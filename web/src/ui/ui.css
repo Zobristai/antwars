@@ -1,0 +1,357 @@
+/* The spectator HUD and pages: a broadcast window. Everything is scoped to a .d2 root inside its host; html[data-d2-hud]
+   only keeps, while this HUD is mounted, the shared no-match notice off the score. Tokens are the page's own (web/index.html :root). */
+
+html[data-d2-hud] #aw-match-status { top: var(--d2-notice-top, 124px); }
+
+/* The HUD's host (overlays.ts mountHud) and the pages' host fill the viewport. */
+.aw-hud, .aw-page-host { position: fixed; inset: 0; overflow: auto; }
+/* The HUD sits over the board, so presses and drags pass through it to the canvas. */
+.aw-hud { pointer-events: none; }
+/* The pages' host is their scroller (html and body do not scroll) and nothing is drawn under it; WebKit will not scroll
+   a scroller that ignores pointer input, so it takes it. */
+.aw-page-host { pointer-events: auto; }
+.aw-hud > .d2 { pointer-events: none; }
+.d2 { position: absolute; inset: 0; box-sizing: border-box; color-scheme: dark; font: 400 13px/1.35 var(--aw-sans); color: var(--aw-ink); -webkit-font-smoothing: antialiased; }
+.d2 *, .d2 *::before, .d2 *::after { box-sizing: border-box; }
+.d2 [hidden] { display: none !important; }
+.d2 :focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.d2 a { color: inherit; }
+/* Without weight, so the shared controls moved into this view (the address's Copy, the replay transport) keep their
+   own ink and type. */
+:where(.d2) button { font: inherit; color: inherit; }
+/* Words for a screen reader only, where a glyph or an icon already says them on screen. */
+.d2-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.d2-wordmark { font-size: 15px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--aw-ink-bright); text-decoration: none; white-space: nowrap; }
+.d2-credit { font-size: 12px; font-weight: 500; color: var(--aw-ink-2); white-space: nowrap; }
+.d2-link { display: inline-flex; align-items: center; min-height: 24px; color: var(--aw-ink-2); text-underline-offset: 3px; }
+.d2-link:hover { color: var(--aw-ink-bright); }
+.d2-pill { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--d2-tap, 36px); padding: 0 16px; border: 0; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: 13px; font-weight: 600; line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.d2-pill:hover { background: var(--aw-raise-hover); }
+.d2-pill:disabled { opacity: 0.45; cursor: default; }
+
+/* The three pages' navigation: text tabs, the page shown underlined and not a link to itself. */
+.d2-nav { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.d2-nav-link { position: relative; display: inline-flex; align-items: center; min-height: 32px; padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--aw-ink-2); text-decoration: none; white-space: nowrap; border-radius: 6px; }
+.d2-nav-link:hover { color: var(--aw-ink-bright); }
+.d2-nav-link[aria-current="page"] { color: var(--aw-ink-bright); }
+.d2-nav-link[aria-current="page"]::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 5px; height: 2px; border-radius: 1px; background: var(--aw-ink-bright); }
+
+/* ---------------------------------------------------------------- the HUD */
+/* Wide: the main column (score, window, the line under it) and the pane. The window's rectangle depends on the viewport
+   alone, so the boards' fit never moves under the viewer; panels that open float, or open in the pane. */
+.d2-hud {
+  --d2-gap: 12px; --d2-pane: clamp(248px, 17vw, 296px); --d2-plate-h: 154px; --d2-foot: 32px; --d2-lane: 44px; --d2-tap: 36px;
+  display: grid; overflow: hidden;
+  grid-template-columns: var(--d2-gap) minmax(0, 1fr) var(--d2-gap) var(--d2-pane) var(--d2-gap);
+  grid-template-rows: 8px var(--d2-plate-h) 6px minmax(0, 1fr) 6px var(--d2-foot) 8px;
+}
+.d2-hud[data-short] { --d2-foot: 28px; --d2-lane: 40px; --d2-tap: 32px; }
+body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibility: hidden; }
+.d2-score { grid-column: 2; grid-row: 2; position: relative; z-index: 3; display: flex; justify-content: center; min-width: 0; pointer-events: none; }
+.d2-stage { grid-column: 2; grid-row: 4; position: relative; min-height: 0; }
+.d2-foot { grid-column: 2; grid-row: 6; position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; pointer-events: auto; }
+.d2-pane { grid-column: 4; grid-row: 2 / 7; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); pointer-events: auto; overflow: hidden; }
+
+/* The window: a clear hole whose shadow paints the page around it, edged with the page's line. */
+.d2-window { position: absolute; inset: 0; z-index: 0; border-radius: 14px; box-shadow: 0 0 0 200vmax var(--aw-bg), inset 0 0 0 1px var(--aw-line); pointer-events: none; }
+.d2-stage > .aw-waiting { position: absolute; z-index: 1; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: auto; }
+/* The window's own bottom lane: the board's controls float in it, over the board's edge, never over its default fit. */
+.d2-lane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; height: var(--d2-lane); display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px; pointer-events: none; }
+.d2-cluster, .d2-transport > * { pointer-events: auto; }
+.d2-cluster { display: flex; align-items: center; gap: 4px; }
+/* One treatment for every board control: a round button, its icon or its two letters centred. */
+.d2-btn { display: inline-grid; place-items: center; width: var(--d2-tap); height: var(--d2-tap); padding: 0; border: 0; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: 18px; font-weight: 500; line-height: 1; text-decoration: none; cursor: pointer; box-shadow: inset 0 0 0 1px var(--aw-line), 0 1px 3px rgba(0, 0, 0, 0.4); }
+.d2-btn:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
+.d2-btn svg { display: block; }
+.d2-btn-board { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.d2-transport { display: flex; justify-content: flex-end; min-width: 0; }
+/* The explicit replay's own native controls, moved here with their listeners, in one floating row. */
+.d2 .aw-replay-controls { position: relative; display: flex; align-items: center; gap: 8px; width: auto; min-width: 0; height: var(--d2-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line), 0 1px 3px rgba(0, 0, 0, 0.4); font-size: 12px; color: var(--aw-ink); }
+.d2 .aw-replay-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--aw-ink-2); }
+.d2 .aw-replay-controls select { min-width: 0; min-height: 0; height: calc(var(--d2-tap) - 8px); padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); color: var(--aw-ink); font: inherit; }
+.d2 .aw-replay-controls input { width: clamp(96px, 22vw, 320px); min-width: 0; min-height: 0; height: calc(var(--d2-tap) - 8px); margin: 0; accent-color: var(--aw-ink-bright); }
+.d2 .aw-replay-time { font-size: 12px; color: var(--aw-ink); }
+.d2 .aw-replay-state { position: absolute; right: 12px; bottom: calc(100% + 4px); min-height: 0; padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
+.d2 .aw-replay-state:empty { display: none; }
+
+/* The significant event: a toast over the board's bottom edge, in its colony's colour; the fall's headline larger. */
+.d2-toast { position: absolute; z-index: 2; left: 50%; bottom: calc(var(--d2-lane) + 6px); display: grid; grid-template-columns: 4px auto minmax(0, 1fr); grid-template-areas: "bar when what" "bar . who"; column-gap: 10px; width: max-content; max-width: min(560px, calc(100% - 24px)); padding: 5px 14px 6px 0; border-radius: 12px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.4); pointer-events: none; opacity: 0; visibility: hidden; transform: translate(-50%, 6px); transition: opacity 200ms var(--aw-ease), transform 200ms var(--aw-ease), visibility 0s linear 200ms; }
+.d2-toast[data-state="shown"] { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition-delay: 0s; }
+/* While the replay's state line shows (loading, seeking, unavailable) it floats 20px over the lane; the toast rises clear. */
+.d2-stage:has(.aw-replay-state:not(:empty)) .d2-toast { bottom: calc(var(--d2-lane) + 26px); }
+.d2-toast-bar { grid-area: bar; border-radius: 12px 0 0 12px; background: currentColor; }
+.d2-toast-when { grid-area: when; font-size: 12px; font-weight: 600; line-height: 22px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.d2-toast-what { grid-area: what; min-width: 0; font-size: 15px; font-weight: 700; line-height: 22px; color: var(--aw-ink-bright); overflow-wrap: break-word; }
+.d2-toast-who { grid-area: who; min-width: 0; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2); overflow-wrap: break-word; }
+.d2-toast[data-kind="fall"] { grid-template-columns: 4px minmax(0, 1fr); grid-template-areas: "bar what" "bar who"; padding: 8px 22px 10px 0; }
+.d2-toast[data-kind="fall"] .d2-toast-when { display: none; }
+.d2-toast[data-kind="fall"] .d2-toast-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: currentColor; }
+.d2-toast[data-kind="fall"] .d2-toast-who { font-size: 14px; line-height: 18px; }
+
+/* The fall: everything but the board and its headline steps back; a fallen colony's own words dim, readable. */
+.d2-hud :is(.d2-plate-wrap, .d2-foot, .d2-pane, .d2-cluster, .d2-transport) { transition: opacity 600ms var(--aw-ease); }
+.d2-hud.is-falling :is(.d2-plate-wrap, .d2-foot, .d2-pane, .d2-cluster, .d2-transport) { opacity: 0.4; }
+.d2 :is(.d2-name, .d2-fig).is-fallen { opacity: 0.6; }
+
+/* ---------------------------------------------------------------- the score plate */
+/* Score panel: a header, then Kills, Territory, Queens and Ants, each row a
+   figure and a track per colony mirrored about its label, 16px text throughout. From 510px of plate each row runs on
+   one line, as the desktop drawing (676 x 154); under it the figures stand over the tracks, as the phone drawing. */
+.d2-plate-wrap { position: relative; width: min(100%, 676px); height: 100%; pointer-events: auto; }
+.d2-plate { position: relative; isolation: isolate; height: 100%; padding: 0 12px; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); }
+/* Each colony's half is the control that opens its drawer, under the rows, which take no pointer. */
+.d2-half { position: absolute; z-index: -1; top: 0; bottom: 0; width: 50%; cursor: pointer; }
+.d2-half.c0 { left: 0; border-radius: 14px 0 0 14px; }
+.d2-half.c1 { right: 0; border-radius: 0 14px 14px 0; }
+.d2-half:hover, .d2-half[aria-expanded="true"] { background: var(--aw-raise); }
+.d2-half:focus-visible { outline-offset: -2px; }
+.d2-rows { position: relative; display: grid; grid-template-rows: 26px repeat(4, 28px); padding-top: 10px; font-size: 16px; line-height: 24px; pointer-events: none; }
+/* The header: each chevron at the plate's outer edge, then the colony's name over its figures; the clock between. */
+.d2-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: 16px; height: 24px; }
+.d2-name { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; font-weight: 700; white-space: nowrap; }
+.d2-name.c0 { color: var(--aw-c0); justify-self: start; margin-left: -1px; }
+.d2-name.c1 { color: var(--aw-c1); justify-self: end; margin-right: -1px; }
+.d2-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.d2-chevron { flex: none; display: inline-flex; color: var(--aw-ink-bright); transition: transform 160ms var(--aw-ease); }
+.d2-chevron svg { display: block; }
+.d2-plate.open-0 .d2-name.c0 .d2-chevron, .d2-plate.open-1 .d2-name.c1 .d2-chevron { transform: rotate(180deg); }
+.d2-clock { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d2-srow { display: grid; grid-template-columns: 68px minmax(0, 1fr) 104px minmax(0, 1fr) 68px; align-items: center; }
+.d2-fig { min-width: 0; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d2-fig.c0 { padding-right: 8px; text-align: right; }
+.d2-fig.c1 { padding-left: 8px; }
+.d2-slabel { min-width: 0; color: var(--aw-ink-2); text-align: center; white-space: nowrap; }
+/* A track: 16px, 4px corners, filled in the colony's colour from the colony's own end. */
+.d2-track { position: relative; height: 16px; border-radius: 4px; background: rgba(233, 239, 240, 0.12); }
+.d2-tfill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 4px; background: var(--aw-c0); overflow: hidden; transition: width 0.25s linear; }
+.d2-track.c1 .d2-tfill { left: auto; right: 0; background: var(--aw-c1); }
+/* Ants: workers solid, soldiers hatched at the fill's inner end. */
+.d2-soldiers { position: absolute; top: 0; bottom: 0; right: 0; width: 0; background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.6) 0 2.5px, transparent 2.5px 6px); transition: width 0.25s linear; }
+.d2-track.c1 .d2-soldiers { right: auto; left: 0; }
+/* Territory: the six-to-one line 6/7 of the way from each colony's end (src/sim/territory.ts). */
+.d2-tick { position: absolute; top: -3px; bottom: -3px; left: var(--d2-lead, 85.71%); display: none; width: 2px; margin-left: -1px; background: var(--aw-ink-bright); }
+.d2-track.c1 .d2-tick { left: auto; right: var(--d2-lead, 85.71%); margin: 0 -1px 0 0; }
+.d2-srow.has-lead-line .d2-tick { display: block; }
+/* A status with a clock: one white pill 24px tall, its icon at its colony's end, then a ring, then its words. */
+.d2-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 6px; border-radius: 12px; background: var(--aw-ink-bright); color: var(--aw-bg); box-shadow: 0 0 0 1.5px var(--aw-bg); font-size: 16px; font-weight: 400; line-height: 24px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.d2-chip.c1 { flex-direction: row-reverse; padding: 0 6px 0 10px; }
+.d2-chip-icon, .d2-chip-ring { flex: none; display: inline-flex; }
+.d2-chip-icon:empty { display: none; }
+.d2-chip svg { display: block; }
+.d2-pie-track { fill: #333b3d; }
+.d2-pie { fill: none; stroke-width: 9; stroke-dasharray: 100 200; stroke-dashoffset: 100; transition: stroke-dashoffset 120ms linear; }
+.d2-chip.c0 .d2-pie { stroke: var(--aw-c0); }
+.d2-chip.c1 .d2-pie { stroke: var(--aw-c1); }
+.d2-chip.is-restart .d2-pie { transition: none; }
+/* The two states no hatch follows share one grey, half the pill's ink and half its ground (3.4:1 on the pill). At the
+   colony's cap the ring is full. Short of food the pill holds only an empty, still ring, with
+   no icon and no words; the Food pair beside it shows stock and cost, and the chip's spoken name
+   keeps the full description. A border draws that ring, so it stays in forced colours, which drop shadows. */
+.d2-chip { --d2-chip-grey: #858a8b; }
+.d2-chip.is-full .d2-pie { stroke: var(--d2-chip-grey); }
+.d2-chip.is-food { padding-inline: 6px; }
+.d2-chip.is-food .d2-chip-ring { box-sizing: border-box; width: 18px; height: 18px; border: 1.5px solid var(--d2-chip-grey); border-radius: 50%; }
+.d2-chip.is-food :is(.d2-chip-icon, .d2-chip-ring svg, .d2-chip-text) { display: none; }
+/* A hold sits over the holding colony's Territory track at its outer end, and covers only fill, never the line. */
+.d2-hold { position: absolute; z-index: 1; top: 50%; left: 0; transform: translateY(-50%); }
+.d2-track.c1 .d2-hold { left: auto; right: 0; }
+/* Queens: one cell per standing queen from the colony's end, her HP filling it from that end. */
+.d2-cells { display: flex; gap: 2px; min-width: 0; height: 16px; }
+.d2-cells.c1 { flex-direction: row-reverse; }
+.d2-cell { position: relative; flex: 0 1 14px; min-width: 3px; height: 16px; border-radius: 3px; background: rgba(233, 239, 240, 0.12); overflow: hidden; }
+.d2-cell-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; border-radius: 3px; background: var(--aw-c0); transition: width 0.25s linear; }
+.d2-cells.c1 .d2-cell-fill { left: auto; right: 0; background: var(--aw-c1); }
+.d2-cells.c0 .d2-cell.is-overrun { background: var(--aw-c1); }
+.d2-cells.c1 .d2-cell.is-overrun { background: var(--aw-c0); }
+.d2-cell.is-attacked { box-shadow: 0 0 0 1.5px var(--aw-ink-bright); }
+.d2-cell.is-hit .d2-cell-fill { background: #fff; transition: none; }
+/* The phone form: the clock over the names, each row's figures and label over its two half-tracks. */
+.d2-hud[data-plate="stacked"] .d2-rows { grid-template-rows: 48px repeat(4, 44px); row-gap: 4px; padding-top: 8px; }
+.d2-hud[data-plate="stacked"] .d2-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "clock clock" "c0 c1"; column-gap: 8px; height: 48px; }
+.d2-hud[data-plate="stacked"] .d2-name.c0 { grid-area: c0; }
+.d2-hud[data-plate="stacked"] .d2-name.c1 { grid-area: c1; }
+.d2-hud[data-plate="stacked"] .d2-clock { grid-area: clock; justify-self: center; }
+.d2-hud[data-plate="stacked"] .d2-srow { grid-template-columns: minmax(0, 1fr) 8px minmax(0, 1fr); grid-template-rows: 24px 16px; row-gap: 4px; }
+.d2-hud[data-plate="stacked"] .d2-fig { grid-row: 1; padding: 0; }
+.d2-hud[data-plate="stacked"] .d2-fig.c0 { grid-column: 1; text-align: left; }
+.d2-hud[data-plate="stacked"] .d2-fig.c1 { grid-column: 3; text-align: right; }
+.d2-hud[data-plate="stacked"] .d2-slabel { grid-row: 1; grid-column: 1 / -1; justify-self: center; }
+.d2-hud[data-plate="stacked"] :is(.d2-track, .d2-cells).c0 { grid-row: 2; grid-column: 1; }
+.d2-hud[data-plate="stacked"] :is(.d2-track, .d2-cells).c1 { grid-row: 2; grid-column: 3; }
+.d2-hud[data-plate="stacked"] .d2-cells { gap: 1.5px; }
+.d2-hud[data-plate="stacked"] .d2-cell { flex-basis: 11px; }
+
+/* The drawers drop from under their halves, side by side, edged in their colony's colour: the next hatch first, at the
+   colony's outer edge, then the five pairs. The right drawer mirrors the left by column, as the plate does. */
+.d2-drawer { container-type: inline-size; position: absolute; top: calc(100% + 4px); width: calc(50% - 2px); padding: 7px 12px 6px; border-top: 3px solid currentColor; border-radius: 0 0 12px 12px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 6px 18px rgba(0, 0, 0, 0.4); font-size: 16px; line-height: 24px; animation: d2-drop 180ms var(--aw-ease); }
+.d2-drawer.c0 { left: 0; color: var(--aw-c0); }
+.d2-drawer.c1 { right: 0; color: var(--aw-c1); }
+.d2-hud[data-plate="stacked"] .d2-drawer { padding-inline: 8px; }
+@keyframes d2-drop { from { transform: translateY(-6px); opacity: 0; } }
+/* Two pairs a line: the outer column 162px, the spawn chip's widest state as drawn ("Needs food"), beside the inner. */
+.d2-ledger { display: grid; grid-template-columns: 162px minmax(0, 1fr); grid-template-rows: 26px 24px 24px; grid-template-areas: "spawn food" "workers soldiers" "hatched cap"; column-gap: 20px; align-items: center; margin: 0; }
+.d2-drawer.c1 .d2-ledger { grid-template-columns: minmax(0, 1fr) 162px; grid-template-areas: "food spawn" "soldiers workers" "cap hatched"; }
+/* One pair a line in a drawer too narrow for two, as the phone drawing: the chip, Food, Workers, Soldiers, Hatched, Cap. */
+@container (max-width: 281px) {
+  .d2-drawer.c0 .d2-ledger, .d2-drawer.c1 .d2-ledger { grid-template-columns: minmax(0, 1fr); grid-template-rows: 26px repeat(5, 24px); grid-template-areas: "spawn" "food" "workers" "soldiers" "hatched" "cap"; }
+}
+.d2-pair { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+.d2-pair dt { color: var(--aw-ink-2); white-space: nowrap; }
+.d2-pair dd { margin: 0; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d2-pair.d2-spawn { align-items: center; justify-content: flex-start; }
+.d2-drawer.c1 .d2-pair.d2-spawn { justify-content: flex-end; }
+.d2-pair.d2-spawn dd { display: flex; font-weight: 400; }
+
+/* ---------------------------------------------------------------- the line under the window */
+/* The stream's state, its parts in one line with a separator between each. */
+.d2-status { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12px; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; }
+.d2-status > :not(:first-child)::before { content: "·"; display: inline-block; margin-right: 8px; color: var(--aw-ink-3); text-decoration: none; }
+.d2-mode-label { flex: none; font-weight: 700; color: var(--aw-ink-bright); }
+.d2-mode-label::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: #ff5a4e; }
+.d2-status.is-replay .d2-mode-label::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
+.d2-mode-label:empty, .d2-mode-detail:empty, .d2-connection:empty { display: none; }
+.d2-mode-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.d2-connection { flex: none; font-weight: 600; color: var(--aw-ink-bright); }
+/* Its words carry the underline, so the separator before them is never drawn as part of the link. */
+.d2-back { flex: none; display: inline-flex; align-items: center; min-height: 24px; font-weight: 600; color: var(--aw-ink-bright); text-decoration: none; }
+.d2-back-text { text-decoration: underline; text-underline-offset: 2px; }
+/* Bring your agent, compact: its name, the address, and Copy, the page's one white pill. */
+.d2-join { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.d2-join-label { font-size: 13px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; }
+.d2 .aw-byoa-address { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; margin: 0; }
+.d2 .aw-byoa-url { padding: 4px 8px; font-size: 12px; line-height: 1.3; white-space: nowrap; }
+.d2 .aw-byoa-copy { min-height: var(--d2-foot); padding: 0 14px; background: var(--aw-ink-bright); color: var(--aw-bg); font-weight: 700; }
+.d2 .aw-byoa-copy:hover { background: #fff; }
+.d2 .aw-byoa-note:empty { display: none; }
+
+/* ---------------------------------------------------------------- the pane */
+.d2-pane-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 10px; }
+.d2-brand { display: inline-flex; align-items: baseline; gap: 8px; min-height: 28px; padding-top: 6px; }
+.d2-pane-head .d2-nav { margin: 0 -8px; }
+.d2-card { flex: none; padding: 4px 4px 8px 10px; border-left: 4px solid var(--aw-ink-3); border-radius: 10px; background: var(--aw-raise); font-size: 12px; line-height: 1.4; }
+.d2-card-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--aw-ink-bright); }
+.d2-card-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.d2-close { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--aw-ink-2); font-size: 18px; line-height: 1; cursor: pointer; }
+.d2-close:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
+.d2-card-line { margin: 3px 4px 0 0; overflow-wrap: anywhere; }
+.d2-card-label { color: var(--aw-ink-3); }
+.d2-card-label::after { content: ": "; }
+.d2-card-value { color: var(--aw-ink); }
+/* The agents: the deck's panel (agents.ts), one dense list, each agent with its newest thought or mark; a chosen
+   agent opens in place. The colonies meet where the rows' edge colour changes, over a gap; no heading repeats it. */
+.d2-agents { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; margin: 0 -10px; overflow-y: auto; scroll-padding-block: 8px; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
+.d2-agents-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 10px 2px 12px; }
+.d2-agents-title { margin: 0; font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0.14em; text-transform: uppercase; color: var(--aw-ink-3); }
+.d2-key-toggle { display: inline-grid; place-items: center; min-width: 28px; min-height: 28px; margin: 0 -6px 0 0; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--aw-ink-2); cursor: pointer; }
+.d2-key-toggle:hover, .d2-key-toggle[aria-expanded="true"] { background: var(--aw-raise); color: var(--aw-ink-bright); }
+.d2-agents svg { display: block; flex: none; }
+.d2-key { flex: none; margin: 0 10px 8px 12px; font-size: 11px; line-height: 1.4; color: var(--aw-ink-2); }
+.d2-key p { margin: 0 0 4px; text-wrap: balance; }
+.d2-agent-list { flex: none; margin: 0; padding: 0; list-style: none; }
+.d2-agent-item { border-top: 1px solid var(--aw-line); box-shadow: inset 3px 0 0 var(--d2-side); }
+.d2-agent-item.c0 { --d2-side: var(--aw-c0); }
+.d2-agent-item.c1 { --d2-side: var(--aw-c1); }
+.d2-agent-item.is-first { border-top: 6px solid var(--aw-bg); }
+.d2-agent { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto auto; grid-template-areas: "badge name elo order idle" ". said said said said"; align-items: center; column-gap: 6px; row-gap: 1px; width: 100%; min-height: 40px; margin: 0; padding: 5px 10px 5px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; cursor: pointer; }
+.d2-agent:hover, .d2-agent-item.is-open .d2-agent { background: var(--aw-raise); }
+.d2-badge { grid-area: badge; width: 16px; height: 16px; }
+.d2-agent-name { grid-area: name; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.d2-agent-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: var(--aw-ink-bright); }
+.d2-agent-sub { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
+.d2-agent-sub:empty, .d2-agent-elo:empty { display: none; }
+.d2-agent-elo { grid-area: elo; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--aw-ink-2); }
+.d2-order { grid-area: order; display: inline-flex; align-items: center; gap: 2px; color: var(--aw-ink-2); }
+.d2-idle { grid-area: idle; color: var(--aw-ink-3); }
+.d2-agent-item.is-idle :is(.d2-agent-title, .d2-said) { opacity: 0.6; }
+.d2-agent-said { grid-area: said; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 5px; min-width: 0; }
+/* Open, the agent's recent lines start with its newest, so the row does not say it a second time. */
+.d2-agent-item.is-open .d2-agent-said { display: none; }
+.d2-said-icon { grid-column: 1; width: 14px; height: 14px; }
+.d2-said { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--aw-ink); }
+.d2-said.is-thought, .d2-said.is-words { font-style: italic; color: var(--aw-ink-2); }
+.d2-said.is-mark:not(.is-words) { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
+.d2-said.is-faded { font-weight: 400; color: var(--aw-ink-2); }
+.d2-said-when { grid-column: 3; font-size: 11px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d2-agent-detail { padding: 2px 10px 8px 36px; background: var(--aw-raise); }
+.d2-agent-lines { margin: 0 0 4px; font-size: 11px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; color: var(--aw-ink-2); }
+.d2-history { margin: 0; padding: 0; list-style: none; }
+.d2-history-button { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 5px; width: 100%; min-height: 24px; margin: 0; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; }
+button.d2-history-button { cursor: pointer; }
+button.d2-history-button:hover .d2-said { text-decoration: underline; text-underline-offset: 2px; }
+.d2-history .d2-said { white-space: normal; overflow-wrap: anywhere; }
+.d2-when { flex: none; color: var(--aw-ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.d2-empty { display: grid; justify-items: start; gap: 8px; padding: 6px 10px 6px 12px; }
+.d2-pane-foot { flex: none; display: grid; gap: 4px; font-size: 11px; color: var(--aw-ink-3); }
+.d2-key { margin: 0; line-height: 1.4; text-wrap: balance; }
+.d2-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; margin: 0; }
+.d2-links .d2-credit { display: none; font-size: 11px; }
+
+/* Short screens on their side: the same layout, tighter. */
+.d2-hud[data-short] .d2-pane { gap: 6px; padding: 8px; }
+
+/* ---------------------------------------------------------------- narrow: one column, the window edge to edge */
+.d2-hud[data-layout="narrow"] {
+  --d2-foot: 68px; --d2-lane: 52px; --d2-tap: 44px;
+  grid-template-columns: 8px minmax(0, 1fr) 8px;
+  grid-template-rows: 6px var(--d2-plate-h) 6px var(--d2-window-h, 300px) 0 minmax(var(--d2-foot), auto) minmax(0, 1fr);
+}
+/* A replay's own row (52px, its controls 44px), over the board's (44px), with room above and below. */
+.d2-hud[data-layout="narrow"].has-transport { --d2-lane: 108px; }
+.d2-hud[data-layout="narrow"] .d2-score { grid-column: 2; grid-row: 2; }
+/* As the phone drawing: the plate 16px from each edge. */
+.d2-hud[data-layout="narrow"] .d2-plate-wrap { width: min(100% - 16px, 676px); }
+.d2-hud[data-layout="narrow"] .d2-stage { grid-column: 1 / -1; grid-row: 4; }
+.d2-hud[data-layout="narrow"] .d2-window { border-radius: 0; box-shadow: 0 0 0 200vmax var(--aw-bg); }
+.d2-hud[data-layout="narrow"].has-transport .d2-lane { flex-direction: column-reverse; align-items: stretch; justify-content: center; gap: 4px; }
+.d2-hud[data-layout="narrow"].has-transport .d2-transport { justify-content: stretch; }
+.d2-hud[data-layout="narrow"] .aw-replay-controls { flex: 1 1 auto; height: calc(var(--d2-tap) + 8px); }
+.d2-hud[data-layout="narrow"] .aw-replay-controls :is(select, input) { height: var(--d2-tap); }
+.d2-hud[data-layout="narrow"] .aw-replay-controls select { min-width: var(--d2-tap); }
+.d2-hud[data-layout="narrow"] .aw-replay-controls input { flex: 1 1 auto; width: auto; }
+.d2-hud[data-layout="narrow"] .d2-toast { max-width: calc(100% - 16px); }
+/* Under the window: the stream's state, then Bring your agent; a long line wraps rather than pushing a control away. */
+.d2-hud[data-layout="narrow"] .d2-foot { grid-column: 2; grid-row: 6; flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; }
+/* A wrapped line never starts with a separator: each sits in the room before its part, and that room is cut away
+   where a part starts a line. */
+.d2-hud[data-layout="narrow"] .d2-status { flex-wrap: wrap; row-gap: 2px; column-gap: 0; min-height: 20px; margin-left: -16px; align-items: center; white-space: normal; overflow: visible; clip-path: inset(-8px -8px -8px 12px); }
+.d2-hud[data-layout="narrow"] .d2-status > * { position: relative; margin-left: 16px; overflow: visible; }
+.d2-hud[data-layout="narrow"] .d2-status > :not(:first-child)::before { position: absolute; left: -8px; margin: 0; transform: translateX(-50%); }
+.d2-hud[data-layout="narrow"] .d2-join { flex-wrap: wrap; row-gap: 4px; min-height: var(--d2-tap); }
+.d2-hud[data-layout="narrow"] .d2-join-label { font-size: 12px; }
+.d2-hud[data-layout="narrow"] .aw-byoa-address { flex-wrap: wrap; row-gap: 4px; }
+.d2-hud[data-layout="narrow"] .aw-byoa-url { font-size: 11.5px; }
+/* Every phone target is 44px both ways. */
+.d2-hud[data-layout="narrow"] .aw-byoa-copy { min-height: var(--d2-tap); }
+.d2-hud[data-layout="narrow"] .d2-back, .d2-hud[data-layout="narrow"] .d2-link { min-height: 44px; }
+.d2-hud[data-layout="narrow"] .d2-link { min-width: 44px; justify-content: center; }
+.d2-hud[data-layout="narrow"] .d2-close { width: 44px; height: 44px; }
+/* The pane scrolls as a whole under the line: its name and pages in one row, then the list, nothing in it shrinking. */
+.d2-hud[data-layout="narrow"] .d2-pane { grid-column: 1 / -1; grid-row: 7; margin-top: 4px; border-radius: 14px 14px 0 0; overflow-y: auto; scroll-padding-block: 22px; }
+.d2-hud[data-layout="narrow"] .d2-pane > * { flex: none; }
+/* The agents stand open under the line, the pane scrolling as a whole; every row a finger opens is 44px tall. */
+.d2-hud[data-layout="narrow"] .d2-agents { overflow: visible; }
+.d2-hud[data-layout="narrow"] :is(.d2-agent, button.d2-history-button) { min-height: 44px; }
+.d2-hud[data-layout="narrow"] .d2-key-toggle { min-width: 44px; min-height: 44px; margin: -8px -10px -8px 0; }
+.d2-hud[data-layout="narrow"] .d2-pane-head { flex-wrap: nowrap; min-height: 44px; }
+.d2-hud[data-layout="narrow"] .d2-brand { padding-top: 0; }
+.d2-hud[data-layout="narrow"] .d2-pane-head .d2-credit { display: none; }
+.d2-hud[data-layout="narrow"] .d2-links .d2-credit { display: inline; }
+.d2-hud[data-layout="narrow"] .d2-pane-head .d2-nav { margin: 0 -5px 0 0; }
+.d2-hud[data-layout="narrow"] .d2-nav-link { min-height: 44px; padding: 0 5px; }
+.d2-hud[data-layout="narrow"] .d2-nav-link[aria-current="page"]::after { left: 5px; right: 5px; bottom: 9px; }
+
+/* The phone form of the plate is taller (the drawing: 258px), in either layout. */
+.d2-hud[data-plate="stacked"] { --d2-plate-h: 258px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .d2 *, .d2 *::before, .d2 *::after { animation: none !important; }
+  .d2-toast, .d2-toast[data-state="shown"] { transform: translate(-50%, 0); }
+  /* The spawn ring steps in quarters (hud.ts), never sweeping; the tracks, cells and rings jump to each reading. */
+  .d2-hud :is(.d2-plate-wrap, .d2-foot, .d2-pane, .d2-cluster, .d2-transport), .d2-chevron, .d2-tfill, .d2-soldiers, .d2-cell-fill, .d2-pie { transition: none; }
+}
+
+/* The board's point-of-view choice: Full view or one colony's fog-of-war view, first in the window's controls. */
+.d2 .aw-team-view { height: var(--d2-tap); max-width: 46vw; padding: 0 10px; border: 0; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: inset 0 0 0 1px var(--aw-line), 0 1px 3px rgba(0, 0, 0, 0.4); }
+.d2 .aw-team-view:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
+/* After a click or tap it shows no focus ring, like the round controls beside it; by keyboard it keeps the shared ring. */
+.d2 .aw-team-view[data-pointer]:focus-visible { outline: none; }

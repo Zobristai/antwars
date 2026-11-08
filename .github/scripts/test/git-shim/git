@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Test shim for history-isolation-test.sh: simulates failing git reads, otherwise runs REAL_GIT.
+#   FAIL_LSREMOTE=1                 every ls-remote exits 128
+#   LSREMOTE_EXIT=<n> LSREMOTE_REF=<s>  an ls-remote naming a ref containing <s> exits <n>
+#   FAIL_FETCH=<s>                  a fetch naming a refspec containing <s> exits 128
+#   GIT_SHIM_FAIL=<glob>            a call whose arguments match <glob> fails (exit 128) once
+#                                   GIT_SHIM_AFTER (default 0) matching calls have succeeded;
+#                                   GIT_SHIM_PARTIAL=<n> first prints <n> lines of the real output.
+#                                   Matching calls are counted in the file GIT_SHIM_STATE.
+#   GIT_SHIM_COUNT=<n>              rev-list --count prints <n>
+#   GIT_SHIM_STAT_IDS=<file>        each call appends the modes of $TMPDIR/tmp.*/ and of its ids file
+real=${REAL_GIT:?REAL_GIT is not set}
+for a in "$@"; do
+  [ -n "${FAIL_LSREMOTE:-}" ] && [ "$a" = ls-remote ] && { echo "fatal: simulated ls-remote failure" >&2; exit 128; }
+done
+if [ -n "${LSREMOTE_EXIT:-}" ] && [ "$1" = ls-remote ]; then
+  for a in "$@"; do case "$a" in *"$LSREMOTE_REF"*) echo "fatal: simulated ls-remote exit $LSREMOTE_EXIT" >&2; exit "$LSREMOTE_EXIT" ;; esac; done
+fi
+if [ -n "${FAIL_FETCH:-}" ] && [ "$1" = fetch ]; then
+  for a in "$@"; do case "$a" in *"$FAIL_FETCH"*) echo "fatal: simulated fetch failure" >&2; exit 128 ;; esac; done
+fi
+if [ -n "${GIT_SHIM_FAIL:-}" ]; then
+  # shellcheck disable=SC2254
+  case "$*" in
+    $GIT_SHIM_FAIL)
+      n=0; [ -f "$GIT_SHIM_STATE" ] && n=$(cat "$GIT_SHIM_STATE")
+      echo $((n + 1)) > "$GIT_SHIM_STATE"
+      if [ "$n" -ge "${GIT_SHIM_AFTER:-0}" ]; then
+        [ -z "${GIT_SHIM_PARTIAL:-}" ] || "$real" "$@" | head -n "$GIT_SHIM_PARTIAL"
+        echo "fatal: simulated failure of git $1" >&2; exit 128
+      fi ;;
+  esac
+fi
+if [ -n "${GIT_SHIM_STAT_IDS:-}" ]; then
+  for f in "${TMPDIR:?}"/tmp.*/ids; do [ -e "$f" ] && stat -c '%a' "${f%/ids}" "$f" | tr '\n' ' ' >> "$GIT_SHIM_STAT_IDS"; done
+  echo >> "$GIT_SHIM_STAT_IDS"
+fi
+if [ -n "${GIT_SHIM_COUNT:-}" ] && [ "$1" = rev-list ] && [ "${2:-}" = --count ]; then echo "$GIT_SHIM_COUNT"; exit 0; fi
+exec "$real" "$@"

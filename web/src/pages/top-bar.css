@@ -1,0 +1,15 @@
+/* The three pages' top bar (top-bar.ts) is main's HUD deck bar, styled by deck.css's own bar and dialog rules. Only what
+   differs on these pages is here, scoped to the .d1p root so the HUD's bar is untouched. */
+
+/* The HUD's tap size, which deck.css sets on its own .d1 root. */
+.d1p { --d1-tap: 36px; }
+
+/* Sticky over the scrolling page; on the board the bar is the HUD grid's first row. */
+.d1p .d1-top { position: sticky; top: 0; z-index: 3; flex: none; height: 48px; background: var(--aw-bg); }
+
+@media (max-width: 559px) {
+  .d1p { --d1-tap: 44px; }
+  /* "Built with Zobrist" stays under the wordmark at every width: the HUD's phone move of the credit to its footer does not apply. */
+  .d1p .d1-brand > .d1-top-credit { display: inline; }
+  .d1p .d1-brand > .d2-wordmark { grid-row: 1; align-self: end; }
+}

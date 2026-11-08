@@ -1,0 +1,132 @@
+#!/bin/sh
+# Refuses a commit whose staged files contain one of the private identifiers, or a secret
+# found by gitleaks' default rules (.gitleaks-defaults.toml). Installation: CONTRIBUTING.md.
+#
+# The private identifiers are never in this repository. The identifier scan reads them from
+# the untracked file .git/antwars-identifiers (one literal identifier per line, LF;
+# CONTRIBUTING.md). Without that file the identifier scan is skipped with a notice; the
+# gitleaks workflow still runs it in CI.
+#
+# The list only ever reaches trusted code, never code from the working tree, which any branch
+# you check out can change. This hook reads the list only when it runs as the copy installed
+# in the Git directory's hooks folder (CONTRIBUTING.md), which no checkout writes. It builds
+# the rules with the .githooks/identifier-config of refs/remotes/origin/main, read as a git
+# object: that ref is the reviewed main as last fetched from origin, and only a fetch moves it.
+#
+# gitleaks redacts only the matched text; its own output and reports still carry file paths and
+# whole lines, which could hold an identifier. So gitleaks' own output is discarded: each finding is
+# reduced to its rule, line and the sha256 of its path, as the gitleaks workflow does
+# (.github/scripts/identifiers-scan.sh), and the raw reports are deleted.
+#
+# The defaults scan uses the approved .gitleaks-defaults.toml: the version whose Git blob id
+# is on the defaults_baseline line below, read from the object store, never from the working
+# copy or the commit being made. A commit whose staged .gitleaks-defaults.toml differs from it
+# is refused. To change that config (a maintainers' decision), edit it, `git add` it, then put
+# the id printed by `git rev-parse :.gitleaks-defaults.toml` on the defaults_baseline line, in
+# the same reviewed change. The gitleaks workflow checks this same line.
+defaults_baseline=31ef6255ec2cf87ffe129eb0a7c3e97fa3a12cac
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed, so this commit cannot be checked for private identifiers or secrets. Install gitleaks 8.30.1 as CONTRIBUTING.md describes." >&2
+  exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "pre-commit: python3 is not installed, so this commit's findings cannot be reported safely. Install python3." >&2
+  exit 1
+fi
+common=$(git rev-parse --path-format=absolute --git-common-dir) || exit 1
+list="$common/antwars-identifiers"
+trusted_ref=refs/remotes/origin/main
+staged=$(mktemp -d) || exit 1
+aside=$(mktemp -d) || { rm -rf "$staged"; exit 1; }
+trap 'rm -rf "$staged" "$aside"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+configs=defaults.toml
+if [ -f "$list" ]; then
+  here=$(cd "$(dirname "$0")" && pwd -P) || exit 1
+  installed=$(cd "$common/hooks" 2>/dev/null && pwd -P) || installed=
+  if [ "$here" != "$installed" ]; then
+    echo "pre-commit: this hook is running from $here, not from $common/hooks, so it will not read $list: a hook in the working tree can be changed by any branch you check out. Install the hook as CONTRIBUTING.md describes, and unset core.hooksPath." >&2
+    exit 1
+  fi
+  if ! git cat-file blob "$trusted_ref:.githooks/identifier-config" > "$aside/identifier-config" 2>/dev/null; then
+    echo "pre-commit: $trusted_ref has no .githooks/identifier-config, so this commit cannot be checked for private identifiers. Run git fetch origin main." >&2
+    exit 1
+  fi
+  # The generated rules stay in a private temporary directory and are never printed.
+  if ! (umask 077 && sh "$aside/identifier-config" < "$list" > "$aside/identifiers.toml"); then
+    echo "pre-commit: $list is not a valid identifier list (CONTRIBUTING.md), so this commit cannot be checked for private identifiers." >&2
+    exit 1
+  fi
+  configs="identifiers.toml defaults.toml"
+else
+  echo "pre-commit: NOTICE: $list is absent, so the private identifier scan is SKIPPED for this commit. The gitleaks workflow still runs it in CI; CONTRIBUTING.md says how to add the file." >&2
+fi
+if ! git cat-file blob "$defaults_baseline" > "$aside/defaults.toml" 2>/dev/null; then
+  echo "pre-commit: the approved .gitleaks-defaults.toml ($defaults_baseline) is not in this repository, so this commit cannot be checked with gitleaks' default rules." >&2
+  exit 1
+fi
+# Copy the staged version of every added or changed file (text, binary, or a symlink as its target text).
+git diff --cached --name-only --diff-filter=ACMRT -z | git -c core.symlinks=false checkout-index --prefix="$staged/" -z --stdin || exit 1
+# No suppression applies: inline gitleaks:allow is ignored, and a staged .gitleaksignore is
+# moved out of the scan root and scanned as an ordinary file.
+status=0
+staged_defaults=$(git rev-parse -q --verify :.gitleaks-defaults.toml)
+# Nothing runs with the staged tree as its working directory except gitleaks, which loads only
+# the config named here and never runs or imports what it scans.
+[ -e "$staged/.gitleaksignore" ] && { mv "$staged/.gitleaksignore" "$aside/" || exit 1; }
+mkdir "$aside/raw" || exit 1
+# Prints one raw report's findings as rule, line and path sha256 only, then deletes the report.
+# Python runs isolated (-I: no current directory, script directory, PYTHON* variables or user
+# site-packages on its path) from the hook's private directory, so no staged file can be imported.
+report() {
+  (cd "$aside/raw" && python3 -I - "$aside/raw/$1.json" "$1") <<'PY'
+import hashlib, json, re, sys
+raw, scan = sys.argv[1], sys.argv[2]
+try:
+    with open(raw, encoding="utf-8") as f:
+        items = json.load(f)
+except FileNotFoundError:
+    print("pre-commit: the %s scan wrote no report." % scan, file=sys.stderr)
+    sys.exit(1)
+except (OSError, ValueError):
+    items = None
+if not isinstance(items, list):
+    print("pre-commit: the %s scan's report is unreadable." % scan, file=sys.stderr)
+    sys.exit(1)
+for item in items:
+    item = item if isinstance(item, dict) else {}
+    rule, line, path = item.get("RuleID"), item.get("StartLine"), item.get("File")
+    if isinstance(path, str) and path:
+        path = path[2:] if path.startswith("./") else path
+        path = hashlib.sha256(path.encode("utf-8", "surrogatepass")).hexdigest()
+    else:
+        path = "path redacted"
+    rule = rule if isinstance(rule, str) and re.fullmatch(r"[A-Za-z0-9._-]+", rule) else "rule redacted"
+    line = line if isinstance(line, int) and not isinstance(line, bool) else 0
+    print("pre-commit: finding: scan=%s rule=%s path-sha256=%s line=%d" % (scan, rule, path, line), file=sys.stderr)
+PY
+  r=$?
+  rm -f "$aside/raw/$1.json"
+  return $r
+}
+for config in $configs; do
+  scan=${config%.toml}
+  (cd "$staged" && gitleaks dir . --no-banner --redact --ignore-gitleaks-allow --config "$aside/$config" \
+    --report-format json --report-path "$aside/raw/$scan.json") >/dev/null 2>&1 || status=1
+  report "$scan" || status=1
+  if [ -e "$aside/.gitleaksignore" ]; then
+    (cd "$aside" && gitleaks dir .gitleaksignore --no-banner --redact --ignore-gitleaks-allow --gitleaks-ignore-path "$staged" --config "$aside/$config" \
+      --report-format json --report-path "$aside/raw/ignore-$scan.json") >/dev/null 2>&1 || status=1
+    report "ignore-$scan" || status=1
+  fi
+done
+if [ "$status" != 0 ]; then
+  echo "pre-commit: refused. Each finding above names only its rule, line and the sha256 of its file's path; CONTRIBUTING.md says how to find the file." >&2
+fi
+if [ "$staged_defaults" != "$defaults_baseline" ]; then
+  echo "pre-commit: the staged .gitleaks-defaults.toml differs from the approved default-rules config ($defaults_baseline) or is missing. A change to it must update the defaults_baseline line in .githooks/pre-commit in the same reviewed change." >&2
+  status=1
+fi
+exit $status

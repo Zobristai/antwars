@@ -1,0 +1,389 @@
+/* The Archive (ported to the live pages): Leaderboard, Matches and Rules. Everything is
+   scoped to a .d1p root inside the page's scroll host (.aw-page-host, ui/ui.css); the top bar and dialog are main's deck bar (deck.css, top-bar.css). One token set, one type scale,
+   one set of components on all three pages: the HUD's
+   tokens and caps roles, the slate base, amber wash and battle hero.
+   Dark only; every change is a cut, so nothing transitions and reduced motion changes nothing.
+   One container: the same 912 px, centred, with the same edges on all
+   three pages, so every head of the widest table (Recordings) sits on one line; the page's title and controls in a band
+   at its top, the cards under it; on Rules, from 65.5rem, a sticky section index beside the reading cards inside that same
+   container, and under it the index stacks above them. Matches' lists restack into labelled rows wherever their card is
+   under 56rem, and every table does under 46rem, where targets grow to 44 px; the top bar keeps the HUD's own 560 px phone
+   form. Spacing keeps the sheet's 4 px grid.
+   Layout pass: the title, Refresh and freshness read as one group; each card's head is one band, title and
+   state; every table row shares one first baseline; Live now and Recordings share one column grid.
+   Layout pass: Matches' colonies take the width the other columns leave; every seat keeps its name and badges on
+   one line, a colony's alike seats once with their count; one head row in both Matches tables. */
+
+.d1p {
+  /* The HUD's tokens (web/index.html :root), set here as well because /rules declares its own warm ones. */
+  --aw-bg: #121719; --aw-surface: #1a2225; --aw-raise: #293337; --aw-raise-hover: #364146;
+  --aw-ink: #e9eff0; --aw-ink-bright: #f8fcfc; --aw-ink-2: rgba(233, 239, 240, 0.76); --aw-ink-3: rgba(233, 239, 240, 0.63);
+  --aw-line: rgba(233, 239, 240, 0.12); --aw-c0: #ffb000; --aw-c1: #00c2ff;
+  --aw-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  --aw-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --d1p-hair: rgba(233, 239, 240, 0.08); --d1p-red: #ff5a4e;
+  --d2-tap: 36px; --d1p-row-tap: 28px; --d1p-pad: 24px; --d1p-inset: 24px;
+  /* The container; Rules' index and its gap inside it; and the gutter before every table column after the first. */
+  --d1p-content: 912px; --d1p-index: 200px; --d1p-gap: 32px; --d1p-gutter: 16px;
+  position: relative; display: flex; flex-direction: column; min-height: 100%; box-sizing: border-box;
+  background: var(--aw-bg); color: var(--aw-ink); color-scheme: dark;
+  font: 400 13px/1.35 var(--aw-sans); -webkit-font-smoothing: antialiased;
+}
+/* The scroll host passes pointer events through to the page it holds. */
+.aw-page-host > .d1p { pointer-events: auto; }
+.d1p *, .d1p *::before, .d1p *::after { box-sizing: border-box; }
+/* /rules styles bare elements (h1, h2, p, section, ul, li, main, a); these classes outrank them. */
+.d1p :where(h1, h2, h3, p, ul, ol, li, section, nav, main, header, footer, table, caption, th, td) {
+  margin: 0; padding: 0; border: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: none; text-align: inherit;
+}
+.d1p :where(ul, ol) { list-style: none; }
+/* Without weight, so the shared pills (ui/ui.css .d2-pill) keep their own type and ink. */
+:where(.d1p) :where(button) { font: inherit; color: inherit; }
+.d1p [hidden] { display: none !important; }
+.d1p :focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.d1p-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ---------------------------------------------------------------- the hero and the wash */
+/* 176 px of the battle image's front line (source rows 309–574 of 724, drawn 1440 px wide, centred); wider screens scale
+   it to their width. Fades: 20 px from the bar's ground, 48 px into the wash's peak, #2E2916 (#FFB000 12 % on #121719). */
+.d1p-hero { position: relative; flex: none; height: 176px; overflow: hidden; background: var(--aw-bg); }
+.d1p-hero img { position: absolute; top: 0; left: 50%; display: block; width: max(1440px, 100%); max-width: none; height: auto; margin-top: min(-14.2265%, -204.86px); transform: translateX(-50%); }
+.d1p-hero::before, .d1p-hero::after { content: ""; position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none; }
+.d1p-hero::before { top: 0; height: 20px; background: linear-gradient(#121719, rgba(18, 23, 25, 0)); }
+.d1p-hero::after { bottom: 0; height: 48px; background: linear-gradient(rgba(46, 41, 22, 0), #2e2916); }
+/* The wash: #FFB000 12 % to 0 % over 182 px, behind each page's summary; the cards cover it in their column. */
+.d1p-page { flex: 1 0 auto; display: flex; flex-direction: column; background: linear-gradient(rgba(255, 176, 0, 0.12), rgba(255, 176, 0, 0)) no-repeat 0 0 / 100% 182px; }
+
+/* ---------------------------------------------------------------- layout: one 912 px container (Matches' 1200 px), the band over the cards */
+.d1p-main { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 24px; align-items: start; width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); margin: 0 auto; padding: 36px var(--d1p-pad) 0; }
+/* Matches takes the landing page's 1200 px column (landing.css --fg-column), which draws the same Recordings card, so each
+   colony of its two lists holds a team seat with its badges and count on one line; Leaderboard and Rules keep
+   912 px. */
+.d1p[data-page="matches"] { --d1p-content: 1200px; }
+/* The band: the title with Refresh and freshness at the start, the board choice at the end; their
+   bottom lines meet, so Refresh and the board tabs stand on one line. Where both do not fit, the choice takes the next line. */
+.d1p-band { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px var(--d1p-gap); min-width: 0; }
+.d1p-content { display: grid; gap: 24px; min-width: 0; }
+
+/* ---------------------------------------------------------------- the band: title, summary, choices */
+.d1p-title { font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+.d1p-title:focus { outline: none; }
+.d1p-lead { margin-top: 12px; font-size: 14px; line-height: 20px; color: var(--aw-ink-2); }
+/* The page's one Refresh, on the title's left edge with the time the lists were loaded after it: one group under the
+   title, never a pill pushed to the band's far edge. The time follows the pill, so its arrival moves nothing. */
+.d1p-fresh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.d1p-loaded { font-size: 13px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.d1p-loaded:empty { visibility: hidden; }
+.d1p-summary { min-width: 0; }
+/* Refresh in main's one cyan button style (deck.css .d1-agent-button). */
+.d1p .d1p-refresh { background: var(--aw-c1); color: var(--aw-bg); font-weight: 700; }
+.d1p .d1p-refresh:hover { background: color-mix(in srgb, var(--aw-c1) 60%, #fff); }
+/* The HUD's caps kicker. */
+.d1p-kicker { font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); }
+
+/* The board choice in the HUD's tab treatment: the board shown in ink-bright with a 2 px rule under its label. */
+/* Its two groups side by side, each kicker over its tabs; on phones one over the other. */
+.d1p-boards { display: flex; flex-wrap: wrap; gap: 20px var(--d1p-gap); min-width: 0; }
+.d1p-board-group { display: grid; gap: 8px; }
+.d1p-tabs { display: flex; gap: 8px; }
+.d1p-tab { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; min-height: 36px; padding: 0 8px; border: 0; border-radius: 6px; background: none; font-size: 13px; font-weight: 600; color: var(--aw-ink-2); cursor: pointer; }
+.d1p-tab:hover { color: var(--aw-ink-bright); }
+.d1p-tab > span { position: relative; }
+.d1p-tab[aria-pressed="true"] { color: var(--aw-ink-bright); }
+.d1p-tab[aria-pressed="true"] > span::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 2px; border-radius: 1px; background: var(--aw-ink-bright); }
+
+/* ---------------------------------------------------------------- record cards */
+/* Each card is a container: its lists choose their form from the card's width, not the window's. */
+.d1p-card { container: d1p-card / inline-size; min-width: 0; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); overflow: hidden; scroll-margin-top: 64px; }
+/* The head is one band: the card's title, and its list's state on the same baseline at the far end; where the two do not
+   fit, the state takes the next line under the title. 15 px under the card's 1 px edge. */
+.d1p-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px; padding: 15px var(--d1p-inset) 11px; }
+.d1p-card-title { font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+.d1p-state { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
+/* The glyph keeps to the state's first line when the words wrap. */
+.d1p-glyph { flex: none; align-self: flex-start; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; }
+.d1p-glyph[data-glyph="dot"] { background: var(--aw-ink-bright); }
+.d1p-glyph[data-glyph="ring"] { box-shadow: inset 0 0 0 1.5px var(--aw-ink-3); }
+.d1p-glyph[data-glyph="half"] { background: linear-gradient(90deg, var(--aw-ink-2) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
+.d1p-glyph[data-glyph="error"] { width: 7px; height: 7px; border-radius: 1px; background: var(--d1p-red); transform: rotate(45deg); }
+.d1p-notice .d1p-card-head { padding-top: 14px; padding-bottom: 14px; }
+.d1p-notice .d1p-state { font-size: 14px; color: var(--aw-ink-bright); }
+.d1p-card-foot { padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); display: flex; flex-wrap: wrap; gap: 8px; }
+.d1p-card-foot.is-bare { border-top: 0; padding-top: 0; }
+.d1p-more { padding: 6px var(--d1p-inset); border-top: 1px solid var(--aw-line); color: var(--aw-ink-3); }
+
+/* Pills: actions are the cyan button (deck.css .d1-agent-button), a row's Watch or Replay 28 px in a row; the HUD's grey
+   pill (ui/ui.css .d2-pill) remains where an action has not yet moved (Matches' Load more). */
+.d1p .d2-pill:focus-visible { outline-offset: 2px; }
+/* Scoped twice, so the order of the two stylesheets never decides it. */
+.d1p .d1p-row-pill { min-height: var(--d1p-row-tap); }
+/* The challenge bubble (the front page's and the Leaderboard's) in the cyan button: its words wrap inside it where a phone
+   is narrower than them, rather than run past the screen's edge. */
+.d1p .d1-agent-button[data-key="challenge-new"] { white-space: normal; text-align: center; line-height: 1.3; padding-block: 8px; }
+
+/* ---------------------------------------------------------------- tables: real columns, hairlines, one first baseline */
+/* Every column after the first opens with the 16 px gutter, so neighbouring cells never touch; the card's 24 px inset
+   opens the first and closes the last, and each column's width includes its gutter. A row's cells share their first
+   baseline whatever their size: a second line hangs below it, and a pill or stamp rides it. Heads sit on one bottom
+   line, right over their data. */
+.d1p-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.d1p-table th, .d1p-table td { padding: 8px 0 8px var(--d1p-gutter); border-top: 1px solid var(--aw-line); line-height: 20px; text-align: left; vertical-align: baseline; overflow-wrap: anywhere; }
+.d1p-table :is(th, td):first-child { padding-left: var(--d1p-inset); }
+.d1p-table :is(th, td):last-child { padding-right: var(--d1p-inset); }
+/* A head breaks only between its words, never inside one; each column is sized to hold its longest head word. */
+.d1p-table thead th { font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); white-space: nowrap; overflow-wrap: normal; vertical-align: bottom; }
+/* A row's 28 px pill keeps to the row's 20 px line, so it rides the baseline instead of pushing the row open. */
+.d1p-table .d1p-row-pill { margin-block: -4px; }
+/* Still bars in place of rows while a list first loads: no pulse, the state line says it. */
+.d1p-skel { display: inline-block; height: 8px; border-radius: 4px; vertical-align: middle; background: rgba(233, 239, 240, 0.1); }
+
+/* Leaderboard: rank (derived), name (an antwars-owned model's badges, any other's thinking level quiet after it), rating ± RD
+   in whole points, rated matches, then Record and Last 5 (following main). The rank stands 12 px from its name,
+   a pair; every other column opens with the gutter. */
+.d1p-lb .c-rank { width: calc(var(--d1p-inset) + 24px); text-align: right; }
+.d1p-lb :is(th, td).c-name { padding-left: 12px; }
+/* Rating: the figure right-aligned in a 40 px slot, its head over it, then "± RD" in a 48 px slot, then room for
+   the word "provisional". */
+.d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 184px); text-align: left; }
+.d1p-lb thead th.c-elo { padding-right: 144px; text-align: right; }
+.d1p-lb .d1p-elo { display: inline-block; width: 40px; text-align: right; }
+.d1p-lb .d1p-rd { display: inline-block; width: 48px; }
+.d1p-lb .c-matches { width: calc(var(--d1p-gutter) + 72px); text-align: right; }
+.d1p-lb .c-record { width: calc(var(--d1p-gutter) + 56px); text-align: right; }
+/* "Rated matches" takes two lines, so the name keeps the width; every head sits on the bottom line. */
+.d1p-lb thead th.c-matches { white-space: normal; }
+.d1p-lb .c-form { width: calc(20px + 140px + var(--d1p-inset)); padding-left: 20px; white-space: nowrap; }
+.d1p-lb td.c-rank { font-weight: 600; color: var(--aw-ink-2); }
+.d1p-lb tbody :is(th, td) { padding-top: 6px; padding-bottom: 6px; }
+.d1p-lb tbody th { font-size: 14px; font-weight: 600; color: var(--aw-ink-bright); }
+.d1p-think { margin-left: 6px; font-size: 13px; font-weight: 400; color: var(--aw-ink-3); }
+.d1p-elo { font-weight: 600; color: var(--aw-ink-bright); }
+.d1p-rd { font-size: 13px; color: var(--aw-ink-2); font-variant-numeric: tabular-nums; white-space: pre; }
+/* The rating's badge look (identity.ts RATING_LOOK "badge"): the in-match cyan badge (deck.css .d1-tag.d1-elo),
+   set inline on the pages' row line as the level and Fast badges are. */
+.d1p-elo-badge { display: inline-block; vertical-align: 1px; }
+/* With an RD it is a button (identity.ts rdBadge): the figure alone, "± RD" a small tip above it on keyboard focus,
+   a tap, or a mouse or pen over it. Shut, the tip is clipped to nothing but keeps its text for screen readers, as .d1p-sr
+   does. Hover is identity.ts's data-hover, set only by a mouse or pen, never CSS :hover: WebKit keeps a tapped element
+   :hover, so a second tap would not shut it. */
+button.d1p-elo-badge { position: relative; margin: 0; background: none; font-family: inherit; cursor: help; }
+.d1p-elo-rd { position: absolute; left: 50%; bottom: calc(100% + 4px); z-index: 5; padding: 2px 6px; transform: translateX(-50%); white-space: nowrap; border: 0; border-radius: 3px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 2px 8px rgba(0, 0, 0, 0.45); color: var(--aw-ink); }
+.d1p-elo-badge:not(:focus-visible, [data-open], [data-hover]) > .d1p-elo-rd { width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+/* A rating below 10 rated matches: the plain word, the HUD's caps label
+   role (deck.css .d1-ml), with no note; under the figure on phones. */
+.d1p-prov { margin-left: 8px; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
+.d1p-lb td:is(.c-matches, .c-record) { color: var(--aw-ink); }
+/* Badges (following main): an antwars-owned model's fixed level, and Fast where fast; the record stamp's label
+   type, filled where the stamp is outlined. */
+.d1p-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px; background: var(--aw-raise); font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; vertical-align: 1px; }
+.d1p-tag + .d1p-tag { margin-left: 4px; }
+/* The badges stay together: a name that wraps moves both to the next line, never one. */
+.d1p-tags { display: inline-block; white-space: nowrap; }
+/* A recording's match type: the seat badge, on its own line under the winner, in its words as written ("1v1"). */
+.d1p-tag.d1p-type { display: block; width: fit-content; margin: 4px 0 0; text-transform: none; letter-spacing: normal; }
+/* Last 5, newest first: a result stamp each, a win filled, a loss or a draw outlined; a stored replay makes it a link,
+   underlined. The element is the target and the stamp is drawn inside it: 24 px here, 28 px in a 40 × 44 px target on phones. */
+.d1p-form-mark { position: relative; isolation: isolate; display: inline-grid; place-items: center; width: 28px; height: 24px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--aw-ink-2); text-decoration: none; vertical-align: middle; }
+.d1p-form-mark::before { content: ""; position: absolute; inset: 0 2px; z-index: -1; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--aw-line); }
+.d1p-form-mark[data-result="W"] { color: var(--aw-ink-bright); }
+.d1p-form-mark[data-result="W"]::before { background: var(--aw-raise); box-shadow: none; }
+.d1p a.d1p-form-mark { text-decoration: underline; text-underline-offset: 2px; }
+.d1p a.d1p-form-mark:hover { color: var(--aw-ink-bright); }
+.d1p a.d1p-form-mark:hover::before { background: var(--aw-raise-hover); box-shadow: none; }
+.d1p .d1p-form-mark:focus-visible { outline-offset: 0; }
+/* In the table a mark keeps to its row's 20 px line, so a row of marks is no taller than a row of words. */
+.d1p-lb.d1p-table .d1p-form-mark { margin-block: -2px; }
+
+/* Live now and Recordings: one six-column grid, so each list's columns stand under the other's: the start; the outcome
+   (Winner in both); a column per colony's models; the record; the action. Every column but the
+   colonies is sized to what it holds (a date, "Lake Hodges Colony" or "In progress", an UNAVAILABLE stamp, the
+   Replay or Watch pill); the two colonies share the rest equally: 343 px each in the 1200 px card both pages give them, never less
+   than 255 px, since the table stands only in a card 64rem wide (the stacked rows, below). Live now has no record, so its
+   second colony spans the record column, and its Watch stands in the action column, as Recordings' Replay does. Waiting
+   stands on the same grid: its time waited and kind, then its colonies, the second spanning to the card's end. */
+:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-start { width: calc(var(--d1p-inset) + 88px); }
+:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-result { width: calc(var(--d1p-gutter) + 152px); }
+:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-record { width: calc(var(--d1p-gutter) + 100px); }
+:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-go { width: calc(var(--d1p-gutter) + 80px + var(--d1p-inset)); }
+:is(.d1p-live, .d1p-rec) .c-go { text-align: right; }
+
+/* One head row in both tables, every head on the bottom line right over its data, the colony heads in their colony's ink. */
+.d1p-table thead th.d1p-c0 { color: var(--aw-c0); }
+.d1p-table thead th.d1p-c1 { color: var(--aw-c1); }
+:is(.d1p-wait, .d1p-live, .d1p-rec) tbody th { font-weight: 400; }
+/* A start is one date over one time, never broken. */
+.d1p-date { display: block; color: var(--aw-ink); white-space: nowrap; }
+.d1p-time { display: block; font-size: 12px; line-height: 17px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1p-result { font-weight: 600; color: var(--aw-ink-bright); }
+/* A seat a line: its name, its badges and, for alike seats, how many, held on one line. The badges and the count are never
+   cut, shrunk or wrapped away from the name; a name too long for its column ends in an ellipsis on that line, its whole
+   text kept as its title and for screen readers (matches.ts seatBlock). 18 px
+   lines put a cell's second seat on the baseline of the start's time. */
+.d1p-model { display: flex; align-items: baseline; font-size: 12px; line-height: 18px; color: var(--aw-ink); }
+.d1p-model > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d1p-model > :not(:first-child) { flex: none; }
+/* A self-reported level may run to 32 characters (src/mcp/config.ts), wider than a seat's whole line: the badges stop at
+   12em, so the name always keeps room on the line. Every real set (MINIMAL FAST, the widest, is under 10em) shows whole; a
+   wider one is clipped, its whole text its title and read in full (matches.ts seatBlock). */
+.d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
+.d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1p-unknown { color: var(--aw-ink-3); }
+/* Colony colour only as ink on a colony's name, which always names it too. */
+.d1p-c0 { color: var(--aw-c0); }
+.d1p-c1 { color: var(--aw-c1); }
+.d1p-colony { font-weight: 600; }
+
+/* Record stamps: the record's own word, in the HUD's label role; complete solid, partial dashed, unavailable muted. */
+.d1p-stamp { display: inline-block; padding: 0 5px; border: 1px solid var(--aw-ink-2); border-radius: 3px; font-size: 11px; font-weight: 600; line-height: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink); white-space: nowrap; }
+.d1p-stamp.is-partial { border-style: dashed; }
+.d1p-stamp.is-unavailable { border-color: var(--aw-ink-3); color: var(--aw-ink-3); }
+
+/* The self-reported asterisk's 24 px control and its tooltip (matches.ts mountTip). Neither Matches card draws the asterisk
+   now. */
+.d1p-ast { position: relative; display: inline-grid; place-items: center; width: 24px; height: 24px; margin: -5px 0; padding: 0; border: 0; border-radius: 6px; background: none; font-size: 14px; font-weight: 700; line-height: 1; letter-spacing: 0; color: var(--aw-ink-2); cursor: help; }
+.d1p-ast:hover, .d1p-ast[data-open] { background: var(--aw-raise); color: var(--aw-ink-bright); }
+.d1p-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: 12px; font-weight: 400; line-height: 1.35; letter-spacing: normal; text-transform: none; color: var(--aw-ink); }
+
+/* The stacked rows that replace each table under 46rem, and Matches' tables wherever their card is under 64rem: there a
+   colony's column no longer holds the widest team seat the house names make, name, two badges and count on one line
+   ("Grok Composer 2.5 Fast MEDIUM ×4", 217 px in Arial's widths, 240 px in a fallback monospace). Both Matches cards
+   are one width, so both lists change form together. */
+.d1p-narrow { display: none; }
+@container d1p-card (width < 64rem) {
+  :is(.d1p-wait, .d1p-live, .d1p-rec).d1p-wide { display: none; }
+  :is(.d1p-wait, .d1p-live, .d1p-rec) + .d1p-narrow { display: block; }
+}
+.d1p-rows > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: start; padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); }
+/* A row's 28 px pill centres on the row's 19 px first line, as it rides the first baseline in a table row; the phone's
+   44 px pill is taller than two lines, so there it tops the row instead (the phone form, below). */
+.d1p-rows > li > :is(.d2-pill, .d1p-row-pill) { grid-column: 2; grid-row: 1 / span 6; align-self: start; margin-top: calc((19px - var(--d1p-row-tap)) / 2); }
+/* Matches' stacked rows: the start and the outcome beside Watch or Replay, a winner under the Winner column's head word;
+   under them the colonies take the item's whole width, each colony's name in a label column with its seats one per line
+   beside it, as the table's colony columns hold them. Two classes on the colonies, so the landing page's list reset
+   (.fg :where(dl)) cannot take the 4 px that parts them from the outcome. */
+.d1p-match-rows > li > .d1p-row-pill { grid-row: 1 / span 2; }
+.d1p-match-rows .d1p-kicker { margin-right: 3px; }
+.d1p-match-rows .d1p-colonies { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 4px 0 0; }
+.d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: 12px; line-height: 18px; }
+/* In a card under 28rem, a phone's, each colony's name stands over its seats, so a seat line has the item's whole width:
+   beside the names' column a 390 px phone left 193 px, too little for a team seat with two badges ("GPT-6.1 Terra XHIGH
+   FAST ×4", 196 px). 4 px part a colony's last seat from the next colony's name. */
+@container d1p-card (width < 28rem) {
+  .d1p-match-rows .d1p-colonies { grid-template-columns: minmax(0, 1fr); }
+  .d1p-match-rows .d1p-colonies > dd + dt { margin-top: 4px; }
+}
+.d1p-rows-head { display: flex; align-items: center; min-height: 36px; padding: 0 var(--d1p-inset); border-top: 1px solid var(--aw-line); }
+.d1p-line { grid-column: 1; font-size: 13px; line-height: 19px; color: var(--aw-ink-2); }
+.d1p-line.is-lead { font-size: 14px; font-weight: 600; color: var(--aw-ink-bright); }
+.d1p-line.is-meta { font-size: 12px; color: var(--aw-ink-3); }
+.d1p-line.is-model { font-size: 12px; color: var(--aw-ink); }
+.d1p-line > .d1p-stamp { margin-top: 4px; }
+/* The Leaderboard's stacked rows: rank, name and rating on the first line, under a head that names them once; rated matches,
+   Record and Last 5 labelled under the name, wrapping as the width needs. */
+.d1p-rows-head.d1p-lb-head, .d1p-rows.d1p-lb-rows > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 8px; }
+.d1p-rows.d1p-lb-rows > li { row-gap: 2px; align-items: baseline; padding: 10px var(--d1p-inset) 6px; }
+.d1p-lb-head .c-rank, .d1p-lb-rows .c-rank { text-align: right; }
+.d1p-lb-rows .c-rank { font-size: 13px; font-weight: 600; color: var(--aw-ink-2); font-variant-numeric: tabular-nums; }
+/* A long unbroken name wraps inside its own track, as the table's cells do, rather than painting over the rating. */
+.d1p-lb-rows .d1p-line.is-lead { grid-column: 2; overflow-wrap: anywhere; }
+.d1p-lb-head .c-elo, .d1p-lb-rows .c-elo { grid-column: 3; text-align: right; }
+.d1p-lb-rows .c-elo { font-size: 14px; font-variant-numeric: tabular-nums; }
+.d1p-lb-rows .d1p-prov { display: block; margin-left: 0; }
+.d1p-lb-rows .d1p-lb-stats { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
+.d1p-stat { min-width: 0; }
+.d1p-stat > .d1p-kicker { margin-right: 3px; }
+.d1p-form { display: inline-flex; vertical-align: middle; }
+
+/* ---------------------------------------------------------------- Rules: a sticky index beside two reading cards */
+/* The container splits: the index, the gap, the reading cards taking the rest. */
+.d1p-split { grid-template-columns: var(--d1p-index) minmax(0, 1fr); column-gap: var(--d1p-gap); align-items: start; }
+.d1p-reading { display: grid; gap: 24px; min-width: 0; }
+/* 20 px down, so the index's first kicker shares its line with the first card's (the card's 1 px edge and 19 px head);
+   sticky under the bar, so the section marked stays in view. */
+.d1p-index { position: sticky; top: 72px; display: grid; gap: 18px; min-width: 0; padding-top: 20px; }
+.d1p-index-group { display: grid; gap: 6px; }
+.d1p-index-list a { position: relative; display: flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 4px; font-size: 14px; color: var(--aw-ink-2); text-decoration: none; overflow: hidden; }
+.d1p-index-list a:hover { color: var(--aw-ink-bright); }
+.d1p-index-list a[aria-current] { background: var(--aw-raise); font-weight: 600; color: var(--aw-ink-bright); }
+.d1p-index-list a[aria-current]::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--aw-ink-bright); }
+.d1p-rules-kicker { padding: 19px var(--d1p-inset) 11px; border-bottom: 1px solid var(--aw-line); }
+.d1p-rule { margin: 0 var(--d1p-inset); padding: 24px 0 22px; border-top: 1px solid var(--aw-line); scroll-margin-top: 64px; }
+.d1p-rules-kicker + .d1p-rule { border-top: 0; }
+.d1p-rule-title { margin-bottom: 12px; font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+.d1p-rule p { max-width: 600px; font-size: 15px; line-height: 24px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
+.d1p-rule p + p { margin-top: 12px; }
+.d1p-win li { position: relative; max-width: 600px; padding-left: 18px; font-size: 17px; line-height: 26px; color: var(--aw-ink-bright); }
+.d1p-win li + li { margin-top: 10px; }
+.d1p-win li::before { content: ""; position: absolute; top: 11px; left: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--aw-ink-2); }
+
+/* ---------------------------------------------------------------- the end block and the HUD's footer */
+.d1p-end { width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); margin: 0 auto; padding: 20px var(--d1p-pad) 16px; border-bottom: 1px solid var(--d1p-hair); }
+.d1p-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); min-height: 36px; margin: 40px auto 0; padding: 0 var(--d1p-pad) 20px; font-size: 12px; }
+.d1p .d1p-foot-current, .d1p .d1p-foot-current:hover { color: var(--aw-ink-bright); text-decoration: none; }
+.d1p-end:not([hidden]) + .d1p-foot { margin-top: 0; }
+
+/* ---------------------------------------------------------------- Rules' index above its cards under 65.5rem */
+@media (width < 65.5rem) {
+  .d1p-split { grid-template-columns: minmax(0, 1fr); row-gap: 24px; }
+  .d1p-index { position: static; padding-top: 0; }
+}
+
+/* ---------------------------------------------------------------- the phone form under 46rem */
+@media (width < 46rem) {
+  /* Every button a 44 px tap on a phone: the grey pills (--d2-tap) and the site's cyan button (--d1-tap) alike. */
+  .d1p { --d2-tap: 44px; --d1-tap: 44px; --d1p-row-tap: 44px; --d1p-pad: 16px; --d1p-inset: 16px; }
+  .d1p-hero { height: 104px; }
+  .d1p-hero img { width: 1200px; margin-top: -177.9px; }
+  .d1p-hero::before { height: 16px; }
+  .d1p-hero::after { height: 36px; }
+  .d1p-page { background-size: 100% 136px; }
+  .d1p-main { padding-top: 24px; }
+  .d1p-title, .d1p-card-title, .d1p-rule-title { font-size: 14px; }
+  .d1p-lead { margin-top: 10px; }
+  /* The board choice takes the band's whole width, its groups one over the other, each size a quarter of it. */
+  .d1p-boards { display: grid; flex: 1 1 100%; }
+  .d1p-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .d1p-tab { min-height: 44px; }
+  /* The state always stands under its title, whatever the title's length. */
+  .d1p-card-head { flex-direction: column; align-items: flex-start; padding-top: 14px; }
+  .d1p-think { display: block; margin-left: 0; font-size: 12px; }
+  .d1p-form-mark { width: 40px; height: 44px; }
+  .d1p-form-mark::before { inset: 8px 6px; }
+  .d1p-wide { display: none; }
+  .d1p-narrow { display: block; }
+  .d1p-rows > li > :is(.d2-pill, .d1p-row-pill) { margin-top: 0; }
+  /* A 44 px touch target around the same 24 px mark. */
+  .d1p-ast::before { content: ""; position: absolute; inset: -10px; }
+  .d1p-index-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; }
+  .d1p-index-list a { min-height: 44px; padding: 0 2px; border-radius: 0; border-bottom: 1px solid var(--aw-line); }
+  .d1p-index-list a[aria-current] { padding-left: 12px; }
+  .d1p-rules-kicker { padding-top: 14px; padding-bottom: 10px; }
+  .d1p-rule { padding: 18px 0 16px; }
+  .d1p-win li { font-size: 16px; line-height: 24px; }
+  .d1p-win li::before { top: 10px; }
+  .d1p-foot { gap: 0 12px; margin-top: 24px; padding: 4px var(--d1p-pad) 8px; }
+  .d1p-foot .d2-link { min-height: 44px; }
+}
+
+/* ---------------------------------------------------------------- the Leaderboard on touch screens */
+/* Every control a 44 px tap at any width a finger uses, a phone on its side included; the Leaderboard only, so Matches,
+   Rules and every mouse-driven screen are unchanged. */
+@media (pointer: coarse) {
+  .d1p[data-page="leaderboard"] { --d2-tap: 44px; --d1-tap: 44px; }
+  .d1p[data-page="leaderboard"] .d1p-tab { min-height: 44px; }
+  .d1p[data-page="leaderboard"] .d1-top .d2-nav-link { min-height: 44px; }
+  .d1p[data-page="leaderboard"] .d1p-foot .d2-link { min-height: 44px; }
+}
+/* Last 5 in the wide table: each link keeps its 28 px column share and grows to a 44 px tap around the same 24 px stamp.
+   Under 46rem the phone form above already sizes it. */
+@media (pointer: coarse) and (width >= 46rem) {
+  .d1p[data-page="leaderboard"] .d1p-form-mark { height: 44px; }
+  .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 10px 2px; }
+}
+
+@media (forced-colors: active) {
+  .d1p-card, .d1p-stamp { border-color: CanvasText; }
+  /* Fills and shadows are dropped here: badges and result stamps keep a real edge. */
+  .d1p-tag, .d1p-form-mark::before { border: 1px solid CanvasText; }
+  .d1p-glyph, .d1p-index-list a[aria-current]::before, .d1p-tab[aria-pressed="true"] > span::after { forced-color-adjust: none; background: CanvasText; }
+}

@@ -1,0 +1,984 @@
+{
+ "about": "Seat codec conformance fixtures. Each case: encoded is the server's wire payload, decoded is what a decoder must return; every invalid case must be refused (throw). The server encoders reproduce every encoded cells, territory and columnar-v1 marks payload from its decoded value.",
+ "cells": [
+  {
+   "name": "empty",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 1,
+    "data": ""
+   },
+   "decoded": []
+  },
+  {
+   "name": "food-only runs, repeat across a row boundary",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 5,
+    "data": "1hq;9*6;6*3;g8;9"
+   },
+   "decoded": [
+    {
+     "tileX": 2,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 3,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 4,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 5,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 6,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 7,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 8,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 9,
+     "tileY": 3,
+     "food": 1,
+     "ants": []
+    },
+    {
+     "tileX": 10,
+     "tileY": 3,
+     "food": 1,
+     "ants": []
+    },
+    {
+     "tileX": 11,
+     "tileY": 3,
+     "food": 1,
+     "ants": []
+    },
+    {
+     "tileX": 127,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 0,
+     "tileY": 4,
+     "food": 4,
+     "ants": []
+    }
+   ]
+  },
+  {
+   "name": "queens with and without hp, both colonies",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 3,
+    "data": "5y6,0,n5c;8z,1:9.6;3,1,0"
+   },
+   "decoded": [
+    {
+     "tileX": 10,
+     "tileY": 20,
+     "food": 0,
+     "ants": [],
+     "queen": 0,
+     "queenHp": 30000
+    },
+    {
+     "tileX": 117,
+     "tileY": 20,
+     "food": 2,
+     "ants": [
+      {
+       "antId": 9,
+       "hp": 1,
+       "colony": 0
+      }
+     ],
+     "queen": 1
+    },
+    {
+     "tileX": 118,
+     "tileY": 20,
+     "food": 0,
+     "ants": [],
+     "queen": 1,
+     "queenHp": 0
+    }
+   ]
+  },
+  {
+   "name": "every caste kind for both colonies",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 6,
+    "data": "ttc:2s.iio/2t.gz7/2u.ffq/2v.dw9/2w.ccs/2x.atb;6:1jk.5po;7:1jl.5pv;8:1jm.5q2;9:1jn.5q9;a:1jo.5qg;b:1jp.5qn"
+   },
+   "decoded": [
+    {
+     "tileX": 40,
+     "tileY": 50,
+     "food": 0,
+     "ants": [
+      {
+       "antId": 100,
+       "hp": 4000,
+       "colony": 0
+      },
+      {
+       "antId": 101,
+       "hp": 3667,
+       "colony": 1
+      },
+      {
+       "antId": 102,
+       "hp": 3334,
+       "colony": 0,
+       "caste": "worker"
+      },
+      {
+       "antId": 103,
+       "hp": 3001,
+       "colony": 1,
+       "caste": "worker"
+      },
+      {
+       "antId": 104,
+       "hp": 2668,
+       "colony": 0,
+       "caste": "soldier"
+      },
+      {
+       "antId": 105,
+       "hp": 2335,
+       "colony": 1,
+       "caste": "soldier"
+      }
+     ]
+    },
+    {
+     "tileX": 41,
+     "tileY": 50,
+     "food": 0,
+     "ants": [
+      {
+       "antId": 2000,
+       "hp": 1234,
+       "colony": 0
+      }
+     ]
+    },
+    {
+     "tileX": 42,
+     "tileY": 50,
+     "food": 1,
+     "ants": [
+      {
+       "antId": 2001,
+       "hp": 1235,
+       "colony": 1
+      }
+     ]
+    },
+    {
+     "tileX": 43,
+     "tileY": 50,
+     "food": 2,
+     "ants": [
+      {
+       "antId": 2002,
+       "hp": 1236,
+       "colony": 0,
+       "caste": "worker"
+      }
+     ]
+    },
+    {
+     "tileX": 44,
+     "tileY": 50,
+     "food": 3,
+     "ants": [
+      {
+       "antId": 2003,
+       "hp": 1237,
+       "colony": 1,
+       "caste": "worker"
+      }
+     ]
+    },
+    {
+     "tileX": 45,
+     "tileY": 50,
+     "food": 4,
+     "ants": [
+      {
+       "antId": 2004,
+       "hp": 1238,
+       "colony": 0,
+       "caste": "soldier"
+      }
+     ]
+    },
+    {
+     "tileX": 46,
+     "tileY": 50,
+     "food": 5,
+     "ants": [
+      {
+       "antId": 2005,
+       "hp": 1239,
+       "colony": 1,
+       "caste": "soldier"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "all of the above on one page",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 6,
+    "data": "1sg;a*6;7*3;jg;a;9j0,0,n5c;hw,1:9.6;6,1,0;hf0:2s.iio/2t.gz7/2u.ffq/2v.dw9/2w.ccs/2x.atb;6:1jk.5po;7:1jl.5pv;8:1jm.5q2;9:1jn.5q9;a:1jo.5qg;b:1jp.5qn"
+   },
+   "decoded": [
+    {
+     "tileX": 2,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 3,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 4,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 5,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 6,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 7,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 8,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 9,
+     "tileY": 3,
+     "food": 1,
+     "ants": []
+    },
+    {
+     "tileX": 10,
+     "tileY": 3,
+     "food": 1,
+     "ants": []
+    },
+    {
+     "tileX": 11,
+     "tileY": 3,
+     "food": 1,
+     "ants": []
+    },
+    {
+     "tileX": 127,
+     "tileY": 3,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 0,
+     "tileY": 4,
+     "food": 4,
+     "ants": []
+    },
+    {
+     "tileX": 10,
+     "tileY": 20,
+     "food": 0,
+     "ants": [],
+     "queen": 0,
+     "queenHp": 30000
+    },
+    {
+     "tileX": 117,
+     "tileY": 20,
+     "food": 2,
+     "ants": [
+      {
+       "antId": 9,
+       "hp": 1,
+       "colony": 0
+      }
+     ],
+     "queen": 1
+    },
+    {
+     "tileX": 118,
+     "tileY": 20,
+     "food": 0,
+     "ants": [],
+     "queen": 1,
+     "queenHp": 0
+    },
+    {
+     "tileX": 40,
+     "tileY": 50,
+     "food": 0,
+     "ants": [
+      {
+       "antId": 100,
+       "hp": 4000,
+       "colony": 0
+      },
+      {
+       "antId": 101,
+       "hp": 3667,
+       "colony": 1
+      },
+      {
+       "antId": 102,
+       "hp": 3334,
+       "colony": 0,
+       "caste": "worker"
+      },
+      {
+       "antId": 103,
+       "hp": 3001,
+       "colony": 1,
+       "caste": "worker"
+      },
+      {
+       "antId": 104,
+       "hp": 2668,
+       "colony": 0,
+       "caste": "soldier"
+      },
+      {
+       "antId": 105,
+       "hp": 2335,
+       "colony": 1,
+       "caste": "soldier"
+      }
+     ]
+    },
+    {
+     "tileX": 41,
+     "tileY": 50,
+     "food": 0,
+     "ants": [
+      {
+       "antId": 2000,
+       "hp": 1234,
+       "colony": 0
+      }
+     ]
+    },
+    {
+     "tileX": 42,
+     "tileY": 50,
+     "food": 1,
+     "ants": [
+      {
+       "antId": 2001,
+       "hp": 1235,
+       "colony": 1
+      }
+     ]
+    },
+    {
+     "tileX": 43,
+     "tileY": 50,
+     "food": 2,
+     "ants": [
+      {
+       "antId": 2002,
+       "hp": 1236,
+       "colony": 0,
+       "caste": "worker"
+      }
+     ]
+    },
+    {
+     "tileX": 44,
+     "tileY": 50,
+     "food": 3,
+     "ants": [
+      {
+       "antId": 2003,
+       "hp": 1237,
+       "colony": 1,
+       "caste": "worker"
+      }
+     ]
+    },
+    {
+     "tileX": 45,
+     "tileY": 50,
+     "food": 4,
+     "ants": [
+      {
+       "antId": 2004,
+       "hp": 1238,
+       "colony": 0,
+       "caste": "soldier"
+      }
+     ]
+    },
+    {
+     "tileX": 46,
+     "tileY": 50,
+     "food": 5,
+     "ants": [
+      {
+       "antId": 2005,
+       "hp": 1239,
+       "colony": 1,
+       "caste": "soldier"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "1x1 map",
+   "encoded": {
+    "width": 1,
+    "height": 1,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 8,
+    "data": "7"
+   },
+   "decoded": [
+    {
+     "tileX": 0,
+     "tileY": 0,
+     "food": 7,
+     "ants": []
+    }
+   ]
+  }
+ ],
+ "cellsInvalid": [
+  {
+   "name": "not base36",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 6,
+    "data": "zz!"
+   }
+  },
+  {
+   "name": "repeat on a token with queen or ants",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 6,
+    "data": "1,0*2"
+   }
+  },
+  {
+   "name": "zero repeat",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 6,
+    "data": "0*0"
+   }
+  },
+  {
+   "name": "index outside map",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 6,
+    "data": "1kw0"
+   }
+  },
+  {
+   "name": "food radix below 1",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
+    "foodRadix": 0,
+    "data": "1sg;a*6;7*3;jg;a;9j0,0,n5c;hw,1:9.6;6,1,0;hf0:2s.iio/2t.gz7/2u.ffq/2v.dw9/2w.ccs/2x.atb;6:1jk.5po;7:1jl.5pv;8:1jm.5q2;9:1jn.5q9;a:1jo.5qg;b:1jp.5qn"
+   }
+  }
+ ],
+ "territory": [
+  {
+   "name": "1x1",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 1,
+    "height": 1,
+    "data": "AQ=="
+   },
+   "decoded": [
+    "#"
+   ]
+  },
+  {
+   "name": "5x3 with final-byte padding",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 5,
+    "height": 3,
+    "data": "yAI="
+   },
+   "decoded": [
+    "...#.",
+    ".##.#",
+    "....."
+   ]
+  },
+  {
+   "name": "64x48",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 64,
+    "height": 48,
+    "data": "L0GfZBFTIhcZLCSD1PBD6AnSA0NAQIqZXcIA8K4OYDWECQUO4+3ibExPblhDQrQWtYNlAqLhCSZd5AIRAsxMpvCdQEoh3FAacr5n+tCBAlswcJGgD5xJoGRFqUDdRJ+iX4wSLCEwcIo583QDKCxKLBAOh5U4oJAzQFwv+uh4NImihEJCHIQ/OdLtRjCzwNJCVFqYMoYC3k4WJ5o0kHaTl6pMUBRjQDNDHGBPohbSQ0Y6eh1IWhjQJhwCYLdjwKn2eIfHAHNPiDRhBRAUUCIAAmwNiygpEQ7X7wwgYzV1e72zGIQXVKxkQGJLLwR1TTV6JphFaMVSeGkCsCiEuAtBwZgxjqQgbAhIpmJiI9dyyInEHKOpFGmcH5nJG5J5EhTqARYRQxHQLCKayHWAR6oCogJSUE0tyMbiVACANDGZ9ynQTkgWbS0Yn0jOhiDTQnWRXMtOa3eERoFOpeGlzEgIlcUgxpl07QTFQrsLwCzGiCKpwJwiMocFSicyCKgG0ErE"
+   },
+   "decoded": [
+    "####.#..#.....#.#####..#..#..##.#...#...##..#.#..#...#..###.#...",
+    "#..##.....##.#....#..#..##.....#..#.#.##....######....#....#.###",
+    "#..#.....#..#.####......##....#.......#.......#..#.#...##..##..#",
+    "#.###.#..#....##............####.###.#.#.###.........##.#.#.##..",
+    "..#....##..#....#.#......###....##...####.##.###.#...###..##.##.",
+    "..##..#.####..#..###.##....##.#.##....#..#....#...#.##.#.##.#...",
+    "#.#.##.###.....##.#..##..#.......#...#.##....####..#.....##..#..",
+    "#.###.#...#..###.#......#...#....#........##..##..##..#..##..#.#",
+    "....#####.###..#......#..#.#..#.#....#....###.##....#.#..#.##...",
+    ".#..###..#####.####..##..#.#####....#.###......#.#......##.##.#.",
+    "....##......###.#...#..#.....#.#####......###..##..#..#......#.#",
+    "..#..##.#.#...#.#..#.#.#......#.#.###.##..#...#.#####..#.#...#.#",
+    "#####.#...##...#.#..#.....##.#..#....#......##......###..#.#...#",
+    "#..###..##..####..#.###.##.........#.#....##.#...#.#..#...##.#..",
+    "....#....###....###....##.#.#..#...###.......#.#....#..###..##..",
+    "......#...###.#.####.#...#.#####...#.###...####...#.##..#..#...#",
+    ".#...#.#..#....#.#....#..#....#...###.....#....#######..#..###..",
+    ".#..#.###.##.###.##...#.....##..##..##.#......##.#..#.##.#....#.",
+    "..#.#.#..#.##.#....##..#.#..##...##....#.#.......####.##.###..#.",
+    ".##.#...###..#...#.##..#..#.##......#..#.##.###.##..#..####.#..#",
+    ".#.#.#.#..##..#.....#.#...#.#...##...##.......#.##..##..##....#.",
+    "..###........##.####..#..#...#.#.##.#....#..#.####....#..##...#.",
+    ".#.###...#.####.#.###......#..#..#.##.#....##.......#.##.##..#..",
+    "..###....#...........##.###.##.###...##.......###..#.#.#.##.####",
+    "...####.###....####...##........##..###.####..#....#...#..#.##..",
+    "#....##.#.#.........#.....#.#.......#.#..#...#...........#......",
+    "..##.##.#.##....##.#...#...#.#..#..#.#..#...#....###....###.#.##",
+    "####.###..##.........#..##...##.#.#.##..#.#.###.##.####.#.####.#",
+    "##..##.#...##.....#....####.#.....#.#.#...##.#.#..#..##.......#.",
+    ".#...##.##.#..#.####.#....#.....#.#.###.#.##..#.#.#.##...#.####.",
+    ".##..#.....##..##.#...#....#.##.#.#...##.#..#.#....####.#..#.##.",
+    ".#..........##.#...#.#....#....#...###.###.#....#.....#.#.....##",
+    "...##..##...##...###...#..#..#.#.....#....##.##....#.......#..#.",
+    ".##..#.#.#...##..#...##.##...#..###.#.##.#..###....#..###..#...#",
+    "..#...##..###...##...#.##..#.#.#..#.#...#..#.##...###..######...",
+    "#..##..##..#..####.##....#..#..##..####..#..#.....#.#....#.#.###",
+    "#........##.#...#...#...##....#.#...#.......#.##..##.#...#...#..",
+    ".#.##..#...#..###.#.###........####...#..#.#.#.#.#.......#...#.#",
+    ".#.......#..#.#.....#.#.#.##..#.#.##.#.....#..##.##...##.#...###",
+    "..#.#.#................#..#.##..#...##..#..##..####.#####..#.#..",
+    "....#.##.###..#....#..#..##.#...#.##.##.#.##.#.....##...#####..#",
+    "...#..#..###..##.##....#.....#..##..#.##.#....#.#.#.###.#...#..#",
+    "..###.#.##.#..##.###..#.##.#.##.###.###...#....#.##...#.#......#",
+    ".###..#.#.#..#.##....####.#..#.#..##..##...#..#....#....#.#.#..#",
+    "#.#...##.....#...##...###..##..#..#.###.#.##.###..#.....#.#...##",
+    ".#....#.##.###.###.#..........##..##.#...##...##...#...#.#...#..",
+    "#..#.#.#......##..###..#.#...#...#..##..###....##.#......#.#..#.",
+    "###..#...#..##.....#.......#.#.#.##.........#.##.#.#..#...#...##"
+   ]
+  },
+  {
+   "name": "128x96",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 128,
+    "height": 96,
+    "data": "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"
+   },
+   "decoded": [
+    "...#.#.#.#..#####.#..##.###....##......##..#..###...#.......#.###..#..#.......###.#.#.#..#.#.##..##.....##.#...#.###..#...##.#.#",
+    "#.##.##..###........#.###...#.#..#.#..##.#...#..#...#....##..##..#.##.##.##...#.###.#.##.#.....#....##.#.###.###......#.##..###.",
+    "...#..#.###..###......##...#.#.#..#.###...#.........#..#..#....#.....######.#...##.......#.#.....##.....#.##...#.##.##....#...#.",
+    ".##..........#..##....#..##...##..#...##.#.###.....#.....###..#.##.##..#.##....##..##....#....#..###.#...#.#..#......#.....#.###",
+    "#.#...#..#.##..##...###..####.....####..#...####....##..#####.#..#.#..#...#....#.#...#.#.#####.........#....#...#..###.##.#.####",
+    ".##.#....#...##.#..##.......#..#..###.......##..##.#..##.#.##..#......#.#.###..#.....##.......##.##..#..........#.....###..#....",
+    "#...###..#...........#.#..#......#.#....#........#.......#...#####.......#......#...#...#.....###....###...#.....#.#....#.......",
+    "#....#...#.#.#.##.#.#....#..####.....#.#..##.##..#.#...#.###.#..#....##..#####...######.###.#.......#.#.#...##.....##..##.#....#",
+    "#..#.#...#.##..#.#.##..#.###.#...#.#..##.#.......#.#....#.........##....#..##.##..#......#..#.#..#....####.....###....##...##..#",
+    "##........#.......##..##.#....#.#.#.#.#.#..#.###.#..#....#...#......#.#.##.#....##.#...###..#..#..#...#.....#...#.....#....##...",
+    "##......#.##.#####....#...#.##..###.#.#...#..#..#.#....######.#.##....#..#####......#...##.##...##....###.#.#.##...#.#.....###..",
+    "..#..##..#..#.#...#.####...#...#..#..##..#..##.#...#.##.#.#...#.##..####.....#.#...#######....#...##...##.#.#..####...#.#.#...##",
+    "#.#....######.##.#..###..#..#.....#...#..#...#.#.##..###..#...##.#...#...............#.#...#.#...#..#.#......#.##....##.#.####..",
+    "..##..##..##.....###...#....#.##...#.#...#.##....#.#..###...#####..##.#..##..#..#...###.....#.######..#.####..###.#..#...#..####",
+    "......###....###....#...##.#.###..#####.#.##..#..#.......##...#..##.....#.#.###..###..#...#.........#......#..##....##..#.....##",
+    "...####.....#..#..####....#..##..##......#.#..##.......#...###..##....####..#.#......#....##..####.........#.###......#..##.#.#.",
+    "##..#....#.....###.##.###.#.#.###.###.#...##.#..#....##...#.#...#.##...#.....#.#...##.#######.#..##..###..#.#..##.##..###.##.##.",
+    "#...#.##.#..#.####.....#..##..#.#.#...##.#.#...#..#..#.......####....#..#.#.#.#####..#....#.####..##.##.#.##...##.....#...#...#.",
+    "#..#.##.#..#...#....#.....#.#.#..#.##......#..#.#.#.##.....##..##.####..##.#.#....#.....#.#.......####.##.....#...#..#.#.####...",
+    "##...#......##...............##.##..#.###..####.#####..#.#.....#..#.#..#.##.#.##..#.##.##....#..#...#.##.#..##..#.##..#.#...#..#",
+    "#..#.#.#...#....#...##...#.#.###...#.##.#..###....###..#.#...##..#......##...#..#...#.##........#.#...###.####.##.###....##.#..#",
+    ".##........###..##..##.#.#.....#..####.#...##..#.#..##.#...#.#..#.....#.####.##...##.......##...#.....#..........##..#..#.#.####",
+    ".....#.##.#..#.#####.##.#####...##.####.#.##.#......##..##....#.###...#..##.##..#...........#..##..##..#.##.......#.##...#.#.##.",
+    "#.....###..#.#..#..##.#...##.....#....##.###.#..###...#..###.#.##.#.....####.#..#.#.#..#....#.#.....#..##....#.#.#.#.....##..#..",
+    "##...###....###...#.#.#...#.#....#......#..#.##.#.#...#....#.#...######..####.#...##..###.#...#..#..#...#.##......#...##..##..##",
+    "#.##..#.#.#..#..#.####....##..#....##.#.##..#.#....#..#...###.######.#.#...#..##.#....#.##.##.#..#.##.#.#.#....###..#.#..#..#.#.",
+    "#.....#..###......###....#..###..#.#..#..#....#.#........#.#.#...###......#.####...##.#..#..##.##..#..#.###..#....##...#...#....",
+    "######...###..###.#..##.###.###...#...#.#......#..#..#.##.###...#...####...###.###.#...#.##.#.....#...#.#.........###...#..###..",
+    "#..#...............##....###.##..##.......#.##.#.#.###..#.#...##..#....#....##......##.##.#.#....#####.###..#..#.#......#.##..#.",
+    ".##....###..#....##..#......#..#.##.#.######.#....##..#......#....###.#####....##..##.#..#.#..#.#..#.###.#####........#....#...#",
+    "..###.#..##..#.##.##.##....#.....#...#.#.#..###.##..##.....#.#.#.###..##.#......#.#.###.#.##.#...#..##...............#.##..#....",
+    "##...##...#......##.#.#.#.#..###.#........##.#.##.#.....#.#....###......#..#.#..##..#...####.#..#...#..#.###..#####...#.#..#....",
+    ".#.###.......#..#.#.#..#..#....#.##...#.#...###..#....#..###..##.#.###.#...#....##.###.##.....##.###..###.##.#.#........##..#...",
+    "#.#......###.#.#.##....#####......#.....#..####....#.#..#...#.#####.....#.#.##.#.#...#.#.#.#..#.#....##..#.#..#..##.#.##.#..#..#",
+    "####.#..##.#.#..#...#.........###.##..#...#..#.#.##.#####.###..##....##.....#..#...#.##.##.##....#.....###.####.##...#.#.##....#",
+    "##...#####..###.##.#.#..##.##.#..#.#..#...#.....#...#...#..#.....##.##..###..###.##.#..#.##.#.###..###......#..##...##...###.#..",
+    "....#..#..##....#.#.###...#....#.......#..#...#....##.#.##...#....##...###.#.##....#.....#.#...##..##....#....#.###.#.##.##...#.",
+    "#.#..###.#.##.......#####......#....###....#..#...####..#..........#...#......#...#.#...##..#..##.#...#.#..##..#..#...#.....###.",
+    "#.##.#####...##.###...#.#.#..#.....#...##.##.#...##......#.#..##.#.#...#.#...#..####....###.##.#......##.###...###.#.......###..",
+    "....###....###..###...#..#...###.#.....##.....#.#..#..##..##..#.#..#..#...#.##..#...##.##.......##.#.........##.###....#.#..#..#",
+    "..#.##....###..#.....#.#..##.##.##...##..#.##..#.##.#...##.....#####.##...##...#.######...#..##....#..##.#..#.##.#.#.#.###.###.#",
+    "#.#..#.#.#..##.#.#.##...#.##.#.#.#...#............##...#....#...#..#...##.#...#..##..#.#.###.##.#.#.###..#.#.........#.##.#.....",
+    "..#..##..#..#..#..#.#....##...#..#####..##..##.##...#......###......#.#...##.#...#..###.##.#........#.##..#..#.#.#.....####.#...",
+    ".###..##.##.#.##..##...#.##..#.##..#.#.#.##..#.#...........#..#..##.#.#..#..#.#.##...#.#.#..#...#.##..##..##....#.##.#..#####.#.",
+    "##...###.#.####..#...#...#.##.#..#.....#.###.#.....#.#.#.....###..##.....#.##......##..###..##.#..#.#.###....#.#.##...#.##....#.",
+    ".......##..#.#.#....#.#.....#.....#.##....#..####.#.#....#.####.##...##.##.#....#...#..#....#.##.#.#.#.#.....#..#.##....#.#.#.#.",
+    "#...####....#....###..#...#.#.##.##.....#####.....#..######.....#.#.......#....#.###.####..###..####.####....##..#.#.....##...##",
+    "##.#.#..###.#..#.....#.#......#.####..##..##..#....#...##....#...#.#..#........#.#.#.#..#..#.##..#.###..###....#....###...###.##",
+    ".##.#.#..##.##..#.#..#..##..####....#......##..#.#.#.......##.#.#.....###..#....#.##..#...#.###........#####..#..#.#..#....#.#.#",
+    "#..###..###..####.#.#..#.#.....#.####...#...#####....#.####..#..###...#..#.#..#..###..#.......##........##...##.......#.#####.#.",
+    "#.#....#...#.#......##...###....#.......#....##..###....#....#..##.#.#.##..#.####...#..##....#.##...##.#.#..##.##..#.##....#....",
+    "...#..##.#...###.......##..#.......#.#...#..#..##.#...#....#.##.....#.....##.#..##...##...#.##..##.#.##.#.####.#.##.##.##.##.###",
+    ".#........##.##.#.#..#.....#.#...#......##..###.##...#.#...###..##..#.#..#...##.#.###.....##........##...##.#..#..#...#..#..#.##",
+    ".#.........#..#..#.#.#...........#..#.##.#.#...#.#.........##.#######...##..#.##.....#..#....#..#.##...#.#......###..###..#.....",
+    "##..##..####...#...#....#.#..#......#.#.##..#..............###.#....#.#####....#..#....#...#....#.#..#...#.#......#.#.#.##..#.#.",
+    "##..##..##..######.#..#..#.#......##......####.#..##.#..##.#..#..#.....#.#...#..#..##.#...#.##......#..#...#.##.#..#..#..#.##.##",
+    "##...###...##.....##....#.########.##..#.#####..###......#..........#......##..##...#..#.......###........#...#######...###...#.",
+    "##.......###...##.#.#.###.......##..#.##....###...#..#.##.....#...#..##.#..###....#.#..##...#.##.##.#..#.#......##.##..####.....",
+    "..#....#..##.#..##.###.......###...#.##.#..##...#....##......##.#.........#.##.#.#....#.####....#...#....#.....#...#..........##",
+    ".#.#.#.##.....####.#...##.####.#....#.....#...#.#.#..#.##..##..###..#..##.....##..#..#..#.....##..##...###..#..##.#.##.##.#.#...",
+    ".#.#...#..#.##....##.......#..#.##.###.#....#.##.#.#.#..##...#...#.#..#...#.#....#.#..##...##..##.####.##...#..#.......###.###..",
+    "###.#...#....###..#..##.....#.#####...#..#.##...........#.............#...#.#..##.#.##.#.##.###.##..#.##.##.....####......#.##..",
+    ".##...###..#..#..#.###....#.#..##.#.###.#.##....##...#.##..#....##....#......##...#.##.....#.###.#..#.###.....#.#..###.#...##...",
+    "...##...#.#...##....#..##.....#.#.##.##.....##....###.#.#.#..##.#.##....#.#.##.##.......#..#.###.##...#...#.###.##..#....#....##",
+    "#....##..........#..##...#...####.#.#..#........#.###....#.#....#..##.#..#...##...#.######..##.##.###....###.##.....#..#..#.##.#",
+    "#.#..#....#.#.##....####....#..#....##.##.......##.##.#.#...#..#.#.##..##.#.##.#...#.#..#.....###..............######..#..##.#.#",
+    ".###.##....##.#....#.##...#...##..#..#..##.#..##..#.....##..##.....####.###...#....###..#.#.....##.##.#....#.###...#.#......#..#",
+    "#.##.##...#..#####.....#...#........###.###..##.....##..##....#.#...#.......#...#............#.##.##...#....####.#........##....",
+    ".......####.##.#....#.#..#..##.####.........#...##..###....##..#....#...###....#..#.#.#...#.####......#..#...##..#..#....#.###.#",
+    "..###......#..###...##..##..#....#.....###.##.#....###.#...........#...###...#.##..#..#....#.#.#.##.#..#.....#......#.#...####..",
+    "#####.##...#..#.##...#..#..#.....###.#....###.#...#..#...........#.##..##...#.....###..#.###..#....#...#....#.#.##...#....#.#.##",
+    "#.###.....####..#.......##..####.#.......####....#.######...#.#...##.#..#...###..##.........##....##........#####..###..#.#.##..",
+    ".#..#...##.#.##.##...#......##..##..#.#.....##...##..#..####.#....#....##...#.....#..#####.###.#.##..##..#.###.##....##..#..#..#",
+    "#..#..#.#...#.......#..#.#...#...#.....#.##.#..#...#....###..#..#.###..##.#.##...........#.#..#.##.##.#...#.#.#..#.....##.#.....",
+    ".#.#...##...#......#..#.##...##.#....#...#####.##..#.#.....#...#....###.....##...#..##....#...##......#..#.##.......#.#...##....",
+    "....#.#.....#.#..##....#....##..##..#......#.###.#....#...#..##.##..##....#.###...#.#..##..#.##........#.#..###...##....##...#..",
+    ".....##..##....###......####....#....#.#.##..#.#....####..#.##.#.........##..#...#..#.##.......#..#.#...#.##.#.....##..###....##",
+    ".#...#.#......##...#..#.........#........####...#..#.###.......####.#..##..##..#..##.....#...##..##..#...#..#.##.#..#.##.......#",
+    "...#..##..#..#..####.####..###.#.##.##..#..#..#.#.##.####.#.#...#.##.#.###.#.#.....###.#......#....#.......##........##....##...",
+    "###..###......#..#......#..##.#....#....#.##.#.....###.##.#..#.##...##.###....##..##....#.......##.#....##..........#.....##.#..",
+    ".#...###.#.##....#...##..#...##.###.#.#...###....##....##..#....##...#..#.##...#.##.#.#..####......#..##.##.###.##.##...#..#.#.#",
+    "##..#..##.#.#..##..#...#...#.#..#............#..####.##.#.###.#..##.#.##..#.#.##..###..##.....###...#.....#.##..##.##...#.....##",
+    "##...#............#.##..##...#.#.##..##..#....#.#.##...#.##.##.#..#....#.....#.####.....#.#..##...#.#.##.#.###....#....##.#.....",
+    "...######..#.#.#...#....#..#####.#...#...##.###.#.#...........########...##.#..#....#......###...#.#####.#....##....#.#..##.##.#",
+    "#..##.##....#.##..###...#.#.#.##.#..#.....##..##....#.###...#...##..#..####...#.#.......#.....#...#.....#.#..##.#...#..#..#.....",
+    ".####.##.....######.#.#...##..##.#..#....###...........##.###.##.....#..#.##...##....#......#....#..#..#....#...##.#.#..#.......",
+    "..##.#..#..#.......#.#.##..#.##...#.#...#.#......#..###...#.#.#..#..##..#..###.#.##.....#...#.##.#.#...#.#.#......#.#...###...#.",
+    "##.#.###..##..#.#..#.#..##......#..#.#...#..#..#.###....#...#..#....#.#...#..#.#.###..##..##.....##...###...##.##.###.....#.....",
+    "####.#.##....#..###...#.....####..#..#.##.#.#..#.##.##..#.##..#.#.##.###.###.##..#.#....##...##.#.#....###..#####.#..#.....#.#..",
+    "#.#.#...#.#..#.####...........##..#.##...#...#.##....##.#.#....#####..#...#.#..#......#.#.....#.#.##.#...#.#....#..####.#...##.#",
+    "#.#..#.#..#.....##....#.......#.#..##..#.##....#......##.#....#....#....#.#..#.#.#.##...##..##...#.#....#....#..#..#..###..####.",
+    ".#.....#.#..#.#.......##..##...#.#......###.###.###.##.##.##..#...#.##.#....##.##........########............#..#...##.........#",
+    "...##....##.#...#.....#.####.#..#..##.#...#...#..#........##..#....##..#.##......#.#.##.....###.#..#####.##...#..####.###.#.#.##",
+    "...#....##..#...#..#...#.###.#..#####.##..#..##..#.#....##....#.##..##.#.#.#..##....#...##....#....##..#..######.......##.#...#.",
+    "#...###.....###....#...........#......#.#.#....##....####.###.......#.#..#.....###..#..#..##.....#...........#..####..##.#.#.#..",
+    "......###......###.#..#.#..#...#..#..#....##.#.#..###...#.#...#.....#.#.###.###.....#.#...#.##..#..#..#.#..#....#...#....##....#"
+   ]
+  }
+ ],
+ "territoryInvalid": [
+  {
+   "name": "wrong data",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 5,
+    "height": 3,
+    "data": "////"
+   }
+  },
+  {
+   "name": "nonzero padding bits",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 5,
+    "height": 3,
+    "data": "//8="
+   }
+  },
+  {
+   "name": "wrong length",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 5,
+    "height": 3,
+    "data": "AAAAAA=="
+   }
+  },
+  {
+   "name": "wrong encoding",
+   "encoded": {
+    "encoding": "base64",
+    "width": 5,
+    "height": 3,
+    "data": "yAI="
+   }
+  },
+  {
+   "name": "width above 256",
+   "encoded": {
+    "encoding": "base64-bitset-lsb0",
+    "width": 257,
+    "height": 3,
+    "data": "yAI="
+   }
+  }
+ ],
+ "marks": [
+  {
+   "name": "object array passes through",
+   "encoded": [
+    {
+     "markId": 1,
+     "words": [
+      "food"
+     ],
+     "tileX": 3,
+     "tileY": 4,
+     "ticksLeft": 90,
+     "mine": true
+    },
+    {
+     "markId": 2,
+     "words": [],
+     "tileX": 5,
+     "tileY": 6,
+     "ticksLeft": 10,
+     "mine": false,
+     "verb": "attack",
+     "count": 4,
+     "claimed": 2,
+     "caste": "soldier"
+    }
+   ],
+   "decoded": [
+    {
+     "markId": 1,
+     "words": [
+      "food"
+     ],
+     "tileX": 3,
+     "tileY": 4,
+     "ticksLeft": 90,
+     "mine": true
+    },
+    {
+     "markId": 2,
+     "words": [],
+     "tileX": 5,
+     "tileY": 6,
+     "ticksLeft": 10,
+     "mine": false,
+     "verb": "attack",
+     "count": 4,
+     "claimed": 2,
+     "caste": "soldier"
+    }
+   ]
+  },
+  {
+   "name": "columnar-v1 with absent optional fields",
+   "encoded": {
+    "encoding": "columnar-v1",
+    "fields": [
+     "markId",
+     "words",
+     "tileX",
+     "tileY",
+     "ticksLeft",
+     "mine",
+     "verb",
+     "count",
+     "claimed",
+     "caste"
+    ],
+    "rows": [
+     [
+      1,
+      [
+       "food"
+      ],
+      3,
+      4,
+      90,
+      true,
+      null,
+      null,
+      null,
+      null
+     ],
+     [
+      2,
+      [],
+      5,
+      6,
+      10,
+      false,
+      "attack",
+      4,
+      2,
+      "soldier"
+     ]
+    ]
+   },
+   "decoded": [
+    {
+     "markId": 1,
+     "words": [
+      "food"
+     ],
+     "tileX": 3,
+     "tileY": 4,
+     "ticksLeft": 90,
+     "mine": true
+    },
+    {
+     "markId": 2,
+     "words": [],
+     "tileX": 5,
+     "tileY": 6,
+     "ticksLeft": 10,
+     "mine": false,
+     "verb": "attack",
+     "count": 4,
+     "claimed": 2,
+     "caste": "soldier"
+    }
+   ]
+  },
+  {
+   "name": "columnar-v1 empty",
+   "encoded": {
+    "encoding": "columnar-v1",
+    "fields": [],
+    "rows": []
+   },
+   "decoded": []
+  }
+ ],
+ "marksInvalid": [
+  {
+   "name": "wrong encoding",
+   "encoded": {
+    "encoding": "columnar-v2",
+    "fields": [],
+    "rows": []
+   }
+  },
+  {
+   "name": "duplicate field",
+   "encoded": {
+    "encoding": "columnar-v1",
+    "fields": [
+     "markId",
+     "markId"
+    ],
+    "rows": [
+     [
+      1,
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "name": "row length mismatch",
+   "encoded": {
+    "encoding": "columnar-v1",
+    "fields": [
+     "markId",
+     "tileX"
+    ],
+    "rows": [
+     [
+      1
+     ]
+    ]
+   }
+  }
+ ]
+}

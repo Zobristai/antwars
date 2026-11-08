@@ -1,0 +1,1333 @@
+{
+  "source": "24e5729d33fb4ab1292106cb40dddbb84630deb7",
+  "cases": [
+    {
+      "name": "public-reference",
+      "seed": 340,
+      "ticks": 600,
+      "rulesVersion": 23,
+      "config": {
+        "forageTieBreak": "mirrored",
+        "ticksPerSecond": 10,
+        "matchTicks": 600,
+        "mapWidth": 64,
+        "mapHeight": 48,
+        "nestTileX": 8,
+        "nestTileY": 24,
+        "nestDeliverTiles": 1,
+        "foodPatches": [
+          {
+            "tileX": 12,
+            "tileY": 24,
+            "radius": 2,
+            "perTile": 2
+          },
+          {
+            "tileX": 18,
+            "tileY": 9,
+            "radius": 2,
+            "perTile": 3
+          },
+          {
+            "tileX": 18,
+            "tileY": 39,
+            "radius": 2,
+            "perTile": 3
+          },
+          {
+            "tileX": 30,
+            "tileY": 24,
+            "radius": 3,
+            "perTile": 8
+          },
+          {
+            "tileX": 28,
+            "tileY": 10,
+            "radius": 1,
+            "perTile": 1
+          },
+          {
+            "tileX": 28,
+            "tileY": 38,
+            "radius": 1,
+            "perTile": 1
+          }
+        ],
+        "foodRegrowTicks": 150,
+        "groundIncomeRevision": 1,
+        "foodJitter": 1,
+        "antSpeedTilesPerSecond": 2,
+        "startAnts": 30,
+        "colonyCap": 512,
+        "hatchCost": 3,
+        "hatchIntervalTicks": 10,
+        "corpseFood": 1,
+        "sightTiles": 6,
+        "smellTiles": 8,
+        "antHp": 4000,
+        "damagePerSecond": 1000,
+        "defenderBonusPermille": 1250,
+        "combatGraceTicks": 600,
+        "overrunRadiusTiles": 2,
+        "overrunTicks": 600,
+        "overrunGraceTicks": 7200,
+        "territoryDecayTicks": 200,
+        "markStrengthPermille": 700,
+        "markReachTiles": 10,
+        "markLifetimeTicks": 1800,
+        "markMaxWords": 3,
+        "squadSize": 6,
+        "squadSupplyPermille": 500,
+        "squadTimerTicks": 900,
+        "commandFloorTicks": 100,
+        "intentMaxChars": 80,
+        "attackRadiusTiles": 3,
+        "guardCount": 2,
+        "guardEngageTiles": 6,
+        "fighterShareStartPermille": 600,
+        "fighterShareEndPermille": 900,
+        "rallyStartPermille": 300,
+        "rallyEndPermille": 1000,
+        "pushRatioPermille": 600,
+        "castes": {
+          "soldierCost": 6,
+          "soldierHpPermille": 2000,
+          "soldierDamagePermille": 1500
+        },
+        "adjudication": "kills-first",
+        "controlRevision": 1,
+        "guardSharePermille": 400,
+        "queenFounding": {
+          "cost": 400,
+          "costMultiplier": 2,
+          "costBasis": "founded-live",
+          "firstFoundTick": 3000,
+          "cooldownTicks": 1800,
+          "minDistanceTiles": 16,
+          "houseReserveFood": 200,
+          "standingNestsOnly": true,
+          "guardsPerQueen": true,
+          "totalGuardSharePermille": 600
+        },
+        "terrain": {
+          "maps": [
+            {
+              "id": "open-field",
+              "name": "Open Field",
+              "water": []
+            },
+            {
+              "id": "three-crossings",
+              "name": "Three Crossings",
+              "water": [
+                {
+                  "x": 30,
+                  "y": 0,
+                  "width": 4,
+                  "height": 8
+                },
+                {
+                  "x": 30,
+                  "y": 12,
+                  "width": 4,
+                  "height": 10
+                },
+                {
+                  "x": 30,
+                  "y": 26,
+                  "width": 4,
+                  "height": 10
+                },
+                {
+                  "x": 30,
+                  "y": 40,
+                  "width": 4,
+                  "height": 8
+                }
+              ]
+            },
+            {
+              "id": "central-lake",
+              "name": "Central Lake",
+              "water": [
+                {
+                  "x": 27,
+                  "y": 15,
+                  "width": 10,
+                  "height": 18
+                },
+                {
+                  "x": 27,
+                  "y": 0,
+                  "width": 10,
+                  "height": 12
+                },
+                {
+                  "x": 27,
+                  "y": 36,
+                  "width": 10,
+                  "height": 12
+                }
+              ]
+            }
+          ],
+          "referenceWidth": 64,
+          "referenceHeight": 48,
+          "rocks": {
+            "minPairs": 6,
+            "maxPairs": 8,
+            "minClusterTiles": 1,
+            "maxClusterTiles": 3,
+            "nestClearanceTiles": 3,
+            "placementAttempts": 128
+          },
+          "mapId": "central-lake"
+        },
+        "foodLayout": {
+          "patches": [
+            {
+              "tileX": 12,
+              "tileY": 24,
+              "radius": 2,
+              "perTile": 2
+            },
+            {
+              "tileX": 18,
+              "tileY": 9,
+              "radius": 2,
+              "perTile": 3
+            },
+            {
+              "tileX": 18,
+              "tileY": 39,
+              "radius": 2,
+              "perTile": 3
+            },
+            {
+              "tileX": 30,
+              "tileY": 24,
+              "radius": 3,
+              "perTile": 8
+            },
+            {
+              "tileX": 28,
+              "tileY": 10,
+              "radius": 1,
+              "perTile": 1
+            },
+            {
+              "tileX": 28,
+              "tileY": 38,
+              "radius": 1,
+              "perTile": 1
+            }
+          ],
+          "positionJitterTiles": 2,
+          "radiusJitterTiles": 1,
+          "richnessJitter": 1,
+          "nestClearanceTiles": 2,
+          "patchClearanceTiles": 1,
+          "minStartingFood": 452,
+          "maxStartingFood": 1026,
+          "placementAttempts": 128,
+          "layoutAttempts": 1024,
+          "optionalPatchIndices": [
+            4,
+            5
+          ]
+        }
+      },
+      "hash": "47e0b893e8f28f06"
+    },
+    {
+      "name": "public-fine",
+      "seed": 340,
+      "ticks": 600,
+      "rulesVersion": 23,
+      "config": {
+        "forageTieBreak": "mirrored",
+        "ticksPerSecond": 10,
+        "matchTicks": 600,
+        "mapWidth": 128,
+        "mapHeight": 96,
+        "nestTileX": 16.5,
+        "nestTileY": 48.5,
+        "nestDeliverTiles": 2,
+        "foodPatches": [
+          {
+            "tileX": 24.5,
+            "tileY": 48.5,
+            "radius": 4,
+            "perTile": 2
+          },
+          {
+            "tileX": 36.5,
+            "tileY": 18.5,
+            "radius": 4,
+            "perTile": 3
+          },
+          {
+            "tileX": 36.5,
+            "tileY": 78.5,
+            "radius": 4,
+            "perTile": 3
+          },
+          {
+            "tileX": 60.5,
+            "tileY": 48.5,
+            "radius": 6,
+            "perTile": 8
+          },
+          {
+            "tileX": 56.5,
+            "tileY": 20.5,
+            "radius": 2,
+            "perTile": 1
+          },
+          {
+            "tileX": 56.5,
+            "tileY": 76.5,
+            "radius": 2,
+            "perTile": 1
+          }
+        ],
+        "foodRegrowTicks": 150,
+        "groundIncomeRevision": 1,
+        "foodJitter": 1,
+        "antSpeedTilesPerSecond": 4,
+        "startAnts": 30,
+        "colonyCap": 512,
+        "hatchCost": 3,
+        "hatchIntervalTicks": 10,
+        "corpseFood": 1,
+        "sightTiles": 12,
+        "smellTiles": 16,
+        "antHp": 4000,
+        "damagePerSecond": 1000,
+        "defenderBonusPermille": 1250,
+        "combatGraceTicks": 600,
+        "overrunRadiusTiles": 4,
+        "overrunTicks": 600,
+        "overrunGraceTicks": 7200,
+        "territoryDecayTicks": 200,
+        "markStrengthPermille": 700,
+        "markReachTiles": 20,
+        "markLifetimeTicks": 1800,
+        "markMaxWords": 3,
+        "squadSize": 6,
+        "squadSupplyPermille": 500,
+        "squadTimerTicks": 900,
+        "commandFloorTicks": 100,
+        "intentMaxChars": 80,
+        "attackRadiusTiles": 6,
+        "guardCount": 2,
+        "guardEngageTiles": 12,
+        "fighterShareStartPermille": 600,
+        "fighterShareEndPermille": 900,
+        "rallyStartPermille": 300,
+        "rallyEndPermille": 1000,
+        "pushRatioPermille": 600,
+        "castes": {
+          "soldierCost": 6,
+          "soldierHpPermille": 2000,
+          "soldierDamagePermille": 1500
+        },
+        "adjudication": "kills-first",
+        "controlRevision": 1,
+        "guardSharePermille": 400,
+        "queenFounding": {
+          "cost": 400,
+          "costMultiplier": 2,
+          "costBasis": "founded-live",
+          "firstFoundTick": 3000,
+          "cooldownTicks": 1800,
+          "minDistanceTiles": 32,
+          "houseReserveFood": 200,
+          "standingNestsOnly": true,
+          "guardsPerQueen": true,
+          "totalGuardSharePermille": 600
+        },
+        "terrain": {
+          "maps": [
+            {
+              "id": "open-field",
+              "name": "Open Field",
+              "water": []
+            },
+            {
+              "id": "three-crossings",
+              "name": "Three Crossings",
+              "water": [
+                {
+                  "x": 60,
+                  "y": 0,
+                  "width": 8,
+                  "height": 16
+                },
+                {
+                  "x": 60,
+                  "y": 24,
+                  "width": 8,
+                  "height": 20
+                },
+                {
+                  "x": 60,
+                  "y": 52,
+                  "width": 8,
+                  "height": 20
+                },
+                {
+                  "x": 60,
+                  "y": 80,
+                  "width": 8,
+                  "height": 16
+                }
+              ]
+            },
+            {
+              "id": "central-lake",
+              "name": "Central Lake",
+              "water": [
+                {
+                  "x": 56,
+                  "y": 24,
+                  "width": 16,
+                  "height": 1
+                },
+                {
+                  "x": 55,
+                  "y": 25,
+                  "width": 18,
+                  "height": 1
+                },
+                {
+                  "x": 54,
+                  "y": 26,
+                  "width": 20,
+                  "height": 1
+                },
+                {
+                  "x": 53,
+                  "y": 27,
+                  "width": 22,
+                  "height": 1
+                },
+                {
+                  "x": 52,
+                  "y": 28,
+                  "width": 24,
+                  "height": 1
+                },
+                {
+                  "x": 51,
+                  "y": 29,
+                  "width": 26,
+                  "height": 1
+                },
+                {
+                  "x": 50,
+                  "y": 30,
+                  "width": 28,
+                  "height": 1
+                },
+                {
+                  "x": 49,
+                  "y": 31,
+                  "width": 30,
+                  "height": 1
+                },
+                {
+                  "x": 48,
+                  "y": 32,
+                  "width": 32,
+                  "height": 1
+                },
+                {
+                  "x": 47,
+                  "y": 33,
+                  "width": 34,
+                  "height": 1
+                },
+                {
+                  "x": 46,
+                  "y": 34,
+                  "width": 36,
+                  "height": 1
+                },
+                {
+                  "x": 45,
+                  "y": 35,
+                  "width": 38,
+                  "height": 1
+                },
+                {
+                  "x": 44,
+                  "y": 36,
+                  "width": 40,
+                  "height": 24
+                },
+                {
+                  "x": 45,
+                  "y": 60,
+                  "width": 38,
+                  "height": 1
+                },
+                {
+                  "x": 46,
+                  "y": 61,
+                  "width": 36,
+                  "height": 1
+                },
+                {
+                  "x": 47,
+                  "y": 62,
+                  "width": 34,
+                  "height": 1
+                },
+                {
+                  "x": 48,
+                  "y": 63,
+                  "width": 32,
+                  "height": 1
+                },
+                {
+                  "x": 49,
+                  "y": 64,
+                  "width": 30,
+                  "height": 1
+                },
+                {
+                  "x": 50,
+                  "y": 65,
+                  "width": 28,
+                  "height": 1
+                },
+                {
+                  "x": 51,
+                  "y": 66,
+                  "width": 26,
+                  "height": 1
+                },
+                {
+                  "x": 52,
+                  "y": 67,
+                  "width": 24,
+                  "height": 1
+                },
+                {
+                  "x": 53,
+                  "y": 68,
+                  "width": 22,
+                  "height": 1
+                },
+                {
+                  "x": 54,
+                  "y": 69,
+                  "width": 20,
+                  "height": 1
+                },
+                {
+                  "x": 55,
+                  "y": 70,
+                  "width": 18,
+                  "height": 1
+                },
+                {
+                  "x": 56,
+                  "y": 71,
+                  "width": 16,
+                  "height": 1
+                }
+              ]
+            }
+          ],
+          "referenceWidth": 128,
+          "referenceHeight": 96,
+          "rocks": {
+            "minPairs": 6,
+            "maxPairs": 8,
+            "minClusterTiles": 1,
+            "maxClusterTiles": 3,
+            "nestClearanceTiles": 3,
+            "placementAttempts": 128
+          },
+          "mapId": "central-lake"
+        },
+        "foodLayout": {
+          "patches": [
+            {
+              "tileX": 24.5,
+              "tileY": 48.5,
+              "radius": 4,
+              "perTile": 2
+            },
+            {
+              "tileX": 36.5,
+              "tileY": 18.5,
+              "radius": 4,
+              "perTile": 3
+            },
+            {
+              "tileX": 36.5,
+              "tileY": 78.5,
+              "radius": 4,
+              "perTile": 3
+            },
+            {
+              "tileX": 60.5,
+              "tileY": 48.5,
+              "radius": 6,
+              "perTile": 8
+            },
+            {
+              "tileX": 56.5,
+              "tileY": 20.5,
+              "radius": 2,
+              "perTile": 1
+            },
+            {
+              "tileX": 56.5,
+              "tileY": 76.5,
+              "radius": 2,
+              "perTile": 1
+            }
+          ],
+          "positionJitterTiles": 4,
+          "radiusJitterTiles": 2,
+          "richnessJitter": 1,
+          "nestClearanceTiles": 4,
+          "patchClearanceTiles": 2,
+          "minStartingFood": 452,
+          "maxStartingFood": 1026,
+          "placementAttempts": 128,
+          "layoutAttempts": 1024,
+          "optionalPatchIndices": [
+            4,
+            5
+          ]
+        },
+        "gridScale": 2,
+        "startArea": "back-quarter"
+      },
+      "hash": "276fc2aa15f64a2d"
+    },
+    {
+      "name": "redesign-reference",
+      "seed": 340,
+      "ticks": 600,
+      "rulesVersion": 23,
+      "config": {
+        "forageTieBreak": "mirrored",
+        "ticksPerSecond": 10,
+        "matchTicks": 600,
+        "mapWidth": 64,
+        "mapHeight": 48,
+        "nestTileX": 8,
+        "nestTileY": 24,
+        "nestDeliverTiles": 1,
+        "foodPatches": [
+          {
+            "tileX": 10,
+            "tileY": 10,
+            "radius": 5,
+            "perTile": 2
+          },
+          {
+            "tileX": 18,
+            "tileY": 9,
+            "radius": 2,
+            "perTile": 6
+          },
+          {
+            "tileX": 18,
+            "tileY": 39,
+            "radius": 2,
+            "perTile": 6
+          },
+          {
+            "tileX": 30,
+            "tileY": 24,
+            "radius": 1,
+            "perTile": 1
+          },
+          {
+            "tileX": 28,
+            "tileY": 10,
+            "radius": 1,
+            "perTile": 1
+          },
+          {
+            "tileX": 28,
+            "tileY": 38,
+            "radius": 1,
+            "perTile": 1
+          }
+        ],
+        "foodRegrowTicks": 150,
+        "groundIncomeRevision": 1,
+        "foodJitter": 1,
+        "antSpeedTilesPerSecond": 2,
+        "startAnts": 30,
+        "colonyCap": 512,
+        "hatchCost": 3,
+        "hatchIntervalTicks": 10,
+        "corpseFood": 1,
+        "sightTiles": 6,
+        "smellTiles": 8,
+        "antHp": 4000,
+        "damagePerSecond": 1000,
+        "defenderBonusPermille": 1250,
+        "combatGraceTicks": 600,
+        "overrunRadiusTiles": 2,
+        "overrunTicks": 600,
+        "overrunGraceTicks": 7200,
+        "territoryDecayTicks": 200,
+        "markStrengthPermille": 700,
+        "markReachTiles": 10,
+        "markLifetimeTicks": 1800,
+        "markMaxWords": 3,
+        "squadSize": 6,
+        "squadSupplyPermille": 500,
+        "squadTimerTicks": 900,
+        "commandFloorTicks": 100,
+        "intentMaxChars": 80,
+        "attackRadiusTiles": 3,
+        "guardCount": 2,
+        "guardEngageTiles": 6,
+        "fighterShareStartPermille": 600,
+        "fighterShareEndPermille": 900,
+        "rallyStartPermille": 300,
+        "rallyEndPermille": 1000,
+        "pushRatioPermille": 600,
+        "castes": {
+          "soldierCost": 6,
+          "soldierHpPermille": 2000,
+          "soldierDamagePermille": 1500
+        },
+        "adjudication": "kills-first",
+        "controlRevision": 1,
+        "guardSharePermille": 400,
+        "queenFounding": {
+          "cost": 400,
+          "costMultiplier": 2,
+          "costBasis": "founded-live",
+          "firstFoundTick": 3000,
+          "cooldownTicks": 1800,
+          "minDistanceTiles": 16,
+          "houseReserveFood": 200,
+          "standingNestsOnly": true,
+          "guardsPerQueen": true,
+          "totalGuardSharePermille": 600
+        },
+        "terrain": {
+          "maps": [
+            {
+              "id": "open-field",
+              "name": "Open Field",
+              "water": []
+            },
+            {
+              "id": "three-crossings",
+              "name": "Three Crossings",
+              "water": [
+                {
+                  "x": 30,
+                  "y": 0,
+                  "width": 4,
+                  "height": 8
+                },
+                {
+                  "x": 30,
+                  "y": 12,
+                  "width": 4,
+                  "height": 10
+                },
+                {
+                  "x": 30,
+                  "y": 26,
+                  "width": 4,
+                  "height": 10
+                },
+                {
+                  "x": 30,
+                  "y": 40,
+                  "width": 4,
+                  "height": 8
+                }
+              ]
+            },
+            {
+              "id": "central-lake",
+              "name": "Central Lake",
+              "water": [
+                {
+                  "x": 27,
+                  "y": 15,
+                  "width": 10,
+                  "height": 18
+                },
+                {
+                  "x": 27,
+                  "y": 0,
+                  "width": 10,
+                  "height": 12
+                },
+                {
+                  "x": 27,
+                  "y": 36,
+                  "width": 10,
+                  "height": 12
+                }
+              ]
+            }
+          ],
+          "referenceWidth": 64,
+          "referenceHeight": 48,
+          "rocks": {
+            "minPairs": 6,
+            "maxPairs": 8,
+            "minClusterTiles": 1,
+            "maxClusterTiles": 3,
+            "nestClearanceTiles": 3,
+            "placementAttempts": 128
+          },
+          "mapId": "central-lake"
+        },
+        "foodLayout": {
+          "patches": [
+            {
+              "tileX": 10,
+              "tileY": 10,
+              "radius": 5,
+              "perTile": 2
+            },
+            {
+              "tileX": 18,
+              "tileY": 9,
+              "radius": 2,
+              "perTile": 6
+            },
+            {
+              "tileX": 18,
+              "tileY": 39,
+              "radius": 2,
+              "perTile": 6
+            },
+            {
+              "tileX": 30,
+              "tileY": 24,
+              "radius": 1,
+              "perTile": 1
+            },
+            {
+              "tileX": 28,
+              "tileY": 10,
+              "radius": 1,
+              "perTile": 1
+            },
+            {
+              "tileX": 28,
+              "tileY": 38,
+              "radius": 1,
+              "perTile": 1
+            }
+          ],
+          "positionJitterTiles": 2,
+          "radiusJitterTiles": 1,
+          "richnessJitter": 1,
+          "nestClearanceTiles": 2,
+          "patchClearanceTiles": 1,
+          "minStartingFood": 452,
+          "maxStartingFood": 1026,
+          "placementAttempts": 128,
+          "layoutAttempts": 1024,
+          "optionalPatchIndices": [
+            4,
+            5
+          ]
+        },
+        "rules": "redesign",
+        "wordMarksDisabled": true,
+        "softSeparation": {
+          "radius": 100,
+          "strength": 1600,
+          "maxStep": 200,
+          "arrivalSubunits": 300,
+          "epsilon": 1,
+          "arrivalLinkRadius": 150
+        },
+        "hatchTiming": {
+          "soldierIntervalMultiplier": 2
+        },
+        "countMarks": {
+          "recruitTiles": 8,
+          "defendTiles": 3,
+          "defendHolds": true,
+          "casteSelection": true,
+          "combatTotals": true,
+          "recruitColonyWide": true,
+          "placement": "colony_sight",
+          "reportClaimAvailability": true
+        },
+        "patrolLinkTiles": 6,
+        "localAnts": {
+          "defendTiles": 3,
+          "soldierFrontSharePermille": 500,
+          "soldierPatchSharePermille": 900,
+          "soldierAllocation": "live_share",
+          "soldierPatchAdvance": false,
+          "workerIdlePatchPatrol": true,
+          "workerHomeGuardCount": 32,
+          "workerHomeGuardSharePermille": 250,
+          "workerHomeGuardHold": true,
+          "workerPatchDispatchSharePermille": 400,
+          "workerQueenThreatTiles": 12,
+          "workerQueenRecallCount": 32
+        },
+        "queenHp": {
+          "hp": 40000,
+          "biteDamage": 4000,
+          "biteIntervalTicks": 20,
+          "regenHp": 1000,
+          "regenIntervalTicks": 100,
+          "regenClearTiles": 3,
+          "shieldTicks": 3000
+        },
+        "earlyWin": {
+          "minTick": 6000,
+          "holdTicks": 3000,
+          "territoryRatioPermille": 6000,
+          "minHeldTiles": 100
+        },
+        "commandIdleTicks": 1800
+      },
+      "hash": "5ab602dca2067bd5"
+    },
+    {
+      "name": "redesign-fine",
+      "seed": 340,
+      "ticks": 600,
+      "rulesVersion": 23,
+      "config": {
+        "forageTieBreak": "mirrored",
+        "ticksPerSecond": 10,
+        "matchTicks": 600,
+        "mapWidth": 128,
+        "mapHeight": 96,
+        "nestTileX": 16.5,
+        "nestTileY": 48.5,
+        "nestDeliverTiles": 2,
+        "foodPatches": [
+          {
+            "tileX": 20.5,
+            "tileY": 20.5,
+            "radius": 10,
+            "perTile": 2
+          },
+          {
+            "tileX": 36.5,
+            "tileY": 18.5,
+            "radius": 4,
+            "perTile": 6
+          },
+          {
+            "tileX": 36.5,
+            "tileY": 78.5,
+            "radius": 4,
+            "perTile": 6
+          },
+          {
+            "tileX": 60.5,
+            "tileY": 48.5,
+            "radius": 2,
+            "perTile": 1
+          },
+          {
+            "tileX": 56.5,
+            "tileY": 20.5,
+            "radius": 2,
+            "perTile": 1
+          },
+          {
+            "tileX": 56.5,
+            "tileY": 76.5,
+            "radius": 2,
+            "perTile": 1
+          }
+        ],
+        "foodRegrowTicks": 150,
+        "groundIncomeRevision": 1,
+        "foodJitter": 1,
+        "antSpeedTilesPerSecond": 4,
+        "startAnts": 30,
+        "colonyCap": 512,
+        "hatchCost": 3,
+        "hatchIntervalTicks": 10,
+        "corpseFood": 1,
+        "sightTiles": 12,
+        "smellTiles": 16,
+        "antHp": 4000,
+        "damagePerSecond": 1000,
+        "defenderBonusPermille": 1250,
+        "combatGraceTicks": 600,
+        "overrunRadiusTiles": 4,
+        "overrunTicks": 600,
+        "overrunGraceTicks": 7200,
+        "territoryDecayTicks": 200,
+        "markStrengthPermille": 700,
+        "markReachTiles": 20,
+        "markLifetimeTicks": 1800,
+        "markMaxWords": 3,
+        "squadSize": 6,
+        "squadSupplyPermille": 500,
+        "squadTimerTicks": 900,
+        "commandFloorTicks": 100,
+        "intentMaxChars": 80,
+        "attackRadiusTiles": 6,
+        "guardCount": 2,
+        "guardEngageTiles": 12,
+        "fighterShareStartPermille": 600,
+        "fighterShareEndPermille": 900,
+        "rallyStartPermille": 300,
+        "rallyEndPermille": 1000,
+        "pushRatioPermille": 600,
+        "castes": {
+          "soldierCost": 6,
+          "soldierHpPermille": 2000,
+          "soldierDamagePermille": 1500
+        },
+        "adjudication": "kills-first",
+        "controlRevision": 1,
+        "guardSharePermille": 400,
+        "queenFounding": {
+          "cost": 400,
+          "costMultiplier": 2,
+          "costBasis": "founded-live",
+          "firstFoundTick": 3000,
+          "cooldownTicks": 1800,
+          "minDistanceTiles": 32,
+          "houseReserveFood": 200,
+          "standingNestsOnly": true,
+          "guardsPerQueen": true,
+          "totalGuardSharePermille": 600
+        },
+        "terrain": {
+          "maps": [
+            {
+              "id": "open-field",
+              "name": "Open Field",
+              "water": []
+            },
+            {
+              "id": "three-crossings",
+              "name": "Three Crossings",
+              "water": [
+                {
+                  "x": 60,
+                  "y": 0,
+                  "width": 8,
+                  "height": 16
+                },
+                {
+                  "x": 60,
+                  "y": 24,
+                  "width": 8,
+                  "height": 20
+                },
+                {
+                  "x": 60,
+                  "y": 52,
+                  "width": 8,
+                  "height": 20
+                },
+                {
+                  "x": 60,
+                  "y": 80,
+                  "width": 8,
+                  "height": 16
+                }
+              ]
+            },
+            {
+              "id": "central-lake",
+              "name": "Central Lake",
+              "water": [
+                {
+                  "x": 56,
+                  "y": 24,
+                  "width": 16,
+                  "height": 1
+                },
+                {
+                  "x": 55,
+                  "y": 25,
+                  "width": 18,
+                  "height": 1
+                },
+                {
+                  "x": 54,
+                  "y": 26,
+                  "width": 20,
+                  "height": 1
+                },
+                {
+                  "x": 53,
+                  "y": 27,
+                  "width": 22,
+                  "height": 1
+                },
+                {
+                  "x": 52,
+                  "y": 28,
+                  "width": 24,
+                  "height": 1
+                },
+                {
+                  "x": 51,
+                  "y": 29,
+                  "width": 26,
+                  "height": 1
+                },
+                {
+                  "x": 50,
+                  "y": 30,
+                  "width": 28,
+                  "height": 1
+                },
+                {
+                  "x": 49,
+                  "y": 31,
+                  "width": 30,
+                  "height": 1
+                },
+                {
+                  "x": 48,
+                  "y": 32,
+                  "width": 32,
+                  "height": 1
+                },
+                {
+                  "x": 47,
+                  "y": 33,
+                  "width": 34,
+                  "height": 1
+                },
+                {
+                  "x": 46,
+                  "y": 34,
+                  "width": 36,
+                  "height": 1
+                },
+                {
+                  "x": 45,
+                  "y": 35,
+                  "width": 38,
+                  "height": 1
+                },
+                {
+                  "x": 44,
+                  "y": 36,
+                  "width": 40,
+                  "height": 24
+                },
+                {
+                  "x": 45,
+                  "y": 60,
+                  "width": 38,
+                  "height": 1
+                },
+                {
+                  "x": 46,
+                  "y": 61,
+                  "width": 36,
+                  "height": 1
+                },
+                {
+                  "x": 47,
+                  "y": 62,
+                  "width": 34,
+                  "height": 1
+                },
+                {
+                  "x": 48,
+                  "y": 63,
+                  "width": 32,
+                  "height": 1
+                },
+                {
+                  "x": 49,
+                  "y": 64,
+                  "width": 30,
+                  "height": 1
+                },
+                {
+                  "x": 50,
+                  "y": 65,
+                  "width": 28,
+                  "height": 1
+                },
+                {
+                  "x": 51,
+                  "y": 66,
+                  "width": 26,
+                  "height": 1
+                },
+                {
+                  "x": 52,
+                  "y": 67,
+                  "width": 24,
+                  "height": 1
+                },
+                {
+                  "x": 53,
+                  "y": 68,
+                  "width": 22,
+                  "height": 1
+                },
+                {
+                  "x": 54,
+                  "y": 69,
+                  "width": 20,
+                  "height": 1
+                },
+                {
+                  "x": 55,
+                  "y": 70,
+                  "width": 18,
+                  "height": 1
+                },
+                {
+                  "x": 56,
+                  "y": 71,
+                  "width": 16,
+                  "height": 1
+                }
+              ]
+            }
+          ],
+          "referenceWidth": 128,
+          "referenceHeight": 96,
+          "rocks": {
+            "minPairs": 6,
+            "maxPairs": 8,
+            "minClusterTiles": 1,
+            "maxClusterTiles": 3,
+            "nestClearanceTiles": 3,
+            "placementAttempts": 128
+          },
+          "mapId": "central-lake"
+        },
+        "foodLayout": {
+          "patches": [
+            {
+              "tileX": 20.5,
+              "tileY": 20.5,
+              "radius": 10,
+              "perTile": 2
+            },
+            {
+              "tileX": 36.5,
+              "tileY": 18.5,
+              "radius": 4,
+              "perTile": 6
+            },
+            {
+              "tileX": 36.5,
+              "tileY": 78.5,
+              "radius": 4,
+              "perTile": 6
+            },
+            {
+              "tileX": 60.5,
+              "tileY": 48.5,
+              "radius": 2,
+              "perTile": 1
+            },
+            {
+              "tileX": 56.5,
+              "tileY": 20.5,
+              "radius": 2,
+              "perTile": 1
+            },
+            {
+              "tileX": 56.5,
+              "tileY": 76.5,
+              "radius": 2,
+              "perTile": 1
+            }
+          ],
+          "positionJitterTiles": 4,
+          "radiusJitterTiles": 2,
+          "richnessJitter": 1,
+          "nestClearanceTiles": 4,
+          "patchClearanceTiles": 2,
+          "minStartingFood": 452,
+          "maxStartingFood": 1026,
+          "placementAttempts": 128,
+          "layoutAttempts": 1024,
+          "optionalPatchIndices": [
+            4,
+            5
+          ]
+        },
+        "rules": "redesign",
+        "wordMarksDisabled": true,
+        "softSeparation": {
+          "radius": 200,
+          "strength": 3200,
+          "maxStep": 400,
+          "arrivalSubunits": 600,
+          "epsilon": 2,
+          "arrivalLinkRadius": 300
+        },
+        "hatchTiming": {
+          "soldierIntervalMultiplier": 2
+        },
+        "countMarks": {
+          "recruitTiles": 16,
+          "defendTiles": 6,
+          "defendHolds": true,
+          "casteSelection": true,
+          "combatTotals": true,
+          "recruitColonyWide": true,
+          "placement": "colony_sight",
+          "reportClaimAvailability": true
+        },
+        "patrolLinkTiles": 12,
+        "localAnts": {
+          "defendTiles": 6,
+          "soldierFrontSharePermille": 500,
+          "soldierPatchSharePermille": 900,
+          "soldierAllocation": "live_share",
+          "soldierPatchAdvance": false,
+          "workerIdlePatchPatrol": true,
+          "workerHomeGuardCount": 32,
+          "workerHomeGuardSharePermille": 250,
+          "workerHomeGuardHold": true,
+          "workerPatchDispatchSharePermille": 400,
+          "workerQueenThreatTiles": 24,
+          "workerQueenRecallCount": 32
+        },
+        "queenHp": {
+          "hp": 40000,
+          "biteDamage": 4000,
+          "biteIntervalTicks": 20,
+          "regenHp": 1000,
+          "regenIntervalTicks": 100,
+          "regenClearTiles": 6,
+          "shieldTicks": 3000
+        },
+        "earlyWin": {
+          "minTick": 6000,
+          "holdTicks": 3000,
+          "territoryRatioPermille": 6000,
+          "minHeldTiles": 100
+        },
+        "commandIdleTicks": 1800,
+        "gridScale": 2,
+        "startArea": "back-quarter"
+      },
+      "hash": "d58fc709e9fa96e6"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{"type":"header","rulesVersion":3,"seed":674008274,"config":{"ticksPerSecond":10,"matchTicks":7200,"mapWidth":64,"mapHeight":48,"nestTileX":8,"nestTileY":24,"nestDeliverTiles":1,"foodPatches":[{"tileX":12,"tileY":24,"radius":2,"perTile":2},{"tileX":18,"tileY":9,"radius":2,"perTile":3},{"tileX":18,"tileY":39,"radius":2,"perTile":3},{"tileX":30,"tileY":24,"radius":3,"perTile":8}],"foodRegrowTicks":150,"foodJitter":1,"antSpeedTilesPerSecond":2,"startAnts":30,"colonyCap":150,"hatchCost":3,"hatchIntervalTicks":18,"corpseFood":1,"sightTiles":6,"smellTiles":8,"antHp":4000,"damagePerSecond":1000,"defenderBonusPermille":1250,"combatGraceTicks":600,"overrunRadiusTiles":2,"overrunTicks":100,"overrunGraceTicks":600,"territoryDecayTicks":200,"markStrengthPermille":700,"markReachTiles":10,"markLifetimeTicks":1800,"marksPerAgent":3,"markMaxWords":3,"squadSize":6,"squadSupplyPermille":500,"squadTimerTicks":900,"commandFloorTicks":100,"intentMaxChars":80,"attackRadiusTiles":3,"guardCount":2,"guardEngageTiles":3,"fighterShareStartPermille":600,"fighterShareEndPermille":900,"rallyStartPermille":300,"rallyEndPermille":1000,"pushRatioPermille":600}}
+{"tick":62,"inputs":[{"type":"join","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","colony":0,"modelLabel":"Claude Code sonnet"}]}
+{"tick":90,"inputs":[{"type":"join","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","colony":1,"modelLabel":"Claude Code sonnet"}]}
+{"tick":140,"inputs":[{"type":"join","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","colony":0,"modelLabel":"Claude Code sonnet"}]}
+{"tick":151,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"go_to","tileX":20,"tileY":20},"mark":{"words":["GO","E"]},"intent":"push east to scout enemy and claim territory"}]}
+{"tick":169,"inputs":[{"type":"join","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","colony":1,"modelLabel":"Claude Code sonnet"}]}
+{"tick":180,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"intent":"economic buildup: scout wider for food, no combat yet"}]}
+{"tick":280,"inputs":[{"type":"mark","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","words":["QUEEN","HOLD"]}]}
+{"tick":287,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":30,"tileY":24},"mark":{"words":["ATTACK","W"]},"intent":"push west to find enemies and expand territory"}]}
+{"tick":568,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":607,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":623,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":640,"inputs":[{"type":"observe","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":677,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":681,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"No enemies in sight, territory 99%, keep foraging"}]}
+{"tick":713,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":32,"tileY":30},"intent":"pushing southeast beyond our territory edge to find enemies"}]}
+{"tick":728,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"intent":"keep harvesting both food clusters, build economy"}]}
+{"tick":772,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":20,"tileY":24},"mark":{"words":["ATTACK","W","MANY"]},"intent":"Push west to hunt remaining enemy colony after winning fight at (29,24)"}]}
+{"tick":1066,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":1092,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":1123,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":1172,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":34,"tileY":30},"mark":{"words":["ATTACK","MANY"]},"intent":"Reinforce ongoing battle at 33-34,29-31 against colony 1"}]}
+{"tick":1179,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":1272,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":16,"tileY":26},"mark":{"words":["ATTACK","MANY"]},"intent":"push west into enemy lines, calling for backup"}]}
+{"tick":1287,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"intent":"keep gathering food, queen area safe, watching east border skirmish"}]}
+{"tick":1341,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":1457,"inputs":[{"type":"mark","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","words":["FOOD","MANY"]}]}
+{"tick":1567,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":1586,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":1625,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":1681,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":1711,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"keep foraging near base, food plentiful at 49-50,23-25"}]}
+{"tick":1745,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"continue foraging, signal food near battle site to colony"}]}
+{"tick":1746,"inputs":[{"type":"observe","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":1795,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":37,"tileY":33},"mark":{"words":["ATTACK","MANY"]},"intent":"press southeast to retake contested territory"}]}
+{"tick":1798,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":1837,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":25,"tileY":26},"mark":{"words":["ATTACK","MANY"]},"intent":"clean up nearby enemy clusters at 24,25 and 26,26 instead of overextending west"}]}
+{"tick":1888,"inputs":[{"type":"observe","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":1972,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"hold"},"mark":{"words":["HELP","NEST"]},"intent":"squad wiped to 1 ant; hold near queen, rebuild before next push"}]}
+{"tick":1991,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"attack","tileX":53,"tileY":24},"mark":{"tileX":53,"tileY":23,"words":["ATTACK","FEW"]},"intent":"finish off last 3 enemy raiders near queen, secure nest"}]}
+{"tick":2018,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"threat cleared, back to economy"}]}
+{"tick":2046,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":2101,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":2103,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":42,"tileY":38},"mark":{"tileX":37,"tileY":33,"words":["ATTACK","MANY"]},"intent":"Push southeast to find enemies and expand territory"}]}
+{"tick":2142,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":2164,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":2207,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":36,"tileY":25},"mark":{"words":["ATTACK"]},"intent":"push west to support fight against colony 0 near 36,25"}]}
+{"tick":2254,"inputs":[{"type":"mark","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","words":["FOOD","MANY","S"]}]}
+{"tick":2260,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY","E"]},"intent":"keep foraging, rich food patch to the east"}]}
+{"tick":2305,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":2566,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":2594,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":2630,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":2633,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":46,"tileY":38},"mark":{"words":["ATTACK","MANY"]},"intent":"press east toward enemy sightings, won last skirmish"}]}
+{"tick":2639,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":2664,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":2714,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":36,"tileY":31},"mark":{"tileX":36,"tileY":25,"words":["ATTACK","MANY"]},"intent":"push south to crush colony 0 ants fighting ally 334 near (36,31)"}]}
+{"tick":2751,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"intent":"continue foraging, queen safe, territory growing"}]}
+{"tick":2760,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"keep foraging near home, mark food for teammates"}]}
+{"tick":3064,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":3090,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":3125,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":3150,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":48,"tileY":34},"mark":{"words":["ATTACK","MANY"]},"intent":"press north into enemy lines after wiping their attackers"}]}
+{"tick":3176,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"},{"type":"mark","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","tileX":18,"tileY":40,"words":["FOOD","MANY","S"]}]}
+{"tick":3190,"inputs":[{"type":"mark","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","words":["FOOD","MANY"]}]}
+{"tick":3212,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"intent":"Keep foraging near nest, avoid south combat zone"}]}
+{"tick":3302,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":36,"tileY":34},"mark":{"words":["ATTACK","MANY"]},"intent":"Push south to finish wounded enemy and hold the line"}]}
+{"tick":3562,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":3599,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":3625,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":3682,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":3686,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":40,"tileY":32},"mark":{"words":["ATTACK","MANY"]},"intent":"Push squad to reinforce the active front at 40,32 and overrun enemy there"}]}
+{"tick":3727,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":3752,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"mark":{"tileX":28,"tileY":24,"words":["FOOD","MANY"]},"intent":"keep foraging rich east food cluster, defensive posture"}]}
+{"tick":3826,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"continue foraging, low-HP ants avoid the ATTACK call for now"}]}
+{"tick":3831,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":40,"tileY":32},"mark":{"tileX":41,"tileY":32,"words":["HELP","ATTACK"]},"intent":"Reinforce 454 at frontline, converge squad to crush enemies at 40,32"}]}
+{"tick":3903,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"attack","tileX":55,"tileY":24},"intent":"responding to teammate ATTACK mark at queen tile, defend queen"}]}
+{"tick":3944,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":41,"tileY":32},"mark":{"tileX":45,"tileY":30,"words":["HELP","ATTACK"]},"intent":"Converge squad on frontline battle at 41,32 to finish off enemies"}]}
+{"tick":3986,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":41,"tileY":31},"mark":{"words":["ATTACK","MANY"]},"intent":"Push squad into the big frontline brawl at 41,31 to help colony win it"}]}
+{"tick":4063,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":4101,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":4144,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":4148,"inputs":[{"type":"observe","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":4149,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"intent":"no threat at queen now, resume foraging to grow economy"}]}
+{"tick":4179,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":4205,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":43,"tileY":30},"mark":{"words":["ATTACK","MANY"]},"intent":"pressing attack east, winning trades, keep pushing enemy line"}]}
+{"tick":4260,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"mark":{"words":["FOOD","MANY"]},"intent":"continue foraging, no enemies in sight"}]}
+{"tick":4268,"inputs":[{"type":"observe","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":4398,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":41,"tileY":31},"intent":"reinforce brawl once ants free up"}]}
+{"tick":4566,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":4584,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":4624,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":4644,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":46,"tileY":27},"mark":{"words":["ATTACK","MANY"]},"intent":"press the advantage east toward enemy cluster at 46,27"}]}
+{"tick":4679,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":4700,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"attack","tileX":45,"tileY":28},"mark":{"words":["ATTACK","MANY"]},"intent":"push west front to retake contested territory from colony 0"}]}
+{"tick":4706,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"intent":"continue gathering food, no enemies in sight"}]}
+{"tick":4759,"inputs":[{"type":"observe","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":4830,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":45,"tileY":29},"intent":"defend hatchery area under attack"}]}
+{"tick":5065,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":5085,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":5134,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":5139,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":5141,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":50,"tileY":25},"mark":{"words":["ATTACK","MANY"]},"intent":"Push east into enemy-held territory, squad is winning the attrition fight"}]}
+{"tick":5180,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":5186,"inputs":[{"type":"order","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb","order":{"kind":"forage"},"intent":"rebuild economy, squad currently empty"}]}
+{"tick":5240,"inputs":[{"type":"observe","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":5278,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"intent":"continue foraging, territory growing, no enemies near queen"}]}
+{"tick":5283,"inputs":[{"type":"observe","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":5373,"inputs":[{"type":"order","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4","order":{"kind":"attack","tileX":45,"tileY":29},"intent":"press attack when ants free up, defend hatchery"}]}
+{"tick":5565,"inputs":[{"type":"rejoin","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd"}]}
+{"tick":5602,"inputs":[{"type":"rejoin","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}
+{"tick":5625,"inputs":[{"type":"order","agentId":"0ca6bcc2-7535-4295-9a18-8183883edfcd","order":{"kind":"attack","tileX":55,"tileY":24},"mark":{"words":["ATTACK","QUEEN"]},"intent":"push for enemy queen overrun"}]}
+{"tick":5639,"inputs":[{"type":"rejoin","agentId":"442230e9-0020-437b-bfcf-57317217ca0f"}]}
+{"tick":5677,"inputs":[{"type":"order","agentId":"442230e9-0020-437b-bfcf-57317217ca0f","order":{"kind":"forage"},"intent":"keep foraging, no threats seen"}]}
+{"tick":5680,"inputs":[{"type":"rejoin","agentId":"99feda71-d78e-4592-af82-5abf1a182ae4"}]}
+{"tick":5725,"inputs":[{"type":"observe","agentId":"fb6e9106-9d70-48de-8be9-ce7841eb4feb"}]}

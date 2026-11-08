@@ -1,0 +1,103 @@
+/* The front page: Field guide. The page's root is the Archive pages'
+   .d1p (pages/archive.css), so the Leaderboard's and Matches' record cards below the hero are drawn exactly as those pages
+   draw them, restyled nowhere here; every rule in this file is scoped to the page's own .fg parts: the mast, the hero, the
+   column the cards stand in, Bring your agent and the footer. The nav tabs and links are ui/ui.css's own classes, and
+   every action button deck.css's cyan .d1-agent-button. The phone form starts at the pages' 720 px. Kept from the direction: the 4/8 rhythm and one 200 ms
+   fade-and-rise on first paint. */
+
+.fg { --fg-gutter: 32px; --fg-column: 1200px; --fg-gap: 96px; --d2-tap: 36px; }
+.fg :where(h1, h2, h3, p, figure, ol, ul, dl, dd) { margin: 0; padding: 0; }
+.fg :where(ol, ul) { list-style: none; }
+/* One column of 1200 px at most between the gutters; the hero alone runs the full width. */
+.fg-inner {
+  display: grid; padding-bottom: 40px;
+  grid-template-columns: [full-start] minmax(var(--fg-gutter), 1fr) [content-start] minmax(0, var(--fg-column)) [content-end] minmax(var(--fg-gutter), 1fr) [full-end];
+}
+.fg-inner > * { grid-column: content; min-width: 0; }
+
+.fg-mast { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 40px; min-height: 64px; border-bottom: 1px solid var(--aw-line); }
+/* The deck's brand (ui/deck/brand.ts): the emblem, then the wordmark with the credit stacked under it. */
+.fg-brand { display: inline-grid; grid-template-columns: auto auto; grid-template-rows: auto auto; align-content: center; column-gap: 10px; min-height: 44px; white-space: nowrap; }
+.fg-emblem { grid-row: 1 / 3; height: 28px; width: auto; align-self: center; }
+.fg-brand > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; font-size: 18px; }
+.fg-brand > .d2-credit { grid-column: 2; grid-row: 2; align-self: start; margin-top: 2px; font-size: 11px; line-height: 13px; }
+.fg-nav { gap: 8px; }
+
+/* ---------------------------------------------------------------- the hero */
+/* 640 px tall on a desktop, at most 72% of the window and at least 480 px, and taller only when its words need it. */
+.fg-hero { position: relative; isolation: isolate; overflow: hidden; grid-column: full; display: grid; grid-template-columns: subgrid; align-content: end; min-height: clamp(480px, 72vh, 640px); }
+.fg-hero-art { position: absolute; inset: 0; z-index: -2; }
+.fg-hero-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.fg-hero-body { position: relative; grid-column: content; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 160px 0 64px; }
+/* The dark scrim rises from the hero's foot across its width and fades out 160 px above the title, so every line of the
+   words stands on at least 66% of the page's own dark: 4.5:1 or more whatever the frame shows behind them, white
+   included. It is anchored to the words, not to the frame, so it follows them when they wrap or are enlarged. */
+.fg-hero-body::before {
+  content: ""; position: absolute; z-index: -1; inset: 0 -100vw; pointer-events: none;
+  background: linear-gradient(to top, var(--aw-bg) 0, rgb(18 23 25 / 0.9) 200px, rgb(18 23 25 / 0.66) calc(100% - 160px), rgb(18 23 25 / 0) 100%);
+}
+.fg-title { grid-column: 1 / -1; max-width: 11em; font-size: 72px; font-weight: 700; line-height: 76px; letter-spacing: -0.03em; color: var(--aw-ink-bright); text-wrap: balance; }
+.fg-title:focus { outline: none; }
+.fg-lede { grid-column: 1 / -1; max-width: 30em; margin-top: 16px; font-size: 22px; line-height: 32px; color: var(--aw-ink); }
+/* The lede's "real time" stays on one line (copy.ts ledeKeep); its text is unchanged. */
+.fg-keep { white-space: nowrap; }
+.fg-hero-actions { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: 32px; }
+/* Watch any match and the challenge bubble are the site's cyan button (deck.css .d1-agent-button), a 44 px tap at
+   every width. */
+.fg-hero-actions { --d1-tap: 44px; }
+.fg .fg-quiet { min-height: 52px; gap: 6px; font-size: 16px; font-weight: 600; color: var(--aw-ink-bright); text-decoration: none; }
+.fg .fg-quiet:hover { color: var(--aw-ink); }
+.fg-quiet-word { text-decoration: underline; text-underline-offset: 4px; }
+/* The recording line: the gameplay proof, bottom right on a desktop, under the way in elsewhere. */
+.fg-recording { grid-column: 2; margin-top: 32px; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
+.fg-recording-label { font-weight: 700; color: var(--aw-ink-bright); }
+
+/* ---------------------------------------------------------------- the sections under it */
+/* The Leaderboard's and Matches' cards, one above the other, each the column's width. */
+.fg-records { display: grid; gap: 40px; margin-top: var(--fg-gap); }
+.fg-section { min-width: 0; }
+.fg-agent { margin-top: var(--fg-gap); }
+.fg-section-title { margin-bottom: 24px; font-size: 40px; font-weight: 700; line-height: 44px; letter-spacing: -0.02em; color: var(--aw-ink-bright); }
+.fg-agent-field { padding: 20px var(--d1p-inset); }
+.fg-agent-label { margin-bottom: 6px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2); }
+/* Today's address row (agent.ts), restyled from the HUD's one-line form (ui.css .d2 .aw-byoa-*): it wraps, and Copy is the
+   pages' grey pill. */
+.fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 560px; margin: 0; }
+.fg .fg-agent .aw-byoa-url { flex: 1 1 220px; min-width: 0; min-height: var(--d2-tap); display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--aw-bg); box-shadow: inset 0 0 0 1px var(--aw-line); font: 500 13px/1.4 var(--aw-mono); color: var(--aw-ink-bright); white-space: normal; overflow-wrap: anywhere; }
+.fg .fg-agent .aw-byoa-copy { min-height: var(--d2-tap); padding: 0 16px; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: 13px; font-weight: 600; }
+.fg .fg-agent .aw-byoa-copy:hover { background: var(--aw-raise-hover); }
+.fg .fg-agent .aw-byoa-note:empty { display: none; }
+/* The pages' footer: their credit, Rules and the inspiration. */
+.fg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; margin-top: var(--fg-gap); padding-top: 12px; border-top: 1px solid var(--aw-line); font-size: 12px; color: var(--aw-ink-3); }
+
+/* ---------------------------------------------------------------- first paint */
+@keyframes fg-rise { from { opacity: 0; transform: translateY(8px); } }
+.fg-hero-body { animation: fg-rise 200ms var(--aw-ease) both; }
+@media (prefers-reduced-motion: reduce) {
+  .fg-hero-body { animation: none; }
+}
+
+/* ---------------------------------------------------------------- one column: the recording line under the way in */
+@media (max-width: 1009px) {
+  .fg-hero-body { grid-template-columns: minmax(0, 1fr); }
+  .fg-title { font-size: 56px; line-height: 60px; }
+  .fg-recording { grid-column: 1; margin-top: 8px; }
+}
+
+/* ---------------------------------------------------------------- the phone */
+@media (max-width: 719px) {
+  .fg { --fg-gutter: 16px; --fg-gap: 56px; --d2-tap: 44px; }
+  .fg-mast { gap: 0 12px; padding-top: 8px; }
+  .fg-nav { order: 3; flex-basis: 100%; margin: 0 -6px; }
+  .fg .fg-nav .d2-nav-link { min-height: 44px; padding: 0 6px; }
+  .fg-hero { min-height: 600px; }
+  .fg-hero-body { padding: 120px 0 8px; }
+  .fg-hero-body::before { background: linear-gradient(to top, var(--aw-bg) 0, rgb(18 23 25 / 0.9) 200px, rgb(18 23 25 / 0.66) calc(100% - 120px), rgb(18 23 25 / 0) 100%); }
+  .fg-title { font-size: 32px; line-height: 36px; letter-spacing: -0.02em; }
+  .fg-lede { margin-top: 12px; font-size: 17px; line-height: 26px; }
+  .fg-hero-actions { gap: 8px 24px; margin-top: 24px; }
+  .fg .fg-quiet { min-height: 48px; }
+  .fg-recording { margin-top: 4px; }
+  .fg-section-title { margin-bottom: 16px; font-size: 28px; line-height: 32px; }
+  .fg .fg-foot .d2-link { min-height: 44px; min-width: 44px; justify-content: center; }
+}

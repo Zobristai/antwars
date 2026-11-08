@@ -1,0 +1,15 @@
+{
+  "base": "0072af0341d86681daef18e94222dc7c41e27d76",
+  "hashes": {
+    "300": "4a8dec47ae6b5f08",
+    "600": "f77a20d66983e285",
+    "900": "f60d44317e9c9608",
+    "1200": "1dd4e9869dfea281"
+  },
+  "result": {
+    "winner": 1,
+    "reason": "time_up",
+    "decidedBy": "territory",
+    "tick": 1199
+  }
+}

@@ -1,0 +1,47 @@
+# Refuses any push to main, or pull request into main, whose history has a root other than
+# the repository's initial commit or a commit whose author, committer or message matches a
+# private identifier. It is a required check on main.
+# Pull requests are checked by main's copy of .github/scripts/history-isolation.sh: the
+# pull request's commits are fetched only as git objects, and none of its files is checked
+# out, sourced or run. The identifiers come from the ANTWARS_IDENTIFIERS Actions secret, and
+# the expected initial commit from the ANTWARS_EXPECTED_ROOT Actions variable; the script fails
+# when either is unset or empty, so a value that does not reach the job fails the check rather
+# than passing it. pull_request_target runs this workflow from the base default branch with the
+# same trust as push, secrets included, for pull requests from forks too (GitHub docs, "Securely
+# using pull_request_target").
+name: history-isolation
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  history-isolation:
+    name: history-isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check root commits and identities
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_SHA: ${{ github.sha }}
+          FETCH_TOKEN: ${{ github.token }}
+          ANTWARS_IDENTIFIERS: ${{ secrets.ANTWARS_IDENTIFIERS }}
+          ANTWARS_EXPECTED_ROOT: ${{ vars.ANTWARS_EXPECTED_ROOT }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request_target ]; then
+            bash .github/scripts/history-isolation.sh --pull-request "$PR_NUMBER" "$PR_HEAD_SHA"
+          else
+            bash .github/scripts/history-isolation.sh "$PUSH_SHA"
+          fi

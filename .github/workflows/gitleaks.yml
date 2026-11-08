@@ -1,0 +1,181 @@
+# Refuses any pull request into main, or push to main, that carries one of the private
+# identifiers or a secret found by gitleaks' default rules (.gitleaks-defaults.toml), naming
+# the matched rule and file. It repeats the pre-commit hook's check (.githooks/pre-commit)
+# for commits that skipped it. The scan is .github/scripts/identifiers-scan.sh.
+#
+# The identifiers are never in this repository: they come from the ANTWARS_IDENTIFIERS
+# secret (CONTRIBUTING.md), and a missing or empty secret fails the job. Pull requests run
+# under pull_request_target, so this workflow, the gitleaks install, the scan script, the
+# identifier-config generator and the defaults config all come from the base branch. The
+# pull request is fetched as git objects and read only as data: its files are never checked
+# out, executed, sourced, installed or loaded as config, and no pull-request text reaches a
+# run: line except through env. A notice names any of those trusted files the change
+# modifies. No allow comment or .gitleaksignore entry suppresses a finding.
+# Each finding's rule, line, commit SHA and the sha256 of its file's path appear as an error
+# annotation (the first nine, then a count) and in the job summary. No path, commit author,
+# email or message and no identifier value is printed.
+name: gitleaks
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  identifiers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The base branch only: no ref is given, so pull_request_target checks out the base.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks 8.30.1
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "$GITLEAKS_SHA256  $archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Fetch the pull request as git objects
+        if: github.event_name == 'pull_request_target'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The token reaches only this fetch, through the environment; it is not persisted.
+          header=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$header"
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $header" \
+            git fetch --no-tags origin "+refs/pull/$PR_NUMBER/head:refs/remotes/pull/head"
+          if ! git cat-file -e "$HEAD_SHA^{commit}"; then
+            echo "::error title=identifiers::The pull request head $HEAD_SHA was not fetched; it may have moved. Re-run the job." >&2
+            exit 1
+          fi
+      - name: Scan for private identifiers and secrets
+        env:
+          ANTWARS_IDENTIFIERS: ${{ secrets.ANTWARS_IDENTIFIERS }}
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          if [ "$EVENT" = pull_request_target ]; then
+            candidate=$HEAD_SHA start=$BASE_SHA
+          elif [ "$BEFORE" != "$zero" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            candidate=$SHA start=$BEFORE
+          else
+            candidate=$SHA start=
+          fi
+          bash "$GITHUB_WORKSPACE/.github/scripts/identifiers-scan.sh" "$RUNNER_TEMP/identifiers" "$candidate" ${start:+"$start"}
+      - name: Report findings
+        if: failure()
+        shell: python
+        run: |
+          import json, os
+          work = os.path.join(os.environ["RUNNER_TEMP"], "identifiers")
+          reports = os.path.join(work, "reports")
+          has_ignore = os.path.exists(os.path.join(work, "gitleaksignore", ".gitleaksignore"))
+          try:
+              with open(os.path.join(reports, "ran.txt"), encoding="utf-8") as f:
+                  ran = set(f.read().split())
+          except OSError:
+              ran = set()
+          scans = [
+              ("tree", "candidate tree (identifier rules)", True),
+              ("tree-defaults", "candidate tree (default rules)", True),
+              ("ignore", ".gitleaksignore (identifier rules)", has_ignore),
+              ("ignore-defaults", ".gitleaksignore (default rules)", has_ignore),
+              ("commits", "commits (identifier rules)", True),
+              ("commits-defaults", "commits (default rules)", True),
+          ]
+
+          def prop(s):  # workflow-command property value
+              return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A").replace(":", "%3A").replace(",", "%2C")
+
+          def data(s):  # workflow-command message
+              return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+          def plain(s):  # a log line: no '#', backslash or unprintable character survives
+              out = []
+              for c in s:
+                  if c == "\\":
+                      out.append("\\\\")
+                  elif c == "#":
+                      out.append("\\x23")
+                  elif c != " " and not c.isprintable():
+                      out.append("\\x%02x" % ord(c) if ord(c) < 256 else "\\u%04x" % ord(c))
+                  else:
+                      out.append(c)
+              return "".join(out)
+
+          def cell(s):  # a job-summary table cell
+              s = plain(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+              return "".join("\\" + c if c in "\\`*_[]|#~!" else c for c in s)
+
+          findings, status = [], []
+          for order, (key, label, applies) in enumerate(scans):
+              if not applies:
+                  status.append((label, "not applicable (this change has no .gitleaksignore)"))
+                  continue
+              if key not in ran:
+                  status.append((label, "not run (an earlier check failed)"))
+                  continue
+              try:
+                  with open(os.path.join(reports, key + ".json"), encoding="utf-8") as f:
+                      items = json.load(f)
+              except FileNotFoundError:
+                  status.append((label, "report missing although the scan ran"))
+                  continue
+              except (OSError, ValueError):
+                  status.append((label, "report unreadable"))
+                  continue
+              if not isinstance(items, list):
+                  status.append((label, "report unreadable"))
+                  continue
+              status.append((label, "%d finding(s)" % len(items)))
+              # The scan script keeps only these four fields; a path is only ever its sha256.
+              for item in items:
+                  item = item if isinstance(item, dict) else {}
+                  line = item.get("StartLine")
+                  findings.append((order, str(item.get("PathSHA256", "path redacted")), line if isinstance(line, int) else 0,
+                                   str(item.get("RuleID", "")), str(item.get("Commit", "") or ""), label))
+          findings.sort()
+
+          for _, path, line, rule, commit, _ in findings[:9]:
+              text = "%s in the file whose path has sha256 %s" % (rule, path) + (", line %d" % line if line >= 1 else "") + \
+                     (", at commit %s" % commit if commit else "")
+              print("::error title=%s::%s" % (prop("gitleaks " + rule), data(text)))
+          if len(findings) >= 10:
+              print("::error title=gitleaks findings::%d findings in total; the first nine are annotated. "
+                    "The job summary and the Report findings step log list all of them." % len(findings))
+
+          for _, path, line, rule, commit, label in findings:
+              print("gitleaks finding: scan=%s rule=%s path-sha256=%s line=%d%s" % (
+                  plain(label), plain(rule), plain(path), line, " commit=" + plain(commit) if commit else ""))
+
+          md = ["## gitleaks", ""]
+          md += ["- %s: %s" % (cell(label), cell(text)) for label, text in status]
+          md.append("")
+          if findings:
+              md += ["Files are named by the sha256 of their path; CONTRIBUTING.md says how to find one.", "",
+                     "| Scan | Rule | Path sha256 | Line | Commit |", "| --- | --- | --- | --- | --- |"]
+              md += ["| %s | %s | %s | %s | %s |" % (cell(label), cell(rule), cell(path), line if line >= 1 else "",
+                                                     cell(commit)) for _, path, line, rule, commit, label in findings]
+          else:
+              md.append("No findings: the job failed at another step.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(md) + "\n")

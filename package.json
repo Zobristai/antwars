@@ -1,0 +1,44 @@
+{
+  "name": "antwar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --max-semi-space-size=8 --import ./src/ts-resolve.mjs src/main.ts",
+    "prepare": "npm run build:web",
+    "build:web": "vite build --config web/vite.config.ts",
+    "seat-codec": "node --import ./src/ts-resolve.mjs scripts/generate-seat-codec.ts",
+    "capture": "node --import ./src/ts-resolve.mjs web/capture/capture.ts",
+    "bench": "node --import ./src/ts-resolve.mjs web/capture/bench.ts",
+    "live": "node --import ./src/ts-resolve.mjs web/capture/live-check.ts --serve",
+    "record": "node --import ./src/ts-resolve.mjs src/live/record.ts",
+    "record-service": "node --import ./src/ts-resolve.mjs src/records/main.ts",
+    "live-check": "node --import ./src/ts-resolve.mjs web/capture/live-check.ts",
+    "watch": "node --import ./src/ts-resolve.mjs web/capture/watch.ts",
+    "test:essential": "npx firebase emulators:exec --only firestore 'npx vitest run --config vitest.essential.config.ts --maxWorkers=8'",
+    "test:full": "npx firebase emulators:exec --only firestore 'npx vitest run --maxWorkers=2'",
+    "test": "npm run test:essential",
+    "lint": "oxlint"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "devDependencies": {
+    "@babylonjs/core": "9.30.0",
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.4",
+    "oxlint": "1.90.0",
+    "pixi-filters": "6.1.5",
+    "pixi.js": "8.22.0",
+    "playwright-core": "1.61.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "zod": "4.6.7"
+  }
+}

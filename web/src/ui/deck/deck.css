@@ -1,0 +1,494 @@
+/* The 3D board's spectator HUD: the Instrument deck (ported). Everything is scoped to a .d1 root inside the
+   direction's host. Tokens are the page's own (web/index.html :root); the navigation, wordmark, credit, links and the grey
+   pill reuse Current's shared classes (ui/ui.css). Still: every state change is a cut, so nothing here transitions and
+   reduced motion changes nothing. Dark only, the brand default. The deck stands over the board.
+   Breakpoints come from the content: under 1280 px the two team tables and the score no longer fit one band, so the
+   score sits over the teams and the deck scrolls over the board; under 760 px the score stacks and the teams follow one
+   another, too tall to come first, so the board does; the phone form is under 560 px, where every target is 44 px. */
+
+.d1 {
+  --d1-lane: 44px; --d1-tap: 36px; --d1-hair: rgba(233, 239, 240, 0.08); --d1-ground: rgba(233, 239, 240, 0.12);
+  position: absolute; inset: 0; box-sizing: border-box; color-scheme: dark;
+  font: 400 13px/1.35 var(--aw-sans); color: var(--aw-ink); -webkit-font-smoothing: antialiased;
+}
+/* The HUD host passes the pointer through; this view passes it through its board window to the board. */
+.aw-hud > .d1 { pointer-events: none; }
+.d1 *, .d1 *::before, .d1 *::after { box-sizing: border-box; }
+.d1 [hidden] { display: none !important; }
+.d1 :focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.d1 :where(button) { font: inherit; color: inherit; }
+.d1 :where(p, h2, h3, ol, ul) { margin: 0; padding: 0; }
+.d1 :where(ol, ul) { list-style: none; }
+/* The page's waiting panel covers the HUD until the first frame, as it does today. */
+body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: hidden; }
+.d1-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ---------------------------------------------------------------- wide: one deck on top, the board under it */
+/* The gap over the frame leaves its legend, set 8 px into the space above the rule, clear of the deck.
+   The deck is 20 px taller than before the Ants balance row, so the score still shows its Map row unscrolled. */
+.d1-hud {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 12px;
+  grid-template-rows: 48px 4px minmax(0, 232px) 12px minmax(calc(200px + var(--d1-lane)), 1fr) 36px;
+}
+.d1-top { grid-column: 1 / -1; grid-row: 1; }
+/* The window's shadow paints the page around the board; every panel stands above it, the top bar over the deck. */
+.d1-top, .d1-lane, .d1-deck, .d1-deck-end, .d1-foot { position: relative; z-index: 1; }
+.d1-top { z-index: 2; }
+.d1-below { display: contents; }
+.d1-deck { grid-column: 2; grid-row: 3; }
+.d1-frame { grid-column: 2; grid-row: 5; }
+.d1-deck-end { grid-column: 2; grid-row: 6; }
+.d1-foot { grid-column: 2; grid-row: 6; }
+
+/* ---------------------------------------------------------------- the top bar */
+.d1-top { display: flex; align-items: center; gap: 30px; min-width: 0; padding: 0 12px 0 16px; pointer-events: auto; }
+/* The emblem, then the wordmark with the credit stacked under it, the pair centred on the emblem. */
+.d1-brand { display: inline-grid; grid-template-columns: auto auto; grid-template-rows: auto auto; align-content: center; column-gap: 10px; white-space: nowrap; }
+.d1-emblem { grid-row: 1 / 3; height: 28px; width: auto; align-self: center; }
+.d1-brand > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; }
+.d1-brand > .d1-top-credit { grid-column: 2; grid-row: 2; align-self: start; margin-top: 2px; font-size: 11px; line-height: 13px; }
+.d1-top-end { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+/* The primary action of its context: the one cyan pill, the emblem's cyan, its text the page's dark. */
+.d1-agent-button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: var(--d1-tap, 36px); padding: 0 18px; border: 0; border-radius: 999px;
+  background: var(--aw-c1); color: var(--aw-bg); font-size: 13px; font-weight: 700; line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.d1 .d1-agent-button { color: var(--aw-bg); }
+/* The result dialog also stands in the 2D board's .d2 root, whose links inherit their ink (ui.css .d2 a). */
+.d1-dialog .d1-agent-button { color: var(--aw-bg); }
+.d1-agent-button:hover { background: color-mix(in srgb, var(--aw-c1) 60%, #fff); }
+.d1-agent-button:disabled { opacity: 0.45; cursor: default; }
+
+/* ---------------------------------------------------------------- the frame: its rule says the stream's state */
+.d1-frame { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) var(--d1-lane); min-width: 0; min-height: 0; border-radius: 14px; }
+.d1-frame::before { content: ""; position: absolute; z-index: 1; inset: 0; border: 1.5px solid var(--aw-ink-3); border-radius: inherit; pointer-events: none; }
+.d1-frame[data-rule="double"]::before { border-width: 1px; outline: 1px solid var(--aw-ink-3); outline-offset: 2px; }
+.d1-frame[data-rule="dashed"]::before { border-style: dashed; }
+.d1-frame[data-rule="hairline"]::before { border-width: 1px; border-color: rgba(233, 239, 240, 0.22); }
+/* The window: a clear hole whose shadow paints the page around it; the board's own picture shows through. */
+.d1-window { min-height: 0; border-radius: 14px 14px 0 0; box-shadow: 0 0 0 200vmax var(--aw-bg); pointer-events: none; }
+/* The legend is set into the top rule, its first line on the rule; a background breaks the rule behind it. */
+.d1-legend {
+  position: absolute; z-index: 2; top: -8px; left: 18px; display: flex; align-items: baseline; max-width: calc(100% - 36px); padding: 0 8px;
+  background: var(--aw-bg); font-size: 12px; font-weight: 700; line-height: 16px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--aw-ink-2); white-space: nowrap; pointer-events: auto;
+}
+.d1-dot { flex: none; align-self: center; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: #ff5a4e; }
+.d1-dot[data-kind="recording"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
+.d1-mode { flex: none; font-weight: 800; color: var(--aw-ink-bright); }
+.d1-legend-rest { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The lane under the window: the one event at its left, the board controls at its right. Nothing covers the board. */
+.d1-lane {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0;
+  padding: 0 8px 0 12px; border-top: 1px solid var(--aw-line); border-radius: 0 0 14px 14px; background: var(--aw-surface); pointer-events: auto;
+}
+.d1-caption { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--d1-side, var(--aw-ink)); }
+.d1-cap-meta { display: contents; }
+.d1-cap-bar { flex: none; order: 0; width: 4px; height: 28px; border-radius: 2px; background: currentColor; }
+.d1-cap-when { flex: none; order: 1; font-size: 12px; font-weight: 600; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.d1-cap-what { order: 2; min-width: 0; font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-cap-who { flex: none; order: 3; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
+.d1-cap-when:empty { display: none; }
+/* The fall: the queen lost, large, in the fallen colony's colour. */
+.d1-caption[data-kind="fall"] .d1-cap-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: currentColor; }
+.d1-caption[data-kind="fall"] .d1-cap-who { font-size: 14px; }
+.d1-controls { flex: none; display: flex; align-items: center; gap: 4px; }
+/* One treatment for every board control: round, its icon or its letters centred. */
+.d1-btn {
+  display: inline-grid; place-items: center; width: var(--d1-tap); height: var(--d1-tap); padding: 0; border: 0; border-radius: 999px;
+  background: var(--aw-raise); color: var(--aw-ink); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 18px; font-weight: 500; line-height: 1;
+  text-decoration: none; cursor: pointer;
+}
+.d1-btn:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
+.d1-btn svg { display: block; }
+.d1-btn-board { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+/* An explicit replay's own speed and position controls (replay-controls.ts), just before the board controls:
+   pushed against them, 8px apart. */
+.d1-transport { display: flex; align-items: center; margin: 0 -4px 0 auto; }
+.d1 .aw-replay-controls { position: relative; display: flex; width: auto; min-width: 0; align-items: center; gap: 8px; height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 12px; color: var(--aw-ink); }
+.d1 .aw-replay-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--aw-ink-2); }
+.d1 .aw-replay-controls select { min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); color: var(--aw-ink); font: inherit; }
+.d1 .aw-replay-controls input { width: clamp(72px, 18vw, 280px); min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); margin: 0; accent-color: var(--aw-ink-bright); }
+.d1 .aw-replay-time { font-size: 12px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
+.d1 .aw-replay-state { position: absolute; min-height: 0; right: 12px; bottom: calc(100% + 4px); padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
+.d1 .aw-replay-state:empty { display: none; }
+/* A recording's Back to live, at the legend's end, as today's HUD offers it on its status line. */
+.d1-back { flex: none; margin-left: 10px; color: var(--aw-ink-bright); font-weight: 600; letter-spacing: 0; text-transform: none; text-underline-offset: 3px; }
+
+/* ---------------------------------------------------------------- the deck: the shared score in the middle, a team at each side */
+.d1-deck {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(376px, 400px) minmax(0, 1fr); grid-template-areas: "t0 score t1"; column-gap: 14px; min-height: 0;
+  padding: 8px 12px; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); overflow: hidden; pointer-events: auto;
+}
+.d1-score { grid-area: score; display: grid; align-content: start; min-width: 0; min-height: 0; padding: 0 14px; border-inline: 1px solid var(--aw-line); overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
+.d1-clock { justify-self: center; font-size: 15px; font-weight: 700; line-height: 20px; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; text-transform: uppercase; white-space: nowrap; }
+
+/* A team: its name, its economy, its agents and its game history; a pick's card in their place. */
+.d1-team { display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; }
+.d1-team.c0 { grid-area: t0; }
+.d1-team.c1 { grid-area: t1; }
+.d1-team:focus { outline: none; }
+.d1-team-head { flex: none; display: flex; align-items: baseline; gap: 0 10px; min-width: 0; }
+.d1-name { flex: 0 1 auto; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-name.c0 { color: var(--aw-c0); }
+.d1-name.c1 { color: var(--aw-c1); }
+/* One icon per member, centred on the name; its tip shows the member's handle, model and Elo. */
+.d1-team-members { flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; align-self: center; gap: 4px; min-width: 0; }
+.d1-member { display: inline-grid; place-items: center; padding: 2px; margin: -2px; border-radius: 5px; line-height: 0; cursor: help; }
+.d1-member:hover { background: var(--aw-raise); }
+/* The player's name gives way; its Elo never does. */
+.d1-team-player { flex: 0 1 auto; display: inline-flex; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-team-player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.d1-team-player-elo { flex: none; }
+/* The economy: a cell per measure, its label over its figure. */
+.d1-econ { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--d1-hair); }
+.d1-cell { display: grid; grid-template-rows: 14px 20px; row-gap: 1px; min-width: 0; }
+.d1-ml { min-width: 0; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-mv { display: flex; align-items: center; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-mv.c0 { color: var(--aw-c0); }
+.d1-mv.c1 { color: var(--aw-c1); }
+/* The next spawn: the coming unit's icon inside its ring, both in the colony's colour, no seconds; full, the
+   grey full ring; short of food, the empty ring alone. */
+.d1-next { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.d1-next .d1-ring { display: inline-grid; place-items: center; }
+.d1-next .d1-ring > * { grid-area: 1 / 1; }
+.d1-next .d1-ring > svg { width: 20px; height: 20px; }
+.d1-caste { display: inline-grid; place-items: center; color: currentColor; }
+.d1-caste svg { display: block; width: 10px; height: 10px; }
+.d1-ring { flex: none; display: inline-flex; }
+.d1-ring svg { display: block; }
+.d1-ring-track { fill: none; stroke: #3a4448; stroke-width: 3; }
+.d1-ring-fill { fill: none; stroke: currentColor; stroke-width: 3; }
+.d1-next[data-kind="none"] .d1-ring { display: none; }
+.d1-next[data-kind="full"] .d1-ring-fill { stroke: #858a8b; }
+.d1-next[data-kind="food"] .d1-ring-track { stroke: #8b9294; stroke-width: 2; }
+.d1-next[data-kind="food"] .d1-ring-fill { display: none; }
+.d1-next[data-kind="none"] .d1-next-text { color: var(--aw-ink-3); }
+
+/* Balance and Win conditions: a figure and a half-track per colony, mirrored about the row's label. */
+.d1-kicker { font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); }
+/* Each heading on the axis its rows' labels and the clock share. */
+.d1-score > .d1-kicker, .d1-win > .d1-kicker { margin-top: 6px; text-align: center; }
+.d1-win { display: grid; min-width: 0; }
+/* Win conditions give way once the result shows; the result itself is a modal over the screen. */
+.d1-score.is-ended > .d1-win { display: none; }
+.d1-gauge, .d1-queens, .d1-hold { display: grid; grid-template-columns: 50px 84px minmax(0, 1fr) 84px 50px; grid-template-rows: 26px; align-items: center; min-width: 0; }
+.d1-glabel { grid-row: 1; grid-column: 3; justify-self: center; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
+.d1-fig { grid-row: 1; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-fig.c0 { grid-column: 1; justify-self: end; padding-right: 10px; color: var(--aw-c0); }
+.d1-fig.c1 { grid-column: 5; justify-self: start; padding-left: 10px; color: var(--aw-c1); }
+.d1-track { grid-row: 1; position: relative; height: 12px; border-radius: 3px; background: var(--d1-ground); }
+.d1-track.c0 { grid-column: 2; }
+.d1-track.c1 { grid-column: 4; }
+.d1-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 3px; background: var(--aw-c0); }
+.d1-track.c1 .d1-fill { left: auto; right: 0; background: var(--aw-c1); }
+/* Dotted: the 6:1 line, explained in plain words by its row's tooltip (model.ts D1_COPY.leadLine). */
+.d1-lead { position: absolute; top: -4px; bottom: -4px; left: var(--d1-lead, 85.71%); width: 0; margin-left: -1px; border-left: 2px dotted var(--aw-ink-bright); }
+.d1-track.c1 .d1-lead { left: auto; right: var(--d1-lead, 85.71%); margin: 0 -1px 0 0; border-left: 0; border-right: 2px dotted var(--aw-ink-bright); }
+/* Queens: the colony's half-track split into a bar per queen, gaps between, from the colony's end, her HP filling it;
+   under attack ringed; lost kept, marked lost. Each bar is the Kills and Territory bars' height. */
+.d1-lamps { grid-row: 1; display: flex; gap: 4px; min-width: 0; }
+.d1-lamps.c0 { grid-column: 2; }
+.d1-lamps.c1 { grid-column: 4; flex-direction: row-reverse; }
+.d1-lamp { position: relative; flex: 1 1 0; min-width: 0; height: 12px; border-radius: 3px; background: var(--d1-ground); overflow: hidden; font-size: 10px; font-weight: 700; line-height: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.d1-lamp-fill, .d1-lamp-hp { position: absolute; inset: 0; }
+.d1-lamp-fill { background: var(--aw-c0); clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
+.d1-lamp-hp { color: var(--aw-ink-bright); }
+/* The figure reads dark over the fill and light over the empty housing. */
+.d1-lamp-hp.is-on { color: #0e1214; clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
+.d1-lamps.c1 .d1-lamp-fill { background: var(--aw-c1); }
+.d1-lamps.c1 :is(.d1-lamp-fill, .d1-lamp-hp.is-on) { clip-path: inset(0 0 0 calc(100% - var(--d1-f, 100%))); }
+.d1-lamp.is-inferred::after { content: ""; position: absolute; inset: 0; border: 1px dashed rgba(248, 252, 252, 0.55); border-radius: 3px; }
+.d1-lamp.is-attacked { box-shadow: 0 0 0 1.5px var(--aw-surface), 0 0 0 3.5px var(--aw-ink-bright); }
+.d1-lamp.is-lost { background: transparent; box-shadow: inset 0 0 0 1px #5b676d; }
+.d1-lamp.is-lost::before { content: ""; position: absolute; inset: 0; border: 1px dashed #5b676d; border-radius: 3px; }
+.d1-lamp.is-lost { box-shadow: none; }
+.d1-lamp.is-lost .d1-lamp-hp { font-weight: 400; color: var(--aw-ink-3); }
+.d1-lamps.is-crowded .d1-lamp:not(.is-lost) .d1-lamp-hp { display: none; }
+/* A territory hold: on the holder's side the hold so far and its time to win; an em dash otherwise. */
+.d1-hold-dash { grid-row: 1; font-size: 15px; font-weight: 700; color: var(--aw-ink-3); }
+.d1-hold-dash.c0 { grid-column: 1; justify-self: end; padding-right: 10px; }
+.d1-hold-dash.c1 { grid-column: 5; justify-self: start; padding-left: 10px; }
+.d1-hold-win { grid-row: 1; display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.d1-hold-win.c0 { grid-column: 1 / 3; justify-self: end; margin-right: 18px; color: var(--aw-c0); }
+.d1-hold-win.c1 { grid-column: 4 / 6; justify-self: start; margin-left: 18px; color: var(--aw-c1); }
+/* The map, under Territory hold on the rows' label axis: its label, then its name. */
+.d1-map { display: flex; justify-content: center; align-items: baseline; gap: 8px; min-width: 0; min-height: 26px; margin: 0; padding-top: 4px; }
+.d1-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); }
+
+/* ---------------------------------------------------------------- a team's agents and its history */
+/* Agents: one small row each under the
+   colony name, its badge, its Leaderboard-style name, its model and its rating, scrolling in place past four rows.
+   Pointing at a row lights its squad; choosing it opens its card. */
+.d1-agents { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; max-height: 88px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
+.d1-agent-item { --d1-side: var(--aw-c0); min-width: 0; }
+.d1-agent-item.c1 { --d1-side: var(--aw-c1); }
+.d1-agent {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; align-items: center; width: 100%; min-height: 22px; margin: 0; padding: 0 6px 0 9px;
+  border: 0; border-radius: 6px; background: none; box-shadow: inset 3px 0 0 var(--d1-side); font-size: 11.5px; line-height: 16px; text-align: left; cursor: pointer;
+}
+.d1-agent:hover, .d1-agent-item.is-selected .d1-agent { background: var(--aw-raise); }
+.d1-agent:focus-visible { outline-offset: -2px; }
+.d1-badge { display: inline-flex; width: 16px; height: 16px; }
+.d1-badge svg { display: block; }
+/* The name is never cut: as on the Leaderboard it wraps, its badges moving whole onto the next line. */
+.d1-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; padding-block: 2px; }
+.d1-title-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
+.d1-model-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
+.d1-title { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); }
+.d1-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
+/* A Benchmark handle's level and Fast badges, as the Leaderboard's d1p-tags: one unit, never split or shrunk. */
+.d1-tags { flex: none; display: inline-flex; gap: 3px; align-self: center; }
+.d1-tag { padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 3px; font-size: 10px; font-weight: 600; line-height: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
+/* Any other row's thinking level, quiet after its name and model, as the Leaderboard's d1p-think. */
+.d1-quiet { flex: none; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+/* The self-reported asterisk, right after the model it marks; a pointer over it or a tap shows its explanation. */
+.d1-ast-mark { flex: none; padding: 0 2px 0 1px; color: var(--aw-ink-2); font-weight: 700; cursor: help; }
+.d1-who > .d1-ast-mark { margin-left: -6px; }
+/* The rating, always in full: a .d1-tag badge right after the level and Fast badges, in the site's cyan, as the Matches page's Refresh button. */
+.d1-elo { flex: none; align-self: center; border-color: color-mix(in srgb, var(--aw-c1) 45%, transparent); color: var(--aw-c1); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.35; color: var(--aw-ink); pointer-events: auto; }
+.d1-tip-line { display: block; overflow-wrap: anywhere; }
+.d1-said-icon { flex: none; display: inline-flex; width: 14px; height: 14px; }
+.d1-said-icon svg { display: block; }
+.d1-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--aw-ink); }
+.d1-said.is-thought, .d1-said.is-words { font-style: italic; color: var(--aw-ink-2); }
+.d1-said.is-mark:not(.is-words) { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
+.d1-said.is-faded { font-weight: 400; color: var(--aw-ink-2); }
+/* The game history, the whole panel under the economy: its rows newest first, full width, scrolling in place. */
+.d1-timeline { flex: 1 1 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 52px; }
+.d1-timeline > .d1-kicker { flex: none; }
+.d1-tl { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
+.d1-tl-entry { display: grid; grid-template-columns: 38px minmax(0, max-content) auto; align-items: baseline; column-gap: 8px; min-height: 18px; font-size: 12px; line-height: 18px; }
+.d1-tl-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--aw-ink); }
+.d1-tl-none { display: block; color: var(--aw-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A row: its time, the acting member's badge (blank for a colony's own event), its symbol, its words, and its status at the right. */
+.d1-tl-entry.d1-log { grid-template-columns: 38px 14px 13px minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
+.d1-log .d1-when { font-variant-numeric: tabular-nums; }
+.d1-log-who { display: inline-flex; width: 14px; height: 14px; }
+.d1-log-icon { display: inline-flex; width: 13px; height: 13px; color: var(--aw-ink-2); }
+.d1-log-who svg, .d1-log-icon svg { display: block; }
+.d1-log-intent { margin-left: 6px; font-style: italic; color: var(--aw-ink-2); }
+.d1-log-refused { justify-self: end; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1-log.is-refused .d1-log-text { color: var(--aw-ink-2); text-decoration: line-through; text-decoration-color: var(--aw-ink-3); }
+/* An arrival row: no time, "On arrival" before the standing order and its newest live mark, wrapping whole. */
+.d1-log.is-arrival .d1-tl-what { white-space: normal; overflow-wrap: anywhere; }
+.d1-log-lead { margin-right: 6px; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1-log-mark { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: top; }
+.d1-log-mark-word { color: var(--aw-ink-3); }
+
+/* Selected: the card for whatever the board or an agent row picked, in its colony's container in place of its history. */
+.d1-team.is-picked > .d1-timeline { display: none; }
+.d1-selected { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
+.d1-selected:focus-visible { outline-offset: -2px; }
+.d1-sel {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "head head" "order recent" "lines recent"; align-content: start;
+  gap: 6px 14px; padding: 6px 6px 8px 12px; border-radius: 10px; background: var(--aw-raise); box-shadow: inset 3px 0 0 var(--d1-side, var(--aw-ink-3));
+}
+.d1-sel:has(> .d1-sel-recent[hidden]), .d1-sel-ant { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "order" "lines"; }
+.d1-sel-recent { grid-area: recent; display: grid; align-content: start; gap: 2px; min-width: 0; }
+.d1-sel-head { grid-area: head; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 10px; }
+.d1-sel-head > .d1-badge { width: 18px; height: 18px; margin-top: 1px; }
+.d1-sel-ant .d1-sel-head { grid-template-columns: minmax(0, 1fr) auto; }
+.d1-sel-names { display: grid; gap: 2px; min-width: 0; }
+.d1-sel-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
+.d1-sel-title .d1-model { font-weight: 400; }
+.d1-sel-title .d1-ast-mark { margin-left: -8px; font-size: 11px; }
+.d1-sel-sub { font-size: 12px; font-weight: 600; color: var(--aw-ink-2); }
+.d1-sel-order { grid-area: order; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.d1-sel-line { font-size: 12.5px; color: var(--aw-ink); overflow-wrap: anywhere; }
+.d1-sel-lines { grid-area: lines; display: grid; align-content: start; gap: 4px; }
+.d1-history { display: grid; gap: 2px; }
+.d1-history-line { display: grid; grid-template-columns: 38px 14px minmax(0, 1fr) auto; align-items: center; column-gap: 6px; min-height: 28px; font-size: 12px; }
+.d1-history-line .d1-said { white-space: normal; overflow-wrap: anywhere; }
+.d1-history-line .d1-said-icon[hidden] + .d1-said { grid-column: 2 / 4; }
+.d1-when { font-size: 11px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.d1-gone { font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+/* The grey pill: a secondary action; pressed, it turns white like the page's chosen pills. */
+.d1-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--aw-raise-hover); font-size: 12px; font-weight: 600; color: var(--aw-ink); white-space: nowrap; cursor: pointer; }
+.d1-chip:hover { background: #435056; color: var(--aw-ink-bright); }
+.d1-chip[aria-pressed="true"] { background: var(--aw-ink-bright); color: var(--aw-bg); }
+.d1-close { flex: none; display: inline-grid; place-items: center; width: var(--d1-tap); height: var(--d1-tap); padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--aw-ink-2); cursor: pointer; }
+.d1-close:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
+.d1-close svg { display: block; }
+
+/* Result: a modal over the whole screen, the winner or a draw, how it ended, rating changes, the decisive
+   moments, the next start; the colony's colour down its side. Centred at every width, scrolling inside when taller. */
+.d1-dialog.d1-result-dialog { width: min(440px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); margin: auto; border-radius: 14px; overflow: auto; }
+/* The 2D board shows the same modal outside the deck: it carries the deck's text resets itself. */
+.d1-result-dialog :where(p, ol, ul) { margin: 0; padding: 0; }
+.d1-result-dialog :where(ol, ul) { list-style: none; }
+.d1-result { display: grid; align-content: start; gap: 2px; padding: 12px 12px 16px 20px; box-shadow: inset 4px 0 0 var(--d1-side, var(--aw-ink-3)); }
+.d1-result-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.d1-result-head { padding-top: 6px; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
+.d1-result-how { font-weight: 600; color: var(--aw-ink); }
+.d1-ratings { display: grid; gap: 1px; margin-top: 4px; font-size: 12px; color: var(--aw-ink-2); font-variant-numeric: tabular-nums; }
+/* A rating line: the name, its badges as one unit, then the change; it wraps between them, never inside the badges. */
+.d1-rating { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+.d1-rating-name { color: var(--aw-ink); font-weight: 600; }
+.d1-moments { display: grid; gap: 2px; margin-top: 4px; font-size: 12px; }
+.d1-moment { display: flex; flex-wrap: wrap; gap: 0 8px; }
+.d1-moment-what { font-weight: 600; }
+.d1-moment-who { color: var(--aw-ink-2); }
+.d1-result-next { margin-top: 4px; font-size: 12px; color: var(--aw-ink-2); }
+/* Share on X: the cyan button (.d1-agent-button) after the next start, at the body's start edge. */
+.d1-share { justify-self: start; margin-top: 8px; }
+
+/* ---------------------------------------------------------------- the footer: Rules, the inspiration; with no agents, the offer */
+.d1-foot { position: relative; display: flex; align-items: center; gap: 0 16px; min-width: 0; padding-left: 12px; font-size: 12px; pointer-events: auto; }
+.d1-foot-credit { display: none; }
+.d1-deck-end { pointer-events: auto; }
+.d1-offer { margin-left: auto; }
+
+/* ---------------------------------------------------------------- Bring your agent: a native modal dialog */
+.d1-dialog {
+  width: min(520px, calc(100vw - 32px)); max-width: none; padding: 0; border: 0; border-radius: 14px; background: var(--aw-surface); color: var(--aw-ink);
+  box-shadow: inset 0 0 0 1px var(--aw-line), 0 12px 40px rgba(0, 0, 0, 0.5); pointer-events: auto; font: 400 13px/1.35 var(--aw-sans);
+}
+.d1-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.d1-dialog-body { display: grid; gap: 12px; padding: 16px 16px 20px 20px; }
+.d1-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.d1-dialog-title { font-size: 16px; font-weight: 700; color: var(--aw-ink-bright); }
+.d1-dialog-label { margin-top: 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); }
+.d1-dialog .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.d1-dialog .aw-byoa-url { flex: 1 1 240px; min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--aw-raise); font: 500 13px/1.4 var(--aw-mono); color: var(--aw-ink-bright); user-select: all; overflow-wrap: anywhere; }
+/* Copy in main's one cyan button style (.d1-agent-button). */
+.d1-dialog .aw-byoa-copy { min-height: 32px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--aw-c1); color: var(--aw-bg); font-size: 13px; font-weight: 700; cursor: pointer; }
+.d1-dialog .aw-byoa-copy:hover { background: color-mix(in srgb, var(--aw-c1) 60%, #fff); }
+/* Copy prompt: its button carries .aw-byoa-copy, so it is the same cyan pill, hover and phone size. */
+.d1-dialog .aw-byoa-prompt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.d1-dialog .aw-byoa-note { font-size: 12px; color: var(--aw-ink-2); }
+.d1-dialog .aw-byoa-note:empty { display: none; }
+.d1-dialog :focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.d1-dialog .d1-close { width: 36px; height: 36px; background: var(--aw-raise); }
+
+/* ---------------------------------------------------------------- one column: the deck scrolling over the fixed board */
+@media (max-width: 1279px) {
+  .d1-hud { grid-template-rows: 48px 4px minmax(0, 1fr) 12px auto auto; }
+  .d1-frame { grid-template-rows: var(--d1-window-h) var(--d1-lane); --d1-window-h: min(calc((100vw - 24px) / 1.37), calc(100vh * 0.46)); }
+  .d1-below { position: relative; z-index: 1; grid-column: 2; grid-row: 3; display: block; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); pointer-events: auto; }
+  /* The score over the two teams, which sit side by side while their tables fit. */
+  .d1-deck {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "score score" "t0 t1"; gap: 0 16px; padding: 12px 12px 0;
+    overflow: visible; border-radius: 0; background: none; box-shadow: none;
+  }
+  .d1-score { justify-self: center; width: min(100%, 560px); padding: 0 0 12px; border-inline: 0; overflow: visible; }
+  .d1-team { padding: 10px 0 12px; border-top: 1px solid var(--aw-line); overflow: visible; }
+  .d1-selected { flex: none; overflow: visible; }
+  .d1-agents { max-height: none; overflow: visible; }
+  /* The history alone keeps its own scroll here, so a replay's whole match never runs the deck on. */
+  .d1-timeline { flex: none; min-height: 0; }
+  .d1-tl { flex: none; max-height: 252px; }
+  .d1-deck-end { padding: 12px 12px 0; }
+  .d1-foot { min-height: 44px; padding: 4px 12px 8px; }
+  .d1-foot .d2-link { min-height: 44px; }
+}
+
+/* Stacked: the score full width with each row's figures over its tracks, then one team after the other; too tall to
+   stand over the board, so the board comes first and the deck, its end and the footer scroll beneath it. */
+@media (max-width: 759px) {
+  .d1-hud { grid-template-rows: 48px 4px auto 8px minmax(0, 1fr); }
+  .d1-frame { grid-row: 3; }
+  .d1-below { grid-row: 5; border-radius: 14px 14px 0 0; }
+  .d1-deck { grid-template-columns: minmax(0, 1fr); grid-template-areas: "score" "t0" "t1"; }
+  .d1-score { width: 100%; }
+  .d1-team-head { flex-wrap: wrap; }
+  .d1-name { font-size: 14px; }
+  .d1-sel, .d1-sel:has(> .d1-sel-recent[hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "order" "lines" "recent"; }
+  .d1-gauge { grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr); grid-template-rows: 22px 12px; row-gap: 6px; padding-bottom: 8px; }
+  .d1-gauge > .d1-glabel { grid-column: 1 / -1; grid-row: 1; }
+  .d1-gauge > .d1-fig.c0 { grid-column: 1; grid-row: 1; justify-self: start; padding: 0; }
+  .d1-gauge > .d1-fig.c1 { grid-column: 3; grid-row: 1; justify-self: end; padding: 0; }
+  .d1-gauge > .d1-track.c0 { grid-column: 1; grid-row: 2; }
+  .d1-gauge > .d1-track.c1 { grid-column: 3; grid-row: 2; }
+  .d1-queens, .d1-hold { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr) auto; grid-template-rows: 36px; column-gap: 10px; }
+  .d1-queens > .d1-fig.c0 { grid-column: 1; padding: 0; }
+  .d1-queens > .d1-lamps.c0 { grid-column: 2; }
+  .d1-queens > .d1-lamps.c1 { grid-column: 4; }
+  .d1-queens > .d1-fig.c1 { grid-column: 5; padding: 0; }
+  /* A hold's side keeps its own width; the label between gives way, onto two lines on the narrowest screens. */
+  .d1-hold { grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); }
+  .d1-hold > .d1-glabel { grid-column: 2; max-width: 92px; white-space: normal; text-align: center; line-height: 13px; }
+  .d1-hold-dash.c0, .d1-hold-win.c0 { grid-column: 1; justify-self: start; padding: 0; margin: 0; }
+  .d1-hold-dash.c1, .d1-hold-win.c1 { grid-column: 3; justify-self: end; padding: 0; margin: 0; }
+  .d1-hold-win.c1 { flex-direction: row-reverse; }
+}
+
+/* The phone: the frame edge to edge, every target 44 px, two-line rows, the dialog a bottom sheet. */
+@media (max-width: 559px) {
+  .d1 { --d1-lane: 52px; --d1-tap: 44px; }
+  .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 4px auto minmax(0, 1fr); }
+  .d1-top { padding: 0 2px 0 12px; gap: 8px; }
+  .d1-top-credit { display: none; }
+  .d1-brand > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
+  .d1-top .d2-nav { margin-left: auto; }
+  .d1-top .d2-nav-link { min-height: 44px; padding: 0 5px; }
+  .d1-top .d2-nav-link[aria-current="page"]::after { left: 5px; right: 5px; bottom: 9px; }
+  .d1-top-end { margin-left: 4px; }
+  .d1-frame { grid-column: 1; grid-row: 3; border-radius: 0; --d1-window-h: min(73vw, calc(100vh * 0.42)); }
+  /* The legend wraps rather than truncating; its first line stays on the rule. */
+  .d1-legend { display: block; left: 6px; max-width: calc(100% - 12px); white-space: normal; }
+  .d1-dot { display: inline-block; vertical-align: 0; }
+  .d1-legend-rest { overflow: visible; }
+  .d1-window { border-radius: 0; }
+  .d1-lane { padding: 0 4px 0 10px; border-radius: 0; gap: 8px; }
+  /* A replay's controls take their own row over the event and the board controls (as today's HUD does, ui.css), so
+     every control stays on the screen; the lane grows by that row and the seek bar takes the row's width. */
+  .d1-frame:has(> .d1-lane > .d1-transport:not([hidden])) { --d1-lane: calc(var(--d1-tap) * 2 + 16px); }
+  .d1-lane:has(> .d1-transport:not([hidden])) { flex-wrap: wrap; align-content: center; row-gap: 4px; }
+  .d1-transport { order: -1; flex: 1 1 100%; min-width: 0; margin: 0; }
+  .d1 .aw-replay-controls { flex: 1 1 auto; }
+  .d1 .aw-replay-controls input { flex: 1 1 0; width: auto; }
+  .d1-caption { display: grid; grid-template-columns: 4px auto minmax(0, 1fr); grid-template-areas: "bar what what" "bar when who"; column-gap: 8px; row-gap: 1px; align-items: baseline; }
+  .d1-cap-bar { grid-area: bar; height: 36px; align-self: center; }
+  .d1-cap-what { grid-area: what; font-size: 14px; line-height: 18px; }
+  .d1-cap-when { grid-area: when; font-size: 11px; }
+  .d1-cap-who { grid-area: who; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+  .d1-cap-when:not(:empty) + .d1-cap-who { margin-left: -4px; }
+  .d1-cap-when:not(:empty) + .d1-cap-who::before { content: "· "; }
+  .d1-caption[data-kind="fall"] .d1-cap-what { font-size: 20px; line-height: 24px; }
+  .d1-caption[data-kind="fall"] .d1-cap-who { font-size: 12px; }
+  .d1-below { grid-column: 1; grid-row: 4; border-radius: 0; box-shadow: none; }
+  .d1-deck { padding: 8px 8px 0; }
+  /* The economy in two rows of cells, so each figure keeps its width. */
+  .d1-econ { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; }
+  /* Each agent row a 44 px target. */
+  .d1-agent { min-height: 44px; padding: 4px 4px 4px 10px; column-gap: 8px; border-radius: 0; border-bottom: 1px solid var(--d1-hair); font-size: 12px; }
+  .d1-title { font-size: 13px; }
+  .d1-model { font-size: 11.5px; }
+  .d1-tl-entry { min-height: 28px; line-height: 28px; }
+  .d1-tl-entry.is-arrival { line-height: 18px; padding-block: 5px; }
+  .d1-said { font-size: 12px; }
+  .d1-history-line { min-height: 44px; }
+  .d1-chip { min-height: 44px; padding: 0 16px; }
+  .d1-deck-end { padding: 20px 8px 16px; border-bottom: 1px solid var(--d1-hair); }
+  .d1-agent-button { min-height: 44px; font-size: 14px; }
+  .d1-foot { padding: 4px 8px 8px; gap: 0 12px; flex-wrap: wrap; }
+  .d1-foot .d2-link { min-height: 44px; }
+  .d1-foot-credit { display: inline; margin-left: auto; font-size: 12px; }
+  .d1-dialog { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0; }
+  .d1-dialog .aw-byoa-copy { min-height: 44px; padding: 0 20px; }
+  .d1-dialog .d1-close { width: 44px; height: 44px; }
+}
+
+/* The narrowest phones: the wordmark and the three pages fit beside the emblem without running off the screen. */
+@media (max-width: 359px) {
+  .d1-top { padding-left: 8px; gap: 4px; }
+  .d1-brand { column-gap: 6px; }
+  .d1-top .d2-nav-link { padding: 0 3px; }
+  .d1-top .d2-nav-link[aria-current="page"]::after { left: 3px; right: 3px; }
+  .d1-top-end:empty { display: none; }
+}
+
+@media (forced-colors: active) {
+  .d1-track, .d1-lamp { border: 1px solid CanvasText; }
+  .d1-fill, .d1-lamp-fill, .d1-dot { forced-color-adjust: none; }
+}
+
+/* The board's point-of-view choice: Full view or one colony's fog-of-war view, first in the board controls. */
+.d1 .aw-team-view { height: var(--d1-tap); max-width: 46vw; padding: 0 10px; border: 0; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: inset 0 0 0 1px var(--aw-line); }
+.d1 .aw-team-view:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
+/* After a click or tap it shows no focus ring, like the round controls beside it; by keyboard it keeps the shared ring. */
+.d1 .aw-team-view[data-pointer]:focus-visible { outline: none; }

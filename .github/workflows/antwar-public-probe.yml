@@ -1,0 +1,56 @@
+# Pushes perform syntax checks only. Live probes run on a
+# GitHub-hosted runner, with no Google credential or repository secret.
+# The entry-point probe also runs every 6 hours. A degraded probe
+# exits non-zero and fails the run; GitHub's own failed-run notification is
+# the alert. Every live check targets https://antwars.ai only; the comparison of
+# antwars.ai with the service's own host runs in the deploy's post-deploy checks.
+name: antwar public probe
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - .github/workflows/antwar-public-probe.yml
+      - deploy/cloud-run/probe.mjs
+      - deploy/cloud-run/domain.sh
+      - deploy/cloud-run/deploy.sh
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # The public address; discovery/MCP routes available before and after main-match retirement.
+  ANTWAR_URL: https://antwars.ai
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bash -n deploy/cloud-run/domain.sh && node --check deploy/cloud-run/probe.mjs
+  probe:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify the runner holds no Google credential before any live request
+        env:
+          PROBE_HEAD: ${{ github.sha }}
+          RUNNER_KIND: ${{ runner.environment }}
+        run: |
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) runner.environment=$RUNNER_KIND sha=$PROBE_HEAD"
+          test "$RUNNER_KIND" = github-hosted
+          test -z "$(env | grep -E '^(GOOGLE_|CLOUDSDK_|GCLOUD_)' || true)"
+          test ! -e "$HOME/.config/gcloud/application_default_credentials.json"
+      - run: npm ci --no-audit --no-fund
+      - name: Read-only MCP initialize and list tools at antwars.ai
+        run: node deploy/cloud-run/probe.mjs entrypoint "$ANTWAR_URL"
+      - name: Entry-point MCP GET stream for 12 minutes
+        run: node deploy/cloud-run/probe.mjs stream "$ANTWAR_URL" 720 60

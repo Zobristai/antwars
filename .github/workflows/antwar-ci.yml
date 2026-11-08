@@ -1,0 +1,103 @@
+# Every push to main, every pull request and every manual dispatch runs the
+# typecheck, lint, the essential/full test-set diff and the essential suite
+# (without coverage instrumentation) against the Firestore emulator. The full
+# suite runs daily and on manual dispatch.
+# ANTWAR_REQUIRE_EMULATOR=1 makes a run without the emulator fail instead of
+# skipping the emulator-gated suites green (scripts/ci/emulator-guard.ts).
+name: antwar ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # Each job installs a pinned firebase-tools globally, so `npx firebase` in
+  # the test scripts resolves that CLI (the deploy host uses its own installed CLI).
+  npm_config_yes: 'true'
+jobs:
+  checks:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --no-audit --no-fund
+      - name: Firebase CLI (pinned)
+        run: npm install -g firebase-tools@15.35.0 --no-audit --no-fund
+      - name: Playwright WebKit browser
+        run: npx playwright-core install --with-deps webkit
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Essential and full test sets
+        run: node scripts/ci/test-set-diff.ts
+      - name: Essential suite
+        env:
+          ANTWAR_REQUIRE_EMULATOR: '1'
+          # Overrides the script's --maxWorkers=8 (sized for the deploy host) on the runner.
+          VITEST_MAX_WORKERS: '2'
+        run: npm test
+  full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --no-audit --no-fund
+      - name: Firebase CLI (pinned)
+        run: npm install -g firebase-tools@15.35.0 --no-audit --no-fund
+      - name: Playwright WebKit browser
+        run: npx playwright-core install --with-deps webkit
+      - name: Full suite
+        env:
+          ANTWAR_REQUIRE_EMULATOR: '1'
+        # The Wide Plain handover runs in its own step below: on a 2-CPU runner beside the rest of the suite its
+        # agent-visible pause exceeded its 40 s limit.
+        # The deploy tooling tests also run in their own step below: their concurrent `all` block spawns many
+        # fake-deploy processes at once and starved the other worker's tests past their 5 s limits.
+        run: npx firebase emulators:exec --only firestore 'npx vitest run --maxWorkers=2 --exclude test/slots/handover-wide-plain.test.ts --exclude deploy/cloud-run/deploy.test.ts'
+      - name: Wide Plain handover (own step)
+        if: always()
+        run: npx vitest run test/slots/handover-wide-plain.test.ts
+      - name: Deploy tooling tests (own step)
+        if: always()
+        # Needs no Firestore emulator: the file never reads FIRESTORE_EMULATOR_HOST.
+        run: npx vitest run deploy/cloud-run/deploy.test.ts
+  history-isolation-tests:
+    # The history-isolation guard's offline cases (synthetic identifiers, no network beyond the
+    # checkout), on pull requests and pushes to main only. Not a required check. It reads no
+    # Actions variable or secret: the cases take the repository's single root commit from the
+    # clone, so they run the same on pull requests from forks.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0  # the cases need the repository's initial commit
+          persist-credentials: false
+      - name: History-isolation guard tests
+        run: bash .github/scripts/test/history-isolation-test.sh

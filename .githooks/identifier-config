@@ -1,0 +1,46 @@
+#!/bin/sh
+# Builds the gitleaks config for the private identifier scan from the identifier list.
+# The identifiers are never in this repository: .githooks/pre-commit reads the list from the
+# untracked file .git/antwars-identifiers, and .github/scripts/identifiers-scan.sh from the
+# ANTWARS_IDENTIFIERS Actions secret (CONTRIBUTING.md).
+#
+# Input (stdin): UTF-8, LF line endings, one private identifier per line as a literal string.
+# Every line is read, including a last line without LF. Blank lines (empty, or spaces and
+# tabs only) are skipped. Output (stdout): one rule per identifier, private-identifier-<n>
+# for the n-th identifier, matching it lower-cased and case-insensitively as a fixed
+# substring. Every regex metacharacter is escaped, so a value only ever matches itself.
+# A list with no identifiers, a CR or another control character fails, and nothing is
+# written; an error names the line number only, never a value.
+LC_ALL=C exec awk '
+BEGIN {
+  for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
+  meta = "\\.+*?()|[]{}^$"
+  line = 0; n = 0; bad = 0
+  out = "title = \"antwar private identifiers (built at run time, never committed)\"\n"
+}
+{
+  line++
+  if ($0 ~ /^[ \t]*$/) next
+  value = tolower($0)
+  re = ""
+  for (i = 1; i <= length(value); i++) {
+    c = substr(value, i, 1)
+    o = ord[c]
+    if (o == 13) { printf "identifier-config: line %d contains a CR; the list uses LF line endings only.\n", line > "/dev/stderr"; bad = 1; next }
+    if ((o < 32 && o != 9) || o == 127) { printf "identifier-config: line %d contains a control character.\n", line > "/dev/stderr"; bad = 1; next }
+    if (c == "'\''") re = re "\\x27"
+    else if (index(meta, c) > 0) re = re "\\" c
+    else re = re c
+  }
+  n++
+  out = out "\n[[rules]]\nid = \"private-identifier-" n "\"\n"
+  out = out "description = \"Private identifier " n " of the identifier list\"\n"
+  out = out "regex = '\'''\'''\''(?i)" re "'\'''\'''\''\n"
+}
+END {
+  if (bad) exit 1
+  if (n == 0) { print "identifier-config: the identifier list has no identifiers." > "/dev/stderr"; exit 1 }
+  out = out "\n[[allowlists]]\ndescription = \"Git metadata: commits are scanned by gitleaks git, not as files\"\npaths = ['\'''\'''\''(^|/)\\.git/'\'''\'''\'']\n"
+  printf "%s", out
+}
+'

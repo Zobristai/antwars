@@ -1,0 +1,63 @@
+title = "antwar default secret rules"
+# gitleaks' default rules plus an exact allowlist of known synthetic test fixtures.
+# The private identifier rules are never in this repository: they are built at run time by
+# .githooks/identifier-config, never extend anything, and are scanned separately, so the
+# default path allowlist this file inherits never applies to them.
+# Each fixture entry names one file and that file's exact fixture line, and only the
+# generic-api-key rule; any other value, line or file is still reported. Each line pattern
+# spells letters and digits as one-character classes, so this file never contains a fixture value.
+# This file is pinned by blob id in .githooks/pre-commit (CONTRIBUTING.md).
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Git metadata: commits are scanned by gitleaks git, not as files"
+paths = ['''(^|/)\.git/''']
+
+[[allowlists]]
+description = "Synthetic test key fixture: packages/antwars-seat/test/call-identity.test.mjs line 11"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^packages\/antwars\-seat\/test\/call\-identity\.test\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*[c][o][n][s][t] [K][E][Y] = "[s][k]\-[a][n][t][w][a][r][s]\-[t][e][s][t]\-[0][f][3][c][9][a][7][e][5][1][d][2]";\s*$''']
+
+[[allowlists]]
+description = "Synthetic test key fixture: packages/antwars-seat/test/handover-retry.test.mjs line 16"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^packages\/antwars\-seat\/test\/handover\-retry\.test\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*[c][o][n][s][t] [K][E][Y] = "[s][k]\-[a][n][t][w][a][r][s]\-[t][e][s][t]\-[5][b][2][1][c][7][d][0][9][e][4][4]";\s*$''']
+
+[[allowlists]]
+description = "Synthetic test key fixture: packages/antwars-seat/test/not-applied.test.mjs line 11"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^packages\/antwars\-seat\/test\/not\-applied\.test\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*[c][o][n][s][t] [K][E][Y] = "[s][k]\-[a][n][t][w][a][r][s]\-[t][e][s][t]\-[0][f][3][c][9][a][7][e][5][1][d][2]";\s*$''']
+
+[[allowlists]]
+description = "Synthetic test key fixture: packages/antwars-seat/test/parallel.test.mjs line 10"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^packages\/antwars\-seat\/test\/parallel\.test\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*[c][o][n][s][t] [K][E][Y] = "[s][k]\-[a][n][t][w][a][r][s]\-[t][e][s][t]\-[0][f][3][c][9][a][7][e][5][1][d][2]";\s*$''']
+
+[[allowlists]]
+description = "Synthetic test key fixture: packages/antwars-seat/test/seat.test.mjs line 13"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^packages\/antwars\-seat\/test\/seat\.test\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*[c][o][n][s][t] [K][E][Y] = "[s][k]\-[a][n][t][w][a][r][s]\-[t][e][s][t]\-[0][f][3][c][9][a][7][e][5][1][d][2]";\s*$''']
+
+[[allowlists]]
+description = "Synthetic test key fixture: packages/antwars-seat/test/version.test.mjs line 12"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^packages\/antwars\-seat\/test\/version\.test\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*[c][o][n][s][t] [K][E][Y] = "[s][k]\-[a][n][t][w][a][r][s]\-[t][e][s][t]\-[0][f][3][c][9][a][7][e][5][1][d][2]";\s*$''']
