@@ -17,7 +17,7 @@ import { OFFER_TEXT } from "../../replay.ts";
 import { D1_ICON } from "./icons.ts";
 import { mountResultModal } from "./result-modal.ts";
 import {
-  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyName, history as gameHistory, plateBadges, roster, selected,
+  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyName, history as gameHistory, roster, selected,
   type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Row, type Selected,
 } from "./model.ts";
 
@@ -121,10 +121,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const members = h(doc, "span", "d1-team-members"), player = h(doc, "span", "d1-team-player");
     const playerName = h(doc, "span", "d1-team-player-name"), playerElo = h(doc, "span", "d1-team-player-elo");
     player.append(playerName, playerElo);
-    // Once the result shows, WINNER on the winning colony's name or DRAW on both, kept after the result card is closed.
-    const badge = h(doc, "span", `d1-plate-badge c${colony}`);
-    badge.hidden = true;
-    head.append(name, badge, members, player);
+    head.append(name, members, player);
     // The agents: one small row each under the colony name, its badge, name, model and rating; none for one
     // player, whose heading names it once.
     const rows = h(doc, "ol", "d1-agents");
@@ -139,7 +136,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     section.append(head, rows, hooks.economy[colony], line);
     // Each row's node by its key, written again only when what it shows changes.
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
-    return { section, badge, members, membersKey: "", player, playerName, playerElo, rows, line, entries, none, lineNodes };
+    return { section, members, membersKey: "", player, playerName, playerElo, rows, line, entries, none, lineNodes };
   });
 
   // ---------------------------------------------------------------- the rows
@@ -490,13 +487,6 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       const frame: Frame | null = view.frame;
       const b = frame?.board ?? null;
       selectedAgent = view.selectedAgent;
-      const badges = plateBadges(frame);
-      for (const colony of COLONIES) {
-        const badge = teamNodes[colony]!.badge, word = badges[colony];
-        setText(badge, word ?? "");
-        setHidden(badge, word === null);
-        flag(badge, "is-draw", word !== null && badges[0] === badges[1]);
-      }
       const none = !frame || !b || b.agents.length === 0;
       // With no agents, or no match, the footer holds the recording's offer, once; while connecting, nothing yet.
       setHidden(offer, !none || connecting);

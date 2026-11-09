@@ -134,12 +134,6 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-name { flex: 0 1 auto; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1-name.c0 { color: var(--aw-c0); }
 .d1-name.c1 { color: var(--aw-c1); }
-/* The result on the plate (pane.ts): WINNER filled in the winning colony's colour, DRAW outlined on both; text, never colour
-   alone, and 16 px like every result label. */
-.d1-plate-badge { flex: none; align-self: center; padding: 0 6px; border-radius: 4px; font-size: 16px; font-weight: 800; line-height: 22px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; color: var(--aw-bg); }
-.d1-plate-badge.c0 { background: var(--aw-c0); }
-.d1-plate-badge.c1 { background: var(--aw-c1); }
-.d1-plate-badge.is-draw { background: none; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); color: var(--aw-ink-bright); }
 /* One icon per member, centred on the name; its tip shows the member's handle, model and Elo. */
 .d1-team-members { flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; align-self: center; gap: 4px; min-width: 0; }
 .d1-member { display: inline-grid; place-items: center; padding: 2px; margin: -2px; border-radius: 5px; line-height: 0; cursor: help; }
@@ -326,27 +320,21 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* The 2D board shows the same modal outside the deck: it carries the deck's text resets itself. */
 .d1-result-dialog :where(p, ol, ul) { margin: 0; padding: 0; }
 .d1-result-dialog :where(ol, ul) { list-style: none; }
-.d1-result { display: grid; align-content: start; gap: 4px; padding: 12px 12px 16px 20px; box-shadow: inset 4px 0 0 var(--d1-side, var(--aw-ink-3)); font-size: 16px; line-height: 22px; }
+.d1-result { display: grid; align-content: start; gap: 2px; padding: 12px 12px 16px 20px; box-shadow: inset 4px 0 0 var(--d1-side, var(--aw-ink-3)); }
 .d1-result-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-/* The winning model, in its colony's colour (result-modal.ts); every line of the card is 16 px or more. */
-.d1-result-head { padding-top: 6px; font-size: 22px; line-height: 28px; font-weight: 800; letter-spacing: -0.01em; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
-.d1-result-detail { display: flex; align-items: baseline; gap: 8px; color: var(--aw-ink); overflow-wrap: anywhere; }
-.d1-result-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; transform: translateY(-1px); }
+.d1-result-head { padding-top: 6px; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
 .d1-result-how { font-weight: 600; color: var(--aw-ink); }
-.d1-ratings { display: grid; gap: 2px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--aw-line); color: var(--aw-ink-2); font-variant-numeric: tabular-nums; }
+.d1-ratings { display: grid; gap: 1px; margin-top: 4px; font-size: 12px; color: var(--aw-ink-2); font-variant-numeric: tabular-nums; }
 /* A rating line: the name, its badges as one unit, then the change; it wraps between them, never inside the badges. */
 .d1-rating { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
 .d1-rating-name { color: var(--aw-ink); font-weight: 600; }
-.d1-result .d1-tag { font-size: 16px; line-height: 20px; letter-spacing: 0.02em; text-transform: none; }
-.d1-moments { display: grid; gap: 2px; margin-top: 8px; }
-.d1-moments .d1-when { font-size: 16px; }
+.d1-moments { display: grid; gap: 2px; margin-top: 4px; font-size: 12px; }
 .d1-moment { display: flex; flex-wrap: wrap; gap: 0 8px; }
 .d1-moment-what { font-weight: 600; }
 .d1-moment-who { color: var(--aw-ink-2); }
-.d1-result-next { margin-top: 8px; color: var(--aw-ink-2); }
+.d1-result-next { margin-top: 4px; font-size: 12px; color: var(--aw-ink-2); }
 /* Share on X: the cyan button (.d1-agent-button) after the next start, at the body's start edge. */
 .d1-share { justify-self: start; margin-top: 8px; }
-.d1-result .d1-share { font-size: 16px; }
 
 /* ---------------------------------------------------------------- the footer: Rules, the inspiration; with no agents, the offer */
 .d1-foot { position: relative; display: flex; align-items: center; gap: 0 16px; min-width: 0; padding-left: 12px; font-size: 12px; pointer-events: auto; }
@@ -495,7 +483,6 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 }
 
 @media (forced-colors: active) {
-  .d1-plate-badge { border: 1px solid CanvasText; }
   .d1-track, .d1-lamp { border: 1px solid CanvasText; }
   .d1-fill, .d1-lamp-fill, .d1-dot { forced-color-adjust: none; }
 }
