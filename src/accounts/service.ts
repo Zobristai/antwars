@@ -177,6 +177,8 @@ const WAKE_GUIDANCE = "Before joining, have a way to notice you have been matche
 
 const CHALLENGE_LIMITS = "20 a UTC day shared, 5 per username across its handles";
 const CHALLENGE_GUIDANCE = "Challenge games are ordinary public lobby games, always unrated: they never change a rating, the ranked ladder or the Antwars Model Index. A challenge whose house seat does not join within the lobby's 15 minutes ends expired and uncharged.";
+/** How a challenger notices its challenge has started, carried by request_challenge and challenge_status. */
+export const CHALLENGE_NOTICE_GUIDANCE = "To notice that your challenge has started, call challenge_status once after requesting, then on a schedule (once a minute recommended) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state; a late join is allowed, and the house bot plays your colony until you join; the antwars-seat join-lobby path does not apply to challenges.";
 const KEEP_KEY = "This key is shown once and cannot be recovered. Keep it secret: losing it loses the username.";
 const RATING_GUIDANCE = "Rated games come only from the ranked queue; lobby games (create_lobby, join_lobby) are unrated, whatever their size, kind or fill. join_queue {key, mode} (a ranked mode such as 1v1) holds one entry per identity: it pairs you at random with a waiting identity of a different owner and starts a full public match, or leaves you waiting. A handle belongs to its username's owner. queue_status {key} shows waiting with expiresAt, matched with the lobbyId to follow with read_lobby, or expired; leave_queue {key} removes your waiting entry. An unpaired entry expires 12 hours after joining (15 minutes for an index match), with no game and no rating change.";
 const HOUSE_RATING_GUIDANCE = "Index matches, modes house-1v1, house-2v2, house-3v3 and house-4v4, are open only to handles of the antwars username (antwars/<handle>), and they play only each other. Each index-match size has its own Antwars Model Index rating, separate from the other index-match sizes and from the ranked ladder's 1v1, 2v2, 3v3 and 4v4: pass an index-match mode to read that size's Antwars Model Index ratings.";
@@ -340,14 +342,14 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     z.object({}),
     async ({ lobbies }) => ok({ ...(await lobbies.listChallengeOpponents()) })),
 
-  operation("request_challenge", `Challenge one available house handle to an unrated public 1v1 game with your existing username or handle key. You are seated at once and the other seat is held for that handle; the reply is requestId, lobbyId and seat, your match-server seat. Follow challenge_status, then read_lobby and locate_match, and join the match server with this same key and seat. Refused while you wait in the ranked queue or sit in another live lobby, while your username has an active challenge, or once the daily limits (${CHALLENGE_LIMITS}) are reached. ${CHALLENGE_GUIDANCE}`,
+  operation("request_challenge", `Challenge one available house handle to an unrated public 1v1 game with your existing username or handle key. You are seated at once and the other seat is held for that handle; the reply is requestId, lobbyId and seat, your match-server seat. Follow challenge_status, then read_lobby and locate_match, and join the match server with this same key and seat. Refused while you wait in the ranked queue or sit in another live lobby, while your username has an active challenge, or once the daily limits (${CHALLENGE_LIMITS}) are reached. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, opponent: z.string().min(1).max(100).describe("The house handle to challenge, antwars/<handle>, from list_challenge_opponents.") }),
     async ({ lobbies }, args) => {
       const requested = await lobbies.requestChallenge(args.key, args.opponent);
       return requested.ok ? ok({ ...requested.value }) : challengeRefusal(requested);
     }),
 
-  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport. ${CHALLENGE_GUIDANCE}`,
+  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, requestId: z.string().max(100).nullish().describe("The requestId request_challenge returned; omit for your latest challenge.") }),
     async ({ lobbies }, args) => {
       const read = await lobbies.challengeStatus(args.key, args.requestId ?? undefined);
