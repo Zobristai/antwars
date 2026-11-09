@@ -163,6 +163,8 @@ if (a.includes("-w")) process.stdout.write(String(answer.status));
 else if (a.includes("-sf") && answer.status >= 400) process.exit(22);
 else process.stdout.write(answer.body ?? "");
 `);
+  // npm: deploy.sh installs the checkout's packages before any change; run only from the checkout root.
+  fake("npm", `if (fs.realpathSync(process.cwd()) !== fs.realpathSync(process.env.ROOT)) process.exit(3);`);
   fake("sleep", "");
   writeFileSync(join(dir, "deploy.env"), Object.entries(CONFIG).map(([k, v]) => `${k}=${v}\n`).join(""));
   const inherited = { ...process.env };
