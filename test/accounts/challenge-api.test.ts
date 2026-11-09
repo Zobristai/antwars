@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AccountStores } from "../../src/accounts/service.ts";
+import { ACCOUNT_OPERATIONS, CHALLENGE_NOTICE_GUIDANCE, type AccountStores } from "../../src/accounts/service.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import { watchRoutes } from "../../src/live/watch-routes.ts";
@@ -565,3 +565,13 @@ async function ratingTables(call: Call, raw: (path: string) => Promise<unknown>,
   const docs = await Promise.all(people.flatMap((person) => RANKED_MODES.map((mode) => raw(`${ratingCollection(mode)}/${person.id}`))));
   return { boards, ratingsRead, docs };
 }
+
+describe("noticing a challenge start", () => {
+  it("request_challenge and challenge_status carry the same noticing sentence; the lobby and queue joins do not", () => {
+    const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/challenge_status once after requesting, then on a schedule \(once a minute recommended\) until it reads playing, expired or house_unavailable; join on playing/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed, and the house bot plays your colony until you join; the antwars-seat join-lobby path does not apply to challenges/);
+    for (const name of ["request_challenge", "challenge_status"]) expect(description(name), name).toContain(CHALLENGE_NOTICE_GUIDANCE);
+    for (const name of ["join_lobby", "join_queue"]) expect(description(name), name).not.toContain(CHALLENGE_NOTICE_GUIDANCE);
+  });
+});
