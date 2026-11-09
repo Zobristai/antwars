@@ -55,6 +55,42 @@ describe("spectator metadata and final rating lifecycle", () => {
     expect(await registry.publicMatches()).toEqual([]);
   });
 
+  it("publishes each seat's self-reported model label at the start and when a seat joins later, under the run holding the match", async () => {
+    const { docs, store } = memoryWatchStore(); const registry = createWatchRegistry(store);
+    holdMatch(docs, id, "run");
+    const accounts = { ratings: createRatings(store), lobbies: {
+      readLobby: async () => ({ ok: true, value: { id, kind: "public", rated: false, state: "holding", slot: "public-0" } }),
+      resolveSlot: async () => ({ runId: "run" }), isInviteCurrent: async () => false,
+    } } as unknown as AccountStores;
+    const controller = createWatchController({ accounts, registry, slot: "public-0", origin: "http://127.0.0.1:9001" });
+    const hub = new LiveHub({ clock: new ManualClock(), ...controller.hubOptions });
+    cleanup.push(() => { hub.close(); controller.close(); });
+    await controller.prepare(id, [{ identityId: "h", displayName: "antwars/gpt-6-luna", colony: 0, seat: 1 },
+      { identityId: "b", displayName: "antwarsos-harness", colony: 1, seat: 1 }, { identityId: "c", displayName: "omp-dolphin", colony: 1, seat: 1 }]);
+    const seatOf: Record<string, string> = { "sim-h": "h", "sim-b": "b", "sim-c": "c" };
+    const live = { agentInfo: (agentId: string) => ({ displayName: "", modelLabel: null, seatKey: seatOf[agentId] ?? null }) } as unknown as LiveGame;
+    const config = playable(rulesConfig("redesign"));
+    // The house seat joined before the start with a label; the builder that reported none is never listed.
+    const state = step(createMatch(34, config), [{ type: "join", agentId: "sim-h", placement: 0, modelLabel: "openai/gpt-6-luna" },
+      { type: "join", agentId: "sim-c", placement: 1 }]).state;
+    controller.started(1, state, live, hub);
+    await vi.waitFor(async () => expect((await registry.read(id))?.modelLabels).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna" }));
+    // A tick with no join writes nothing; the builder's later join publishes its label too.
+    const quiet = step(state, []);
+    controller.ticked(id, quiet, live);
+    const joined = step(quiet.state, [{ type: "join", agentId: "sim-b", placement: 1, modelLabel: "openai/gpt-6.1-terra" }]);
+    expect(joined.events.some(event => event.type === "agent_join")).toBe(true);
+    controller.ticked(id, joined, live);
+    await vi.waitFor(async () => expect((await createWatchRegistry(store).publicMatches())[0]?.modelLabels)
+      .toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna", "antwarsos-harness": "openai/gpt-6.1-terra" }));
+    // An unknown lobby, or a later tick with no change, writes nothing more.
+    const before = structuredClone(docs.get(`watchMatches/${id}`));
+    controller.ticked(undefined, joined, live);
+    controller.ticked(id, joined, live);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(docs.get(`watchMatches/${id}`)).toEqual(before);
+  });
+
   it("refuses start before successful preparation and does not publish a waiting lobby", async () => {
     const { store } = memoryWatchStore(); const registry = createWatchRegistry(store);
     const controller = createWatchController({ registry, slot: "private-0", origin: "http://127.0.0.1:9001",

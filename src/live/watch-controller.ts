@@ -1,7 +1,7 @@
 import type { AccountStores } from "../accounts/service.js";
 import { seatKeyOf, type LobbySeat } from "../mcp/game.js";
 import type { LiveGame } from "../server.js";
-import type { SimState } from "../sim/types.js";
+import type { SimState, StepOutput } from "../sim/types.js";
 import type { PrivateArchive } from "../replays/private-archive.js";
 import { slotActivity } from "../slots/activity.js";
 import type { StreamIdentity } from "./format.js";
@@ -28,6 +28,8 @@ export interface WatchController {
   readonly hubOptions: LiveHubOptions;
   prepare(lobbyId: string, seats: readonly LobbySeat[]): Promise<void>;
   started(seq: number, state: SimState, live: LiveGame, hub: LiveHub): void;
+  /** A tick of the lobby's match started or resumed here: a seat that joined with a model label publishes it for the catalog. */
+  ticked(lobbyId: string | undefined, out: StepOutput, live: LiveGame): void;
   /** The watch part of a handover save of a lobby whose match started or resumed here. */
   save(lobbyId: string): WatchSave;
   /**
@@ -59,6 +61,20 @@ export function createWatchController(options: {
    * takes its playback end and replay id only from the run holding the match.
    */
   const runs = new Map<string, string>();
+  /** The seat labels last published for each started lobby, so an unchanged set is not written again. */
+  const published = new Map<string, string>();
+  /** Each joined seat's self-reported model label by its stream display name; a seat that reported none is left out. */
+  const publishLabels = (metadata: Prepared, state: SimState, live: LiveGame) => {
+    const identity = seatIdentity(metadata, live), labels: Record<string, string> = {};
+    for (const agent of state.agents) {
+      const seat = agent.parentAgentId === null && agent.modelLabel ? identity(agent.id) : undefined;
+      if (seat) labels[seat.displayName] = agent.modelLabel!;
+    }
+    const lobbyId = metadata.access.lobbyId, text = JSON.stringify(labels);
+    if (Object.keys(labels).length === 0 || published.get(lobbyId) === text) return;
+    published.set(lobbyId, text);
+    publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, labels), "seat labels");
+  };
   /** Publish a fenced write under the lobby's run; a run that no longer holds the match leaves the entry its owner's. */
   const publishOwned = (lobbyId: string, write: (runId: string) => Promise<boolean>, what: string) => {
     const runId = runs.get(lobbyId);
@@ -95,6 +111,7 @@ export function createWatchController(options: {
       onReplaySaved(access, id) {
         publishOwned(access.lobbyId, runId => registry.replaySaved(access.lobbyId, runId, id), "replay id");
         runs.delete(access.lobbyId);
+        published.delete(access.lobbyId);
       },
       async resultRatings(access, agents) {
         const lobby = await accounts.lobbies.readLobby(access.lobbyId);
@@ -142,6 +159,12 @@ export function createWatchController(options: {
       prepared.set(metadata.access.lobbyId, { ...metadata, startedAt });
       runs.set(metadata.access.lobbyId, metadata.runId);
       publish(() => registry.register({ ...metadata.access, startedAt, origin: options.origin, slot: options.slot, runId: metadata.runId }));
+      publishLabels(metadata, state, live);
+    },
+    ticked(lobbyId, out, live) {
+      if (lobbyId === undefined || !out.events.some(event => event.type === "agent_join")) return;
+      const metadata = prepared.get(lobbyId);
+      if (metadata?.startedAt !== undefined) publishLabels(metadata, out.state, live);
     },
     save(lobbyId) {
       const metadata = prepared.get(lobbyId);
@@ -165,7 +188,7 @@ export function createWatchController(options: {
         console.log(`antwar slot ${options.slot}: lobby ${lobbyId}'s match is no longer run ${runId}'s; its watch entry stays its owner's`);
       });
     },
-    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) job.release(); prepared.clear(); runs.clear(); },
+    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) job.release(); prepared.clear(); runs.clear(); published.clear(); },
   };
 }
 
