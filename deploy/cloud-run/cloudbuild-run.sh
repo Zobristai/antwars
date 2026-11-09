@@ -84,11 +84,7 @@ if ! command -v gcloud >/dev/null; then
   apt-get update -qq >/dev/null
   apt-get install -y -qq google-cloud-cli >/dev/null
 fi
-# probe.mjs, the domain comparison at the end of a full `all` run, needs the
-# repository's packages; no package script runs.
-if [[ "${ARGS[0]}" == all && ${#ARGS[@]} -eq 2 ]]; then
-  (cd "$REPO_ROOT" && npm ci --ignore-scripts --no-audit --no-fund >&2)
-fi
+# deploy.sh installs the packages its domain comparison needs itself.
 
 set +e
 ANTWAR_ROLLBACK_DIR="$OUT" "$HERE/deploy.sh" "${ARGS[@]}" &

@@ -153,7 +153,6 @@ describe("cloudbuild-run.sh", () => {
     const r = run({ tag: `deploy-${SHA}` });
     expect(r.status).toBe(0);
     expect(deployCall(r.calls)).toEqual(["deploy.sh", "all", SHA]);
-    expect(r.calls.some((c) => c[0] === "npm")).toBe(true);
     expect(uploads(r.calls)).toHaveLength(1);
   });
 
@@ -226,14 +225,15 @@ describe("cloudbuild-run.sh", () => {
     const [, written, out] = configCall(r.calls);
     expect(written).toBe(Object.entries(CONFIG).map(([k, v]) => `${k}=${v}\n`).join(""));
     expect(deployCall(r.calls)).toEqual(["deploy.sh", "all", SHA]);
-    expect(r.calls.find((c) => c[0] === "npm")).toEqual(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
+    // deploy.sh installs the packages its domain comparison needs; the wrapper does not.
+    expect(r.calls.some((c) => c[0] === "npm")).toBe(false);
     const [up] = uploads(r.calls);
     expect(up).toEqual(["gcloud", "storage", "cp", `${out}/antwar-deploy-status`, `${out}/records-rollback-r1.json`,
       `gs://example-build/deploys/${BUILD_ID}/`, "--account", CONFIG.ACCOUNT, "--project", CONFIG.PROJECT]);
     expect(r.stderr).toContain("==================== deploy status ====================\nDONE");
   });
 
-  it("runs the precheck and records-rollback without packages", () => {
+  it("runs the precheck and records-rollback", () => {
     for (const args of [`all ${SHA} --precheck`, `records-rollback ${SHA} ${DIGEST}`]) {
       const r = run({ args, writes: false });
       expect(r.status).toBe(0);
