@@ -1,0 +1,76 @@
+#!/usr/bin/env node
+/**
+ * One-off correction (ANT-016): records a rated ranked lobby whose colony never joined the match as abandoned and
+ * unrated, removes its rating effect, and rewrites its public recording as an abandoned, unrated match.
+ * src/rating/unrateNeverJoined.ts holds the checks and writes.
+ *
+ *   node --import ./src/ts-resolve.mjs scripts/unrate-never-joined.ts \
+ *     --lobby <lobbyId> --project <gcp project> --namespace <store namespace> \
+ *     --replay-bucket <bucket> --record-input-bucket <bucket> [--apply]
+ *
+ * Every argument but --apply is required; there are no defaults. Without --apply it only reads: it prints every check
+ * and the writes it would make, and exits 0 when every check passed, 1 otherwise. With --apply it writes only when every
+ * check passed in the same run. Google access is the Cloud Run service identity (metadata server), as for the server
+ * itself, so a real run happens in Cloud Run. FIRESTORE_EMULATOR_HOST selects the Firestore emulator (loopback only,
+ * refused on Cloud Run), exactly as for the server.
+ */
+import { parseArgs } from "node:util";
+import { firestoreFromEnv } from "../src/store/firestore.ts";
+import { gcsRecordingObjects } from "../src/replays/abandonRecording.ts";
+import { correct, type Correction } from "../src/rating/unrateNeverJoined.ts";
+
+export interface Arguments {
+  readonly lobby: string;
+  readonly project: string;
+  readonly namespace: string;
+  readonly replayBucket: string;
+  readonly recordInputBucket: string;
+  readonly apply: boolean;
+}
+
+const REQUIRED = ["lobby", "project", "namespace", "replay-bucket", "record-input-bucket"] as const;
+
+/** The command line, or an error naming every missing or unknown argument. */
+export function parseArguments(argv: readonly string[]): Arguments {
+  const { values } = parseArgs({
+    args: [...argv], strict: true, allowPositionals: false,
+    options: {
+      lobby: { type: "string" }, project: { type: "string" }, namespace: { type: "string" },
+      "replay-bucket": { type: "string" }, "record-input-bucket": { type: "string" }, apply: { type: "boolean" },
+    },
+  });
+  const missing = REQUIRED.filter(name => (values[name] ?? "").trim() === "");
+  if (missing.length > 0) throw new Error(`missing required argument(s): ${missing.map(name => `--${name}`).join(", ")}`);
+  const value = (name: (typeof REQUIRED)[number]) => values[name]!;
+  return { lobby: value("lobby"), project: value("project"), namespace: value("namespace"), replayBucket: value("replay-bucket"),
+    recordInputBucket: value("record-input-bucket"), apply: values.apply === true };
+}
+
+export function report(args: Arguments, result: Correction): string {
+  const v = result.verification;
+  const lines = [
+    `project ${args.project}, namespace ${args.namespace}, lobby ${args.lobby}, replay ${v.replayId ?? "unknown"}, mode ${args.apply ? "APPLY" : "read-only"}`,
+    ...v.checks.map(check => `${check.ok ? "PASS" : "FAIL"} ${check.name}: ${check.detail}`),
+    v.ok ? `never joined: ${v.neverJoined.join(", ")}` : "verification FAILED: nothing written",
+    ...(v.ok ? [result.applied ? "written:" : "would write:", ...result.writes.map(write => `  ${write}`)] : []),
+  ];
+  return lines.join("\n");
+}
+
+export async function main(argv: readonly string[], env: Readonly<Record<string, string | undefined>>): Promise<number> {
+  const args = parseArguments(argv);
+  const store = firestoreFromEnv({ ANTWAR_STORE_NAMESPACE: args.namespace, GCLOUD_PROJECT: args.project,
+    FIRESTORE_EMULATOR_HOST: env.FIRESTORE_EMULATOR_HOST, K_SERVICE: env.K_SERVICE });
+  if (store === undefined) throw new Error("no store");
+  const result = await correct({ store, recordings: gcsRecordingObjects(args.replayBucket), recordInputs: gcsRecordingObjects(args.recordInputBucket) },
+    args.lobby, { apply: args.apply });
+  console.log(report(args, result));
+  return result.verification.ok ? 0 : 1;
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main(process.argv.slice(2), process.env).then(code => { process.exitCode = code; }, (error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 2;
+  });
+}
