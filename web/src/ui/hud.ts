@@ -25,6 +25,7 @@ import { AGENT_ADDRESS_LABEL, AGENT_HEADING, buildAgentPanel, mcpAddress, type C
 import { STEPPE_LOOK } from "./steppe-look.ts";
 import { mountAgents } from "./agents.ts";
 import { mountResultModal } from "./deck/result-modal.ts";
+import { plateBadges } from "./deck/model.ts";
 import {
   CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, shares, spawnFill, stepped, withUnits, withoutCasteGlyph,
   type DrawerEvent, type Drawers,
@@ -148,13 +149,19 @@ export function mountHud(context: HudHost): Mounted<HudView> {
   const widths = new WeakMap<HTMLElement, string>();
   const width = (node: HTMLElement, value: string) => { if (widths.get(node) !== value) { widths.set(node, value); node.style.width = value; } };
   // The header: each colony's chevron at the plate's outer edge, then its name over its own figures; the clock between.
+  const plateBadgeEls: HTMLElement[] = [];
   const names = COLONIES.map(colony => {
     const name = el("span", `d2-name c${colony}`);
     const chevron = icon("d2-chevron", ICONS.chevron);
     const words = el("span", "d2-name-text", COLONY_NAMES[colony]);
-    name.append(...(colony === 0 ? [chevron, words] : [words, chevron]));
+    // Once the result shows, WINNER beside the winning colony's name or DRAW beside both, kept after the result card closes.
+    const badge = el("span", `d2-plate-badge c${colony}`);
+    badge.hidden = true;
+    plateBadgeEls.push(badge);
+    name.append(...(colony === 0 ? [chevron, words, badge] : [badge, words, chevron]));
     return name;
   });
+  const badgeOf = (colony: Colony) => plateBadgeEls[colony]!;
   const clock = el("span", "d2-clock");
   const plateHead = el("div", "d2-head");
   plateHead.append(names[0]!, clock, names[1]!);
@@ -465,6 +472,13 @@ export function mountHud(context: HudHost): Mounted<HudView> {
 
   function paintPlate(frame: Frame | null, b: Board | null) {
     flag(root, "is-empty", b === null);
+    const badges = plateBadges(frame);
+    for (const c of COLONIES) {
+      const badge = badgeOf(c), word = badges[c];
+      text(badge, word ?? "");
+      if (badge.hidden !== (word === null)) badge.hidden = word === null;
+      flag(badge, "is-draw", word !== null && badges[0] === badges[1]);
+    }
     if (b === null || frame === null) {
       text(clock, "—");
       for (const c of COLONIES) {

@@ -8,9 +8,9 @@
 // read, each colony's seated names in its colony's column. Private lobbies are never sent. A row leaves once its match begins.
 //
 // One row style: Live now's grid and column order (matches.ts rowParts, MATCH_COLUMNS), a
-// table in a wide card and its stacked rows in a narrow one. Waited stands in the start column, the match's kind in the
-// outcome column, then the colonies; Waiting has no record and no action, so the second colony spans those columns, and a
-// queued agent, which has no colony yet, spans both colonies'. A lobby's kind takes the standing mode names:
+// table in a wide card and its stacked rows in a narrow one. Waited stands in the start column, then the colonies, each seat
+// after its colony's dot, then the match's kind in the status column, spanning the action column Waiting does not have; a
+// queued agent, which has no colony yet, spans both colonies' columns. A lobby's kind takes the standing mode names:
 // "Index", "Challenge", "Ranked", and "Lobby" for a public or invite-only lobby, told by the rule the server
 // types a recording's lobby by (src/replays/history-routes.ts recordingMatchType); "Unranked" is not a mode name and never
 // shows here. A queued agent's mode takes the same words.
@@ -86,7 +86,7 @@ export function waitingState(view: Pick<MatchesView, "waiting">): SectionState {
 }
 
 export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, parts: RowParts): HTMLElement {
-  const { headCell, matchGrid, seatBlock, colonyList } = parts;
+  const { headCell, matchGrid, seatBlock, sides, colonyHead } = parts;
   const state = sectionLine(waitingState(view), view.waiting.rows.length);
   const section = h(doc, "section", "d1p-card d1p-waiting");
   section.setAttribute("aria-labelledby", "d1p-waiting-title");
@@ -109,56 +109,58 @@ export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, p
     const table = h(doc, "table", "d1p-table d1p-wait d1p-wide");
     table.setAttribute("aria-labelledby", "d1p-waiting-title");
     matchGrid(table);
-    // Live now's head row: Waited, Match, then each colony under its name, the second spanning the record and action
-    // columns Waiting does not have.
+    // Live now's head row: Waited, each colony under its name, then the match's kind spanning the status and action
+    // columns.
     const labels = h(doc, "tr");
-    labels.append(headCell(WAITING_HEADS[0], "c-start"), headCell(WAITING_HEADS[1], "c-result"));
-    const colonyHeads = COLONIES.map(colony => headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`));
-    colonyHeads[1]!.colSpan = 3;
-    labels.append(...colonyHeads);
+    const match = headCell(WAITING_HEADS[1], "c-how");
+    match.colSpan = 2;
+    labels.append(headCell(WAITING_HEADS[0], "c-start"), ...COLONIES.map(colony => colonyHead(colony)), match);
     const thead = h(doc, "thead");
     thead.append(labels);
     const tbody = h(doc, "tbody");
     const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
     list.setAttribute("aria-labelledby", "d1p-waiting-title");
-    /** A seat on its own line in the shared row style (matches.ts seatBlock), named through the HUD's rowName. */
-    const seat = (name: string): HTMLElement => {
+    /** A seat in the shared row style (matches.ts seatBlock), named through the HUD's rowName, after its colony's dot; a
+     * queued agent has no colony yet, so no dot. */
+    const seat = (name: string, colony: 0 | 1 | null): HTMLElement => {
       const shown = rowName(name, undefined);
       const group: SeatGroup = { parts: { name: shown.name, badges: shown.badges, quiet: null }, seats: 1 };
-      return seatBlock(group);
+      return seatBlock(group, colony);
     };
     for (const row of view.waiting.rows) {
       const waited = waitedText(row.waitingSeconds);
-      const match = isLobby(row) ? lobbyText(row) : waitingMode(row.mode);
+      const kindText = isLobby(row) ? lobbyText(row) : waitingMode(row.mode);
       const line = h(doc, "tr");
       // The start column's two lines: the time waited over "when loaded".
       const when = h(doc, "th", "c-start");
       when.scope = "row";
       when.append(h(doc, "span", "d1p-date", waited), h(doc, "span", "d1p-time", WHEN_LOADED));
-      const kind = h(doc, "td", "c-result");
-      kind.append(h(doc, "span", "d1p-result", match));
-      line.append(when, kind);
+      line.append(when);
       const item = h(doc, "li");
-      item.append(h(doc, "p", "d1p-line", `${waited} waiting ${WHEN_LOADED}`), h(doc, "p", "d1p-line is-lead", match));
+      item.append(h(doc, "p", "d1p-line", `${waited} waiting ${WHEN_LOADED}`), h(doc, "p", "d1p-line is-lead", kindText));
       if (isLobby(row)) {
-        COLONIES.forEach(colony => {
-          const cell = h(doc, "td", "c-model");
-          if (colony === 1) cell.colSpan = 3;
-          cell.append(...row.colonies[colony].map(seat));
-          line.append(cell);
-        });
         // A colony with no seat yet is left blank: the Match text says how many seats are taken.
-        item.append(colonyList(COLONIES.map(colony => row.colonies[colony].map(seat)), null));
+        const seated = COLONIES.map(colony => row.colonies[colony].map(name => seat(name, colony)));
+        for (const colony of COLONIES) {
+          const cell = h(doc, "td", "c-side");
+          if (seated[colony]!.length > 0) cell.append(h(doc, "span", "d1p-sr", `${COLONY_NAMES[colony]}: `), ...seated[colony]!);
+          line.append(cell);
+        }
+        item.append(sides(COLONIES.map(colony => [colony, row.colonies[colony].map(name => seat(name, colony))] as const), false));
       } else {
         // A queued agent has no colony yet: its name spans both colonies' columns.
-        const cell = h(doc, "td", "c-model");
-        cell.colSpan = 4;
-        cell.append(seat(row.displayName));
+        const cell = h(doc, "td", "c-side");
+        cell.colSpan = 2;
+        cell.append(seat(row.displayName, null));
         line.append(cell);
         const named = h(doc, "p", "d1p-line is-model");
-        named.append(seat(row.displayName));
+        named.append(seat(row.displayName, null));
         item.append(named);
       }
+      const kind = h(doc, "td", "c-how");
+      kind.colSpan = 2;
+      kind.append(h(doc, "span", "d1p-status", kindText));
+      line.append(kind);
       tbody.append(line);
       list.append(item);
     }

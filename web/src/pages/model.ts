@@ -9,7 +9,7 @@ import { C } from "../leaderboard-page/copy.ts";
 import type { Opponent } from "../leaderboard-page/challenge.ts";
 import { LEADERBOARD_HREF } from "../leaderboard-page/route.ts";
 import { benchmarkLabel, recordText, type RankingView } from "../leaderboard-page/view.ts";
-import { RECORD_LABEL, RETRY, keep, liveState, recordingsState, type SectionState } from "../ui/format.ts";
+import { RECORD_LABEL, RETRY, keep, liveState, recordingResult, recordingsState, type SectionState } from "../ui/format.ts";
 
 // ---------------------------------------------------------------- shared
 
@@ -272,6 +272,23 @@ export const stampWord = (status: Recording["status"]): string => RECORD_LABEL[s
 
 /** A winner shown in its colony's ink only where the record names one and the match was not abandoned. */
 export const winnerOf = (r: Pick<Recording, "winner" | "reason">): 0 | 1 | null => r.reason === "abandoned" ? null : r.winner;
+
+/** A recording's result as the match lists order it, from the record alone: the winning colony and the beaten one; or, for
+ * a draw, an abandoned match or an unknown result, no winner and the record's own word for it (ui/format.ts
+ * recordingResult: Draw, Abandoned, Result unknown), so neither side is ever shown as winner or defeated. */
+export type Outcome =
+  | { readonly kind: "won"; readonly winner: 0 | 1; readonly loser: 0 | 1 }
+  | { readonly kind: "none"; readonly word: string };
+export function outcomeOf(r: Pick<Recording, "winner" | "reason" | "decidedBy">): Outcome {
+  const winner = winnerOf(r);
+  return winner === null ? { kind: "none", word: recordingResult(r).result } : { kind: "won", winner, loser: (1 - winner) as 0 | 1 };
+}
+/** A row's sides in the order the lists show them: the winner first, else colony order. */
+export const sideOrder = (outcome: Outcome): readonly [0 | 1, 0 | 1] => outcome.kind === "won" ? [outcome.winner, outcome.loser] : [0, 1];
+/** How a recording ended, worded as the result card words it (story.ts resultHow); null where the record does not say. */
+export const endedBy = (r: Pick<Recording, "winner" | "reason" | "decidedBy">): string | null => recordingResult(r).how;
+/** A recording's start line: its time, then its match type where known ("27 Oct 2026 · 09:00 UTC · Index · 1v1"). */
+export const startLine = (when: string, type: string | null): string => type === null ? when : `${when} · ${type}`;
 
 /** The list Matches' Load more continues. */
 export const RECORDINGS_LIST = "recordings";

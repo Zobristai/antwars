@@ -18,7 +18,7 @@ function queen(id: number, colony: 0 | 1, tile: number, hp: number, lostTick: nu
   return { id, colony, x: tile * SUB_TILE + 2, y: 20 * SUB_TILE + 2, foundedTick: 0, lostTick, overrun: 0, hp };
 }
 function agent(colony: 0 | 1, name: string, elo: number): StreamAgent {
-  return { identity: { displayName: name, elo }, colony, modelLabel: "claude-sonnet-5", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
+  return { identity: { displayName: name, elo }, colony, modelLabel: colony === 0 ? "openai/gpt-6.1-sol" : "anthropic/claude-fable-5-1", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
 }
 
 /**
@@ -68,7 +68,11 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe("Very Large Colony wins");
+    // The headline names the winning model each seat recorded, not the colony or the player's handle; the colony and the
+    // model it beat stand under it.
+    expect(head.textContent).toBe("GPT-6.1 Sol wins");
+    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("Very Large Colony · beat Claude Fable 5.1");
+    expect(head.textContent).not.toContain("fennec/forager");
     expect((head.style as unknown as { color: string }).color).toBe("var(--aw-c0)");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
@@ -148,7 +152,7 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: false, name: "next/match" }));
     show(frameOf({ ended: true, winner: 1, name: "next/match" }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Lake Hodges Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Claude Fable 5.1 wins");
   });
 
   it("opens again for the next match even when its result reads exactly as the one just closed", () => {
@@ -161,7 +165,7 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true, match: 2 }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("GPT-6.1 Sol wins");
     // And that match's own Close holds for it, as the first match's did.
     closeButton(dialog).click();
     show(frameOf({ ended: true, match: 2 }));
@@ -237,3 +241,49 @@ function shareDialog(frame: Frame) {
   teams.update({ ...view(frame), share: "https://antwars.example/?replay=2026-10-28-12" }, false);
   return { dialog, link: dialog.byClass("d1-share")[0]! };
 }
+
+// The result stays on the plate after the card is closed: a WINNER badge on the winning colony's head, or DRAW on both.
+describe("the plate's result badge", () => {
+  const badges = (teams: ElementPort[]) => teams.map(team => team.byClass("d1-plate-badge")[0]!)
+    .map(node => [node.hidden, node.textContent, node.classes().includes("is-draw")]);
+  function mountWithTeams() {
+    const port = dom();
+    const deck = mountDeck(port.doc);
+    const teams = mountTeams(port.doc, actions, { search: () => "", economy: deck.economy });
+    port.body.append(...teams.teams as unknown as ElementPort[], teams.result as unknown as ElementPort);
+    const show = (frame: Frame) => { deck.update(frame); teams.update(view(frame), false); };
+    return { teams: teams.teams as unknown as ElementPort[], dialog: teams.result as unknown as ElementPort, show };
+  }
+
+  it("shows nothing before the result, WINNER on the winning colony once it shows, and keeps it after Close", () => {
+    const { teams, dialog, show } = mountWithTeams();
+    show(frameOf({ ended: false }));
+    expect(badges(teams)).toEqual([[true, "", false], [true, "", false]]);
+    show(frameOf({ ended: true, winner: 1 }));
+    expect(badges(teams)).toEqual([[true, "", false], [false, "Winner", false]]);
+    closeButton(dialog).click();
+    show(frameOf({ ended: true, winner: 1 }));
+    expect(dialog.open).toBe(false);
+    expect(badges(teams)).toEqual([[true, "", false], [false, "Winner", false]]);
+    // In the colony's head, right after its name.
+    expect(teams[1]!.byClass("d1-team-head")[0]!.children.map(node => node.className).slice(0, 2)).toEqual(["d1-name c1", "d1-plate-badge c1"]);
+  });
+
+  it("shows DRAW on both colonies for a draw, and names neither side as winner in the card", () => {
+    const { teams, dialog, show } = mountWithTeams();
+    const draw = frameOf({ ended: true });
+    draw.board!.result = { winner: null, reason: "time_up", decidedBy: "draw", tick: END, nextStartMs: null };
+    show(draw);
+    expect(badges(teams)).toEqual([[false, "Draw", true], [false, "Draw", true]]);
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Draw");
+    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("GPT-6.1 Sol drew with Claude Fable 5.1");
+    expect(dialog.textContent).not.toMatch(/ wins| beat /);
+  });
+
+  it("draws the badge and every line of the result card at 16 px or more", () => {
+    expect(CSS).toMatch(/\.d1-plate-badge \{[^}]*font-size: 16px;/);
+    expect(CSS).toMatch(/\.d1-result \{[^}]*font-size: 16px;/);
+    const result = CSS.slice(CSS.indexOf(".d1-result {"), CSS.indexOf("/* Share on X"));
+    for (const size of result.matchAll(/font-size: (\d+)px/g)) expect(Number(size[1])).toBeGreaterThanOrEqual(16);
+  });
+});

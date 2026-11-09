@@ -118,10 +118,12 @@ export function boardHref(board: "2d" | "3d", href: string): string {
   return url.toString();
 }
 
-/** The visible live/replay HUD headline, separate from its reason and rating lines. */
-export function resultHeadline(result: Pick<StreamResult, "winner" | "reason">): string {
+/** The visible live/replay HUD headline, separate from its reason and rating lines: the winning model(s) by name,
+ * "GPT-6.1 Sol wins", a team "Claude Opus 5.5 & Grok 4.7 win"; the colony's name only where no seat names a model. */
+export function resultHeadline(result: Pick<StreamResult, "winner" | "reason">, winners: readonly string[] = []): string {
   if (result.reason === "abandoned") return "Abandoned";
-  return result.winner === null ? "Draw" : `${COLONY_NAMES[result.winner]} wins`;
+  if (result.winner === null) return "Draw";
+  return winners.length === 0 ? `${COLONY_NAMES[result.winner]} wins` : `${winners.join(" & ")} ${winners.length > 1 ? "win" : "wins"}`;
 }
 
 // ---------------------------------------------------------------- the matches page

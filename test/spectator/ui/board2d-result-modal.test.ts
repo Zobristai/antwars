@@ -19,7 +19,7 @@ function queen(id: number, colony: 0 | 1, tile: number, hp: number, lostTick: nu
   return { id, colony, x: tile * SUB_TILE + 2, y: 20 * SUB_TILE + 2, foundedTick: 0, lostTick, overrun: 0, hp };
 }
 function agent(colony: 0 | 1, name: string, elo: number): StreamAgent {
-  return { identity: { displayName: name, elo }, colony, modelLabel: "claude-sonnet-5", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
+  return { identity: { displayName: name, elo }, colony, modelLabel: colony === 0 ? "openai/gpt-6.1-sol" : "anthropic/claude-fable-5-1", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
 }
 
 /** A 1v1 on the redesign rules, ended at END by queens killed when `ended`; `match` as Playback counts it (Frame.match). */
@@ -66,11 +66,77 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("GPT-6.1 Sol wins");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
     expect(host.byClass("d2-result")).toHaveLength(0);
     expect(host.byClass("d2-pane")[0]!.byClass("d1-result")).toHaveLength(0);
+  });
+
+  // The 2D plate keeps the result once the card is closed: WINNER beside the winning colony's name, as text.
+  it("puts WINNER beside the winning colony's name on the plate once the result shows, and keeps it after Close", () => {
+    const { host, dialogs, show } = mount();
+    const badges = () => host.byClass("d2-plate-badge").map(node => [node.classes().join(" "), node.hidden, node.textContent]);
+    show(frameOf({ ended: false }));
+    expect(badges()).toEqual([["d2-plate-badge c0", true, ""], ["d2-plate-badge c1", true, ""]]);
+    show(frameOf({ ended: true }));
+    expect(badges()).toEqual([["d2-plate-badge c0", false, "Winner"], ["d2-plate-badge c1", true, ""]]);
+    dialogs()[0]!.byClass("d1-close")[0]!.click();
+    show(frameOf({ ended: true }));
+    expect(dialogs()[0]!.open).toBe(false);
+    expect(badges()[0]).toEqual(["d2-plate-badge c0", false, "Winner"]);
+    // Each badge sits inside its colony's name, so it reads with it.
+    expect(host.byClass("d2-name").map(name => name.byClass("d2-plate-badge").length)).toEqual([1, 1]);
+    expect(UI_CSS).toMatch(/\.d2-plate-badge \{[^}]*font-size: 16px;/);
+  });
+
+  const plate = (host: ElementPort) => host.byClass("d2-plate-badge").map(node => [node.classes().join(" "), node.hidden, node.textContent]);
+  const HIDDEN = [["d2-plate-badge c0", true, ""], ["d2-plate-badge c1", true, ""]];
+
+  it("puts DRAW on both colonies' names for a draw, and never WINNER", () => {
+    // Guards against a draw shown as a win on the plate.
+    const { host, show } = mount();
+    const f = frameOf({ ended: true });
+    f.board!.result = { ...f.board!.result!, winner: null, reason: "time_up", decidedBy: "draw" };
+    show(f);
+    expect(plate(host)).toEqual([["d2-plate-badge c0 is-draw", false, "Draw"], ["d2-plate-badge c1 is-draw", false, "Draw"]]);
+    expect(UI_CSS).toMatch(/\.d2-plate-badge\.is-draw \{[^}]*box-shadow:/);
+  });
+
+  it("puts no badge on either name for an abandoned match, even where the record names a colony", () => {
+    // Guards against an abandoned match shown as a win for the colony left standing.
+    const { host, show } = mount();
+    const f = frameOf({ ended: true });
+    f.board!.result = { ...f.board!.result!, winner: 1, reason: "abandoned", decidedBy: "idle" };
+    show(f);
+    expect(plate(host)).toEqual(HIDDEN);
+  });
+
+  it("clears the badge on a seek back before the result, or into the end's beat, and shows it again at the result", () => {
+    // Guards against a replay keeping WINNER on the plate while it plays back through the match.
+    const { host, show } = mount();
+    show(frameOf({ ended: true }));
+    expect(plate(host)[0]).toEqual(["d2-plate-badge c0", false, "Winner"]);
+    show(frameOf({ ended: false }));
+    expect(plate(host)).toEqual(HIDDEN);
+    show(frameOf({ ended: true }));
+    expect(plate(host)[0]).toEqual(["d2-plate-badge c0", false, "Winner"]);
+    // The match has ended but the result's beat has not passed: not yet.
+    show(frameOf({ ended: true, atMs: END * 100 }));
+    expect(plate(host)).toEqual(HIDDEN);
+  });
+
+  it("clears the badge when the next match starts, and badges that match's own winner at its end", () => {
+    // Guards against the last match's WINNER carried onto the next.
+    const { host, show } = mount();
+    show(frameOf({ ended: true }));
+    expect(plate(host)[0]).toEqual(["d2-plate-badge c0", false, "Winner"]);
+    show(frameOf({ ended: false, match: 2 }));
+    expect(plate(host)).toEqual(HIDDEN);
+    const next = frameOf({ ended: true, match: 2 });
+    next.board!.result = { ...next.board!.result!, winner: 1 };
+    show(next);
+    expect(plate(host)).toEqual([["d2-plate-badge c0", true, ""], ["d2-plate-badge c1", false, "Winner"]]);
   });
 
   it("closes and stays closed for that match, and opens again for the next match with the same result", () => {

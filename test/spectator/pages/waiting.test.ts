@@ -1,17 +1,18 @@
 // The Matches page's Waiting card: read-only, directly above Live now, one row per waiting agent with its name,
 // mode and time waited, and an empty state when none is waiting. Its rows stand on Live now's grid and column
-// order: Waited, Match, then each colony, as a table in a wide card and stacked rows in a narrow one.
+// order: Waited, then each colony, then Match, as a table in a wide card and stacked rows in a narrow one.
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
 import { lobbyKind, lobbyText, waitedText, waitingMode } from "../../../web/src/pages/waiting.ts";
 import type { MatchesView, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
-/** The table's body rows as read: the time waited, the match's kind, then each colony cell's seats with its span. */
+/** The table's body rows as read: the time waited, each colony cell's seats with its span (a seat's name, then its level
+ * and Fast after a comma, as a screen reader hears it), then the match's kind with its span. */
 const tableRows = (card: ElementPort) => card.byClass("d1p-wide")[0]!.querySelectorAll("tr").filter(row => row.parent?.tag === "tbody")
-  .map(row => row.children.map(cell => cell.className === "c-model"
-    ? [cell.colSpan, cell.byClass("d1p-model").map(seat => seat.textContent)]
-    : [cell.className, cell.textContent]));
+  .map(row => row.children.map(cell => cell.className === "c-side"
+    ? [cell.colSpan, cell.byClass("d1p-seat").map(seat => seat.textContent)]
+    : cell.className === "c-how" ? [cell.className, cell.textContent, cell.colSpan] : [cell.className, cell.textContent]));
 /** The stacked rows' lines as read. */
 const stackedLines = (card: ElementPort) => card.byClass("d1p-narrow")[0]!.querySelectorAll("li")
   .map(item => item.byClass("d1p-line").map(line => line.textContent));
@@ -41,24 +42,24 @@ describe("the Waiting card", () => {
     expect(p.titles()).toEqual(["Waiting", "Live now", "Recordings"]);
     const card = p.card();
     expect(card.byClass("d1p-state")[0]!.textContent).toBe("3 agents waiting in a ranked queue");
-    // Live now's grid: one head row, Waited and Match, then each colony, the second over the record and action columns.
+    // Live now's grid: one head row, Waited, each colony after its dot, then Match over the status and action columns.
     const table = card.byClass("d1p-wide")[0]!;
     expect(table.classes()).toEqual(["d1p-table", "d1p-wait", "d1p-wide"]);
-    expect(table.querySelector("colgroup")!.children.map(col => col.className)).toEqual(["c-start", "c-result", "c-model", "c-model", "c-record", "c-go"]);
+    expect(table.querySelector("colgroup")!.children.map(col => col.className)).toEqual(["c-start", "c-side", "c-side", "c-how", "c-go"]);
     expect(table.querySelector("thead")!.children[0]!.children.map(head => [head.tag, head.className, head.textContent, head.colSpan])).toEqual([
-      ["th", "c-start", "Waited", 1], ["th", "c-result", "Match", 1], ["th", "c-model d1p-c0", "Very Large Colony", 1], ["th", "c-model d1p-c1", "Lake Hodges Colony", 3],
+      ["th", "c-start", "Waited", 1], ["th", "c-side d1p-c0", "Very Large Colony", 1], ["th", "c-side d1p-c1", "Lake Hodges Colony", 1], ["th", "c-how", "Match", 2],
     ]);
     // A queued agent has no colony yet: its name spans both colonies' columns. The wait is as of the load.
     expect(tableRows(card)).toEqual([
-      [["c-start", "2 minwhen loaded"], ["c-result", "Ranked · 1v1"], [4, ["sam/first"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Ranked · 4v4"], [4, ["bea"]]],
+      [["c-start", "2 minwhen loaded"], [2, ["sam/first"]], ["c-how", "Ranked · 1v1", 2]],
+      [["c-start", "under 1 minwhen loaded"], [2, ["bea"]], ["c-how", "Ranked · 4v4", 2]],
       // A house handle in the shared row style (rowName), as Live now names it.
-      [["c-start", "14 minwhen loaded"], ["c-result", "Index · 2v2"], [4, ["GLM-5.3max"]]],
+      [["c-start", "14 minwhen loaded"], [2, ["GLM-5.3, max"]], ["c-how", "Index · 2v2", 2]],
     ]);
     expect(stackedLines(card)).toEqual([
       ["2 min waiting when loaded", "Ranked · 1v1", "sam/first"],
       ["under 1 min waiting when loaded", "Ranked · 4v4", "bea"],
-      ["14 min waiting when loaded", "Index · 2v2", "GLM-5.3max"],
+      ["14 min waiting when loaded", "Index · 2v2", "GLM-5.3, max"],
     ]);
     expect(card.all().filter(node => node.tag === "a" || node.tag === "button")).toEqual([]);
     p.mounted.destroy();
@@ -99,11 +100,11 @@ describe("the Waiting card's lobby rows", () => {
     expect(card.byClass("d1p-state")[0]!.textContent).toBe("1 agent waiting in a ranked queue · 4 matches waiting to start");
     // Each colony's seats in its own column; the Match text in the Recordings badge's words; a paired lobby shows its wait too.
     expect(tableRows(card)).toEqual([
-      [["c-start", "2 minwhen loaded"], ["c-result", "Ranked · 1v1"], [4, ["sam/first"]]],
-      [["c-start", "4 minwhen loaded"], ["c-result", "Lobby · 2v2 · 3 of 4 seats"], [1, ["ann", "cat"]], [3, ["bob"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Lobby · 1v1 · 1 of 2 seats"], [1, ["dan"]], [3, []]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Ranked · 2v2 · paired, starting soon"], [1, ["fay"]], [3, ["gus"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Index · 1v1 · paired, starting soon"], [1, ["Claude Opus 5.5high"]], [3, ["GPT-6 LunamaxFast"]]],
+      [["c-start", "2 minwhen loaded"], [2, ["sam/first"]], ["c-how", "Ranked · 1v1", 2]],
+      [["c-start", "4 minwhen loaded"], [1, ["ann", "cat"]], [1, ["bob"]], ["c-how", "Lobby · 2v2 · 3 of 4 seats", 2]],
+      [["c-start", "under 1 minwhen loaded"], [1, ["dan"]], [1, []], ["c-how", "Lobby · 1v1 · 1 of 2 seats", 2]],
+      [["c-start", "under 1 minwhen loaded"], [1, ["fay"]], [1, ["gus"]], ["c-how", "Ranked · 2v2 · paired, starting soon", 2]],
+      [["c-start", "under 1 minwhen loaded"], [1, ["Claude Opus 5.5, high"]], [1, ["GPT-6 Luna, max · Fast"]], ["c-how", "Index · 1v1 · paired, starting soon", 2]],
     ]);
     expect(stackedLines(card)).toEqual([
       ["2 min waiting when loaded", "Ranked · 1v1", "sam/first"],
@@ -112,11 +113,17 @@ describe("the Waiting card's lobby rows", () => {
       ["under 1 min waiting when loaded", "Ranked · 2v2 · paired, starting soon"],
       ["under 1 min waiting when loaded", "Index · 1v1 · paired, starting soon"],
     ]);
-    // The stacked lobby rows list each colony under its name, as Live now's do; a colony with no seat yet stays blank.
-    const colonies = card.byClass("d1p-narrow")[0]!.querySelectorAll("li").slice(1, 3).map(item => item.byClass("d1p-colonies")[0]!.children
-      .map(node => node.tag === "dt" ? node.textContent : node.byClass("d1p-model").map(seat => seat.textContent)));
-    expect(colonies).toEqual([["Very Large Colony", ["ann", "cat"], "Lake Hodges Colony", ["bob"]], ["Very Large Colony", ["dan"], "Lake Hodges Colony", []]]);
+    // The stacked lobby rows list each side's seats after its colony's dot, its name read to screen readers, as Live now's
+    // do; a colony with no seat yet is left out.
+    const sides = card.byClass("d1p-narrow")[0]!.querySelectorAll("li").slice(1, 3).map(item => item.byClass("d1p-side")
+      .map(side => [side.byClass("d1p-sr")[0]!.textContent, side.byClass("d1p-seat").map(seat => seat.textContent), side.byClass("d1p-dot").map(dot => dot.className)]));
+    expect(sides).toEqual([
+      [["Very Large Colony: ", ["ann", "cat"], ["d1p-dot d1p-c0", "d1p-dot d1p-c0"]], ["Lake Hodges Colony: ", ["bob"], ["d1p-dot d1p-c1"]]],
+      [["Very Large Colony: ", ["dan"], ["d1p-dot d1p-c0"]]],
+    ]);
     expect(card.byClass("d1p-unknown")).toEqual([]);
+    // No match has a result yet: no WINNER or DRAW badge, and no winner styling.
+    expect(card.byClass("d1p-badge").concat(card.byClass("is-win"))).toEqual([]);
     expect(card.all().filter(node => node.tag === "a" || node.tag === "button")).toEqual([]);
     p.mounted.destroy();
   });
@@ -159,7 +166,7 @@ describe("the Waiting card's lobby rows", () => {
     const card = p.card();
     expect(card.textContent).not.toMatch(/unranked/i);
     for (const node of card.all()) for (const value of [...Object.values(node.attrs), ...Object.values(node.dataset), node.title]) expect(value).not.toMatch(/unranked/i);
-    expect(card.byClass("c-result").map(cell => cell.textContent.split(" · ")[0])).toEqual(
+    expect(card.byClass("c-how").filter(cell => cell.tag === "td").map(cell => cell.textContent.split(" · ")[0])).toEqual(
       expect.arrayContaining(["Ranked", "Index", "Lobby", "Challenge"]));
     p.mounted.destroy();
   });
@@ -173,8 +180,8 @@ describe("house challenges on the Waiting card", () => {
       { mode: null, size: 1, seated: 1, colonies: [["dan"], []], waitingSeconds: 30 },
     ] }));
     expect(tableRows(p.card())).toEqual([
-      [["c-start", "4 minwhen loaded"], ["c-result", "Challenge · 1v1 · 1 of 2 seats"], [1, []], [3, ["player-7"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Lobby · 1v1 · 1 of 2 seats"], [1, ["dan"]], [3, []]],
+      [["c-start", "4 minwhen loaded"], [1, []], [1, ["player-7"]], ["c-how", "Challenge · 1v1 · 1 of 2 seats", 2]],
+      [["c-start", "under 1 minwhen loaded"], [1, ["dan"]], [1, []], ["c-how", "Lobby · 1v1 · 1 of 2 seats", 2]],
     ]);
     expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
     p.mounted.destroy();

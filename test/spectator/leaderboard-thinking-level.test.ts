@@ -38,7 +38,7 @@ describe("Model Index thinking levels", () => {
     ]);
     await vi.waitFor(() => expect(p.card().names).toHaveLength(3));
     const head = p.card().table!.querySelector("thead")!.querySelectorAll("th");
-    expect(head.map(cell => cell.textContent)).toEqual(["#Rank", "Name", "Rating", "Rated matches", "Record", "Last 5"]);
+    expect(head.map(cell => cell.textContent)).toEqual(["#Rank", "Model", "Rating", "Matches", "W–LWins and losses", "Last 5"]);
     expect(head.every(cell => cell.scope === "col")).toBe(true);
     // Rank, the handle alone (no level, no "(not recorded)"), Elo
     // (provisional below 10 rated matches), rated matches, Record, Last 5.

@@ -112,6 +112,12 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-name.c0 { color: var(--aw-c0); justify-self: start; margin-left: -1px; }
 .d2-name.c1 { color: var(--aw-c1); justify-self: end; margin-right: -1px; }
 .d2-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The result beside the colony's name (hud.ts): WINNER filled in its colour, DRAW outlined; text, never colour alone. */
+.d2-plate-badge { flex: none; padding: 0 6px; border-radius: 4px; font-size: 16px; font-weight: 800; line-height: 20px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--aw-bg); }
+.d2-plate-badge[hidden] { display: none; }
+.d2-plate-badge.c0 { background: var(--aw-c0); }
+.d2-plate-badge.c1 { background: var(--aw-c1); }
+.d2-plate-badge.is-draw { background: none; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); color: var(--aw-ink-bright); }
 .d2-chevron { flex: none; display: inline-flex; color: var(--aw-ink-bright); transition: transform 160ms var(--aw-ease); }
 .d2-chevron svg { display: block; }
 .d2-plate.open-0 .d2-name.c0 .d2-chevron, .d2-plate.open-1 .d2-name.c1 .d2-chevron { transform: rotate(180deg); }

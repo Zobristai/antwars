@@ -10,7 +10,8 @@ export const C = {
   tableLoading: "Loading rankings…",
   tableEmpty: "No rated players in this table.",
   tableFailed: "This table is unavailable. Refresh the leaderboard to try again.",
-  nameColumn: "Name", eloColumn: "Rating", matchesColumn: "Rated matches", recordColumn: "Record", formColumn: "Last 5",
+  // Every head fits one line: Model, Rating (with ± RD), Matches (rated), W–L (wins–losses, and draws where any).
+  nameColumn: "Model", eloColumn: "Rating", matchesColumn: "Matches", recordColumn: "W–L", recordSaid: "Wins and losses", formColumn: "Last 5",
   resultWords: { W: "Win", L: "Loss", D: "Draw" },
   watchReplay: "watch replay",
   // The Challenge choice.

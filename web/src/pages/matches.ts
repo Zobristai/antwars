@@ -1,37 +1,45 @@
-// The Archive (ported): Matches, following `main`. Two record cards, each saying its own state once: Live now,
-// and Recordings with one models column per colony. The band's Refresh is the page's only one: a failed card says so in
-// its state line and carries no second Refresh. Real column tables, the two lists on one column grid with one
-// head row each, in a card at least 56rem wide; in a narrower card each row stacks into labelled lines (archive.css). Rows
-// and links come from today's helpers (ui/format.ts), read-only.
-// Layout: every seat on one line with its badges, a colony's alike
-// seats once with how many they are; the columns: Recordings' Time and
-// Winner, the winning colony's name alone; Live now's Winner, "In progress", in place of Delay, and its Watch in Recordings'
-// action column, where Replay sits; no Lobby and no rating in Live now; no MODELS * head and no self-reported asterisk anywhere.
+// The Archive (ported): Matches, following `main`. Three record cards, each saying its own state once: Waiting, Live now,
+// and Recordings. The band's Refresh is the page's only one: a failed card says so in its state line and carries no second
+// Refresh. Real column tables, the three lists on one column grid with one head row each; in a card under 52rem each row
+// stacks into labelled lines (archive.css). Rows and links come from today's helpers (ui/format.ts), read-only.
+// Layout: rows are model-first, one column per colony in every list (Match, each colony's models under its name, Ended by,
+// Replay), each model after its colony's dot. Recordings marks the result in the side's own column: WINNER, filled in the
+// winning colony's ink, beside the winning side's first model, its models bold; a draw puts DRAW on both sides, and an
+// abandoned match or an unknown result its own word on both, so neither side is ever shown as the winner. Live now and
+// Waiting have no result yet, so no badge. Each seat's level and Fast are quiet words under its name, a colony's alike
+// seats once with how many they are. No rating anywhere, and no self-reported asterisk.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { SEAT, rowName } from "../compose.ts";
 import { liveRow, recordingRows, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
+import { PLATE_BADGE } from "../ui/deck/model.ts";
 import { h } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine } from "./chrome.ts";
-import { nameNodes } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
-  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, recordingsLine, seatGroups, stampWord,
-  whenParts, winnerOf, type LoadsSeen, type NameParts, type SeatEntry, type SeatGroup,
+  RECORDINGS_LIST, colonySeats, endedBy, liveKind, liveLine, loadedText, loadsSettled, matchesLists, outcomeOf, recordingsLine, seatGroups,
+  stampWord, startLine, whenParts, type LoadsSeen, type NameParts, type Outcome, type SeatEntry, type SeatGroup,
 } from "./model.ts";
 
 /** The HUD's tooltip words, held as a placeholder (‡): these
  * pages follow whatever wording the HUD lands, and never say "house matches". */
 const SELF_REPORTED = "Self-reported: outside the Antwars Model Index, each agent names its own model.";
-const LIVE_HEADS = ["Started", "Winner"] as const;
-/** Live now's one result. */
+const LIVE_HEADS = ["Started", "Status"] as const;
+/** Live now's one status. */
 const IN_PROGRESS = "In progress";
-const RECORDING_HEADS = ["Time", "Winner", "Record"] as const;
+/** Recordings' heads either side of the colonies'. */
+export const RECORDING_HEADS = ["Match", "Ended by"] as const;
+/** The result's word in a side's column: the plate's WINNER and DRAW (deck/model.ts PLATE_BADGE); an abandoned match or
+ * an unknown result takes the record's own word. */
+export const RESULT_BADGE = PLATE_BADGE;
+/** Ended by where the record does not say. */
+const NOT_RECORDED = "not recorded";
 const COLONIES = [0, 1] as const;
-/** One column grid for both lists (archive.css), so Live now's columns stand under Recordings' at every width. */
-const MATCH_COLUMNS = ["c-start", "c-result", "c-model", "c-model", "c-record", "c-go"] as const;
+/** One column grid for every Matches list (archive.css): the start; two sides; how it ended (Live now's status, Waiting's
+ * match); the action. */
+export const MATCH_COLUMNS = ["c-start", "c-side", "c-side", "c-how", "c-go"] as const;
 
 export interface MatchesActions { refresh(): void; more(): void }
 
@@ -58,24 +66,19 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   queueMicrotask(() => { if (title.isConnected && (doc.activeElement === null || doc.activeElement === doc.body)) title.focus({ preventScroll: true }); });
 
   const parts = rowParts(doc);
-  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList } = parts;
-  /** Live now's second colony cell spans the record column Live now does not have. */
-  const spanRecord = <T extends HTMLTableCellElement>(colony: 0 | 1, cell: T): T => { if (colony === 1) cell.colSpan = 2; return cell; };
+  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, sideCell, sides } = parts;
 
   // ---------------------------------------------------------------- Live now
   const started = (match: LiveMatch) => utcStamp(match.startedAt) ?? "Start unknown";
-  /** A live colony's players in the one row style every page shares (identity.ts), as Recordings lists its models:
-   * the name and level/Fast badges through the HUD's rowName, no rating and no provisional,
-   * and no thinking level for another player: the catalog carries none. An identity holding several seats is "<name> #<seat>" on
-   * each (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds, as
-   * alike recorded seats are; a seat it holds alone in its colony keeps
-   * its "#<seat>", as before. */
-  const players = (seats: readonly LiveSeat[]): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
+  /** A live colony's players in the one row style every Matches list shares: the name, its level and Fast as quiet words
+   * through the HUD's rowName, no rating and no provisional. An identity holding several seats is "<name> #<seat>" on each
+   * (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds, as alike
+   * recorded seats are; a seat it holds alone in its colony keeps its "#<seat>". */
+  const players = (seats: readonly LiveSeat[], colony: 0 | 1): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
     const shown = (name: string): NameParts => { const named = rowName(name, undefined); return { name: named.name, badges: named.badges, quiet: null }; };
     return { who, parts: shown(seat.displayName), alike: shown(who) };
-  })).map(group => seatBlock(group));
-  const notRecorded = (text: string) => h(doc, "span", "d1p-model d1p-unknown", text);
+  })).map(group => seatBlock(group, colony));
   const liveCard = (view: MatchesView): HTMLElement => {
     const state = liveLine(view);
     const rows = view.live.rows, loading = view.live.status === "loading" && rows.length === 0;
@@ -83,54 +86,48 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
     if (rows.length > 0 || loading) {
       const table = h(doc, "table", "d1p-table d1p-live d1p-wide");
       table.setAttribute("aria-labelledby", "d1p-live-title");
-      // Recordings' grid and head row: Winner, each colony's players under its models, and Watch in the action column,
-      // headed for screen readers, as Replay is. Live now has no record, so its second colony spans the record's column:
-      // no empty cell, and every column's left edge still stands under Recordings'.
+      // Recordings' grid: Started, each colony's players under its name, the status where Recordings says how a match
+      // ended, and Watch where Replay sits, headed for screen readers. Nobody has won yet, so no side is a winner.
       columns(table, MATCH_COLUMNS);
       const head = h(doc, "thead"), labels = h(doc, "tr");
-      labels.append(headCell(LIVE_HEADS[0], "c-start"), headCell(LIVE_HEADS[1], "c-result"));
-      for (const colony of COLONIES) labels.append(spanRecord(colony, headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`)));
-      labels.append(srHead("Watch", "c-go"));
+      labels.append(headCell(LIVE_HEADS[0], "c-start"));
+      for (const colony of COLONIES) labels.append(colonyHead(doc, colony));
+      labels.append(headCell(LIVE_HEADS[1], "c-how"), srHead("Watch", "c-go"));
       head.append(labels);
       const tbody = h(doc, "tbody");
       const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
       list.setAttribute("aria-labelledby", "d1p-live-title");
       if (loading) {
         table.setAttribute("aria-hidden", "true"); list.hidden = true;
-        for (let line = 0; line < 2; line++) tbody.append(skeleton(6, ["84px", "120px", "128px", "128px"]));
+        for (let line = 0; line < 2; line++) tbody.append(skeleton(5, ["84px", "128px", "128px", "84px"]));
       }
       for (const match of rows) {
         const row = liveRow(match, search), when = started(match);
         const name = `Watch, ${liveKind(match)} started ${when}`;
         const seated = match.colonies[0].length + match.colonies[1].length > 0;
         const line = h(doc, "tr");
-        const result = h(doc, "td", "c-result");
-        result.append(h(doc, "span", "d1p-result", IN_PROGRESS));
-        line.append(startCell(when), result);
+        line.append(startCell(when));
         if (!seated) {
-          const none = h(doc, "td", "c-model");
-          none.colSpan = 3;
-          none.append(notRecorded("Seats not recorded"));
+          const none = h(doc, "td", "c-side");
+          none.colSpan = 2;
+          none.append(h(doc, "span", "d1p-unknown", "Seats not recorded"));
           line.append(none);
         } else {
-          for (const colony of COLONIES) {
-            const cell = h(doc, "td", "c-model");
-            const seats = players(match.colonies[colony]);
-            cell.append(...(seats.length > 0 ? seats : [notRecorded("not recorded")]));
-            line.append(spanRecord(colony, cell));
-          }
+          for (const colony of COLONIES) line.append(sideCell(colony, players(match.colonies[colony], colony)));
         }
+        const status = h(doc, "td", "c-how");
+        status.append(h(doc, "span", "d1p-status", IN_PROGRESS));
         // Watch where Replay sits, by the same rowPill.
         const go = h(doc, "td", "c-go");
         go.append(rowPill("Watch", row.href, name, `live|wide|${row.id}`));
-        line.append(go);
+        line.append(status, go);
         tbody.append(line);
 
-        // Recordings' stacked row: the start, then the result, beside Watch; then each colony's players.
+        // The stacked row: the start, then the status, beside Watch; then each side's players after their colony's dot.
         const item = h(doc, "li");
         item.append(h(doc, "p", "d1p-line", `Started ${when}`), h(doc, "p", "d1p-line is-lead", IN_PROGRESS));
-        if (!seated) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
-        else item.append(colonyList(COLONIES.map(colony => players(match.colonies[colony]))));
+        if (!seated) item.append(h(doc, "p", "d1p-line d1p-unknown", "Seats not recorded"));
+        else item.append(sides(COLONIES.map(colony => [colony, players(match.colonies[colony], colony)] as const)));
         item.append(rowPill("Watch", row.href, name, `live|narrow|${row.id}`));
         list.append(item);
       }
@@ -164,7 +161,21 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   };
 }
 
-// ---------------------------------------------------------------- one row's parts, shared by both lists
+/** A colony's dot, in its ink; decorative, since its colony is always named beside it or read to screen readers. */
+function dot(doc: Document, colony: 0 | 1): HTMLElement {
+  const node = h(doc, "span", `d1p-dot d1p-c${colony}`);
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+/** A colony's column head, Live now's and Waiting's: its dot, then its name in its ink. */
+function colonyHead(doc: Document, colony: 0 | 1, cls = "c-side"): HTMLTableCellElement {
+  const cell = h(doc, "th", `${cls} d1p-c${colony}`);
+  cell.scope = "col";
+  cell.append(dot(doc, colony), COLONY_NAMES[colony]);
+  return cell;
+}
+
+// ---------------------------------------------------------------- one row's parts, shared by every list
 /** The parts the Matches lists' rows are built from, so Waiting, Live now and Recordings stand on one column grid. */
 export type RowParts = ReturnType<typeof rowParts>;
 function rowParts(doc: Document) {
@@ -177,13 +188,13 @@ function rowParts(doc: Document) {
     link.setAttribute("aria-label", label);
     return link;
   };
-  const card = (id: string, heading: string, lines: Node[], body: Node[], actionsRow: HTMLElement[]) => {
+  const card = (id: string, heading: string, lines: Node[], body: Node[], actionsRow: HTMLElement[], aside: Node[] = []) => {
     const section = h(doc, "section", "d1p-card");
     section.setAttribute("aria-labelledby", id);
     const head = h(doc, "div", "d1p-card-head");
     const titleNode = h(doc, "h2", "d1p-card-title", heading);
     titleNode.id = id;
-    head.append(titleNode, ...lines);
+    head.append(titleNode, ...aside, ...lines);
     section.append(head, ...body);
     if (actionsRow.length) {
       const foot = h(doc, "div", "d1p-card-foot");
@@ -208,50 +219,80 @@ function rowParts(doc: Document) {
     for (const cls of classes) group.append(h(doc, "col", cls));
     table.append(group);
   };
-  /** A row's start as its date over its time, the row's header, in both lists. */
-  const startCell = (when: string) => {
+  /** A row's start as its date over its time, then any further lines (a recording's match type), the row's header. */
+  const startCell = (when: string, ...more: Node[]) => {
     const parts = whenParts(when);
     const cell = h(doc, "th", "c-start");
     cell.scope = "row";
     cell.append(h(doc, "span", "d1p-date", parts.date));
     if (parts.time) cell.append(h(doc, "span", "d1p-time", parts.time));
+    cell.append(...more);
     return cell;
   };
-  /** A seat on its own line, in both lists and both forms: its name and badges and, for alike seats, how many they are,
-   * held on one line (archive.css .d1p-model). A name too long for its column ends in an ellipsis there, so its whole text
-   * is its title on hover; a screen reader reads the text itself, which is never cut. */
-  const seatBlock = ({ parts, seats }: SeatGroup) => {
-    const node = h(doc, "span", "d1p-model");
-    const [name, ...rest] = nameNodes(doc, parts);
-    // nameNodes' first node is always the name's own span, then its badges' unit where it has any (identity.ts).
-    (name as HTMLElement).title = parts.name;
-    if (parts.badges.length > 0) (rest[0] as HTMLElement).title = parts.badges.join(" ");
-    node.append(name!, ...rest);
+  /** A seat as every list shows it: its colony's dot (none for a queued agent, which has no colony yet), the model's name
+   * and, for alike seats, how many they are, on one line; its level and Fast as quiet words under it. A name too long for
+   * its column ends in an ellipsis there, so its whole text is its title on hover; a screen reader reads the text itself,
+   * which is never cut. */
+  const seatBlock = ({ parts, seats }: SeatGroup, colony: 0 | 1 | null, badge: HTMLElement | null = null) => {
+    const node = h(doc, "span", "d1p-seat");
+    const line = h(doc, "span", "d1p-model");
+    if (colony !== null) line.append(dot(doc, colony));
+    if (badge) line.append(badge, h(doc, "span", "d1p-sr", ", "));
+    const name = h(doc, "span", "d1p-name", parts.name);
+    name.title = parts.name;
+    line.append(name);
     if (seats > 1) {
       const count = h(doc, "span", "d1p-count");
       const shown = h(doc, "span", undefined, `×${seats}`);
       shown.setAttribute("aria-hidden", "true");
       count.append(shown, h(doc, "span", "d1p-sr", `, ${seats} seats`));
-      node.append(count);
+      line.append(count);
+    }
+    node.append(line);
+    if (parts.badges.length > 0) {
+      const meta = h(doc, "span", "d1p-meta", parts.badges.join(" · "));
+      meta.title = parts.badges.join(" · ");
+      node.append(h(doc, "span", "d1p-sr", ", "), meta);
     }
     return node;
   };
-  /** The stacked rows' colonies, in every list: each colony's name in its ink, its seats one per line beside it, as the
-   * table's colony columns hold them; a colony with none "not recorded", or blank where none is null (Waiting's open seats). */
-  const colonyList = (seats: readonly (readonly HTMLElement[] | null)[], none: string | null = "not recorded") => {
-    const list = h(doc, "dl", "d1p-colonies");
-    for (const colony of COLONIES) {
-      const lines = seats[colony];
-      const block = h(doc, "dd");
-      if (lines && lines.length > 0) block.append(...lines);
-      else if (none !== null) block.append(h(doc, "span", "d1p-model d1p-unknown", none));
-      list.append(h(doc, "dt", `d1p-colony d1p-c${colony}`, COLONY_NAMES[colony]), block);
-    }
-    return list;
+  /** A side's seats with its colony's name read to screen readers first; "not recorded" where none was, carrying the
+   * side's badge where it has one. */
+  const sideNodes = (colony: 0 | 1, seats: readonly HTMLElement[] | null, badge: HTMLElement | null = null): Node[] => [
+    h(doc, "span", "d1p-sr", `${COLONY_NAMES[colony]}: `),
+    ...(seats && seats.length > 0 ? seats : [unknownSide(colony, badge)]),
+  ];
+  /** A side whose models were not recorded: its colony's dot and name, so the result still reads. */
+  const unknownSide = (colony: 0 | 1, badge: HTMLElement | null = null) => {
+    const node = h(doc, "span", "d1p-seat");
+    const line = h(doc, "span", "d1p-model");
+    line.append(dot(doc, colony));
+    if (badge) line.append(badge, h(doc, "span", "d1p-sr", ", "));
+    line.append(h(doc, "span", "d1p-name", COLONY_NAMES[colony]));
+    node.append(line, h(doc, "span", "d1p-sr", ", "), h(doc, "span", "d1p-meta", "models not recorded"));
+    return node;
   };
-  /** The one six-column grid every Matches list stands on. */
+  const sideCell = (colony: 0 | 1, seats: readonly HTMLElement[] | null, cls = "c-side", badge: HTMLElement | null = null) => {
+    const cell = h(doc, "td", cls);
+    cell.append(...sideNodes(colony, seats, badge));
+    return cell;
+  };
+  /** The stacked rows' sides: each side's seats one per line, the sides apart; a side with none "not recorded", or left out
+   * where none is null (Waiting's open seats). */
+  const sides = (entries: readonly (readonly [0 | 1, readonly HTMLElement[] | null])[], none: boolean = true,
+    badge: (colony: 0 | 1) => HTMLElement | null = () => null) => {
+    const block = h(doc, "div", "d1p-sides");
+    for (const [colony, seats] of entries) {
+      if (!none && (seats === null || seats.length === 0)) continue;
+      const side = h(doc, "div", "d1p-side");
+      side.append(...sideNodes(colony, seats, badge(colony)));
+      block.append(side);
+    }
+    return block;
+  };
+  /** The one five-column grid every Matches list stands on. */
   const matchGrid = (table: HTMLTableElement) => columns(table, MATCH_COLUMNS);
-  return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, colonyList };
+  return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, sideCell, sideNodes, sides, colonyHead: (colony: 0 | 1, cls?: string) => colonyHead(doc, colony, cls) };
 }
 
 // ---------------------------------------------------------------- Recordings
@@ -270,26 +311,34 @@ export interface RecordingsCardOptions {
 /** The Recordings list as the Matches page draws it: a record card saying its own state once, its table and stacked rows. */
 export function recordingsCard(doc: Document, view: MatchesView, options: RecordingsCardOptions): HTMLElement {
   const { search } = options;
-  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList } = rowParts(doc);
-  /** The Winner column: the winning colony's name alone, in its own
-   * ink, where the record names a winner and the match was not abandoned; otherwise the record's own word (ui/format.ts
-   * recordingResult): Abandoned, Draw or Result unknown. */
-  const outcome = (r: Recording, text: string) => {
-    const winner = winnerOf(r);
-    return winner === null ? h(doc, "span", "d1p-result", text) : h(doc, "span", `d1p-result d1p-colony d1p-c${winner}`, COLONY_NAMES[winner]);
-  };
-  /** The match-type badge (ui/format.ts recordingType) under the winner, in both forms; none where the type is
-   * unknown. */
-  const typeBadge = (type: string | null) => type === null ? [] : [h(doc, "span", "d1p-tag d1p-type", type)];
+  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, sideCell, sides } = rowParts(doc);
+  /** The record stamp, only where a record is partial or unavailable: a complete record needs no word. */
   const stamp = (status: Recording["status"]) => {
+    if (status === "complete") return [];
     const node = h(doc, "span", `d1p-stamp is-${status}`);
     node.append(h(doc, "span", "d1p-sr", "Record "), stampWord(status));
+    return [node];
+  };
+  /** Each colony's recorded models, the seats that recorded one model label with the same badges once with how many they
+   * are (seatGroups), the side's badge on its first model's line; null for a colony with no recorded seat. No rating: a
+   * recording carries none. */
+  const recordedSeats = (seats: ReturnType<typeof colonySeats>, colony: 0 | 1, badge: HTMLElement | null): HTMLElement[] | null =>
+    seats?.[colony] ? seatGroups(seats[colony]).map((group, index) => seatBlock(group, colony, index === 0 ? badge : null)) : null;
+  /** A side's result, in its own column: WINNER filled in the winner's ink, nothing on the beaten side; with no winner, the
+   * record's word (Draw, Abandoned, Result unknown) outlined on both sides. Text, never colour alone. */
+  const badgeOf = (outcome: Outcome, colony: 0 | 1): HTMLElement | null => {
+    if (outcome.kind === "won") return outcome.winner === colony ? h(doc, "span", `d1p-badge is-win d1p-c${colony}`, RESULT_BADGE.winner) : null;
+    return h(doc, "span", "d1p-badge is-even", outcome.word);
+  };
+  const legend = () => {
+    const node = h(doc, "p", "d1p-legend");
+    for (const colony of COLONIES) {
+      const item = h(doc, "span", `d1p-legend-item d1p-c${colony}`);
+      item.append(dot(doc, colony), COLONY_NAMES[colony]);
+      node.append(item);
+    }
     return node;
   };
-  /** Each colony's recorded models, the seats that recorded one model label with the same badges once with how many they are
-   * (seatGroups), in both forms; null for a colony with no recorded seat. No rating: a recording carries none. */
-  const recordedSeats = (seats: NonNullable<ReturnType<typeof colonySeats>>) =>
-    COLONIES.map(colony => seats[colony] && seatGroups(seats[colony]).map(group => seatBlock(group)));
   const all = recordingRows(view, search);
   // A limited card shows the newest rows; where more remain it says so in the list's own words, never Load more.
   const rows = options.limit === undefined ? all : all.slice(0, options.limit);
@@ -298,17 +347,14 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   const loading = view.recordings.status === "loading" && rows.length === 0;
   const lines: Node[] = [stateLine(doc, state.glyph, state.text)];
   const body: Node[] = [];
-  // No note under the state (no editorial copy): the record stamp says each record's fidelity.
   if (rows.length > 0 || loading) {
     const table = h(doc, "table", "d1p-table d1p-rec d1p-wide");
     table.setAttribute("aria-labelledby", "d1p-rec-title");
     columns(table, MATCH_COLUMNS);
-    // One head row, as Live now's: Time, Winner, each colony's models under its name, Record, and Replay's head for screen
-    // readers.
+    // One head row: Match, each colony's name in its ink, Ended by, and Replay's head for screen readers.
     const head = h(doc, "thead"), labels = h(doc, "tr");
-    labels.append(headCell(RECORDING_HEADS[0], "c-start"), headCell(RECORDING_HEADS[1], "c-result"));
-    for (const colony of COLONIES) labels.append(headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`));
-    labels.append(headCell(RECORDING_HEADS[2], "c-record"), srHead(PAGE_WORDS.replay, "c-go"));
+    labels.append(headCell(RECORDING_HEADS[0], "c-start"), ...COLONIES.map(colony => colonyHead(doc, colony)),
+      headCell(RECORDING_HEADS[1], "c-how"), srHead(PAGE_WORDS.replay, "c-go"));
     head.append(labels);
     const tbody = h(doc, "tbody");
     const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
@@ -316,47 +362,44 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     // The stacked list has no skeleton rows: while the first page loads, the card's state line alone says so.
     if (loading) {
       table.setAttribute("aria-hidden", "true"); list.hidden = true;
-      for (let line = 0; line < 2; line++) tbody.append(skeleton(6, ["84px", "112px", "128px", "128px", "70px"]));
+      for (let line = 0; line < 2; line++) tbody.append(skeleton(5, ["84px", "128px", "128px", "96px"]));
     }
     for (const row of rows) {
       const r = byId.get(row.id)!;
       const seats = colonySeats(r.seats);
+      const outcome = outcomeOf(r);
+      const won = (colony: 0 | 1) => outcome.kind === "won" && outcome.winner === colony;
+      const how = endedBy(r);
       const name = `Replay, recording started ${row.when}`;
       const line = h(doc, "tr");
-      const result = h(doc, "td", "c-result");
-      result.append(outcome(r, row.result), ...typeBadge(row.type));
-      line.append(startCell(row.when), result);
-      if (seats === null) {
-        const none = h(doc, "td", "c-model");
-        none.colSpan = 2;
-        none.append(h(doc, "span", "d1p-model d1p-unknown", "Seats not recorded"));
-        line.append(none);
-      } else {
-        for (const models of recordedSeats(seats)) {
-          const cell = h(doc, "td", "c-model");
-          cell.append(...(models ?? [h(doc, "span", "d1p-model d1p-unknown", "not recorded")]));
-          line.append(cell);
-        }
+      line.append(startCell(row.when, ...(row.type === null ? [] : [h(doc, "span", "d1p-time d1p-type", row.type)]), ...stamp(r.status)));
+      // Each side's badge is one node, carried by its first model's line, or by its colony's line where no model was recorded.
+      for (const colony of COLONIES) {
+        const badge = badgeOf(outcome, colony);
+        const cell = sideCell(colony, recordedSeats(seats, colony, badge), "c-side", badge);
+        if (won(colony)) cell.classList.add("is-win");
+        line.append(cell);
       }
-      const record = h(doc, "td", "c-record");
-      record.append(stamp(r.status));
+      const ended = h(doc, "td", "c-how");
+      ended.append(how === null ? h(doc, "span", "d1p-unknown", NOT_RECORDED) : how);
       const go = h(doc, "td", "c-go");
       go.append(rowPill(PAGE_WORDS.replay, row.href, name, `rec|wide|${row.id}`));
-      line.append(record, go);
+      line.append(ended, go);
       tbody.append(line);
 
-      // The stacked row: its time, then its winner, beside Replay; then each colony's models, then the record. With no head
-      // over it, a winner carries the column's head word.
+      // The stacked row: its time and match type beside Replay; then each side's models in colony order, the result's
+      // badge on its model line as in the table; then how it ended, and a stamp where one is due.
       const item = h(doc, "li");
-      const lead = h(doc, "p", "d1p-line is-lead");
-      if (winnerOf(r) !== null) lead.append(h(doc, "span", "d1p-kicker", RECORDING_HEADS[1]), " ");
-      lead.append(outcome(r, row.result), ...typeBadge(row.type));
-      item.append(h(doc, "p", "d1p-line", row.when), lead);
-      if (seats === null) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
-      else item.append(colonyList(recordedSeats(seats)));
-      const stampLine = h(doc, "p", "d1p-line");
-      stampLine.append(stamp(r.status));
-      item.append(stampLine, rowPill(PAGE_WORDS.replay, row.href, name, `rec|narrow|${row.id}`));
+      item.append(h(doc, "p", "d1p-line", startLine(row.when, row.type)));
+      const narrowBadges = COLONIES.map(colony => badgeOf(outcome, colony));
+      const block = sides(COLONIES.map(colony => [colony, recordedSeats(seats, colony, narrowBadges[colony] ?? null)] as const),
+        true, colony => narrowBadges[colony] ?? null);
+      block.children[COLONIES.findIndex(won)]?.classList.add("is-win");
+      item.append(block);
+      if (how !== null) item.append(h(doc, "p", "d1p-line is-meta", how));
+      const stamped = stamp(r.status);
+      if (stamped.length > 0) { const stampLine = h(doc, "p", "d1p-line"); stampLine.append(...stamped); item.append(stampLine); }
+      item.append(rowPill(PAGE_WORDS.replay, row.href, name, `rec|narrow|${row.id}`));
       list.append(item);
     }
     table.append(head, tbody);
@@ -370,7 +413,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     button.addEventListener("click", options.more);
     act = [button];
   }
-  return card("d1p-rec-title", PAGE_WORDS.recordings, lines, body, act);
+  return card("d1p-rec-title", PAGE_WORDS.recordings, lines, body, act, rows.length > 0 ? [legend()] : []);
 }
 
 /** The HUD's self-reported tooltip: focus, pointing or a tap on the asterisk opens it beside the
