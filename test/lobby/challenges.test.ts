@@ -417,7 +417,7 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     expect(value(await w.report(told.requestId, "unavailable", REASON))).toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
     expect(await w.raw(`lobbies/${told.lobbyId}`)).toMatchObject({ state: "ended", outcome: "not_played" });
     expect(value(await w.main.challengeStatus(builder.key, undefined))).toEqual({
-      requestId: told.requestId, lobbyId: told.lobbyId, handle: `antwars/${HANDLES[0]}`, state: "house_unavailable", reason: "house challenges are unavailable right now: maintenance" });
+      requestId: told.requestId, lobbyId: told.lobbyId, handle: `antwars/${HANDLES[0]}`, state: "house_unavailable", reason: "challenges are unavailable right now: maintenance" });
     expect(value(await w.main.challengeStatus(w.house.key, told.requestId)).launchReport).toBe("unavailable");
     // Its place is returned and nothing about the handle changed: no availability write, the same listing, admission open.
     expect((await w.main.listChallengeOpponents()).allowanceLeft).toBe(20);
