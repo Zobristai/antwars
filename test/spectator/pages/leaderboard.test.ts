@@ -219,16 +219,15 @@ describe("rating ± RD", () => {
     const shown = () => p.root.byClass("c-elo").map(cell => cell.textContent).filter(text => /\d/.test(text));
     // The table cell, then the stacked row (which names the column for screen readers).
     expect(shown()).toEqual(expect.arrayContaining(["1663 ± 87", "1337 ± 290, provisional", "1300", "Rating 1663 ± 87"]));
-    // The rankings show the number look: the figure bold and ± RD beside it in one cell, always in view, never in a tip.
-    expect(p.root.byClass("d1p-elo").map(node => node.textContent)).toEqual(["1663", "1337", "1300", "1663", "1337", "1300"]);
-    expect(p.root.byClass("d1p-rd").map(node => node.textContent)).toEqual([" ± 87", " ± 290", " ± 87", " ± 290"]);
-    expect(p.root.byClass("d1-elo").concat(p.root.byClass("d1p-elo-rd"))).toEqual([]);
-    // "provisional" stands on its own line under the figure in the table (archive.css).
-    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
-    expect(css).toContain(".d1p-lb td.c-elo .d1p-prov { display: block; margin-left: 0; }");
+    // The in-match cyan badge holds the figure and ± RD (RATING_LOOK "badge"), the ± RD in its tip.
+    expect(p.root.byClass("d1-elo").map(node => node.textContent)).toEqual(["1663 ± 87", "1337 ± 290", "1300", "1663 ± 87", "1337 ± 290", "1300"]);
+    expect(p.root.byClass("d1-elo").map(node => node.children[0]?.tag === "#text" ? node.children[0].textContent : node.textContent))
+      .toEqual(["1663", "1337", "1300", "1663", "1337", "1300"]);
+    expect(p.root.byClass("d1p-elo-rd").map(node => node.textContent)).toEqual([" ± 87", " ± 290", " ± 87", " ± 290"]);
+    expect(p.root.byClass("d1p-rd")).toEqual([]);
     p.choose("Ranked 1v1");
     await p.answer("1v1", rows("public"), undefined, false); await p.answer("1v1", rows("public"));
-    expect(p.root.byClass("c-elo").map(cell => cell.textContent)).toContain("1663 ± 87");
+    expect(p.root.byClass("d1-elo").map(node => node.textContent)).toContain("1663 ± 87");
     p.dispose();
   });
 });

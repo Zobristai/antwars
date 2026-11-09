@@ -228,15 +228,8 @@ function foot(doc: Document, ...nodes: HTMLElement[]): HTMLElement {
 /** The name: an antwars-owned model's display name and badges, any other its handle only, with no thinking level,
  * in the one row style every page shares (identity.ts). */
 const nameOf = (doc: Document, entry: LeaderboardRow): Node[] => nameNodes(doc, { ...nameParts(entry), quiet: null });
-/** The rating and ± its RD in one cell, the figure bold, the provisional word on its own line under it: the rankings show
- * the number look, so the RD is always in view (identity.ts). */
-const eloNodes = (doc: Document, entry: LeaderboardRow): Node[] => ratingNodes(doc, entry, "number");
-/** W–L as shown, and read as words. */
-const recordHead = (doc: Document): Node[] => {
-  const shown = h(doc, "span", undefined, C.recordColumn);
-  shown.setAttribute("aria-hidden", "true");
-  return [shown, h(doc, "span", "d1p-sr", C.recordSaid)];
-};
+/** The rating, ± its RD and the provisional word, in the shared rating look (identity.ts). */
+const eloNodes = (doc: Document, entry: LeaderboardRow): Node[] => ratingNodes(doc, entry);
 /** Last 5, newest first: a result stamp each, a link to its replay where one is stored. Each link is keyed by
  * its table and layout (place), player and replay, so a redraw of another table keeps focus on it. */
 const formNodes = (doc: Document, entry: LeaderboardRow, search: string, place: string): HTMLElement[] => formMarks(entry, search).map(mark => {
@@ -274,8 +267,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
     [C.nameColumn, "c-name"], [C.eloColumn, "c-elo"], [C.matchesColumn, "c-matches"], [C.recordColumn, "c-record"], [C.formColumn, "c-form"],
   ] as const;
   for (const [text, cls] of columns) {
-    const cell = h(doc, "th", cls);
-    cell.append(...(text === C.recordColumn ? recordHead(doc) : [text]));
+    const cell = h(doc, "th", cls, text);
     cell.scope = "col";
     labels.append(cell);
   }
@@ -309,9 +301,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
   narrow.append(narrowHead, list);
   const stat = (label: string, ...value: (Node | string)[]) => {
     const node = h(doc, "span", "d1p-stat");
-    const kicker = h(doc, "span", "d1p-kicker");
-    kicker.append(...(label === C.recordColumn ? recordHead(doc) : [label]));
-    node.append(kicker, " ", ...value);
+    node.append(h(doc, "span", "d1p-kicker", label), " ", ...value);
     return node;
   };
   table.rows.forEach((entry, index) => {

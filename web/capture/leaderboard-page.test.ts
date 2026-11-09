@@ -395,7 +395,7 @@ describe("record and last-5 form columns", () => {
     letters: table.table!.querySelector("tbody")!.children.map(line => line.children[5]!.children.map(mark => mark.children[0]!.textContent).join("")),
   }));
   const expected = {
-    head: ["#Rank", "Model", "Rating", "Matches", "W–LWins and losses", "Last 5"],
+    head: ["#Rank", "Name", "Rating", "Rated matches", "Record", "Last 5"],
     // wins–losses; draws only for a player who has any; empty, never partial, without a reconciled record.
     cells: [["1700", "10", "7–3"], ["1600, provisional", "4", "2–1–1"], ["1500, provisional", "4", ""]],
     letters: ["WLWWL", "DLW", ""],
