@@ -16,7 +16,7 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // moved it from 037784f0). These digests were computed at main 5df81d04 from the
 // public redesign config, before the drawn map (undrawn) and after the drawn map of seed 6006.
 // Repinned for the idle rule's ranked never-joined clause (", or ranked seat not joined by the limit from match
-// start" in the Index clause, decision da631e67), which every briefing's idle line carries;
+// start" in the Index clause), which every briefing's idle line carries;
 // without that clause every text hashes to its 5df81d04 digest, so nothing else changed.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
   "join house=false undrawn=true nest=false": "743c4dcc81fdd6a5d9773a67f57bf31c550ddb3e1e0768648531df04495da583",
