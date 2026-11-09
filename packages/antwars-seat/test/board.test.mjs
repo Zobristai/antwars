@@ -4,6 +4,8 @@ import { denseCells, expandCells as serverExpandCells } from "../../../src/sim/v
 import { packTerritory } from "../../../src/mcp/territory.ts";
 import { packMarks } from "../../../src/mcp/markTable.ts";
 import { MAX_OBSERVE_TEXT_CHARS } from "../../../src/mcp/replies.ts";
+import { terrainView } from "../../../src/sim/terrain.ts";
+import { WIDE_PLAIN } from "../../../src/sim/scale2Maps.ts";
 import { expandCells, renderView, unpackMarks, unpackTerritory } from "../lib/board.mjs";
 
 const W = 128, H = 96; // New-match grid (gridScale 2).
@@ -179,5 +181,19 @@ describe("readable view", () => {
     expect(SIZES.worstCells.printed).toBeLessThan(SIZES.worstCells.raw * 1.5);
     expect(SIZES.worst.printed).toBeLessThan(SIZES.worst.raw * 1.8);
     expect(worst.view.cellsMore).toBe(true);
+  });
+
+  it("prints every water and rock rectangle of a real map, in the view and the nest selection", () => {
+    // Wide Plain at gridScale 2, plus more rocks than the 12-item cut other fields get.
+    const water = WIDE_PLAIN.water.map((r) => ({ x: r.x * 2, y: r.y * 2, width: r.width * 2, height: r.height * 2 }));
+    const rocks = Array.from({ length: 14 }, (_, i) => ({ x: 4 + i * 8, y: 90, width: 2, height: 2 }));
+    const terrain = terrainView({ mapId: WIDE_PLAIN.id, mapName: WIDE_PLAIN.name, water, rocks });
+    expect(terrain.water.length).toBeGreaterThan(12);
+    const data = reply(coverageCells(), null);
+    data.view.terrain = terrain;
+    data.nestSelection = { required: false, terrain, picks: [] };
+    const header = JSON.parse(renderView(data).split("\n")[0]);
+    expect(header.view.terrain).toEqual(terrain);
+    expect(header.nestSelection.terrain).toEqual(terrain);
   });
 });

@@ -16,7 +16,8 @@ function shrink(value, depth = 0) {
     return value.length > MAX_ARRAY ? [...head, `…${value.length - MAX_ARRAY} more`] : head;
   }
   if (value && typeof value === "object" && depth < 6) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shrink(v, depth + 1)]));
+    // Map terrain (view.terrain, nestSelection.terrain) is kept whole: every water and rock rectangle.
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === "terrain" ? v : shrink(v, depth + 1)]));
   }
   return value;
 }
