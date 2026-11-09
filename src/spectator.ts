@@ -106,6 +106,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
     ticked: (seq, out, game) => {
       if (out.state.result !== null) hub.setNextStart(seq, game.nextStart?.kind === "scheduled" ? game.nextStart.at : null);
       hub.pushTick(seq, out);
+      controller?.ticked(lobbies.get(seq), out, game);
     },
     // Handover save and restore: LiveHub.saveMatch/resumeMatch and WatchController.save/resume.
     ...(controller && spectatorHandover(hub, controller as WatchController & HandoverWatch, lobbies)),
