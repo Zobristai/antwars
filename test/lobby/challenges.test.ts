@@ -403,7 +403,7 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
 
   it("ends a challenge reported unavailable before the seat joins: house_unavailable with its reason, uncharged, its place returned, no handle marked", async () => {
     const w = await world(at(12, 0));
-    const REASON = "house challenges are unavailable right now";
+    const REASON = "maintenance";
     const availabilityBefore = await w.raw(`challengeAvailability/${HANDLES[0]}`);
     const rowOf = async () => (await w.main.listChallengeOpponents()).opponents.find((o) => o.handle === `antwars/${HANDLES[0]}`)!;
     const rowBefore = await rowOf();
@@ -417,7 +417,7 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     expect(value(await w.report(told.requestId, "unavailable", REASON))).toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
     expect(await w.raw(`lobbies/${told.lobbyId}`)).toMatchObject({ state: "ended", outcome: "not_played" });
     expect(value(await w.main.challengeStatus(builder.key, undefined))).toEqual({
-      requestId: told.requestId, lobbyId: told.lobbyId, handle: `antwars/${HANDLES[0]}`, state: "house_unavailable", reason: REASON });
+      requestId: told.requestId, lobbyId: told.lobbyId, handle: `antwars/${HANDLES[0]}`, state: "house_unavailable", reason: "house challenges are unavailable right now: maintenance" });
     expect(value(await w.main.challengeStatus(w.house.key, told.requestId)).launchReport).toBe("unavailable");
     // Its place is returned and nothing about the handle changed: no availability write, the same listing, admission open.
     expect((await w.main.listChallengeOpponents()).allowanceLeft).toBe(20);

@@ -338,7 +338,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
 
     it("accepts unavailable only from the house owner: it ends the challenge house_unavailable uncharged with its reason and lists no handle unavailable", async () => {
       const w = await serve(open);
-      const REASON = "house challenges are unavailable right now";
+      const REASON = "maintenance";
       const rowOf = async () => (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/glm-5-3");
       const rowBefore = await rowOf();
       expect([rowBefore.available, rowBefore.reason]).toEqual([true, null]);
@@ -359,7 +359,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         .toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
       expect((await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: told.lobbyId })).lobby).toMatchObject({ state: "ended", outcome: "not_played" });
       expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual({
-        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-3", state: "house_unavailable", reason: REASON });
+        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-3", state: "house_unavailable", reason: "house challenges are unavailable right now: maintenance" });
       expect((await okBody(w.call, "challenge_status", { key: w.house.key, requestId: told.requestId })).launchReport).toBe("unavailable");
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "failed", reason: "late" })).toMatch(/^already_reported( 409)?$/);
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "unavailable", reason: REASON })).toMatch(/^already_reported( 409)?$/);
