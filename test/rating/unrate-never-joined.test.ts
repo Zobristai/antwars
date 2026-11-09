@@ -114,23 +114,12 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     expect(record).toMatchObject({ status: "complete", setup: { rated: false }, result: { winner: null, reason: "abandoned", decidedBy: "draw" } });
     expect(record.result.ratingChanges).toBeUndefined();
     expect(record.seats).toEqual(w.recording.record.seats);
-    // A second run finds nothing to correct and writes nothing.
+    // A second run reads the committed correction, finds nothing left to write and writes nothing.
     const again = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
-    expect(again.verification.ok).toBe(false);
+    expect(again.verification.ok).toBe(true);
+    expect(again.verification.stage).toBe("corrected");
+    expect(again.writes).toEqual([]);
     expect(again.applied).toBe(false);
-  });
-
-  it("finishes a run that stopped after rewriting the recording", async () => {
-    const w = await world();
-    // As a run that crashed between the recording and the Firestore transaction leaves it.
-    const bin = w.recordings.objects.get(`${REPLAY_ID}.bin`)!, json = w.recordings.objects.get(`${REPLAY_ID}.json`)!;
-    await w.recordings.replace(`${REPLAY_ID}.bin`, { ...bin, body: abandonBinary(bin.body).body! }, bin.generation);
-    await w.recordings.replace(`${REPLAY_ID}.json`, { ...json, body: serializeRecord(abandonRecord(w.recording.record)) }, json.generation);
-    const resumed = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
-    expect(resumed.verification.recordingCorrected).toBe(true);
-    expect(resumed.applied).toBe(true);
-    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.outcome).toBe("abandoned");
-    expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("false");
   });
 
   async function refuses(w: Awaited<ReturnType<typeof world>>, check: string): Promise<void> {
@@ -210,7 +199,76 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     await refuses(w, "lobby");
   });
 
-  it("writes nothing to Firestore when a recording object changed after verification", async () => {
+  /** The store with its commit transaction (the third: snapshot, rating rows, commit) replaced by `commit`. */
+  const atCommit = (w: Awaited<ReturnType<typeof world>>, commit: Store["transaction"]): CorrectionDeps => {
+    let calls = 0;
+    return { ...w.deps, store: { ...w.store, namespace: w.store.namespace, get: w.store.get, query: w.store.query,
+      transaction: (step) => (++calls === 3 ? commit : w.store.transaction)(step) } };
+  };
+  /** The bucket with replace of names matching `name` replaced by `replace`. */
+  const replacing = (w: Awaited<ReturnType<typeof world>>, name: RegExp, replace: RecordingObjects["replace"]): CorrectionDeps =>
+    ({ ...w.deps, recordings: { ...w.recordings, read: w.recordings.read, replace: (n, o, g) => (name.test(n) ? replace : w.recordings.replace)(n, o, g) } });
+  const firestoreCorrected = async (w: Awaited<ReturnType<typeof world>>) => {
+    expect((await w.store.get(`lobbies/${w.lobbyId}`))!).toMatchObject({ outcome: "abandoned", rated: "false" });
+    expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("false");
+    expect(await w.store.get(`ratedMatches/${w.lobbyId}`)).toBeNull();
+    for (const id of w.ids) expect(await w.store.get(`ratings/${id}`)).toBeNull();
+  };
+  const recordingAbandoned = (w: Awaited<ReturnType<typeof world>>) => {
+    const decoded = binaryRecord({ id: REPLAY_ID, binary: w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body });
+    expect(decoded.result).toMatchObject({ winner: null, reason: "abandoned", decidedBy: "draw" });
+    expect(decoded.setup!.rated).toBe(false);
+    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(serializeRecord(abandonRecord(w.recording.record)));
+  };
+  const recordingUntouched = (w: Awaited<ReturnType<typeof world>>) => {
+    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
+    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
+  };
+
+  it("writes nothing to Firestore or the recording when a document changed after verification", async () => {
+    const w = await world();
+    const racing = atCommit(w, async (step) => {
+      await write(w.store, [{ op: "update", path: `ratings/${w.joined}`, fields: { thinkingLevel: "changed" } }]);
+      return w.store.transaction(step);
+    });
+    await expect(correct(racing, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/changed since verification; nothing written to Firestore or the recording/);
+    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
+    expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("true");
+    expect(await w.store.get(`ratings/${w.absent}`)).not.toBeNull();
+    // The recording was never written: the Firestore check runs before any recording write.
+    recordingUntouched(w);
+  });
+
+  it("leaves the recording untouched when the commit fails, and a rerun completes the whole correction", async () => {
+    const w = await world();
+    await expect(correct(atCommit(w, async () => { throw new Error("commit failed"); }), w.lobbyId, { apply: true, replayId: REPLAY_ID }))
+      .rejects.toThrow(/Firestore commit outcome unknown \(commit failed\); the recording was not touched/);
+    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
+    recordingUntouched(w);
+    const rerun = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
+    expect(rerun.verification.stage).toBe("rated");
+    expect(rerun.applied).toBe(true);
+    await firestoreCorrected(w);
+    recordingAbandoned(w);
+  });
+
+  it("when a commit response is lost after Firestore committed, a rerun reads the commit and completes only the recording", async () => {
+    const w = await world();
+    const lost = atCommit(w, async (step) => { await w.store.transaction(step); throw new Error("DEADLINE_EXCEEDED"); });
+    await expect(correct(lost, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/outcome unknown \(DEADLINE_EXCEEDED\); the recording was not touched/);
+    await firestoreCorrected(w);
+    recordingUntouched(w);
+    const readOnly = await correct(w.deps, w.lobbyId, { apply: false, replayId: REPLAY_ID });
+    expect(failed(readOnly.verification.checks)).toEqual([]);
+    expect(readOnly.verification.stage).toBe("corrected");
+    expect(readOnly.writes).toEqual([`replace ${REPLAY_ID}.bin at generation 1`, `replace ${REPLAY_ID}.json at generation 2`]);
+    const rerun = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
+    expect(rerun.applied).toBe(true);
+    await firestoreCorrected(w);
+    recordingAbandoned(w);
+  });
+
+  it("when a recording object changed after verification, Firestore is corrected and a rerun completes the recording", async () => {
     const w = await world();
     const original = w.deps.recordings;
     let reads = 0;
@@ -219,51 +277,42 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
       if (name.endsWith(".bin") && ++reads === 1) w.recordings.touch(name);
       return object;
     } };
-    await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/changed since it was verified/);
-    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
-    expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("true");
-    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
+    await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true, replayId: REPLAY_ID }))
+      .rejects.toThrow(/not confirmed replaced \(object .*\.bin changed since it was verified; nothing replaced\)\. Rerun with --apply/);
+    await firestoreCorrected(w);
+    recordingUntouched(w);
+    expect((await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID })).applied).toBe(true);
+    recordingAbandoned(w);
   });
 
-  it("puts the binary back when the record cannot be replaced", async () => {
+  it("when an upload was stored but its response lost, a rerun checks both objects and rewrites only the one still rated", async () => {
     const w = await world();
-    const original = w.deps.recordings;
-    let reads = 0;
-    const racing: RecordingObjects = { ...original, read: async name => {
-      const object = await original.read(name);
-      if (name.endsWith(".json") && ++reads === 1) w.recordings.touch(name);
-      return object;
-    } };
-    await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/recording was restored/);
-    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
-    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
-  });
-
-  it("writes nothing to Firestore when a document changed after verification", async () => {
-    const w = await world();
-    let calls = 0;
-    const racing: CorrectionDeps = { ...w.deps, store: { ...w.store, namespace: w.store.namespace, get: w.store.get, query: w.store.query,
-      transaction: async (step) => {
-        if (++calls === 3) await write(w.store, [{ op: "update", path: `ratings/${w.joined}`, fields: { thinkingLevel: "changed" } }]);
-        return w.store.transaction(step);
-      } } };
-    await expect(correct(racing, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/changed since verification; nothing written to Firestore; the recording was restored/);
-    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
-    expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("true");
-    expect(await w.store.get(`ratings/${w.absent}`)).not.toBeNull();
-    // The recording is put back exactly: a failed check leaves it as it was.
-    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
-    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
-  });
-
-  it("puts the recording back when the Firestore transaction fails", async () => {
-    const w = await world();
-    let calls = 0;
-    const failing: CorrectionDeps = { ...w.deps, store: { ...w.store, namespace: w.store.namespace, get: w.store.get, query: w.store.query,
-      transaction: async (step) => { if (++calls === 3) throw new Error("commit failed"); return w.store.transaction(step); } } };
-    await expect(correct(failing, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/commit failed; nothing written to Firestore; the recording was restored/);
-    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
-    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
+    // The record upload lands but its response is lost; the binary upload fails outright.
+    const uncertain = replacing(w, /\.(bin|json)$/, async (name, object, generation) => {
+      if (name.endsWith(".bin")) throw new Error("connection reset");
+      await w.recordings.replace(name, object, generation);
+      throw new Error("response lost");
+    });
+    await expect(correct(uncertain, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/\.bin not confirmed replaced \(connection reset\)/);
+    // Simulate the opposite order too: the record already abandoned while the binary is still rated.
+    const json = w.recordings.objects.get(`${REPLAY_ID}.json`)!;
+    await w.recordings.replace(`${REPLAY_ID}.json`, { ...json, body: serializeRecord(abandonRecord(w.recording.record)) }, json.generation);
+    const readOnly = await correct(w.deps, w.lobbyId, { apply: false, replayId: REPLAY_ID });
+    expect(failed(readOnly.verification.checks)).toEqual([]);
+    expect(readOnly.writes).toEqual([`replace ${REPLAY_ID}.bin at generation 1`]);
+    const rerun = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
+    expect(rerun.writes).toEqual([`replace ${REPLAY_ID}.bin at generation 1`]);
+    await firestoreCorrected(w);
+    recordingAbandoned(w);
+    // And the binary abandoned while the record is still rated: only the record is rewritten.
+    const v = await world();
+    await expect(correct(replacing(v, /\.json$/, async (name, object, generation) => {
+      await v.recordings.replace(name, object, generation); throw new Error("response lost");
+    }), v.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/\.json not confirmed replaced \(response lost\)/);
+    const vJson = v.recordings.objects.get(`${REPLAY_ID}.json`)!;
+    await v.recordings.replace(`${REPLAY_ID}.json`, { ...vJson, body: v.recording.recordBody }, vJson.generation);
+    expect((await correct(v.deps, v.lobbyId, { apply: true, replayId: REPLAY_ID })).writes).toEqual([`replace ${REPLAY_ID}.json at generation 5`]);
+    recordingAbandoned(v);
   });
 });
 
