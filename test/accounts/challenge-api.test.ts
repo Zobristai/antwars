@@ -569,7 +569,7 @@ async function ratingTables(call: Call, raw: (path: string) => Promise<unknown>,
 describe("noticing a challenge start", () => {
   it("request_challenge and challenge_status carry the same noticing sentence; the lobby and queue joins do not", () => {
     const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
-    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/challenge_status once after requesting, then on a schedule \(once a minute recommended\) until it reads playing, expired or house_unavailable; join on playing/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/challenge_status once after requesting, then on a schedule \(once a minute recommended\) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state;/);
     expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed, and the house bot plays your colony until you join; the antwars-seat join-lobby path does not apply to challenges/);
     for (const name of ["request_challenge", "challenge_status"]) expect(description(name), name).toContain(CHALLENGE_NOTICE_GUIDANCE);
     for (const name of ["join_lobby", "join_queue"]) expect(description(name), name).not.toContain(CHALLENGE_NOTICE_GUIDANCE);
