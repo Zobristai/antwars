@@ -596,13 +596,14 @@ export function plateBadges(frame: Frame | null): readonly [string | null, strin
 }
 export const PLATE_BADGE = { winner: "Winner", draw: "Draw" } as const;
 
-/** One side's models by their shown names, each distinct name once in seat order (a seat's "#n" dropped): a seated identity's
- * row name, else the model it reported; a seat naming neither is left out. */
+/** One side's models by their shown names, each distinct name once in seat order: the model each seat recorded, as the
+ * Leaderboard names it (agentModel: a house handle's own model name, else the recorded label's); a seat that recorded no
+ * model, its player's shown name (a seat's "#n" dropped); a seat naming neither is left out. */
 export function sideModels(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony): string[] {
   const names: string[] = [];
   for (const a of agents) {
     if (a.colony !== colony) continue;
-    const name = a.identity ? rowName(SEAT.exec(a.identity.displayName)?.[1] ?? a.identity.displayName, undefined).name : agentModel(a)?.name ?? null;
+    const name = agentModel(a)?.name ?? (a.identity ? rowName(SEAT.exec(a.identity.displayName)?.[1] ?? a.identity.displayName, undefined).name : null);
     if (name !== null && !names.includes(name)) names.push(name);
   }
   return names;

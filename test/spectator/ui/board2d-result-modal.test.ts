@@ -19,7 +19,7 @@ function queen(id: number, colony: 0 | 1, tile: number, hp: number, lostTick: nu
   return { id, colony, x: tile * SUB_TILE + 2, y: 20 * SUB_TILE + 2, foundedTick: 0, lostTick, overrun: 0, hp };
 }
 function agent(colony: 0 | 1, name: string, elo: number): StreamAgent {
-  return { identity: { displayName: name, elo }, colony, modelLabel: "claude-sonnet-5", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
+  return { identity: { displayName: name, elo }, colony, modelLabel: colony === 0 ? "openai/gpt-6.1-sol" : "anthropic/claude-fable-5-1", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
 }
 
 /** A 1v1 on the redesign rules, ended at END by queens killed when `ended`; `match` as Playback counts it (Frame.match). */
@@ -66,7 +66,7 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("fennec/forager wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("GPT-6.1 Sol wins");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
     expect(host.byClass("d2-result")).toHaveLength(0);

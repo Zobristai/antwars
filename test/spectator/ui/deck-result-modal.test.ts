@@ -18,7 +18,7 @@ function queen(id: number, colony: 0 | 1, tile: number, hp: number, lostTick: nu
   return { id, colony, x: tile * SUB_TILE + 2, y: 20 * SUB_TILE + 2, foundedTick: 0, lostTick, overrun: 0, hp };
 }
 function agent(colony: 0 | 1, name: string, elo: number): StreamAgent {
-  return { identity: { displayName: name, elo }, colony, modelLabel: "claude-sonnet-5", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
+  return { identity: { displayName: name, elo }, colony, modelLabel: colony === 0 ? "openai/gpt-6.1-sol" : "anthropic/claude-fable-5-1", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
 }
 
 /**
@@ -68,9 +68,11 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
-    // The headline names the winning model, not the colony; the colony and whom it beat stand under it.
-    expect(head.textContent).toBe("fennec/forager wins");
-    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("Very Large Colony · beat tidewater");
+    // The headline names the winning model each seat recorded, not the colony or the player's handle; the colony and the
+    // model it beat stand under it.
+    expect(head.textContent).toBe("GPT-6.1 Sol wins");
+    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("Very Large Colony · beat Claude Fable 5.1");
+    expect(head.textContent).not.toContain("fennec/forager");
     expect((head.style as unknown as { color: string }).color).toBe("var(--aw-c0)");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
@@ -150,7 +152,7 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: false, name: "next/match" }));
     show(frameOf({ ended: true, winner: 1, name: "next/match" }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("tidewater wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Claude Fable 5.1 wins");
   });
 
   it("opens again for the next match even when its result reads exactly as the one just closed", () => {
@@ -163,7 +165,7 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true, match: 2 }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("fennec/forager wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("GPT-6.1 Sol wins");
     // And that match's own Close holds for it, as the first match's did.
     closeButton(dialog).click();
     show(frameOf({ ended: true, match: 2 }));
@@ -274,7 +276,7 @@ describe("the plate's result badge", () => {
     show(draw);
     expect(badges(teams)).toEqual([[false, "Draw", true], [false, "Draw", true]]);
     expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Draw");
-    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("fennec/forager drew with tidewater");
+    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("GPT-6.1 Sol drew with Claude Fable 5.1");
     expect(dialog.textContent).not.toMatch(/ wins| beat /);
   });
 
