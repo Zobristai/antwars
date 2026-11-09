@@ -120,6 +120,21 @@ const configCall = (calls: string[][]) => calls.find((c) => c[0] === "deploy.sh 
 const uploads = (calls: string[][]) => calls.filter((c) => c[0] === "gcloud" && c[1] === "storage" && c[2] === "cp");
 
 describe("cloudbuild-run.sh", () => {
+  // read takes only the first line: `all <sha>` then `--precheck` on a second line would otherwise deploy.
+  it.each([
+    `all ${SHA}\n--precheck`,
+    `all ${SHA} --precheck\n`,
+    `all ${SHA}\r--precheck`,
+    `all ${SHA}\r\n`,
+    `\nall ${SHA}`,
+    `records-rollback ${SHA}\n${DIGEST}`,
+  ])("refuses _ARGS %j holding a line break before any call", (args) => {
+    const r = run({ args });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("refusing: _ARGS holds a line break");
+    expect(r.calls).toEqual([]);
+  });
+
   it.each([
     "slots live " + SHA,
     "slots preview " + SHA,
@@ -299,6 +314,65 @@ describe("cloudbuild.yaml", () => {
     expect(script).toContain('git -C /tmp/antwars checkout --quiet --detach "$$ANTWAR_COMMIT"');
     expect(script).toContain("exec bash /tmp/antwars/deploy/cloud-run/cloudbuild-run.sh");
     expect(script.replaceAll("$$", "")).not.toContain("$");
+  });
+
+  // The step's own script, run as Cloud Build runs it ($$ unescaped), against a fake git whose clone
+  // leaves a sentinel cloudbuild-run.sh in the checkout: nothing from the checkout may run off main.
+  function step(onMain: boolean, commit = SHA) {
+    const dir = mkdtempSync(join(tmpdir(), "antwar-cloudbuild-step-"));
+    scratch.push(dir);
+    const bin = join(dir, "bin");
+    const checkout = join(dir, "antwars");
+    mkdirSync(bin);
+    const calls = join(dir, "calls.jsonl");
+    writeFileSync(calls, "");
+    writeFileSync(join(bin, "git"), `#!/usr/bin/env node
+const fs = require("node:fs"), path = require("node:path");
+const a = process.argv.slice(2);
+fs.appendFileSync(process.env.CALLS, JSON.stringify(["git", ...a]) + "\\n");
+const rest = a[0] === "-C" ? a.slice(2) : a;
+if (rest[0] === "clone") {
+  const tools = path.join(rest.at(-1), "deploy", "cloud-run");
+  fs.mkdirSync(tools, { recursive: true });
+  fs.writeFileSync(path.join(tools, "cloudbuild-run.sh"), 'printf "%s\\\\n" \\'["sentinel wrapper ran"]\\' >>"$CALLS"\\n');
+}
+if (rest[0] === "merge-base") process.exit(process.env.ON_MAIN === "1" ? 0 : 1);
+`, { mode: 0o755 });
+    const script = /\n {6}- \|\n((?: {8}.*\n)*)/.exec(yaml)![1]
+      .replace(/^ {8}/gm, "").replaceAll("$$", "$").replaceAll("/tmp/antwars", checkout);
+    const r = spawnSync("bash", ["-c", script], { encoding: "utf8", env: {
+      PATH: `${bin}:${process.env.PATH}`, CALLS: calls, ON_MAIN: onMain ? "1" : "0",
+      ANTWAR_COMMIT: commit, ANTWAR_REPO_URL: "https://example.com/antwars.git",
+    } });
+    const list = readFileSync(calls, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as string[]);
+    return { status: r.status, stderr: r.stderr, calls: list, checkout };
+  }
+
+  it("refuses a commit not on origin/main before running anything from the checkout", () => {
+    const r = step(false);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`refusing: commit ${SHA} is not on origin/main; nothing from it runs`);
+    expect(r.calls).toEqual([
+      ["git", "clone", "--quiet", "https://example.com/antwars.git", r.checkout],
+      ["git", "-C", r.checkout, "merge-base", "--is-ancestor", SHA, "origin/main"],
+    ]);
+  });
+
+  it("checks the commit is on origin/main, then checks it out and runs its wrapper", () => {
+    const r = step(true);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.calls).toEqual([
+      ["git", "clone", "--quiet", "https://example.com/antwars.git", r.checkout],
+      ["git", "-C", r.checkout, "merge-base", "--is-ancestor", SHA, "origin/main"],
+      ["git", "-C", r.checkout, "checkout", "--quiet", "--detach", SHA],
+      ["sentinel wrapper ran"],
+    ]);
+  });
+
+  it("refuses a commit that is not a full sha before cloning", () => {
+    const r = step(true, SHA.slice(0, 39));
+    expect(r.status).toBe(2);
+    expect(r.calls).toEqual([]);
   });
 
   it("logs to Cloud Logging, and outlasts deploy.sh's longest run", () => {

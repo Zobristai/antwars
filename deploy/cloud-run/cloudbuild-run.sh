@@ -32,6 +32,9 @@ source "$HERE/config.sh"
 
 HEX40='^[0-9a-f]{40}$'
 [[ "${ANTWAR_COMMIT:-}" =~ $HEX40 ]] || { echo "refusing: the build's commit (COMMIT_SHA) is not a full 40-hex sha" >&2; exit 2; }
+# read takes only the first line, so a line break would silently drop the rest
+# (`all <sha>` then `--precheck` would deploy): refused before any parsing.
+[[ "${ANTWAR_ARGS:-}" != *$'\n'* && "${ANTWAR_ARGS:-}" != *$'\r'* ]] || { echo "refusing: _ARGS holds a line break" >&2; exit 2; }
 if [[ -n "${ANTWAR_TAG:-}" ]]; then
   [[ -z "${ANTWAR_ARGS:-}" ]] || { echo "refusing: a tag build takes no _ARGS" >&2; exit 2; }
   [[ "$ANTWAR_TAG" =~ ^deploy-([0-9a-f]{40})$ ]] \
