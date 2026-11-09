@@ -217,7 +217,10 @@ SHA covers both phases.
 Existing objects must have the script's ownership description and matching
 configuration, except the NEG: its create command has no description flag, so
 its exact reserved name, SERVERLESS type, `cloudRun.service=antwar`, and absence
-of tag/mask are its ownership proof. Matching objects are skipped without
+of tag/mask are its ownership proof. The ownership description is
+`antwars.ai frontend; app=antwar`; objects created by earlier versions carry it
+after one leading word, a form the script still accepts because addresses,
+certificates and forwarding rules cannot change a description in place. Matching objects are skipped without
 mutation; conflicting or half-created objects stop the run before writes. The script does not reconcile
 existing infrastructure. CLI create is INSERT-only: a concurrent name collision
 stops. Address/forwarding-rule labels are finished only immediately after their

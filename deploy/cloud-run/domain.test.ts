@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const script = resolve("deploy/cloud-run/domain.sh");
+const marker = "antwars.ai frontend; app=antwar";
 const scratch: string[] = [];
 afterEach(() => { for (const p of scratch.splice(0)) rmSync(p, { recursive: true, force: true }); });
 
@@ -260,6 +261,47 @@ describe("Front-end creation boundary", () => {
     const f = fixture(); expectExit(f.run("reserve-ip")).toBe(0);
     const s = f.state(); s["ssl-certificates/antwar-domain-cert"] = { name: "antwar-domain-cert", description: "foreign" }; f.setState(s);
     f.clearCalls(); expectExit(f.run("create-remaining")).not.toBe(0); expect(mutations(f.calls())).toEqual([]);
+  });
+  it("marks every described resource with the neutral marker and nothing else", () => {
+    const f = fixture(); expectExit(f.run("reserve-ip")).toBe(0);
+    expectExit(f.run("create-remaining")).toBe(0);
+    for (const [resource, v] of Object.entries(f.state())) {
+      if (resource.startsWith("network-endpoint-groups/")) continue;
+      expect(v.description, resource).toBe(marker);
+    }
+    // The script names no tracker-style key (letters, hyphen, digits) anywhere.
+    expect(readFileSync(script, "utf8")).not.toMatch(/\b[A-Z][A-Z0-9]*-\d+\b/);
+  }, 15_000);
+  it("accepts the older one-leading-word marker form read-only in every phase", () => {
+    const f = fixture(); expectExit(f.run("reserve-ip")).toBe(0);
+    expectExit(f.run("create-remaining")).toBe(0);
+    const state = f.state();
+    for (const [resource, v] of Object.entries(state)) {
+      if (!resource.startsWith("network-endpoint-groups/")) v.description = `OLD-1 ${marker}`;
+    }
+    f.setState(state);
+    for (const phase of ["reserve-ip", "create-remaining", "describe"]) {
+      f.clearCalls(); const run = f.run(phase);
+      expectExit(run, phase).toBe(0);
+      expect(mutations(f.calls())).toEqual([]);
+      expect(f.state()).toEqual(state);
+    }
+  }, 15_000);
+  it.each([
+    ["two leading words", `A B ${marker}`],
+    ["a leading space only", ` ${marker}`],
+    ["text after the marker", `${marker} extra`],
+    ["a leading word without a space", `X${marker}`],
+    ["an empty description", ""],
+    ["no description", undefined],
+  ])("refuses an existing resource whose description has %s", (_label, description) => {
+    const f = fixture(); expectExit(f.run("reserve-ip")).toBe(0);
+    const state = f.state();
+    state["addresses/antwar-domain-ip"]!.description = description;
+    f.setState(state); f.clearCalls(); const run = f.run("describe");
+    expectExit(run).not.toBe(0);
+    expect(run.stderr).toContain("conflicting/incomplete existing resource: addresses/antwar-domain-ip");
+    expect(mutations(f.calls())).toEqual([]);
   });
   it("propagates inventory errors without assuming absence", () => {
     const f = fixture(); expectExit(f.run("reserve-ip", { FAIL_AT: "backend-services:list" })).not.toBe(0); expect(mutations(f.calls())).toEqual([]);
