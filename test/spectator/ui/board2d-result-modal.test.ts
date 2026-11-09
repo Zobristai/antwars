@@ -66,11 +66,28 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("fennec/forager wins");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
     expect(host.byClass("d2-result")).toHaveLength(0);
     expect(host.byClass("d2-pane")[0]!.byClass("d1-result")).toHaveLength(0);
+  });
+
+  // The 2D plate keeps the result once the card is closed: WINNER beside the winning colony's name, as text.
+  it("puts WINNER beside the winning colony's name on the plate once the result shows, and keeps it after Close", () => {
+    const { host, dialogs, show } = mount();
+    const badges = () => host.byClass("d2-plate-badge").map(node => [node.classes().join(" "), node.hidden, node.textContent]);
+    show(frameOf({ ended: false }));
+    expect(badges()).toEqual([["d2-plate-badge c0", true, ""], ["d2-plate-badge c1", true, ""]]);
+    show(frameOf({ ended: true }));
+    expect(badges()).toEqual([["d2-plate-badge c0", false, "Winner"], ["d2-plate-badge c1", true, ""]]);
+    dialogs()[0]!.byClass("d1-close")[0]!.click();
+    show(frameOf({ ended: true }));
+    expect(dialogs()[0]!.open).toBe(false);
+    expect(badges()[0]).toEqual(["d2-plate-badge c0", false, "Winner"]);
+    // Each badge sits inside its colony's name, so it reads with it.
+    expect(host.byClass("d2-name").map(name => name.byClass("d2-plate-badge").length)).toEqual([1, 1]);
+    expect(UI_CSS).toMatch(/\.d2-plate-badge \{[^}]*font-size: 16px;/);
   });
 
   it("closes and stays closed for that match, and opens again for the next match with the same result", () => {

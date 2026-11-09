@@ -18,7 +18,7 @@ describe("the team head's member icons", () => {
   it("drops the agent count from the head", () => {
     expect(PANE).not.toContain("d1-team-count");
     expect(CSS).not.toContain(".d1-team-count");
-    expect(PANE).toContain('head.append(name, members, player)');
+    expect(PANE).toContain('head.append(name, badge, members, player)');
   });
 
   it("writes one labelled image per member, which the keyboard never stops on", () => {

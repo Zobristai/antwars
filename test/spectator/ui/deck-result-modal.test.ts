@@ -68,7 +68,9 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe("Very Large Colony wins");
+    // The headline names the winning model, not the colony; the colony and whom it beat stand under it.
+    expect(head.textContent).toBe("fennec/forager wins");
+    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("Very Large Colony · beat tidewater");
     expect((head.style as unknown as { color: string }).color).toBe("var(--aw-c0)");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
@@ -148,7 +150,7 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: false, name: "next/match" }));
     show(frameOf({ ended: true, winner: 1, name: "next/match" }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Lake Hodges Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("tidewater wins");
   });
 
   it("opens again for the next match even when its result reads exactly as the one just closed", () => {
@@ -161,7 +163,7 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true, match: 2 }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("fennec/forager wins");
     // And that match's own Close holds for it, as the first match's did.
     closeButton(dialog).click();
     show(frameOf({ ended: true, match: 2 }));
@@ -237,3 +239,49 @@ function shareDialog(frame: Frame) {
   teams.update({ ...view(frame), share: "https://antwars.example/?replay=2026-10-28-12" }, false);
   return { dialog, link: dialog.byClass("d1-share")[0]! };
 }
+
+// The result stays on the plate after the card is closed: a WINNER badge on the winning colony's head, or DRAW on both.
+describe("the plate's result badge", () => {
+  const badges = (teams: ElementPort[]) => teams.map(team => team.byClass("d1-plate-badge")[0]!)
+    .map(node => [node.hidden, node.textContent, node.classes().includes("is-draw")]);
+  function mountWithTeams() {
+    const port = dom();
+    const deck = mountDeck(port.doc);
+    const teams = mountTeams(port.doc, actions, { search: () => "", economy: deck.economy });
+    port.body.append(...teams.teams as unknown as ElementPort[], teams.result as unknown as ElementPort);
+    const show = (frame: Frame) => { deck.update(frame); teams.update(view(frame), false); };
+    return { teams: teams.teams as unknown as ElementPort[], dialog: teams.result as unknown as ElementPort, show };
+  }
+
+  it("shows nothing before the result, WINNER on the winning colony once it shows, and keeps it after Close", () => {
+    const { teams, dialog, show } = mountWithTeams();
+    show(frameOf({ ended: false }));
+    expect(badges(teams)).toEqual([[true, "", false], [true, "", false]]);
+    show(frameOf({ ended: true, winner: 1 }));
+    expect(badges(teams)).toEqual([[true, "", false], [false, "Winner", false]]);
+    closeButton(dialog).click();
+    show(frameOf({ ended: true, winner: 1 }));
+    expect(dialog.open).toBe(false);
+    expect(badges(teams)).toEqual([[true, "", false], [false, "Winner", false]]);
+    // In the colony's head, right after its name.
+    expect(teams[1]!.byClass("d1-team-head")[0]!.children.map(node => node.className).slice(0, 2)).toEqual(["d1-name c1", "d1-plate-badge c1"]);
+  });
+
+  it("shows DRAW on both colonies for a draw, and names neither side as winner in the card", () => {
+    const { teams, dialog, show } = mountWithTeams();
+    const draw = frameOf({ ended: true });
+    draw.board!.result = { winner: null, reason: "time_up", decidedBy: "draw", tick: END, nextStartMs: null };
+    show(draw);
+    expect(badges(teams)).toEqual([[false, "Draw", true], [false, "Draw", true]]);
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Draw");
+    expect(dialog.byClass("d1-result-detail")[0]!.textContent).toBe("fennec/forager drew with tidewater");
+    expect(dialog.textContent).not.toMatch(/ wins| beat /);
+  });
+
+  it("draws the badge and every line of the result card at 16 px or more", () => {
+    expect(CSS).toMatch(/\.d1-plate-badge \{[^}]*font-size: 16px;/);
+    expect(CSS).toMatch(/\.d1-result \{[^}]*font-size: 16px;/);
+    const result = CSS.slice(CSS.indexOf(".d1-result {"), CSS.indexOf("/* Share on X"));
+    for (const size of result.matchAll(/font-size: (\d+)px/g)) expect(Number(size[1])).toBeGreaterThanOrEqual(16);
+  });
+});

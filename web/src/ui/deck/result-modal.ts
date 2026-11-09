@@ -1,5 +1,6 @@
 // The match result as a modal over the whole screen, shared by the deck and the 2D board: one native
-// modal dialog, the page dimmed and inert behind it: the winner in the colony's colour, how it ended, rating changes, the
+// modal dialog, the page dimmed and inert behind it: the winning model in the colony's colour, the colony and whom it
+// beat under it, how it ended, rating changes, the
 // decisive moments and the next start. It is named by its headline and described by how it ended, heard as it opens with
 // the focus on Close. Close, Escape or a click on the dimmed page closes it, and it stays closed for that match's end: a
 // replay seeked back before the end hides it, reaching the end again leaves it closed, and the next match's result opens
@@ -50,6 +51,11 @@ export function mountResultModal(doc: Document): ResultModal {
   close.innerHTML = D1_ICON.close;
   const top = h(doc, "div", "d1-result-top");
   top.append(head, close);
+  // The winning colony, its dot in the colony's colour, and whom it beat; for a draw, who drew.
+  const detail = h(doc, "p", "d1-result-detail");
+  const detailDot = h(doc, "span", "d1-result-dot"), detailText = h(doc, "span");
+  detailDot.setAttribute("aria-hidden", "true");
+  detail.append(detailDot, detailText);
   const ratings = h(doc, "ul", "d1-ratings"), moments = h(doc, "ol", "d1-moments"), next = h(doc, "p", "d1-result-next");
   // Share on X: the post intent in a new tab, only where the match has a public link, in the site's cyan button
   // (deck.css .d1-agent-button).
@@ -57,7 +63,7 @@ export function mountResultModal(doc: Document): ResultModal {
   shareLink.setAttribute("target", "_blank");
   shareLink.setAttribute("rel", "noopener noreferrer");
   shareLink.hidden = true;
-  result.append(top, how, ratings, moments, next, shareLink);
+  result.append(top, detail, how, ratings, moments, next, shareLink);
   dialog.append(result);
 
   /** The match's end now shown, and the one the viewer closed: keys over the end itself, not over playback. */
@@ -82,6 +88,10 @@ export function mountResultModal(doc: Document): ResultModal {
     result.style.setProperty("--d1-side", r.winner === null ? "var(--aw-ink-3)" : COLONY_CSS[r.winner]);
     setText(head, r.headline);
     head.style.color = r.winner === null ? "" : COLONY_CSS[r.winner];
+    setText(detailText, r.detail);
+    setHidden(detail, r.detail === "");
+    setHidden(detailDot, r.winner === null);
+    detailDot.style.background = r.winner === null ? "" : COLONY_CSS[r.winner];
     setText(how, r.how);
     // Each player's shown name, its level and Fast badges as the Leaderboard shows them, then the change.
     ratings.replaceChildren(...r.ratings.map(row => {

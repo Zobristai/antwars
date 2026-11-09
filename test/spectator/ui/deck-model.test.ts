@@ -183,12 +183,30 @@ describe("the lane and the result", () => {
       fr.targetMs = TICK * 100 + 10_000; fr.story = story;
     });
     expect(resultView(f)).toEqual({
-      headline: "Very Large Colony wins", winner: 0, how: "Queens killed",
+      headline: "fennec/forager wins", winner: 0, detail: "Very Large Colony · beat tidewater", how: "Queens killed",
       ratings: [{ name: "fennec/forager #1", badges: [], text: "Rating 1512 → 1527 (+15)" }],
       moments: [{ when: "10:47", what: "Queen 2 lost", who: "Lake Hodges Colony", colony: 1 }],
       next: "Next match · not announced",
     });
     expect(resultView(frameOf())).toBeNull();
+  });
+  it("names the winning models in the headline, a team's joined with & under one \"win\", and lists the winner's rating lines first", () => {
+    const f = frameOf((b, fr) => {
+      b.agents = [agent(0, "kite", 1500, "k"), agent(1, "antwars/claude-opus-5-5 #1", 1500, "c"), agent(1, "rook", 1450, "r"), agent(1, "antwars/claude-opus-5-5 #2", 1500, "c")];
+      b.result = { winner: 1, reason: "overrun", decidedBy: "overrun", tick: TICK - 100, nextStartMs: null,
+        ratingChanges: [{ agent: 0, before: 1500, after: 1490 }, { agent: 1, before: 1500, after: 1505 }, { agent: 2, before: 1450, after: 1455 }] };
+      fr.targetMs = TICK * 100 + 10_000;
+    });
+    const shown = resultView(f)!;
+    expect([shown.headline, shown.detail]).toEqual(["Claude Opus 5.5 & rook win", "Lake Hodges Colony · beat kite"]);
+    expect(shown.ratings.map(row => row.name)).toEqual(["Claude Opus 5.5 #1", "rook", "kite"]);
+    // Seats that name no model leave the colony as the headline, never an invented handle.
+    const unnamed = frameOf((b, fr) => {
+      b.agents = b.agents.map(a => ({ ...a, identity: undefined, modelLabel: null })) as unknown as typeof b.agents;
+      b.result = { winner: 0, reason: "overrun", decidedBy: "overrun", tick: TICK - 100, nextStartMs: null };
+      fr.targetMs = TICK * 100 + 10_000;
+    });
+    expect([resultView(unnamed)!.headline, resultView(unnamed)!.detail]).toEqual(["Very Large Colony wins", "Very Large Colony · beat Lake Hodges Colony"]);
   });
   it("names each rating line's player as the Leaderboard does, with a Benchmark name's level and Fast badges, never its antwars/ handle", () => {
     const f = frameOf((b, fr) => {
