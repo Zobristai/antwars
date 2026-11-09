@@ -219,6 +219,15 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     expect(first!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["GPT-6 LunamaxFast", "omp-dolphin"]);
     expect(second!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["GPT-6.1 Terra", "local×2, 2 seats"]);
     expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["GPT-6 LunamaxFast", "omp-dolphin"]], ["Lake Hodges Colony", ["GPT-6.1 Terra", "local×2, 2 seats"]]]);
+    // One identity's seats that report different models, or a model on only one seat, each keep their own line.
+    const mixed: LiveMatch = { ...unrated, lobbyId: "lobby-x", colonies: [[
+      { displayName: "kite #1", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null },
+      { displayName: "kite #2", modelLabel: "anthropic/claude-opus-5-5", rating: null, rd: null, ratedMatches: null },
+      { displayName: "kite #3", modelLabel: null, rating: null, rd: null, ratedMatches: null }], []] };
+    const differing = show(mixed);
+    expect(differing.table.byClass("c-model").filter(node => node.tag === "td")[0]!.byClass("d1p-model").map(seat => seat.textContent))
+      .toEqual(["GPT-6.1 Terra #1", "Claude Opus 5.5 #2", "kite #3"]);
+    differing.p.mounted.destroy();
     // A catalog with no labels (an older server) names the players as before.
     expect(bodyRows(table)[1]!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["alice", "bob"]);
     p.mounted.destroy();

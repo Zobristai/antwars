@@ -77,7 +77,8 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
     const model = seat.modelLabel && !isBenchmark(who) ? modelName(seat.modelLabel) : null;
     const named = (name: string) => model === null ? name : `${model}${name.slice(who.length)}`;
     const shown = (name: string): NameParts => { const row = rowName(named(name), undefined); return { name: row.name, badges: row.badges, quiet: null }; };
-    return { who, parts: shown(seat.displayName), alike: shown(who) };
+    // Seats group by identity and the model each reported, so an identity's seats that differ in model each keep their line.
+    return { who: JSON.stringify([who, model]), parts: shown(seat.displayName), alike: shown(who) };
   })).map(group => seatBlock(group));
   const notRecorded = (text: string) => h(doc, "span", "d1p-model d1p-unknown", text);
   const liveCard = (view: MatchesView): HTMLElement => {

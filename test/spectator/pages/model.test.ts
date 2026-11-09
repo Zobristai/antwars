@@ -221,8 +221,11 @@ describe("Matches", () => {
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
     expect(seatGroups(groups)).toEqual([{ parts: { name: "omp-dolphin", badges: [], quiet: null }, seats: 2 }, { parts: { name: "coffeebot-ant", badges: [], quiet: null }, seats: 1 }]);
-    // A handle never joins a model label that reads the same.
+    // A handle never joins a model label that reads the same, however the label is spelled.
     expect(seatGroups(colonySeats([seat(0, null, "local"), seat(1, "local", "kite")])![0]!)).toHaveLength(2);
+    for (const label of ["@omp-dolphin", "handle:omp-dolphin", "model:omp-dolphin"]) {
+      expect(seatGroups(colonySeats([seat(0, null, "omp-dolphin"), seat(1, label, "kite")])![0]!).map(group => group.seats)).toEqual([1, 1]);
+    }
   });
   it("lists a colony's alike seats once with how many they are, in first-seat order, and keeps every seat that differs", () => {
     const opus = { name: "Claude Opus 5.5", badges: ["high"], quiet: null }, sol = { name: "GPT-6.1 Sol", badges: ["max", "Fast"], quiet: null };

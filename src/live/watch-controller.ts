@@ -28,7 +28,8 @@ export interface WatchController {
   readonly hubOptions: LiveHubOptions;
   prepare(lobbyId: string, seats: readonly LobbySeat[]): Promise<void>;
   started(seq: number, state: SimState, live: LiveGame, hub: LiveHub): void;
-  /** A tick of the lobby's match started or resumed here: a seat that joined with a model label publishes it for the catalog. */
+  /** A tick of the lobby's match started or resumed here: its seats' model labels publish for the catalog once the match is
+   * this server's run's, and again when a seat joins. */
   ticked(lobbyId: string | undefined, out: StepOutput, live: LiveGame): void;
   /** The watch part of a handover save of a lobby whose match started or resumed here. */
   save(lobbyId: string): WatchSave;
@@ -61,19 +62,23 @@ export function createWatchController(options: {
    * takes its playback end and replay id only from the run holding the match.
    */
   const runs = new Map<string, string>();
-  /** The seat labels last published for each started lobby, so an unchanged set is not written again. */
+  /** The seat labels last read for each lobby whose match is this server's, so an unchanged set is not written again. */
   const published = new Map<string, string>();
-  /** Each joined seat's self-reported model label by its stream display name; a seat that reported none is left out. */
+  /** Each joined seat's self-reported model label by its stream display name; a seat that reported none is left out. Read
+   * only once the lobby's match is this server's run's (started here, or a resumed match once adopted), so a resumed match's
+   * labels are published under the run that holds it, whatever the server it came from published. */
   const publishLabels = (metadata: Prepared, state: SimState, live: LiveGame) => {
+    const lobbyId = metadata.access.lobbyId;
+    if (!runs.has(lobbyId)) return;
     const identity = seatIdentity(metadata, live), labels: Record<string, string> = {};
     for (const agent of state.agents) {
       const seat = agent.parentAgentId === null && agent.modelLabel ? identity(agent.id) : undefined;
       if (seat) labels[seat.displayName] = agent.modelLabel!;
     }
-    const lobbyId = metadata.access.lobbyId, text = JSON.stringify(labels);
-    if (Object.keys(labels).length === 0 || published.get(lobbyId) === text) return;
+    const text = JSON.stringify(labels);
+    if (published.get(lobbyId) === text) return;
     published.set(lobbyId, text);
-    publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, labels), "seat labels");
+    if (Object.keys(labels).length > 0) publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, labels), "seat labels");
   };
   /** Publish a fenced write under the lobby's run; a run that no longer holds the match leaves the entry its owner's. */
   const publishOwned = (lobbyId: string, write: (runId: string) => Promise<boolean>, what: string) => {
@@ -162,7 +167,8 @@ export function createWatchController(options: {
       publishLabels(metadata, state, live);
     },
     ticked(lobbyId, out, live) {
-      if (lobbyId === undefined || !out.events.some(event => event.type === "agent_join")) return;
+      // Read again when a seat joins, and on the first tick after this server's run took the match (a resumed match).
+      if (lobbyId === undefined || (published.has(lobbyId) && !out.events.some(event => event.type === "agent_join"))) return;
       const metadata = prepared.get(lobbyId);
       if (metadata?.startedAt !== undefined) publishLabels(metadata, out.state, live);
     },
