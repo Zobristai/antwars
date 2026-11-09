@@ -72,9 +72,10 @@ const CELL_KEY = "key: per row y<row>: tiles by x; x-x2 = run of equal food-only
 /** The readable text of any reply that carries a view. Nothing in cells, territory, squad, queens or marks is cut. */
 export function renderView(data) {
   const { view, ...top } = data ?? {};
-  const header = Object.fromEntries(Object.entries(top).filter(([k]) => !DROP_KEYS.has(k)));
+  // Header fields and the view are each shrunk once, so every "…N more" counts the items actually hidden.
+  const header = shrink(Object.fromEntries(Object.entries(top).filter(([k]) => !DROP_KEYS.has(k))));
   header.view = shrink(Object.fromEntries(Object.entries(view).filter(([k]) => !VIEW_SECTIONS.has(k))));
-  const lines = [JSON.stringify(shrink(header))];
+  const lines = [JSON.stringify(header)];
   const own = view.colony;
   if (Array.isArray(view.squad)) lines.push(`squad (${view.squad.length}):`, ...view.squad.map((a) => JSON.stringify(a)));
   if (Array.isArray(view.queens)) lines.push(`queens (${view.queens.length}):`, ...view.queens.map((q) => JSON.stringify(q)));

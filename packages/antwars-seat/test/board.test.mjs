@@ -196,4 +196,18 @@ describe("readable view", () => {
     expect(header.view.terrain).toEqual(terrain);
     expect(header.nestSelection.terrain).toEqual(terrain);
   });
+
+  it("cuts long lists to 12 items and counts every item not shown", () => {
+    const data = reply(coverageCells(), null);
+    const items = (n) => Array.from({ length: n }, (_, i) => ({ id: i }));
+    data.view.events = items(20);
+    data.view.cutAtThirteen = items(13);
+    data.view.shortList = items(12);
+    data.recent = items(20);
+    const header = JSON.parse(renderView(data).split("\n")[0]);
+    expect(header.view.events).toEqual([...items(12), "…8 more"]);
+    expect(header.view.cutAtThirteen).toEqual([...items(12), "…1 more"]);
+    expect(header.view.shortList).toEqual(items(12));
+    expect(header.recent).toEqual([...items(12), "…8 more"]);
+  });
 });
