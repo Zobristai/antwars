@@ -101,7 +101,7 @@ const REFUSALS = {
   no_such_opponent: [404, "That handle is not in the House table."],
   already_reported: [409, "This challenge's launch was already reported."],
   house_seated: [409, "The house seat has already joined this challenge; its game plays on and a failed or unavailable report is refused."],
-  reason_required: [400, "A failed launch report needs a reason."],
+  reason_required: [400, "A failed or unavailable launch report needs a reason."],
   // A key-issuing call refused, or aborted before its commit, while its session could not be kept open.
   server_busy: [503, "Server busy: this call could not be held open for its reply, so no key was issued. Retry shortly."],
 } as const satisfies Record<string, readonly [number, string]>;
