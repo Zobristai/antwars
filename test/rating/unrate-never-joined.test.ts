@@ -82,7 +82,9 @@ async function world(options: { joined?: readonly (0 | 1)[] } = {}) {
 
 const failed = (checks: readonly { name: string; ok: boolean }[]) => checks.filter(check => !check.ok).map(check => check.name);
 
-describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
+// Whichever test runs first here also pays the Firestore emulator setup: about 4.5 s, where the same work takes about
+// 0.5 s once connected. Every test gets more than the 5 s default so a busy runner does not fail the first one.
+describe.skipIf(!host)("unrating a never-joined ranked lobby", { timeout: 30_000 }, () => {
   it("passes read-only, reports the never-joined player and writes nothing", async () => {
     const w = await world();
     const before = await documents(w.store, w.lobbyId, w.ids);
@@ -95,9 +97,7 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     expect(result.writes).toEqual(expect.arrayContaining([`update watchMatches/${w.lobbyId} {"rated":"false"}`, `delete ratings/${w.absent}`]));
     expect(await documents(w.store, w.lobbyId, w.ids)).toEqual(before);
     expect(w.recordings.objects).toEqual(bucket);
-    // The first test in this file also pays the Firestore emulator setup: about 4.5 s, where the same work takes about
-    // 0.5 s once connected. It gets more than the 5 s default so a busy runner does not fail it.
-  }, 30_000);
+  });
 
   it("applies: lobby abandoned and unrated, watch entry unrated, players unrated, recording abandoned and unrated", async () => {
     const w = await world();
