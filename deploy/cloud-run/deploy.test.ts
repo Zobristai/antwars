@@ -116,7 +116,7 @@ interface CreateSpec {
     scaling?: { minInstanceCount?: number; maxInstanceCount?: number };
     containers: { image: string; command?: string[]; args?: string[]; startupProbe?: unknown;
       env: { name: string; value?: string; valueSource?: { secretKeyRef: { secret: string; version: string } } }[];
-      resources: { limits: Record<string, string>; cpuIdle?: boolean } }[] };
+      resources: { limits: Record<string, string>; cpuIdle?: boolean; startupCpuBoost?: boolean } }[] };
 }
 interface CurlState {
   /** Reads of queueWaiting that show a waiting entry. */
@@ -2117,7 +2117,7 @@ describe.concurrent("all", () => {
       };
       const env = (svc: string) => spec(svc).template.containers[0]!.env;
       const image = `${SERVER_REPO}@${DIGEST}`;
-      const container = { image, resources: { limits: { cpu: "1", memory: "2Gi" }, cpuIdle: false } };
+      const container = { image, resources: { limits: { cpu: "1", memory: "2Gi" }, cpuIdle: false, startupCpuBoost: true } };
       const slotShape = (svc: string) => ({
         labels: { app: "antwar", commit: SHA, "antwar-slots": "live" }, ingress: "INGRESS_TRAFFIC_ALL", invokerIamDisabled: true,
         template: { revision: REV(svc), labels: { app: "antwar", commit: SHA, "antwar-slots": "live" }, serviceAccount: CONFIG.RUN_SA,
@@ -2149,7 +2149,7 @@ describe.concurrent("all", () => {
         labels: { app: "antwar", commit: SHA }, ingress: "INGRESS_TRAFFIC_ALL", invokerIamDisabled: true, scaling: { maxInstanceCount: 1 },
         template: { revision: REV("antwar"), labels: { app: "antwar", commit: SHA }, serviceAccount: CONFIG.RUN_SA,
           scaling: { minInstanceCount: 1, maxInstanceCount: 1 }, timeout: "3600s", maxInstanceRequestConcurrency: 1000,
-          containers: [{ image, resources: { limits: { cpu: "2", memory: "2Gi" }, cpuIdle: false } }] },
+          containers: [{ image, resources: { limits: { cpu: "2", memory: "2Gi" }, cpuIdle: false, startupCpuBoost: true } }] },
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
         "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",

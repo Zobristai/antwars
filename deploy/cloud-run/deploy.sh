@@ -943,7 +943,9 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # does not translate, so no deploy flag is dropped from a first deploy unnoticed.
     create_body() {
       REV="$1" node -e '
-        const a = process.argv.slice(1), lim = {}, c = { env: [], resources: { limits: lim } };
+        // Startup CPU boost is on for every service; no deploy flag sets it, since a deploy
+        // keeps it from the earlier revision, so a created service takes it here.
+        const a = process.argv.slice(1), lim = {}, c = { env: [], resources: { limits: lim, startupCpuBoost: true } };
         const t = { revision: process.env.REV, labels: {}, scaling: {}, containers: [c] };
         const svc = { labels: t.labels, template: t };
         // A flag value split like gcloud: on ^<delimiter>^ when given, else on commas.
