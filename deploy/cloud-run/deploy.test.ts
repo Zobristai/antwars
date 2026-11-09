@@ -97,6 +97,8 @@ interface Revision { image: string; sha: string; cpu?: string; env?: string[]; r
 interface State {
   services: Record<string, { latest: string; created?: string; traffic: TrafficEntry[] }>;
   revisions: Record<string, Revision>;
+  /** Services besides the slots that describe as not found until a deploy creates them. */
+  absent?: string[];
   /** What the fake curl answers. A count is how many more reads see it busy. */
   curl?: CurlState;
   bucket?: BucketState;
@@ -210,12 +212,13 @@ const pairs = (v) => { const d = /^\\^([^^]+)\\^/.exec(v ?? ""); return (d ? v.s
 const names = (f) => pairs(flag(f)).map((kv) => kv.split("=")[0]);
 // A slot service exists once deployed (deploy_named creates it without --no-traffic); before, describe cannot find it.
 const SLOT_SERVICE = /^antwar-(preview-)?(public|private)-[0-9]+$/;
+const CAN_BE_ABSENT = (svc) => SLOT_SERVICE.test(svc) || (st.absent ?? []).includes(svc);
 const hostOf = (svc) => process.env.WRONG_URL === "1" ? "https://elsewhere.run.app" : "https://" + svc + "-" + process.env.FAKE_PROJECT_NUMBER + ".australia-southeast1.run.app";
 // NO_NEW_REVISION=<service>: its deploy succeeds and creates nothing; FAIL_DEPLOY=<service>: it fails creating nothing.
 if (at("run", "deploy") && [process.env.NO_NEW_REVISION, process.env.FAIL_DEPLOY].includes(a[2])) process.exit(process.env.FAIL_DEPLOY === a[2] ? 1 : 0);
 // Like gcloud, a deploy that would create the service refuses --no-traffic and creates nothing.
-if (at("run", "deploy") && SLOT_SERVICE.test(a[2]) && !st.services[a[2]] && a.includes("--no-traffic")) { console.error("ERROR: --no-traffic not supported when creating a new service."); process.exit(1); }
-if (at("run", "deploy") && SLOT_SERVICE.test(a[2]) && !st.services[a[2]]) st.services[a[2]] = { latest: "", traffic: [] };
+if (at("run", "deploy") && CAN_BE_ABSENT(a[2]) && !st.services[a[2]] && a.includes("--no-traffic")) { console.error("ERROR: --no-traffic not supported when creating a new service."); process.exit(1); }
+if (at("run", "deploy") && CAN_BE_ABSENT(a[2]) && !st.services[a[2]]) st.services[a[2]] = { latest: "", traffic: [] };
 if (at("auth", "print-access-token")) { if (process.env.FAKE_NO_TOKEN === "1") process.exit(1); console.log("fake-token"); }
 else if (at("run", "deploy") && st.services[a[2]]) {
   // A deploy creates a revision and moves all traffic to it, keeping every tag;
@@ -262,7 +265,7 @@ else if (at("run", "services", "describe") && st.services[a[3]]) {
   console.log(JSON.stringify({ metadata: { annotations: { "run.googleapis.com/urls": JSON.stringify([hostOf(a[3])]) } },
     status: { url: "https://" + a[3] + "-hash-ts.a.run.app", latestReadyRevisionName: svc.latest, latestCreatedRevisionName: svc.created ?? svc.latest, traffic: svc.traffic } }));
 }
-else if (at("run", "services", "describe") && SLOT_SERVICE.test(a[3])) { console.error("ERROR: (gcloud.run.services.describe) Cannot find service [" + a[3] + "]"); process.exit(1); }
+else if (at("run", "services", "describe") && CAN_BE_ABSENT(a[3])) { console.error("ERROR: (gcloud.run.services.describe) Cannot find service [" + a[3] + "]"); process.exit(1); }
 else if (at("run", "revisions", "describe")) {
   const rev = st.revisions[a[3]];
   if (!rev) process.exit(1);
@@ -1951,6 +1954,81 @@ describe.concurrent("all", () => {
       expect(next.calls.some(storage("rm", RUN_NEW))).toBe(true);
       expect(next.state.bucket!.objects.filter((o) => !isMark(o))).toEqual([]);
       expect(next.state.services["antwar-records"]!.traffic).toEqual([{ revisionName: "antwar-records-new2", percent: 100 }]);
+    }, TIMEOUT);
+  });
+
+  // A first deploy into a project with none of the 18 services yet.
+  describe("first deploy", () => {
+    const empty = (s: State) => {
+      live()(s);
+      for (const svc of SERVICES) delete s.services[svc];
+      s.absent = ["antwar-records", "antwar"];
+    };
+    const FIRST = ` first deploy: all 18 services are absent, so each is created with no rollback, no gate and no domain comparison\n`;
+    const changes = (r: { gcloud: string[][]; calls: string[][] }) => [
+      ...r.gcloud.filter((c) => !((c[0] === "run" && (c[1] === "services" || c[1] === "revisions") && c[2] === "describe") || (c[0] === "storage" && c[1] === "ls"))),
+      ...r.calls.filter((c) => c[0] === "curl" || c[0] === "probe"),
+    ];
+    const MISSING = "antwar-public-3";
+    const missingBlocker = `${MISSING} does not serve exactly its latest created revision ? at 100% (serving: unreadable)`;
+
+    it("--precheck reports clear, changing nothing, when every service is absent", async () => {
+      const r = await runAsync(["all", SHA, "--precheck"], { state: empty });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toBe(`precheck ${SHA}: clear, nothing blocks a deploy of all 18 services\n`);
+      expect(r.stderr).toContain(FIRST);
+      expect(changes(r)).toEqual([]);
+      expect(r.statusFile).toBeNull();
+      expect(Object.keys(r.state.services).filter((svc) => SERVICES.includes(svc))).toEqual([]);
+    }, TIMEOUT);
+
+    it("creates all 18 services with no rollback, gate or domain comparison, saying the comparison was skipped", async () => {
+      const r = await runAsync(["all", SHA], { state: empty });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stderr).toContain(FIRST);
+      expect(r.stdout).toBe(SERVICES.map((s) => `${s} ${s}-new\n`).join(""));
+      expect(deployed(r)).toEqual(SERVICES);
+      // Each is created (gcloud refuses --no-traffic on create), recorded, then given all traffic by name.
+      for (const d of deploys(r.gcloud)) expect(d, d[2]).not.toContain("--no-traffic");
+      for (const svc of SERVICES) {
+        expect(r.state.services[svc]!.traffic, svc).toEqual([{ revisionName: `${svc}-new`, percent: 100 }]);
+        expect(r.stderr).toContain(` ${svc}: no rollback: first deploy, it had no earlier revision\n`);
+      }
+      expect(r.state.bucket!.objects.filter(isMark)).toHaveLength(18);
+      expect(r.gcloud.filter((c) => c.includes("--set-tags") || c.includes("--clear-tags"))).toEqual([]);
+      // No gate: no queue, lobby, slot holder or slot status read, and no slot withheld.
+      expect(r.calls.filter((c) => c[0] === "curl" && /\/(queueWaiting|lobbies|slots\/|withheld\/)|\/live\/status$/.test(curlTo(c)))).toEqual([]);
+      expect(roundSleeps(r)).toEqual([]);
+      // The forwarding rules are still read, and the site still answers before the run is done.
+      expect(r.gcloud.filter((c) => c[0] === "compute")).toEqual([RULES_LIST]);
+      expect(r.calls.filter((c) => c[0] === "curl" && c.includes("https://antwars.ai/"))).toHaveLength(1);
+      // Only the domain comparison is skipped, plainly, never as a pass.
+      expect(r.calls.filter((c) => c[0] === "probe")).toEqual([]);
+      expect(r.stderr).toContain(` done ${SHA} all 18 services, domain comparison SKIPPED, not a pass: first deploy, so https://antwars.ai is not compared with ${CONFIG.GAME_SERVICE_URL}`);
+      expect(r.stderr).not.toContain("domain comparison passed");
+      expect(r.statusFile).toMatch(/^DONE\n/);
+    }, TIMEOUT);
+
+    it("stops with nothing reverted when the site does not answer 200", async () => {
+      const r = await runAsync(["all", SHA], { state: (s) => { empty(s); s.curl!.site = 503; } });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("stopping: https://antwars.ai/ answered 503, not 200, within 5 minutes of antwar-new serving; nothing was reverted, since this first deploy had no earlier revision of antwar\n");
+      expect(r.calls.filter((c) => c[0] === "probe")).toEqual([]);
+    }, TIMEOUT);
+
+    it("1 of 18 missing: --precheck blocks it as today, and the run refuses before any change", async () => {
+      const state = live({}, (s) => { delete s.services[MISSING]; });
+      const pre = await runAsync(["all", SHA, "--precheck"], { state });
+      expect(pre.status).toBe(1);
+      expect(pre.stdout).toBe(`precheck ${SHA}: 1 blocking\nblocked: ${missingBlocker}\n`);
+      expect(pre.stderr).not.toContain("first deploy");
+      expect(changes(pre)).toEqual([]);
+
+      const r = await runAsync(["all", SHA], { state });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(`refusing: ${missingBlocker}\n`);
+      expect(r.stderr).not.toContain("first deploy");
+      expect(r.gcloud.filter((c) => c[0] === "builds" || c[1] === "deploy" || c[2] === "update-traffic")).toEqual([]);
     }, TIMEOUT);
   });
 
