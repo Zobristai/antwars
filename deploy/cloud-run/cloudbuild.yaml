@@ -1,0 +1,65 @@
+# Runs deploy/cloud-run/deploy.sh in Cloud Build, as the build's own service
+# account, so a production deploy needs nothing on any operator machine. The
+# build clones this repository, checks out the build's commit (COMMIT_SHA, which
+# must be on origin/main) and hands over to deploy/cloud-run/cloudbuild-run.sh
+# at that commit.
+#
+# Submitted for one approved commit on main with `gcloud builds submit
+# --no-source --config deploy/cloud-run/cloudbuild.yaml`, the build's region and
+# --service-account, and these substitutions besides the settings below (the
+# exact command is in TEARDOWN.md, "Production deploys"):
+#   TAG_NAME=deploy-<sha>,COMMIT_SHA=<sha>     `deploy.sh all <sha>`, every gate
+#   COMMIT_SHA=<tooling sha>,_ARGS=<args>      _ARGS one of `all <sha> --precheck`
+#                                              or `records-rollback <sha> <sha256:...>`
+#
+# A trigger on a pushed tag deploy-<full sha> would set TAG_NAME and COMMIT_SHA
+# itself; it is not set up (TEARDOWN.md, "Not set up: a tag trigger"). Either way
+# the tag must name the build's own commit.
+#
+# This file names no project, account or bucket. The project is the build's own
+# ($PROJECT_ID); every other setting of deploy.sh's private config
+# (deploy/cloud-run/config.sh, deploy.env.example) is a substitution of the same
+# name with a leading underscore, set on the command line, and
+# none has a default here. An empty or missing one stops deploy.sh before any
+# change. The service account (the config's ACCOUNT; cloudbuild-run.sh refuses
+# to run as any other identity) is set on the command line. Build
+# logs go to Cloud Logging, as a build that runs as its own service account
+# requires either that or a named logs bucket.
+steps:
+  - id: deploy
+    name: node:24-bookworm
+    entrypoint: bash
+    env:
+      - ANTWAR_REPO_URL=$_REPO_URL
+      - ANTWAR_TAG=$TAG_NAME
+      - ANTWAR_COMMIT=$COMMIT_SHA
+      - ANTWAR_ARGS=$_ARGS
+      - ANTWAR_BUILD_ID=$BUILD_ID
+      - ANTWAR_CFG_ACCOUNT=$_ACCOUNT
+      - ANTWAR_CFG_PROJECT=$PROJECT_ID
+      - ANTWAR_CFG_BUILD_BUCKET=$_BUILD_BUCKET
+      - ANTWAR_CFG_BUILD_SA=$_BUILD_SA
+      - ANTWAR_CFG_RUN_SA=$_RUN_SA
+      - ANTWAR_CFG_RECORDS_SA=$_RECORDS_SA
+      - ANTWAR_CFG_RECORD_INPUT_BUCKET=$_RECORD_INPUT_BUCKET
+      - ANTWAR_CFG_REPLAY_BUCKET=$_REPLAY_BUCKET
+      - ANTWAR_CFG_GAME_SERVICE_URL=$_GAME_SERVICE_URL
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        [[ "$$ANTWAR_COMMIT" =~ ^[0-9a-f]{40}$$ ]] || { echo "refusing: COMMIT_SHA must be a full 40-hex commit sha" >&2; exit 2; }
+        git clone --quiet "$$ANTWAR_REPO_URL" /tmp/antwars
+        git -C /tmp/antwars checkout --quiet --detach "$$ANTWAR_COMMIT"
+        exec bash /tmp/antwars/deploy/cloud-run/cloudbuild-run.sh
+substitutions:
+  _REPO_URL: https://github.com/Zobristai/antwars.git
+  _ARGS: ''
+options:
+  logging: CLOUD_LOGGING_ONLY
+# A full-gate `all` run can wait up to ANTWAR_DEPLOY_ROUNDS (120) minute-long
+# rounds four times (records gate, slot rounds, game gate, records drain): 8
+# hours. Add the image build, 16 slot swap checks of up to 2 minutes each and
+# the 12-minute domain comparison, and 12 hours covers the longest run deploy.sh
+# allows before it stops itself.
+timeout: 43200s

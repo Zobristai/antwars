@@ -49,7 +49,10 @@ scripts. Its private settings (Google Cloud project, account and resources) are
 not in this repository: the scripts read them from a copy of
 `deploy/cloud-run/deploy.env.example` kept outside every checkout and named in
 `ANTWAR_DEPLOY_CONFIG`, and stop before making any change, naming each setting
-that is missing.
+that is missing. Production deploys run `deploy.sh` in Cloud Build
+(`deploy/cloud-run/cloudbuild.yaml`), as the deploy service account, with those
+settings passed as build substitutions; each is submitted for one approved main
+commit, as `deploy/cloud-run/TEARDOWN.md` describes.
 
 ## Licence
 

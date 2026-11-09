@@ -23,11 +23,11 @@ Resources whose type supports labels carry `app=antwar`; the others are named
 | Cloud Run service (and its revisions) | `antwar-records` | `app=antwar` (revisions add `commit=<sha>`) | `deploy.sh records`: the record service, its own service and not a game-server mode or revision; main commits only; image `server:<sha>` started as `npm run record-service`; runs as `antwar-records`; exactly one instance kept running, CPU always allocated, 1 vCPU, 2 GiB; `NODE_OPTIONS=--max-old-space-size=512`, `ANTWAR_RECORD_INPUT_BUCKET=<RECORD_INPUT_BUCKET>`, `ANTWAR_REPLAY_BUCKET=<REPLAY_BUCKET>`, `ANTWAR_CODE_VERSION=<sha>`, secret `antwar-private-replay-key` version 1 as `ANTWAR_PRIVATE_REPLAY_KEY`; ingress internal, invoker IAM check on |
 | Cloud Storage bucket | `gs://<RECORD_INPUT_BUCKET>` | `app=antwar` | `record-service-setup.sh`: private match inputs waiting for their records; uniform access, public access prevention enforced, soft delete off, no lifecycle rule |
 | Artifact Registry repository (docker) | `antwar` | `app=antwar` | holds images `server:<main sha>` and, from preview mode, `preview:<sha>`; images themselves take no labels |
-| Cloud Storage bucket | `gs://<BUILD_BUCKET>` | `app=antwar` | Cloud Build source (`source/`) and build logs (`logs/`) |
+| Cloud Storage bucket | `gs://<BUILD_BUCKET>` | `app=antwar` | Cloud Build source (`source/`) and build logs (`logs/`); for a Cloud Build deploy run (`cloudbuild.yaml`), its status file and records rollback spec (`deploys/<build id>/`; its log is in Cloud Logging) |
 | Service account (no labels) | `RUN_SA` (`antwar-run`) | none possible | the service's identity; holds only the grants below |
 | Service account (no labels) | `BUILD_SA` (`antwar-build`) | none possible | Cloud Build's identity for antwar builds |
 | Service account (no labels) | `RECORDS_SA` (`antwar-records`) | none possible | `record-service-setup.sh`: the record service's identity; holds only the grants below |
-| Cloud Build build records (no labels) | one per `deploy.sh` run, preview runs included | none possible | listed by image tag; Cloud Build keeps them and they cannot be deleted |
+| Cloud Build build records (no labels) | one per `deploy.sh` run, preview runs included, plus one per Cloud Build deploy run (`cloudbuild.yaml`) | none possible | listed by image tag; Cloud Build keeps them and they cannot be deleted |
 
 ## Role grants (the only ones made)
 
@@ -91,6 +91,68 @@ The antwar build records (main and preview) stay in Cloud Build's history. List 
 ```bash
 gcloud builds list --region australia-southeast1 --filter 'images~antwar/' --account "$ACCOUNT" --project "$PROJECT"
 ```
+
+## Production deploys (Cloud Build)
+
+A production deploy runs `deploy.sh` in Cloud Build (`cloudbuild.yaml`), as the
+config's `ACCOUNT`: the deploy service account, which the build refuses to run as
+any other identity. Each build is submitted for one named commit on main, once
+that deploy is approved. Whoever submits it, a person's gcloud login or an
+automated job signed in as `ACCOUNT` without a key file, needs
+`cloudbuild.builds.create` and `iam.serviceAccounts.actAs` on `ACCOUNT`; the build
+log is in Cloud Logging, so `ACCOUNT` holds `roles/logging.logWriter`, and
+`run.services.setIamPolicy` for the invoker setting `deploy.sh` restates on every
+service.
+
+Run this from a clean checkout of this repository at the named commit, with
+`ANTWAR_DEPLOY_CONFIG` naming the private config file and its `ACCOUNT` set to the
+deploy service account. Set `SHA` to the commit's full 40-hex sha and `RUN` to one
+of the three forms below; the build clones that commit from this repository and
+runs its own `cloudbuild-run.sh`.
+
+```bash
+SHA=<full 40-hex commit sha on main>
+git checkout --detach "$SHA"
+# The deploy itself: `deploy.sh all <sha>`, every gate included.
+RUN="TAG_NAME=deploy-$SHA,COMMIT_SHA=$SHA"
+# Or the precheck, which changes nothing: `deploy.sh all <sha> --precheck`.
+RUN="COMMIT_SHA=$SHA,_ARGS=all $SHA --precheck"
+# Or a records rollback: SHA is the commit whose deploy printed the rollback
+# command, and <rollback sha> <sha256:digest> are that command's two arguments.
+RUN="COMMIT_SHA=$SHA,_ARGS=records-rollback <rollback sha> <sha256:digest>"
+(
+  source deploy/cloud-run/config.sh && load_deploy_config "${DEPLOY_SETTINGS[@]}"
+  gcloud builds submit --no-source --config deploy/cloud-run/cloudbuild.yaml \
+    --region australia-southeast1 --project "$PROJECT" \
+    --service-account "projects/$PROJECT/serviceAccounts/$ACCOUNT" \
+    --substitutions "$RUN,_ACCOUNT=$ACCOUNT,_BUILD_BUCKET=$BUILD_BUCKET,_BUILD_SA=$BUILD_SA,_RUN_SA=$RUN_SA,_RECORDS_SA=$RECORDS_SA,_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET,_REPLAY_BUCKET=$REPLAY_BUCKET,_GAME_SERVICE_URL=$GAME_SERVICE_URL"
+)
+```
+
+A precheck passes when the build log ends `precheck <sha>: clear`. Each build
+saves `deploy.sh`'s status file and any records rollback spec to
+`gs://<BUILD_BUCKET>/deploys/<build id>/`.
+
+### Not set up: a tag trigger
+
+A Cloud Build trigger would post the project ID and trigger name to GitHub's
+checks on this public repository, so none is set up. `cloudbuild.yaml` already accepts a
+trigger's build, which takes the pushed tag and commit from the built-in
+`TAG_NAME` and `COMMIT_SHA` exactly as the deploy form above sets them.
+Once that is resolved:
+
+- A Cloud Build 2nd-gen GitHub connection, region `australia-southeast1`: the
+  Cloud Build GitHub App installed on the GitHub organization, and its
+  authorization token in Secret Manager, with the repository linked to it.
+  Removed, after the trigger, with `gcloud builds connections delete <connection>
+  --region australia-southeast1 --project "$PROJECT"`, then by uninstalling the
+  app on GitHub.
+- A trigger on a pushed tag matching `^deploy-[0-9a-f]{40}$`, running
+  `deploy/cloud-run/cloudbuild.yaml` as `ACCOUNT`, with the settings above as its
+  substitutions. Removed with `gcloud builds triggers delete <trigger> --region
+  australia-southeast1 --project "$PROJECT"`.
+- A repository ruleset limiting creation and deletion of `deploy-*` tags to
+  repository admins, so creating the tag stays the go for a deploy.
 
 ## antwars.ai front end
 
