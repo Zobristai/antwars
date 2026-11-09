@@ -94,18 +94,29 @@ interface Options {
 // `created` is the latest created revision when it differs from the latest ready one.
 interface TrafficEntry { revisionName: string; percent?: number; tag?: string; latestRevision?: boolean }
 interface Revision { image: string; sha: string; cpu?: string; env?: string[]; ready?: boolean;
+  /** The container's command and arguments; like Cloud Run, a deploy keeps them unless it sets them. */
+  command?: string[]; args?: string[];
   /** The values a deploy gave, by name (a secret's value is "secret:<ref>"); describe shows them when known. */
   values?: Record<string, string> }
 interface State {
   services: Record<string, { latest: string; created?: string; traffic: TrafficEntry[] }>;
   revisions: Record<string, Revision>;
-  /** Services the fake create-only request created, with the identity and command it was given. */
-  created?: { svc: string; serviceAccount: string; command: string[] }[];
+  /** Services the fake create-only request created, with the whole service it was given. */
+  created?: { svc: string; spec: CreateSpec }[];
   /** Services besides the slots that describe as not found until a deploy creates them. */
   absent?: string[];
   /** What the fake curl answers. A count is how many more reads see it busy. */
   curl?: CurlState;
   bucket?: BucketState;
+}
+/** The parts of a Cloud Run Admin API (v2) service a first deploy's create-only request gives. */
+interface CreateSpec {
+  labels?: Record<string, string>; ingress?: string; invokerIamDisabled?: boolean; scaling?: { maxInstanceCount?: number };
+  template: { revision: string; labels?: Record<string, string>; serviceAccount?: string; timeout?: string; maxInstanceRequestConcurrency?: number;
+    scaling?: { minInstanceCount?: number; maxInstanceCount?: number };
+    containers: { image: string; command?: string[]; args?: string[]; startupProbe?: unknown;
+      env: { name: string; value?: string; valueSource?: { secretKeyRef: { secret: string; version: string } } }[];
+      resources: { limits: Record<string, string>; cpuIdle?: boolean } }[] };
 }
 interface CurlState {
   /** Reads of queueWaiting that show a waiting entry. */
@@ -144,6 +155,8 @@ interface CurlState {
   uploadFails?: readonly string[];
   /** Services another party creates just before this run's create-only request for them, which is then refused. */
   appearAtCreate?: readonly string[];
+  /** Services another party deploys a revision of just after this run's create-only request: serving it, or with no traffic. */
+  changeAfterCreate?: Record<string, "traffic" | "no-traffic">;
 }
 /** The record input bucket as the fake gcloud storage keeps it. */
 interface BucketState {
@@ -246,8 +259,11 @@ else if (at("run", "deploy") && st.services[a[2]]) {
     st.curl.instances = { ...st.curl.instances, [slotName]: retake ? outgoing : svc.latest };
     if (retake) st.curl.superseded = { ...st.curl.superseded, [slotName]: 1 };
   }
+  const prev = st.revisions[svc.traffic.find((t) => t.percent)?.revisionName] ?? {};
   st.revisions[svc.latest] = {
     image: flag("--image") ?? "", sha: process.env.WRONG_VERSION === a[2] ? "f".repeat(40) : sha, cpu: flag("--cpu"),
+    command: a.includes("--command") ? flag("--command").split(",") : prev.command,
+    args: a.includes("--args") ? flag("--args").split(",") : prev.args,
     env: [...new Set([...(flag("--set-env-vars") || flag("--set-secrets") ? [] : before), ...names("--set-env-vars"), ...names("--update-env-vars"), ...names("--set-secrets"), ...names("--update-secrets")])],
     ready: process.env.NOT_READY !== a[2],
     values: Object.fromEntries(([
@@ -286,7 +302,7 @@ else if (at("run", "revisions", "describe")) {
   if (!rev) process.exit(1);
   console.log(JSON.stringify({ metadata: { name: a[3] },
     status: { imageDigest: rev.image, conditions: [{ type: "Ready", status: rev.ready === false ? "False" : "True" }] },
-    spec: { containers: [{ image: rev.image, resources: { limits: { cpu: rev.cpu ?? "1" } },
+    spec: { containers: [{ image: rev.image, ...(rev.command ? { command: rev.command } : {}), ...(rev.args ? { args: rev.args } : {}), resources: { limits: { cpu: rev.cpu ?? "1" } },
       env: [{ name: "ANTWAR_CODE_VERSION", value: rev.sha }, ...(rev.env ?? []).filter((n) => n !== "ANTWAR_CODE_VERSION").map((name) => {
         const v = rev.values?.[name];
         return v === undefined ? { name } : v.startsWith("secret:") ? { name, valueFrom: { secretKeyRef: { key: v.slice(7) } } } : { name, value: v };
@@ -359,22 +375,38 @@ if (url.startsWith(UPLOAD)) {
   }
 }
 else if (url.startsWith(RUN_CREATE)) {
-  // The Cloud Run Admin API's create: refuses (409) a service that exists, else creates it serving one revision.
+  // The Cloud Run Admin API's create: refuses (409) a service that exists, else creates it, serving the one
+  // revision its template names, with exactly the settings the request gives.
   const header = a.includes("@-") ? fs.readFileSync(0, "utf8") : "";
   const svc = decodeURIComponent(url.slice(RUN_CREATE.length));
   const spec = JSON.parse(a[a.indexOf("--data") + 1] ?? "{}");
+  const c0 = spec.template?.containers?.[0];
+  const rev = spec.template?.revision;
   if (header !== "Authorization: Bearer fake-token\\n") code = 401;
-  else if (a[a.indexOf("-X") + 1] !== "POST" || !spec.template?.containers?.[0]?.image) code = 400;
+  else if (a[a.indexOf("-X") + 1] !== "POST" || !c0?.image || typeof rev !== "string" || !rev.startsWith(svc + "-")) code = 400;
   else {
     if ((c.appearAtCreate ?? []).includes(svc) && !st.services[svc]) {
       st.services[svc] = { latest: svc + "-00001-other", traffic: [{ revisionName: svc + "-00001-other", percent: 100, latestRevision: true }] };
     }
     if (st.services[svc]) code = 409;
     else {
-      const rev = svc + "-00001-placeholder";
+      // DROP_ENV=<service>:<name>: that service is created without <name>.
+      const [dropSvc, dropName] = (process.env.DROP_ENV ?? "").split(":");
+      const env = (c0.env ?? []).filter((e) => !(svc === dropSvc && e.name === dropName));
+      const ref = (e) => "secret:" + e.valueSource.secretKeyRef.secret + ":" + e.valueSource.secretKeyRef.version;
       st.services[svc] = { latest: rev, traffic: [{ revisionName: rev, percent: 100, latestRevision: true }] };
-      st.revisions[rev] = { image: spec.template.containers[0].image, sha: "", env: [] };
-      st.created = [...(st.created ?? []), { svc, serviceAccount: spec.template.serviceAccount, command: spec.template.containers[0].command }];
+      st.revisions[rev] = { image: c0.image, sha: env.find((e) => e.name === "ANTWAR_CODE_VERSION")?.value ?? "", cpu: c0.resources?.limits?.cpu,
+        env: env.map((e) => e.name), values: Object.fromEntries(env.map((e) => [e.name, e.valueSource ? ref(e) : e.value])),
+        command: c0.command, args: c0.args };
+      st.created = [...(st.created ?? []), { svc, spec }];
+      const change = (c.changeAfterCreate ?? {})[svc];
+      if (change) {
+        const other = svc + "-00002-other";
+        st.revisions[other] = { image: c0.image, sha: "", env: [] };
+        st.services[svc] = change === "traffic"
+          ? { latest: other, traffic: [{ revisionName: other, percent: 100, latestRevision: true }] }
+          : { latest: other, traffic: [{ revisionName: rev, percent: 100 }] };
+      }
     }
     save();
   }
@@ -2023,38 +2055,35 @@ describe.concurrent("all", () => {
       expect(Object.keys(r.state.services).filter((svc) => SERVICES.includes(svc))).toEqual([]);
     }, TIMEOUT);
 
+    // The one revision each service's create-only request names.
+    const REV = (svc: string) => `${svc}-first-${SHA.slice(0, 8)}`;
+
     it("creates all 18 services with no rollback, gate or domain comparison, saying the comparison was skipped", async () => {
       const r = await runAsync(["all", SHA], { state: empty });
       expect(r.status, r.stderr).toBe(0);
       expect(r.stderr).toContain(FIRST);
-      expect(r.stdout).toBe(SERVICES.map((s) => `${s} ${s}-new\n`).join(""));
-      expect(deployed(r)).toEqual(SERVICES);
-      // Each is created by one create-only request, under its own identity, before its deploy; the deploy then
-      // creates the new revision with no traffic, recorded, and moves all traffic to it by name.
+      expect(r.stdout).toBe(SERVICES.map((s) => `${s} ${REV(s)}\n`).join(""));
+      // Each is created whole by one create-only request, serving the revision it names, recorded in a run mark.
+      // No deploy and no traffic move follow: there is no earlier revision for either to act on.
       const creates = r.calls.filter((c) => c[0] === "curl" && curlTo(c).startsWith(RUN_CREATE));
       expect(creates.map((c) => curlTo(c).slice(RUN_CREATE.length))).toEqual(SERVICES);
-      expect(r.state.created!.map((c) => [c.svc, c.serviceAccount, c.command])).toEqual(SERVICES.map((svc) =>
-        [svc, svc === "antwar-records" ? "antwar-records@example-project.iam.gserviceaccount.com" : "antwar-run@example-project.iam.gserviceaccount.com", ["node"]]));
+      expect(deploys(r.gcloud)).toEqual([]);
+      expect(r.gcloud.filter((c) => c[2] === "update-traffic")).toEqual([]);
       for (const svc of SERVICES) {
-        expect(indexOf(r.calls, (c) => c[0] === "curl" && curlTo(c) === RUN_CREATE + svc), svc)
-          .toBeLessThan(indexOf(r.calls, (c) => c[0] === "gcloud" && c[2] === "deploy" && c[3] === svc));
-      }
-      for (const d of deploys(r.gcloud)) expect(d, d[2]).toContain("--no-traffic");
-      for (const svc of SERVICES) {
-        expect(r.state.services[svc]!.traffic, svc).toEqual([{ revisionName: `${svc}-new`, percent: 100 }]);
+        expect(r.state.services[svc]!.traffic, svc).toEqual([{ revisionName: REV(svc), percent: 100, latestRevision: true }]);
         expect(r.stderr).toContain(` ${svc}: no rollback: first deploy, it had no earlier revision\n`);
       }
       expect(r.state.bucket!.objects.filter(isMark)).toHaveLength(18);
-      expect(r.gcloud.filter((c) => c.includes("--set-tags") || c.includes("--clear-tags"))).toEqual([]);
       // No gate: no queue, lobby, slot holder or slot status read, and no slot withheld.
       expect(r.calls.filter((c) => c[0] === "curl" && /\/(queueWaiting|lobbies|slots\/|withheld\/)|\/live\/status$/.test(curlTo(c)))).toEqual([]);
       expect(roundSleeps(r)).toEqual([]);
-      // The forwarding rules are still read, and the site still answers before the run is done.
+      // Each slot still takes its swap check; the forwarding rules are still read, and the site still answers before the run is done.
+      for (const slot of SLOTS) expect(r.stderr, slot).toContain(` antwar-${slot} swap check 1: ${REV(`antwar-${slot}`)} holds slot ${slot}`);
       expect(r.gcloud.filter((c) => c[0] === "compute")).toEqual([RULES_LIST]);
       expect(r.calls.filter((c) => c[0] === "curl" && curlTo(c) === "https://antwars.ai/")).toHaveLength(1);
       // Each created service is given every setting it runs on, from the deploy's own inputs: none is kept from
       // an earlier revision, since the service had none.
-      const values = (svc: string) => r.state.revisions[`${svc}-new`]!.values!;
+      const values = (svc: string) => r.state.revisions[REV(svc)]!.values!;
       const shared = { ANTWAR_RECORD_INPUT_BUCKET: CONFIG.RECORD_INPUT_BUCKET, ANTWAR_REPLAY_BUCKET: CONFIG.REPLAY_BUCKET,
         ANTWAR_CODE_VERSION: SHA, ANTWAR_PRIVATE_REPLAY_KEY: "secret:antwar-private-replay-key:1" };
       expect(values("antwar-records")).toMatchObject(shared);
@@ -2073,6 +2102,63 @@ describe.concurrent("all", () => {
       expect(r.statusFile).toMatch(/^DONE\n/);
     }, TIMEOUT);
 
+    it("creates each service with exactly the settings its deploy flags give, and nothing besides", async () => {
+      const r = await runAsync(["all", SHA], { state: empty });
+      expect(r.status, r.stderr).toBe(0);
+      const spec = (svc: string) => r.state.created!.find((c) => c.svc === svc)!.spec;
+      // The service without its environment, which is checked by name and value below.
+      const shape = (svc: string) => {
+        const { template: { containers: [{ env: _env, ...container }], ...template }, ...service } = spec(svc);
+        return { ...service, template: { ...template, containers: [container] } };
+      };
+      const env = (svc: string) => spec(svc).template.containers[0]!.env;
+      const image = `${SERVER_REPO}@${DIGEST}`;
+      const container = { image, resources: { limits: { cpu: "1", memory: "2Gi" }, cpuIdle: false } };
+      const slotShape = (svc: string) => ({
+        labels: { app: "antwar", commit: SHA, "antwar-slots": "live" }, ingress: "INGRESS_TRAFFIC_ALL", invokerIamDisabled: true,
+        template: { revision: REV(svc), labels: { app: "antwar", commit: SHA, "antwar-slots": "live" }, serviceAccount: CONFIG.RUN_SA,
+          scaling: { minInstanceCount: 0, maxInstanceCount: 1 }, timeout: "3600s", maxInstanceRequestConcurrency: 1000,
+          containers: [{ ...container, startupProbe: { httpGet: { path: "/ready" }, periodSeconds: 1, failureThreshold: 600, timeoutSeconds: 1 } }] },
+      });
+      expect(shape("antwar-records")).toEqual({
+        labels: { app: "antwar", commit: SHA }, ingress: "INGRESS_TRAFFIC_INTERNAL_ONLY", invokerIamDisabled: false,
+        template: { revision: REV("antwar-records"), labels: { app: "antwar", commit: SHA }, serviceAccount: CONFIG.RECORDS_SA,
+          scaling: { minInstanceCount: 1, maxInstanceCount: 1 },
+          containers: [{ ...container, command: ["npm"], args: ["run", "record-service"] }] },
+      });
+      expect(env("antwar-records")).toEqual([
+        { name: "ANTWAR_RECORD_INPUT_BUCKET", value: CONFIG.RECORD_INPUT_BUCKET }, { name: "ANTWAR_REPLAY_BUCKET", value: CONFIG.REPLAY_BUCKET },
+        { name: "ANTWAR_CODE_VERSION", value: SHA }, { name: "NODE_OPTIONS", value: "--max-old-space-size=512" },
+        { name: "ANTWAR_PRIVATE_REPLAY_KEY", valueSource: { secretKeyRef: { secret: "antwar-private-replay-key", version: "1" } } },
+      ]);
+      for (const slot of SLOTS) {
+        const svc = `antwar-${slot}`;
+        expect(shape(svc), svc).toEqual(slotShape(svc));
+        expect(env(svc).map((e) => e.name), svc).toEqual(["ANTWAR_SLOT", "ANTWAR_PUBLIC_URL", "ANTWAR_STORE_NAMESPACE", "GCLOUD_PROJECT",
+          "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_RECORD_INPUT_BUCKET",
+          "ANTWAR_CODE_VERSION", "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_PRIVATE_REPLAY_KEY", ...(slot.startsWith("public") ? ["ANTWAR_OPERATOR_TOKEN"] : [])]);
+        expect(env(svc).filter((e) => e.valueSource).map((e) => e.valueSource), svc).toEqual([
+          { secretKeyRef: { secret: "antwar-private-replay-key", version: "1" } },
+          ...(slot.startsWith("public") ? [{ secretKeyRef: { secret: "ANTWAR_OPERATOR_TOKEN", version: "latest" } }] : [])]);
+      }
+      expect(shape("antwar")).toEqual({
+        labels: { app: "antwar", commit: SHA }, ingress: "INGRESS_TRAFFIC_ALL", invokerIamDisabled: true, scaling: { maxInstanceCount: 1 },
+        template: { revision: REV("antwar"), labels: { app: "antwar", commit: SHA }, serviceAccount: CONFIG.RUN_SA,
+          scaling: { minInstanceCount: 1, maxInstanceCount: 1 }, timeout: "3600s", maxInstanceRequestConcurrency: 1000,
+          containers: [{ image, resources: { limits: { cpu: "2", memory: "2Gi" }, cpuIdle: false } }] },
+      });
+      expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
+        "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",
+        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY"]);
+      // Every service runs the revision its create made, so it runs exactly the command its flags give: the record
+      // service's own, and the image's default everywhere else. Like Cloud Run, the fake keeps a command across
+      // a deploy that does not set one, so a setting left from any earlier revision would show here.
+      for (const svc of SERVICES) {
+        const serving = r.state.revisions[r.state.services[svc]!.traffic.find((t) => t.percent === 100)!.revisionName]!;
+        expect([serving.command, serving.args], svc).toEqual(svc === "antwar-records" ? [["npm"], ["run", "record-service"]] : [undefined, undefined]);
+      }
+    }, TIMEOUT);
+
     it("stops, deploying nothing and moving no traffic, when a service appears before its create-only request", async () => {
       const r = await runAsync(["all", SHA], { state: (s) => { empty(s); s.curl!.appearAtCreate = ["antwar-records"]; } });
       expect(r.status).toBe(1);
@@ -2084,10 +2170,24 @@ describe.concurrent("all", () => {
       expect(r.statusFile).toMatch(/^FAILED\n/);
     }, TIMEOUT);
 
+    it("goes on only on the revision its own create made: another revision serving, or created after it, stops the run", async () => {
+      for (const [svc, change, serving] of [["antwar-public-0", "traffic", "antwar-public-0-00002-other"], ["antwar-records", "no-traffic", REV("antwar-records")]] as const) {
+        const r = await runAsync(["all", SHA], { state: (s) => { empty(s); s.curl!.changeAfterCreate = { [svc]: change }; } });
+        expect(r.status, svc).toBe(1);
+        expect(r.stderr).toContain(`stopping: ${svc} now has latest created revision ${svc}-00002-other and serves ${serving}, not only ${REV(svc)}, the revision this run's create made; nothing further was deployed to it and none of its traffic moved\n`);
+        // Nothing after the create acts on that service: no deploy, no traffic move, no swap check.
+        expect(r.gcloud.filter((c) => c[1] === "deploy" || c[2] === "update-traffic"), svc).toEqual([]);
+        expect(r.calls.filter((c) => c[0] === "curl" && curlTo(c).startsWith(url(svc))), svc).toEqual([]);
+        expect(r.calls.filter((c) => c[0] === "curl" && curlTo(c) === RUN_CREATE + "antwar"), svc).toEqual([]);
+        expect(r.stderr).not.toContain(` done ${SHA}`);
+        expect(r.statusFile).toMatch(/^FAILED\n/);
+      }
+    }, 2 * TIMEOUT);
+
     it("fails, never reporting done, when a created service lacks a setting it needs", async () => {
       const r = await runAsync(["all", SHA], { state: empty, env: { DROP_ENV: "antwar:ANTWAR_STORE_NAMESPACE" } });
       expect(r.status).toBe(1);
-      expect(r.stderr).toContain("mismatch: antwar antwar-new was created without ANTWAR_STORE_NAMESPACE\n");
+      expect(r.stderr).toContain(`mismatch: antwar ${REV("antwar")} was created without ANTWAR_STORE_NAMESPACE\n`);
       expect(r.stderr).not.toContain(` done ${SHA}`);
       expect(r.statusFile).toMatch(/^FAILED\n/);
     }, TIMEOUT);
@@ -2095,7 +2195,7 @@ describe.concurrent("all", () => {
     it("stops with nothing reverted when the site does not answer 200", async () => {
       const r = await runAsync(["all", SHA], { state: (s) => { empty(s); s.curl!.site = 503; } });
       expect(r.status).toBe(1);
-      expect(r.stderr).toContain("stopping: https://antwars.ai/ answered 503, not 200, within 5 minutes of antwar-new serving; nothing was reverted, since this first deploy had no earlier revision of antwar\n");
+      expect(r.stderr).toContain(`stopping: https://antwars.ai/ answered 503, not 200, within 5 minutes of ${REV("antwar")} serving; nothing was reverted, since this first deploy had no earlier revision of antwar\n`);
       expect(r.calls.filter((c) => c[0] === "probe")).toEqual([]);
     }, TIMEOUT);
 
