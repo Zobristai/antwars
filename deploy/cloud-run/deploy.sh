@@ -174,6 +174,19 @@ source "$(dirname "$0")/config.sh"
 # and reports passed or SKIPPED (no public lobby in both catalogs; never a pass).
 # A failed comparison stops the run non-zero with nothing rolled back.
 #
+# First deploy. Only when gcloud reports every one of the 18 services absent
+# (Cannot find service), --precheck and the run take the first-deploy path: no
+# preflight, rolling-support check, global or slot gate, or rollback (there is no
+# outgoing revision). Each service is created whole, with this commit's image and
+# the deploy flags it always takes, by a create-only request that refuses an
+# existing service (create_service); on a refusal the run stops, the project no
+# longer empty, with nothing deployed to that service and none of its traffic
+# moved. It goes on only on the revision its own create named. The swap checks
+# and the site-200 check after the game are kept; on its failure the run
+# stops with nothing reverted. Only the final domain comparison is skipped, and
+# the run says so. A project with any service present, or any service that
+# cannot be read, takes every check above unchanged.
+#
 # Rolling deploy. When every outgoing service's ANTWAR_CODE_VERSION
 # contains both 46d6c91 (running/<commit> records overlap signal) and
 # e6f22591 (withheld/<slot> mark), no service waits on the global gate:
@@ -889,7 +902,122 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # A run interrupted by INT or TERM ends as FAILED; only SIGKILL leaves RUNNING.
     on_signal() { STOP_REASON="interrupted by SIG$1"; echo "stopping: $STOP_REASON" >&2; exit "$2"; }
 
-    # Records, slots and the game: the serving revision must still be the outgoing
+    # First deploy: creates service $1 with the Cloud Run Admin API's create
+    # (services.create), which refuses a service that already exists, so this run
+    # never deploys to a service it did not create. The service is created whole,
+    # from the same image and the same gcloud run deploy flags $2... any deploy of it
+    # takes (create_body), and its one revision is named by this run. On a refusal
+    # (409) the run stops before any deploy or traffic move on $1. The run goes on
+    # only once that named revision is the service's latest created, latest ready
+    # and serving 100%; any other revision there stops it. Records the revision in
+    # this run's mark at once (on_created) and sets CREATED_NEW. The bearer reaches
+    # curl on stdin.
+    create_service() {
+      local svc="$1" rev="$1-first-${SHA:0:8}" code body serving created ready try
+      shift
+      body="$(create_body "$rev" "$@")" || stop "cannot create $svc from its deploy flags (above); nothing was created"
+      stamp curl -X POST "$(create_url "$svc")" ... revision "$rev"
+      code="$(firestore_curl "$(firestore_token)" -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST \
+        -H 'Content-Type: application/json' --data "$body" "$(create_url "$svc")" || true)"
+      [[ "$code" != 409 ]] \
+        || stop "$svc already exists: the project is no longer empty, so this first deploy stops; nothing was deployed to $svc and none of its traffic moved"
+      [[ "$code" == 200 ]] || stop "creating $svc failed (HTTP ${code:-no answer}); nothing was deployed to it"
+      on_created "$svc" "$rev"
+      for ((try = 1; try <= 60; try++)); do
+        read -r serving created ready _ < <(service_state "$svc") || true
+        if [[ ( -n "$created" && "$created" != NONE && "$created" != "$rev" ) || ( -n "$serving" && "$serving" != NONE && "$serving" != "$rev" ) ]]; then
+          stop "$svc now has latest created revision $created and serves ${serving:-nothing}, not only $rev, the revision this run's create made; nothing further was deployed to it and none of its traffic moved"
+        fi
+        if [[ "$serving" == "$rev" && "$created" == "$rev" && "$ready" == "$rev" ]]; then
+          stamp "$svc created, serving $rev"
+          CREATED_NEW="$rev"
+          return 0
+        fi
+        sleep 5
+      done
+      stop "$svc was created but $rev is not ready and serving 100% after 5 minutes"
+    }
+    create_url() { echo "https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/services?serviceId=$1"; }
+    # Prints, as Cloud Run Admin API (v2) JSON, the service that `gcloud run deploy`
+    # with flags $2... creates, its one revision named $1. Exits 1 naming any flag it
+    # does not translate, so no deploy flag is dropped from a first deploy unnoticed.
+    create_body() {
+      REV="$1" node -e '
+        // Startup CPU boost is on for every service; no deploy flag sets it, since a deploy
+        // keeps it from the earlier revision, so a created service takes it here.
+        const a = process.argv.slice(1), lim = {}, c = { env: [], resources: { limits: lim, startupCpuBoost: true } };
+        const t = { revision: process.env.REV, labels: {}, scaling: {}, containers: [c] };
+        const svc = { labels: t.labels, template: t };
+        // A flag value split like gcloud: on ^<delimiter>^ when given, else on commas.
+        const list = (v) => { const d = /^\^([^^]+)\^/.exec(v); return d ? v.slice(d[0].length).split(d[1]) : v.split(","); };
+        const kv = (v) => list(v).map((p) => [p.slice(0, p.indexOf("=")), p.slice(p.indexOf("=") + 1)]);
+        const num = (v) => (/^[0-9]+$/.test(v) ? Number(v) : v);
+        for (let i = 0; i < a.length; i++) {
+          const f = a[i], v = a[i + 1];
+          switch (f) {
+            case "--image": c.image = v; break;
+            case "--command": c.command = list(v); break;
+            case "--args": c.args = list(v); break;
+            case "--set-env-vars": case "--update-env-vars": for (const [name, value] of kv(v)) c.env.push({ name, value }); break;
+            case "--set-secrets": case "--update-secrets":
+              for (const [name, ref] of kv(v)) c.env.push({ name, valueSource: { secretKeyRef: { secret: ref.split(":")[0], version: ref.split(":")[1] } } });
+              break;
+            case "--service-account": t.serviceAccount = v; break;
+            case "--min-instances": t.scaling.minInstanceCount = Number(v); break;
+            case "--max-instances": t.scaling.maxInstanceCount = Number(v); break;
+            case "--max": svc.scaling = { maxInstanceCount: Number(v) }; break;
+            case "--cpu": lim.cpu = v; break;
+            case "--memory": lim.memory = v; break;
+            case "--no-cpu-throttling": c.resources.cpuIdle = false; i--; break;
+            case "--timeout": t.timeout = v + "s"; break;
+            case "--concurrency": t.maxInstanceRequestConcurrency = Number(v); break;
+            case "--startup-probe": {
+              const probe = (c.startupProbe = {});
+              for (const [key, value] of kv(v)) {
+                const path = key.split("."), last = path.pop();
+                path.reduce((o, k) => (o[k] ??= {}), probe)[last] = num(value);
+              }
+              break;
+            }
+            case "--ingress": svc.ingress = { all: "INGRESS_TRAFFIC_ALL", internal: "INGRESS_TRAFFIC_INTERNAL_ONLY" }[v]; if (!svc.ingress) { console.error("unknown --ingress " + v); process.exit(1); } break;
+            case "--invoker-iam-check": svc.invokerIamDisabled = false; i--; break;
+            case "--no-invoker-iam-check": svc.invokerIamDisabled = true; i--; break;
+            case "--labels": for (const [k, value] of kv(v)) t.labels[k] = value; break;
+            default: console.error("no create-only translation for the deploy flag " + f); process.exit(1);
+          }
+          i++;
+        }
+        console.log(JSON.stringify(svc));' -- "${@:2}"
+    }
+
+    # First deploy: every variable and secret each created service runs with,
+    # since it has none set outside this script to keep. The operator token is on
+    # the game and the public slots only.
+    first_deploy_requires() {
+      local common="ANTWAR_RECORD_INPUT_BUCKET ANTWAR_REPLAY_BUCKET ANTWAR_CODE_VERSION ANTWAR_PRIVATE_REPLAY_KEY"
+      local served="GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common NODE_OPTIONS"
+      elif [[ "$1" == "$GAME_SERVICE" ]]; then echo "$common $served ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_OPERATOR_TOKEN"
+      elif [[ "$1" == "${PREFIX}public-"* ]]; then echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_OPERATOR_TOKEN"
+      else echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL"
+      fi
+    }
+    # Prints, space-separated, each of variables $2... that revision $1 does not
+    # set to a non-empty value (a secret counts as set); fails when it cannot be read.
+    revision_lacks() {
+      local rev="$1"
+      shift
+      run_gcloud run revisions describe "$rev" --format json \
+        | NAMES="$*" node -e '
+          let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+            const env = JSON.parse(s).spec?.containers?.[0]?.env ?? [];
+            const set = (n) => env.some((e) => e.name === n && (e.valueFrom || (typeof e.value === "string" && e.value !== "")));
+            console.log(process.env.NAMES.split(" ").filter((n) => !set(n)).join(" "));
+          });'
+    }
+
+    # Records, slots and the game. A first deploy creates the service with these
+    # flags (create_service). Otherwise the serving revision must still be the outgoing
     # one, and the latest created the same or the service's recorded leftover.
     # deploy_named then creates the new revision with no traffic, records it in
     # this run's mark at once (on_created), even when the deploy fails, and once it
@@ -897,6 +1025,11 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     swap() {
       local svc="$1" serving created
       shift
+      if [[ "$FIRST_DEPLOY" == 1 ]]; then
+        create_service "$svc" --image "$IMAGE" "$@"
+        NEW_REV[$svc]="$CREATED_NEW"
+        return 0
+      fi
       read -r serving created _ _ < <(service_state "$svc") || true
       [[ "$serving" == "${OUT_REV[$svc]}" && ( "$created" == "$serving" || "$created" == "${LEFTOVER[$svc]:-}" ) ]] \
         || stop "$svc serves ${serving:-nothing readable} (latest created ${created:-?}), not its outgoing revision ${OUT_REV[$svc]}"
@@ -960,7 +1093,9 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # is removed; traffic is not changed.
     keep_rollback() {
       local svc="$1" tag=""
-      if [[ "$svc" == "$GAME_SERVICE" ]]; then
+      if [[ "$FIRST_DEPLOY" == 1 ]]; then
+        stamp "$svc: no rollback: first deploy, it had no earlier revision"
+      elif [[ "$svc" == "$GAME_SERVICE" ]]; then
         tag="r${OUT_SHA[$svc]:0:8}"
         stamp gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" ...
         run_gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" || stop "tagging the rollback of $svc failed"
@@ -1095,6 +1230,31 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       fi
     }
 
+    # First deploy: FIRST_DEPLOY=1 only when gcloud reports every service absent.
+    # Stops reading at the first service present or unreadable, leaving 0 and
+    # printing nothing, so the preflight then runs unchanged. Reads only.
+    FIRST_DEPLOY=0
+    first_deploy_check() {
+      local svc
+      for svc in "${SERVICES[@]}"; do
+        [[ "$(service_state_or_absent "$svc" 2>/dev/null)" == ABSENT ]] || return 0
+      done
+      FIRST_DEPLOY=1
+      stamp "first deploy: all ${#SERVICES[@]} services are absent, so each is created with no rollback, no gate and no domain comparison"
+    }
+    # The operator token, as the public slots (and a first-created game) take it.
+    OPERATOR_TOKEN_SECRET="ANTWAR_OPERATOR_TOKEN=ANTWAR_OPERATOR_TOKEN:latest"
+    # The preflight of every service, unless this is a first deploy.
+    preflight_all() {
+      first_deploy_check
+      if [[ "$FIRST_DEPLOY" == 1 ]]; then return 0; fi
+      if [[ "$PRECHECK" == 1 ]]; then
+        for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE" || true; done
+      else
+        for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE"; done
+      fi
+    }
+
     # --precheck: the preflight alone, changing nothing (no build, deploy, traffic
     # move, mark, status file or saved spec). Names every blocker on stdout and
     # exits 1 when any blocks, else prints clear and exits 0.
@@ -1104,7 +1264,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       if ! { git -C "$REPO_ROOT" fetch --quiet origin main && git -C "$REPO_ROOT" merge-base --is-ancestor "$SHA" origin/main; }; then
         block "$SHA is not a commit on origin/main" || true
       fi
-      for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE" || true; done
+      preflight_all
       if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
         echo "precheck $SHA: clear, nothing blocks a deploy of all ${#SERVICES[@]} services"
         exit 0
@@ -1140,7 +1300,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 
     # Nothing changes unless every service can be rolled back.
     FACTS="$(mktemp)"
-    for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE"; done
+    preflight_all
 
     # A rolling deploy only when every outgoing build honours the slot
     # mark and the records overlap signal: its commit contains both support
@@ -1152,7 +1312,10 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     LABELLED=()
     REGISTRY_TOKEN=""
     REGISTRY_TOKEN_READ=0
+    # A first deploy has no outgoing build to check, and is not a rolling deploy.
+    [[ "$FIRST_DEPLOY" != 1 ]] || ROLLING=0
     for SERVICE in "${SERVICES[@]}"; do
+      [[ "$FIRST_DEPLOY" != 1 ]] || break
       MISSING=""
       for C in "${SUPPORT_COMMITS[@]}"; do
         git -C "$REPO_ROOT" merge-base --is-ancestor "$C" "${OUT_SHA[$SERVICE]}" 2>/dev/null && continue
@@ -1169,7 +1332,9 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       PREDATES="$SERVICE runs ${OUT_SHA[$SERVICE]}, which does not contain $MISSING, and its image ${OUT_IMG[$SERVICE]} is not shown to support rolling: $LABEL_REASON"
       break
     done
-    if [[ "$ROLLING" == 1 && ${#LABELLED[@]} -eq 0 ]]; then
+    if [[ "$FIRST_DEPLOY" == 1 ]]; then
+      stamp "first deploy: no gate, since no service exists to hold a match or lobby"
+    elif [[ "$ROLLING" == 1 && ${#LABELLED[@]} -eq 0 ]]; then
       stamp "rolling deploy: every outgoing build contains ${SUPPORT_COMMITS[*]}"
     elif [[ "$ROLLING" == 1 ]]; then
       stamp "rolling deploy: every outgoing build contains ${SUPPORT_COMMITS[*]} or carries ai.antwars.rolling-support=1 (by label: ${LABELLED[*]})"
@@ -1197,7 +1362,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       check_tags_and_traffic "$RECORDS_SERVICE" "${OUT_REV[$RECORDS_SERVICE]}" "$OVERLAP_TAG" latest-only \
         || stop "$RECORDS_SERVICE keeps a tag or traffic other than $OVERLAP_TAG on ${OUT_REV[$RECORDS_SERVICE]} (above)"
     else
-      [[ "$ROLLING" == 1 ]] || wait_global "$RECORDS_SERVICE"
+      [[ "$ROLLING" == 1 || "$FIRST_DEPLOY" == 1 ]] || wait_global "$RECORDS_SERVICE"
       swap "$RECORDS_SERVICE" "${RECORDS_FLAGS[@]}"
       keep_rollback "$RECORDS_SERVICE"
     fi
@@ -1222,7 +1387,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       TOKEN="$(firestore_token)"
       for SLOT in "${PENDING[@]}"; do
         SERVICE="$PREFIX$SLOT"
-        REASON="$(slot_gate "$TOKEN" "$SLOT")"
+        REASON=""
+        [[ "$FIRST_DEPLOY" == 1 ]] || REASON="$(slot_gate "$TOKEN" "$SLOT")"
         if [[ -n "$REASON" ]]; then
           BUSY+=("$SLOT")
           stamp "$SERVICE waits: $REASON"
@@ -1230,7 +1396,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
         fi
         URL="$(slot_url "$SLOT")"
         SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
-        [[ "$SLOT" != public-* ]] || SECRETS+=",ANTWAR_OPERATOR_TOKEN=ANTWAR_OPERATOR_TOKEN:latest"
+        [[ "$SLOT" != public-* ]] || SECRETS+=",$OPERATOR_TOKEN_SECRET"
         slot_flags "$SLOT" "$URL" "$SECRETS"
         [[ "$ROLLING" != 1 ]] || IN_FLIGHT="$SLOT"
         CURRENT_SLOT="$SLOT"
@@ -1267,11 +1433,21 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # 4. The game: 2 vCPU with the private replay key, no traffic until Ready, and
     # traffic back unless the site answers 200. Full gate: only while no lobby is open.
     STEP="game swap"
-    [[ "$ROLLING" == 1 ]] || wait_global "$GAME_SERVICE"
+    [[ "$ROLLING" == 1 || "$FIRST_DEPLOY" == 1 ]] || wait_global "$GAME_SERVICE"
     # ^;^ makes ; the separator, so the comma list of addresses stays one value.
+    # A deploy keeps the game's variables and secrets set outside this script (its
+    # store namespace, replay bucket and operator token); a first deploy has none to
+    # keep, so it sets them from the live slot settings, the deploy config and the
+    # public slots' operator token secret.
+    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client"
+    GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
+    if [[ "$FIRST_DEPLOY" == 1 ]]; then
+      GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
+      GAME_SECRETS+=",$OPERATOR_TOKEN_SECRET"
+    fi
     swap "$GAME_SERVICE" \
-      --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client" \
-      --update-secrets "ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1" \
+      --update-env-vars "$GAME_ENV" \
+      --update-secrets "$GAME_SECRETS" \
       --service-account "$RUN_SA" \
       --min-instances 1 --max-instances 1 \
       --max 1 \
@@ -1288,7 +1464,9 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       [[ "$SITE" != 200 ]] || break
       sleep 10
     done
-    if [[ "$SITE" != 200 ]]; then
+    if [[ "$SITE" != 200 && "$FIRST_DEPLOY" == 1 ]]; then
+      stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; nothing was reverted, since this first deploy had no earlier revision of $GAME_SERVICE"
+    elif [[ "$SITE" != 200 ]]; then
       run_gcloud run services update-traffic "$GAME_SERVICE" --to-revisions "${OUT_REV[$GAME_SERVICE]}=100" || true
       stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; $GAME_SERVICE traffic was reverted to ${OUT_REV[$GAME_SERVICE]}"
     fi
@@ -1336,6 +1514,11 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       if [[ "$SERVICE" == "${PREFIX}public-"* && "$OPTOKEN" != token ]]; then
         MISMATCHED+=("$SERVICE $SERVING has no ANTWAR_OPERATOR_TOKEN")
       fi
+      if [[ "$FIRST_DEPLOY" == 1 ]]; then
+        MISSING="$(revision_lacks "$SERVING" $(first_deploy_requires "$SERVICE"))" \
+          || MISSING="its variables (unreadable)"
+        [[ -z "$MISSING" ]] || MISMATCHED+=("$SERVICE $SERVING was created without $MISSING")
+      fi
       NEW_REV[$SERVICE]="$SERVING"
     done
     if [[ ${#MISMATCHED[@]} -ne 0 ]]; then
@@ -1353,6 +1536,12 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # stays at $SHA. A skip (no public lobby in both catalogs) is reported as a
     # skip, never as a pass.
     STEP="domain comparison"
+    if [[ "$FIRST_DEPLOY" == 1 ]]; then
+      COMPARISON="SKIPPED, not a pass: first deploy, so ${SITE_URL%/} is not compared with $GAME_SERVICE_URL (the domain may still serve another deployment)"
+      stamp domain comparison "$COMPARISON"
+      stamp done "$SHA" all "${#SERVICES[@]}" services, domain comparison "$COMPARISON"
+      exit 0
+    fi
     PROBE_LOG="$(mktemp)"
     stamp node deploy/cloud-run/probe.mjs domain "${SITE_URL%/}" "$GAME_SERVICE_URL" 720
     set +e
