@@ -177,8 +177,11 @@ source "$(dirname "$0")/config.sh"
 # First deploy. Only when gcloud reports every one of the 18 services absent
 # (Cannot find service), --precheck and the run take the first-deploy path: no
 # preflight, rolling-support check, global or slot gate, or rollback (there is no
-# outgoing revision), and each service is created by deploy_named once it still
-# reads absent. The site-200 check after the game is kept; on its failure the run
+# outgoing revision). Each service is created by a create-only request that
+# refuses an existing service (create_service); on a refusal the run stops, the
+# project no longer empty, with nothing deployed to that service and none of its
+# traffic moved. The new revision then replaces the created one exactly as on any
+# deploy (deploy_named). The site-200 check after the game is kept; on its failure the run
 # stops with nothing reverted. Only the final domain comparison is skipped, and
 # the run says so. A project with any service present, or any service that
 # cannot be read, takes every check above unchanged.
@@ -898,6 +901,39 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # A run interrupted by INT or TERM ends as FAILED; only SIGKILL leaves RUNNING.
     on_signal() { STOP_REASON="interrupted by SIG$1"; echo "stopping: $STOP_REASON" >&2; exit "$2"; }
 
+    # First deploy: creates service $1 with the Cloud Run Admin API's create
+    # (services.create), which refuses a service that already exists, so this run
+    # never deploys to a service it did not create. Its one revision runs this
+    # image with a placeholder command that only answers on $PORT, under the
+    # service's own identity; it is replaced by deploy_named at once. On a refusal
+    # (409) the run stops before any deploy or traffic move on $1. Sets OUT_REV[$1]
+    # to the placeholder revision once it serves. The bearer reaches curl on stdin.
+    create_service() {
+      local svc="$1" sa="$RUN_SA" code body serving ready try
+      [[ "$svc" != "$RECORDS_SERVICE" ]] || sa="$RECORDS_SA"
+      body="$(IMG="$IMAGE" SA="$sa" node -e '
+        const serve = "require(\"node:http\").createServer((q, s) => s.end()).listen(process.env.PORT)";
+        console.log(JSON.stringify({ template: { serviceAccount: process.env.SA, scaling: { maxInstanceCount: 1 },
+          containers: [{ image: process.env.IMG, command: ["node"], args: ["-e", serve] }] } }));')"
+      stamp curl -X POST "$(create_url "$svc")" ...
+      code="$(firestore_curl "$(firestore_token)" -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST \
+        -H 'Content-Type: application/json' --data "$body" "$(create_url "$svc")" || true)"
+      [[ "$code" != 409 ]] \
+        || stop "$svc already exists: the project is no longer empty, so this first deploy stops; nothing was deployed to $svc and none of its traffic moved"
+      [[ "$code" == 200 ]] || stop "creating $svc failed (HTTP ${code:-no answer}); nothing was deployed to it"
+      for ((try = 1; try <= 60; try++)); do
+        read -r serving _ ready _ < <(service_state "$svc") || true
+        if [[ -n "$serving" && "$serving" != NONE && "$serving" == "$ready" ]]; then
+          OUT_REV[$svc]="$serving"
+          stamp "$svc created, serving its placeholder revision $serving"
+          return 0
+        fi
+        sleep 5
+      done
+      stop "$svc was created but serves no ready revision after 5 minutes; nothing was deployed to it"
+    }
+    create_url() { echo "https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/services?serviceId=$1"; }
+
     # Records, slots and the game: the serving revision must still be the outgoing
     # one, and the latest created the same or the service's recorded leftover.
     # deploy_named then creates the new revision with no traffic, records it in
@@ -906,14 +942,10 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     swap() {
       local svc="$1" serving created
       shift
-      if [[ "$FIRST_DEPLOY" == 1 ]]; then
-        [[ "$(service_state_or_absent "$svc" 2>/dev/null)" == ABSENT ]] \
-          || stop "$svc is no longer absent, so this first deploy does not create it"
-      else
-        read -r serving created _ _ < <(service_state "$svc") || true
-        [[ "$serving" == "${OUT_REV[$svc]}" && ( "$created" == "$serving" || "$created" == "${LEFTOVER[$svc]:-}" ) ]] \
-          || stop "$svc serves ${serving:-nothing readable} (latest created ${created:-?}), not its outgoing revision ${OUT_REV[$svc]}"
-      fi
+      [[ "$FIRST_DEPLOY" != 1 ]] || create_service "$svc"
+      read -r serving created _ _ < <(service_state "$svc") || true
+      [[ "$serving" == "${OUT_REV[$svc]}" && ( "$created" == "$serving" || "$created" == "${LEFTOVER[$svc]:-}" ) ]] \
+        || stop "$svc serves ${serving:-nothing readable} (latest created ${created:-?}), not its outgoing revision ${OUT_REV[$svc]}"
       stamp swap "$svc": gcloud run deploy --image "$IMAGE" --no-traffic ..., then gcloud run services update-traffic --to-revisions '<new revision>=100'
       deploy_named "$svc" --image "$IMAGE" "$@"
       NEW_REV[$svc]="$CREATED_NEW"
