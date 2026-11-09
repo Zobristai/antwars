@@ -91,6 +91,39 @@ describe("spectator metadata and final rating lifecycle", () => {
     expect(docs.get(`watchMatches/${id}`)).toEqual(before);
   });
 
+  it("publishes a resumed match's seat labels once this server's run has adopted it, though no seat joins again", async () => {
+    const { docs, store } = memoryWatchStore(); const registry = createWatchRegistry(store);
+    holdMatch(docs, id, "run");
+    const accounts = { ratings: createRatings(store), lobbies: {
+      readLobby: async () => ({ ok: true, value: { id, kind: "public", rated: false, state: "holding", slot: "public-0" } }),
+      resolveSlot: async () => ({ runId: "run" }), isInviteCurrent: async () => false,
+    } } as unknown as AccountStores;
+    // The match began on a server that published no labels (an older server): its save carries the seats only.
+    const earlier = createWatchController({ accounts, registry, slot: "public-0", origin: "http://127.0.0.1:9001" });
+    const earlierHub = new LiveHub({ clock: new ManualClock(), ...earlier.hubOptions });
+    cleanup.push(() => { earlierHub.close(); earlier.close(); });
+    await earlier.prepare(id, [{ identityId: "b", displayName: "antwarsos-harness", colony: 1, seat: 1 }]);
+    const live = { agentInfo: (agentId: string) => ({ displayName: "", modelLabel: null, seatKey: agentId === "sim-b" ? "b" : null }) } as unknown as LiveGame;
+    const state = step(createMatch(34, playable(rulesConfig("redesign"))), [{ type: "join", agentId: "sim-b", placement: 1, modelLabel: "openai/gpt-6.1-terra" }]).state;
+    earlier.started(1, state, live, earlierHub);
+    await vi.waitFor(async () => expect(await registry.read(id)).not.toBeNull());
+    docs.set(`watchMatches/${id}`, (({ modelLabels: _labels, ...row }) => row)(docs.get(`watchMatches/${id}`)!));
+    docs.set(`watchPublic/${id}`, (({ modelLabels: _labels, ...row }) => row)(docs.get(`watchPublic/${id}`)!));
+    const save = JSON.parse(JSON.stringify(earlier.save(id)));
+    const successor = createWatchController({ accounts, registry, slot: "public-0", origin: "http://127.0.0.1:9002" });
+    cleanup.push(() => successor.close());
+    await successor.resume(save, live);
+    // Before adoption the match is not this server's: nothing is written.
+    const quiet = step(state, []);
+    successor.ticked(id, quiet, live);
+    await new Promise(resolve => setImmediate(resolve));
+    expect((await registry.read(id))?.modelLabels).toBeUndefined();
+    holdMatch(docs, id, "run-2");
+    successor.adopted(id, "run-2");
+    successor.ticked(id, step(quiet.state, []), live);
+    await vi.waitFor(async () => expect((await registry.publicMatches())[0]?.modelLabels).toEqual({ "antwarsos-harness": "openai/gpt-6.1-terra" }));
+  });
+
   it("refuses start before successful preparation and does not publish a waiting lobby", async () => {
     const { store } = memoryWatchStore(); const registry = createWatchRegistry(store);
     const controller = createWatchController({ registry, slot: "private-0", origin: "http://127.0.0.1:9001",
