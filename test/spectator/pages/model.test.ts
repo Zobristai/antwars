@@ -10,7 +10,7 @@ import { RETRY } from "../../../web/src/ui/format.ts";
 import type { LiveMatch, Recording } from "../../../web/src/matches-page/data.ts";
 import type { RankingView } from "../../../web/src/leaderboard-page/view.ts";
 import {
-  BOARD_GROUPS, OPENING_MODE, RECORDINGS_LIST, colonyModels, eloText, formMarks, rdText, leaderboardLists, liveKind,
+  BOARD_GROUPS, OPENING_MODE, RECORDINGS_LIST, colonyModels, colonySeats, eloText, formMarks, rdText, leaderboardLists, liveKind,
   liveLine, loadedText, loadsSettled, matchesLists, modelName, nameParts, provisional, ranks, recordOf, recordedIdentity, recordingsLine,
   ruleAnchor, ruleGroups, seatGroups, stampWord, tableCount, tableState, tableTitle, thinkingText, whenParts, winnerOf, type ListLoad, type LoadsSeen,
 } from "../../../web/src/pages/model.ts";
@@ -211,6 +211,18 @@ describe("Matches", () => {
     expect(names(colonyModels([seat(1, 1, "b"), seat(2, 0, "c"), seat(0, 0, "a")]))).toEqual([["a", "c"], ["b"]]);
     expect(names(colonyModels([seat(0, 0, null)]))).toEqual([["model unknown"], null]);
     expect(colonyModels([])).toBeNull();
+  });
+  it("names a builder seat that reported no model by its handle, and keeps unlabelled players with different handles apart", () => {
+    const seat = (seat: number, modelLabel: string | null, handle: string | null) => ({ seat, colony: 0 as const, modelLabel, thinkingLevel: null, serviceTier: null, handle });
+    expect(recordedIdentity(seat(0, null, "omp-dolphin"))).toEqual({ name: "omp-dolphin", badges: [], quiet: null });
+    // A reported model wins over the handle; a house handle keeps its own row's name.
+    expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "antwarsos-harness")).name).toBe("GPT-6.1 Terra");
+    expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant")).name).toBe("local");
+    expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
+    const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
+    expect(seatGroups(groups)).toEqual([{ parts: { name: "omp-dolphin", badges: [], quiet: null }, seats: 2 }, { parts: { name: "coffeebot-ant", badges: [], quiet: null }, seats: 1 }]);
+    // A handle never joins a model label that reads the same.
+    expect(seatGroups(colonySeats([seat(0, null, "local"), seat(1, "local", "kite")])![0]!)).toHaveLength(2);
   });
   it("lists a colony's alike seats once with how many they are, in first-seat order, and keeps every seat that differs", () => {
     const opus = { name: "Claude Opus 5.5", badges: ["high"], quiet: null }, sol = { name: "GPT-6.1 Sol", badges: ["max", "Fast"], quiet: null };

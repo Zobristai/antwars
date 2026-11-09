@@ -10,6 +10,11 @@ export interface WatchMatch extends CatalogMatch {
   readonly slot: string;
   readonly runId: string;
   readonly replayId?: string;
+  /**
+   * Each seat's self-reported model label by its stream display name, as its slot published it once the seat joined;
+   * absent where none was published (an older server or row, or no seat has joined yet).
+   */
+  readonly modelLabels?: Readonly<Record<string, string>>;
 }
 export interface WatchRegistry {
   register(match: Omit<WatchMatch, "playbackFinished" | "replayId">): Promise<void>;
@@ -36,6 +41,11 @@ export interface WatchRegistry {
    * the lobby's match, checked in this write's own transaction: false, with nothing written, otherwise.
    */
   playbackFinished(lobbyId: string, runId: string): Promise<boolean>;
+  /**
+   * Each seated player's self-reported model label by its stream display name, on the match and its public listing; fenced
+   * as playbackFinished is. A seat that reported none is left out.
+   */
+  seatLabels(lobbyId: string, runId: string, labels: Readonly<Record<string, string>>): Promise<boolean>;
   /** Run runId saved the match's recording as replayId; fenced as playbackFinished is. */
   replaySaved(lobbyId: string, runId: string, replayId: string): Promise<boolean>;
   /** The lobby whose saved recording has this replay id; null when no registered match has it. */
@@ -68,7 +78,19 @@ function decode(lobbyId: string, row: Fields): WatchMatch {
     mode: row.mode === undefined || row.mode === "" ? undefined : row.mode as RankedMode });
   return { ...access, startedAt,
     playbackFinished: row.playbackFinished === "true", origin: origin(row.origin!), slot: row.slot!, runId: row.runId,
-    ...(row.replayId === undefined ? {} : { replayId: row.replayId }) };
+    ...(row.replayId === undefined ? {} : { replayId: row.replayId }),
+    ...modelLabels(row.modelLabels) };
+}
+
+/** A stored modelLabels field read back: a JSON object of non-empty strings. Absent or malformed reads as none, so a
+ * label never fails the catalog. */
+function modelLabels(value: string | undefined): { modelLabels: Readonly<Record<string, string>> } | undefined {
+  if (value === undefined) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { return undefined; }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+  const labels = Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== "");
+  return { modelLabels: Object.fromEntries(labels) };
 }
 
 /** A listing no run can finish or resume, which the catalog never shows again: see WatchRegistry.publicMatches. */
@@ -89,7 +111,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       return { result: new Set(stale.map(match => match.lobbyId)), writes };
     });
   }
-  async function update(lobbyId: string, runId: string, fields: Fields, removeListing = false): Promise<boolean> {
+  async function update(lobbyId: string, runId: string, fields: Fields, listed: "keep" | "remove" | "update" = "keep"): Promise<boolean> {
     if (!ID.test(lobbyId)) throw new Error("Invalid spectator lobby id");
     return store.transaction<boolean>(async read => {
       const docs = await read([path(lobbyId), listing(lobbyId), lobby(lobbyId)]);
@@ -99,7 +121,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       if (!before) throw new Error("Spectator match not registered");
       if (fields.replayId !== undefined && before.replayId !== undefined && fields.replayId !== before.replayId) throw new Error("Spectator recording identity changed");
       const writes: Write[] = [{ op: "update", path: path(lobbyId), fields }];
-      if (removeListing && docs.get(listing(lobbyId))) writes.push({ op: "delete", path: listing(lobbyId) });
+      if (listed !== "keep" && docs.get(listing(lobbyId))) writes.push(listed === "remove" ? { op: "delete", path: listing(lobbyId) } : { op: "update", path: listing(lobbyId), fields });
       return { result: true, writes };
     });
   }
@@ -186,7 +208,8 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       }
       throw new Error("Spectator catalog exceeds its read limit");
     },
-    playbackFinished: (lobbyId, runId) => update(lobbyId, runId, { playbackFinished: "true" }, true),
+    playbackFinished: (lobbyId, runId) => update(lobbyId, runId, { playbackFinished: "true" }, "remove"),
+    seatLabels: (lobbyId, runId, labels) => update(lobbyId, runId, { modelLabels: JSON.stringify(labels) }, "update"),
     replaySaved(lobbyId, runId, replayId) {
       if (!isReplayId(replayId)) throw new Error("Invalid spectator replay id");
       return update(lobbyId, runId, { replayId });
