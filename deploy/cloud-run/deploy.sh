@@ -934,6 +934,31 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     }
     create_url() { echo "https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/services?serviceId=$1"; }
 
+    # First deploy: the variables and secrets each created service needs, since
+    # it has none set outside this script to keep.
+    first_deploy_requires() {
+      local common="ANTWAR_RECORD_INPUT_BUCKET ANTWAR_REPLAY_BUCKET ANTWAR_CODE_VERSION ANTWAR_PRIVATE_REPLAY_KEY"
+      if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common"
+      elif [[ "$1" == "$GAME_SERVICE" ]]; then
+        echo "$common GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      else
+        echo "$common GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      fi
+    }
+    # Prints, space-separated, each of variables $2... that revision $1 does not
+    # set to a non-empty value (a secret counts as set); fails when it cannot be read.
+    revision_lacks() {
+      local rev="$1"
+      shift
+      run_gcloud run revisions describe "$rev" --format json \
+        | NAMES="$*" node -e '
+          let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+            const env = JSON.parse(s).spec?.containers?.[0]?.env ?? [];
+            const set = (n) => env.some((e) => e.name === n && (e.valueFrom || (typeof e.value === "string" && e.value !== "")));
+            console.log(process.env.NAMES.split(" ").filter((n) => !set(n)).join(" "));
+          });'
+    }
+
     # Records, slots and the game: the serving revision must still be the outgoing
     # one, and the latest created the same or the service's recorded leftover.
     # deploy_named then creates the new revision with no traffic, records it in
@@ -1346,8 +1371,13 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     STEP="game swap"
     [[ "$ROLLING" == 1 || "$FIRST_DEPLOY" == 1 ]] || wait_global "$GAME_SERVICE"
     # ^;^ makes ; the separator, so the comma list of addresses stays one value.
+    # A deploy keeps the game's variables set outside this script (its store
+    # namespace and replay bucket); a first deploy has none to keep, so it sets
+    # them from the live slot settings and the deploy config.
+    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client"
+    [[ "$FIRST_DEPLOY" != 1 ]] || GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
     swap "$GAME_SERVICE" \
-      --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client" \
+      --update-env-vars "$GAME_ENV" \
       --update-secrets "ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1" \
       --service-account "$RUN_SA" \
       --min-instances 1 --max-instances 1 \
@@ -1414,6 +1444,11 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       fi
       if [[ "$SERVICE" == "${PREFIX}public-"* && "$OPTOKEN" != token ]]; then
         MISMATCHED+=("$SERVICE $SERVING has no ANTWAR_OPERATOR_TOKEN")
+      fi
+      if [[ "$FIRST_DEPLOY" == 1 ]]; then
+        MISSING="$(revision_lacks "$SERVING" $(first_deploy_requires "$SERVICE"))" \
+          || MISSING="its variables (unreadable)"
+        [[ -z "$MISSING" ]] || MISMATCHED+=("$SERVICE $SERVING was created without $MISSING")
       fi
       NEW_REV[$SERVICE]="$SERVING"
     done
