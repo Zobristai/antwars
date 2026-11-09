@@ -137,7 +137,6 @@ describe("authenticated lobby nest MCP tools", () => {
       const reply = await agent.call(name, args);
       expect(reply.data.nestSelection.required).toBe(false);
       expect(reply.data.nestSelection.rules).toContain("outsiders see finalized nests on the delayed feed or through normal ant sight after play starts");
-      expect(reply.data.nestSelection.rules).toContain("In ranked matches a seat that has not joined the match by the idle limit, counted from match start, ends it abandoned, with no rating change.");
     }
     expect((await agent.client.listTools()).tools.find(tool => tool.name === "pick_nest")!.description)
       .toContain("In ranked matches a seat that has not joined the match by the idle limit, counted from match start, ends it abandoned, with no rating change.");

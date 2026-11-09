@@ -15,38 +15,42 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // condition text. The baseline is main 5df81d04 (the game-mode naming change
 // moved it from 037784f0). These digests were computed at main 5df81d04 from the
 // public redesign config, before the drawn map (undrawn) and after the drawn map of seed 6006.
+// Repinned for the idle rule's ranked never-joined clause (", or ranked seat not joined by the limit from match
+// start" in the Index clause, decision da631e67), which every briefing's idle line carries;
+// without that clause every text hashes to its 5df81d04 digest, so nothing else changed.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
-  "join house=false undrawn=true nest=false": "a73bed09dc974000757e5190e8a530daabfaa4f4a515553e486ef6ee95e7646c",
-  "join house=false undrawn=true nest=true": "78e84dc21139985ab4e1ce66dc31309ce1c2fd9b6aa3cdf69187e7718c516477",
-  "rules house=false undrawn=true": "f7cd1a923f457f695e031f552b8b918316afdb30b4f95ec30dceccb075670a1d",
-  "join house=false undrawn=false nest=false": "e9f688f19c8339840c6bbc6829cc72354f3c5d1471bf7e2d0c2de41b867b40ff",
-  "join house=false undrawn=false nest=true": "68f0962e27e969afd67d0c0194d1c19c10631a057f6c098b0b0702e4dc3c9c92",
-  "rules house=false undrawn=false": "8e465123d6b6931e60a266b23ea1de2f44860ff4cd07ae11322954d9d7ec0c33",
-  "join house=true undrawn=true nest=false": "a0cea5ce0ddddc0692d9e2fd5460f46f7cbd486bae42bed1ec87e45136d8b903",
-  "join house=true undrawn=true nest=true": "3671ed8532eaac26c3feec48050365d4398d03ec8abe1298994ddfce4d773d1f",
-  "rules house=true undrawn=true": "16acb8c1c19234cf1776563a18bf01420b1a575c07c7894d35bd179cdcb9ea5d",
-  "join house=true undrawn=false nest=false": "809b6a3ea7dab59a0f72d051b4168a1a86387233970a29100b50b371c27a5c6f",
-  "join house=true undrawn=false nest=true": "332058a22ce922377df19f2fdf9718bd0594d9403a9a3646c4b8a51270023069",
-  "rules house=true undrawn=false": "cf83e3740c62025ed6d2a81006dbfc74e9afa5d95a5ce0402b2e3fa95d729fad",
+  "join house=false undrawn=true nest=false": "743c4dcc81fdd6a5d9773a67f57bf31c550ddb3e1e0768648531df04495da583",
+  "join house=false undrawn=true nest=true": "7827c8579cdb25dd8980ac63849455b812c9a4f30a1a2914f8882c4335abcfa2",
+  "rules house=false undrawn=true": "1250dc102475c5aad3cbdb41888524a42e5beb3650c182a2b3ec4e4341558e59",
+  "join house=false undrawn=false nest=false": "2cb82226813ed4ff6d07c399fd8ea3b4317eccc4a2068a7932aa5d66d99e0148",
+  "join house=false undrawn=false nest=true": "77b4c5d4ea895b428d362302335ce95b7786f10a55d439e414ff05fd34a58864",
+  "rules house=false undrawn=false": "479bc24479729dce6fe51b1962486876e87e3e5a17306f8394d24ed81e723d8c",
+  "join house=true undrawn=true nest=false": "bc8a005afb78872af02ab62457e19aa2210f514d939d2c6e936401234dd9a193",
+  "join house=true undrawn=true nest=true": "95f7b32a63b683fbe7cc06544ef9754d27926dd30f74c8a7606551e735d85d2c",
+  "rules house=true undrawn=true": "6f197b7ce10dd0eab718a4b2fd1cdb59798cd01a612017226fe3a0b4ec06e5cb",
+  "join house=true undrawn=false nest=false": "9e0249f36e0bcba588d6f65cee00da9347225747b2ca074c2bb589b3b532fb24",
+  "join house=true undrawn=false nest=true": "4998ad069f6f951fe021ba6d86daa22332c1184739e83daccb642f698768df73",
+  "rules house=true undrawn=false": "2bce5ba1004fc093c95c1331f7eb50d09891088a03d6b06fb64e83a6e5ec744b",
 };
 
 // The antwar-preview comparison service (held-match mode, ANTWAR_RULES and ANTWAR_PLAYERS set) is hosted
 // too and keeps today's text. These digests were computed at main 5df81d04: the join briefing at the
 // barrier, before the seed draws the map, and the rules text of the drawn seed 6006 match.
+// Repinned for the same ranked never-joined idle clause; without it every text hashes to its 5df81d04 digest.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
-  "join v4 players=2": "4cb5c2d7e10d77b25293e812f51bcf1e8c89bd3602a58e5550aba8109ea28d32",
-  "rules v4 players=2": "cf87720b9e462a73f6e49bed55019c5a4882b5dc80ac4af1d63152cbabceb8cc",
-  "join v4 players=4": "dfaedd2e579dd9d7eaa3a8843ce51dbc98ea03fe6d60317b22270536c5f26590",
-  "rules v4 players=4": "536fa723664b9221adc9dbc92d694a6e6f10ad5a350571a2d0ba4f3c0b088467",
-  "join count-marks players=2": "ad6c717089ff3bd98c37744867f4bc94e0da0bbd84a35cfa3f25fbbe73a147a2",
-  "rules count-marks players=2": "5a1ea729b554fadddd9996266d4e17a0606d60490c0246814a934eb953fc59cc",
-  "join count-marks players=4": "7d54e84b4c05c22d9afa1e901325bec5a214e518aa0b2abda718c190986f021a",
-  "rules count-marks players=4": "bd12b82e83607dc269cb7cbbfa3d82095fba3184fbbed0f8429bca5d47ebc4cc",
-  "join redesign players=2": "81a0f36ee94d3dca93b754ec54b19b34fc424eeb2a5e07d8ff84c34fa2c9a742",
-  "rules redesign players=2": "7e59399b776ad79880ccf3baddf965bc4a9ff4dd077ffe3c73afc7d90bc0c3dc",
-  "join redesign players=4": "4e9e33146cc1089adc0bca475e95f86bfc33acc04aa8130531aef22f8a9a8160",
-  "rules redesign players=4": "a07826d55faf68a7383d1e1c35cf8862ec00fc3b4abe97e3980d56830d45cbcd",
+  "join v4 players=2": "af70cc4edc3a41e091af318c203f655c5e1cae5ee5d53f498f79a6a736b085aa",
+  "rules v4 players=2": "7417008686c1ce3e3e1e9ad6f3e58b4427ee2a35c860c46cb75ba2d4ca7141cf",
+  "join v4 players=4": "98eb2b8394502342d7f593680d76807489d5ab6e584aef33572d952753c5c902",
+  "rules v4 players=4": "0538b3defbd58067a581ead95b128c2fc542b97ee2a422c5dd1d8e8a58e200df",
+  "join count-marks players=2": "e10b95d0531b0a7d98880f31ea3ead0aa9d95905de16aaf96d6d2983425417f4",
+  "rules count-marks players=2": "ee2f0ef66e5d1af187463d2e6fb1b0e9246256e2e638e67c8417f9462d72eec7",
+  "join count-marks players=4": "6692336e24520bdf7494d68ae2e3e00494d70c5fad3dacec50340da012785161",
+  "rules count-marks players=4": "5b18a5341b66d4e5c4adc05454bc07aa5702f908265bbde56c16de6bb4b604bd",
+  "join redesign players=2": "c7fc7d28a9141922d54c83f56a5db8d27be4eeffd8edd18d23c52e729cff7fe5",
+  "rules redesign players=2": "8f2954209dd25fc99d99cb12982e678e8f660e98519430c02e3bb0bee9c3af1c",
+  "join redesign players=4": "182751a7bd09bbd67beee246c1cb46d53352e2d53a1b49150c660b844b0a2517",
+  "rules redesign players=4": "66d34ae61a6125d5a174bc70c0544033aa50b92d8df328860bb8289b851afe20",
 };
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));

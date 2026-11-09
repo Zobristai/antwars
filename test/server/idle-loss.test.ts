@@ -246,7 +246,7 @@ describe("the one rule in briefing and rules text", () => {
     const config = { ...HISTORICAL_CONFIG, commandIdleTicks: 1800 };
     for (const text of [briefing(config, DEFAULT_MCP_CONFIG, { house }), joinBriefing(config, DEFAULT_MCP_CONFIG, false, { house })]) {
       expect(text).toContain(`for ${DEFAULT_HOUSE_IDLE_SECONDS} s is idle`);
-      expect(text).toContain("Index match (house-*): match abandoned, unrated.");
+      expect(text).toContain("Index match (house-*), or ranked seat not joined by the limit from match start: match abandoned, unrated.");
       expect(text).toContain("both colonies idle on one tick: draw");
       expect(text).not.toMatch(/idle timeout|without accepted commands|without an accepted command/);
       expect(text).not.toMatch(/Accepted commands alone reset/);
