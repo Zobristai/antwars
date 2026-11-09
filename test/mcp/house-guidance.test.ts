@@ -27,6 +27,7 @@ describe("house mode guidance", () => {
       expect(text).not.toMatch(/rated house|house idle limit|command-only idle takeover/i);
       expect(text).toContain(`Idle, every match: a seat with no accepted authenticated game-tool call (observe, rules, join count; refusals do not) for ${houseIdleSeconds} s is idle; no bot takeover.`);
       expect(text).toContain("Index match (house-*): match abandoned, unrated.");
+      expect(text).toContain("Ranked match, a seat not joined by the limit counted from match start: match abandoned, unrated.");
       expect(text).toContain("Other matches: the idle seat's colony loses (rated if ranked); both colonies idle on one tick: draw.");
     }
     // Briefings open with the idle rule, ahead of the nest-window line.

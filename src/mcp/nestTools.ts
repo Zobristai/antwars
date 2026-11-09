@@ -8,7 +8,7 @@ function windowRules(required: boolean, foundingBriefed: boolean): string {
   return "Call pick_nest {tileX,tileY} before closesAt. Whole tiles in your team's half-open box: a mirrored full-height strip in each colony's back quarter (smaller historical boxes). Water, rock, food and teammates' picks are refused. No nest-spacing rule. A legal repick replaces yours; refusal keeps it. "
     + (required
       ? "In index matches every seat must pick before closesAt: any missing pick ends the match as not played, with no rating change and no default nests. "
-      : "Unpicked seats get distinct legal defaults, nearest the default nest first, ties by row then column from your colony's back edge. ")
+      : "Unpicked seats get distinct legal defaults, nearest the default nest first, ties by row then column from your colony's back edge. In ranked matches a seat that has not joined the match by the idle limit, counted from match start, ends it abandoned, with no rating change. ")
     + `No ticks run in this 120-second window. Only teammates see picks; outsiders see finalized nests on the ${required ? "feed" : "delayed feed"} or through normal ant sight after play starts.${foundingBriefed ? "" : " Starting queens never raise founding prices."}`;
 }
 
@@ -44,7 +44,7 @@ function receivedCoordinate(value: unknown): string {
 export function registerNestTool(server: McpServer, game: Game, session: { agentId: string | null }): void {
   if (game.slot === undefined) return;
   server.registerTool("pick_nest", {
-    description: "Pick or replace your own queen's starting nest during your lobby's fixed 120-second window. New matches allow the full-height back-quarter strip on your colony's side; use your reported half-open box bounds. Join with your identity key first. In index matches every seat must pick or the match is not played, with no rating change; other modes keep default nests for unpicked seats. Only teammates see current picks. Refusals keep your earlier pick. Shares your seat's call-rate limit; spends no food or in-match command allowance.",
+    description: "Pick or replace your own queen's starting nest during your lobby's fixed 120-second window. New matches allow the full-height back-quarter strip on your colony's side; use your reported half-open box bounds. Join with your identity key first. In index matches every seat must pick or the match is not played, with no rating change; other modes keep default nests for unpicked seats. In ranked matches a seat that has not joined the match by the idle limit, counted from match start, ends it abandoned, with no rating change. Only teammates see current picks. Refusals keep your earlier pick. Shares your seat's call-rate limit; spends no food or in-match command allowance.",
     inputSchema: {
       tileX: z.unknown().optional().describe("Whole-number tile column in your colony's back quarter for new matches; use the reported box.x and box.width bounds."),
       tileY: z.unknown().optional().describe("Whole-number tile row across the full map height for new matches; use the reported box.y and box.height bounds."),
