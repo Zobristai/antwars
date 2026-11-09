@@ -138,8 +138,6 @@ export interface StoredObject {
 export interface RecordingObjects {
   /** The stored bytes as stored (never transcoded) with their generation; null when absent. */
   read(name: string): Promise<StoredObject | null>;
-  /** Whether an object exists (metadata only). */
-  exists(name: string): Promise<boolean>;
   /** Replaces exactly `generation`; a changed object fails (GCS 412) and nothing is written. */
   replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<void>;
 }
@@ -171,9 +169,6 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
       if (body === null) throw new Error(`object ${name} vanished during read`);
       return { ...meta, body };
     },
-    async exists(name) {
-      return (await metadata(name, await metadataAccessToken(request))) !== null;
-    },
     async replace(name, object, generation) {
       if (!GENERATION.test(generation)) throw new Error("invalid generation");
       try {
@@ -189,8 +184,6 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
 
 export const recordName = (replayId: string): string => { if (!isReplayId(replayId)) throw new Error("invalid replay id"); return `${replayId}.json`; };
 export const binaryName = (replayId: string): string => { if (!isReplayId(replayId)) throw new Error("invalid replay id"); return `${replayId}.bin`; };
-/** The record service's private input for a match (src/records/input-store.ts). */
-export const inputName = (replayId: string): string => { if (!isReplayId(replayId)) throw new Error("invalid replay id"); return `${replayId}.input`; };
 
 export function parseRecord(id: string, body: Uint8Array): MatchRecord {
   const raw = body[0] === 0x1f && body[1] === 0x8b ? gunzipSync(body) : body;

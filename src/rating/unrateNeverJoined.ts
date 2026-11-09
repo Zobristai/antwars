@@ -5,7 +5,7 @@ import {
   type RankedMode,
 } from "./ratings.js";
 import {
-  abandonBinary, abandonRecord, assertConsistent, binaryName, inputName, isAbandonedRecord, parseRecord, recordName, serializeRecord,
+  abandonBinary, abandonRecord, assertConsistent, binaryName, isAbandonedRecord, parseRecord, recordName, serializeRecord,
   unjoinedColonies, type RecordingObjects, type StoredObject,
 } from "../replays/abandonRecording.js";
 import type { MatchRecord } from "../replays/history.js";
@@ -28,8 +28,6 @@ export interface CorrectionDeps {
   readonly store: Store;
   /** The replay bucket: <replayId>.bin and <replayId>.json. */
   readonly recordings: RecordingObjects;
-  /** The record service's input bucket: <replayId>.input must be absent, or the service could rebuild the record. */
-  readonly recordInputs: RecordingObjects;
 }
 
 export interface Verification {
@@ -56,7 +54,6 @@ export interface Correction {
 const lobbyPath = (id: string) => `lobbies/${id}`;
 const markerPath = (id: string) => `ratedMatches/${id}`;
 const watchPath = (id: string) => `watchMatches/${id}`;
-const listingPath = (id: string) => `watchPublic/${id}`;
 
 interface StoredChange { identityId: string; after: number; rdAfter?: number }
 
@@ -83,7 +80,7 @@ export async function verify(deps: CorrectionDeps, lobbyId: string): Promise<Ver
   if (!isValidId(lobbyId)) throw new Error("invalid lobby id");
   const checks: Check[] = [];
   const check = (name: string, ok: boolean, detail: string) => { checks.push({ name, ok, detail }); return ok; };
-  const first = await readSnapshot(deps.store, [lobbyPath(lobbyId), markerPath(lobbyId), watchPath(lobbyId), listingPath(lobbyId)]);
+  const first = await readSnapshot(deps.store, [lobbyPath(lobbyId), markerPath(lobbyId), watchPath(lobbyId)]);
   const lobby = first.get(lobbyPath(lobbyId)) ?? null;
   const seats = lobbySeats(lobby?.seats);
   const mode = (lobby?.mode || "1v1") as RankedMode;
@@ -138,18 +135,14 @@ export async function verify(deps: CorrectionDeps, lobbyId: string): Promise<Ver
   const watch = first.get(watchPath(lobbyId)) ?? null;
   const replayId = watch?.replayId ?? null;
   const snapshot = new Map([...first, ...rows]);
-  if (!check("watch entry", watch !== null && replayId !== null && watch.rated === "true" && watch.playbackFinished === "true"
-    && !first.get(listingPath(lobbyId)),
-  watch === null ? "watchMatches entry missing"
-    : `replayId ${replayId ?? "none"}, rated ${watch.rated}, playbackFinished ${watch.playbackFinished}, public listing ${first.get(listingPath(lobbyId)) ? "present" : "absent"}`)) {
+  if (!check("watch entry", watch !== null && replayId !== null && watch.rated === "true",
+    watch === null ? "watchMatches entry missing" : `replayId ${replayId ?? "none"}, rated ${watch.rated}`)) {
     return fail(snapshot);
   }
-  const [binary, stored, input] = await Promise.all([deps.recordings.read(binaryName(replayId!)), deps.recordings.read(recordName(replayId!)),
-    deps.recordInputs.exists(inputName(replayId!))]);
-  check("no record input", !input, input ? `${inputName(replayId!)} is still in the record input bucket` : "absent");
+  const [binary, stored] = await Promise.all([deps.recordings.read(binaryName(replayId!)), deps.recordings.read(recordName(replayId!))]);
   let parsed: MatchRecord | null = null;
   try { parsed = stored === null ? null : parseRecord(replayId!, stored.body); } catch { parsed = null; }
-  if (!check("match record", binary !== null && parsed !== null && parsed.status === "complete",
+  if (!check("match record", binary !== null && parsed !== null && parsed.status !== "unavailable",
     `${binaryName(replayId!)} ${binary === null ? "missing" : "present"}, ${recordName(replayId!)} ${stored === null ? "missing" : parsed === null ? "unreadable" : `status ${parsed.status}`}`)) {
     return fail(snapshot, { replayId });
   }

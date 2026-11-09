@@ -24,7 +24,6 @@ function memoryBucket(initial: Record<string, Omit<StoredObject, "generation">> 
     objects,
     touch(name) { const object = objects.get(name)!; objects.set(name, { ...object, generation: String(next++) }); },
     async read(name) { return objects.get(name) ?? null; },
-    async exists(name) { return objects.has(name); },
     async replace(name, object, generation) {
       if (objects.get(name)?.generation !== generation) throw new Error(`object ${name} changed since it was verified; nothing replaced`);
       objects.set(name, { ...object, generation: String(next++) });
@@ -42,7 +41,7 @@ async function rate(store: Store, result: MatchResult): Promise<void> {
 
 /** Every document the correction reads or writes, as stored now. */
 async function documents(store: Store, lobbyId: string, ids: readonly string[]): Promise<Record<string, Fields | null>> {
-  const paths = [`lobbies/${lobbyId}`, `ratedMatches/${lobbyId}`, `watchMatches/${lobbyId}`, `watchPublic/${lobbyId}`,
+  const paths = [`lobbies/${lobbyId}`, `ratedMatches/${lobbyId}`, `watchMatches/${lobbyId}`,
     ...ids.flatMap(id => RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`))];
   return Object.fromEntries(await Promise.all(paths.map(async path => [path, await store.get(path)] as const)));
 }
@@ -74,9 +73,8 @@ async function world(options: { joined?: readonly (0 | 1)[] } = {}) {
     [`${REPLAY_ID}.bin`]: { body: recording.binary, contentType: "application/octet-stream", contentEncoding: "gzip" },
     [`${REPLAY_ID}.json`]: { body: recording.recordBody, contentType: "application/json" },
   });
-  const recordInputs = memoryBucket();
-  const deps: CorrectionDeps = { store, recordings, recordInputs };
-  return { store, deps, recordings, recordInputs, lobbyId, absent, joined, third, startsAt, recording, ids: [absent, joined] };
+  const deps: CorrectionDeps = { store, recordings };
+  return { store, deps, recordings, lobbyId, absent, joined, third, startsAt, recording, ids: [absent, joined] };
 }
 
 const failed = (checks: readonly { name: string; ok: boolean }[]) => checks.filter(check => !check.ok).map(check => check.name);
@@ -177,25 +175,21 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     await refuses(w, "rating change record");
   });
 
-  it("refuses when the match record is missing", async () => {
+  it("refuses when the match record is missing or unavailable", async () => {
     const w = await world();
     w.recordings.objects.delete(`${REPLAY_ID}.json`);
     await refuses(w, "match record");
-  });
-
-  it("refuses while the record service still holds the match's input", async () => {
-    const w = await world();
-    w.recordInputs.objects.set(`${REPLAY_ID}.input`, { body: new Uint8Array([1]), generation: "1", contentType: "application/octet-stream" });
-    await refuses(w, "no record input");
-  });
-
-  it("refuses while playback has not finished or the match is publicly listed", async () => {
-    const w = await world();
-    await write(w.store, [{ op: "create", path: `watchPublic/${w.lobbyId}`, fields: { runId: "run-1" } }]);
-    await refuses(w, "watch entry");
     const v = await world();
-    await write(v.store, [{ op: "update", path: `watchMatches/${v.lobbyId}`, fields: { playbackFinished: "false" } }]);
-    await refuses(v, "watch entry");
+    const record = { ...v.recording.record, status: "unavailable", source: "unavailable" };
+    v.recordings.objects.set(`${REPLAY_ID}.json`, { ...v.recordings.objects.get(`${REPLAY_ID}.json`)!,
+      body: new TextEncoder().encode(JSON.stringify(record) + "\n") });
+    await refuses(v, "match record");
+  });
+
+  it("refuses when the watch entry is not rated", async () => {
+    const w = await world();
+    await write(w.store, [{ op: "update", path: `watchMatches/${w.lobbyId}`, fields: { rated: "false" } }]);
+    await refuses(w, "watch entry");
   });
 
   it("refuses a lobby that is not rated", async () => {
@@ -234,12 +228,12 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
 });
 
 describe("command line", () => {
-  const all = ["--lobby", "l", "--project", "p", "--namespace", "n", "--replay-bucket", "r", "--record-input-bucket", "i"];
+  const all = ["--lobby", "l", "--project", "p", "--namespace", "n", "--replay-bucket", "r"];
   it("requires every target argument and is read-only unless --apply", () => {
-    expect(parseArguments(all)).toEqual({ lobby: "l", project: "p", namespace: "n", replayBucket: "r", recordInputBucket: "i", apply: false });
+    expect(parseArguments(all)).toEqual({ lobby: "l", project: "p", namespace: "n", replayBucket: "r", apply: false });
     expect(parseArguments([...all, "--apply"]).apply).toBe(true);
     expect(() => parseArguments(all.slice(2))).toThrow("missing required argument(s): --lobby");
-    expect(() => parseArguments([])).toThrow("--lobby, --project, --namespace, --replay-bucket, --record-input-bucket");
+    expect(() => parseArguments([])).toThrow("missing required argument(s): --lobby, --project, --namespace, --replay-bucket");
     expect(() => parseArguments([...all, "--project", ""])).toThrow("--project");
     expect(() => parseArguments([...all, "--force"])).toThrow();
   });

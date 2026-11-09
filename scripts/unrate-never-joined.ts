@@ -6,7 +6,7 @@
  *
  *   node --import ./src/ts-resolve.mjs scripts/unrate-never-joined.ts \
  *     --lobby <lobbyId> --project <gcp project> --namespace <store namespace> \
- *     --replay-bucket <bucket> --record-input-bucket <bucket> [--apply]
+ *     --replay-bucket <bucket> [--apply]
  *
  * Every argument but --apply is required; there are no defaults. Without --apply it only reads: it prints every check
  * and the writes it would make, and exits 0 when every check passed, 1 otherwise. With --apply it writes only when every
@@ -24,11 +24,10 @@ export interface Arguments {
   readonly project: string;
   readonly namespace: string;
   readonly replayBucket: string;
-  readonly recordInputBucket: string;
   readonly apply: boolean;
 }
 
-const REQUIRED = ["lobby", "project", "namespace", "replay-bucket", "record-input-bucket"] as const;
+const REQUIRED = ["lobby", "project", "namespace", "replay-bucket"] as const;
 
 /** The command line, or an error naming every missing or unknown argument. */
 export function parseArguments(argv: readonly string[]): Arguments {
@@ -36,14 +35,14 @@ export function parseArguments(argv: readonly string[]): Arguments {
     args: [...argv], strict: true, allowPositionals: false,
     options: {
       lobby: { type: "string" }, project: { type: "string" }, namespace: { type: "string" },
-      "replay-bucket": { type: "string" }, "record-input-bucket": { type: "string" }, apply: { type: "boolean" },
+      "replay-bucket": { type: "string" }, apply: { type: "boolean" },
     },
   });
   const missing = REQUIRED.filter(name => (values[name] ?? "").trim() === "");
   if (missing.length > 0) throw new Error(`missing required argument(s): ${missing.map(name => `--${name}`).join(", ")}`);
   const value = (name: (typeof REQUIRED)[number]) => values[name]!;
   return { lobby: value("lobby"), project: value("project"), namespace: value("namespace"), replayBucket: value("replay-bucket"),
-    recordInputBucket: value("record-input-bucket"), apply: values.apply === true };
+    apply: values.apply === true };
 }
 
 export function report(args: Arguments, result: Correction): string {
@@ -62,8 +61,7 @@ export async function main(argv: readonly string[], env: Readonly<Record<string,
   const store = firestoreFromEnv({ ANTWAR_STORE_NAMESPACE: args.namespace, GCLOUD_PROJECT: args.project,
     FIRESTORE_EMULATOR_HOST: env.FIRESTORE_EMULATOR_HOST, K_SERVICE: env.K_SERVICE });
   if (store === undefined) throw new Error("no store");
-  const result = await correct({ store, recordings: gcsRecordingObjects(args.replayBucket), recordInputs: gcsRecordingObjects(args.recordInputBucket) },
-    args.lobby, { apply: args.apply });
+  const result = await correct({ store, recordings: gcsRecordingObjects(args.replayBucket) }, args.lobby, { apply: args.apply });
   console.log(report(args, result));
   return result.verification.ok ? 0 : 1;
 }
