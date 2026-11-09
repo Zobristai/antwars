@@ -272,7 +272,7 @@ it("rate refusals do not refresh house activity; accepted rules and observe expo
     h.clock.now += 1000;
     const rules = await left.call("rules");
     expect(rules.data.rules).toContain("for 2 s is idle");
-    expect(rules.data.rules).toContain("Index match (house-*): match abandoned, unrated.");
+    expect(rules.data.rules).toContain("Index match (house-*), or ranked seat not joined by the limit from match start: match abandoned, unrated.");
     h.game.match!.state.tick = 22; // Last successful rules call was at tick 2.
     expect((await left.call("observe")).data.error.code).toBe("call_rate");
     await right.call("observe");
