@@ -75,8 +75,11 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   const players = (seats: readonly LiveSeat[]): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
     const model = seat.modelLabel && !isBenchmark(who) ? modelName(seat.modelLabel) : null;
-    const named = (name: string) => model === null ? name : `${model}${name.slice(who.length)}`;
-    const shown = (name: string): NameParts => { const row = rowName(named(name), undefined); return { name: row.name, badges: row.badges, quiet: null }; };
+    // A reported model is drawn as given, never read as a house handle; a seat with none keeps its own row's name.
+    const shown = (name: string): NameParts => {
+      if (model !== null) return { name: `${model}${name.slice(who.length)}`, badges: [], quiet: null };
+      const row = rowName(name, undefined); return { name: row.name, badges: row.badges, quiet: null };
+    };
     // Seats group by identity and the model each reported, so an identity's seats that differ in model each keep their line.
     return { who: JSON.stringify([who, model]), parts: shown(seat.displayName), alike: shown(who) };
   })).map(group => seatBlock(group));

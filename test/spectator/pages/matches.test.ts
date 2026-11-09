@@ -228,6 +228,12 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     expect(differing.table.byClass("c-model").filter(node => node.tag === "td")[0]!.byClass("d1p-model").map(seat => seat.textContent))
       .toEqual(["GPT-6.1 Terra #1", "Claude Opus 5.5 #2", "kite #3"]);
     differing.p.mounted.destroy();
+    // A builder's reported model is drawn as given, with no house name or badges, though it reads like a house handle.
+    const lookalike = show({ ...unrated, lobbyId: "lobby-l", colonies: [[
+      { displayName: "kain", modelLabel: "openai/antwars/gpt-6-luna", rating: null, rd: null, ratedMatches: null }], []] });
+    expect(lookalike.table.byClass("c-model").filter(node => node.tag === "td")[0]!.byClass("d1p-model").map(seat => seat.textContent))
+      .toEqual(["antwars/gpt-6-luna"]);
+    lookalike.p.mounted.destroy();
     // A catalog with no labels (an older server) names the players as before.
     expect(bodyRows(table)[1]!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["alice", "bob"]);
     p.mounted.destroy();

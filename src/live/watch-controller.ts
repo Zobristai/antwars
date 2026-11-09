@@ -1,10 +1,10 @@
 import type { AccountStores } from "../accounts/service.js";
 import { seatKeyOf, type LobbySeat } from "../mcp/game.js";
 import type { LiveGame } from "../server.js";
-import type { SimState, StepOutput } from "../sim/types.js";
+import type { SimState } from "../sim/types.js";
 import type { PrivateArchive } from "../replays/private-archive.js";
 import { slotActivity } from "../slots/activity.js";
-import type { StreamIdentity } from "./format.js";
+import type { StreamAgent, StreamIdentity } from "./format.js";
 import type { LiveHub, LiveHubOptions } from "./hub.js";
 import { captureMatchAccess, type MatchAccess } from "./match-access.js";
 import type { WatchRegistry } from "./watch-registry.js";
@@ -28,9 +28,6 @@ export interface WatchController {
   readonly hubOptions: LiveHubOptions;
   prepare(lobbyId: string, seats: readonly LobbySeat[]): Promise<void>;
   started(seq: number, state: SimState, live: LiveGame, hub: LiveHub): void;
-  /** A tick of the lobby's match started or resumed here: its seats' model labels publish for the catalog once the match is
-   * this server's run's, and again when a seat joins. */
-  ticked(lobbyId: string | undefined, out: StepOutput, live: LiveGame): void;
   /** The watch part of a handover save of a lobby whose match started or resumed here. */
   save(lobbyId: string): WatchSave;
   /**
@@ -62,19 +59,18 @@ export function createWatchController(options: {
    * takes its playback end and replay id only from the run holding the match.
    */
   const runs = new Map<string, string>();
-  /** The seat labels last read for each lobby whose match is this server's, so an unchanged set is not written again. */
+  /**
+   * Each lobby's seat model labels by stream display name, as its delayed playback shows them (hub onReleased): a seat's
+   * label reaches the catalog no earlier than spectators see that seat join. A seat that reported none is left out.
+   */
+  const shown = new Map<string, Readonly<Record<string, string>>>();
+  /** The labels last written for each lobby, so an unchanged set is not written again. */
   const published = new Map<string, string>();
-  /** Each joined seat's self-reported model label by its stream display name; a seat that reported none is left out. Read
-   * only once the lobby's match is this server's run's (started here, or a resumed match once adopted), so a resumed match's
-   * labels are published under the run that holds it, whatever the server it came from published. */
-  const publishLabels = (metadata: Prepared, state: SimState, live: LiveGame) => {
-    const lobbyId = metadata.access.lobbyId;
-    if (!runs.has(lobbyId)) return;
-    const identity = seatIdentity(metadata, live), labels: Record<string, string> = {};
-    for (const agent of state.agents) {
-      const seat = agent.parentAgentId === null && agent.modelLabel ? identity(agent.id) : undefined;
-      if (seat) labels[seat.displayName] = agent.modelLabel!;
-    }
+  /** Write the lobby's shown labels once its match is this server's run's (started here, or a resumed match once adopted), so
+   * a resumed match's labels are published under the run that holds it, whatever the server it came from published. */
+  const publishLabels = (lobbyId: string) => {
+    const labels = shown.get(lobbyId);
+    if (!runs.has(lobbyId) || labels === undefined) return;
     const text = JSON.stringify(labels);
     if (published.get(lobbyId) === text) return;
     published.set(lobbyId, text);
@@ -113,10 +109,15 @@ export function createWatchController(options: {
         publishOwned(access.lobbyId, runId => registry.playbackFinished(access.lobbyId, runId), "playback end");
         prepared.delete(access.lobbyId);
       },
+      onReleased(access, agents) {
+        shown.set(access.lobbyId, releasedLabels(agents));
+        publishLabels(access.lobbyId);
+      },
       onReplaySaved(access, id) {
         publishOwned(access.lobbyId, runId => registry.replaySaved(access.lobbyId, runId, id), "replay id");
         runs.delete(access.lobbyId);
         published.delete(access.lobbyId);
+        shown.delete(access.lobbyId);
       },
       async resultRatings(access, agents) {
         const lobby = await accounts.lobbies.readLobby(access.lobbyId);
@@ -164,13 +165,6 @@ export function createWatchController(options: {
       prepared.set(metadata.access.lobbyId, { ...metadata, startedAt });
       runs.set(metadata.access.lobbyId, metadata.runId);
       publish(() => registry.register({ ...metadata.access, startedAt, origin: options.origin, slot: options.slot, runId: metadata.runId }));
-      publishLabels(metadata, state, live);
-    },
-    ticked(lobbyId, out, live) {
-      // Read again when a seat joins, and on the first tick after this server's run took the match (a resumed match).
-      if (lobbyId === undefined || (published.has(lobbyId) && !out.events.some(event => event.type === "agent_join"))) return;
-      const metadata = prepared.get(lobbyId);
-      if (metadata?.startedAt !== undefined) publishLabels(metadata, out.state, live);
     },
     save(lobbyId) {
       const metadata = prepared.get(lobbyId);
@@ -193,9 +187,21 @@ export function createWatchController(options: {
         if (await registry.resumed(match)) return;
         console.log(`antwar slot ${options.slot}: lobby ${lobbyId}'s match is no longer run ${runId}'s; its watch entry stays its owner's`);
       });
+      // What its delayed playback has shown so far, on this server or carried by the save.
+      publishLabels(lobbyId);
     },
-    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) job.release(); prepared.clear(); runs.clear(); published.clear(); },
+    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) job.release(); prepared.clear(); runs.clear(); published.clear(); shown.clear(); },
   };
+}
+
+/** Each seat's self-reported model label by its stream display name, from the agents delayed playback shows. */
+function releasedLabels(agents: readonly StreamAgent[]): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const agent of agents) {
+    const name = agent.identity?.displayName;
+    if (name !== undefined && agent.modelLabel !== "" && !Object.hasOwn(labels, name)) labels[name] = agent.modelLabel;
+  }
+  return labels;
 }
 
 /** Each stream agent's spectator identity, found by the seat it plays. */

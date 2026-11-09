@@ -76,6 +76,8 @@ export interface LiveHubOptions {
   /** Hands each recorded match's inputs to the record service; omitted means no readable record. */
   readonly recordHandoff?: RecordHandoff;
   readonly onPlaybackFinished?: (access: MatchAccess) => void;
+  /** Each record of a match as it reaches delayed playback, with the agents spectators see at that point. */
+  readonly onReleased?: (access: MatchAccess, agents: readonly StreamAgent[]) => void;
   readonly onReplaySaved?: (access: MatchAccess, replayId: string) => void;
   /** null means the match's actual rating transaction has not committed yet; retain the final tick. */
   readonly resultRatings?: (access: MatchAccess, agents: readonly StreamAgent[]) => Promise<readonly StreamRatingChange[] | null>;
@@ -452,6 +454,7 @@ class MatchStream {
     } else {
       this.released.apply(record);
     }
+    if (this.access) this.hub.recordReleased(this.access, this.released.full.agents);
     let full: string | null = null;
     if (this.recording !== null) {
       if (first) {
@@ -552,6 +555,7 @@ export class LiveHub {
   private readonly requireMatchAccess: boolean;
   private readonly currentInvite: CurrentInvite;
   private readonly onPlaybackFinished: LiveHubOptions["onPlaybackFinished"];
+  private readonly onReleased: LiveHubOptions["onReleased"];
   private readonly onReplaySaved: LiveHubOptions["onReplaySaved"];
   private readonly encode: (message: StreamMessage) => Uint8Array;
   private readonly keepMatches: number;
@@ -578,6 +582,7 @@ export class LiveHub {
     this.requireMatchAccess = options.requireMatchAccess === true;
     this.currentInvite = options.currentInvite ?? (async () => false);
     this.onPlaybackFinished = options.onPlaybackFinished;
+    this.onReleased = options.onReleased;
     this.onReplaySaved = options.onReplaySaved;
     this.relayKey = options.relayKey;
     this.spectatorCap = createAdmissionCap("live spectators", { max: this.config.maxSpectators, perSource: this.config.maxSpectatorsPerSource });
@@ -759,6 +764,9 @@ export class LiveHub {
 
   /** @internal Called only when the actual delayed final frame has been released. */
   playbackFinished(access: MatchAccess): void { this.onPlaybackFinished?.(access); }
+
+  /** @internal Called as each record reaches delayed playback. */
+  recordReleased(access: MatchAccess, agents: readonly StreamAgent[]): void { this.onReleased?.(access, agents); }
 
   catalogMatches(): readonly CatalogMatch[] {
     return [...this.streams.values()].flatMap(stream => stream.access === undefined ? [] : [{
