@@ -4,8 +4,9 @@
 // head row each, in a card at least 56rem wide; in a narrower card each row stacks into labelled lines (archive.css). Rows
 // and links come from today's helpers (ui/format.ts), read-only.
 // Layout: every seat on one line with its badges, a colony's alike
-// seats once with how many they are; the columns: Recordings' Time over the start and outcome columns, the winner a WINNER
-// badge (DRAW in a draw) in its own colony's column; Live now's Winner, "In progress", in place of Delay, and its Watch in Recordings'
+// seats once with how many they are; the columns: Recordings' Time over the start column and its Game type over the outcome
+// column, the winner a WINNER badge (DRAW in a draw) in its own colony's column and ink; Live now's Winner, "In progress", in
+// place of Delay, and its Watch in Recordings'
 // action column, where Replay sits; no Lobby and no rating in Live now; no MODELS * head and no self-reported asterisk anywhere.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
@@ -28,7 +29,7 @@ const SELF_REPORTED = "Self-reported: outside the Antwars Model Index, each agen
 const LIVE_HEADS = ["Started", "Winner"] as const;
 /** Live now's one result. */
 const IN_PROGRESS = "In progress";
-const RECORDING_HEADS = ["Time", "Record"] as const;
+const RECORDING_HEADS = ["Time", "Game type", "Record"] as const;
 const COLONIES = [0, 1] as const;
 /** One column grid for both lists (archive.css), so Live now's columns stand under Recordings' at every width. */
 const MATCH_COLUMNS = ["c-start", "c-result", "c-model", "c-model", "c-record", "c-go"] as const;
@@ -277,11 +278,9 @@ export interface RecordingsCardOptions {
 export function recordingsCard(doc: Document, view: MatchesView, options: RecordingsCardOptions): HTMLElement {
   const { search } = options;
   const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList } = rowParts(doc);
-  /** Recordings has no outcome column of its own: its start takes that column too, so every other column stays where Live
-   * now's stands. */
-  const withResult = <T extends HTMLTableCellElement>(cell: T): T => { cell.colSpan = 2; return cell; };
-  /** A colony's result badge, in the shared badge style (identity.ts d1p-tag): Winner on the winning colony where the record
-   * names a winner and the match was not abandoned, Draw on both colonies in a draw; none otherwise. */
+  /** A colony's result badge, in the shared badge style (identity.ts d1p-tag) with its words in the colony's ink: Winner on
+   * the winning colony where the record names a winner and the match was not abandoned, Draw on both colonies in a draw;
+   * none otherwise. */
   const markOf = (r: Recording, colony: 0 | 1): string | null => {
     const winner = winnerOf(r);
     if (winner !== null) return winner === colony ? "Winner" : null;
@@ -291,8 +290,8 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
    * Abandoned or Result unknown, and Draw on a row with no recorded seat. A winner's word names its colony, never shown. */
   const outcome = (r: Recording, text: string, marked: boolean) =>
     !marked && winnerOf(r) === null ? [h(doc, "span", "d1p-result", text)] : [];
-  /** The match-type badge (ui/format.ts recordingType) under the time, in both forms; none where the type is
-   * unknown. */
+  /** The match-type badge (ui/format.ts recordingType): in the table's Game type column, in the stacked row's line after
+   * the time; none where the type is unknown. */
   const typeBadge = (type: string | null) => type === null ? [] : [h(doc, "span", "d1p-tag d1p-type", type)];
   const stamp = (status: Recording["status"]) => {
     const node = h(doc, "span", `d1p-stamp is-${status}`);
@@ -313,7 +312,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       // The line's words stay its first child (archive.css .d1p-model > :first-child), the badge after them.
       const lines = models ?? [h(doc, "span", "d1p-model d1p-unknown")];
       if (models === null) lines[0]!.append(h(doc, "span", undefined, NOT_JOINED));
-      for (const line of lines) line.append(h(doc, "span", "d1p-tag", mark));
+      for (const line of lines) line.append(h(doc, "span", `d1p-tag d1p-c${colony}`, mark));
       return lines;
     });
   const all = recordingRows(view, search);
@@ -329,12 +328,13 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     const table = h(doc, "table", "d1p-table d1p-rec d1p-wide");
     table.setAttribute("aria-labelledby", "d1p-rec-title");
     columns(table, MATCH_COLUMNS);
-    // One head row on Live now's grid: Time over the start and outcome columns, each colony's models under its name, Record,
-    // and Replay's head for screen readers. No Winner column: the winner's badge stands in its own colony's column.
+    // One head row on Live now's grid: Time over the start column, Game type over the outcome column (under Live now's
+    // Winner), each colony's models under its name, Record, and Replay's head for screen readers. No Winner column: the
+    // winner's badge stands in its own colony's column.
     const head = h(doc, "thead"), labels = h(doc, "tr");
-    labels.append(withResult(headCell(RECORDING_HEADS[0], "c-start")));
+    labels.append(headCell(RECORDING_HEADS[0], "c-start"), headCell(RECORDING_HEADS[1], "c-result"));
     for (const colony of COLONIES) labels.append(headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`));
-    labels.append(headCell(RECORDING_HEADS[1], "c-record"), srHead(PAGE_WORDS.replay, "c-go"));
+    labels.append(headCell(RECORDING_HEADS[2], "c-record"), srHead(PAGE_WORDS.replay, "c-go"));
     head.append(labels);
     const tbody = h(doc, "tbody");
     const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
@@ -351,9 +351,11 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const marked = seats !== null && (markOf(r, 0) !== null || markOf(r, 1) !== null);
       const name = `Replay, recording started ${row.when}`;
       const line = h(doc, "tr");
-      const start = withResult(startCell(row.when));
-      start.append(...outcome(r, row.result, marked), ...typeBadge(row.type));
-      line.append(start);
+      const start = startCell(row.when);
+      start.append(...outcome(r, row.result, marked));
+      const type = h(doc, "td", "c-result");
+      type.append(...typeBadge(row.type));
+      line.append(start, type);
       if (seats === null) {
         const none = h(doc, "td", "c-model");
         none.colSpan = 2;

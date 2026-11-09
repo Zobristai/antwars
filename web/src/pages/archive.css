@@ -179,8 +179,10 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-tag + .d1p-tag { margin-left: 4px; }
 /* The badges stay together: a name that wraps moves both to the next line, never one. */
 .d1p-tags { display: inline-block; white-space: nowrap; }
-/* A recording's match type: the seat badge, on its own line under the winner, in its words as written ("1v1"). */
+/* A recording's match type: the seat badge, on its own line, in its words as written ("1v1"). */
 .d1p-tag.d1p-type { display: block; width: fit-content; margin: 4px 0 0; text-transform: none; letter-spacing: normal; }
+/* In Recordings' Game type column it is the cell's first line, so it rides the row's first baseline. */
+.d1p-rec td.c-result > .d1p-type { margin-top: 0; }
 /* Last 5, newest first: a result stamp each, a win filled, a loss or a draw outlined; a stored replay makes it a link,
    underlined. The element is the target and the stamp is drawn inside it: 24 px here, 28 px in a 40 × 44 px target on phones. */
 .d1p-form-mark { position: relative; isolation: isolate; display: inline-grid; place-items: center; width: 28px; height: 24px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--aw-ink-2); text-decoration: none; vertical-align: middle; }
@@ -195,8 +197,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-lb.d1p-table .d1p-form-mark { margin-block: -2px; }
 
 /* Live now and Recordings: one six-column grid, so each list's columns stand under the other's: the start; the outcome
-   (Live now's Winner; Recordings' Time spans it, its winner a badge in its colony's column); a column per colony's models; the record; the action. Every column but the
-   colonies is sized to what it holds (a date, "Lake Hodges Colony" or "In progress", an UNAVAILABLE stamp, the
+   (Live now's Winner; Recordings' Game type, its winner a badge in its colony's column); a column per colony's models; the record; the action. Every column but the
+   colonies is sized to what it holds (a date, "Lake Hodges Colony", "In progress" or a match type, an UNAVAILABLE stamp, the
    Replay or Watch pill); the two colonies share the rest equally: 343 px each in the 1200 px card both pages give them, never less
    than 255 px, since the table stands only in a card 64rem wide (the stacked rows, below). Live now has no record, so its
    second colony spans the record column, and its Watch stands in the action column, as Recordings' Replay does. Waiting
@@ -228,7 +230,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
 .d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
 .d1p-unknown { color: var(--aw-ink-3); }
-/* Colony colour only as ink on a colony's name, which always names it too. */
+/* Colony colour only as ink: on a colony's name, which always names it too, and on the words of Recordings' WINNER and DRAW
+   badges (matches.ts markedSeats), which stand in that colony's column or under its name; the badge keeps its grey fill. */
 .d1p-c0 { color: var(--aw-c0); }
 .d1p-c1 { color: var(--aw-c1); }
 .d1p-colony { font-weight: 600; }
