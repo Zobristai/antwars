@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { ratingWrites, ratingCollection, RANKED_MODES, type MatchResult } from "../../src/rating/ratings.ts";
 import { correct, type CorrectionDeps } from "../../src/rating/unrateNeverJoined.ts";
-import { createFirestore, type Fields, type Store } from "../../src/store/firestore.ts";
+import { createFirestore, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
 import { abandonBinary, abandonRecord, serializeRecord, type RecordingObjects, type StoredObject } from "../../src/replays/abandonRecording.ts";
 import { binaryRecord } from "../../src/replays/history.ts";
 import { parseArguments } from "../../scripts/unrate-never-joined.ts";
@@ -24,6 +24,7 @@ function memoryBucket(initial: Record<string, Omit<StoredObject, "generation">> 
     objects,
     touch(name) { const object = objects.get(name)!; objects.set(name, { ...object, generation: String(next++) }); },
     async read(name) { return objects.get(name) ?? null; },
+    async generation(name) { return objects.get(name)?.generation ?? null; },
     async replace(name, object, generation) {
       if (objects.get(name)?.generation !== generation) throw new Error(`object ${name} changed since it was verified; nothing replaced`);
       const written = String(next++);
@@ -43,7 +44,7 @@ async function rate(store: Store, result: MatchResult): Promise<void> {
 
 /** Every document the correction reads or writes, as stored now. */
 async function documents(store: Store, lobbyId: string, ids: readonly string[]): Promise<Record<string, Fields | null>> {
-  const paths = [`lobbies/${lobbyId}`, `ratedMatches/${lobbyId}`, `watchMatches/${lobbyId}`,
+  const paths = [`lobbies/${lobbyId}`, `ratedMatches/${lobbyId}`, `watchMatches/${lobbyId}`, `ratingCorrections/${lobbyId}`,
     ...ids.flatMap(id => RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`))];
   return Object.fromEntries(await Promise.all(paths.map(async path => [path, await store.get(path)] as const)));
 }
@@ -105,6 +106,9 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("false");
     expect(await w.store.get(`ratedMatches/${w.lobbyId}`)).toBeNull();
     for (const id of w.ids) expect(await w.store.get(`ratings/${id}`)).toBeNull();
+    expect(await w.store.get(`ratingCorrections/${w.lobbyId}`)).toMatchObject({ kind: "unrate-never-joined", lobbyId: w.lobbyId,
+      replayId: REPLAY_ID, runId: "run-1", mode: "1v1", identities: JSON.stringify(w.ids), neverJoined: JSON.stringify([w.absent]),
+      binaryGeneration: "1", recordGeneration: "2" });
     const binary = w.recordings.objects.get(`${REPLAY_ID}.bin`)!;
     expect(binary).toMatchObject({ contentType: "application/octet-stream", contentEncoding: "gzip" });
     const decoded = binaryRecord({ id: REPLAY_ID, binary: binary.body });
@@ -268,21 +272,63 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     recordingAbandoned(w);
   });
 
-  it("when a recording object changed after verification, Firestore is corrected and a rerun completes the recording", async () => {
+  it("writes nothing to Firestore or the recording when a recording object changed after verification", async () => {
     const w = await world();
     const original = w.deps.recordings;
     let reads = 0;
     const racing: RecordingObjects = { ...original, read: async name => {
       const object = await original.read(name);
-      if (name.endsWith(".bin") && ++reads === 1) w.recordings.touch(name);
+      if (name.endsWith(".json") && ++reads === 1) w.recordings.touch(name);
       return object;
     } };
     await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true, replayId: REPLAY_ID }))
+      .rejects.toThrow(/recording changed since verification; nothing written to Firestore or the recording/);
+    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
+    expect(await w.store.get(`ratings/${w.absent}`)).not.toBeNull();
+    expect(await w.store.get(`ratingCorrections/${w.lobbyId}`)).toBeNull();
+    recordingUntouched(w);
+  });
+
+  it("in the remaining window (object replaced after the transaction's re-read), Firestore is corrected and a rerun completes the recording", async () => {
+    const w = await world();
+    const window = replacing(w, /\.bin$/, async (name, object, generation) => {
+      w.recordings.touch(name);
+      return w.recordings.replace(name, object, generation);
+    });
+    await expect(correct(window, w.lobbyId, { apply: true, replayId: REPLAY_ID }))
       .rejects.toThrow(/not confirmed replaced \(object .*\.bin changed since it was verified; nothing replaced\)\. Rerun with --apply/);
     await firestoreCorrected(w);
-    recordingUntouched(w);
     expect((await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID })).applied).toBe(true);
     recordingAbandoned(w);
+  });
+
+  it("a rerun after a partial run refuses when a player has played another rated match since", async () => {
+    const w = await world();
+    const lost = atCommit(w, async (step) => { await w.store.transaction(step); throw new Error("DEADLINE_EXCEEDED"); });
+    await expect(correct(lost, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/outcome unknown/);
+    await firestoreCorrected(w);
+    await rate(w.store, { matchId: randomUUID(), teams: [[w.joined], [w.third]], winner: "a", mode: "1v1", at: w.startsAt + 3_600_000 });
+    await refuses(w, `only rated match: ${w.joined}`);
+    recordingUntouched(w);
+  });
+
+  it("a rerun after a partial run refuses when the correction marker names another recording", async () => {
+    const w = await world();
+    const lost = atCommit(w, async (step) => { await w.store.transaction(step); throw new Error("DEADLINE_EXCEEDED"); });
+    await expect(correct(lost, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/outcome unknown/);
+    await write(w.store, [{ op: "update", path: `ratingCorrections/${w.lobbyId}`, fields: { replayId: "2026-11-09T13-26-59-841Z-1" } }]);
+    await refuses(w, "correction marker");
+  });
+
+  it("does not take an abandoned, unrated lobby without this tool's correction marker as corrected", async () => {
+    const w = await world();
+    await w.store.transaction(async () => ({ result: undefined, writes: <Write[]>[
+      { op: "update", path: `lobbies/${w.lobbyId}`, fields: { outcome: "abandoned", rated: "false" } },
+      { op: "update", path: `watchMatches/${w.lobbyId}`, fields: { rated: "false" } },
+      ...w.ids.map(id => ({ op: "delete" as const, path: `ratings/${id}` })),
+      { op: "delete" as const, path: `ratedMatches/${w.lobbyId}` },
+    ] }));
+    await refuses(w, "correction marker");
   });
 
   it("when an upload was stored but its response lost, a rerun checks both objects and rewrites only the one still rated", async () => {

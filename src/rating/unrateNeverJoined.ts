@@ -17,11 +17,17 @@ import { isReplayId } from "../replays/access.js";
  *
  * verify reads everything and writes nothing. correct runs verify and writes only when every check passed in that same
  * run and apply is set. Firestore is corrected first, in one transaction that re-reads every document verify read and
- * writes only while each is unchanged: a refused or failed check therefore leaves Firestore and the recording untouched.
- * Only once Firestore is corrected is the recording rewritten, each object independently and only at the generation
- * verify read. Every run reads the authoritative state afresh: when Firestore already shows the correction (an earlier
- * run committed it, even if its commit response was lost) it checks each recording object on its own and rewrites only
- * one still rated. The correction is limited to the case where nothing later depends on the match: each player's only
+ * the generation of both recording objects, and writes only while each is unchanged: a refused or failed check therefore
+ * leaves Firestore and the recording untouched. The same transaction creates a correction marker
+ * (ratingCorrections/<lobbyId>) recording what was verified. Only once Firestore is corrected is the recording rewritten,
+ * each object independently and only at the generation verify read. Every run reads the authoritative state afresh: a
+ * lobby counts as already corrected only when this tool's marker names it, its replay and run, and its players, and
+ * then only while neither player has any rating row in any ranked mode; it then checks each recording object on its own
+ * and rewrites only one still rated.
+ *
+ * Remaining window: Cloud Storage cannot join the Firestore transaction. A recording object replaced after the
+ * transaction re-read its generation and before the commit lands is not detected until its upload is refused, by
+ * which time Firestore is corrected. The correction is limited to the case where nothing later depends on the match: each player's only
  * rated result in any ranked mode is this one, so deleting their rating rows returns them to unrated
  * (src/rating/ratings.ts: an unrated identity has no row).
  */
@@ -66,6 +72,8 @@ export interface Correction {
 const lobbyPath = (id: string) => `lobbies/${id}`;
 const markerPath = (id: string) => `ratedMatches/${id}`;
 const watchPath = (id: string) => `watchMatches/${id}`;
+const correctionPath = (id: string) => `ratingCorrections/${id}`;
+const CORRECTION_KIND = "unrate-never-joined";
 
 interface StoredChange { identityId: string; after: number; rdAfter?: number }
 
@@ -96,7 +104,7 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
   if (!isReplayId(expectedReplayId)) throw new Error("invalid replay id");
   const checks: Check[] = [];
   const check = (name: string, ok: boolean, detail: string) => { checks.push({ name, ok, detail }); return ok; };
-  const first = await readSnapshot(deps.store, [lobbyPath(lobbyId), markerPath(lobbyId), watchPath(lobbyId)]);
+  const first = await readSnapshot(deps.store, [lobbyPath(lobbyId), markerPath(lobbyId), watchPath(lobbyId), correctionPath(lobbyId)]);
   const lobby = first.get(lobbyPath(lobbyId)) ?? null;
   const seats = lobbySeats(lobby?.seats);
   const mode = (lobby?.mode || "1v1") as RankedMode;
@@ -119,8 +127,12 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
     return fail(first);
   }
 
-  let snapshot: ReadonlyMap<string, Fields | null> = first;
+  const marker = first.get(correctionPath(lobbyId)) ?? null;
+  const rowPaths = identities.flatMap(id => RANKED_MODES.map(each => `${ratingCollection(each)}/${id}`));
+  const rows = await readSnapshot(deps.store, rowPaths);
+  const snapshot: ReadonlyMap<string, Fields | null> = new Map([...first, ...rows]);
   if (stage === "rated") {
+    check("correction marker", marker === null, marker === null ? "none (not yet corrected)" : "present although the lobby is still rated");
     // (2) The rating change record names exactly the lobby's identities.
     const changes = parseChanges(first.get(markerPath(lobbyId)) ?? null);
     check("rating change record", changes !== null && changes.length === identities.length
@@ -128,8 +140,6 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
     changes === null ? "ratedMatches record missing or unreadable" : `identities ${changes.map(change => change.identityId).join(", ")}`);
 
     // (4) Each player's only rated result, in any ranked mode, is this lobby's, and its row is as the match left it.
-    const rowPaths = identities.flatMap(id => RANKED_MODES.map(each => `${ratingCollection(each)}/${id}`));
-    const rows = await readSnapshot(deps.store, rowPaths);
     for (const id of identities) {
       const side = seats!.find(seat => seat.id === id)!.colony;
       const row = rows.get(`${ratingCollection(mode)}/${id}`) ?? null;
@@ -151,11 +161,23 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
       if (others.length > 0) { ok = false; detail += `; also rated in ${others.join(", ")}`; }
       check(`only rated match: ${id}`, ok, detail);
     }
-    snapshot = new Map([...first, ...rows]);
   } else {
-    // Already committed: the rating change record is gone (and with it the rating rows the same transaction deleted).
+    // Corrected by this tool only when its marker names this lobby's replay, run, mode and players.
+    let named: unknown = null;
+    try { named = JSON.parse(marker?.identities ?? "null"); } catch { named = null; }
+    check("correction marker", marker !== null && marker.kind === CORRECTION_KIND && marker.replayId === expectedReplayId
+      && !!lobby!.matchRunId && marker.runId === lobby!.matchRunId && marker.mode === mode
+      && Array.isArray(named) && isDeepStrictEqual(new Set(named), new Set(identities)) && named.length === identities.length,
+    marker === null ? "none: this lobby was not corrected by this tool"
+      : `kind ${marker.kind}, replayId ${marker.replayId}, runId ${marker.runId}, mode ${marker.mode}, identities ${marker.identities}, at ${marker.at}`);
     check("rating change record", first.get(markerPath(lobbyId)) === null, first.get(markerPath(lobbyId)) === null
       ? "removed by the committed correction" : "ratedMatches record still present although the lobby is unrated");
+    // (4) Still no other rated match: the committed correction deleted this match's rows, so any row is a later match.
+    for (const id of identities) {
+      const rated = RANKED_MODES.filter(each => rows.get(`${ratingCollection(each)}/${id}`));
+      check(`only rated match: ${id}`, rated.length === 0, rated.length === 0 ? "no rating row in any ranked mode"
+        : `rated in ${rated.join(", ")} since the correction`);
+    }
   }
 
   // (3) The recording linked to the lobby (the expected one, saved by the run that played the lobby's match), and that
@@ -204,8 +226,12 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
     recording: { binary: binary!, record: stored!, parsed: parsed!, newBinary, newRecord } };
 }
 
-function firestoreWrites(v: Verification): Write[] {
+function firestoreWrites(v: Verification, at: Date): Write[] {
+  const lobby = v.snapshot.get(lobbyPath(v.lobbyId))!;
   return [
+    { op: "create", path: correctionPath(v.lobbyId), fields: { kind: CORRECTION_KIND, lobbyId: v.lobbyId, replayId: v.replayId!,
+      runId: lobby.matchRunId!, mode: v.mode!, identities: JSON.stringify(v.identities), neverJoined: JSON.stringify(v.neverJoined),
+      binaryGeneration: v.recording!.binary.generation, recordGeneration: v.recording!.record.generation, at: at.toISOString() } },
     { op: "update", path: lobbyPath(v.lobbyId), fields: { outcome: "abandoned", rated: "false" } },
     { op: "update", path: watchPath(v.lobbyId), fields: { rated: "false" } },
     ...v.identities.map((id): Write => ({ op: "delete", path: `${ratingCollection(v.mode!)}/${id}` })),
@@ -230,7 +256,7 @@ export async function correct(deps: CorrectionDeps, lobbyId: string, options: { 
   if (!verification.ok) return { verification, applied: false, writes: [] };
   const recording = verification.recording!;
   const replayId = verification.replayId!;
-  const writes = verification.stage === "rated" ? firestoreWrites(verification) : [];
+  const writes = verification.stage === "rated" ? firestoreWrites(verification, new Date()) : [];
   const objects = [
     ...(recording.newBinary === null ? [] : [{ name: binaryName(replayId), from: recording.binary,
       object: { body: recording.newBinary, contentType: recording.binary.contentType,
@@ -243,19 +269,25 @@ export async function correct(deps: CorrectionDeps, lobbyId: string, options: { 
   if (!options.apply || planned.length === 0) return { verification, applied: false, writes: planned };
 
   if (writes.length > 0) {
-    let committed: boolean;
+    let outcome: "committed" | "documents" | "recording";
     try {
-      committed = await deps.store.transaction(async read => {
+      outcome = await deps.store.transaction(async read => {
         const paths = [...verification.snapshot.keys()];
         const now = await read(paths);
-        const unchanged = paths.every(path => isDeepStrictEqual(now.get(path) ?? null, verification.snapshot.get(path) ?? null));
-        return unchanged ? { result: true, writes } : { result: false, writes: [] };
+        if (!paths.every(path => isDeepStrictEqual(now.get(path) ?? null, verification.snapshot.get(path) ?? null))) {
+          return { result: "documents" as const, writes: [] };
+        }
+        // The recording as verified, read again just before the commit (Cloud Storage cannot join the transaction).
+        const [binary, record] = await Promise.all([deps.recordings.generation(binaryName(replayId)), deps.recordings.generation(recordName(replayId))]);
+        if (binary !== recording.binary.generation || record !== recording.record.generation) return { result: "recording" as const, writes: [] };
+        return { result: "committed" as const, writes };
       });
     } catch (error) {
       throw new Error(`Firestore commit outcome unknown (${message(error)}); the recording was not touched. ` +
         "Rerun read-only: it reads whether the correction committed, and --apply then completes whichever state it finds.");
     }
-    if (!committed) throw new Error("Firestore documents changed since verification; nothing written to Firestore or the recording");
+    if (outcome === "documents") throw new Error("Firestore documents changed since verification; nothing written to Firestore or the recording");
+    if (outcome === "recording") throw new Error("recording changed since verification; nothing written to Firestore or the recording");
   }
   const done = [...writes.map(describe)];
   for (const { name, from, object } of objects) {

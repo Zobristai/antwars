@@ -11,7 +11,8 @@
  * Every argument but --apply is required; there are no defaults. --replay is the recording the lobby's watch entry must
  * name; the project is the operator's to choose at run time (nothing here names one). Without --apply it only reads: it prints every check
  * and the writes it would make, and exits 0 when every check passed, 1 otherwise. With --apply it writes only when every
- * check passed in the same run: Firestore first (one transaction, only while every verified document is unchanged), then
+ * check passed in the same run: Firestore first (one transaction, only while every verified document and both recording
+ * generations are unchanged, which also creates the marker ratingCorrections/<lobby>), then
  * each recording object still rated. A run stopped by an unknown outcome is completed by running it again: each run
  * reads which state Firestore and each recording object are in and writes only what is still missing. Google access is the Cloud Run service identity (metadata server), as for the server
  * itself, so a real run happens in Cloud Run. FIRESTORE_EMULATOR_HOST selects the Firestore emulator (loopback only,

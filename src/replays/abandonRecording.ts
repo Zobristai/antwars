@@ -138,6 +138,8 @@ export interface StoredObject {
 export interface RecordingObjects {
   /** The stored bytes as stored (never transcoded) with their generation; null when absent. */
   read(name: string): Promise<StoredObject | null>;
+  /** The object's current generation only (no body); null when absent. */
+  generation(name: string): Promise<string | null>;
   /** Replaces exactly `generation` and returns the new generation; a changed object fails (GCS 412) and nothing is written. */
   replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<string>;
 }
@@ -168,6 +170,9 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
         .then(res => res === null ? null : { body: res }));
       if (body === null) throw new Error(`object ${name} vanished during read`);
       return { ...meta, body };
+    },
+    async generation(name) {
+      return (await metadata(name, await metadataAccessToken(request)))?.generation ?? null;
     },
     async replace(name, object, generation) {
       if (!GENERATION.test(generation)) throw new Error("invalid generation");
