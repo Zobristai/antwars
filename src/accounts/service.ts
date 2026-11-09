@@ -100,8 +100,8 @@ const REFUSALS = {
   no_such_challenge: [404, "No challenge with that id is visible to this key."],
   no_such_opponent: [404, "That handle is not in the House table."],
   already_reported: [409, "This challenge's launch was already reported."],
-  house_seated: [409, "The house seat has already joined this challenge; its game plays on and a failed report is refused."],
-  reason_required: [400, "A failed launch report needs a reason."],
+  house_seated: [409, "The house seat has already joined this challenge; its game plays on and a failed or unavailable report is refused."],
+  reason_required: [400, "A failed or unavailable launch report needs a reason."],
   // A key-issuing call refused, or aborted before its commit, while its session could not be kept open.
   server_busy: [503, "Server busy: this call could not be held open for its reply, so no key was issued. Retry shortly."],
 } as const satisfies Record<string, readonly [number, string]>;
@@ -361,12 +361,12 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return set.ok ? ok({ ...set.value }) : challengeRefusal(set);
     }),
 
-  operation("report_challenge_launch", "House owner only: with the antwars username's own key, report one challenge's house launch once. launched, sent once the house seat is seated, charges the game against both daily allowances. failed needs a reason: before the house seat joins it closes the lobby, ends the request house_unavailable uncharged and lists the handle unavailable with that reason; once the seat has joined it is refused house_seated.",
+  operation("report_challenge_launch", "House owner only: with the antwars username's own key, report one challenge's house launch once. launched, sent once the house seat is seated, charges the game against both daily allowances. failed needs a reason: before the house seat joins it closes the lobby, ends the request house_unavailable uncharged and lists the handle unavailable with that reason; once the seat has joined it is refused house_seated. unavailable needs a reason and tells the builder challenges are unavailable right now: before the house seat joins it closes the lobby and ends the request house_unavailable uncharged, its reason reading 'challenges are unavailable right now: ' and the given reason, and it lists no handle unavailable, so every opponent's listing and admission are unchanged; it is refused already_reported after any earlier report and house_seated once the seat has joined. After a failed or unavailable report every later report is refused already_reported. A requestId that is no challenge is refused no_such_challenge with nothing written, whatever the outcome.",
     z.object({
       key: key.describe("The antwars username's own key; handle keys are refused."),
       requestId: z.string().min(1).max(100),
-      outcome: z.enum(["launched", "failed"]),
-      reason: z.string().max(500).nullish().describe("Why the launch failed; required with failed."),
+      outcome: z.enum(["launched", "failed", "unavailable"]),
+      reason: z.string().max(500).nullish().describe("Why the launch failed, or why challenges are unavailable; required with failed and unavailable."),
     }),
     async ({ lobbies }, args) => {
       const reported = await lobbies.reportChallengeLaunch(args.key, args.requestId, args.outcome, args.reason ?? undefined);

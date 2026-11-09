@@ -16,21 +16,31 @@ import { queueStatusStep } from "./queue.js";
  * A request holds a place on every UTC day its match could still fall on (heldDays), derived from its lobby, never
  * stored: both the creation day and the day of createdAt + the lobby expiry + the countdown while it can still take a
  * slot, its startsAt day once it has, its creation day when it expired full awaiting one, and none when its held seat
- * was never filled or a failed launch closed it. Places only shrink after admission, and admission needs room on every
+ * was never filled or a failed or unavailable report closed it. Places only shrink after admission, and admission needs room on every
  * day it adds, so no day ever holds more than 20 places, or 5 for one owner. A game is charged when the house owner
  * reports it launched and its held seat is filled; a charged game's match day always keeps its place, so charged games
  * per day never exceed the places held. The allowance left today is 20 minus today's places.
  *
+ * Launch reports: launched is the charge event. failed and unavailable each need a reason and, before the held seat
+ * joins, close the open lobby and end the request house_unavailable uncharged. failed also lists the handle unavailable
+ * with its reason (challengeAvailability lastLaunch); unavailable says challenges are unavailable right now, a
+ * service-wide state: the builder's reason reads CHALLENGES_UNAVAILABLE followed by the owner's reason, and it
+ * writes no challengeAvailability document and changes no handle's listing or admission.
+ *
  * Documents, under the store's namespace:
  *   challengeRequests/{requestId}   { challengerId, ownerId, handle, lobbyId, createdAt, launchReport ("" | launched |
- *                                     failed), reportReason, reportedAt, closedByFailure ("" | "true") }
+ *                                     failed | unavailable), reportReason, reportedAt, closedByFailure ("" | "true"),
+ *                                     set when a failed or unavailable report closed the lobby }
  *   challengeAllowance/{YYYY-MM-DD} { requests }  ids of requests admitted with a place that day, pruned of released ones
  *   challengeOwners/{ownerId}       { requestId }  the owner's latest request: one active challenge per owner
  *   challengeChallengers/{id}       { requestId }  the identity's latest request, for challenge_status without an id
- *   challengeAvailability/{handle}  { marked ("" | "unavailable"), lastLaunch ("" | launched | failed), failureReason }
+ *   challengeAvailability/{handle}  { marked ("" | "unavailable"), lastLaunch ("" | launched | failed), failureReason },
+ *                                     written only by launched and failed reports and set_challenge_availability
  */
 
 export const CHALLENGE_SHARED_DAILY_LIMIT = 20;
+/** What a builder reads, ahead of the owner's reason, on a challenge an unavailable report ended. */
+export const CHALLENGES_UNAVAILABLE = "challenges are unavailable right now";
 export const CHALLENGE_OWNER_DAILY_LIMIT = 5;
 /** The colony whose seat a challenge lobby holds for its handle; the builder sits in the other. */
 export const HELD_COLONY = 0;
@@ -41,7 +51,7 @@ const NOT_SEATS: ReadonlySet<string> = new Set(["gpt-6-1-terra"]);
 export const CHALLENGE_SCAN_PAGE_SIZE = 100;
 
 export type ChallengeState = "waiting_for_house" | "waiting_for_slot" | "playing" | "finished" | "expired" | "house_unavailable";
-export type LaunchOutcome = "launched" | "failed";
+export type LaunchOutcome = "launched" | "failed" | "unavailable";
 
 export type ChallengeRefusal =
   | "unknown_key" | "opponent_unavailable" | "already_queued" | "seated_elsewhere" | "active_challenge"
@@ -140,7 +150,10 @@ export function heldDays(lobby: Fields | null | undefined, at: number, rules: Ch
 
 /** A request's state and reason, derived from it and its lobby at `at`. */
 export function stateOf(request: Fields, lobby: Fields | null | undefined, at: number, rules: Pick<ChallengeLobbyRules, "isExpired">): { state: ChallengeState; reason?: string } {
-  if (request.closedByFailure === "true") return { state: "house_unavailable", reason: request.reportReason ?? "" };
+  if (request.closedByFailure === "true") {
+    const reason = request.reportReason ?? "";
+    return { state: "house_unavailable", reason: request.launchReport === "unavailable" ? `${CHALLENGES_UNAVAILABLE}: ${reason}` : reason };
+  }
   // A challenge lobby is never deleted; a missing one is read as ended without a game.
   if (!lobby) return { state: "expired" };
   if (rules.isExpired(lobby, at)) return { state: "expired", reason: lobby.state === "open" ? "house_did_not_join" : "no_match_slot" };
@@ -308,7 +321,9 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
       if (!UUID.test(requestId)) return no("no_such_challenge");
       const request = (await read([requestPath(requestId)])).get(requestPath(requestId));
       if (!request) return no("no_such_challenge");
-      if (outcome === "failed" && !reason?.trim()) return no("reason_required");
+      // After the UUID and existence checks, so an id that is not a challenge is refused no_such_challenge with or
+      // without a reason: that answer is how a caller learns this build accepts every outcome.
+      if (outcome !== "launched" && !reason?.trim()) return no("reason_required");
       const lobbyId = request.lobbyId!;
       const docs = await read([lobbyPath(lobbyId), availabilityPath(request.handle!)]);
       const lobby = docs.get(lobbyPath(lobbyId)) ?? null;
@@ -323,10 +338,18 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
         if (request.launchReport) return no("already_reported");
         next = { ...request, launchReport: "launched", reportReason: reason ?? "", reportedAt: String(at) };
         writes.push(availabilityWrite({ lastLaunch: "launched", failureReason: "" }));
+      } else if (outcome === "unavailable") {
+        // One report, and only before the held seat joins. It closes the lobby as failed does, but challenges
+        // being unavailable is no fault of this handle: no availability write, so its listing and admission are unchanged.
+        if (request.launchReport) return no("already_reported");
+        if (lobby && heldSeatFilled(lobby)) return no("house_seated");
+        const closes = !!lobby && lobby.state === "open" && !rules.isExpired(lobby, at);
+        next = { ...request, launchReport: "unavailable", reportReason: reason!.trim(), reportedAt: String(at), closedByFailure: closes ? "true" : "" };
+        if (closes) writes.push(rules.closeWrite(lobbyId));
       } else {
         // Failed is accepted while the held seat is unfilled, even after an early launched report; after the seat
         // joined it is refused house_seated and the game plays on.
-        if (request.launchReport === "failed") return no("already_reported");
+        if (request.launchReport === "failed" || request.launchReport === "unavailable") return no("already_reported");
         if (lobby && heldSeatFilled(lobby)) return no("house_seated");
         const closes = !!lobby && lobby.state === "open" && !rules.isExpired(lobby, at);
         next = { ...request, launchReport: "failed", reportReason: reason!.trim(), reportedAt: String(at), closedByFailure: closes ? "true" : "" };
