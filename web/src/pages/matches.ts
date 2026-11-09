@@ -281,9 +281,10 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     if (winner !== null) return winner === colony ? "Winner" : null;
     return r.reason !== "abandoned" && r.decidedBy === "draw" ? "Draw" : null;
   };
-  /** The record's own word (ui/format.ts recordingResult) where no colony carries a badge: Abandoned or Result unknown. */
-  const outcome = (r: Recording, text: string) =>
-    markOf(r, 0) === null && markOf(r, 1) === null ? [h(doc, "span", "d1p-result", text)] : [];
+  /** The record's own word (ui/format.ts recordingResult) where no colony carries a badge and the record names no winner:
+   * Abandoned or Result unknown, and Draw on a row with no recorded seat. A winner's word names its colony, never shown. */
+  const outcome = (r: Recording, text: string, marked: boolean) =>
+    !marked && winnerOf(r) === null ? [h(doc, "span", "d1p-result", text)] : [];
   /** The match-type badge (ui/format.ts recordingType) under the time, in both forms; none where the type is
    * unknown. */
   const typeBadge = (type: string | null) => type === null ? [] : [h(doc, "span", "d1p-tag d1p-type", type)];
@@ -296,8 +297,8 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
    * (seatGroups), in both forms; null for a colony with no recorded seat. No rating: a recording carries none. */
   const recordedSeats = (seats: NonNullable<ReturnType<typeof colonySeats>>) =>
     COLONIES.map(colony => seats[colony] && seatGroups(seats[colony]).map(group => seatBlock(group)));
-  /** Each colony's lines, a colony with no recorded seat "not recorded", its result badge after its first line's own words,
-   * so every name keeps its place and no other text stands in for a model. */
+  /** Each colony's lines, a colony with no recorded seat "not recorded", its result badge after each of its lines' own words,
+   * so every model the colony fielded carries it, every name keeps its place and no other text stands in for a model. */
   const markedSeats = (r: Recording, seats: NonNullable<ReturnType<typeof colonySeats>>) =>
     recordedSeats(seats).map((models, colony) => {
       const mark = markOf(r, colony as 0 | 1);
@@ -305,7 +306,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       // The line's words stay its first child (archive.css .d1p-model > :first-child), the badge after them.
       const lines = models ?? [h(doc, "span", "d1p-model d1p-unknown")];
       if (models === null) lines[0]!.append(h(doc, "span", undefined, "not recorded"));
-      lines[0]!.append(h(doc, "span", "d1p-tag", mark));
+      for (const line of lines) line.append(h(doc, "span", "d1p-tag", mark));
       return lines;
     });
   const all = recordingRows(view, search);
@@ -339,10 +340,12 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     for (const row of rows) {
       const r = byId.get(row.id)!;
       const seats = colonySeats(r.seats);
+      // A row with no recorded seat has no colony line to carry a badge.
+      const marked = seats !== null && (markOf(r, 0) !== null || markOf(r, 1) !== null);
       const name = `Replay, recording started ${row.when}`;
       const line = h(doc, "tr");
       const start = withResult(startCell(row.when));
-      start.append(...outcome(r, row.result), ...typeBadge(row.type));
+      start.append(...outcome(r, row.result, marked), ...typeBadge(row.type));
       line.append(start);
       if (seats === null) {
         const none = h(doc, "td", "c-model");
@@ -367,7 +370,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       // then each colony's models, the winner's badge on its colony's line as in the table, then the record.
       const item = h(doc, "li");
       const lead = h(doc, "p", "d1p-line is-lead");
-      lead.append(...outcome(r, row.result), ...typeBadge(row.type));
+      lead.append(...outcome(r, row.result, marked), ...typeBadge(row.type));
       item.append(h(doc, "p", "d1p-line", row.when), lead);
       if (seats === null) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
       else item.append(colonyList(markedSeats(r, seats)));

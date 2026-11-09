@@ -294,8 +294,12 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     const unknownModel = at("rec-unknown-model", "06", { winner: 0, seats: [seat(0, 0, null), seat(0, 1, "zai/glm-5.3", "max")] });
     const noColonySeat = at("rec-no-colony", "05", { winner: 1, seats: [seat(0, 0, "zai/glm-5.3", "max")] });
     const noSeats = at("rec-no-seats", "04", { winner: 1, seats: [] });
-    const { p, table, list } = show(unknownModel, noColonySeat, noSeats);
-    const [first, second, third] = bodyRows(table);
+    const noSeatsDraw = at("rec-no-seats-draw", "03", { winner: null, reason: "time_up", decidedBy: "draw", seats: [] });
+    const { p, table, list } = show(unknownModel, noColonySeat, noSeats, noSeatsDraw);
+    const [first, second, third, fourth] = bodyRows(table);
+    // With no colony line to carry a badge, a draw keeps its own word under the time; a winner's word names a colony, so none.
+    expect([third!, fourth!].map(row => row.byClass("c-start")[0]!.byClass("d1p-result").map(node => node.textContent))).toEqual([[], ["Draw"]]);
+    expect(list.byClass("is-lead").slice(2).map(line => line.textContent)).toEqual(["", "Draw"]);
     const lines = (scope: ElementPort) => scope.byClass("d1p-model").map(line => line.children.map(node => [node.className, node.textContent]));
     expect(lines(first!)).toEqual([[["", "model unknown"], ["d1p-tag", "Winner"]], [["", "GLM-5.3"], ["d1p-tags", "max"]]]);
     expect(lines(second!)).toEqual([[["", "GLM-5.3"], ["d1p-tags", "max"]], [["", "not recorded"], ["d1p-tag", "Winner"]]]);
@@ -318,9 +322,17 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     expect(first!.byClass("d1p-model")[0]!.children.map(node => node.className)).toEqual(["", "d1p-tags", "d1p-count"]);
     expect(first!.byClass("d1p-tags").map(tags => tags.children.map(tag => [tag.className, tag.textContent]))).toEqual([[["d1p-tag", "max"], ["d1p-tag", "Fast"]], [["d1p-tag", "high"]]]);
     // Seats that differ keep their own lines, in seat order; a colony with no recorded seat says so.
-    expect(seats(second!)).toEqual([["GPT-6 LunamaxFastWinner", "model unknown"], ["some-model.2"]]);
+    expect(seats(second!)).toEqual([["GPT-6 LunamaxFastWinner", "model unknownWinner"], ["some-model.2"]]);
     expect(seats(third!)).toEqual([["GLM-5.3maxWinner"], ["not recorded"]]);
     expect(table.byClass("d1p-elo").concat(table.byClass("d1p-rd"), table.byClass("d1-elo"), table.byClass("d1p-prov"))).toEqual([]);
+    p.mounted.destroy();
+  });
+
+  it("marks every line of the winning colony, a recorded model after an unknown one included", () => {
+    const later = at("rec-later", "06", { winner: 0, seats: [seat(0, 0, null), seat(1, 0, "zai/glm-5.3", "max"), seat(0, 1, "provider/some-model.2")] });
+    const { p, table, list } = show(later);
+    expect(seats(bodyRows(table)[0]!)).toEqual([["model unknownWinner", "GLM-5.3maxWinner"], ["some-model.2"]]);
+    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["model unknownWinner", "GLM-5.3maxWinner"]], ["Lake Hodges Colony", ["some-model.2"]]]);
     p.mounted.destroy();
   });
 
@@ -329,8 +341,8 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
       seat(0, 0, "openai/gpt-6.1-sol", "max"), seat(1, 0, "openrouter/gpt-6.1-sol", "max"), seat(2, 0, "openai/gpt-6.1-sol", "max"), seat(0, 1, "zai/glm-5.3", "max"),
     ] });
     const { p, table, list } = show(providers);
-    expect(seats(bodyRows(table)[0]!)).toEqual([["GPT-6.1 Solmax×2, 2 seatsWinner", "GPT-6.1 Solmax"], ["GLM-5.3max"]]);
-    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["GPT-6.1 Solmax×2, 2 seatsWinner", "GPT-6.1 Solmax"]], ["Lake Hodges Colony", ["GLM-5.3max"]]]);
+    expect(seats(bodyRows(table)[0]!)).toEqual([["GPT-6.1 Solmax×2, 2 seatsWinner", "GPT-6.1 SolmaxWinner"], ["GLM-5.3max"]]);
+    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["GPT-6.1 Solmax×2, 2 seatsWinner", "GPT-6.1 SolmaxWinner"]], ["Lake Hodges Colony", ["GLM-5.3max"]]]);
     p.mounted.destroy();
   });
 
@@ -373,7 +385,7 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     expect(first!.children.map(node => node.tag)).toEqual(["p", "p", "dl", "p", "a"]);
     expect(first!.children[0]!.textContent).toBe("27 Oct 2026 · 09:00 UTC");
     expect(colonies(first!)).toEqual([["Very Large Colony", ["GPT-6.1 SolmaxFast×4, 4 seats"]], ["Lake Hodges Colony", ["Claude Opus 5.5high×4, 4 seatsWinner"]]]);
-    expect(colonies(second!)).toEqual([["Very Large Colony", ["GPT-6 LunamaxFastWinner", "model unknown"]], ["Lake Hodges Colony", ["some-model.2"]]]);
+    expect(colonies(second!)).toEqual([["Very Large Colony", ["GPT-6 LunamaxFastWinner", "model unknownWinner"]], ["Lake Hodges Colony", ["some-model.2"]]]);
     expect(first!.byClass("d1p-stamp").map(node => node.textContent)).toEqual(["Record complete"]);
     expect(first!.byClass("d1p-row-pill").map(link => link.textContent)).toEqual(["Replay"]);
     p.mounted.destroy();
