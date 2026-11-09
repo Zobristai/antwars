@@ -122,6 +122,8 @@ describe("the Waiting card's lobby rows", () => {
       [["Very Large Colony: ", ["dan"], ["d1p-dot d1p-c0"]]],
     ]);
     expect(card.byClass("d1p-unknown")).toEqual([]);
+    // No match has a result yet: no WINNER or DRAW badge, and no winner styling.
+    expect(card.byClass("d1p-badge").concat(card.byClass("is-win"))).toEqual([]);
     expect(card.all().filter(node => node.tag === "a" || node.tag === "button")).toEqual([]);
     p.mounted.destroy();
   });

@@ -114,9 +114,9 @@ describe("Live now: model-first rows under each colony's name, In progress, Watc
     expect(table.querySelector("thead")!.byClass("d1p-dot").map(dot => [dot.className, dot.getAttribute("aria-hidden")]))
       .toEqual([["d1p-dot d1p-c0", "true"], ["d1p-dot d1p-c1", "true"]]);
     expect(table.querySelector("colgroup")!.children.map(col => col.className)).toEqual(["c-start", "c-side", "c-side", "c-how", "c-go"]);
-    // Nobody has won yet: no Winner head and no winner styling.
-    expect(table.textContent).not.toMatch(/Winner|Defeated/);
-    expect(table.byClass("is-win")).toEqual([]);
+    // Nobody has won yet: no Winner head, no result badge and no winner styling.
+    expect(table.textContent).not.toMatch(/Winner|Defeated|Draw/);
+    expect(table.byClass("is-win").concat(table.byClass("d1p-badge"))).toEqual([]);
     expect(table.textContent).not.toMatch(/Delay|Lobby|behind|00000000/);
     p.mounted.destroy();
   });
@@ -205,13 +205,14 @@ describe("Live now: model-first rows under each colony's name, In progress, Watc
     expect(item!.byClass("d1p-line").map(line => [line.textContent, line.classes().includes("is-lead")]))
       .toEqual([["Started 28 Oct 2026 · 03:00 UTC", false], ["In progress", true]]);
     expect(sidesOf(item!)).toEqual([["Very Large Colony", ["GPT-6 Luna, max · Fast"]], ["Lake Hodges Colony", ["kite×2, 2 seats", "bob"]]]);
-    expect(item!.textContent).not.toMatch(/Won|Lost|Winner/);
+    expect(item!.textContent).not.toMatch(/Won|Lost|Winner|Draw/);
+    expect(list.byClass("d1p-badge")).toEqual([]);
     expect(none!.byClass("d1p-unknown").map(node => node.textContent)).toEqual(["Seats not recorded"]);
     p.mounted.destroy();
   });
 });
 
-describe("Recordings: Match, Winner, Defeated, Ended by — the winning model always in the Winner column", () => {
+describe("Recordings: one column per colony, the result as a badge in the side's own column", () => {
   const seat = (seat: number, colony: 0 | 1, modelLabel: string | null, thinkingLevel: string | null = null, serviceTier: string | null = null) =>
     ({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle: null });
   const four = (colony: 0 | 1, modelLabel: string, thinkingLevel: string | null, serviceTier: string | null = null) =>
@@ -221,58 +222,92 @@ describe("Recordings: Match, Winner, Defeated, Ended by — the winning model al
   const team = at("rec-team", "09", { winner: 1, decidedBy: "queens_killed", seats: [...four(0, "openai/gpt-6.1-sol", "max", "fast"), ...four(1, "anthropic/claude-opus-5-5", "high")] });
   const mixed = at("rec-mixed", "08", { seats: [seat(1, 0, null), seat(0, 0, "openai/gpt-6-luna", "max", "fast"), seat(0, 1, "provider/some-model.2")] });
   const oneSided = at("rec-one", "07", { seats: [seat(0, 0, "zai/glm-5.3", "max")] });
+  const abandoned = at("rec-abandoned", "06", { winner: 1, reason: "abandoned", decidedBy: "inactive", seats: [seat(0, 0, "zai/glm-5.3", "max"), seat(0, 1, "openai/gpt-6.1-sol")] });
+  const draw = at("rec-draw", "05", { winner: null, reason: "time_up", decidedBy: "draw", seats: [seat(0, 0, "moonshot/k3.1-pro", "max"), seat(0, 1, "zai/glm-5.3", "max")] });
+  const unknown = at("rec-unknown", "04", { winner: null, reason: null, decidedBy: null });
   const show = (...rows: Recording[]) => {
     const p = page();
     p.mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows }, next: null });
     const card = p.body.byClass("d1p-card")[2]!;
     return { p, card, table: card.byClass("d1p-wide")[0]!, list: card.byClass("d1p-narrow")[0]! };
   };
+  /** A row's two sides in colony order: bold or not, and each seat as heard, its badge first where it carries one. */
   const sides = (row: ElementPort) => row.byClass("c-side").filter(node => node.tag === "td").map(cell => [cell.classes().includes("is-win"), seatsOf(cell)]);
+  /** Each side's badge as drawn: its classes and word, or null for a side with none; the badge always on a model's line. */
+  const badges = (scope: ElementPort, side: string) => scope.byClass(side).filter(node => node.tag !== "th").map(node => {
+    const found = node.byClass("d1p-badge");
+    expect(found.length).toBeLessThanOrEqual(1);
+    if (found.length === 0) return null;
+    expect(found[0]!.parent!.classes()).toContain("d1p-model");
+    return [found[0]!.className, found[0]!.textContent];
+  });
 
-  it("heads the table Match, Winner, Defeated, Ended by and Replay on one row, with the colony legend in the card's head", () => {
+  it("heads the table Match, each colony's name in its ink, Ended by and Replay on one row; no Winner or Defeated column", () => {
+    // Guards the ruling against the separate Winner column returning.
     const { p, card, table } = show(team);
     expect(table.querySelector("thead")!.children).toHaveLength(1);
-    expect(heads(table)).toEqual([["c-start", "Match", 1], ["c-side", "Winner", 1], ["c-side", "Defeated", 1], ["c-how", "Ended by", 1], ["c-go", "Replay", 1]]);
+    expect(heads(table)).toEqual([
+      ["c-start", "Match", 1], ["c-side d1p-c0", "Very Large Colony", 1], ["c-side d1p-c1", "Lake Hodges Colony", 1], ["c-how", "Ended by", 1], ["c-go", "Replay", 1],
+    ]);
+    expect(table.textContent).not.toMatch(/Defeated/);
+    expect(table.querySelector("thead")!.textContent).not.toMatch(/Winner/);
+    // The legend names the colonies for the stacked rows only (archive.css shows it with them).
     expect(card.byClass("d1p-card-head")[0]!.byClass("d1p-legend")[0]!.children.map(item => [item.className, item.textContent]))
       .toEqual([["d1p-legend-item d1p-c0", "Very Large Colony"], ["d1p-legend-item d1p-c1", "Lake Hodges Colony"]]);
+    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\n\.d1p-legend \{ display: none;/);
+    expect(/@container d1p-card \(width < 52rem\) \{\n([\s\S]*?)\n\}/.exec(css)![1]).toContain(".d1p-legend { display: flex; }");
     expect(card.byClass("d1p-ast")).toEqual([]);
     expect(card.textContent).not.toMatch(/Models|\*/);
     expect(p.body.byClass("d1p-tip")).toEqual([]);
     p.mounted.destroy();
   });
 
-  it("puts the winning colony's models in Winner, bold, and the beaten colony's in Defeated, whichever colony won", () => {
-    // Guards against the winner showing as a colony name again, or the columns following the side instead of the result.
+  it("puts WINNER beside the winning side's first model, in its own colony's column, bold, whichever colony won", () => {
+    // Guards against the badge on the wrong side or the beaten side, or the winner shown as a colony name again.
     const { p, table } = show(team, mixed);
     const [first, second] = bodyRows(table);
-    expect(sides(first!)).toEqual([[true, ["Claude Opus 5.5×4, 4 seats, high"]], [false, ["GPT-6.1 Sol×4, 4 seats, max · Fast"]]]);
-    expect(first!.byClass("c-side")[0]!.byClass("d1p-dot").map(dot => dot.className)).toEqual(["d1p-dot d1p-c1"]);
-    expect(first!.byClass("c-side")[0]!.children[0]!.textContent).toBe("Lake Hodges Colony: ");
-    expect(sides(second!)).toEqual([[true, ["GPT-6 Luna, max · Fast", "model unknown"]], [false, ["some-model.2"]]]);
+    expect(sides(first!)).toEqual([[false, ["GPT-6.1 Sol×4, 4 seats, max · Fast"]], [true, ["Winner, Claude Opus 5.5×4, 4 seats, high"]]]);
+    expect(badges(first!, "c-side")).toEqual([null, ["d1p-badge is-win d1p-c1", "Winner"]]);
+    expect(first!.byClass("c-side")[1]!.children[0]!.textContent).toBe("Lake Hodges Colony: ");
+    expect(sides(second!)).toEqual([[true, ["Winner, GPT-6 Luna, max · Fast", "model unknown"]], [false, ["some-model.2"]]]);
+    expect(badges(second!, "c-side")).toEqual([["d1p-badge is-win d1p-c0", "Winner"], null]);
     expect(first!.byClass("c-how")[0]!.textContent).toBe("Queens killed");
     expect(second!.byClass("c-how")[0]!.textContent).toBe("not recorded");
-    expect(table.textContent).not.toMatch(/ won/);
     const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
     expect(css).toMatch(/\.is-win \.d1p-name \{[^}]*font-weight: 700;/);
+    expect(css).toMatch(/\.d1p-badge \{[^}]*font-size: 16px;/);
     p.mounted.destroy();
   });
 
-  it("shows a draw, an abandoned match or an unknown result with its word and both sides in one cell, neither as winner", () => {
-    const abandoned = at("rec-abandoned", "06", { winner: 1, reason: "abandoned", decidedBy: "inactive", seats: [seat(0, 0, "zai/glm-5.3", "max"), seat(0, 1, "openai/gpt-6.1-sol")] });
-    const draw = at("rec-draw", "05", { winner: null, reason: "time_up", decidedBy: "draw", seats: [seat(0, 0, "moonshot/k3.1-pro", "max"), seat(0, 1, "zai/glm-5.3", "max")] });
-    const unknown = at("rec-unknown", "04", { winner: null, reason: null, decidedBy: null });
+  it("marks a side with no recorded models by its colony, and still badges it when it won", () => {
+    const { p, table } = show(oneSided, at("rec-blank-win", "03", { winner: 1, seats: [seat(0, 0, "zai/glm-5.3", "max")] }));
+    const [one, blank] = bodyRows(table);
+    expect(sides(one!)).toEqual([[true, ["Winner, GLM-5.3, max"]], [false, ["Lake Hodges Colony, models not recorded"]]]);
+    expect(sides(blank!)).toEqual([[false, ["GLM-5.3, max"]], [true, ["Winner, Lake Hodges Colony, models not recorded"]]]);
+    p.mounted.destroy();
+  });
+
+  it("puts DRAW on both sides of a draw, and Abandoned or Result unknown on both sides, never WINNER and nothing bold", () => {
+    // Guards against a draw, an abandoned match or an unknown result being shown as a win.
     const { p, table, list } = show(abandoned, draw, unknown);
     const rows = bodyRows(table);
     expect(rows.map(row => row.children.map(cell => [cell.className, cell.colSpan]))).toEqual(Array(3).fill(
-      [["c-start", 1], ["c-side is-even", 2], ["c-how", 1], ["c-go", 1]]));
-    expect(rows.map(row => row.byClass("d1p-mark").map(mark => mark.textContent))).toEqual([["Abandoned"], ["Draw"], ["Result unknown"]]);
-    expect(rows[1]!.byClass("d1p-side").map(side => [side.children[0]!.textContent, seatsOf(side)]))
-      .toEqual([["Very Large Colony: ", ["K3.1 Pro, max"]], ["Lake Hodges Colony: ", ["GLM-5.3, max"]]]);
+      [["c-start", 1], ["c-side", 1], ["c-side", 1], ["c-how", 1], ["c-go", 1]]));
+    expect(rows.map(row => badges(row, "c-side"))).toEqual([
+      [["d1p-badge is-even", "Abandoned"], ["d1p-badge is-even", "Abandoned"]],
+      [["d1p-badge is-even", "Draw"], ["d1p-badge is-even", "Draw"]],
+      [["d1p-badge is-even", "Result unknown"], ["d1p-badge is-even", "Result unknown"]],
+    ]);
+    expect(rows.map(sides)).toEqual([
+      [[false, ["Abandoned, GLM-5.3, max"]], [false, ["Abandoned, GPT-6.1 Sol"]]],
+      [[false, ["Draw, K3.1 Pro, max"]], [false, ["Draw, GLM-5.3, max"]]],
+      [[false, ["Result unknown, Very Large Colony, models not recorded"]], [false, ["Result unknown, Lake Hodges Colony, models not recorded"]]],
+    ]);
     expect(rows[1]!.byClass("c-how")[0]!.textContent).toBe("Time-up · decided on draw");
-    expect(rows[2]!.byClass("d1p-seat").map(seat => seat.textContent)).toEqual(["Very Large Colony, models not recorded", "Lake Hodges Colony, models not recorded"]);
-    // Nothing bold, no Won or Lost, in either form.
+    expect(list.querySelectorAll("li").map(item => badges(item, "d1p-side"))).toEqual(rows.map(row => badges(row, "c-side")));
     expect(table.byClass("is-win").concat(list.byClass("is-win"))).toEqual([]);
-    expect(list.querySelectorAll("dt").map(dt => dt.textContent)).toEqual(["Abandoned", "Draw", "Result unknown"]);
+    expect(table.textContent.concat(list.textContent)).not.toMatch(/Winner|Won|Lost/);
     p.mounted.destroy();
   });
 
@@ -280,11 +315,10 @@ describe("Recordings: Match, Winner, Defeated, Ended by — the winning model al
     const providers = at("rec-providers", "06", { seats: [
       seat(0, 0, "openai/gpt-6.1-sol", "max"), seat(1, 0, "openrouter/gpt-6.1-sol", "max"), seat(2, 0, "openai/gpt-6.1-sol", "max"), seat(0, 1, "zai/glm-5.3", "max"),
     ] });
-    const { p, table } = show(team, oneSided, providers);
-    const [, one, many] = bodyRows(table);
-    // A colony with no recorded seat still shows its colony, so the result reads.
-    expect(sides(one!)).toEqual([[true, ["GLM-5.3, max"]], [false, ["Lake Hodges Colony, models not recorded"]]]);
-    expect(sides(many!)).toEqual([[true, ["GPT-6.1 Sol×2, 2 seats, max", "GPT-6.1 Sol, max"]], [false, ["GLM-5.3, max"]]]);
+    const { p, table } = show(team, providers);
+    const [, many] = bodyRows(table);
+    // On a team, the badge sits on the first model's line only.
+    expect(sides(many!)).toEqual([[true, ["Winner, GPT-6.1 Sol×2, 2 seats, max", "GPT-6.1 Sol, max"]], [false, ["GLM-5.3, max"]]]);
     expect(table.byClass("d1p-elo").concat(table.byClass("d1p-rd"), table.byClass("d1-elo"), table.byClass("d1p-prov"))).toEqual([]);
     p.mounted.destroy();
   });
@@ -300,6 +334,7 @@ describe("Recordings: Match, Winner, Defeated, Ended by — the winning model al
       expect([shown.textContent, shown.title]).toEqual([name, name]);
       expect([meta.textContent, meta.title]).toEqual([`${level} · Fast`, `${level} · Fast`]);
       expect(first.byClass("d1p-count")[0]!.textContent).toBe("×4, 4 seats");
+      expect(first.byClass("d1p-badge").map(badge => badge.textContent)).toEqual(["Winner"]);
     }
     const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
     expect(css).toContain(".d1p-model > .d1p-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }");
@@ -307,22 +342,39 @@ describe("Recordings: Match, Winner, Defeated, Ended by — the winning model al
     p.mounted.destroy();
   });
 
-  it("stacks each row: its start and type beside Replay; Won and Lost with their models; how it ended; a stamp only where due", () => {
+  it("stacks each row: its start and type beside Replay; each side's models in colony order, WINNER on the model line; how it ended; a stamp only where due", () => {
     const partial = at("rec-partial", "06", { status: "partial", seats: [seat(0, 0, "zai/glm-5.3", "max"), seat(0, 1, "openai/gpt-6.1-sol")] });
     const { p, table, list } = show(team, partial);
     const [first, second] = list.querySelectorAll("li");
-    expect(first!.children.map(node => node.tag)).toEqual(["p", "dl", "p", "a"]);
+    expect(first!.children.map(node => node.tag)).toEqual(["p", "div", "p", "a"]);
     expect(first!.children[0]!.textContent).toBe("27 Oct 2026 · 09:00 UTC");
-    expect(first!.byClass("d1p-outcome")[0]!.children.map(node => [node.tag, node.tag === "dt" ? node.textContent : seatsOf(node), node.classes().includes("is-win")])).toEqual([
-      ["dt", "Won", false], ["dd", ["Claude Opus 5.5×4, 4 seats, high"], true], ["dt", "Lost", false], ["dd", ["GPT-6.1 Sol×4, 4 seats, max · Fast"], false],
-    ]);
+    expect(sidesOf(first!)).toEqual([["Very Large Colony", ["GPT-6.1 Sol×4, 4 seats, max · Fast"]], ["Lake Hodges Colony", ["Winner, Claude Opus 5.5×4, 4 seats, high"]]]);
+    expect(first!.byClass("d1p-side").map(side => side.classes().includes("is-win"))).toEqual([false, true]);
+    expect(badges(first!, "d1p-side")).toEqual([null, ["d1p-badge is-win d1p-c1", "Winner"]]);
+    expect(sidesOf(second!).map(([, seats]) => seats)).toEqual([["Winner, GLM-5.3, max"], ["GPT-6.1 Sol"]]);
     expect(first!.byClass("is-meta").map(line => line.textContent)).toEqual(["Queens killed"]);
+    expect(first!.textContent).not.toMatch(/Won|Lost/);
     // A complete record carries no stamp; a partial one says so, in both forms.
     expect(first!.byClass("d1p-stamp")).toEqual([]);
     expect(second!.byClass("d1p-stamp").map(node => node.textContent)).toEqual(["Record partial"]);
     expect(bodyRows(table).map(row => row.byClass("d1p-stamp").map(node => node.textContent))).toEqual([[], ["Record partial"]]);
     expect(first!.byClass("d1p-row-pill").map(link => link.textContent)).toEqual(["Replay"]);
     p.mounted.destroy();
+  });
+
+  it("keeps the WINNER badge's dark text at AA contrast on either colony's ink", () => {
+    // Guards against a colony colour or the badge's ink changing to an unreadable pair.
+    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.d1p-badge\.is-win \{ color: var\(--aw-bg\); \}/);
+    const hex = (name: string) => /#[0-9a-f]{6}/i.exec(new RegExp(`--aw-${name}: (#[0-9a-f]{6})`, "i").exec(css)![1]!)![0]!;
+    const luminance = (colour: string) => {
+      const [r, g, b] = [1, 3, 5].map(at => parseInt(colour.slice(at, at + 2), 16) / 255).map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    for (const colony of ["c0", "c1"]) {
+      const [light, dark] = [luminance(hex(colony)), luminance(hex("bg"))];
+      expect((light + 0.05) / (dark + 0.05)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 
