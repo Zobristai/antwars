@@ -25,7 +25,12 @@ import { isIPv4 } from 'node:net';
 const phase = process.argv[2];
 const region = 'australia-southeast1';
 const prefix = 'antwar-domain-';
-const owner = 'ANT-149 antwars.ai frontend; app=antwar';
+const owner = 'antwars.ai frontend; app=antwar';
+// Resources created by earlier versions of this script carry the marker after one
+// leading word. Some of their kinds cannot change a description in place, so that
+// older form stays accepted, by shape only. New resources get the marker alone.
+const ownedDescription = (d) => typeof d === 'string'
+  && (d === owner || (/^\S+ /.test(d) && d.slice(d.indexOf(' ') + 1) === owner));
 const account = process.env.DOMAIN_ACCOUNT;
 const project = process.env.DOMAIN_PROJECT;
 const root = `https://www.googleapis.com/compute/v1/projects/${project}/`;
@@ -116,7 +121,7 @@ for (const [resource, config] of expected) {
   const kind = resource.split('/')[0];
   // NEG create has no description flag. Its exact reserved name, SERVERLESS
   // type, antwar service and absence of a tag/mask are its ownership proof.
-  const owns = kind === 'network-endpoint-groups' || actual.description === owner;
+  const owns = kind === 'network-endpoint-groups' || ownedDescription(actual.description);
   if (!owns || !contains(actual, config, apiDefaults.get(kind))) throw new Error(`conflicting/incomplete existing resource: ${resource}; stop, do not repair`);
   const forbidden = {
     'network-endpoint-groups': ['appEngine', 'cloudFunction', 'network', 'subnetwork'],
