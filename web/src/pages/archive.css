@@ -195,7 +195,7 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-lb.d1p-table .d1p-form-mark { margin-block: -2px; }
 
 /* Live now and Recordings: one six-column grid, so each list's columns stand under the other's: the start; the outcome
-   (Winner in both); a column per colony's models; the record; the action. Every column but the
+   (Live now's Winner; Recordings' Time spans it, its winner a badge in its colony's column); a column per colony's models; the record; the action. Every column but the
    colonies is sized to what it holds (a date, "Lake Hodges Colony" or "In progress", an UNAVAILABLE stamp, the
    Replay or Watch pill); the two colonies share the rest equally: 343 px each in the 1200 px card both pages give them, never less
    than 255 px, since the table stands only in a card 64rem wide (the stacked rows, below). Live now has no record, so its
@@ -257,7 +257,7 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 /* A row's 28 px pill centres on the row's 19 px first line, as it rides the first baseline in a table row; the phone's
    44 px pill is taller than two lines, so there it tops the row instead (the phone form, below). */
 .d1p-rows > li > :is(.d2-pill, .d1p-row-pill) { grid-column: 2; grid-row: 1 / span 6; align-self: start; margin-top: calc((19px - var(--d1p-row-tap)) / 2); }
-/* Matches' stacked rows: the start and the outcome beside Watch or Replay, a winner under the Winner column's head word;
+/* Matches' stacked rows: the start and the outcome beside Watch or Replay, Recordings' winner a badge on its colony's line;
    under them the colonies take the item's whole width, each colony's name in a label column with its seats one per line
    beside it, as the table's colony columns hold them. Two classes on the colonies, so the landing page's list reset
    (.fg :where(dl)) cannot take the 4 px that parts them from the outcome. */
