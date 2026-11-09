@@ -13,7 +13,7 @@
    state; every table row shares one first baseline; Live now and Recordings share one column grid.
    Layout pass: Matches' colonies take the width the other columns leave; every seat keeps its name and badges on
    one line, a colony's alike seats once with their count; one head row in both Matches tables.
-   Winner pass (ANT-003): one 16 px type floor for every label and value on these pages, heads included; Matches' lists
+   Winner pass: one 16 px type floor for every label and value on these pages, heads included; Matches' lists
    follow the result (Match, Winner, Defeated, Ended by), each model after its colony's dot, its level and Fast quiet under
    it; a result is always said in words, never by colour alone; Matches shares the 912 px container. */
 
