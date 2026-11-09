@@ -4,7 +4,7 @@ import { createIdentities } from "../../src/identity/identities.ts";
 import { ratingWrites, ratingCollection, RANKED_MODES, type MatchResult } from "../../src/rating/ratings.ts";
 import { correct, type CorrectionDeps } from "../../src/rating/unrateNeverJoined.ts";
 import { createFirestore, type Fields, type Store } from "../../src/store/firestore.ts";
-import type { RecordingObjects, StoredObject } from "../../src/replays/abandonRecording.ts";
+import { abandonBinary, abandonRecord, serializeRecord, type RecordingObjects, type StoredObject } from "../../src/replays/abandonRecording.ts";
 import { binaryRecord } from "../../src/replays/history.ts";
 import { parseArguments } from "../../scripts/unrate-never-joined.ts";
 import { ratedRecording, REPLAY_ID } from "../replays/never-joined-fixture.ts";
@@ -26,7 +26,9 @@ function memoryBucket(initial: Record<string, Omit<StoredObject, "generation">> 
     async read(name) { return objects.get(name) ?? null; },
     async replace(name, object, generation) {
       if (objects.get(name)?.generation !== generation) throw new Error(`object ${name} changed since it was verified; nothing replaced`);
-      objects.set(name, { ...object, generation: String(next++) });
+      const written = String(next++);
+      objects.set(name, { ...object, generation: written });
+      return written;
     },
   };
   return bucket;
@@ -84,7 +86,7 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     const w = await world();
     const before = await documents(w.store, w.lobbyId, w.ids);
     const bucket = new Map(w.recordings.objects);
-    const result = await correct(w.deps, w.lobbyId, { apply: false });
+    const result = await correct(w.deps, w.lobbyId, { apply: false, replayId: REPLAY_ID });
     expect(failed(result.verification.checks)).toEqual([]);
     expect(result.verification.ok).toBe(true);
     expect(result.verification.neverJoined).toEqual([w.absent]);
@@ -96,7 +98,7 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
 
   it("applies: lobby abandoned and unrated, watch entry unrated, players unrated, recording abandoned and unrated", async () => {
     const w = await world();
-    const result = await correct(w.deps, w.lobbyId, { apply: true });
+    const result = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
     expect(result.applied).toBe(true);
     const lobby = (await w.store.get(`lobbies/${w.lobbyId}`))!;
     expect(lobby).toMatchObject({ outcome: "abandoned", rated: "false", state: "ended" });
@@ -113,24 +115,18 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
     expect(record.result.ratingChanges).toBeUndefined();
     expect(record.seats).toEqual(w.recording.record.seats);
     // A second run finds nothing to correct and writes nothing.
-    const again = await correct(w.deps, w.lobbyId, { apply: true });
+    const again = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
     expect(again.verification.ok).toBe(false);
     expect(again.applied).toBe(false);
   });
 
-  it("finishes a run interrupted after the recording was rewritten", async () => {
+  it("finishes a run that stopped after rewriting the recording", async () => {
     const w = await world();
-    const reads = w.deps.recordings;
-    let replaced = 0;
-    const interrupted: CorrectionDeps = { ...w.deps, store: { ...w.store, namespace: w.store.namespace, get: w.store.get,
-      query: w.store.query, transaction: async (step) => {
-        // The third transaction is the correction's write: fail it as an interrupted run would.
-        if (++replaced === 3) throw new Error("interrupted");
-        return w.store.transaction(step);
-      } } };
-    await expect(correct({ ...interrupted, recordings: reads }, w.lobbyId, { apply: true })).rejects.toThrow("interrupted");
-    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
-    const resumed = await correct(w.deps, w.lobbyId, { apply: true });
+    // As a run that crashed between the recording and the Firestore transaction leaves it.
+    const bin = w.recordings.objects.get(`${REPLAY_ID}.bin`)!, json = w.recordings.objects.get(`${REPLAY_ID}.json`)!;
+    await w.recordings.replace(`${REPLAY_ID}.bin`, { ...bin, body: abandonBinary(bin.body).body! }, bin.generation);
+    await w.recordings.replace(`${REPLAY_ID}.json`, { ...json, body: serializeRecord(abandonRecord(w.recording.record)) }, json.generation);
+    const resumed = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
     expect(resumed.verification.recordingCorrected).toBe(true);
     expect(resumed.applied).toBe(true);
     expect((await w.store.get(`lobbies/${w.lobbyId}`))!.outcome).toBe("abandoned");
@@ -140,7 +136,7 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
   async function refuses(w: Awaited<ReturnType<typeof world>>, check: string): Promise<void> {
     const before = await documents(w.store, w.lobbyId, [...w.ids, w.third]);
     const bucket = new Map(w.recordings.objects);
-    const result = await correct(w.deps, w.lobbyId, { apply: true });
+    const result = await correct(w.deps, w.lobbyId, { apply: true, replayId: REPLAY_ID });
     expect(failed(result.verification.checks)).toContain(check);
     expect(result.applied).toBe(false);
     expect(await documents(w.store, w.lobbyId, [...w.ids, w.third])).toEqual(before);
@@ -149,6 +145,22 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
 
   it("refuses when both colonies joined", async () => {
     await refuses(await world({ joined: [0, 1] }), "never joined");
+  });
+
+  it("refuses when colony 0 joined and colony 1 did not", async () => {
+    await refuses(await world({ joined: [0] }), "never joined");
+  });
+
+  it("refuses when the watch entry names another recording", async () => {
+    const w = await world();
+    await write(w.store, [{ op: "update", path: `watchMatches/${w.lobbyId}`, fields: { replayId: "2026-11-09T13-26-59-841Z-1" } }]);
+    await refuses(w, "watch entry");
+  });
+
+  it("refuses when the watch entry belongs to another run than the lobby's match", async () => {
+    const w = await world();
+    await write(w.store, [{ op: "update", path: `watchMatches/${w.lobbyId}`, fields: { runId: "run-other" } }]);
+    await refuses(w, "watch entry");
   });
 
   it("refuses when a player has another rated 1v1 match", async () => {
@@ -207,9 +219,24 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
       if (name.endsWith(".bin") && ++reads === 1) w.recordings.touch(name);
       return object;
     } };
-    await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true })).rejects.toThrow(/changed since it was verified/);
+    await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/changed since it was verified/);
     expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
     expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("true");
+    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
+  });
+
+  it("puts the binary back when the record cannot be replaced", async () => {
+    const w = await world();
+    const original = w.deps.recordings;
+    let reads = 0;
+    const racing: RecordingObjects = { ...original, read: async name => {
+      const object = await original.read(name);
+      if (name.endsWith(".json") && ++reads === 1) w.recordings.touch(name);
+      return object;
+    } };
+    await expect(correct({ ...w.deps, recordings: racing }, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/recording was restored/);
+    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
+    expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
   });
 
   it("writes nothing to Firestore when a document changed after verification", async () => {
@@ -220,20 +247,33 @@ describe.skipIf(!host)("unrating a never-joined ranked lobby", () => {
         if (++calls === 3) await write(w.store, [{ op: "update", path: `ratings/${w.joined}`, fields: { thinkingLevel: "changed" } }]);
         return w.store.transaction(step);
       } } };
-    await expect(correct(racing, w.lobbyId, { apply: true })).rejects.toThrow(/changed since verification/);
+    await expect(correct(racing, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/changed since verification; nothing written to Firestore; the recording was restored/);
     expect((await w.store.get(`lobbies/${w.lobbyId}`))!.rated).toBe("true");
     expect((await w.store.get(`watchMatches/${w.lobbyId}`))!.rated).toBe("true");
     expect(await w.store.get(`ratings/${w.absent}`)).not.toBeNull();
+    // The recording is put back exactly: a failed check leaves it as it was.
+    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
+    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
+  });
+
+  it("puts the recording back when the Firestore transaction fails", async () => {
+    const w = await world();
+    let calls = 0;
+    const failing: CorrectionDeps = { ...w.deps, store: { ...w.store, namespace: w.store.namespace, get: w.store.get, query: w.store.query,
+      transaction: async (step) => { if (++calls === 3) throw new Error("commit failed"); return w.store.transaction(step); } } };
+    await expect(correct(failing, w.lobbyId, { apply: true, replayId: REPLAY_ID })).rejects.toThrow(/commit failed; nothing written to Firestore; the recording was restored/);
+    expect(w.recordings.objects.get(`${REPLAY_ID}.bin`)!.body).toEqual(w.recording.binary);
+    expect(w.recordings.objects.get(`${REPLAY_ID}.json`)!.body).toEqual(w.recording.recordBody);
   });
 });
 
 describe("command line", () => {
-  const all = ["--lobby", "l", "--project", "p", "--namespace", "n", "--replay-bucket", "r"];
+  const all = ["--lobby", "l", "--replay", "x", "--project", "p", "--namespace", "n", "--replay-bucket", "r"];
   it("requires every target argument and is read-only unless --apply", () => {
-    expect(parseArguments(all)).toEqual({ lobby: "l", project: "p", namespace: "n", replayBucket: "r", apply: false });
+    expect(parseArguments(all)).toEqual({ lobby: "l", replay: "x", project: "p", namespace: "n", replayBucket: "r", apply: false });
     expect(parseArguments([...all, "--apply"]).apply).toBe(true);
     expect(() => parseArguments(all.slice(2))).toThrow("missing required argument(s): --lobby");
-    expect(() => parseArguments([])).toThrow("missing required argument(s): --lobby, --project, --namespace, --replay-bucket");
+    expect(() => parseArguments([])).toThrow("missing required argument(s): --lobby, --replay, --project, --namespace, --replay-bucket");
     expect(() => parseArguments([...all, "--project", ""])).toThrow("--project");
     expect(() => parseArguments([...all, "--force"])).toThrow();
   });

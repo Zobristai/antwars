@@ -138,8 +138,8 @@ export interface StoredObject {
 export interface RecordingObjects {
   /** The stored bytes as stored (never transcoded) with their generation; null when absent. */
   read(name: string): Promise<StoredObject | null>;
-  /** Replaces exactly `generation`; a changed object fails (GCS 412) and nothing is written. */
-  replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<void>;
+  /** Replaces exactly `generation` and returns the new generation; a changed object fails (GCS 412) and nothing is written. */
+  replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<string>;
 }
 
 const GENERATION = /^[1-9]\d*$/;
@@ -171,13 +171,15 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
     },
     async replace(name, object, generation) {
       if (!GENERATION.test(generation)) throw new Error("invalid generation");
-      try {
-        await objects.upload({ name, body: object.body, contentType: object.contentType, contentEncoding: object.contentEncoding,
-          ifGenerationMatch: generation, stream: false });
-      } catch (error) {
-        if (error instanceof ReplayCreateError && error.status === 412) throw new Error(`object ${name} changed since it was verified; nothing replaced`);
-        throw error;
-      }
+      // As gcsBucket's media upload (encoding is object metadata, not a request header), reading the new generation back.
+      const target = objects.url(undefined, { uploadType: "media", name, ifGenerationMatch: generation, contentEncoding: object.contentEncoding }, true);
+      const response = await objects.call(target, { method: "POST", token: await metadataAccessToken(request),
+        headers: { "content-type": object.contentType }, body: Buffer.from(object.body) });
+      if (response.status === 412) { await response.body?.cancel(); throw new Error(`object ${name} changed since it was verified; nothing replaced`); }
+      if (!response.ok) { await response.body?.cancel(); throw new ReplayCreateError(response.status); }
+      const value = await response.json() as { generation?: unknown };
+      if (typeof value.generation !== "string" || !GENERATION.test(value.generation)) throw new Error(`object ${name} replaced but its new generation is unknown`);
+      return value.generation;
     },
   };
 }
