@@ -203,6 +203,31 @@ describe("a ranked seat that never joins", () => {
     expect(out!.state.result).toMatchObject({ winner: 0, reason: "idle", decidedBy: "idle" });
   });
 
+  it("a joined seat idling and a never-joined seat on the same tick: abandoned, unrated", async () => {
+    // Colony 1's joined agent stays silent from match start; colony 0 stays active.
+    const silentTick = async (game: Game) => {
+      const active = game.match!.state.agents.filter(agent => agent.colony === 0);
+      const calls = active.map(agent => game.call(agent.id, { type: "observe", agentId: agent.id }));
+      const out = game.tick();
+      await Promise.all(calls);
+      return out;
+    };
+    // Every seat joined: the silent seat's colony loses at its idle deadline.
+    const joined = await partlyJoined("1v1", () => true);
+    let idle = await silentTick(joined.game);
+    while (idle!.state.result === null) idle = await silentTick(joined.game);
+    expect(idle!.state.result).toMatchObject({ winner: 0, reason: "idle", tick: 10 });
+    // 2v2 with colony 1's second seat never joining: both deadlines fall on that same tick.
+    const { game, logs } = await partlyJoined("2v2", (colony, seat) => colony === 0 || seat === 1);
+    let out = await silentTick(game);
+    while (out!.state.result === null) out = await silentTick(game);
+    expect(out!.state.result).toEqual({ winner: null, reason: "abandoned", decidedBy: "draw", tick: 10 });
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({ tick: 10, abandoned: true });
+    expect(stateHash(replay(logs, Infinity))).toBe(stateHash(out!.state));
+    expect(matchRecord({ id: "2026-11-09T21-30-00-000Z-430", binary: packMessages(recordLog(logs)), logLines: logs }))
+      .toMatchObject({ status: "complete", result: { reason: "abandoned" }, setup: { rated: false } });
+  });
+
   it("an unranked lobby match plays on past the limit with a seat that never joined", async () => {
     const { game } = await partlyJoined(null, colony => colony === 0);
     for (let tick = 0; tick < 30; tick++) expect((await activeTick(game))!.state.result).toBeNull();
