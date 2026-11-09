@@ -547,12 +547,8 @@ const NO_ROWS: readonly HistoryRow[] = [];
 
 export interface Moment { readonly when: string; readonly what: string; readonly who: string; readonly colony: Colony }
 export interface ResultView {
-  /** The winning model(s) by name (resultHeadline), "Draw" or "Abandoned". */
   readonly headline: string;
   readonly winner: Colony | null;
-  /** The line under the headline: the winning colony and whom it beat ("Very Large Colony · beat Claude Fable 5.1"), or
-   * for a draw who drew; empty for an abandoned match. */
-  readonly detail: string;
   /** The reason, with the deciding measure where it differs (resultHow). */
   readonly how: string;
   /** Each rating line: the shown name, a Benchmark name's level and Fast badges, then the change. */
@@ -566,47 +562,15 @@ export function resultView(frame: Frame | null): ResultView | null {
   const r = resultShown(frame) ? b?.result ?? null : null;
   if (!frame || !b || r === null) return null;
   const rate = tps(b);
-  const winner = r.winner, abandoned = r.reason === "abandoned";
-  // The winner's rating lines first, each side in seat order (a stable sort).
-  const changes = winner === null || r.ratingChanges === undefined ? r.ratingChanges
-    : [...r.ratingChanges].sort((x, y) => Number(b.agents[x.agent]?.colony !== winner) - Number(b.agents[y.agent]?.colony !== winner));
-  const named = (colony: Colony) => sideModels(b.agents, colony);
-  const side = (colony: Colony) => { const names = named(colony); return names.length > 0 ? names.join(" & ") : COLONY_NAMES[colony]; };
-  const detail = abandoned ? ""
-    : winner === null ? `${side(0)} drew with ${side(1)}`
-    : `${COLONY_NAMES[winner]} · beat ${side((1 - winner) as Colony)}`;
   return {
-    headline: resultHeadline(r, winner === null ? [] : named(winner)), winner, detail, how: resultHow(r, b.queens !== undefined),
-    ratings: ratingResultRows(b.setup.rated, b.agents, { ...r, ratingChanges: changes }),
+    headline: resultHeadline(r), winner: r.winner, how: resultHow(r, b.queens !== undefined),
+    ratings: ratingResultRows(b.setup.rated, b.agents, r),
     moments: decisive(frame.story, r.reason, r.winner).map(m => ({
       when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true).what, who: COLONY_NAMES[m.colony], colony: m.colony,
     })),
     next: r.nextStartMs === null ? "Next match · not announced"
       : `Next match · ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(r.nextStartMs)}`,
   };
-}
-
-/** What the score plate's colony headers carry once the result shows: "Winner" on the winning colony, "Draw" on both, and
- * nothing before the result shows or for an abandoned match. */
-export function plateBadges(frame: Frame | null): readonly [string | null, string | null] {
-  const r = resultShown(frame) ? frame!.board!.result : null;
-  if (r === null || r.reason === "abandoned") return [null, null];
-  if (r.winner === null) return [PLATE_BADGE.draw, PLATE_BADGE.draw];
-  return r.winner === 0 ? [PLATE_BADGE.winner, null] : [null, PLATE_BADGE.winner];
-}
-export const PLATE_BADGE = { winner: "Winner", draw: "Draw" } as const;
-
-/** One side's models by their shown names, each distinct name once in seat order: the model each seat recorded, as the
- * Leaderboard names it (agentModel: a house handle's own model name, else the recorded label's); a seat that recorded no
- * model, its player's shown name (a seat's "#n" dropped); a seat naming neither is left out. */
-export function sideModels(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony): string[] {
-  const names: string[] = [];
-  for (const a of agents) {
-    if (a.colony !== colony) continue;
-    const name = agentModel(a)?.name ?? (a.identity ? rowName(SEAT.exec(a.identity.displayName)?.[1] ?? a.identity.displayName, undefined).name : null);
-    if (name !== null && !names.includes(name)) names.push(name);
-  }
-  return names;
 }
 
 // ---------------------------------------------------------------- sharing the result
