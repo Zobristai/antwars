@@ -393,6 +393,9 @@ if (a.includes("-w")) process.stdout.write(String(code));
 else if (a.includes("-sf") && code >= 400) process.exit(22);
 else process.stdout.write(body);
 `);
+  // npm: run only from the checkout root (exit 3 elsewhere); FAKE_NPM_FAIL=1 makes it fail.
+  fake("npm", `if (fs.realpathSync(process.cwd()) !== fs.realpathSync(process.env.ROOT)) process.exit(3);
+if (process.env.FAKE_NPM_FAIL === "1") process.exit(1);`);
   // TERM_ON_SLEEP: the run is sent SIGTERM while it sleeps, as an operator interrupting it would.
   fake("sleep", `if (process.env.TERM_ON_SLEEP === "1") process.kill(process.ppid, "SIGTERM");`);
   // The checkout root is ROOT (fake git rev-parse), so the deploy runs this probe.
@@ -1232,6 +1235,12 @@ describe.concurrent("all", () => {
     expect(r.calls.filter((c) => c[0] === "probe")).toEqual([["probe", "domain", "https://antwars.ai", CONFIG.GAME_SERVICE_URL, "720"]]);
     expect(r.calls.findIndex((c) => c[0] === "probe")).toBe(r.calls.length - 1);
     expect(r.stderr).toContain(" domain comparison passed\n");
+    // The probe's packages are installed once, in the checkout, before any build, deploy or traffic move.
+    const installs = r.calls.filter((c) => c[0] === "npm");
+    expect(installs).toEqual([["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"]]);
+    const firstChange = indexOf(r.calls, (c) => c[0] === "gcloud" && (["builds", "artifacts"].includes(c[1]!) || c[2] === "deploy" || c[3] === "update-traffic"));
+    expect(indexOf(r.calls, (c) => c[0] === "npm")).toBeGreaterThanOrEqual(0);
+    expect(indexOf(r.calls, (c) => c[0] === "npm")).toBeLessThan(firstChange);
     // Every slot and the game reach the config file's project for their shared store; the
     // game's namespace is set outside the script and kept by --update-env-vars.
     for (const d of deploys(r.gcloud).slice(1)) {
@@ -1324,6 +1333,16 @@ describe.concurrent("all", () => {
     expect(r.calls.flat()).not.toContain("<prompts enabled>");
     // Every lobby page was read: the second page is asked for by its token.
     expect(r.calls.some((c) => c[0] === "curl" && c.includes("pageToken=page/2+"))).toBe(true);
+  }, TIMEOUT);
+
+  it("a failed package install refuses before any change, so the domain comparison never runs short of its packages", () => {
+    const r = run(["all", SHA], { state: live(), env: { FAKE_NPM_FAIL: "1" } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing: npm ci failed in the checkout, so the domain comparison could not run; nothing was changed\n");
+    expect(r.calls.filter((c) => c[0] === "npm")).toHaveLength(1);
+    // Nothing past the install but the FAILED status's reads: no gate, build, deploy, traffic move or probe.
+    expect(onlyReadsAfter(r, indexOf(r.calls, (c) => c[0] === "npm"))).toBe(true);
+    expect(r.statusFile).toMatch(/^FAILED\n/);
   }, TIMEOUT);
 
   it("domain comparison: a skip is reported as a skip, never as a pass", async () => {
@@ -1841,6 +1860,8 @@ describe.concurrent("all", () => {
       expect(r.status, r.stderr).toBe(0);
       expect(r.stdout).toBe(`precheck ${SHA}: clear, nothing blocks a deploy of all 18 services\n`);
       expect(changes(r)).toEqual([]);
+      // The precheck runs no probe, so it installs nothing.
+      expect(r.calls.filter((c) => c[0] === "npm")).toEqual([]);
       for (const svc of SERVICES) expect(r.gcloud, svc).toContainEqual(named(svc));
       // No status file and no saved records spec: the last real run's outcome stays readable.
       expect(r.statusFile).toBeNull();

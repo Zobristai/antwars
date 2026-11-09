@@ -167,6 +167,8 @@ source "$(dirname "$0")/config.sh"
 # stops naming any service left with another tag; no revision is deleted.
 # The run reports done only if all 18 services serve their latest ready revision
 # at ANTWAR_CODE_VERSION=<sha>; otherwise it names each one that does not.
+# Before any change it installs the checkout's packages (npm ci, no package
+# script), which that comparison needs.
 # After printing the new revisions it runs the domain comparison between
 # https://antwars.ai and GAME_SERVICE_URL (probe.mjs domain, about 12 minutes),
 # and reports passed or SKIPPED (no public lobby in both catalogs; never a pass).
@@ -1122,6 +1124,13 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     stamp "run $RUN_ID: status in $STATUS_FILE"
     STEP=preflight
     require_main_commit "$SHA"
+    # probe.mjs, the domain comparison that ends the run, imports this checkout's
+    # packages, so they are installed here, before any change: a run from a fresh
+    # checkout would otherwise stop at that comparison after every service moved.
+    # No package script runs.
+    stamp npm ci --ignore-scripts
+    (cd "$REPO_ROOT" && npm ci --ignore-scripts --no-audit --no-fund </dev/null >&2) \
+      || refuse "npm ci failed in the checkout, so the domain comparison could not run; nothing was changed"
     project_number
     # The load balancer's addresses for the game, read before any gate, build or deploy.
     stamp gcloud compute forwarding-rules list --global ...
