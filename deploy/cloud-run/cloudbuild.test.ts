@@ -11,6 +11,8 @@ const here = resolve("deploy/cloud-run");
 const SHA = "a".repeat(40);
 const DIGEST = `sha256:${"b".repeat(64)}`;
 const BUILD_ID = "0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+// The one repository the build clones, and the only origin the wrapper runs from.
+const REPO_URL = "https://github.com/Zobristai/antwars.git";
 // Made-up settings, one per name in config.sh's DEPLOY_SETTINGS.
 const CONFIG: Record<string, string> = {
   ACCOUNT: "deployer@example-project.iam.gserviceaccount.com",
@@ -45,6 +47,8 @@ interface Options {
   readonly uploadFails?: boolean;
   /** Replaces settings; an empty string sends the substitution empty. */
   readonly config?: Record<string, string>;
+  /** The checkout's origin URL (default REPO_URL). */
+  readonly origin?: string;
 }
 
 function setup(options: Options) {
@@ -70,6 +74,7 @@ ${body}
 const rest = a[0] === "-C" ? a.slice(2) : a;
 if (rest[0] === "rev-parse" && rest[1] === "--show-toplevel") console.log(process.env.ROOT);
 else if (rest[0] === "rev-parse") console.log("${"c".repeat(40)}");
+else if (rest[0] === "remote" && rest[1] === "get-url" && rest[2] === "origin") console.log(process.env.ORIGIN);
 else if (rest[0] === "merge-base") process.exit(process.env.ON_MAIN === "1" ? 0 : 1);
 `);
   fake(join(bin, "curl"), "curl", `
@@ -93,6 +98,7 @@ else { write(Number(process.env.DEPLOY_RC) === 0 ? "DONE" : "FAILED"); process.e
     PATH: `${bin}:${process.env.PATH}`,
     CALLS: calls,
     ROOT: root,
+    ORIGIN: options.origin ?? REPO_URL,
     STARTED: join(dir, "started"),
     IDENTITY: options.identity === null ? "" : (options.identity ?? CONFIG.ACCOUNT),
     ON_MAIN: options.onMain === false ? "0" : "1",
@@ -220,6 +226,26 @@ describe("cloudbuild-run.sh", () => {
     expect(r.calls.some((c) => ["curl", "gcloud", "deploy.sh"].includes(c[0]))).toBe(false);
   });
 
+  it.each([
+    "https://github.com/someone-else/antwars.git",
+    `${REPO_URL}.other`,
+    "https://example.com/antwars.git",
+    "",
+  ])("refuses to run from a checkout whose origin is %j, before fetching it or any other call", (origin) => {
+    const r = run({ args: `all ${SHA}`, origin });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`is not ${REPO_URL}`);
+    expect(r.calls.some((c) => c.includes("fetch") || c.includes("merge-base"))).toBe(false);
+    expect(r.calls.some((c) => ["curl", "gcloud", "deploy.sh"].includes(c[0]))).toBe(false);
+  });
+
+  it("reads the checkout's origin, then fetches main from it", () => {
+    const r = run({ args: `all ${SHA}` });
+    expect(r.status).toBe(0);
+    const git = r.calls.filter((c) => c[0] === "git").map((c) => c.slice(3));
+    expect(git.slice(1, 3)).toEqual([["remote", "get-url", "origin"], ["fetch", "--quiet", "origin", "main"]]);
+  });
+
   it("refuses an empty setting, naming it, before any call", () => {
     const r = run({ args: `all ${SHA}`, config: { RUN_SA: "" } });
     expect(r.status).toBe(1);
@@ -304,9 +330,24 @@ describe("cloudbuild.yaml", () => {
     }
   });
 
-  it("gives no setting a default: only the public repository address and an empty _ARGS", () => {
+  it("gives no setting a default: only an empty _ARGS", () => {
     const block = /\nsubstitutions:\n((?: {2}.*\n)*)/.exec(yaml)![1];
-    expect(block).toBe("  _REPO_URL: https://github.com/Zobristai/antwars.git\n  _ARGS: ''\n");
+    expect(block).toBe("  _ARGS: ''\n");
+  });
+
+  // Cloud Build refuses a submitted build given a substitution its config does not use, so
+  // a source-repository substitution such as _REPO_URL is refused rather than used.
+  it("uses exactly the deploy's substitutions, and none naming the source repository", () => {
+    const used = new Set([...yaml.replaceAll("$$", "").matchAll(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g)].map((m) => m[1]));
+    expect([...used].sort()).toEqual(["BUILD_ID", "COMMIT_SHA", "PROJECT_ID", "TAG_NAME", "_ARGS",
+      ...settings.filter((n) => n !== "PROJECT").map((n) => `_${n}`)].sort());
+    expect(used.has("_REPO_URL")).toBe(false);
+    expect(yaml).not.toMatch(/substitutionOption|ALLOW_LOOSE/);
+  });
+
+  it("clones the same repository the wrapper requires as origin", () => {
+    expect(yaml).toContain(`git clone --quiet ${REPO_URL} /tmp/antwars\n`);
+    expect(readFileSync(join(here, "cloudbuild-run.sh"), "utf8")).toContain(`\nSOURCE_REPO="${REPO_URL}"\n`);
   });
 
   it("escapes every shell $ in the step's script, so Cloud Build substitutes none of it", () => {
@@ -318,7 +359,19 @@ describe("cloudbuild.yaml", () => {
 
   // The step's own script, run as Cloud Build runs it ($$ unescaped), against a fake git whose clone
   // leaves a sentinel cloudbuild-run.sh in the checkout: nothing from the checkout may run off main.
-  function step(onMain: boolean, commit = SHA) {
+  // The step's env list with its substitutions applied as Cloud Build applies them; one not given is empty.
+  function stepEnv(substitutions: Record<string, string>) {
+    const block = /\n {4}env:\n((?: {6}- .*\n)*)/.exec(yaml)![1];
+    const defaults = Object.fromEntries([.../\nsubstitutions:\n((?: {2}.*\n)*)/.exec(yaml)![1].matchAll(/^ {2}(\w+): (.*)$/gm)]
+      .map((m) => [m[1], m[2] === "''" ? "" : m[2]]));
+    substitutions = { ...defaults, ...substitutions };
+    return Object.fromEntries(block.split("\n").filter(Boolean).map((line) => {
+      const [name, value] = line.replace(/^ {6}- /, "").split(/=(.*)/s);
+      return [name, value.replace(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g, (_, key: string) => substitutions[key] ?? "")];
+    }));
+  }
+
+  function step(onMain: boolean, commit = SHA, substitutions: Record<string, string> = {}) {
     const dir = mkdtempSync(join(tmpdir(), "antwar-cloudbuild-step-"));
     scratch.push(dir);
     const bin = join(dir, "bin");
@@ -341,8 +394,8 @@ if (rest[0] === "merge-base") process.exit(process.env.ON_MAIN === "1" ? 0 : 1);
     const script = /\n {6}- \|\n((?: {8}.*\n)*)/.exec(yaml)![1]
       .replace(/^ {8}/gm, "").replaceAll("$$", "$").replaceAll("/tmp/antwars", checkout);
     const r = spawnSync("bash", ["-c", script], { encoding: "utf8", env: {
+      ...stepEnv({ COMMIT_SHA: commit, ...substitutions }),
       PATH: `${bin}:${process.env.PATH}`, CALLS: calls, ON_MAIN: onMain ? "1" : "0",
-      ANTWAR_COMMIT: commit, ANTWAR_REPO_URL: "https://example.com/antwars.git",
     } });
     const list = readFileSync(calls, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as string[]);
     return { status: r.status, stderr: r.stderr, calls: list, checkout };
@@ -353,7 +406,7 @@ if (rest[0] === "merge-base") process.exit(process.env.ON_MAIN === "1" ? 0 : 1);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain(`refusing: commit ${SHA} is not on origin/main; nothing from it runs`);
     expect(r.calls).toEqual([
-      ["git", "clone", "--quiet", "https://example.com/antwars.git", r.checkout],
+      ["git", "clone", "--quiet", REPO_URL, r.checkout],
       ["git", "-C", r.checkout, "merge-base", "--is-ancestor", SHA, "origin/main"],
     ]);
   });
@@ -362,11 +415,18 @@ if (rest[0] === "merge-base") process.exit(process.env.ON_MAIN === "1" ? 0 : 1);
     const r = step(true);
     expect(r.status, r.stderr).toBe(0);
     expect(r.calls).toEqual([
-      ["git", "clone", "--quiet", "https://example.com/antwars.git", r.checkout],
+      ["git", "clone", "--quiet", REPO_URL, r.checkout],
       ["git", "-C", r.checkout, "merge-base", "--is-ancestor", SHA, "origin/main"],
       ["git", "-C", r.checkout, "checkout", "--quiet", "--detach", SHA],
       ["sentinel wrapper ran"],
     ]);
+  });
+
+  it("clones this repository whatever source-repository substitution is supplied", () => {
+    const r = step(true, SHA, { _REPO_URL: "https://example.com/other.git", _REPO: "https://example.com/other.git" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.calls[0]).toEqual(["git", "clone", "--quiet", REPO_URL, r.checkout]);
+    expect(JSON.stringify(r.calls)).not.toContain("example.com");
   });
 
   it("refuses a commit that is not a full sha before cloning", () => {

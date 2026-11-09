@@ -108,7 +108,10 @@ Run this from a clean checkout of this repository at the named commit, with
 `ANTWAR_DEPLOY_CONFIG` naming the private config file and its `ACCOUNT` set to the
 deploy service account. Set `SHA` to the commit's full 40-hex sha and `RUN` to one
 of the three forms below; the build clones that commit from this repository and
-runs its own `cloudbuild-run.sh`.
+runs its own `cloudbuild-run.sh`. The build always clones this repository,
+`https://github.com/Zobristai/antwars.git`, and takes no substitution for its
+source: Cloud Build refuses a submit that passes a substitution the build does not
+use, and `cloudbuild-run.sh` refuses to run from any other origin.
 
 ```bash
 SHA=<full 40-hex commit sha on main>
