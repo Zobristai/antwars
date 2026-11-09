@@ -16,7 +16,8 @@
 #   ANTWAR_CFG_<NAME> each setting of the private deploy config (config.sh)
 #
 # In order, before anything changes: the tag or arguments are checked; the
-# checked-out commit must be on origin/main, so only reviewed deploy tooling runs
+# checkout's origin must be this repository (SOURCE_REPO), the one the build
+# clones; the checked-out commit must be on origin/main, so only reviewed deploy tooling runs
 # and a tag on any other commit deploys nothing; the build must run as the
 # config's ACCOUNT, read from the metadata server; and the config file is written
 # from the settings. deploy.sh then runs with its status file and saved rollback
@@ -31,6 +32,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/config.sh"
 
 HEX40='^[0-9a-f]{40}$'
+# The one repository deploy tooling runs from; cloudbuild.yaml clones the same.
+SOURCE_REPO="https://github.com/Zobristai/antwars.git"
 [[ "${ANTWAR_COMMIT:-}" =~ $HEX40 ]] || { echo "refusing: the build's commit (COMMIT_SHA) is not a full 40-hex sha" >&2; exit 2; }
 # read takes only the first line, so a line break would silently drop the rest
 # (`all <sha>` then `--precheck` would deploy): refused before any parsing.
@@ -68,6 +71,9 @@ export ANTWAR_DEPLOY_CONFIG="$CONFIG"
 load_deploy_config "${DEPLOY_SETTINGS[@]}"
 
 REPO_ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
+ORIGIN="$(git -C "$REPO_ROOT" remote get-url origin || true)"
+[[ "$ORIGIN" == "$SOURCE_REPO" ]] \
+  || { echo "refusing: the checkout's origin ${ORIGIN:-(none)} is not $SOURCE_REPO" >&2; exit 1; }
 git -C "$REPO_ROOT" fetch --quiet origin main
 git -C "$REPO_ROOT" merge-base --is-ancestor HEAD origin/main \
   || { echo "refusing: the checked-out commit $(git -C "$REPO_ROOT" rev-parse HEAD) is not on origin/main" >&2; exit 1; }

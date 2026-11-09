@@ -1,8 +1,10 @@
 # Runs deploy/cloud-run/deploy.sh in Cloud Build, as the build's own service
 # account, so a production deploy needs nothing on any operator machine. The
-# build clones this repository and refuses the build's commit (COMMIT_SHA) unless
-# it is on origin/main, before running anything from it; then it checks the
-# commit out and hands over to deploy/cloud-run/cloudbuild-run.sh at that commit.
+# build always clones this repository, https://github.com/Zobristai/antwars.git
+# (no substitution names or changes it), and refuses the build's commit
+# (COMMIT_SHA) unless it is on origin/main, before running anything from it; then
+# it checks the commit out and hands over to deploy/cloud-run/cloudbuild-run.sh
+# at that commit, which also refuses to run from any other origin.
 #
 # Submitted for one approved commit on main with `gcloud builds submit
 # --no-source --config deploy/cloud-run/cloudbuild.yaml`, the build's region and
@@ -30,7 +32,6 @@ steps:
     name: node:24-bookworm
     entrypoint: bash
     env:
-      - ANTWAR_REPO_URL=$_REPO_URL
       - ANTWAR_TAG=$TAG_NAME
       - ANTWAR_COMMIT=$COMMIT_SHA
       - ANTWAR_ARGS=$_ARGS
@@ -49,13 +50,12 @@ steps:
       - |
         set -euo pipefail
         [[ "$$ANTWAR_COMMIT" =~ ^[0-9a-f]{40}$$ ]] || { echo "refusing: COMMIT_SHA must be a full 40-hex commit sha" >&2; exit 2; }
-        git clone --quiet "$$ANTWAR_REPO_URL" /tmp/antwars
+        git clone --quiet https://github.com/Zobristai/antwars.git /tmp/antwars
         git -C /tmp/antwars merge-base --is-ancestor "$$ANTWAR_COMMIT" origin/main \
           || { echo "refusing: commit $$ANTWAR_COMMIT is not on origin/main; nothing from it runs" >&2; exit 1; }
         git -C /tmp/antwars checkout --quiet --detach "$$ANTWAR_COMMIT"
         exec bash /tmp/antwars/deploy/cloud-run/cloudbuild-run.sh
 substitutions:
-  _REPO_URL: https://github.com/Zobristai/antwars.git
   _ARGS: ''
 options:
   logging: CLOUD_LOGGING_ONLY
