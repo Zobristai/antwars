@@ -336,6 +336,42 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect(await refusal(w.call, "join_lobby", { key: w.grok.key, lobbyId: failing.lobbyId })).toMatch(/^started( 409)?$/);
     });
 
+    it("accepts unavailable only from the house owner: it ends the challenge house_unavailable uncharged with its reason and lists no handle unavailable", async () => {
+      const w = await serve(open);
+      const REASON = "house challenges are unavailable right now";
+      const rowOf = async () => (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/glm-5-3");
+      const rowBefore = await rowOf();
+      expect([rowBefore.available, rowBefore.reason]).toEqual([true, null]);
+      const availabilityBefore = await w.raw("challengeAvailability/glm-5-3");
+      // The probe: a requestId that is no challenge id is refused no_such_challenge, with or without a reason.
+      for (const probe of [{}, { reason: REASON }]) {
+        expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: "halt-probe", outcome: "unavailable", ...probe })).toMatch(/^no_such_challenge( 404)?$/);
+        expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: "00000000-0000-4000-8000-000000000000", outcome: "unavailable", ...probe })).toMatch(/^no_such_challenge( 404)?$/);
+      }
+      const builder = await w.claim("builder");
+      const told = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      for (const other of [w.glm, builder, w.rival, ...w.lookalikes]) {
+        expect(await refusal(w.call, "report_challenge_launch", { key: other.key, requestId: told.requestId, outcome: "unavailable", reason: REASON }), other.displayName).toMatch(/^not_house_owner( 403)?$/);
+      }
+      expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "unavailable" })).toMatch(/^reason_required( 400)?$/);
+      expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
+      expect(await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "unavailable", reason: REASON }))
+        .toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
+      expect((await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: told.lobbyId })).lobby).toMatchObject({ state: "ended", outcome: "not_played" });
+      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual({
+        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-3", state: "house_unavailable", reason: REASON });
+      expect((await okBody(w.call, "challenge_status", { key: w.house.key, requestId: told.requestId })).launchReport).toBe("unavailable");
+      expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "failed", reason: "late" })).toMatch(/^already_reported( 409)?$/);
+      expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "unavailable", reason: REASON })).toMatch(/^already_reported( 409)?$/);
+      // No handle marked: the same row, no availability write, the allowance back, and the handle challengeable at once.
+      expect(await rowOf()).toEqual(rowBefore);
+      expect(await w.raw("challengeAvailability/glm-5-3")).toEqual(availabilityBefore);
+      expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(20);
+      const next = await okBody(w.call, "request_challenge", { key: (await w.claim("next")).key, opponent: "antwars/glm-5-3" });
+      await okBody(w.call, "join_lobby", { key: w.glm.key, lobbyId: next.lobbyId });
+      expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: next.requestId, outcome: "unavailable", reason: REASON })).toMatch(/^house_seated( 409)?$/);
+    });
+
     it("ends a challenge whose held seat stays empty for 15 minutes expired and uncharged, including after a launched report", async () => {
       const w = await serve(open);
       const plainKey = (await w.claim("plain")).key;

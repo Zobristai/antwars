@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import type { Identities } from "../../src/identity/identities.ts";
 import { LAUNCHABLE_HANDLES } from "../../src/lobby/houseLaunchable.ts";
-import { createChallengeSteps, type ChallengeLobbyRules, type ChallengeOutcome } from "../../src/lobby/challenges.ts";
+import { createChallengeSteps, type ChallengeLobbyRules, type ChallengeOutcome, type LaunchOutcome } from "../../src/lobby/challenges.ts";
 import { createLobbies, type LobbyOutcome, type LobbySettings } from "../../src/lobby/lobbies.ts";
 import { HOUSE_LABELS } from "../../src/rating/house.ts";
 import { createFirestore, type Store } from "../../src/store/firestore.ts";
@@ -63,7 +63,7 @@ async function world(start: number, settings: Omit<LobbySettings, "now"> = {}) {
     const req = (await raw(`challengeRequests/${requestId}`))!;
     return value(await main.join(req.lobbyId!, houseHandles[req.handle!]!.key));
   };
-  const report = (requestId: string, outcome: "launched" | "failed", reason?: string) => main.reportChallengeLaunch(house.key, requestId, outcome, reason);
+  const report = (requestId: string, outcome: LaunchOutcome, reason?: string) => main.reportChallengeLaunch(house.key, requestId, outcome, reason);
   /** A whole game: request, the house seat joins and is reported launched, and the match ends; on the clock's day. */
   const play = async (builder: Keyed, handle: string = HANDLES[0]) => {
     const { requestId, lobbyId } = value(await request(builder, handle));
@@ -84,7 +84,7 @@ type Joined = Awaited<ReturnType<Lobbies["join"]>>;
  * The independent oracle. First every challenge lobby is resolved: the clock passes each lobby's createdAt + TTL +
  * countdown and the lobby is read, settling any waiting lobby. A charged game (stored launch report "launched" and a
  * filled colony-0 seat) must then have a match day: its startsAt, or its createdAt when it expired full awaiting a slot;
- * a lobby closed by a failed report before the held seat joined is ended and uncharged with no match day. Returns charged games per UTC day, shared and per owner.
+ * a lobby closed by a failed or unavailable report before the held seat joined is ended and uncharged with no match day. Returns charged games per UTC day, shared and per owner.
  */
 async function oracle(w: World) {
   const docs = await Promise.all(w.requests.map(async (id) => {
@@ -101,7 +101,7 @@ async function oracle(w: World) {
     const seats = JSON.parse(lobby.seats!) as { colony: number }[];
     const heldFilled = seats.some((seat) => seat.colony === 0);
     const expired = !lobby.startsAt && (lobby.state === "open" || lobby.state === "waiting") && w.clock.t >= Number(lobby.createdAt) + TTL;
-    const failedClosed = request.launchReport === "failed" && lobby.state === "ended" && !lobby.startsAt;
+    const failedClosed = (request.launchReport === "failed" || request.launchReport === "unavailable") && lobby.state === "ended" && !lobby.startsAt;
     expect(lobby.startsAt !== "" || expired || failedClosed, `request ${id} is unresolved: ${JSON.stringify(lobby)}`).toBe(true);
     if (!(request.launchReport === "launched" && heldFilled)) continue;
     const matchDay = lobby.startsAt ? day(Number(lobby.startsAt)) : lobby.state === "waiting" && expired ? day(Number(lobby.createdAt)) : undefined;
@@ -399,6 +399,62 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     value(await w.request(await w.claim("c4")));
     const counts = await oracle(w);
     expect(counts.shared).toEqual({});
+  });
+
+  it("ends a challenge reported unavailable before the seat joins: house_unavailable with its reason, uncharged, its place returned, no handle marked", async () => {
+    const w = await world(at(12, 0));
+    const REASON = "house challenges are unavailable right now";
+    const availabilityBefore = await w.raw(`challengeAvailability/${HANDLES[0]}`);
+    const rowOf = async () => (await w.main.listChallengeOpponents()).opponents.find((o) => o.handle === `antwars/${HANDLES[0]}`)!;
+    const rowBefore = await rowOf();
+    expect([rowBefore.available, rowBefore.reason]).toEqual([true, null]);
+    const builder = await w.claim("builder");
+    const told = value(await w.request(builder));
+    expect((await w.main.listChallengeOpponents()).allowanceLeft).toBe(19);
+    expect(reasonOf(await w.report(told.requestId, "unavailable"))).toBe("reason_required");
+    expect(reasonOf(await w.report(told.requestId, "unavailable", "   "))).toBe("reason_required");
+    expect((await w.raw(`challengeRequests/${told.requestId}`))!.launchReport).toBe("");
+    expect(value(await w.report(told.requestId, "unavailable", REASON))).toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
+    expect(await w.raw(`lobbies/${told.lobbyId}`)).toMatchObject({ state: "ended", outcome: "not_played" });
+    expect(value(await w.main.challengeStatus(builder.key, undefined))).toEqual({
+      requestId: told.requestId, lobbyId: told.lobbyId, handle: `antwars/${HANDLES[0]}`, state: "house_unavailable", reason: REASON });
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId)).launchReport).toBe("unavailable");
+    // Its place is returned and nothing about the handle changed: no availability write, the same listing, admission open.
+    expect((await w.main.listChallengeOpponents()).allowanceLeft).toBe(20);
+    expect(await w.raw(`challengeAvailability/${HANDLES[0]}`)).toEqual(availabilityBefore);
+    expect(await rowOf()).toEqual(rowBefore);
+    // One report: every later one, of any outcome, is refused with nothing written.
+    for (const outcome of ["launched", "failed", "unavailable"] as const) {
+      expect(reasonOf(await w.report(told.requestId, outcome, "again")), outcome).toBe("already_reported");
+    }
+    expect(await w.raw(`challengeAvailability/${HANDLES[0]}`)).toEqual(availabilityBefore);
+    expect((await w.raw(`challengeRequests/${told.requestId}`))).toMatchObject({ launchReport: "unavailable", reportReason: REASON, closedByFailure: "true" });
+    // The same handle is challengeable at once, by the same builder and by another.
+    value(await w.request(builder));
+    value(await w.request(await w.claim("another"), HANDLES[0]));
+    expect((await oracle(w)).shared).toEqual({});
+  });
+
+  it("refuses unavailable once the held seat has joined, and leaves an expired challenge expired with no handle marked", async () => {
+    const w = await world(at(12, 0));
+    const seated = value(await w.request(await w.claim("seated")));
+    await w.houseJoins(seated.requestId);
+    expect(reasonOf(await w.report(seated.requestId, "unavailable", "house challenges are unavailable right now"))).toBe("house_seated");
+    expect((await w.raw(`challengeRequests/${seated.requestId}`))!.launchReport).toBe("");
+    value(await w.report(seated.requestId, "launched"));
+    expect(reasonOf(await w.report(seated.requestId, "unavailable", "late"))).toBe("already_reported");
+    value(await w.main.releaseSlot(seated.lobbyId));
+
+    const availabilityBefore = await w.raw(`challengeAvailability/${HANDLES[1]}`);
+    const late = value(await w.request(await w.claim("late"), HANDLES[1]));
+    w.clock.t = at(12, 15);
+    expect(value(await w.report(late.requestId, "unavailable", "house challenges are unavailable right now")).state).toBe("expired");
+    expect(value(await w.main.challengeStatus(w.house.key, late.requestId))).toMatchObject({ state: "expired", reason: "house_did_not_join", launchReport: "unavailable" });
+    expect((await w.raw(`lobbies/${late.lobbyId}`))!.state).toBe("open");
+    expect(await w.raw(`challengeAvailability/${HANDLES[1]}`)).toEqual(availabilityBefore);
+    const row = (await w.main.listChallengeOpponents()).opponents.find((o) => o.handle === `antwars/${HANDLES[1]}`)!;
+    expect([row.available, row.reason]).toEqual([true, null]);
+    expect((await oracle(w)).shared).toEqual({ [day(at(12, 0))]: 1 });
   });
 
   it("charges a filled, launched lobby that expires awaiting a slot to its creation day, reason no_match_slot, freeing the next day", async () => {
