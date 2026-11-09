@@ -127,10 +127,10 @@ describe("idle end outside the Model Index", () => {
 });
 
 /** A lobby where only the seats `joins` accepts reach the match server; the others never join. */
-async function partlyJoined(mode: RankedMode | null, joins: (colony: 0 | 1, seat: number) => boolean) {
+async function partlyJoined(mode: RankedMode | null, joins: (colony: 0 | 1, seat: number) => boolean, matchTicks = 10_000) {
   const logs: string[] = [];
   const game = new Game({ mcpConfig: { ...DEFAULT_MCP_CONFIG, callsPerSecond: 100, houseIdleSeconds: 1 },
-    simConfig: { ...HISTORICAL_CONFIG, ticksPerSecond: 10, commandIdleTicks: 1800, matchTicks: 10_000, startAnts: 0 }, onLogLine: line => logs.push(line),
+    simConfig: { ...HISTORICAL_CONFIG, ticksPerSecond: 10, commandIdleTicks: 1800, matchTicks, startAnts: 0 }, onLogLine: line => logs.push(line),
     slot: { identityOf: async () => undefined, locate: async () => undefined } });
   const seats = ([0, 1] as const).flatMap(colony => Array.from({ length: sizeOf(mode) }, (_, index) => ({
     identityId: `team-${colony}`, displayName: `Team ${colony}`, colony, seat: index + 1,
@@ -164,6 +164,20 @@ describe("a ranked seat that never joins", () => {
     expect(matchRecord({ id: "2026-11-09T21-30-00-000Z-429", binary: packMessages(recordLog(logs)), logLines: logs }))
       .toMatchObject({ status: "complete", result: { reason: "abandoned" }, setup: { rated: false } });
     expect(game.tick()).toBeNull();
+  });
+
+  it("a natural end before the idle limit is abandoned, unrated, too; with every seat joined it stays natural", async () => {
+    // The match's time limit (5 ticks) falls before the 1 s idle limit (10 ticks).
+    const { game, logs } = await partlyJoined("1v1", colony => colony === 0, 5);
+    let out = await activeTick(game);
+    while (out!.state.result === null) out = await activeTick(game);
+    expect(out!.state.result).toEqual({ winner: null, reason: "abandoned", decidedBy: "draw", tick: 4 });
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({ tick: 4, abandoned: true });
+    expect(stateHash(replay(logs, Infinity))).toBe(stateHash(out!.state));
+    const full = await partlyJoined("1v1", () => true, 5);
+    let natural = await activeTick(full.game);
+    while (natural!.state.result === null) natural = await activeTick(full.game);
+    expect(natural!.state.result).toMatchObject({ reason: "time_up", tick: 4 });
   });
 
   it("a seat whose join is accepted on its deadline tick has joined: the match plays on", async () => {

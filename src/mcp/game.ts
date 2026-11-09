@@ -965,11 +965,13 @@ export class Game {
     // The tick advances the match in place. An idle end re-runs it from its start state,
     // so keep a copy only when an idle end is possible: a seat already at its deadline
     // before this tick's calls (calls only move a seat's activity later), a seat joining
-    // this tick, a ranked seat still missing at its deadline, or no idle allowance at all.
-    // A ranked seat's deadline counts from match start (tick 0), since it has no join tick.
-    const rankedDeadline = !stopNow && tick >= idleTicks && this.isRankedLobby(m.seq);
+    // this tick, a ranked seat that has not joined, or no idle allowance at all.
+    // A ranked seat that never joins ends the match abandoned, unrated: at its deadline, counted from
+    // match start (tick 0) since it has no join tick, or at any earlier natural end. Until then
+    // (at most the idle limit) each tick keeps a copy, since a natural end cannot be known in advance.
+    const ranked = !stopNow && this.isRankedLobby(m.seq);
     const start = !stopNow && (idleTicks <= 0 || inputs.some((input) => input.type === "join") || m.state.agents.some(isIdle)
-      || (rankedDeadline && this.lobbySeatMissing(m.state)))
+      || (ranked && this.lobbySeatMissing(m.state)))
       ? cloneState(m.state) : null;
     let terminal: ServerTerminal = stopNow;
     let out = advance(m.state, inputs, undefined, undefined, undefined, terminal, true);
@@ -980,7 +982,7 @@ export class Game {
     // counts, but a refused command or synthetic error-observe cannot save it.
     // Likewise a ranked seat whose join is accepted on its deadline tick has joined.
     const idle = [...new Set(out.state.agents.filter(isIdle).map(agent => agent.colony))].sort();
-    const neverJoined = rankedDeadline && this.lobbySeatMissing(out.state);
+    const neverJoined = ranked && (tick >= idleTicks || out.state.result !== null) && this.lobbySeatMissing(out.state);
     if (!stopNow && (neverJoined || idle.length > 0)) {
       if (start === null) throw new Error(`match ${m.seq} tick ${tick}: idle end without its start state`);
       // The Model Index abandons, unrated, and so does a ranked match with a seat that never joined;
