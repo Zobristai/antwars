@@ -12,7 +12,7 @@ import type { MatchRecord } from "../replays/history.js";
 import { isReplayId } from "../replays/access.js";
 
 /**
- * One-off correction (ANT-016, decision 938e3cc9): a rated ranked lobby in which colony 0 never joined the match is
+ * One-off correction: a rated ranked lobby in which colony 0 never joined the match is
  * recorded abandoned and unrated, its rating effect removed, and its public recording shown abandoned and unrated.
  *
  * verify reads everything and writes nothing. correct runs verify and writes only when every check passed in that same
@@ -200,7 +200,7 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
   }
   const absent = unjoinedColonies(parsed!, [0, 1]);
   const neverJoined = [...new Set(seats!.filter(seat => absent.includes(seat.colony)).map(seat => seat.id))];
-  // Colony 0 itself never joined, and colony 1 did (ANT-016 criterion 1).
+  // Colony 0 itself never joined, and colony 1 did.
   check("never joined", absent.length === 1 && absent[0] === 0,
     `colonies with no seat and no join: ${absent.length === 0 ? "none" : absent.join(", ")}${neverJoined.length ? ` (${neverJoined.join(", ")})` : ""}`);
 

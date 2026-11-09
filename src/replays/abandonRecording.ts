@@ -9,7 +9,7 @@ import { isReplayId } from "./access.js";
 import { RATINGS_UNAVAILABLE } from "../records/service.js";
 
 /**
- * One-off correction support (ANT-016): turn a stored public recording of a rated match into the shape a house-mode
+ * One-off correction support: turn a stored public recording of a rated match into the shape a house-mode
  * abandoned recording carries — end result winner null, reason "abandoned", decidedBy "draw", the same tick, no rating
  * changes, and setup rated false — keeping every tick and event of the replay. Used only by
  * scripts/unrate-never-joined.ts through src/rating/unrateNeverJoined.ts.

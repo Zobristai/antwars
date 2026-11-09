@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * One-off correction (ANT-016): records a rated ranked lobby whose colony never joined the match as abandoned and
+ * One-off correction: records a rated ranked lobby whose colony never joined the match as abandoned and
  * unrated, removes its rating effect, and rewrites its public recording as an abandoned, unrated match.
  * src/rating/unrateNeverJoined.ts holds the checks and writes.
  *
