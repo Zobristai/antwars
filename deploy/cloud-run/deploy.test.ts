@@ -2091,9 +2091,11 @@ describe.concurrent("all", () => {
         expect(values(`antwar-${slot}`), slot).toMatchObject({ ...shared, ANTWAR_STORE_NAMESPACE: "live", GCLOUD_PROJECT: CONFIG.PROJECT,
           ANTWAR_SLOT: slot, ANTWAR_PUBLIC_URL: url(`antwar-${slot}`), ANTWAR_PUBLIC_SLOTS: "8", ANTWAR_PRIVATE_SLOTS: "8",
           ...(slot.startsWith("public") ? { ANTWAR_OPERATOR_TOKEN: "secret:ANTWAR_OPERATOR_TOKEN:latest" } : {}) });
+        if (slot.startsWith("private")) expect(values(`antwar-${slot}`), slot).not.toHaveProperty("ANTWAR_OPERATOR_TOKEN");
       }
       expect(values("antwar")).toMatchObject({ ...shared, ANTWAR_STORE_NAMESPACE: "live", GCLOUD_PROJECT: CONFIG.PROJECT,
-        ANTWAR_PUBLIC_SLOTS: "8", ANTWAR_PRIVATE_SLOTS: "8", ANTWAR_USERNAME_CLAIM_LIMIT_RULE: "client" });
+        ANTWAR_PUBLIC_SLOTS: "8", ANTWAR_PRIVATE_SLOTS: "8", ANTWAR_USERNAME_CLAIM_LIMIT_RULE: "client",
+        ANTWAR_OPERATOR_TOKEN: "secret:ANTWAR_OPERATOR_TOKEN:latest" });
       expect(Object.keys(values("antwar"))).toEqual(expect.arrayContaining(["ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS"]));
       // Only the domain comparison is skipped, plainly, never as a pass.
       expect(r.calls.filter((c) => c[0] === "probe")).toEqual([]);
@@ -2102,6 +2104,8 @@ describe.concurrent("all", () => {
       expect(r.statusFile).toMatch(/^DONE\n/);
     }, TIMEOUT);
 
+    // Every access setting (ingress, invoker check, identity) is in the create request itself, so each
+    // service has it from the moment it exists, however the run ends afterwards.
     it("creates each service with exactly the settings its deploy flags give, and nothing besides", async () => {
       const r = await runAsync(["all", SHA], { state: empty });
       expect(r.status, r.stderr).toBe(0);
@@ -2149,7 +2153,9 @@ describe.concurrent("all", () => {
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
         "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",
-        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY"]);
+        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+      expect(env("antwar").filter((e) => e.valueSource).map((e) => e.valueSource)).toEqual([
+        { secretKeyRef: { secret: "antwar-private-replay-key", version: "1" } }, { secretKeyRef: { secret: "ANTWAR_OPERATOR_TOKEN", version: "latest" } }]);
       // Every service runs the revision its create made, so it runs exactly the command its flags give: the record
       // service's own, and the image's default everywhere else. Like Cloud Run, the fake keeps a command across
       // a deploy that does not set one, so a setting left from any earlier revision would show here.
@@ -2181,16 +2187,21 @@ describe.concurrent("all", () => {
         expect(r.calls.filter((c) => c[0] === "curl" && curlTo(c) === RUN_CREATE + "antwar"), svc).toEqual([]);
         expect(r.stderr).not.toContain(` done ${SHA}`);
         expect(r.statusFile).toMatch(/^FAILED\n/);
+        // A run stopped here leaves the record service as its create made it: internal, with the invoker check on.
+        const records = r.state.created!.find((c) => c.svc === "antwar-records")!.spec;
+        expect([records.ingress, records.invokerIamDisabled], svc).toEqual(["INGRESS_TRAFFIC_INTERNAL_ONLY", false]);
       }
     }, 2 * TIMEOUT);
 
-    it("fails, never reporting done, when a created service lacks a setting it needs", async () => {
-      const r = await runAsync(["all", SHA], { state: empty, env: { DROP_ENV: "antwar:ANTWAR_STORE_NAMESPACE" } });
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain(`mismatch: antwar ${REV("antwar")} was created without ANTWAR_STORE_NAMESPACE\n`);
-      expect(r.stderr).not.toContain(` done ${SHA}`);
-      expect(r.statusFile).toMatch(/^FAILED\n/);
-    }, TIMEOUT);
+    it("fails, never reporting done, when a created service lacks a variable or secret it needs", async () => {
+      for (const [svc, name] of [["antwar", "ANTWAR_STORE_NAMESPACE"], ["antwar", "ANTWAR_OPERATOR_TOKEN"], ["antwar-records", "NODE_OPTIONS"]]) {
+        const r = await runAsync(["all", SHA], { state: empty, env: { DROP_ENV: `${svc}:${name}` } });
+        expect(r.status, name).toBe(1);
+        expect(r.stderr).toContain(`mismatch: ${svc} ${REV(svc)} was created without ${name}\n`);
+        expect(r.stderr).not.toContain(` done ${SHA}`);
+        expect(r.statusFile).toMatch(/^FAILED\n/);
+      }
+    }, 3 * TIMEOUT);
 
     it("stops with nothing reverted when the site does not answer 200", async () => {
       const r = await runAsync(["all", SHA], { state: (s) => { empty(s); s.curl!.site = 503; } });

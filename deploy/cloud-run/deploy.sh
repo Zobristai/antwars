@@ -988,15 +988,16 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
         console.log(JSON.stringify(svc));' -- "${@:2}"
     }
 
-    # First deploy: the variables and secrets each created service needs, since
-    # it has none set outside this script to keep.
+    # First deploy: every variable and secret each created service runs with,
+    # since it has none set outside this script to keep. The operator token is on
+    # the game and the public slots only.
     first_deploy_requires() {
       local common="ANTWAR_RECORD_INPUT_BUCKET ANTWAR_REPLAY_BUCKET ANTWAR_CODE_VERSION ANTWAR_PRIVATE_REPLAY_KEY"
-      if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common"
-      elif [[ "$1" == "$GAME_SERVICE" ]]; then
-        echo "$common GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
-      else
-        echo "$common GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      local served="GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common NODE_OPTIONS"
+      elif [[ "$1" == "$GAME_SERVICE" ]]; then echo "$common $served ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_OPERATOR_TOKEN"
+      elif [[ "$1" == "${PREFIX}public-"* ]]; then echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_OPERATOR_TOKEN"
+      else echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL"
       fi
     }
     # Prints, space-separated, each of variables $2... that revision $1 does not
@@ -1239,6 +1240,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       FIRST_DEPLOY=1
       stamp "first deploy: all ${#SERVICES[@]} services are absent, so each is created with no rollback, no gate and no domain comparison"
     }
+    # The operator token, as the public slots (and a first-created game) take it.
+    OPERATOR_TOKEN_SECRET="ANTWAR_OPERATOR_TOKEN=ANTWAR_OPERATOR_TOKEN:latest"
     # The preflight of every service, unless this is a first deploy.
     preflight_all() {
       first_deploy_check
@@ -1391,7 +1394,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
         fi
         URL="$(slot_url "$SLOT")"
         SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
-        [[ "$SLOT" != public-* ]] || SECRETS+=",ANTWAR_OPERATOR_TOKEN=ANTWAR_OPERATOR_TOKEN:latest"
+        [[ "$SLOT" != public-* ]] || SECRETS+=",$OPERATOR_TOKEN_SECRET"
         slot_flags "$SLOT" "$URL" "$SECRETS"
         [[ "$ROLLING" != 1 ]] || IN_FLIGHT="$SLOT"
         CURRENT_SLOT="$SLOT"
@@ -1430,14 +1433,19 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     STEP="game swap"
     [[ "$ROLLING" == 1 || "$FIRST_DEPLOY" == 1 ]] || wait_global "$GAME_SERVICE"
     # ^;^ makes ; the separator, so the comma list of addresses stays one value.
-    # A deploy keeps the game's variables set outside this script (its store
-    # namespace and replay bucket); a first deploy has none to keep, so it sets
-    # them from the live slot settings and the deploy config.
+    # A deploy keeps the game's variables and secrets set outside this script (its
+    # store namespace, replay bucket and operator token); a first deploy has none to
+    # keep, so it sets them from the live slot settings, the deploy config and the
+    # public slots' operator token secret.
     GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client"
-    [[ "$FIRST_DEPLOY" != 1 ]] || GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
+    GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
+    if [[ "$FIRST_DEPLOY" == 1 ]]; then
+      GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
+      GAME_SECRETS+=",$OPERATOR_TOKEN_SECRET"
+    fi
     swap "$GAME_SERVICE" \
       --update-env-vars "$GAME_ENV" \
-      --update-secrets "ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1" \
+      --update-secrets "$GAME_SECRETS" \
       --service-account "$RUN_SA" \
       --min-instances 1 --max-instances 1 \
       --max 1 \
