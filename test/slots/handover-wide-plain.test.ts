@@ -19,7 +19,7 @@ import { RATED_DELAY_SECONDS, type MatchAccess } from "../../src/live/match-acce
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { createLobbies, type Lobbies } from "../../src/lobby/lobbies.ts";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.ts";
-import type { ObserveEvent } from "../../src/mcp/game.ts";
+import type { Game, ObserveEvent } from "../../src/mcp/game.ts";
 import { CALL_ID_META_KEY } from "../../src/mcp/tools.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { GZIP_BLOCK_BYTES } from "../../src/replays/pack.ts";
@@ -423,11 +423,16 @@ describe("handover at Wide Plain size with a seated agent", () => {
     const saves = createMatchSaves(w.store, bucket);
     const accounts = { identities: w.ids, lobbies, ratings: createRatings(w.store, w.ids) };
     const watchRegistry = createWatchRegistry(w.store);
+    // Combat stays closed until LATE_TICK, so that the colonies filled to their cap are still at it when the first server saves,
+    // whatever the random seed and however fast the runner. The first server's match starts at tick 0 and runs at most
+    // 10 ticks a second, so within this test's 900 s limit it cannot reach LATE_TICK (35,000): no fight can happen before the save.
+    // The late server resumes at LATE_TICK or later, where combat is open as in production.
+    const simConfig = { ...widePlainConfig(), combatGraceTicks: LATE_TICK };
     const start = async (name: string, port: number, wiring: Partial<SlotWiring>) => {
       const dataDir = tempDir();
       dirs.push(dataDir);
       const server = await startSpectatedServer({
-        port, host: "127.0.0.1", dataDir, simConfig: widePlainConfig(), mcpConfig: TEST_MCP_CONFIG, startPickWindowMs: 100, accounts, watchRegistry,
+        port, host: "127.0.0.1", dataDir, simConfig, mcpConfig: TEST_MCP_CONFIG, startPickWindowMs: 100, accounts, watchRegistry,
         replayStore: { create: async () => {} }, recordHandoff: { submit: () => {} },
         slot: { slot: "public-0", publicUrl: `http://${name}.test`, lobbies, identities: w.ids, revision: "r1", saves, ...wiring },
       });
@@ -457,6 +462,25 @@ describe("handover at Wide Plain size with a seated agent", () => {
     // save step, and the late server resumes that save moved late into the match (lateSave). From here every server runs on
     // production's intervals (1 s poll, 5 s heartbeat, 30 s staleness, 20 s unheard).
     let written: { save: MatchSave; at: number; writeMs: number } | null = null;
+    // The restored match as the late server holds it just before its first resumed tick, and the tick of the save it resumes.
+    // Combat is open from that first tick, so the live counts after the rejoin can already show its losses. The read
+    // below runs before the late server restores the save it returns, and the restored match is first ticked only once adopted
+    // (startResumed), so a one-shot wrapper on its game's tick installed there sees the restored state before any tick acts on it.
+    const lateStarted = Promise.withResolvers<GameServer>();
+    let resumedFrom: number | null = null;
+    let beforeFirstTick: { tick: number; counts: number[] } | null = null;
+    let capturing = false;
+    const captureFirstTick = (game: Pick<Game, "match" | "tick">): void => {
+      if (capturing) return;
+      capturing = true;
+      const tick = game.tick.bind(game);
+      game.tick = (stopNow?: boolean) => {
+        game.tick = tick;
+        const state = game.match?.state;
+        if (state !== undefined) beforeFirstTick = { tick: state.tick, counts: [0, 1].map((colony) => state.ants.filter((ant) => ant.colony === colony).length) };
+        return tick(stopNow);
+      };
+    };
     const lateSaves: MatchSaves = {
       async write(save) {
         const writeAt = Date.now();
@@ -465,13 +489,22 @@ describe("handover at Wide Plain size with a seated agent", () => {
       },
       read: async (id) => {
         const save = await saves.read(id);
-        return save === null ? null : lateSave(save, lateSide, histories);
+        if (save === null) return null;
+        // server.game is the server's own Game, the one its tick loop ticks, typed for mounted routes as LiveGame.
+        captureFirstTick((await lateStarted.promise).game as unknown as Pick<Game, "match" | "tick">);
+        const moved = lateSave(save, lateSide, histories);
+        resumedFrom = moved.tick;
+        return moved;
       },
     };
     const lateServer = await start("late", 0, { staleMs: 300, saves: lateSaves });
+    lateStarted.resolve(lateServer);
     const back = await rejoin(lateServer.port, a.key, SEATS[0].seat, Date.now() + 120_000);
     expect(lateServer.game.match!.state.tick).toBeGreaterThanOrEqual(LATE_TICK);
-    expect([0, 1].map((colony) => lateServer.game.match!.state.ants.filter((ant) => ant.colony === colony).length)).toEqual([1024, 1024]);
+    const restored = beforeFirstTick as { tick: number; counts: number[] } | null;
+    expect(restored, "the late server's state was captured before its first resumed tick").not.toBeNull();
+    expect(restored!.tick, "the captured state is at the tick of the save the late server resumed").toBe(resumedFrom);
+    expect(restored!.counts).toEqual([1024, 1024]);
     written = null;
 
     // The agent drives the late server, as a seated agent does.
