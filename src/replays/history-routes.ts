@@ -8,6 +8,7 @@ import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { RankedMode } from "../rating/ratings.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { noteField } from "./matchNotes.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -15,6 +16,8 @@ type LobbySeat = { readonly id: string; readonly displayName: string };
  * player-created lobby), house challenge label where it has one, and seated identities by colony.
  */
 export interface RecordingLobby {
+  /** The lobby id, which keys a match's public note (src/replays/matchNotes.ts). */
+  readonly id?: string;
   readonly kind: "public" | "private";
   readonly size: 1 | 2 | 3 | 4;
   readonly mode: RankedMode | null;
@@ -87,8 +90,10 @@ export function cachedLobbyLookup(lookup: RecordingLobbyLookup): RecordingLobbyL
 }
 
 export type { RecordingMatchKind, RecordingMatchType } from "./recorded-match-type.js";
-/** harnessPhase is present only on a Model Index row (src/rating/harnessPhase.ts). */
-export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null; readonly harnessPhase?: HarnessPhase };
+/** harnessPhase is present only on a Model Index row (src/rating/harnessPhase.ts); note only on a row whose lobby has a
+ * public note (src/replays/matchNotes.ts). */
+export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null; readonly harnessPhase?: HarnessPhase;
+  readonly note?: string };
 
 /**
  * A recording's match type, from its lobby where one was read (undefined: pending or failed this listing; null: it has
@@ -108,7 +113,7 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
 
 /**
  * Each listed row with its match type (recordingMatchType), and a Model Index row with its harness phase by match time
- * (recordingMatchTime). A pending or failed lookup types the row from its record for
+ * (recordingMatchTime), and a row whose lobby has a public note with that note. A pending or failed lookup types the row from its record for
  * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again.
  */
 export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
@@ -119,7 +124,8 @@ export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (
   return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row => {
     const lobby = await lobbyOf(row.id);
     const matchType = recordingMatchType(row, lobby);
-    return matchType?.kind === "index" ? { ...row, matchType, harnessPhase: harnessPhaseAt(recordingMatchTime(row, lobby)) } : { ...row, matchType };
+    const typed = matchType?.kind === "index" ? { ...row, matchType, harnessPhase: harnessPhaseAt(recordingMatchTime(row, lobby)) } : { ...row, matchType };
+    return { ...typed, ...noteField(lobby?.id) };
   })) });
 }
 

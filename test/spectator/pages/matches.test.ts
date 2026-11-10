@@ -580,3 +580,25 @@ describe("Model Index matches show their harness phase", () => {
     p.mounted.destroy();
   });
 });
+
+describe("a match's public note", () => {
+  it("shows the note on the noted recording's row, in both forms, and on no other row", () => {
+    const p = page();
+    const text = "Self-reported scripted-play breach: one accepted command, at tick 6556";
+    const noted: Recording = { ...recording, id: "2026-11-10T10-30-00-000Z-1", matchType: { kind: "index", size: 1 },
+      harnessPhase: { phase: "from round 31 onward", possibleEffortMismatch: false }, note: text };
+    const other: Recording = { ...recording, id: "2026-11-10T10-31-00-000Z-1", matchType: { kind: "index", size: 1 },
+      harnessPhase: { phase: "from round 31 onward", possibleEffortMismatch: false } };
+    p.mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] },
+      recordings: { status: "ready", rows: [noted, other] }, next: null });
+    const notes = (scope: ElementPort) => scope.byClass("d1p-note").map(node => node.textContent);
+    const recTable = p.body.byClass("d1p-wide").at(-1)!;
+    const recList = p.body.byClass("d1p-narrow").at(-1)!;
+    // Newest first: the later recording, without a note, leads.
+    expect(recTable.querySelector("tbody")!.querySelectorAll("tr").map(notes)).toEqual([[], [text]]);
+    expect(recList.querySelectorAll("li").map(notes)).toEqual([[], [text]]);
+    // The harness tag beside it is unchanged.
+    expect(recTable.querySelector("tbody")!.querySelectorAll("tr").map(row => row.byClass("d1p-phase").length)).toEqual([1, 1]);
+    p.mounted.destroy();
+  });
+});

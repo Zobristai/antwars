@@ -63,3 +63,17 @@ describe("leaderboard form entries in a Model Index mode carry each match's harn
     expect(strip(await ratings.leaderboard({ mode: "house-3v3" }))).toEqual(strip(await plain.ratings.leaderboard({ mode: "3v3" })));
   });
 });
+
+describe("leaderboard form entries carry a match's public note", () => {
+  const NOTED = "c0bce8df-1c3f-46c0-b6dd-1ffec3e15f82";
+  it("adds the note to the noted match's form entry only, in any mode, writing nothing", async () => {
+    for (const mode of ["house-1v1", "1v1"] as const) {
+      const { docs, ratings } = await world(mode, ["r26", NOTED]);
+      const before = JSON.stringify([...docs]);
+      const alpha = entries(await ratings.leaderboard({ mode })).find(entry => entry.identityId === "alpha")!;
+      expect(alpha.form.map(entry => entry.note)).toEqual(["Self-reported scripted-play breach: one accepted command, at tick 6556", undefined]);
+      expect("note" in alpha.form[1]!).toBe(false);
+      expect(JSON.stringify([...docs])).toBe(before);
+    }
+  });
+});

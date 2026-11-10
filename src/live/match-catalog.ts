@@ -1,5 +1,6 @@
 import { isHouseMatch, isPublicMatch, spectatorDelaySeconds, type MatchAccess } from "./match-access.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
+import { noteField } from "../replays/matchNotes.js";
 
 /** Match identity is its lobby, not the slot or whichever sequence runs there next. */
 export interface CatalogMatch extends MatchAccess {
@@ -41,6 +42,8 @@ export interface PublicLiveMatch extends PublicMatchEntry {
   readonly colonies: PublicColonies;
   /** Present only on a Model Index match: its harness phase by its start (src/rating/harnessPhase.ts). */
   readonly harnessPhase?: HarnessPhase;
+  /** Present only on a match with a public note (src/replays/matchNotes.ts). */
+  readonly note?: string;
 }
 export interface PublicLobbyEntry {
   readonly id: string;
@@ -83,6 +86,7 @@ export function publicMatchCatalog(
       lobbyId: match.lobbyId, startedAt: match.startedAt, rated: match.rated, delaySeconds: spectatorDelaySeconds(match),
       colonies: publicColonies(players.get(match.lobbyId)),
       ...(isHouseMatch(match) ? { harnessPhase: harnessPhaseAt(match.startedAt) } : {}),
+      ...noteField(match.lobbyId),
     })),
     lobbies: lobbies.filter(lobby => lobby.kind === "public" && (lobby.state === "open" || lobby.state === "waiting"))
       .map(lobby => ({ id: lobby.id, size: lobby.size, state: lobby.state as "open" | "waiting", colonies: lobby.colonies.map(colony => colony.map(seat => seat.displayName)) })),

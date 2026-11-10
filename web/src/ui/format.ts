@@ -150,6 +150,8 @@ export interface RecordingRow {
   readonly type: string | null;
   /** A Model Index match's harness phase tags (harnessPhaseTags); empty for any other match. */
   readonly phase: readonly string[];
+  /** The match's public note (src/replays/matchNotes.ts); null for a match without one. */
+  readonly note: string | null;
 }
 
 /** Known only from the record; null stays unknown, and a null winner is a draw only where the record says so. */
@@ -197,7 +199,7 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
     id: r.id, href: keep(`/?replay=${encodeURIComponent(r.id)}`, search),
     when: utcStamp(r.startedAt) ?? utcStamp(replayDate(r.id) ?? "") ?? "Start unknown",
     result, how, models: recordingModels(r.seats), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
-    phase: harnessPhaseTags(r.harnessPhase),
+    phase: harnessPhaseTags(r.harnessPhase), note: r.note ?? null,
   };
 }
 

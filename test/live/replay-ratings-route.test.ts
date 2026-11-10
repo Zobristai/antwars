@@ -26,27 +26,28 @@ const close: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of close.splice(0)) await fn(); });
 
 async function fixture(options: { kind?: "public" | "private"; rated?: boolean; outcome?: MatchOutcome; changes?: unknown[] | null;
-  colonies?: Lobby["colonies"]; finished?: boolean; mode?: Lobby["mode"]; startsAt?: number | null } = {}) {
+  colonies?: Lobby["colonies"]; finished?: boolean; mode?: Lobby["mode"]; startsAt?: number | null; lobbyId?: string } = {}) {
+  const matchLobby = options.lobbyId ?? lobbyId;
   const { docs, store } = memoryWatchStore();
   const registry = createWatchRegistry(store);
   const kind = options.kind ?? "public";
-  const lobby: Lobby = { id: lobbyId, kind, size: 1, state: "ended", rated: options.rated ?? true, slot: `${kind}-0`, creatorId: "glm",
+  const lobby: Lobby = { id: matchLobby, kind, size: 1, state: "ended", rated: options.rated ?? true, slot: `${kind}-0`, creatorId: "glm",
     createdAt: 0, expiresAt: 0, startsAt: options.startsAt === undefined ? matchAt : options.startsAt, outcome: options.outcome ?? "colony_0_won",
     mode: options.mode === undefined ? "house-1v1" : options.mode,
     colonies: options.colonies ?? [[{ id: "glm", displayName: "glm" }], [{ id: "deepseek", displayName: "deepseek" }]] };
   let invite = "current";
   const accounts = {
     lobbies: {
-      readLobby: async (id: string) => id === lobbyId ? { ok: true, value: lobby } : { ok: false, reason: "no_such_lobby" },
-      isInviteCurrent: async (id: string, token: string) => id === lobbyId && token === invite,
+      readLobby: async (id: string) => id === matchLobby ? { ok: true, value: lobby } : { ok: false, reason: "no_such_lobby" },
+      isInviteCurrent: async (id: string, token: string) => id === matchLobby && token === invite,
     },
     ratings: createRatings(store),
   } as unknown as AccountStores;
-  await registry.register({ lobbyId, visibility: kind, rated: lobby.rated === true, mode: "house-1v1", startedAt, origin: "http://127.0.0.1:9", slot: `${kind}-0`, runId: "run" });
-  holdMatch(docs, lobbyId, "run");
-  if (options.finished !== false) await registry.playbackFinished(lobbyId, "run");
-  await registry.replaySaved(lobbyId, "run", replayId);
-  if (options.changes !== null) docs.set(`ratedMatches/${lobbyId}`, { changes: JSON.stringify(options.changes ?? glicko) });
+  await registry.register({ lobbyId: matchLobby, visibility: kind, rated: lobby.rated === true, mode: "house-1v1", startedAt, origin: "http://127.0.0.1:9", slot: `${kind}-0`, runId: "run" });
+  holdMatch(docs, matchLobby, "run");
+  if (options.finished !== false) await registry.playbackFinished(matchLobby, "run");
+  await registry.replaySaved(matchLobby, "run", replayId);
+  if (options.changes !== null) docs.set(`ratedMatches/${matchLobby}`, { changes: JSON.stringify(options.changes ?? glicko) });
   const handler = watchRoutes({ accounts, registry, hub: {} as LiveHub });
   const server: Server = createServer((req, res) => { void handler(req, res); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -234,5 +235,28 @@ describe("two identities sharing a display name", () => {
       { name: "glm", rating: 1490, before: 1490, after: 1500 },
       { name: "deepseek", rating: 1386.6, before: 1386.6, after: 1370.4 },
     ]);
+  });
+});
+
+describe("a replay's public match note", () => {
+  const noted = "c0bce8df-1c3f-46c0-b6dd-1ffec3e15f82";
+  const text = "Self-reported scripted-play breach: one accepted command, at tick 6556";
+
+  it("serves the note beside the figures and phase of the match it names, writing nothing, and the page reads it", async () => {
+    const f = await fixture({ lobbyId: noted });
+    const before = JSON.stringify([...f.docs]);
+    expect(await (await f.get()).json()).toEqual({ ratings: [
+      { colony: 0, displayName: "glm", before: 1412.25, after: 1461.75 },
+      { colony: 1, displayName: "deepseek", before: 1430.5, after: 1388 },
+    ], note: text, harnessPhase: round26Phase });
+    const facts = await storedReplayFacts(replayId, null, new AbortController().signal, f.request);
+    expect(facts.note).toBe(text);
+    expect(JSON.stringify([...f.docs])).toBe(before);
+  });
+
+  it("sends no note field for any other match, and the page reads none", async () => {
+    const f = await fixture();
+    expect("note" in await (await f.get()).json()).toBe(false);
+    expect((await storedReplayFacts(replayId, null, new AbortController().signal, f.request)).note).toBeNull();
   });
 });

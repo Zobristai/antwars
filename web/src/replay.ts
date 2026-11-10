@@ -66,17 +66,18 @@ const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace
  * Standing in for the live page (source.ts), the recording's line
  * says why in place of "not live": "RECORDING · no live match · rated match · 4 agents".
  * A stored Model Index recording's harness phase tags follow its detail: "15 Oct 2026 · Harness: rounds 26-30".
+ * A stored recording's public note follows them, wrapping as ordinary text.
  */
 export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: string, storedId: string | null = null, rated?: boolean, delaySeconds?: number,
-  harnessPhase: readonly string[] = []): ModeCopy {
+  harnessPhase: readonly string[] = [], note: string | null = null): ModeCopy {
   const rating = rated === undefined ? "" : rated ? " · rated match" : " · unrated match";
   const delay = delaySeconds === undefined
     ? rated === undefined ? DELAY_DETAIL : `${rated ? 300 : 60} s behind the match`
     : `${delaySeconds} s behind the match`;
   if (mode === "replay") {
     // The live page's stand-in: one label line, a recording and why, with no Back to live (the page goes live by itself).
-    // A Model Index recording's harness phase tags follow the detail, each kept whole on the line.
-    const phase = harnessPhase.map(unbrokenTag).join(" · ");
+    // A Model Index recording's harness phase tags follow the detail, each kept whole on the line; then its public note.
+    const phase = [...harnessPhase.map(unbrokenTag), ...(note ? [note] : [])].join(" · ");
     const after = (text: string) => phase === "" ? text : text === "" ? phase : `${text} · ${phase}`;
     const detail = after(storedId === null ? "" : recordedDateLabel(storedId));
     if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, link: null };

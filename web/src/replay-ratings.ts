@@ -23,11 +23,14 @@ const seatKey = (byColony: boolean, colony: Colony | undefined, displayName: str
   displayName === undefined ? undefined : byColony ? `${colony}:${displayName}` : displayName;
 
 /**
- * What a replay reads from its stored record: the rating figures, and a Model Index match's harness phase. answered is
+ * What a replay reads from its stored record: the rating figures, a Model Index match's harness phase, and the match's
+ * public note (src/replays/matchNotes.ts; null for a match without one). answered is
  * false when the server gave no readable answer (no lobby link for the recording, or a failed read), so its phase is not
  * known from there.
  */
-export interface StoredReplayFacts { readonly ratings: StoredRatings | null; readonly harnessPhase: HarnessPhase | null; readonly answered: boolean }
+export interface StoredReplayFacts {
+  readonly ratings: StoredRatings | null; readonly harnessPhase: HarnessPhase | null; readonly note: string | null; readonly answered: boolean;
+}
 
 /** Null when the match has no stored record, it could not be read, or two seats share a key. */
 export async function storedReplayRatings(replayId: string, invite: string | null, signal: AbortSignal, request: typeof fetch = fetch): Promise<StoredRatings | null> {
@@ -39,7 +42,7 @@ export async function storedReplayRatings(replayId: string, invite: string | nul
  * null for any match other than a Model Index one, or when the answer could not be read.
  */
 export async function storedReplayFacts(replayId: string, invite: string | null, signal: AbortSignal, request: typeof fetch = fetch): Promise<StoredReplayFacts> {
-  const none: StoredReplayFacts = { ratings: null, harnessPhase: null, answered: false };
+  const none: StoredReplayFacts = { ratings: null, harnessPhase: null, note: null, answered: false };
   try {
     const response = await request(`/watch/ratings/${encodeURIComponent(replayId)}`, {
       headers: invite ? { "x-antwar-invite": invite } : {},
@@ -50,9 +53,12 @@ export async function storedReplayFacts(replayId: string, invite: string | null,
     const value: unknown = await response.json();
     if (typeof value !== "object" || value === null || !("ratings" in value) || !Array.isArray(value.ratings)) return none;
     return { ratings: readRatings(value.ratings as unknown[]), harnessPhase: readHarnessPhase("harnessPhase" in value ? value.harnessPhase : undefined),
-      answered: true };
+      note: readNote("note" in value ? value.note : undefined), answered: true };
   } catch { return none; }
 }
+
+/** A public note as the server sends it: text of 1 to 500 characters, else null. Display only. */
+const readNote = (value: unknown): string | null => typeof value === "string" && value.length > 0 && value.length <= 500 ? value : null;
 
 const PHASES: readonly HarnessPhase["phase"][] = ["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "from round 31 onward", "unknown"];
 

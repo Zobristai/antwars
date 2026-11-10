@@ -367,6 +367,8 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       start.append(...outcome(r, row.result, marked));
       const type = h(doc, "td", "c-result");
       type.append(...typeBadge(row.type), ...phaseTags(row.phase));
+      // A match's public note, under its badges (archive.css .d1p-note).
+      if (row.note !== null) type.append(h(doc, "span", "d1p-note", row.note));
       line.append(start, type);
       if (seats === null) {
         const none = h(doc, "td", "c-model");
@@ -393,6 +395,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const lead = h(doc, "p", "d1p-line is-lead");
       lead.append(...outcome(r, row.result, marked), ...typeBadge(row.type), ...phaseTags(row.phase));
       item.append(h(doc, "p", "d1p-line", row.when), lead);
+      if (row.note !== null) item.append(h(doc, "p", "d1p-line is-model d1p-note", row.note));
       if (seats === null) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
       else item.append(colonyList(markedSeats(r, seats)));
       const stampLine = h(doc, "p", "d1p-line");

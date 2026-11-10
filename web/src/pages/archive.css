@@ -185,6 +185,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-tag.d1p-phase { max-width: 100%; white-space: normal; }
 /* In Recordings' Game type column it is the cell's first line, so it rides the row's first baseline. */
 .d1p-rec td.c-result > .d1p-type { margin-top: 0; }
+/* A match's public note (src/replays/matchNotes.ts): its own line under the badges, in the model line's type. */
+.d1p-rec td.c-result > .d1p-note { display: block; margin: 4px 0 0; font-size: 12px; line-height: 16px; color: var(--aw-ink); }
 /* Last 5, newest first: a result stamp each, a win filled, a loss or a draw outlined; a stored replay makes it a link,
    underlined. The element is the target and the stamp is drawn inside it: 24 px here, 28 px in a 40 × 44 px target on phones. */
 .d1p-form-mark { position: relative; isolation: isolate; display: inline-grid; place-items: center; width: 28px; height: 24px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--aw-ink-2); text-decoration: none; vertical-align: middle; }

@@ -45,6 +45,9 @@ export interface SpectatorSource {
   /** A stored Model Index recording's harness phase tags (ui/format.ts harnessPhaseTags), once its stored record is read;
    * empty before then and for any other match. */
   readonly harnessPhase?: readonly string[];
+  /** A stored recording's public note (src/replays/matchNotes.ts), once its stored record is read; null before then and for
+   * a match without one. */
+  readonly matchNote?: string | null;
   linkState(): LinkState;
   take(realMs: number): SourceArrival[];
   now(realMs: number): number;
@@ -239,12 +242,15 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   // A stored match's one read of its stored record: the restatement of its rating figures, and its harness phase tags.
   // undefined while the read is pending; null when the server gave no answer, so the recording itself decides (phaseOf).
   let phaseTags: readonly string[] | null | undefined;
+  // The same answer's public note: null until read and for a match without one.
+  let note: string | null = null;
   // Without that answer, a public replay's recorded setup and seats (recordedMatchFacts), read once alongside playback,
   // never holding it: undefined until read, null when it cannot be.
   let recorded: RecordedMatch | null | undefined;
   // A private lobby's recording (lobbyRecording) never reads public history, invite or not.
   const storedFacts = (replayId: string, invite: string | null, lobbyRecording = false) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
     phaseTags = facts.answered ? harnessPhaseTags(facts.harnessPhase) : null;
+    note = facts.note;
     if (!facts.answered && !lobbyRecording) void recordedMatchFacts(replayId, abort.signal).then(read => { recorded = read; });
     return facts.ratings && restateRatings(facts.ratings);
   });
@@ -455,6 +461,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         lobbyId: automatic ? selected?.lobbyId ?? null : params.get("lobby"),
       }),
       get harnessPhase() { return phaseOf(head, storedId); },
+      get matchNote() { return note; },
       linkState: () => state,
       take(realMs) {
         if (recording) {

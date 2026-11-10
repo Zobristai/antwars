@@ -185,7 +185,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   );
   // The same live/recorded line as 2D, in the deck's legend.
   const mode = replay ? "replay" : "live";
-  overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds, input.harnessPhase));
+  overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds, input.harnessPhase, input.matchNote));
   overlays.setShare(input.share);
   const controls = params.has("replay") && input.recording
     ? mountReplayControls(document, input.recording) : null;
@@ -721,7 +721,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     else overlays.tips.squad.hide();
     if (board) {
       const ended = replay && excerptEnded(frame.tick, input.lastTick);
-      overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds, input.harnessPhase));
+      overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds, input.harnessPhase, input.matchNote));
       // A stall the client already detects (Playback.underrun), shown only while the match or recording still runs.
       overlays.setStalled(board.result === null && !ended && playback.underrun(now));
     }

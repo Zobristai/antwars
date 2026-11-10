@@ -16,6 +16,8 @@ export const harnessPhase = z.object({
   possibleEffortMismatch: z.boolean().nullable(),
 }).nullable().optional().catch(null);
 export type HarnessPhase = NonNullable<z.infer<typeof harnessPhase>>;
+// A match's public note (src/replays/matchNotes.ts); absent on any match without one, null where it does not read as text.
+export const matchNote = z.string().min(1).max(500).nullable().optional().catch(null);
 const liveRow = z.object({
   lobbyId: z.string().min(1), startedAt: z.number().finite(), rated: z.boolean(), delaySeconds: z.union([z.literal(0), z.literal(60), z.literal(300)]),
   colonies: z.tuple([z.array(liveSeat), z.array(liveSeat)]),
@@ -40,6 +42,7 @@ const recordingRow = z.object({
     size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
   }).nullable().optional().catch(null),
   harnessPhase,
+  note: matchNote,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
 // An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode and whole seconds waited

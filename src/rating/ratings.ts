@@ -8,6 +8,7 @@ import { logUnlistedHouse } from "./unlistedHouse.js";
 import { isReplayId } from "../replays/access.js";
 import { INITIAL_RD, glickoUpdate, inflatedRd, teamAsOpponent } from "./glicko.js";
 import { harnessPhaseAt, isIndexMode, type HarnessPhase } from "./harnessPhase.js";
+import { noteField } from "../replays/matchNotes.js";
 
 /**
  * Per-identity ratings and the public leaderboard.
@@ -145,6 +146,8 @@ export interface FormEntry {
   /** Present only in a Model Index mode: the match's harness phase by its lobby's match time (harnessPhase.ts); unknown
    * when the lobby or its time cannot be read. Read-only: nothing is stored. */
   readonly harnessPhase?: HarnessPhase;
+  /** Present only on a match with a public note (src/replays/matchNotes.ts). Read-only: nothing is stored. */
+  readonly note?: string;
 }
 
 export const FORM_LENGTH = 5;
@@ -740,7 +743,7 @@ export function createRatings(
         return { identityId, displayName, ...storedRating(identityId, fields), ...label, benchmark,
           wins: record?.wins ?? null, losses: record?.losses ?? null, draws: record?.draws ?? null,
           form: record?.form.map(({ result, matchId }) => ({ result, replayId: replayIds.get(matchId) ?? null,
-            ...(indexMode ? { harnessPhase: harnessPhaseAt(times.get(matchId) ?? null) } : {}) })) ?? [] };
+            ...(indexMode ? { harnessPhase: harnessPhaseAt(times.get(matchId) ?? null) } : {}), ...noteField(matchId) })) ?? [] };
       }));
       // A Benchmark row whose handle HOUSE_LABELS does not list shows "Unlisted model"; the server logs it.
       logUnlistedHouse("leaderboard", entries.filter(entry => entry.benchmark).map(entry => entry.displayName));
