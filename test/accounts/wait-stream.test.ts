@@ -516,6 +516,37 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await w.ok("challenge_status", { key: builder.key, requestId: requested.requestId })).requestId).toBe(requested.requestId);
   });
 
+  it("a lobby wait record stores its joiner's identity, a challenger's included, and the stream never sends it", async () => {
+    const w = await world();
+    const bob = await w.claim("Bob"), carl = await w.claim("Carl");
+    const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 1));
+    const seated = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    expect(await w.store.get(`waits/${seated}`)).toMatchObject({ kind: "lobby", identityId: bob.id, expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    const waiting = await read(w.fast, seated, 300);
+    await w.ok("join_lobby", { key: carl.key, lobbyId: lobby.id });
+    const final = await read(w.fast, seated);
+    expect(waiting.frames).toHaveLength(1);
+    expect(final.frames.at(-1)?.event).toBe("slot_ready");
+
+    const cast = await houseCast(w.identities, w.store, 0);
+    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    const builder = await w.claim("builder");
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const challenger = tokenOf(requested);
+    const challengeLobby = value(await w.lobbies.readLobby(requested.lobbyId));
+    expect(await w.store.get(`waits/${challenger}`)).toMatchObject({ kind: "lobby", identityId: builder.id, expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
+    const challengeWaiting = await read(w.fast, challenger, 300);
+    await w.ok("report_challenge_launch", { key: cast.house.key, requestId: requested.requestId, outcome: "failed", reason: "failed" });
+    const challengeFinal = await read(w.fast, challenger);
+    expect(challengeWaiting.frames).toHaveLength(1);
+    expect(challengeFinal.frames.at(-1)?.event).toBe("expired");
+
+    for (const [stream, id] of [[waiting, bob.id], [final, bob.id], [challengeWaiting, builder.id], [challengeFinal, builder.id]] as const) {
+      expect(stream.text).not.toContain(id);
+      expect(stream.text).not.toContain("identityId");
+    }
+  });
+
   it("a token grants nothing: it is no key, and a lobby wait sends no lobby id, seat, key or invite", async () => {
     const w = await world();
     const ann = await w.claim("Ann");

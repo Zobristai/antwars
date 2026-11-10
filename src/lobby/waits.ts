@@ -12,7 +12,7 @@ import type { Lobby } from "./lobbies.js";
  *
  * Documents, under the store's namespace:
  *   waits/{token}  { kind: "queue", identityId, joinedAt, expiresAt }  a ranked queue entry, by the join that made it
- *                  { kind: "lobby", lobbyId, expiresAt }                a lobby seat, a challenger's included
+ *                  { kind: "lobby", lobbyId, identityId, expiresAt }    a lobby seat, a challenger's included, by the joiner
  * written in the same transaction as the join or the challenge request, so a returned token always resolves.
  * expiresAt (expiryField) is the wait's own limit plus WAIT_GRACE_MS. Once the wait is read final it is lowered to that
  * read plus WAIT_GRACE_MS, so a reconnect within the grace still learns the outcome; sweepExpiredWaits then removes it.
@@ -21,7 +21,8 @@ import type { Lobby } from "./lobbies.js";
  * the token keeps following that lobby after the identity leaves or rejoins the queue:
  *                  { kind: "lobby", lobbyId, paired: "true" }
  * Its states then carry lobbyId, so an agent that never received paired still learns its queue lobby. The id
- * of a lobby joined directly is never sent: that lobby may be private.
+ * of a lobby joined directly is never sent: that lobby may be private. A record's identityId is stored only:
+ * every state is built from the queue entry or the lobby, never from record fields, so it is never sent.
  */
 
 /** A wait's state. Only paired, slot_ready and expired are final. */
@@ -66,7 +67,7 @@ const isPast = (expiresAt: string | undefined, at: number): boolean => expiresAt
 
 export type WaitRecord =
   | { readonly kind: "queue"; readonly identityId: string; readonly joinedAt: string }
-  | { readonly kind: "lobby"; readonly lobbyId: string };
+  | { readonly kind: "lobby"; readonly lobbyId: string; readonly identityId: string };
 
 /** The token's document, created in the caller's transaction; limit is the wait's own limit, in ms. */
 export function waitWrite(token: string, record: WaitRecord, limit: number): Write {

@@ -887,7 +887,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const colony: Colony = chosen ?? (seated(0) <= seated(1) ? 0 : 1);
         if (fields.heldFor && colony === HELD_COLONY && !holder) return { result: refuse("seat_held"), writes: [] };
         const next = [...seats, { id: joiner.id, displayName: joiner.displayName, colony }];
-        const wait: Write[] = waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId }, lobbyLimit(fields))];
+        const wait: Write[] = waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId, identityId: joiner.id }, lobbyLimit(fields))];
         if (next.length === capacity(lobbyId, fields)) {
           const started = await start(read, lobbyId, fields, next, at);
           return { result: ok(started.lobby), writes: [...started.writes, ...wait] };
