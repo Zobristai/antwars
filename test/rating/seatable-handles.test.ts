@@ -18,11 +18,14 @@ const INDEX_DRAW: readonly string[] = [
   "gpt-6-1-terra-max-fast", "claude-opus-5-5-xhigh", "claude-sonnet-5-5", "claude-opus-5-5-low", "mimo-v2-6-flash", "mimo-v2-6-pro",
 ];
 
-/** Handles seated since round 26's draw. Like INDEX_DRAW, a handle is caught here only once it is added. */
-const DRAWN_SINCE: readonly string[] = ["claude-fable-5-2"];
+/**
+ * Handles seated in rated matches outside the index draw, such as placement-series seats. Every handle seated in a rated
+ * match outside the draw must be added here; a handle that is not added is not checked.
+ */
+const RATED_OUTSIDE_DRAW: readonly string[] = ["claude-fable-5-2"];
 
-/** Every seatable handle: the launchable list, the index draw and the handles seated since, each once. */
-const SEATABLE: readonly string[] = [...new Set([...LAUNCHABLE_HANDLES, ...INDEX_DRAW, ...DRAWN_SINCE])];
+/** Every seatable handle: the launchable list, the index draw and the rated seats outside the draw, each once. */
+const SEATABLE: readonly string[] = [...new Set([...LAUNCHABLE_HANDLES, ...INDEX_DRAW, ...RATED_OUTSIDE_DRAW])];
 
 /** The handles among `handles` that HOUSE_LABELS does not list, so a page would show them as "Unlisted model". */
 const unlabelled = (handles: readonly string[]): string[] =>
