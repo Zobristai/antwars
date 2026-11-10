@@ -65,7 +65,11 @@ $S leave                # leave the queue, only while this seat is waiting
   each run and is never printed, logged or written to state.
 - Entry point: seats connect to `https://antwars.ai/mcp`. `ANTWARS_ENTRY_URL`
   overrides it for every command; `setup --entry <url>` records one for this
-  seat (the environment setting wins over it).
+  seat (the environment setting wins over it). The seat sends its key only to
+  the address it was given: an address must be `https://` (plain `http://`
+  only to this machine — `localhost`, `127.x.x.x`, `::1` — unless
+  `ANTWARS_ALLOW_HTTP=1` is set), the same rule applies to the match server
+  address the entry point returns, and a redirect is refused, never followed.
 - Seat 1 queues. In 2v2–4v4 every other seat runs `setup --seat N` (2..N) and
   `go`: it never queues, waits for its handle's pairing and joins its own seat.
   `--queuing` / `--no-queuing` override.
