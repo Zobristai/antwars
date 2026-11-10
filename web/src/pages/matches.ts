@@ -283,11 +283,11 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   const { search } = options;
   const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList } = rowParts(doc);
   /** A colony's result badge, in the shared badge style (identity.ts d1p-tag) with its words in the colony's ink: Winner on
-   * the winning colony where the record names a winner and the match was not abandoned, Draw on both colonies in a draw;
-   * none otherwise. */
-  const markOf = (r: Recording, colony: 0 | 1): string | null => {
+   * the winning colony where the record names a winner and the match was not abandoned, never on a colony nobody joined
+   * (no recorded seat); Draw on both colonies in a draw; none otherwise. */
+  const markOf = (r: Recording, colony: 0 | 1, seats: NonNullable<ReturnType<typeof colonySeats>>): string | null => {
     const winner = winnerOf(r);
-    if (winner !== null) return winner === colony ? "Winner" : null;
+    if (winner !== null) return winner === colony && seats[colony] !== null ? "Winner" : null;
     return r.reason !== "abandoned" && r.decidedBy === "draw" ? "Draw" : null;
   };
   /** The record's own word (ui/format.ts recordingResult) where no colony carries a badge and the record names no winner:
@@ -311,7 +311,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
    * a model. */
   const markedSeats = (r: Recording, seats: NonNullable<ReturnType<typeof colonySeats>>) =>
     recordedSeats(seats).map((models, colony) => {
-      const mark = markOf(r, colony as 0 | 1);
+      const mark = markOf(r, colony as 0 | 1, seats);
       if (mark === null) return models ?? [h(doc, "span", "d1p-model d1p-unknown", NOT_JOINED)];
       // The line's words stay its first child (archive.css .d1p-model > :first-child), the badge after them.
       const lines = models ?? [h(doc, "span", "d1p-model d1p-unknown")];
@@ -352,7 +352,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const r = byId.get(row.id)!;
       const seats = colonySeats(r.seats);
       // A row with no recorded seat has no colony line to carry a badge.
-      const marked = seats !== null && (markOf(r, 0) !== null || markOf(r, 1) !== null);
+      const marked = seats !== null && (markOf(r, 0, seats) !== null || markOf(r, 1, seats) !== null);
       const name = `Replay, recording started ${row.when}`;
       const line = h(doc, "tr");
       const start = startCell(row.when);
