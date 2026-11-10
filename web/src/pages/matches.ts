@@ -19,7 +19,7 @@ import { mountFrame, rebuild, stateLine } from "./chrome.ts";
 import { nameNodes } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
-  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, modelName, recordingsLine, seatGroups, stampWord,
+  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, recordingsLine, seatGroups, seatModelName, stampWord,
   whenParts, winnerOf, type LoadsSeen, type NameParts, type SeatEntry, type SeatGroup,
 } from "./model.ts";
 
@@ -71,10 +71,11 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
    * each (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds, as
    * alike recorded seats are; a seat it holds alone in its colony keeps
    * its "#<seat>", as before. A seat that self-reported a model shows that model, named as Recordings names it (modelName), in
-   * its name's place; a seat that reported none shows its name; a house handle always shows its own row's name. */
+   * its name's place (its own name where the model's provider part is that name, seatModelName); a seat that reported none
+   * shows its name; a house handle always shows its own row's name. */
   const players = (seats: readonly LiveSeat[]): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
-    const model = seat.modelLabel && !isBenchmark(who) ? modelName(seat.modelLabel) : null;
+    const model = seat.modelLabel && !isBenchmark(who) ? seatModelName(seat.modelLabel, who) : null;
     // A reported model is drawn as given, never read as a house handle; a seat with none keeps its own row's name.
     const shown = (name: string): NameParts => {
       if (model !== null) return { name: `${model}${name.slice(who.length)}`, badges: [], quiet: null };

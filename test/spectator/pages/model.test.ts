@@ -10,7 +10,7 @@ import { RETRY } from "../../../web/src/ui/format.ts";
 import type { LiveMatch, Recording } from "../../../web/src/matches-page/data.ts";
 import type { RankingView } from "../../../web/src/leaderboard-page/view.ts";
 import {
-  BOARD_GROUPS, OPENING_MODE, RECORDINGS_LIST, colonyModels, colonySeats, eloText, formMarks, rdText, leaderboardLists, liveKind,
+  BOARD_GROUPS, OPENING_MODE, RECORDINGS_LIST, colonyModels, colonySeats, seatModelName, eloText, formMarks, rdText, leaderboardLists, liveKind,
   liveLine, loadedText, loadsSettled, matchesLists, modelName, nameParts, provisional, ranks, recordOf, recordedIdentity, recordingsLine,
   ruleAnchor, ruleGroups, seatGroups, stampWord, tableCount, tableState, tableTitle, thinkingText, whenParts, winnerOf, type ListLoad, type LoadsSeen,
 } from "../../../web/src/pages/model.ts";
@@ -218,6 +218,19 @@ describe("Matches", () => {
     // A reported model wins over the handle; a house handle keeps its own row's name.
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "antwarsos-harness")).name).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant")).name).toBe("local");
+    // Recordings names a label whose provider part is the seat's own handle by that handle; the HUD keeps the model's words.
+    expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant"), { listed: true }).name).toBe("coffee-ant");
+    expect(colonySeats([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])!.map(c => c?.map(e => e.parts.name) ?? null))
+      .toEqual([["coffee-ant", "local"], null]);
+    // Only an exact provider part before the first "/" counts; every other label keeps modelName's words.
+    expect(seatModelName("coffee-ant/local", "coffee-ant")).toBe("coffee-ant");
+    expect(seatModelName("coffee-ant/local", "Coffee-Ant")).toBe("local");
+    expect(seatModelName("coffee-ant/local", "coffee")).toBe("local");
+    expect(seatModelName("coffee-ant/local", null)).toBe("local");
+    expect(seatModelName("coffee-ant", "coffee-ant")).toBe("coffee-ant");
+    expect(seatModelName("local", "coffee-ant")).toBe("local");
+    expect(seatModelName("openai/gpt-6.1-terra", "openai")).toBe("openai");
+    expect(seatModelName("openai/gpt-6.1-terra", "antwarsos-harness")).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
     expect(seatGroups(groups)).toEqual([{ parts: { name: "omp-dolphin", badges: [], quiet: null }, seats: 2 }, { parts: { name: "coffeebot-ant", badges: [], quiet: null }, seats: 1 }]);

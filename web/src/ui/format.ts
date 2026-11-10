@@ -190,10 +190,19 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
   };
 }
 
-/** Saved history only, deduplicated by immutable id, newest first by start. */
+/** A match one colony never joined: its record holds seats, none of them that colony's. Such a match was never played.
+ * A record with no seat at all is not one (its seats were not recorded). */
+export const neverJoined = (r: Pick<Recording, "seats">): boolean =>
+  r.seats.length > 0 && !(r.seats.some(seat => seat.colony === 0) && r.seats.some(seat => seat.colony === 1));
+
+/** Saved history only, deduplicated by immutable id, newest first by start; a match a colony never joined is not listed
+ * (its record and replay stay reachable by their own link). */
 export function recordingRows(view: Pick<MatchesView, "recordings">, search: string): RecordingRow[] {
   const rows = new Map<string, { row: RecordingRow; at: number }>();
-  for (const r of view.recordings.rows) rows.set(r.id, { row: recordingRow(r, search), at: Date.parse(r.startedAt) || Date.parse(replayDate(r.id) ?? "") || 0 });
+  for (const r of view.recordings.rows) {
+    if (neverJoined(r)) continue;
+    rows.set(r.id, { row: recordingRow(r, search), at: Date.parse(r.startedAt) || Date.parse(replayDate(r.id) ?? "") || 0 });
+  }
   return [...rows.values()].sort((a, b) => b.at - a.at || (a.row.id < b.row.id ? 1 : -1)).map(entry => entry.row);
 }
 
