@@ -343,7 +343,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect((await okBody(w.call, "read_lobby", { key: other.key, lobbyId: failing.lobbyId })).lobby).toMatchObject({ state: "ended", outcome: "not_played" });
       expect(await okBody(w.call, "challenge_status", { key: other.key })).toEqual({
         requestId: failing.requestId, lobbyId: failing.lobbyId, handle: "antwars/grok-4-7", state: "house_unavailable", reason: "player launch refused" });
-      expect((await okBody(w.call, "challenge_status", { key: w.house.key, requestId: failing.requestId })).launchReport).toBe("failed");
+      expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId: failing.requestId })).toMatchObject({ launchReport: "failed", launchReportReason: "player launch refused" });
       const row = (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/grok-4-7");
       expect([row.available, row.reason]).toEqual([false, "player launch refused"]);
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
@@ -414,7 +414,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
     });
 
-    it("reports each state to its builder, any request to the house owner with launchReport, and nobody else's challenge to anyone else", async () => {
+    it("reports each state to its builder, any request to the house owner with launchReport and its reason, and nobody else's challenge to anyone else", async () => {
       const w = await serve(open);
       const blocker = await occupySlot(w, "blk");
       const builder = await w.claim("builder");
@@ -422,7 +422,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
       const own = (state: string) => ({ requestId, lobbyId, handle: "antwars/glm-5-3", state });
       expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("waiting_for_house"));
-      expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId })).toEqual({ ...own("waiting_for_house"), launchReport: null });
+      expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId })).toEqual({ ...own("waiting_for_house"), launchReport: null, launchReportReason: null });
       for (const other of [sibling, w.glm, w.rival, ...w.lookalikes]) {
         expect(await refusal(w.call, "challenge_status", { key: other.key, requestId }), other.displayName).toMatch(/^no_such_challenge( 404)?$/);
         expect(await refusal(w.call, "challenge_status", { key: other.key }), other.displayName).toMatch(/^no_such_challenge( 404)?$/);
@@ -435,10 +435,10 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       await w.lobbies.registerInstance("public-0", { runId: "run-1", mcpUrl: "http://m", spectatorUrl: "http://s" });
       value(await w.lobbies.beginMatch(lobbyId, "public-0", "run-1"));
       expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("playing"));
-      await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId, outcome: "launched" });
+      await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId, outcome: "launched", reason: "checked before launch" });
       value(await w.lobbies.endMatch(lobbyId, "run-1", "colony_1_won"));
       expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("finished"));
-      expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId })).toEqual({ ...own("finished"), launchReport: "launched" });
+      expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId })).toEqual({ ...own("finished"), launchReport: "launched", launchReportReason: "checked before launch" });
     });
 
     it("leaves every rating, Leaderboard table and Antwars Model Index value unchanged after a challenge game's natural result", async () => {

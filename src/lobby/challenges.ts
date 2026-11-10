@@ -95,6 +95,8 @@ export interface ChallengeStatus {
   readonly reason?: string;
   /** The house owner's view only. */
   readonly launchReport?: LaunchOutcome | null;
+  /** The house owner's view only: the reason sent with the launch report, or null when none was sent. */
+  readonly launchReportReason?: string | null;
 }
 
 /** What lobbies.ts supplies: its lobby rules and the lobby writes a challenge needs. */
@@ -406,7 +408,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
       const view: ChallengeStatus = {
         requestId: id, lobbyId: request.lobbyId!, handle: `${HOUSE_USERNAME}/${request.handle}`, state,
         ...(reason ? { reason } : {}),
-        ...(owner ? { launchReport: (request.launchReport || null) as LaunchOutcome | null } : {}),
+        ...(owner ? { launchReport: (request.launchReport || null) as LaunchOutcome | null, launchReportReason: request.reportReason || null } : {}),
       };
       return { result: ok(view), writes: [] };
     });

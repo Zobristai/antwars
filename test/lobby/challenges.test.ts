@@ -431,6 +431,21 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     expect(counts.shared).toEqual({});
   });
 
+  it("shows the house owner, and only the house owner, the reason sent with a launched report beside an unchanged launchReport", async () => {
+    const w = await world(at(12, 0));
+    const builder = await w.claim("builder");
+    const told = value(await w.request(builder));
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId))).toMatchObject({ launchReport: null, launchReportReason: null });
+    value(await w.report(told.requestId, "launched", "checked before launch"));
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId))).toMatchObject({ launchReport: "launched", launchReportReason: "checked before launch" });
+    expect(value(await w.main.challengeStatus(builder.key, told.requestId))).not.toHaveProperty("launchReportReason");
+    expect(value(await w.main.challengeStatus(builder.key, told.requestId))).not.toHaveProperty("launchReport");
+    // A launched report sent without a reason reads null.
+    const quiet = value(await w.request(await w.claim("quiet"), HANDLES[1]));
+    value(await w.report(quiet.requestId, "launched"));
+    expect(value(await w.main.challengeStatus(w.house.key, quiet.requestId))).toMatchObject({ launchReport: "launched", launchReportReason: null });
+  });
+
   it("ends a challenge reported unavailable before the seat joins: house_unavailable with its reason, uncharged, its place returned, no handle marked", async () => {
     const w = await world(at(12, 0));
     const REASON = "maintenance";
