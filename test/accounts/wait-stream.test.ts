@@ -514,6 +514,22 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await read(w.fast, annToken)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId } }]);
   });
 
+  it("an immediately matched joiner that rejoins before reading its token still gets paired once, then follows the lobby", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    // Bob's join pairs him at once; his token is still a queue wait, never read.
+    const bobToken = tokenOf(await w.ok("join_queue", { key: bob.key, mode: "1v1" }));
+    const { queue } = await w.ok("queue_status", { key: bob.key });
+    expect(await w.store.get(`waits/${bobToken}`)).toMatchObject({ kind: "queue", identityId: bob.id });
+    w.clock.t += 1;
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
+    const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
+    expect(await w.store.get(`waits/${bobToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, identityId: bob.id, paired: "unread", expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    expect((await read(w.fast, bobToken)).frames).toEqual([{ event: "paired", data: { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true } }]);
+    expect((await read(w.fast, bobToken)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId } }]);
+  });
+
   it("a late pairing keeps the waiting partner's record with the lobby: a sweep past its queue limit leaves it, and its first reconnect gets paired, then the lobby", async () => {
     const w = await world();
     const ann = await w.claim("Ann"), bob = await w.claim("Bob");

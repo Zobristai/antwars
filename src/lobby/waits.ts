@@ -23,8 +23,8 @@ import type { Lobby } from "./lobbies.js";
  * A queue wait found paired is re-pointed, once, to a lobby wait on the paired lobby (Lobbies.waitStatus), so
  * the token keeps following that lobby after the identity leaves or rejoins the queue:
  *                  { kind: "lobby", lobbyId, identityId, paired: "true" }  identityId: the queued identity, kept
- * A waiting partner's queue wait is re-pointed by the pairing itself with paired: "unread", so its next read still
- * reports paired once, then follows the lobby.
+ * A waiting partner's queue wait is re-pointed by the pairing itself, and a matched joiner's by its identity's next
+ * join (Lobbies.joinQueue), with paired: "unread", so its next read still reports paired once, then follows the lobby.
  * Its states then carry lobbyId, so an agent that never received paired still learns its queue lobby. The id
  * of a lobby joined directly is never sent: that lobby may be private. A record's identityId is stored only:
  * every state is built from the queue entry or the lobby, never from record fields, so it is never sent.
@@ -82,7 +82,7 @@ export function waitWrite(token: string, record: WaitRecord, limit: number): Wri
 /**
  * Turns a stored queue wait into a lobby wait on the lobby its entry was paired with, in the caller's transaction,
  * keeping identityId, the identity that holds the token; lobbyLimit is that lobby's own limit. paired "unread", written
- * by the pairing itself, means paired was not yet reported: the next read reports it once and sets "true" (Lobbies.waitStatus).
+ * by the pairing or a rejoin before any read, means paired was not yet reported: the next read reports it once and sets "true" (Lobbies.waitStatus).
  */
 export function repointWrite(token: string, lobbyId: string, identityId: string, lobbyLimit: number, paired: "true" | "unread" = "true"): Write {
   return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, paired, identityId, joinedAt: "", expiresAt: expiryField(lobbyLimit + WAIT_GRACE_MS) } };

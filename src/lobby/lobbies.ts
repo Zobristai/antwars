@@ -733,8 +733,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
 
   /**
    * The writes ending the wait of the identity's current queue entry, which this transaction's join replaces or leave
-   * deletes: only while its record is still that join's queue wait. A matched entry's wait is re-pointed to its paired lobby,
-   * as a read would. Any other could only read ended: a replaced one is deleted, a left one is kept until a grace after
+   * deletes: only while its record is still that join's queue wait. A matched entry's wait is re-pointed to its paired lobby
+   * with paired "unread": a record still of kind queue never reported paired (decideQueueWait reports it only in the
+   * transaction that re-points), so its next read reports paired once, then follows the lobby. Any other could only read ended: a replaced one is deleted, a left one is kept until a grace after
    * the leave (endedWrite) so a reconnect learns expired: ended, then swept.
    */
   async function replacedQueueWait(read: TransactionRead, identityId: string, at: number, how: "replaced" | "left" = "replaced"): Promise<Write[]> {
@@ -745,7 +746,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     if (wait?.kind !== "queue" || wait.joinedAt !== entry.joinedAt) return [];
     if (entry.state === "matched" && entry.lobbyId) {
       const lobby = (await read([lobbyPath(entry.lobbyId)])).get(lobbyPath(entry.lobbyId));
-      return [repointWrite(token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at)];
+      return [repointWrite(token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at, "unread")];
     }
     // A left wait stays readable as ended for the grace, so a stream cut before the leave learns it on reconnect.
     return how === "left" ? endedWrite(token, wait, at) : [{ op: "delete", path: waitPath(token) }];
