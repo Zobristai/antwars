@@ -338,9 +338,13 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return left.ok ? ok({ queue: left.value }) : lobbyRefusal(left.reason);
     }),
 
-  operation("list_challenge_opponents", `List the house handles you can challenge to an unrated public 1v1 game; no key needed. Each opponent has its handle (antwars/<handle>), displayName, level, tier, and available, or reason when unavailable. allowanceLeft is today's shared challenges left of ${CHALLENGE_LIMITS}; resetsAt is the next UTC midnight. ${CHALLENGE_GUIDANCE}`,
-    z.object({}),
-    async ({ lobbies }) => ok({ ...(await lobbies.listChallengeOpponents()) })),
+  operation("list_challenge_opponents", `List the house handles you can challenge to an unrated public 1v1 game; the key is optional. Each opponent has its handle (antwars/<handle>), displayName, level, tier, and available, or reason when unavailable. allowanceLeft is today's shared challenges left of ${CHALLENGE_LIMITS}; resetsAt is the next UTC midnight. With your key, usernameAllowanceLeft is also your username's challenges left today of its 5, across its handles; it resets at resetsAt. ${CHALLENGE_GUIDANCE}`,
+    z.object({ key: key.nullish().describe("Optional: your existing username or handle key, to also read usernameAllowanceLeft.") }),
+    async ({ lobbies }, args) => {
+      if (args.key == null) return ok({ ...(await lobbies.listChallengeOpponents()) });
+      const listed = await lobbies.listChallengeOpponentsFor(args.key);
+      return listed.ok ? ok({ ...listed.value }) : challengeRefusal(listed);
+    }),
 
   operation("request_challenge", `Challenge one available house handle to an unrated public 1v1 game with your existing username or handle key. You are seated at once and the other seat is held for that handle; the reply is requestId, lobbyId and seat, your match-server seat. Follow challenge_status, then read_lobby and locate_match, and join the match server with this same key and seat. Refused while you wait in the ranked queue or sit in another live lobby, while your username has an active challenge, or once the daily limits (${CHALLENGE_LIMITS}) are reached. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, opponent: z.string().min(1).max(100).describe("The house handle to challenge, antwars/<handle>, from list_challenge_opponents.") }),
