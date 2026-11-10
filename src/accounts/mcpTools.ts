@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { payload } from "../mcp/replies.js";
 import { accountRefusal, refusesSeatClient, SEAT_CLIENT_ENTRY_TOOLS } from "./seatClientAdmission.js";
-import { KEY_ISSUING_TOOLS, type KeyIssuingHold, type SessionAccess } from "../mcp/http.js";
+import { KEY_ISSUING_TOOLS, type KeyIssuingHold, type LostKey, type SessionAccess } from "../mcp/http.js";
 import {
   ACCOUNT_OPERATIONS, nothingToRecover, RECOVER_KEY_DESCRIPTION, RECOVER_KEY_INPUT, RECOVERED_KEY_WARNING, serverBusy,
   type AccountStores, type Reply,
@@ -68,11 +68,20 @@ export function registerAccountTools(server: McpServer, stores: AccountStores, o
         const hold = session.keyIssuingHold();
         if (hold === undefined) return refused(serverBusy());
         guard = hold;
+        // One key-issuing call at a time per session, each settled delivered or lost before the next (turn).
+        await guard.turn();
       }
-      const reply = await op.run(stores, input, extra.requestInfo?.headers ?? {}, guard);
-      // The key just issued, by verifier only, kept by the session if its reply is not delivered.
-      if (reply.ok && guard !== undefined && typeof reply.body.key === "string") {
-        guard.issued({ verifier: digest(reply.body.key), proof: proofOf(input.key) });
+      let reply: Reply;
+      try {
+        reply = await op.run(stores, input, extra.requestInfo?.headers ?? {}, guard);
+        // A newly issued key, by verifier only, kept by the session if its reply is not delivered. A key the call
+        // presented and kept (claim_username for a released account) was delivered before: it is never recorded.
+        if (reply.ok && guard !== undefined && typeof reply.body.key === "string") {
+          const issued = { verifier: digest(reply.body.key), proof: proofOf(input.key) };
+          if (!sameProof(issued.verifier, issued.proof)) guard.issued(issued);
+        }
+      } finally {
+        guard?.finish();
       }
       if (reply.ok && typeof input.key === "string" && input.key !== "") {
         // A proven identity is used as is, so a key-issuing commit is followed directly by its reply.
@@ -84,18 +93,29 @@ export function registerAccountTools(server: McpServer, stores: AccountStores, o
   }
   server.registerTool("recover_key", { description: RECOVER_KEY_DESCRIPTION, inputSchema: RECOVER_KEY_INPUT }, async (args) => {
     const proof = proofOf((args as Record<string, unknown>).key);
-    const lost = session?.lostKey();
     // Nothing read from the store unless this session holds a lost key and this call presents the same proof.
-    if (session === undefined || lost === undefined || !sameProof(lost.proof, proof)) return refused(nothingToRecover());
+    const pending = (): LostKey | undefined => {
+      const lost = session?.lostKey();
+      return lost !== undefined && sameProof(lost.proof, proof) ? lost : undefined;
+    };
+    if (session === undefined || pending() === undefined) return refused(nothingToRecover());
     const hold = session.keyIssuingHold();
     if (hold === undefined) return refused(serverBusy());
-    const reissued = await stores.identities.reissueLostKey(lost.verifier, hold);
-    if (!reissued.ok && reissued.reason === "server_busy") return refused(serverBusy());
-    // One-shot: recovered, or no longer the identity's current key (replaced since, or expired).
-    session.clearLostKey(lost);
-    if (!reissued.ok) return refused(nothingToRecover());
-    hold.issued({ verifier: digest(reissued.value.key), proof });
-    protectProven(reissued.value.identityId);
-    return payload({ key: reissued.value.key, warning: RECOVERED_KEY_WARNING });
+    // Read again in this session's key-issuing turn: a reply delivered before it has cleared the lost key.
+    await hold.turn();
+    try {
+      const lost = pending();
+      if (lost === undefined) return refused(nothingToRecover());
+      const reissued = await stores.identities.reissueLostKey(lost.verifier, hold);
+      if (!reissued.ok && reissued.reason === "server_busy") return refused(serverBusy());
+      // One-shot: recovered, or no longer the identity's current key (replaced since, or expired).
+      session.clearLostKey(lost);
+      if (!reissued.ok) return refused(nothingToRecover());
+      hold.issued({ verifier: digest(reissued.value.key), proof });
+      protectProven(reissued.value.identityId);
+      return payload({ key: reissued.value.key, warning: RECOVERED_KEY_WARNING });
+    } finally {
+      hold.finish();
+    }
   });
 }

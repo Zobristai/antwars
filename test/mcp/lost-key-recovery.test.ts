@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerAccountTools } from "../../src/accounts/mcpTools.js";
 import { createIdentities, type Identities } from "../../src/identity/identities.js";
+import { INACTIVE_USERNAME_MS } from "../../src/identity/retention.js";
 import type { Fields, Store, Write } from "../../src/store/firestore.js";
 import type { AccountStores } from "../../src/accounts/service.js";
 import { Game } from "../../src/mcp/game.js";
@@ -59,7 +60,9 @@ function memoryStore() {
 
 async function start() {
   const { store, seen, docs } = memoryStore();
-  const identities = createIdentities(store);
+  /** How far the identity store's clock runs ahead of real time, so a test can let a username be released. */
+  const clock = { offsetMs: 0 };
+  const identities = createIdentities(store, { now: () => Date.now() + clock.offsetMs });
   /** Every key a key-issuing operation returned, in order, so a test can check an undelivered key. */
   const issued: string[] = [];
   const keep = <T>(outcome: T): T => {
@@ -100,7 +103,7 @@ async function start() {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
   const url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
-  return { url, seen, docs, identities, issued, http };
+  return { url, seen, docs, identities, issued, http, clock };
 }
 
 type World = Awaited<ReturnType<typeof start>>;
@@ -140,6 +143,19 @@ async function dropDuringCommit(world: World, sessionId: string, name: string, a
   await vi.waitFor(() => expect(world.http.inFlight).toBe(0));
   expect(world.seen.commits.length).toBe(commits + 1);
 }
+
+/** A raw tools/call on the session that the test can abort; settles "delivered" or "dropped". */
+function rawCall(world: World, sessionId: string, name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+  return fetch(world.url, {
+    method: "POST",
+    ...(signal === undefined ? {} : { signal }),
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sessionId, "mcp-protocol-version": "2025-06-18" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 901, method: "tools/call", params: { name, arguments: args } }),
+  }).then((res) => res.text()).then(() => "delivered", () => "dropped");
+}
+
+/** Let the server run whatever the requests just sent can run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 /** An owner username with one handle, from a session whose replies arrive. */
 async function owner(client: Client): Promise<{ ownerKey: string; handleKey: string }> {
@@ -287,5 +303,75 @@ describe("recovering a key whose reply was lost when the client dropped mid-comm
     expect(await works(world, second)).toBe(false);
     expect(await works(world, fresh)).toBe(true);
     expect(await world.identities.resolveKey(fresh)).toMatchObject({ ok: true, value: { displayName: "newcomer" } });
+  });
+
+  it("lets a delivered reply that overlaps recover_key clear the pending recovery before recover_key reads it", async () => {
+    const world = await start();
+    const { client, sessionId } = await session(world);
+    const keys = await owner(client);
+    await dropDuringCommit(world, sessionId, "claim_username", { name: "newcomer" });
+    const commits = world.seen.commits.length;
+
+    // create_handle reaches its commit and pauses there; recover_key arrives meanwhile.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    world.seen.onCommit = () => gate;
+    const created = call(client, "create_handle", { key: keys.ownerKey, handle: "third" });
+    await vi.waitFor(() => expect(world.seen.onCommit).toBeUndefined());
+    const recovered = call(client, "recover_key", {});
+    await settle();
+    // recover_key waits for the session's key-issuing turn: nothing else has committed.
+    expect(world.seen.commits.length).toBe(commits);
+    open();
+    expect((await created).isError).toBe(false);
+    expect((await recovered).body.error).toBe("nothing_to_recover");
+    expect(world.seen.commits.length).toBe(commits + 1);
+  });
+
+  it("decides a dropped call's key before a later overlapping call commits, so a delivered reply always wins", async () => {
+    const world = await start();
+    const { client, sessionId } = await session(world);
+    const keys = await owner(client);
+    const commits = world.seen.commits.length;
+
+    // rotate_key pauses in its commit; create_handle is sent meanwhile; then rotate_key's client drops.
+    const abort = new AbortController();
+    const cut = world.http.cut;
+    let created: Promise<{ isError: boolean }> | undefined;
+    world.seen.onCommit = async () => {
+      created = call(client, "create_handle", { key: keys.ownerKey, handle: "third" });
+      await settle();
+      // The later call waits for the session's key-issuing turn instead of committing alongside.
+      expect(world.seen.commits.length).toBe(commits);
+      abort.abort();
+      await vi.waitFor(() => expect(world.http.cut).toBe(cut + 1));
+    };
+    expect(await rawCall(world, sessionId, "rotate_key", { key: keys.handleKey }, abort.signal)).toBe("dropped");
+    await vi.waitFor(() => expect(created).toBeDefined());
+    expect((await created!).isError).toBe(false);
+    expect(world.seen.commits.length).toBe(commits + 2);
+    // The rotation's key was lost first, then the later reply was delivered: nothing is left to recover.
+    expect((await call(client, "recover_key", { key: keys.handleKey })).body.error).toBe("nothing_to_recover");
+  });
+
+  it("records nothing when a dropped claim for a released account keeps its existing, already delivered key", async () => {
+    const world = await start();
+    const { client, sessionId } = await session(world);
+    const keys = await owner(client);
+    const ownerId = (await world.identities.findByDisplayName("owner"))!.id;
+    await world.identities.recordMatchJoin(ownerId, Date.now());
+    world.clock.offsetMs = INACTIVE_USERNAME_MS + 1;
+    expect(await world.identities.findByDisplayName("owner")).toBeUndefined();
+    // Record the key's use now, so the only commit the dropped claim makes is the claim itself.
+    expect((await world.identities.resolveKey(keys.ownerKey)).ok).toBe(true);
+
+    await dropDuringCommit(world, sessionId, "claim_username", { name: "renamed", key: keys.ownerKey });
+    // The claim kept the account's key; it was not issued by this call, so it is not recoverable and stays working.
+    expect(world.issued.at(-1) === keys.ownerKey).toBe(true);
+    expect((await call(client, "recover_key", { key: keys.ownerKey })).body.error).toBe("nothing_to_recover");
+    expect((await call(client, "recover_key", {})).body.error).toBe("nothing_to_recover");
+    expect(await world.identities.resolveKey(keys.ownerKey)).toMatchObject({ ok: true, value: { id: ownerId, displayName: "renamed" } });
   });
 });

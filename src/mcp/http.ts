@@ -39,6 +39,11 @@ interface Session {
    * delivered, and with the session. A later undelivered key replaces it.
    */
   lostKey: LostKey | null;
+  /**
+   * The tail of this session's key-issuing turns (KeyIssuingHold.turn): it settles once every turn taken so far
+   * has ended, so each key-issuing call commits, and its key is decided delivered or lost, before the next begins.
+   */
+  keyTurns: Promise<void>;
 }
 
 /**
@@ -61,6 +66,12 @@ interface Hold {
   ended: boolean;
   /** The key its key-issuing call committed, decided at the response's close: delivered, or lost (Session.lostKey). */
   issued?: LostKey;
+  /** This request's key-issuing turn, once taken: resolves when the turn is this request's. */
+  turn?: Promise<void>;
+  /** Ends this request's key-issuing turn once it has both ended (its response closed) and finished its call. */
+  endTurn?: () => void;
+  /** The key-issuing call holding this request's turn has returned (KeyIssuingHold.finish). */
+  finished?: boolean;
 }
 
 /** The hold of the HTTP request whose handling is running, so a call can check its own hold and no other. */
@@ -82,6 +93,17 @@ export interface KeyIssuingHold {
    * the store's): the store launches the commit only before it and cuts the commit off at it.
    */
   readonly commitBy: number;
+  /**
+   * Wait for this request's key-issuing turn in its session, before reading a pending lost key or committing.
+   * Turns run one at a time in the order taken; a turn lasts until the request's response closes (or its handling
+   * throws), after its key is decided delivered or lost, so a delivered reply always settles before a later
+   * recover_key reads the pending lost key, and no lost key is recorded after a later reply was delivered.
+   * Calls in the same request share its one turn. The turn ends only once the response has closed and finish has
+   * been called, so a call whose client dropped mid-commit still settles its key before the next turn begins.
+   */
+  turn(): Promise<void>;
+  /** The call that took the turn has returned, issued key recorded or none issued: always called, even on a throw. */
+  finish(): void;
   /**
    * Called once the call's commit has issued a key, before its reply. If the call's response has already closed,
    * or closes before the reply finishes writing, the key is kept on the session as lost (recover_key); once the
@@ -334,6 +356,8 @@ export function createMcpHandler(
       session.holds.delete(hold);
       // A key this call issued: delivered only when its reply finished writing; otherwise it is the session's lost key.
       if (hold.issued !== undefined) session.lostKey = res.writableFinished ? null : hold.issued;
+      // Only once that is decided does the session's next key-issuing turn begin.
+      hold.endTurn?.();
     };
     res.once("close", release);
     return { hold, release };
@@ -417,6 +441,24 @@ export function createMcpHandler(
               own!.pinned = true;
               return true;
             },
+            turn() {
+              if (own!.turn !== undefined) return own!.turn;
+              const previous = session.keyTurns;
+              let end!: () => void;
+              const ended = new Promise<void>((resolve) => {
+                end = resolve;
+              });
+              session.keyTurns = previous.then(() => ended);
+              own!.turn = previous;
+              own!.endTurn = () => {
+                if (own!.ended && own!.finished === true) end();
+              };
+              return previous;
+            },
+            finish() {
+              own!.finished = true;
+              own!.endTurn?.();
+            },
             issued(lost) {
               // Its response already closed: the reply cannot be written, so the key is lost now.
               if (own!.ended) session.lostKey = lost;
@@ -429,7 +471,7 @@ export function createMcpHandler(
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           release();
-          stored = { transport, server, state, lastSeen: now(), protectedBy: null, holds: new Set(), lostKey: null };
+          stored = { transport, server, state, lastSeen: now(), protectedBy: null, holds: new Set(), lostKey: null, keyTurns: Promise.resolve() };
           sessions.set(id, stored);
         },
       });
