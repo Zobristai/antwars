@@ -54,8 +54,8 @@ describe.skipIf(!emulatorHost)("a queue-made match on a real slot server", () =>
       const get = (path: string) => fetch(origin + path, { signal: abort.signal });
       await vi.waitFor(async () => {
         const catalog = await (await get("/watch/catalog")).json();
-        // Both players by name with their first-match figures in the 1v1 mode.
-        const fresh = (displayName: string) => [{ displayName, rating: 1500, rd: 350, ratedMatches: 0 }];
+        // Both players by name with their first-match figures in the 1v1 mode, and no model label: no agent has joined.
+        const fresh = (displayName: string) => [{ displayName, modelLabel: null, rating: 1500, rd: 350, ratedMatches: 0 }];
         expect(catalog.matches).toEqual([{ lobbyId: lobby.id, startedAt: expect.any(Number), rated: true, delaySeconds: RATED_DELAY_SECONDS,
           colonies: [fresh(alice!.displayName), fresh(bob!.displayName)] }]);
         // A queue-made lobby is never offered as a lobby to join.
