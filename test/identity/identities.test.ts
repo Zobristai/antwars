@@ -185,7 +185,7 @@ describe.skipIf(!host)("identities against the Firestore emulator", () => {
     expect(await ids.holderOfVerifier(keyVerifier(scoutNext))).toBe(scout.identity.id);
   });
 
-  it("reissues a handle key with the owner key; nothing recovers a username key", async () => {
+  it("reissues a handle key with the owner key; a username key is replaced only by rotateKey or reissueLostKey", async () => {
     const namespace = freshNamespace();
     const ids = identitiesFor(namespace);
     const kay = value(await ids.claimUsername("Kite"));
@@ -202,7 +202,7 @@ describe.skipIf(!host)("identities against the Firestore emulator", () => {
     expect(await ids.reissueHandleKey(scout.key, "scout")).toEqual({ ok: false, reason: "unknown_key" });
 
     // Public identity operations, retention initialization and successful-join recording.
-    expect(Object.keys(ids).sort()).toEqual(["claimUsername", "createHandle", "findByDisplayName", "findById", "holderOfVerifier", "recordMatchJoin", "reissueHandleKey", "resolveKey", "rotateKey"]);
+    expect(Object.keys(ids).sort()).toEqual(["claimUsername", "createHandle", "findByDisplayName", "findById", "holderOfVerifier", "recordMatchJoin", "reissueHandleKey", "reissueLostKey", "resolveKey", "rotateKey"]);
   });
 
   it("lets exactly one of two simultaneous rotations of the same key succeed", { timeout: RACE_TIMEOUT }, async () => {
