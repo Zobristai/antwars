@@ -179,14 +179,21 @@ describe("the band and its cyan Refresh", () => {
     p.dispose();
   });
 
-  it("holds the challenge bubble under Refresh, its words exactly, the cyan button to the Challenge choice keeping the board", () => {
+  it("puts Loaded then Refresh on the title's line, and the challenge bubble after the board choice, its words exactly, the cyan button to the Challenge choice keeping the board", () => {
     const port = dom({ search: "?page=leaderboard&board=2d", meta: { "antwar-public-matches": "true" } });
     const dispose = mountLeaderboardPage(port.doc, port.win, { request: vi.fn(() => new Promise<Response>(() => {})) });
-    const summary = port.body.all().find(node => node.id === "aw-leaderboard-page")!.byClass("d1p-summary")[0]!;
-    const row = summary.children[2]!;
-    expect(summary.children.map(node => node.className)).toEqual(["d1p-title", "d1p-fresh", "d1p-fresh"]);
-    expect(row.hidden).toBe(false);
-    const bubble = row.children[0]!;
+    const band = port.body.all().find(node => node.id === "aw-leaderboard-page")!.byClass("d1p-band")[0]!;
+    // Two lines: the title's line, then the board choice's.
+    expect(band.children.map(node => node.className)).toEqual(["d1p-summary", "d1p-lb-strip"]);
+    const [summary, strip] = band.children as [ElementPort, ElementPort];
+    // The title, then at its line's end the time and Refresh, in that order, so Refresh holds the end.
+    expect(summary.children.map(node => node.className)).toEqual(["d1p-title", "d1p-fresh"]);
+    expect(summary.children[1]!.children.map(node => node.className)).toEqual(["d1p-loaded", "d2-pill d1p-refresh"]);
+    // The bubble right after the board choice, whose last group is Challenge.
+    expect(strip.hidden).toBe(false);
+    expect(strip.children.map(node => node.className)).toEqual(["d1p-boards", "d1-agent-button"]);
+    expect(strip.children[0]!.children.at(-1)!.byClass("d1p-kicker")[0]!.textContent).toBe("Challenge");
+    const bubble = strip.children[1]!;
     expect([bubble.tag, bubble.className, bubble.dataset.key]).toEqual(["a", "d1-agent-button", "challenge-new"]);
     // Its words wrap inside the cyan button on a narrow phone; the grey bubble's rule is gone from ui/ui.css.
     const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
@@ -201,9 +208,38 @@ describe("the band and its cyan Refresh", () => {
     const port = dom({ search: "?page=leaderboard" });
     const dispose = mountLeaderboardPage(port.doc, port.win, { request: vi.fn(() => new Promise<Response>(() => {})) });
     const root = port.body.all().find(node => node.id === "aw-leaderboard-page")!;
-    expect(root.byClass("d1p-boards")[0]!.hidden).toBe(true);
-    expect(root.all().find(node => node.dataset.key === "challenge-new")!.parentElement!.hidden).toBe(true);
+    // The board choice and the bubble share one line, which goes; the title stays, its freshness and Refresh gone.
+    const strip = root.byClass("d1p-lb-strip")[0]!;
+    expect(strip.hidden).toBe(true);
+    expect(root.byClass("d1p-boards")[0]!.parentElement === strip).toBe(true);
+    expect(root.all().find(node => node.dataset.key === "challenge-new")!.parentElement === strip).toBe(true);
+    expect(root.byClass("d1p-fresh")[0]!.hidden).toBe(true);
+    expect(root.byClass("d1p-title")[0]!.hidden).toBe(false);
     dispose();
+  });
+});
+
+describe("the Leaderboard's layout rules", () => {
+  // Style-contract checks on the source rules; the pass captures show the painted layout.
+  const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+  const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
+  it("scopes every rule for the band's board line, the Challenge list and the rating badge's tap area to the Leaderboard, so the front page, Matches and Rules are unchanged", () => {
+    const own = rules.filter(rule => /d1p-lb-strip|d1p-challenge|d1p-elo-badge::before/.test(rule));
+    expect(own.length).toBeGreaterThan(0);
+    for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
+    // The band's two lines and the tabs' spacing are the Leaderboard's own as well.
+    for (const part of [".d1p-band {", ".d1p-summary {", ".d1p-fresh {", ".d1p-boards {", ".d1p-board-group {", ".d1p-tabs {", ".d1p-tab {"]) {
+      expect(css).toContain(`.d1p[data-page="leaderboard"] ${part}`);
+    }
+  });
+  it("keeps the table's columns, resizing only the Leaderboard's rating and Rated matches columns, while the front page's card keeps its widths", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 144px); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb thead th.c-matches { white-space: nowrap; }');
+    expect(css).toContain(".d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 184px); text-align: left; }");
+    expect(css).toContain(".d1p-lb thead th.c-matches { white-space: normal; }");
+  });
+  it("draws the Challenge handle as one unit that moves to the next line whole, never breaking at its hyphens", () => {
+    expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{ display: inline-block; max-width: 100%;/);
   });
 });
 
@@ -296,6 +332,10 @@ describe("the Challenge choice", () => {
       { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
       { lines: ["GLM-5.3 Highspeedunavailable"], badges: ["unavailable"], rating: [] },
     ]);
+    // The ask is each available row's own line under its name (archive.css lays it across the row).
+    expect(p.card()!.byClass("d1p-ask").map(node => node.textContent)).toEqual([
+      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
+      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
     // A provisional rating keeps its word, as on the ranking rows.
     expect(p.items()[1]!.byClass("d1p-prov").map(node => node.textContent)).toEqual(["provisional"]);
     // No handle slug after a name, no meta line, no placeholder; the handle appears only as code in the ask.
