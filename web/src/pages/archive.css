@@ -14,7 +14,8 @@
    Layout pass: Matches' colonies take the width the other columns leave; every seat keeps its name and badges on
    one line, a colony's alike seats once with their count; one head row in both Matches tables.
    Layout pass (the Leaderboard only): its band is two lines, the title's and the board choice's, the choice a table of
-   choices on phones; its table's rating column fits the badge; the Challenge list's ratings stand in one column. */
+   choices on phones; its table's rating column fits the badge; the Challenge list's ratings stand in one column, and in
+   a 56rem card each Challenge row is one line: name, ask, rating. */
 
 .d1p {
   /* The HUD's tokens (web/index.html :root), set here as well because /rules declares its own warm ones. */
@@ -333,6 +334,22 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .c-elo)) > .is-lead { grid-column: 1 / -1; }
 .d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { grid-column: 1 / -1; }
 .d1p[data-page="leaderboard"] .d1p-challenge .aw-byoa-url { display: inline-block; max-width: 100%; padding: 1px 8px; line-height: 17px; vertical-align: baseline; }
+/* Where the card is 56rem wide (the desktop's 912 px card), every Challenge row is one line, so every row has one height
+   whether or not it carries an ask: the name, then the ask in a column of its own, each handle under the one above, then
+   the rating. The name column fits the widest name that has an ask; a row without an ask gives its name the ask's room.
+   At 1280 px: names with an ask up to 183 px, asks up to 475 px, ratings with "provisional" 129 px, 819 px with the two
+   gutters in the card's 862 px. Narrower cards keep the two lines above. The handle drops its 1 px vertical padding, so
+   its line keeps the name's 19 px. */
+@container d1p-card (width >= 56rem) {
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { grid-template-columns: max-content minmax(0, 1fr) auto; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li:has(> .d1p-ask) > .is-lead { grid-column: 1; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .d1p-ask)) > .is-lead { grid-column: 1 / 3; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> :is(.d1p-ask, .c-elo))) > .is-lead { grid-column: 1 / -1; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li > .d1p-ask { grid-column: 2; grid-row: 1; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .c-elo)) > .d1p-ask { grid-column: 2 / -1; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { grid-column: 3; }
+  .d1p[data-page="leaderboard"] .d1p-challenge .aw-byoa-url { padding-block: 0; }
+}
 
 /* ---------------------------------------------------------------- Rules: a sticky index beside two reading cards */
 /* The container splits: the index, the gap, the reading cards taking the rest. */
