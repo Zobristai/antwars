@@ -6,7 +6,7 @@ import type { AccountStores } from "../../src/accounts/service.ts";
 import { WAIT_STREAM_LIMITS, waitStreamRoutes, type WaitStreamOptions } from "../../src/accounts/waitStream.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createLobbies, type Lobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
-import { expiryField, seatKeyPath, startWaitSweep, WAIT_GRACE_MS, WAIT_SWEEP_INTERVAL_MS, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
+import { expiryField, seatKeyPath, startWaitSweep, WAIT_GRACE_MS, WAIT_SWEEP_INTERVAL_MS, waitIndexPath, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
@@ -172,15 +172,64 @@ describe("the wait stream route", () => {
     expect(await open(256)).toEqual({ status: 503, retryAfter: "1" });
   });
 
-  it("answers a first read slower than its timeout with the retryable 503 and frees its place", async () => {
+  /** A waitStatus whose first `hung` reads never settle until settle() is called; later reads answer `then`. */
+  function hanging(hung: number, then: WaitState) {
     let reads = 0;
-    const slowFirst: Lobbies["waitStatus"] = () => (reads++ === 0 ? new Promise<WaitState | null>(() => {}) : Promise.resolve({ state: "slot_ready", startsAt: 5 }));
-    const port = await streamServer(slowFirst, { limits: { max: 1 }, firstReadMs: 100 });
+    const pending: (() => void)[] = [];
+    const status: Lobbies["waitStatus"] = () => {
+      if (reads++ >= hung) return Promise.resolve(then);
+      return new Promise<WaitState | null>((resolve) => { pending.push(() => resolve(WAITING_QUEUE)); });
+    };
+    return { status, reads: () => reads, settle: () => { for (const done of pending.splice(0)) done(); } };
+  }
+
+  async function fetchFrom(port: number, source: string): Promise<{ status: number; retryAfter: string | null }> {
+    const res = await fetch(`http://127.0.0.1:${port}/wait/${TOKEN}`, { headers: { "x-forwarded-for": source } });
+    await res.text();
+    return { status: res.status, retryAfter: res.headers.get("retry-after") };
+  }
+
+  it("answers a first read slower than its timeout with the retryable 503, but keeps its place on both caps until the read settles", async () => {
+    const slot: WaitState = { state: "slot_ready", startsAt: 5 };
+    const reads = hanging(2, slot);
+    const port = await streamServer(reads.status, { limits: { max: 2, perSource: 1 }, firstReadMs: 100 });
     const started = Date.now();
-    const slow = await read(port, TOKEN);
-    expect([slow.status, slow.headers.get("retry-after"), Date.now() - started < 1_000]).toEqual([503, "1", true]);
-    // With one place, a 200 now shows the timed-out request released it.
-    expect((await read(port, TOKEN)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: 5 } }]);
+    expect(await fetchFrom(port, "10.0.0.1")).toEqual({ status: 503, retryAfter: "1" });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    // The timed-out read never settled, so its source is still at its bound: refused without a read.
+    expect(await fetchFrom(port, "10.0.0.1")).toEqual({ status: 503, retryAfter: "1" });
+    expect(reads.reads()).toBe(1);
+    // Another source takes the second place; its read also times out and keeps that place.
+    expect(await fetchFrom(port, "10.0.0.2")).toEqual({ status: 503, retryAfter: "1" });
+    expect(reads.reads()).toBe(2);
+    // Both places are held by reads still running, so a third source is refused by the overall cap without a read.
+    expect(await fetchFrom(port, "10.0.0.3")).toEqual({ status: 503, retryAfter: "1" });
+    expect(reads.reads()).toBe(2);
+    reads.settle();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Once the reads settle, the places are free again.
+    expect((await read(port, TOKEN)).frames).toEqual([{ event: "slot_ready", data: slot }]);
+    expect(await fetchFrom(port, "10.0.0.1")).toEqual({ status: 200, retryAfter: null });
+  });
+
+  it("keeps a departed client's place until its running re-read settles", async () => {
+    let reads = 0;
+    let settle: () => void = () => {};
+    const status: Lobbies["waitStatus"] = () => {
+      reads += 1;
+      if (reads === 2) return new Promise<WaitState | null>((resolve) => { settle = () => resolve(WAITING_QUEUE); });
+      return Promise.resolve(reads === 1 ? WAITING_QUEUE : { state: "expired", reason: "ended" });
+    };
+    const port = await streamServer(status, { limits: { max: 1 }, pollMs: 20 });
+    // Disconnects once its re-read is running.
+    const left = await read(port, TOKEN, 200);
+    expect([left.ended, reads]).toEqual([false, 2]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await read(port, TOKEN)).status).toBe(503);
+    expect(reads).toBe(2);
+    settle();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await read(port, TOKEN)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "ended" } }]);
   });
 
   it("counts the life bound from admission, so a slow first read does not extend it", async () => {
@@ -388,11 +437,12 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     // a grace after that read.
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
     const stored = { kind: "lobby", lobbyId: queue.lobbyId, paired: "true", identityId: ann.id, joinedAt: "" };
-    expect(await w.store.get(`waits/${annToken}`)).toEqual({ ...stored, expiresAt: expect.any(String) });
+    // A racing read that found slot_ready also marked it final.
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ ...stored, expiresAt: expect.any(String) });
     expect([expiryField(lobby.expiresAt + WAIT_GRACE_MS), expiryField(w.clock.t + WAIT_GRACE_MS)]).toContain((await w.store.get(`waits/${annToken}`))!.expiresAt);
     // Read final (slot_ready), it expires a grace after that read; a later read never raises it again.
     expect((await w.lobbies.waitStatus(annToken))!.state).toBe("slot_ready");
-    expect(await w.store.get(`waits/${annToken}`)).toEqual({ ...stored, expiresAt: expiryField(w.clock.t + WAIT_GRACE_MS) });
+    expect(await w.store.get(`waits/${annToken}`)).toEqual({ ...stored, final: "true", expiresAt: expiryField(w.clock.t + WAIT_GRACE_MS) });
     // Polling reads the matched entry exactly as before.
     expect((await w.ok("queue_status", { key: ann.key })).queue).toEqual(queue);
   });
@@ -470,35 +520,78 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await read(w.fast, token)).status).toBe(404);
   });
 
-  it("repeated joins by one identity keep only the waits left within one grace plus the live one, and the sweep removes only expired records", async () => {
+  it("join/leave churn by one identity across the queue and different lobbies, and repeated challenges, keeps a constant record count with no sweep", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann");
+    const cast = await houseCast(w.identities, w.store, 0);
+    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    const builder = await w.claim("builder");
+    const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 200 })).rows.map((row) => row.path).sort();
+    const sets: string[][] = [];
+    // The test clock moves 1 ms a round, so no record nears its expiry, and no sweep is run.
+    for (let n = 0; n < 4; n++) {
+      const queued = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+      await w.ok("leave_queue", { key: ann.key });
+      const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 1));
+      const seated = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+      await w.ok("leave_lobby", { key: ann.key, lobbyId: lobby.id });
+      const challenge = n < 3 ? await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" }) : null;
+      if (challenge) await w.ok("leave_lobby", { key: builder.key, lobbyId: challenge.lobbyId });
+      w.clock.t += 1;
+      const now = await records();
+      sets.push(now);
+      // Each identity keeps its latest record of each kind, ended and in its grace, and one index per kind; the left
+      // lobby's seat keys are gone.
+      expect(now).toContain(`waits/${queued}`);
+      expect(now).toContain(`waits/${seated}`);
+      if (challenge) expect(now).toContain(`waits/${tokenOf(challenge)}`);
+    }
+    expect(sets.map((set) => set.length)).toEqual([6, 6, 6, 6]);
+    expect(sets.at(-1)!.filter((path) => path.includes("/mine_"))).toEqual(
+      [waitIndexPath("queue", ann.id), waitIndexPath("lobby", ann.id), waitIndexPath("challenge", builder.id)].sort(),
+    );
+  });
+
+  it("the sweep removes only expired records: an unread queue token and its index past their limit plus grace, while a live lobby wait, its key and index stay", async () => {
     const w = await world();
     const ann = await w.claim("Ann"), bob = await w.claim("Bob");
     const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 100 })).rows.map((row) => row.path);
     let token = "";
-    // Each left wait is kept, read ended, for the grace after its leave, then swept: the count is bounded by leaves in one grace.
-    const leftTokens: string[] = [];
-    for (let n = 0; n < 5; n++) {
-      token = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
-      await w.ok("leave_queue", { key: ann.key });
-      leftTokens.push(token);
-      w.clock.t += 1;
-    }
-    expect((await records()).sort()).toEqual(leftTokens.map((t) => `waits/${t}`).sort());
-    w.clock.t += WAIT_GRACE_MS;
-    expect(await w.lobbies.sweepWaits()).toBe(5);
-    expect(await records()).toEqual([]);
     for (let n = 0; n < 5; n++) {
       token = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
       w.clock.t += 12 * HOUR; // the entry expires unread; the next join replaces it
     }
-    expect(await records()).toEqual([`waits/${token}`]);
+    expect((await records()).sort()).toEqual([`waits/${token}`, waitIndexPath("queue", ann.id)].sort());
 
     // Ann's last token, never read, passes its limit plus grace; Bob's lobby wait (and its seat key) is live; the sweep runs with no join.
     const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 1));
     const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
     w.clock.t += WAIT_GRACE_MS;
-    expect(await w.lobbies.sweepWaits()).toBe(1);
-    expect((await records()).sort()).toEqual([`waits/${bobToken}`, seatKeyPath(lobby.id, bob.id)].sort());
+    expect(await w.lobbies.sweepWaits()).toBe(2);
+    expect((await records()).sort()).toEqual([`waits/${bobToken}`, seatKeyPath(lobby.id, bob.id), waitIndexPath("lobby", bob.id)].sort());
+  });
+
+  it("an identity seated in two open lobbies joins a third: both earlier live tokens are kept and still reach slot_ready or expired", async () => {
+    const w = await world();
+    const [ann, b, c, d] = await Promise.all(["Ann", "B2", "C2", "D2"].map((name) => w.claim(name)));
+    const { lobby: first } = value(await w.lobbies.createLobby(b!.key, "public", 1));
+    const { lobby: second } = value(await w.lobbies.createLobby(c!.key, "public", 1));
+    const { lobby: third } = value(await w.lobbies.createLobby(d!.key, "public", 1));
+    const firstToken = tokenOf(await w.ok("join_lobby", { key: ann!.key, lobbyId: first.id }));
+    const secondToken = tokenOf(await w.ok("join_lobby", { key: ann!.key, lobbyId: second.id }));
+    const kept = [await w.store.get(`waits/${firstToken}`), await w.store.get(`waits/${secondToken}`)];
+    const thirdToken = tokenOf(await w.ok("join_lobby", { key: ann!.key, lobbyId: third.id }));
+    expect([await w.store.get(`waits/${firstToken}`), await w.store.get(`waits/${secondToken}`)]).toEqual(kept);
+    expect((await w.store.get(waitIndexPath("lobby", ann!.id)))?.tokens.split(" ").sort()).toEqual([firstToken, secondToken, thirdToken].sort());
+
+    // The first lobby fills and takes the public slot: its earlier token reaches slot_ready.
+    await w.ok("join_lobby", { key: b!.key, lobbyId: first.id });
+    const filled = value(await w.lobbies.readLobby(first.id));
+    expect(filled.state).toBe("holding");
+    expect((await read(w.fast, firstToken)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: filled.startsAt } }]);
+    // The second stays open past its 12 hours: its earlier token reaches expired.
+    w.clock.t += 12 * HOUR;
+    expect((await read(w.fast, secondToken)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "time_limit" } }]);
   });
 
   it("a paired queue token never read before its identity rejoins still follows the paired lobby", async () => {
@@ -575,10 +668,11 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     w.clock.t += 1;
     expect(await w.lobbies.sweepWaits()).toBe(40);
     const keys = [seatKeyPath(lobby.id, bob.id), seatKeyPath(challengeLobbyId, builder.id)];
-    expect((await records()).sort()).toEqual([`waits/${seated}`, `waits/${challenger}`, `waits/${queued}`, ...keys].sort());
+    const indexes = [waitIndexPath("lobby", bob.id), waitIndexPath("challenge", builder.id), waitIndexPath("queue", ann.id)];
+    expect((await records()).sort()).toEqual([`waits/${seated}`, `waits/${challenger}`, `waits/${queued}`, ...keys, ...indexes].sort());
     // Every wait's own limit plus grace passes with no join at all.
     w.clock.t += 12 * HOUR + WAIT_GRACE_MS;
-    expect(await w.lobbies.sweepWaits()).toBe(5);
+    expect(await w.lobbies.sweepWaits()).toBe(8);
     expect(await records()).toEqual([]);
   });
 

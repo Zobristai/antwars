@@ -22,8 +22,10 @@ import { clientSource } from "../server/clientSource.js";
  * Bounds: behind an HTTP/1 frontend a departed client may never be seen leaving (see RELAY_MAX_MS,
  * src/live/watch-routes.ts), so each stream ends maxMs after its admission without a final event, telling the client to
  * reconnect after RETRY_MS; and open streams are capped, overall and per client source, past which a request gets the
- * retryable 503. A first read that fails, or takes longer than firstReadMs, is the retryable 503 and frees its place; a
- * failed re-read ends the stream without a final event. An unknown or malformed token is 404.
+ * retryable 503. A place is given back only once the response has closed and no store read of that stream is still
+ * running: the store client cannot cancel a read, so a read outliving its response still counts against both caps
+ * until it settles. A first read that fails, or takes longer than firstReadMs, is the retryable 503; a failed re-read
+ * ends the stream without a final event. An unknown or malformed token is 404.
  */
 
 /** How often an open stream re-reads its wait. */
@@ -81,8 +83,22 @@ export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: 
       return;
     }
     const token = match[1]!;
-    // The place is held from before the first read until the response closes, and the life bound counts from here.
-    if (!streams.admit(res, clientSource(req.headers))) return;
+    // The place is held from before the first read until the response has closed and no read of this stream is still
+    // running, and the life bound counts from here.
+    if (res.destroyed) return;
+    const release = streams.take(clientSource(req.headers));
+    if (release === null) { refuseBusy(res); return; }
+    let closed = false;
+    let reading = 0;
+    const releaseIfIdle = () => { if (closed && reading === 0) release(); };
+    res.once("close", () => { closed = true; releaseIfIdle(); });
+    const readWait = (): Promise<WaitState | null> => {
+      reading += 1;
+      const pending = lobbies.waitStatus(token);
+      const settled = () => { reading -= 1; releaseIfIdle(); };
+      pending.then(settled, settled);
+      return pending;
+    };
     let poll: NodeJS.Timeout | undefined;
     let firstRead: NodeJS.Timeout | undefined;
     let done = false;
@@ -98,7 +114,7 @@ export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: 
     let first: WaitState | null;
     try {
       first = await Promise.race([
-        lobbies.waitStatus(token),
+        readWait(),
         new Promise<never>((_, reject) => { firstRead = setTimeout(() => reject(new Error("wait first read timed out")), firstReadMs); }),
       ]);
     } catch (cause) {
@@ -121,7 +137,7 @@ export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: 
     const tick = async () => {
       let wait: WaitState | null;
       try {
-        wait = await lobbies.waitStatus(token);
+        wait = await readWait();
       } catch (cause) {
         if (done) return;
         logUnavailable(req.method, ROUTE_CLASS, cause);

@@ -17,6 +17,14 @@ import type { Lobby } from "./lobbies.js";
  *   waits/seat_{lobbyId}_{identityId}  { token, expiresAt }  the lobby wait that identity holds on that lobby, written
  *                  with every lobby wait record and re-point (lobbyWaitWrites, repointWrites), with its expiresAt, so a
  *                  leave can find exactly the leaver's token (Lobbies.leave). Never a token: isWaitToken refuses its id.
+ *   waits/mine_{kind}_{identityId}  { tokens, expiresAt }  the identity's wait records of one kind (queue, lobby or
+ *                  challenge; a challenger's lobby wait is kind challenge here), space-separated, read by exact path, so a
+ *                  join finds its identity's earlier records without a field query (WaitIndexes). Rewritten in the
+ *                  transaction that adds or prunes an entry, with an expiresAt no earlier than any listed record's.
+ * Records per identity are bounded by its joins, not by the sweep: join_queue removes the identity's previous queue
+ * record and request_challenge its previous challenge record, live or ended (replacedWaitWrites); join_lobby and
+ * join_queue remove its lobby records that have ended (left, read final, or past expiry) and keep the live ones, so its
+ * lobby records number the seats it holds plus the ones ended since its last join (prunedLobbyWaitWrites).
  * A lobby wait whose identity left the lobby is marked ended: "true" and reads expired: ended from then on.
  * expiresAt (expiryField) is the wait's own limit plus WAIT_GRACE_MS. Once the wait is read final it is lowered to that
  * read plus WAIT_GRACE_MS, so a reconnect within the grace still learns the outcome; the server's timed sweep
@@ -101,14 +109,147 @@ async function seatKeyWrite(read: TransactionRead, lobbyId: string, identityId: 
   return { op: existing ? "update" : "create", path, fields: { token, expiresAt: expiryField(limit + WAIT_GRACE_MS) } };
 }
 
-/** A new lobby wait record and its seat key, in the caller's transaction; limit is the lobby's own limit. */
-export async function lobbyWaitWrites(read: TransactionRead, token: string, lobbyId: string, identityId: string, limit: number): Promise<Write[]> {
+/** Which per-identity index lists a record (waits/mine_{kind}_{identityId} above). */
+export type WaitIndexKind = "queue" | "lobby" | "challenge";
+
+export const waitIndexPath = (kind: WaitIndexKind, identityId: string): string => `waits/mine_${kind}_${identityId}`;
+
+/**
+ * One transaction's edits to identities' wait indexes, collected so each index document is written at most once, by
+ * writes(), after every other wait write of the transaction is decided.
+ */
+export interface WaitIndexes {
+  /** The tokens an index lists as stored, before this transaction's edits. */
+  stored(kind: WaitIndexKind, identityId: string): Promise<readonly string[]>;
+  /** Lists token, whose record expires at expiresAt (ms). */
+  add(kind: WaitIndexKind, identityId: string, token: string, expiresAt: number): void;
+  /** Stops listing token. */
+  remove(kind: WaitIndexKind, identityId: string, token: string): void;
+  /**
+   * The write for each edited index: its listed tokens, and an expiresAt no earlier than the latest of its records' (an
+   * added record's, or the stored index's own while a stored token stays listed); an index left empty is deleted.
+   */
+  writes(): Promise<Write[]>;
+}
+
+export function waitIndexes(read: TransactionRead): WaitIndexes {
+  const edits = new Map<string, { added: Map<string, number>; removed: Set<string> }>();
+  const docOf = async (path: string) => (await read([path])).get(path) ?? null;
+  const listed = (doc: Fields | null): string[] => (doc?.tokens ? doc.tokens.split(" ").filter(isWaitToken) : []);
+  const editOf = (path: string) => {
+    let edit = edits.get(path);
+    if (!edit) edits.set(path, edit = { added: new Map(), removed: new Set() });
+    return edit;
+  };
+  return {
+    stored: async (kind, identityId) => listed(await docOf(waitIndexPath(kind, identityId))),
+    add(kind, identityId, token, expiresAt) {
+      const edit = editOf(waitIndexPath(kind, identityId));
+      edit.removed.delete(token);
+      edit.added.set(token, Math.max(expiresAt, edit.added.get(token) ?? 0));
+    },
+    remove(kind, identityId, token) {
+      const edit = editOf(waitIndexPath(kind, identityId));
+      edit.added.delete(token);
+      edit.removed.add(token);
+    },
+    async writes() {
+      const writes: Write[] = [];
+      for (const [path, { added, removed }] of edits) {
+        const doc = await docOf(path);
+        const kept = listed(doc).filter((token) => !removed.has(token) && !added.has(token));
+        const tokens = [...kept, ...added.keys()];
+        if (tokens.length === 0) {
+          if (doc) writes.push({ op: "delete", path });
+          continue;
+        }
+        const expiresAt = Math.max(0, ...added.values(), kept.length > 0 && doc?.expiresAt !== undefined ? Number(doc.expiresAt) : 0);
+        const fields = { tokens: tokens.join(" "), expiresAt: expiryField(expiresAt) };
+        if (doc && doc.tokens === fields.tokens && doc.expiresAt === fields.expiresAt) continue;
+        writes.push({ op: doc ? "update" : "create", path, fields });
+      }
+      return writes;
+    },
+  };
+}
+
+/**
+ * A new lobby wait record and its seat key, in the caller's transaction, listed in its identity's index of `kind`
+ * (lobby for join_lobby, challenge for a challenger's); limit is the lobby's own limit.
+ */
+export async function lobbyWaitWrites(
+  read: TransactionRead, indexes: WaitIndexes, token: string, lobbyId: string, identityId: string, limit: number, kind: "lobby" | "challenge" = "lobby",
+): Promise<Write[]> {
+  indexes.add(kind, identityId, token, limit + WAIT_GRACE_MS);
   return [waitWrite(token, { kind: "lobby", lobbyId, identityId }, limit), await seatKeyWrite(read, lobbyId, identityId, token, limit)];
 }
 
-/** repointWrite and the re-pointed wait's seat key, in the caller's transaction. */
-export async function repointWrites(read: TransactionRead, token: string, lobbyId: string, identityId: string, lobbyLimit: number, paired: "true" | "unread" = "true"): Promise<Write[]> {
+/** A new queue wait record, listed in its identity's queue index; limit is the entry's own limit. */
+export function queueWaitWrite(indexes: WaitIndexes, token: string, identityId: string, joinedAt: number, limit: number): Write {
+  indexes.add("queue", identityId, token, limit + WAIT_GRACE_MS);
+  return waitWrite(token, { kind: "queue", identityId, joinedAt: String(joinedAt) }, limit);
+}
+
+/**
+ * repointWrite and the re-pointed wait's seat key, in the caller's transaction; the token moves from its identity's queue
+ * index to its lobby index, with the lobby's limit.
+ */
+export async function repointWrites(
+  read: TransactionRead, indexes: WaitIndexes, token: string, lobbyId: string, identityId: string, lobbyLimit: number, paired: "true" | "unread" = "true",
+): Promise<Write[]> {
+  indexes.remove("queue", identityId, token);
+  indexes.add("lobby", identityId, token, lobbyLimit + WAIT_GRACE_MS);
   return [repointWrite(token, lobbyId, identityId, lobbyLimit, paired), await seatKeyWrite(read, lobbyId, identityId, token, lobbyLimit)];
+}
+
+/** Deletes a record and, while its seat key still names it, that key; keepKey is a key this transaction writes itself. */
+async function deleteWaitWrites(read: TransactionRead, token: string, record: Fields, keepKey?: string): Promise<Write[]> {
+  const writes: Write[] = [{ op: "delete", path: waitPath(token) }];
+  if (record.kind !== "lobby" || !record.lobbyId || !record.identityId) return writes;
+  const keyPath = seatKeyPath(record.lobbyId, record.identityId);
+  if (keyPath === keepKey) return writes;
+  if ((await read([keyPath])).get(keyPath)?.token === token) writes.push({ op: "delete", path: keyPath });
+  return writes;
+}
+
+/**
+ * A join of `kind` by identityId replaces the identity's previous record of that kind, live or ended, in the caller's
+ * transaction: each token its index lists is unlisted and its record deleted (with its seat key while the key names it).
+ * A listed queue token whose record is no longer kind queue was re-pointed to a lobby and is only unlisted: its lobby
+ * index holds it now. handled names records this transaction already writes, which are only unlisted.
+ */
+export async function replacedWaitWrites(
+  read: TransactionRead, indexes: WaitIndexes, kind: "queue" | "challenge", identityId: string, handled: ReadonlySet<string> = new Set(),
+): Promise<Write[]> {
+  const writes: Write[] = [];
+  for (const token of await indexes.stored(kind, identityId)) {
+    indexes.remove(kind, identityId, token);
+    if (handled.has(token)) continue;
+    const record = (await read([waitPath(token)])).get(waitPath(token));
+    if (!record || (kind === "queue" && record.kind !== "queue")) continue;
+    writes.push(...(await deleteWaitWrites(read, token, record)));
+  }
+  return writes;
+}
+
+/**
+ * A join by identityId removes the identity's lobby records that have ended, in the caller's transaction: left (ended),
+ * read final (final), or past expiry; each is deleted with its seat key while the key names it, and unlisted. Live lobby
+ * waits, on lobbies it still sits in, are kept. keepKey: the seat key this transaction writes for the join itself.
+ */
+export async function prunedLobbyWaitWrites(read: TransactionRead, indexes: WaitIndexes, identityId: string, at: number, keepKey?: string): Promise<Write[]> {
+  const writes: Write[] = [];
+  for (const token of await indexes.stored("lobby", identityId)) {
+    const record = (await read([waitPath(token)])).get(waitPath(token));
+    if (!record || record.kind !== "lobby") {
+      indexes.remove("lobby", identityId, token);
+      continue;
+    }
+    if (record.ended !== "true" && record.final !== "true" && !isPast(record.expiresAt, at)) continue;
+    indexes.remove("lobby", identityId, token);
+    writes.push(...(await deleteWaitWrites(read, token, record, keepKey)));
+  }
+  return writes;
 }
 
 /**
@@ -142,11 +283,15 @@ export function endedWrite(token: string, record: Fields | null | undefined, at:
 }
 
 /**
- * The writes ending a lobby wait read final at `at`, in the caller's transaction: its record lowered as endedWrite does,
- * and its seat key lowered to the same expiry, only while that key still names this token.
+ * The writes ending a lobby wait read final at `at`, in the caller's transaction: its record marked final (so its
+ * identity's next join removes it) and lowered as endedWrite does, and its seat key lowered to the same expiry, only while
+ * that key still names this token.
  */
 export async function endedLobbyWaitWrites(read: TransactionRead, token: string, record: Fields, at: number): Promise<Write[]> {
-  const writes = endedWrite(token, record, at);
+  const lowered = endedWrite(token, record, at)[0];
+  const writes: Write[] = record.final === "true"
+    ? (lowered ? [lowered] : [])
+    : [{ op: "update", path: waitPath(token), fields: { final: "true", ...(lowered?.op === "update" ? lowered.fields : {}) } }];
   if (!record.lobbyId || !record.identityId) return writes;
   const keyPath = seatKeyPath(record.lobbyId, record.identityId);
   const key = (await read([keyPath])).get(keyPath);

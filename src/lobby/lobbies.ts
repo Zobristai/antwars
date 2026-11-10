@@ -8,7 +8,10 @@ import type { Fields, Store, TransactionRead, Write } from "../store/firestore.j
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
-import { endedLobbyWaitWrites, endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, repointWrites, sweepAllExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
+import {
+  endedLobbyWaitWrites, endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
+  replacedWaitWrites, repointWrites, seatKeyPath, sweepAllExpiredWaits, waitIndexes, waitPath, withPairedLobby, type WaitIndexes, type WaitState,
+} from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -739,7 +742,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const state = queueWait(entry, wait.joinedAt, at);
       if (state.state !== "paired") return { result: { state }, writes: isFinal(state) ? endedWrite(token, wait, at) : [] };
       const lobby = (await read([lobbyPath(state.lobbyId)])).get(lobbyPath(state.lobbyId));
-      return { result: { state }, writes: await repointWrites(read, token, state.lobbyId, wait.identityId, lobby ? lobbyLimit(lobby) : at) };
+      const indexes = waitIndexes(read);
+      const writes = await repointWrites(read, indexes, token, state.lobbyId, wait.identityId, lobby ? lobbyLimit(lobby) : at);
+      return { result: { state }, writes: [...writes, ...(await indexes.writes())] };
     });
   }
 
@@ -750,7 +755,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
    * transaction that re-points), so its next read reports paired once, then follows the lobby. Any other could only read ended: a replaced one is deleted, a left one is kept until a grace after
    * the leave (endedWrite) so a reconnect learns expired: ended, then swept.
    */
-  async function replacedQueueWait(read: TransactionRead, identityId: string, at: number, how: "replaced" | "left" = "replaced"): Promise<Write[]> {
+  async function replacedQueueWait(read: TransactionRead, indexes: WaitIndexes, identityId: string, at: number, how: "replaced" | "left" = "replaced"): Promise<Write[]> {
     const entry = (await read([queueEntryPath(identityId)])).get(queueEntryPath(identityId));
     const token = entry?.waitToken;
     if (!entry || !token || !isWaitToken(token)) return [];
@@ -758,10 +763,21 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     if (wait?.kind !== "queue" || wait.joinedAt !== entry.joinedAt) return [];
     if (entry.state === "matched" && entry.lobbyId) {
       const lobby = (await read([lobbyPath(entry.lobbyId)])).get(lobbyPath(entry.lobbyId));
-      return repointWrites(read, token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at, "unread");
+      return repointWrites(read, indexes, token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at, "unread");
     }
     // A left wait stays readable as ended for the grace, so a stream cut before the leave learns it on reconnect.
     return how === "left" ? endedWrite(token, wait, at) : [{ op: "delete", path: waitPath(token) }];
+  }
+
+  /**
+   * join_lobby's wait: its record and seat key, listed in the identity's lobby index, with the identity's ended lobby
+   * records removed and its live ones, on lobbies it still sits in, kept (src/lobby/waits.ts).
+   */
+  async function joinedLobbyWaitWrites(read: TransactionRead, token: string, lobbyId: string, identityId: string, limit: number, at: number): Promise<Write[]> {
+    const indexes = waitIndexes(read);
+    const pruned = await prunedLobbyWaitWrites(read, indexes, identityId, at, seatKeyPath(lobbyId, identityId));
+    const created = await lobbyWaitWrites(read, indexes, token, lobbyId, identityId, limit);
+    return [...pruned, ...created, ...(await indexes.writes())];
   }
 
   /** A lobby wait's state, with the paired lobby's id when the token was re-pointed from a queue pairing. */
@@ -901,7 +917,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const colony: Colony = chosen ?? (seated(0) <= seated(1) ? 0 : 1);
         if (fields.heldFor && colony === HELD_COLONY && !holder) return { result: refuse("seat_held"), writes: [] };
         const next = [...seats, { id: joiner.id, displayName: joiner.displayName, colony }];
-        const wait: Write[] = waitToken === undefined ? [] : await lobbyWaitWrites(read, waitToken, lobbyId, joiner.id, lobbyLimit(fields));
+        const wait: Write[] = waitToken === undefined ? [] : await joinedLobbyWaitWrites(read, waitToken, lobbyId, joiner.id, lobbyLimit(fields), at);
         if (next.length === capacity(lobbyId, fields)) {
           const started = await start(read, lobbyId, fields, next, at);
           return { result: ok(started.lobby), writes: [...started.writes, ...wait] };
@@ -1099,11 +1115,19 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!joiner) return refuse("unknown_key");
       return store.transaction(async (read) => {
         const at = now();
-        const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, waitToken);
+        const indexes = waitIndexes(read);
+        const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, indexes, waitToken);
         if (!step.result.ok) return step;
-        const writes = [...step.writes, ...(await replacedQueueWait(read, joiner.id, at))];
-        if (waitToken !== undefined) writes.push(waitWrite(waitToken, { kind: "queue", identityId: joiner.id, joinedAt: String(at) }, at + queueTtl(mode)));
-        return { result: step.result, writes };
+        const replaced = await replacedQueueWait(read, indexes, joiner.id, at);
+        const writes = [...step.writes, ...replaced];
+        if (waitToken !== undefined) {
+          // The identity's previous queue record goes, live or left (unless replacedQueueWait already wrote it), and so do
+          // its ended lobby records, so a queue-only player's finished pairings are removed by its next join.
+          const handled = new Set(replaced.flatMap((write) => write.path.startsWith("waits/") ? [write.path.slice("waits/".length)] : []));
+          writes.push(...(await replacedWaitWrites(read, indexes, "queue", joiner.id, handled)), ...(await prunedLobbyWaitWrites(read, indexes, joiner.id, at)));
+          writes.push(queueWaitWrite(indexes, waitToken, joiner.id, at, at + queueTtl(mode)));
+        }
+        return { result: step.result, writes: [...writes, ...(await indexes.writes())] };
       });
     },
 
@@ -1141,7 +1165,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const at = now();
         const step = await leaveQueueStep(read, identity.id, at);
         // Only a live waiting entry is left (deleted); its join's wait is kept, read ended, until a grace after now.
-        return step.writes.length === 0 ? step : { result: step.result, writes: [...step.writes, ...(await replacedQueueWait(read, identity.id, at, "left"))] };
+        // A waiting entry's wait is never re-pointed here, so no index changes.
+        return step.writes.length === 0 ? step : { result: step.result, writes: [...step.writes, ...(await replacedQueueWait(read, waitIndexes(read), identity.id, at, "left"))] };
       });
     },
 

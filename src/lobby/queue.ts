@@ -2,7 +2,7 @@ import { isHouseOwned } from "../identity/houseOwnership.js";
 import { isRankedMode, type RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
-import { isWaitToken, repointWrites, waitPath, type WaitState } from "./waits.js";
+import { isWaitToken, repointWrites, waitPath, type WaitIndexes, type WaitState } from "./waits.js";
 
 /**
  * The ranked matchmaking queue, as transaction steps that
@@ -93,9 +93,12 @@ async function statusOf(read: TransactionRead, entry: Fields | null, at: number)
   return at < expiresAt ? { state: "waiting", mode, joinedAt, expiresAt } : { state: "expired", mode, expiresAt };
 }
 
-/** waitToken: the join's waiting token (src/lobby/waits.ts), kept on the entry so a later join or leave can remove its wait. */
+/**
+ * waitToken: the join's waiting token (src/lobby/waits.ts), kept on the entry so a later join or leave can remove its wait;
+ * indexes: the transaction's wait index edits, which a re-pointed partner's token moves through.
+ */
 export async function joinQueueStep(
-  read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites, waitToken = "",
+  read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites, indexes: WaitIndexes, waitToken = "",
 ): Promise<Step> {
   const table = isRankedMode(mode) ? QUEUE_MODES[mode] : undefined;
   if (!isRankedMode(mode) || !table) return { result: { ok: false, reason: "invalid_mode" }, writes: [] };
@@ -146,7 +149,7 @@ export async function joinQueueStep(
   const partnerToken = candidateDocs.get(entryPath(pick))?.waitToken;
   const partnerWait = partnerToken && isWaitToken(partnerToken) ? (await read([waitPath(partnerToken)])).get(waitPath(partnerToken)) : null;
   const partnerRepoint: Write[] = partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt
-    ? await repointWrites(read, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")
+    ? await repointWrites(read, indexes, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")
     : [];
   return {
     result: { ok: true, value: { state: "matched", mode, lobbyId, matchedAt: at } },
