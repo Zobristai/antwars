@@ -113,6 +113,8 @@ export interface ChallengeLobbyRules {
   readonly lobbyTtlMs: number;
   readonly now: () => number;
   readonly scanPageSize: number;
+  /** How far back the seated-elsewhere scan reads recent lobbies: a player lobby's lifetime (lobbies.ts LOBBY_TTL_MS). */
+  readonly scanLookbackMs: number;
   /** lobbies.ts isExpired: an open or waiting player-created lobby at or after its expiry. */
   isExpired(fields: Fields, at: number): boolean;
   /** The slot documents of both kinds, as slots/{kind}-{n}. */
@@ -247,8 +249,10 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     ])];
     const lobbies = named.length > 0 ? await read(named.map(lobbyPath)) : new Map<string, Fields | null>();
     if (named.some((id) => seated(lobbies.get(lobbyPath(id))))) return true;
-    // Every other live lobby was created after the cutoff: an older open or waiting player lobby has expired.
-    const cutoff = at - rules.lobbyTtlMs;
+    // Every other live lobby was created after the cutoff: an open or waiting player lobby expires exactly
+    // scanLookbackMs (LOBBY_TTL_MS, 12 hours) after creation, not the challenge lifetime lobbyTtlMs. No countdown margin
+    // is needed: a lobby still live past that holds a slot or waits in queues/public, both named above.
+    const cutoff = at - rules.scanLookbackMs;
     let readTime: string | undefined;
     let startAfter: { value: string; path: string } | undefined;
     for (;;) {

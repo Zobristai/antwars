@@ -837,6 +837,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     lobbyTtlMs: CHALLENGE_LOBBY_TTL_MS,
     now,
     scanPageSize: settings.challengeScanPageSize ?? CHALLENGE_SCAN_PAGE_SIZE,
+    scanLookbackMs: LOBBY_TTL_MS,
     isExpired,
     slotPaths: (["public", "private"] as const).flatMap((kind) => Array.from({ length: slots[kind] }, (_, n) => `slots/${kind}-${n}`)),
     seatPointerPath,

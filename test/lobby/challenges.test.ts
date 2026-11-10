@@ -793,6 +793,26 @@ describe.skipIf(!host)("house challenge seated-elsewhere scan against the Firest
     // The injected joins committed: both resolved ok and their seats are stored.
     expect([joinedBetween, await seatedIn(w, made[1]!, other.id), await seatedIn(w, made[2]!, third.id)]).toEqual([true, true, true]);
   });
+
+  it("finds a seat in an open lobby older than a challenge lobby's lifetime, past the first page, while the seat pointer names a newer lobby", async () => {
+    const w = await world(at(12, 0), { challengeScanPageSize: 2 });
+    const caller = await w.claim("caller");
+    const host = async (name: string) => value(await w.main.createLobby((await w.claim(name)).key, "public", 2)).lobby.id;
+    const older = await host("older");
+    value(await w.main.join(older, caller.key)); // stays open for 12 hours
+    w.clock.t += 60_000;
+    await host("laterx");
+    await host("latery");
+    w.clock.t += 60_000;
+    const newer = await host("newer");
+    value(await w.main.join(newer, caller.key));
+    value(await w.main.leave(newer, caller.key));
+    expect((await w.raw(`lobbySeats/${caller.id}`))?.lobbyId).toBe(newer);
+    // The first page is the newer lobby and a later one from 29 minutes ago; the older lobby is on the second page.
+    w.clock.t = at(12, 30);
+    expect(reasonOf(await w.request(caller))).toBe("seated_elsewhere");
+    expect([await w.raw(`challengeChallengers/${caller.id}`), await w.raw(`challengeOwners/${caller.id}`)]).toEqual([null, null]);
+  });
 });
 
 describe("the house handle list", () => {
