@@ -31,6 +31,8 @@ function setup() {
   const clock = { now: 0 };
   const keys = new Map<string, string>([["ann-first", "ann"], ["bob-first", "bob"]]);
   const store = { failing: false, reads: 0 };
+  /** While held, a join's durable record (and so its reply) waits until release. */
+  const joinRecords = { held: false, waiting: [] as (() => void)[], release() { this.held = false; for (const done of this.waiting.splice(0)) done(); } };
   const game = new Game({ simConfig: playable(PUBLIC_CONFIG), mcpConfig: TEST_MCP_CONFIG, now: () => clock.now,
     slot: {
       identityOf: async key => keys.get(key),
@@ -40,6 +42,7 @@ function setup() {
         return [...keys].find(([key]) => keyVerifier(key) === verifier)?.[1];
       },
       locate: async () => undefined,
+      recordJoin: () => joinRecords.held ? new Promise<void>(resolve => joinRecords.waiting.push(resolve)) : Promise.resolve(),
     } });
   game.seatLobby("rotation-lobby", SEATS);
   game.beginLobbyStart(7001);
@@ -48,7 +51,7 @@ function setup() {
     keys.delete(from);
     keys.set(to, identityId);
   };
-  return { game, clock, store, rotate };
+  return { game, clock, store, rotate, joinRecords };
 }
 
 async function connect(game: Game) {
@@ -133,6 +136,36 @@ describe("rotating a key ends the sessions that key admitted", () => {
     clock.now += 1;
     expect(game.match).toBeNull();
     expect((await old("pick_nest", ANN_TILE)).data.error.code).toBe("key_revoked");
+  });
+
+  it.each([
+    { acknowledgedAfterMs: KEY_RECHECK_MS, joins: false },
+    { acknowledgedAfterMs: KEY_RECHECK_MS - 1, joins: true },
+  ])("times a rejoin's key from its check, when its join record is acknowledged $acknowledgedAfterMs ms after a rotation", async ({ acknowledgedAfterMs, joins }) => {
+    const { game, clock, rotate, joinRecords } = setup();
+    const first = await connect(game);
+    await first("join", { key: "ann-first" });
+    await startMatch(game, clock);
+    expect((await first("order", { kind: "hold" })).error).toBe(false);
+
+    // The rejoin's key is checked, then its reply waits on the join record while the key is rotated.
+    joinRecords.held = true;
+    const rejoin = await connect(game);
+    const pending = rejoin("join", { key: "ann-first" });
+    while (joinRecords.waiting.length === 0) await new Promise(resolve => setImmediate(resolve));
+    rotate("ann-first", "ann-second");
+    clock.now += acknowledgedAfterMs;
+    joinRecords.release();
+    const joined = await pending;
+    if (!joins) {
+      expect(joined.data.error.code).toBe("key_revoked");
+      expect((await rejoin("observe")).data.error.code).toBe("not_joined");
+      return;
+    }
+    // Within the bound the join stands, but its window began at the key check, so the next call re-checks.
+    expect(joined.error).toBe(false);
+    clock.now += 1;
+    expect((await rejoin("order", { kind: "hold" })).data.error.code).toBe("key_revoked");
   });
 
   it("leaves a session joined by the current key playing, reading its key at most once per interval", async () => {

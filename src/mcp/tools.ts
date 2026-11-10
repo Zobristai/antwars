@@ -578,6 +578,8 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
       if (serviceTier !== undefined && !validText(serviceTier, game.mcpConfig.serviceTierMaxChars)) {
         return adapterRefusal(game, session, "join", "bad_service_tier", "Invalid service tier.", `Use 1 to ${game.mcpConfig.serviceTierMaxChars} printable characters, or leave serviceTier out.`);
       }
+      // The key's check time, not the join's end: a join can wait (on its tick and the join record) past a rotation.
+      const keyCheckedAt = game.wallClock();
       const identityId = await slot.identityOf(key);
       // The lobby seating this identity holds the slot but is not seated here yet; nothing touches an older seat.
       if (identityId !== undefined && await game.lobbyLoading(identityId)) {
@@ -601,7 +603,9 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
       const { outcome } = joined;
       // Re-checked by verifier while the session plays (guardKeyAdmission); the key itself is not kept.
       const admission = slot.holderOfVerifier === undefined ? undefined
-        : { identityId: identityId!, verifier: keyVerifier(key), checkedAt: game.wallClock() };
+        : { identityId: identityId!, verifier: keyVerifier(key), checkedAt: keyCheckedAt };
+      // A join that finished KEY_RECHECK_MS or more after its key was checked binds only if the key is still current.
+      if (admission !== undefined && !await keyStillHeld(game, slot, admission)) return keyRevoked();
       // An ended lobby seat remains identifiable even when its key rejoin hits the rate limit.
       if (joined.agentId !== null && outcome.kind === "error" &&
         (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId, admission);
@@ -713,9 +717,14 @@ function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, sess
     session.finalResult = undefined;
     session.admission = undefined;
     if (request.params?.name === "join") return answer(request, extra);
-    return errorResult("key_revoked", "The key this session joined with has been replaced, so this session no longer plays its seat.",
-      "Call join with your seat's current key (and seat, when your key holds several seats).", null);
+    return keyRevoked();
   });
+}
+
+/** The refusal for a call whose joining key has been replaced. */
+function keyRevoked(): CallToolResult {
+  return errorResult("key_revoked", "The key this session joined with has been replaced, so this session no longer plays its seat.",
+    "Call join with your seat's current key (and seat, when your key holds several seats).", null);
 }
 
 /**
