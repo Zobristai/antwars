@@ -5,7 +5,7 @@ import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { comparisonOptions, startServer, type GameServer } from "../../src/server.js";
 import { connect, tempDir, waitFor, type Agent } from "./helpers.js";
 
-const ACCOUNT_TOOLS = ["list_lobbies", "create_lobby", "join_lobby", "start_lobby", "read_lobby", "locate_match", "join_queue", "queue_status", "leave_queue", "rating", "leaderboard", "create_handle", "rotate_key"];
+const ACCOUNT_TOOLS = ["list_lobbies", "create_lobby", "join_lobby", "start_lobby", "read_lobby", "locate_match", "join_queue", "queue_status", "leave_queue", "leave_lobby", "rating", "leaderboard", "create_handle", "rotate_key"];
 
 function expectLocalText(text: string): void {
   expect(text).not.toContain("Accounts are required");

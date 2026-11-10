@@ -91,9 +91,10 @@ const REFUSALS = {
   already_queued: [409, "This identity is already waiting in the ranked queue. Check queue_status, or leave_queue first."],
   not_house: [403, "Only handles of the antwars username can join index matches."],
   // Challenges against house handles.
+  not_seated: [404, "This key holds no seat in that lobby; nothing changed."],
   seat_held: [409, "That seat is held for this challenge's house handle; only that handle can take it. Join the other colony, or another lobby."],
   opponent_unavailable: [409, "That house handle is unavailable for challenges. Choose an available handle from list_challenge_opponents."],
-  seated_elsewhere: [409, "This identity is seated in another live lobby. Finish or leave that game before requesting a challenge."],
+  seated_elsewhere: [409, "This identity is seated in another live lobby. Finish that game, or leave its lobby with leave_lobby before it starts, before requesting a challenge."],
   active_challenge: [409, "Your username already has an active challenge. Follow it with challenge_status; request another once it has ended."],
   owner_daily_limit: [429, "Your username has used its 5 challenges for this UTC day. Try again after the reset at UTC midnight."],
   shared_daily_limit: [429, "Today's 20 shared challenges are used. Try again after the reset at UTC midnight."],
@@ -133,7 +134,7 @@ function lobbyRefusal(reason: LobbyRefusal | "unknown_key"): Reply {
     case "no_such_lobby": case "invalid_invite": case "not_creator": return refuse("no_such_lobby");
     case "invalid_kind": case "invalid_size": case "already_seated": case "full": case "started":
     case "expired": case "colony_empty": case "not_private": case "invalid_mode": case "already_queued": case "not_house":
-    case "colony_full": case "seat_held":
+    case "colony_full": case "seat_held": case "not_seated":
       return refuse(reason);
     default:
       // not_holding and superseded belong to the slot instance, never to these operations.
@@ -262,7 +263,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return ok(token === undefined ? { lobby } : { lobby, inviteLink: inviteLink(lobby.id, token), inviteToken: token });
     }),
 
-  operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with fewer seats, colony 0 on a tie. You play your seat's colony in the match. The last seat starts the lobby automatically. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE}`,
+  operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with fewer seats, colony 0 on a tie. You play your seat's colony in the match. The last seat starts the lobby automatically. Leave before the match starts with leave_lobby. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE}`,
     z.object({
       key, lobbyId, inviteToken,
       colony: z.number().int().min(0).max(1).nullish().describe("Optional: the colony to sit in, 0 or 1. A colony with no free seat is refused colony_full and you stay unseated. Omit it to be seated in the colony with fewer seats, colony 0 on a tie."),
@@ -297,6 +298,15 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
       const started = await stores.lobbies.startEarly(args.lobbyId, args.key);
       return started.ok ? ok({ lobby: started.value }) : lobbyRefusal(started.reason);
+    }),
+
+  operation("leave_lobby", "Leave a lobby you are seated in, with your key and the lobbyId, at any time before its match starts: no rating change and no charge. When the last seated identity leaves, the lobby closes. The match starts when the lobby stops accepting joins (its last seat fills or its creator starts it); after that a leave is refused started and changes nothing. Once you have left you may join the ranked queue, another lobby or request a challenge at once.",
+    z.object({ key, lobbyId }),
+    async (stores, args) => {
+      // A malformed id reads as a lobby without this key's seat, after the key, as a missing lobby does.
+      if (!LOBBY_ID.test(args.lobbyId)) return (await stores.identities.resolveKey(args.key)).ok ? refuse("not_seated") : refuse("invalid_key");
+      const left = await stores.lobbies.leave(args.lobbyId, args.key);
+      return left.ok ? ok({ left: true, lobby: left.value }) : lobbyRefusal(left.reason);
     }),
 
   operation("read_lobby", "Follow your lobby with its creator's or a seated identity's key, or the current invite token. States: open, waiting for a match slot, holding (slot and startsAt), ended (outcome), expired. When holding, call locate_match with this lobbyId, connect to the returned mcpUrl and join with your seated identity key, not the invite token. Reuse that key to return to your match seat.",
@@ -359,7 +369,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return requested.ok ? ok({ ...requested.value, ...waitFields(token) }) : challengeRefusal(requested);
     }),
 
-  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
+  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one; expired with reason builder_left means you left the challenge's lobby with leave_lobby before it started. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, requestId: z.string().max(100).nullish().describe("The requestId request_challenge returned; omit for your latest challenge.") }),
     async ({ lobbies }, args) => {
       const read = await lobbies.challengeStatus(args.key, args.requestId ?? undefined);
