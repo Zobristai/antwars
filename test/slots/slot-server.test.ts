@@ -142,7 +142,8 @@ function slotTimings(w: World) {
 /**
  * Boots a server on the slot each filled lobby already holds. Before its match begins,
  * lobbies.locate and the root locate_match tool return the new server's addresses and
- * a seated key joins it; the match is then played to a natural result.
+ * every seated key joins it; the match is then played to a natural result (a seat that
+ * never joined would end it abandoned instead).
  */
 async function bootAndPlay(w: World, root: GameServer, filled: readonly Awaited<ReturnType<World["fill"]>>[], timings: ReturnType<typeof slotTimings>) {
   const booted = await Promise.all(filled.map(({ lobby }) => slotServer(w, lobby.slot!, `${lobby.slot}-late`, SHORT)));
@@ -160,6 +161,10 @@ async function bootAndPlay(w: World, root: GameServer, filled: readonly Awaited<
       const reply = await seat.call("join", { key: keys[0]!.key });
       return reply.isError ? undefined : reply;
     });
+    for (const key of keys.slice(1)) {
+      const reply = await (await agentOn(server)).call("join", { key: key.key });
+      expect(reply.isError, reply.text).toBe(false);
+    }
     expect(server.game.match).toBeNull();
     expect(timings.begunAt.has(slot)).toBe(false);
 
@@ -219,7 +224,7 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     expect(await w.lobbies.slotHolder("public-0")).toBeNull();
   });
 
-  it("rates every identity seated at the start, idle and never-connected ones included, on a natural result, then starts the next waiting lobby", async () => {
+  it("rates every identity seated at the start, idle ones included, on a natural result, then starts the next waiting lobby", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const w = world();
     const { server, started } = await slotServer(w, "public-0", "a", SHORT);
@@ -242,9 +247,9 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     const next = await w.fill("public", 1, ["N1", "N2"]);
     expect(next.lobby.state).toBe("waiting");
     const active = await agentOn(server);
-    const idle = await agentOn(server);
     expect((await active.call("join", { key: keys[0]!.key })).isError).toBe(false);
-    expect((await idle.call("join", { key: keys[1]!.key })).isError).toBe(false);
+    // Every other seat joins and then stays idle: a seat that never joined would end the match abandoned, unrated.
+    for (const key of keys.slice(1)) expect((await (await agentOn(server)).call("join", { key: key.key })).isError).toBe(false);
     await until(() => running(server));
     await sleep(1_500);
     expect((await active.call("order", { kind: "forage" })).isError).toBe(false);
@@ -265,7 +270,8 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     expect((await w.lobby(next.lobby.id))).toMatchObject({ state: "holding", slot: "public-0" });
     await until(() => started.length === 2);
     expect(started[1]).toBeGreaterThanOrEqual((await w.lobby(next.lobby.id)).startsAt!);
-    expect(await ended(w, next.lobby.id)).toMatch(/won|draw/);
+    // Neither of its seats ever joins, so it ends abandoned.
+    expect(await ended(w, next.lobby.id)).toBe("abandoned");
   });
 
   it("ends a match not played and unrated when a successor instance takes the slot, even after a later natural result, and the old instance never begins again", async () => {

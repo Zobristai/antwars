@@ -415,7 +415,8 @@ describe.skipIf(!host)("a slot server stays up while its slot holds a lobby (Fir
     }
     expect(sawCountdown).toBe(true);
     expect(sawMatch).toBe(true);
-    expect((await w.lobby(lobby.id)).outcome).toMatch(/won|draw/);
+    // No seat ever joins, so the match ends abandoned at its natural end.
+    expect((await w.lobby(lobby.id)).outcome).toBe("abandoned");
     // When the release committed, the server was still held and kept alive.
     expect(atRelease).toEqual({ idle: false, open: 1 });
 

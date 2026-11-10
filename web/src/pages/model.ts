@@ -215,27 +215,33 @@ export function modelName(label: string): string {
 const isHouseHandle = (handle: string): boolean => handle.toLowerCase().startsWith(`${HOUSE_USERNAME}/`);
 
 /** A recorded seat as Recordings shows it, and the HUD's model line: a house handle's own HOUSE_LABELS
- * name (houseDisplayName), else its model's name as the Leaderboard names it (modelName), an unrecorded model "model
- * unknown"; badges (benchmarkLabel) from the seat's own record and its recorded handle: the level it recorded, else a
+ * name (houseDisplayName), else its model's name as the Leaderboard names it (modelName), else, where the seat reported no
+ * model, its handle ("model unknown" only for a seat that recorded neither); badges (benchmarkLabel) from the seat's own record and its recorded handle: the level it recorded, else a
  * listed house handle's fixed level; a listed house handle's fixed tier, else the tier it recorded; Fast only where that
  * tier is fast. A seat shown as UNLISTED_MODEL has no badges. No rating:
  * a recording carries none. */
 export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">): NameParts {
   const house = seat.handle !== null && isHouseHandle(seat.handle);
-  const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel === null ? "model unknown" : modelName(seat.modelLabel);
+  const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? modelName(seat.modelLabel) : seat.handle ?? "model unknown";
   if (name === UNLISTED_MODEL) return { name, badges: [], quiet: null };
   const fixed = seat.handle === null ? { thinkingLevel: null, serviceTier: null } : houseLabel(seat.handle);
   const badges = benchmarkLabel({ displayName: "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier }).badges;
   return { name, badges, quiet: null };
 }
 
-/** Each colony's recorded seats, seat order, each with the model label it recorded and how it shows (recordedIdentity); a
+/** Who holds a recorded seat, as seatGroups keys it: its model label, else its handle, each tagged with its kind so a label
+ * never reads as a handle that spells the same; null where it recorded neither. */
+const seatWho = (seat: Pick<Recording["seats"][number], "modelLabel" | "handle">): string | null =>
+  seat.modelLabel !== null ? `model:${seat.modelLabel}` : seat.handle !== null ? `handle:${seat.handle}` : null;
+
+/** Each colony's recorded seats, seat order, each with who holds it (seatWho, so two unlabelled players never group as one)
+ * and how it shows (recordedIdentity); a
  * colony with no recorded seat null; null when no seat was recorded. */
 export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatEntry[] | null, readonly SeatEntry[] | null] | null {
   if (seats.length === 0) return null;
   const entries = (colony: 0 | 1) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
-      .map((seat): SeatEntry => ({ who: seat.modelLabel, parts: recordedIdentity(seat) }));
+      .map((seat): SeatEntry => ({ who: seatWho(seat), parts: recordedIdentity(seat) }));
     return list.length ? list : null;
   };
   return [entries(0), entries(1)];
@@ -247,7 +253,7 @@ export function colonyModels(seats: Recording["seats"]): readonly [readonly Name
   return colonies && [colonies[0]?.map(seat => seat.parts) ?? null, colonies[1]?.map(seat => seat.parts) ?? null];
 }
 
-/** One seat as both Matches lists group it: who holds it (the model label it recorded, null where it recorded none, or a live
+/** One seat as both Matches lists group it: who holds it (seatWho for a recorded seat, or a live
  * player's identity without its seat number), how it shows alone, and, where that differs, how its group shows. */
 export interface SeatEntry { readonly who: string | null; readonly parts: NameParts; readonly alike?: NameParts }
 /** Seats shown alike, and how many they are. */
