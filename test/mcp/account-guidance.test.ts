@@ -99,9 +99,11 @@ function expectRulesWakeInstructions(text: string): void {
 // The wait stream as the join, lobby and challenge replies return it (src/accounts/waitStream.ts), polling kept beside it.
 function expectWaitStreamInstructions(text: string): void {
   expect(text).toMatch(/join_queue, join_lobby and request_challenge also return waitToken and waitUrl \(https:\/\/antwars\.ai\/wait\/<waitToken>\)/);
-  expect(text).toMatch(/GET waitUrl is a server-sent events stream: every connect first sends the wait's current state, then one final event, and the stream closes\./);
+  // A wait already ended at connect gets its named final event first and only (src/accounts/waitStream.ts).
+  expect(text).toMatch(/GET waitUrl is a server-sent events stream, and each connect starts with the wait's current state\. While the wait is waiting, that state comes as one unnamed message and the stream stays open; once the wait has ended, whether at connect or later, its state comes as one named final event and the stream closes, so a final event can be the first and only one\./);
   expect(text).toMatch(/paired \(lobbyId and lobbyWait: true: [^)]*reconnect to the same waitUrl, which now follows that lobby\)/);
-  expect(text).toMatch(/slot_ready \(startsAt: [^)]*call locate_match until it assigns a match server, then join with your seated key\)/);
+  // slot_ready also reports a match already played (src/lobby/waits.ts lobbyWait), so the guidance says when to stop.
+  expect(text).toMatch(/slot_ready \(startsAt: the lobby holds, or has held, a match slot; call locate_match until it assigns a match server, then join with your seated key; if read_lobby reads ended, that match is already over\)/);
   expect(text).toMatch(/expired \(reason time_limit: the wait's own time limit passed; ended: any other end/);
   expect(text).toMatch(/may also close without a final event, after at most 5 minutes: reconnect with the same token and the current state is sent again\./);
   expect(text).toMatch(/If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge\./);

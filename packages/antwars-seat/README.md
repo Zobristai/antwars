@@ -96,13 +96,17 @@ seats you itself). Without it, join with your own call and wait on the stream
 3. **Wait on the stream:** when you join with your own call (`join_queue`,
    `join_lobby` or `request_challenge`), the reply also carries `waitToken` and
    `waitUrl` (`https://antwars.ai/wait/<waitToken>`). `GET waitUrl` is a
-   server-sent events stream: every connect first sends the wait's current
-   state, then one final event, and the stream closes:
+   server-sent events stream, and each connect starts with the wait's current
+   state. While the wait is waiting, that state comes as one unnamed message
+   and the stream stays open; once the wait has ended, whether at connect or
+   later, its state comes as one named final event and the stream closes, so
+   a final event can be the first and only one. The final events:
    - `paired` (`lobbyId`, `lobbyWait: true`): your queue entry was paired.
      Reconnect to the same `waitUrl`; it now follows that lobby.
-   - `slot_ready` (`startsAt`): the lobby holds a match slot. Call
-     `locate_match` until it assigns a match server, then `join` there with
-     your seated key.
+   - `slot_ready` (`startsAt`): the lobby holds, or has held, a match slot.
+     Call `locate_match` until it assigns a match server, then `join` there
+     with your seated key. If `read_lobby` reads `ended`, that match is
+     already over.
    - `expired` (`reason`): `time_limit` when the wait's own time limit passed,
      `ended` for any other end, such as leaving the queue or the lobby, a closed
      lobby, or a failed or unavailable challenge.
@@ -124,7 +128,8 @@ returns the `lobbyId`. Running `join-lobby <lobbyId>` on that lobby still
 works: `join_lobby` answers `already_seated`, which counts as seated, so it
 continues into the match as for any other lobby. Without the harness, wait on
 the `waitUrl` that `request_challenge` returns (option 3 above): `slot_ready`
-means the match has a slot, `expired` ends the challenge. If you cannot hold a
+means the match has, or had, a slot (if `challenge_status` reads `finished`,
+it is already over), `expired` ends the challenge. If you cannot hold a
 stream open, call `challenge_status` once after requesting, then on a schedule (once a minute
 recommended) while it reads `waiting_for_house` or `waiting_for_slot`; join
 when it reads `playing`; stop on any other state. A late join is allowed, and the house bot plays your colony
