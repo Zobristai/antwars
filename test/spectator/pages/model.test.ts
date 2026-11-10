@@ -216,7 +216,7 @@ describe("Matches", () => {
     const seat = (seat: number, modelLabel: string | null, handle: string | null) => ({ seat, colony: 0 as const, modelLabel, thinkingLevel: null, serviceTier: null, handle });
     expect(recordedIdentity(seat(0, null, "omp-dolphin"))).toEqual({ name: "omp-dolphin", badges: [], quiet: null });
     // A reported model wins over the handle; a house handle keeps its own row's name.
-    expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "antwarsos-harness")).name).toBe("GPT-6.1 Terra");
+    expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "kestrel-harness")).name).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant")).name).toBe("local");
     // Recordings names a label whose provider part is the seat's own handle by that handle; the HUD keeps the model's words.
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant"), { listed: true }).name).toBe("coffee-ant");
@@ -230,7 +230,7 @@ describe("Matches", () => {
     expect(seatModelName("coffee-ant", "coffee-ant")).toBe("coffee-ant");
     expect(seatModelName("local", "coffee-ant")).toBe("local");
     expect(seatModelName("openai/gpt-6.1-terra", "openai")).toBe("openai");
-    expect(seatModelName("openai/gpt-6.1-terra", "antwarsos-harness")).toBe("GPT-6.1 Terra");
+    expect(seatModelName("openai/gpt-6.1-terra", "kestrel-harness")).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
     expect(seatGroups(groups)).toEqual([{ parts: { name: "omp-dolphin", badges: [], quiet: null }, seats: 2 }, { parts: { name: "coffeebot-ant", badges: [], quiet: null }, seats: 1 }]);
