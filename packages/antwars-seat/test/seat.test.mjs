@@ -398,6 +398,30 @@ describe("unrated lobby: create-lobby, join-lobby", () => {
     expect(existsSync(join(s.dir, "state", "match.json"))).toBe(false);
   });
 
+  it("a join_lobby answered already_seated counts as seated: locate_match and join run with the same key and seat, and it stops in the nest window", async () => {
+    const s = await seat({ refuseJoinLobby: "already_seated" });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(s.fake.toolCalls("join_lobby").map((c) => c.args)).toEqual([{ key: KEY, lobbyId: "lobby-1" }]);
+    expect(s.fake.toolCalls("locate_match").map((c) => c.args)[0]).toEqual({ lobbyId: "lobby-1" });
+    expect(s.fake.toolCalls("join").map((c) => c.args)).toEqual([{ key: KEY, seat: 1, modelLabel: "claude-opus-5-5", thinkingLevel: "max" }]);
+    expect(s.state("match.json").lobbyId).toBe("lobby-1");
+    expectStoppedInNestWindow(s);
+    const joinedLobby = readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((e) => e.step === "joined_lobby");
+    expect(joinedLobby).toMatchObject({ lobbyId: "lobby-1", alreadySeated: true });
+    for (const tool of QUEUE_TOOLS) expect(s.fake.toolCalls(tool)).toHaveLength(0);
+  });
+
+  it("any other join_lobby refusal still fails with its code and calls nothing after it", async () => {
+    const s = await seat({ refuseJoinLobby: "lobby_closed" });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(1);
+    expect(s.printed.join("")).toContain("join_lobby refused: lobby_closed");
+    expect(s.state("status.json").step).toBe("failed");
+    for (const tool of [...QUEUE_TOOLS, "locate_match", "join", "pick_nest"]) expect(s.fake.toolCalls(tool)).toHaveLength(0);
+    expect(existsSync(join(s.dir, "state", "match.json"))).toBe(false);
+  });
+
   it("join-lobby without a lobby id is a usage error", async () => {
     const s = await seat();
     expect(await s.cli("join-lobby")).toBe(1);
