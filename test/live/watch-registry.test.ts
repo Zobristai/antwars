@@ -55,6 +55,35 @@ describe("durable spectator match identity", () => {
     await expect(registry.read(id)).rejects.toThrow("Invalid spectator match access policy");
   });
 
+  it("carries the seat labels its holding run publishes, on the match and its public listing, and reads a row without them as none", async () => {
+    const { docs, store } = memory(); const registry = createWatchRegistry(store);
+    await registry.register(match);
+    // A row written before labels were published, as an older server writes it, has none.
+    expect((await registry.read(id))?.modelLabels).toBeUndefined();
+    expect((await registry.publicMatches())[0]?.modelLabels).toBeUndefined();
+    // Only the run holding the match may write them.
+    expect(await registry.seatLabels(id, match.runId, { "antwarsos-harness": "openai/gpt-6.1-terra" })).toBe(false);
+    expect(docs.get(`watchMatches/${id}`)?.modelLabels).toBeUndefined();
+    holdMatch(docs, id, match.runId);
+    expect(await registry.seatLabels(id, "other-run", { "antwarsos-harness": "openai/gpt-6.1-terra" })).toBe(false);
+    expect(await registry.seatLabels(id, match.runId, { "antwarsos-harness": "openai/gpt-6.1-terra" })).toBe(true);
+    const labels = { "antwarsos-harness": "openai/gpt-6.1-terra" };
+    expect((await createWatchRegistry(store).read(id))?.modelLabels).toEqual(labels);
+    expect((await createWatchRegistry(store).publicMatches())[0]?.modelLabels).toEqual(labels);
+    // A handover keeps them; a malformed stored value reads as none rather than failing the catalog.
+    expect(await registry.resumed({ ...match, origin: "http://127.0.0.1:9002" })).toBe(true);
+    expect((await registry.read(id))?.modelLabels).toEqual(labels);
+    for (const bad of ["not json", "[\"a\"]", "null", "{\"a\":3,\"b\":\"\"}"]) {
+      docs.set(`watchPublic/${id}`, { ...docs.get(`watchPublic/${id}`)!, modelLabels: bad });
+      const [row] = await registry.publicMatches();
+      expect(row?.lobbyId).toBe(id);
+      expect(Object.keys(row?.modelLabels ?? {})).toEqual([]);
+    }
+    // Playback's end still removes the listing.
+    expect(await registry.playbackFinished(id, match.runId)).toBe(true);
+    expect(await registry.publicMatches()).toEqual([]);
+  });
+
   it("never writes a private public-list row and rejects replacement identity/origin", async () => {
     const { docs, store } = memory(); const registry = createWatchRegistry(store);
     await registry.register({ ...match, visibility: "private", slot: "private-0" });

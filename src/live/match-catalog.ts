@@ -17,12 +17,13 @@ export interface CatalogLobby {
 }
 
 /**
- * One seated player as the Matches page's Live now row names it: the stream's seat display name, and the
- * player's rating, RD and rated-match count in the match's ranked mode; the three are null for an unrated match.
+ * One seated player as the Matches page's Live now row names it: the stream's seat display name, the model label the
+ * seat self-reported when it joined (null, or absent from a caller, before it joins or where it reported none), and the player's rating, RD and
+ * rated-match count in the match's ranked mode; the three are null for an unrated match.
  */
-export type PublicSeat =
-  | { readonly displayName: string; readonly rating: number; readonly rd: number; readonly ratedMatches: number }
-  | { readonly displayName: string; readonly rating: null; readonly rd: null; readonly ratedMatches: null };
+export type PublicSeat = { readonly displayName: string; readonly modelLabel?: string | null } & (
+  | { readonly rating: number; readonly rd: number; readonly ratedMatches: number }
+  | { readonly rating: null; readonly rd: null; readonly ratedMatches: null });
 /** A live match's seats by colony. */
 export type PublicColonies = readonly [readonly PublicSeat[], readonly PublicSeat[]];
 
@@ -90,10 +91,10 @@ export function listedMatches<T extends CatalogMatch>(matches: readonly T[]): T[
     .sort((a, b) => a.startedAt - b.startedAt || a.lobbyId.localeCompare(b.lobbyId));
 }
 
-/** An explicit copy of each seat's four public fields; anything else a caller attached is dropped. */
+/** An explicit copy of each seat's five public fields; anything else a caller attached is dropped. */
 function publicColonies(colonies: PublicColonies | undefined): PublicColonies {
   const seats = (list: readonly PublicSeat[] | undefined): PublicSeat[] => (list ?? []).map(seat => seat.rating === null
-    ? { displayName: seat.displayName, rating: null, rd: null, ratedMatches: null }
-    : { displayName: seat.displayName, rating: seat.rating, rd: seat.rd, ratedMatches: seat.ratedMatches });
+    ? { displayName: seat.displayName, modelLabel: seat.modelLabel ?? null, rating: null, rd: null, ratedMatches: null }
+    : { displayName: seat.displayName, modelLabel: seat.modelLabel ?? null, rating: seat.rating, rd: seat.rd, ratedMatches: seat.ratedMatches });
   return [seats(colonies?.[0]), seats(colonies?.[1])];
 }
