@@ -7,6 +7,7 @@ import { houseLabel } from "./houseLabels.js";
 import { logUnlistedHouse } from "./unlistedHouse.js";
 import { isReplayId } from "../replays/access.js";
 import { INITIAL_RD, glickoUpdate, inflatedRd, teamAsOpponent } from "./glicko.js";
+import { harnessPhaseAt, isIndexMode, type HarnessPhase } from "./harnessPhase.js";
 
 /**
  * Per-identity ratings and the public leaderboard.
@@ -141,6 +142,9 @@ export interface FormEntry {
   readonly result: MatchResultLetter;
   /** The match's stored replay id, or null when none is stored (matches from before replay ids were stored, or playback not finished). */
   readonly replayId: string | null;
+  /** Present only in a Model Index mode: the match's harness phase by its lobby's match time (harnessPhase.ts); unknown
+   * when the lobby or its time cannot be read. Read-only: nothing is stored. */
+  readonly harnessPhase?: HarnessPhase;
 }
 
 export const FORM_LENGTH = 5;
@@ -627,18 +631,28 @@ export function createRatings(
     (error: unknown) => { console.warn("antwar house rating backfill failed", error); return false; },
   );
   let houseMarked = backfill();
-  /** The replay id stored for each match (watchMatches), read in one batch; a match without one is absent. */
-  async function storedReplayIds(matchIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+  /**
+   * The replay id stored for each match (watchMatches), read in one batch; a match without one is absent. With
+   * withTimes, the same batch also reads each match's lobby for its match time (null when it cannot be read).
+   */
+  async function storedFormFacts(matchIds: readonly string[], withTimes: boolean):
+    Promise<{ readonly replayIds: ReadonlyMap<string, string>; readonly times: ReadonlyMap<string, number | null> }> {
     const unique = [...new Set(matchIds)];
-    if (unique.length === 0) return new Map();
+    if (unique.length === 0) return { replayIds: new Map(), times: new Map() };
+    const paths = unique.flatMap((id) => withTimes ? [`watchMatches/${id}`, `lobbies/${id}`] : [`watchMatches/${id}`]);
     // A transaction with no writes is rolled back: this is one batched read.
-    const docs = await store.transaction(async (read) => ({ result: await read(unique.map((id) => `watchMatches/${id}`)), writes: [] }));
+    const docs = await store.transaction(async (read) => ({ result: await read(paths), writes: [] }));
     const replayIds = new Map<string, string>();
+    const times = new Map<string, number | null>();
     for (const id of unique) {
       const replayId = docs.get(`watchMatches/${id}`)?.replayId;
       if (replayId !== undefined && isReplayId(replayId)) replayIds.set(id, replayId);
+      if (withTimes) {
+        const lobby = docs.get(`lobbies/${id}`);
+        times.set(id, lobby ? matchTime(lobby) : null);
+      }
     }
-    return replayIds;
+    return { replayIds, times };
   }
   return {
     get houseBackfill() { return houseMarked.then(() => undefined); },
@@ -712,7 +726,9 @@ export function createRatings(
       // deliberately current: an old cursor must not attribute a former owner's
       // history to whoever has since claimed that name.
       const records = new Map(rows.map(({ path, fields }) => [path, storedRecord(idOf(path), fields)]));
-      const replayIds = await storedReplayIds([...records.values()].flatMap((record) => record?.form.map(({ matchId }) => matchId) ?? []));
+      const indexMode = isIndexMode(mode);
+      const { replayIds, times } = await storedFormFacts(
+        [...records.values()].flatMap((record) => record?.form.map(({ matchId }) => matchId) ?? []), indexMode);
       const entries = await Promise.all(rows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
         const identityId = idOf(path);
         const identity = await identities.findById(identityId);
@@ -723,7 +739,8 @@ export function createRatings(
         const label = benchmark ? houseLabel(displayName) : { thinkingLevel: fields.thinkingLevel || null, serviceTier: fields.serviceTier || null };
         return { identityId, displayName, ...storedRating(identityId, fields), ...label, benchmark,
           wins: record?.wins ?? null, losses: record?.losses ?? null, draws: record?.draws ?? null,
-          form: record?.form.map(({ result, matchId }) => ({ result, replayId: replayIds.get(matchId) ?? null })) ?? [] };
+          form: record?.form.map(({ result, matchId }) => ({ result, replayId: replayIds.get(matchId) ?? null,
+            ...(indexMode ? { harnessPhase: harnessPhaseAt(times.get(matchId) ?? null) } : {}) })) ?? [] };
       }));
       // A Benchmark row whose handle HOUSE_LABELS does not list shows "Unlisted model"; the server logs it.
       logUnlistedHouse("leaderboard", entries.filter(entry => entry.benchmark).map(entry => entry.displayName));
