@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import type { Fields, Store, Write } from "../store/firestore.js";
 import type { RecordingObjects } from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
-import { createIdentities } from "../identity/identities.js";
+import { identityDisplay, nameState } from "../identity/retention.js";
+import { publicWaitingName } from "../live/queue-catalog.js";
 import { createWatchRegistry } from "../live/watch-registry.js";
 import { describe, firestoreWrites, verify } from "./unrateNeverJoined.js";
 import {
@@ -23,6 +24,9 @@ import {
  *    player's state before the first moved match. Ratings are applied when a match ends, so that order is the
  *    createTime of each match's stored change record. The pass refuses unless the same replay without the move
  *    reproduces every stored change and row.
+ *
+ * Names are published as the public Waiting view shows them (live/queue-catalog.ts): a released owner's placeholder,
+ * which embeds its owner id, becomes a fixed name, so the plan holds no identity id.
  *
  * Any failed check refuses the whole plan: the reason is logged and PLAN_PATH says only "refused".
  * CORRECTION_MARKER is created by the apply in the same transaction as these writes: { planDigest, appliedAt }.
@@ -60,6 +64,38 @@ export interface Plan { readonly writes: readonly Write[]; readonly summary: Pub
 export type PlanState = { readonly state: "computing" | "applied" | "refused" } | ({ readonly state: "planned" } & PublicPlan);
 
 const refuse = (reason: string): never => { throw new Error(reason); };
+/** A name as the plan publishes it: a released owner's placeholder, which embeds its owner id, becomes a fixed name. */
+const shown = publicWaitingName;
+const shownKeys = (labels: Readonly<Record<string, string>>) => Object.fromEntries(Object.entries(labels).map(([name, label]) => [shown(name), label]));
+
+/**
+ * An identity's current display name, as findById projects it, from reads alone: findById would also record an expired
+ * name's new state and drop its username index, a write. Undefined for a missing or purged identity.
+ */
+async function currentName(store: Store, id: string, at: number): Promise<string | undefined> {
+  return store.transaction(async read => {
+    const fields = (await read([`identities/${id}`])).get(`identities/${id}`);
+    const ownerId = fields?.ownerId ?? id;
+    const owner = !fields ? null : ownerId === id ? fields : (await read([`identities/${ownerId}`])).get(`identities/${ownerId}`);
+    const state = owner ? nameState(owner, at) : "purged";
+    return { result: fields && owner && state !== "purged" ? identityDisplay(id, fields, ownerId, { ...owner, nameState: state }) : undefined, writes: [] };
+  });
+}
+
+/**
+ * A house handle's identity id ("antwars/<handle>"), by the indexes findByDisplayName reads (identities.ts), from reads
+ * alone. The house account's name never expires (retention.ts), so there is no expiry to account for.
+ */
+async function houseHandleId(store: Store, displayName: string): Promise<string | undefined> {
+  const [owner, handle] = displayName.toLowerCase().split("/");
+  return store.transaction(async read => {
+    const ownerId = (await read([`usernames/${owner}`])).get(`usernames/${owner}`)?.identityId;
+    const index = `identityHandles/${ownerId}-${handle}`;
+    const id = ownerId ? (await read([index])).get(index)?.identityId : undefined;
+    const fields = id ? (await read([`identities/${id}`])).get(`identities/${id}`) : null;
+    return { result: id && fields?.ownerId === ownerId ? id : undefined, writes: [] };
+  });
+}
 const standing = (id: string, fields: Fields | null | undefined): Standing | null => {
   if (!fields) return null;
   const { rating, rd } = storedState(id, fields);
@@ -131,21 +167,21 @@ async function houseHistory(store: Store, extra: readonly string[]) {
 /** The plan, or "applied" while CORRECTION_MARKER exists. Throws (refuses) on any failed check. Reads only. */
 export async function planCorrections(store: Store, recordings: RecordingObjects): Promise<Plan | "applied"> {
   if (await store.get(CORRECTION_MARKER) !== null) return "applied";
-  const identities = createIdentities(store);
   const names = new Map<string, string>();
-  const handle = async (id: string) => names.get(id) ?? (await identities.findById(id))?.displayName ?? refuse(`unknown identity ${id}`);
-  const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: names.get(c.identityId)!, before: c.before, after: c.after }));
+  const at = Date.now();
+  const handle = async (id: string) => names.get(id) ?? await currentName(store, id, at) ?? refuse(`unknown identity ${id}`);
+  const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
   // 1. The never-joined lobby: verified as still rated, then exactly the existing correction's Firestore writes.
   const v = await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
   if (!v.ok || v.stage !== "rated") refuse(`${NEVER_JOINED.lobbyId}: ${v.checks.filter(c => !c.ok).map(c => `${c.name}: ${c.detail}`).join("; ") || `stage ${v.stage}`}`);
   const writes: Write[] = firestoreWrites(v, new Date());
   for (const id of v.identities) names.set(id, await handle(id));
-  const unrated = v.identities.map(id => names.get(id)!);
+  const unrated = v.identities.map(id => shown(names.get(id)!));
   const matches: PublicPlan["matches"][number][] = [{ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
     before: { status: "rated", seats: unrated, ratingChanges: named(JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!)) },
     after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } }];
-  const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: names.get(id)!, mode: v.mode!,
+  const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: shown(names.get(id)!), mode: v.mode!,
     before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.
@@ -153,10 +189,10 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const moves = await Promise.all(SOL_MOVES.map(async move => {
     const lobbyId = await registry.findByReplay(move.replayId);
     if (lobbyId === null || (move.lobbyId !== undefined && lobbyId !== move.lobbyId)) refuse(`recording ${move.replayId}: lobby ${lobbyId}`);
-    const [from, to] = await Promise.all([identities.findByDisplayName(move.from), identities.findByDisplayName(move.to)]);
-    if (!from || !to) refuse(`${move.from} or ${move.to} not found`);
-    names.set(from!.id, move.from).set(to!.id, move.to);
-    return { ...move, lobbyId: lobbyId!, fromId: from!.id, toId: to!.id };
+    const [fromId, toId] = await Promise.all([houseHandleId(store, move.from), houseHandleId(store, move.to)]);
+    if (!fromId || !toId) refuse(`${move.from} or ${move.to} not found`);
+    names.set(fromId!, move.from).set(toId!, move.to);
+    return { ...move, lobbyId: lobbyId!, fromId: fromId!, toId: toId! };
   }));
   const movers = moves.flatMap(move => [move.fromId, move.toId]);
   if (!store.createTimes) refuse("the store cannot read commit times");
@@ -254,9 +290,9 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     // A match is named by its recording, or by its public lobby id until a recording is published.
     const match = docs.get(`watchMatches/${lobby.id}`)?.replayId || (lobby.listed ? lobby.id : refuse(`lobby ${lobby.id}: no public match id`));
     matches.push({ match, startedAt: new Date(lobby.at).toISOString(),
-      before: { status: "rated", seats: was.seats.map(seat => seat.displayName), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels } : {}) },
-      after: { status: "rated", seats: lobby.seats.map(seat => seat.displayName), ratingChanges: named(result.changes.get(lobby.id)!),
-        ...(relabelled ? { labels: relabelled } : {}) } });
+      before: { status: "rated", seats: was.seats.map(seat => shown(seat.displayName)), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels: shownKeys(labels) } : {}) },
+      after: { status: "rated", seats: lobby.seats.map(seat => shown(seat.displayName)), ratingChanges: named(result.changes.get(lobby.id)!),
+        ...(relabelled ? { labels: shownKeys(relabelled) } : {}) } });
   }
   for (const id of players) {
     const [now, next, fields] = [storedState(id, row(id)), result.state.get(id)!, row(id)];
@@ -266,7 +302,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const updated: Fields = { rating, ratedMatches: String(next.ratedMatches), ...glickoFields(next),
       ...(movers.includes(id) ? recordFields(records(moved, id)) : {}), ...(fields!.houseRating !== undefined ? { houseRating: rating } : {}) };
     writes.push({ op: "update", path: `${ROWS}/${id}`, fields: updated });
-    ratings.push({ handle: names.get(id)!, mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
+    ratings.push({ handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
   }
   return { writes, summary: { digest: planDigest(writes), matches, ratings } };
 }

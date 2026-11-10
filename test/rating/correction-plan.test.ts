@@ -3,7 +3,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
-import { CORRECTION_MARKER, NEVER_JOINED, planCorrections, PLAN_PATH, SOL_MOVES, startCorrectionPlan, type Plan } from "../../src/rating/correctionPlan.ts";
+import { CORRECTION_MARKER, NEVER_JOINED, planCorrections, PLAN_PATH, SOL_MOVES, startCorrectionPlan, type Plan, type PlanState } from "../../src/rating/correctionPlan.ts";
+import { DAY_MS } from "../../src/identity/retention.ts";
+import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
 import { createFirestore, CREATE_TIME_BATCH, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
 import type { RecordingObjects } from "../../src/replays/abandonRecording.ts";
@@ -109,7 +111,8 @@ async function world() {
     lobbies.push(id);
   }
   const paths = [...users.flatMap(id => RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`)), ...[...ids.values()].map(id => `${ratingCollection(MODE)}/${id}`),
-    ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, CORRECTION_MARKER];
+    ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, CORRECTION_MARKER,
+    ...[...users, house.value.identity.id, ...ids.values()].map(id => `identities/${id}`), "usernames/absent-player", "usernames/joined-player", "usernames/antwars"];
   const snapshot = async () => Object.fromEntries(await Promise.all(paths.map(async path => [path, await store.get(path)] as const)));
   return { store, recordings: readOnly(objects), users, ids, lobbies, snapshot };
 }
@@ -167,6 +170,38 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     expect(await record("gpt-6-1-sol-high-fast")).toMatchObject({ wins: 2, losses: 3, draws: 0, form: expect.arrayContaining([{ result: "L", matchId: w.lobbies[5] }]) });
     expect(await record("gpt-6-1-sol-xhigh-fast")).toMatchObject({ wins: 1, losses: 2, draws: 0 });
     expect(JSON.parse((await w.store.get(`watchMatches/${w.lobbies[5]}`))!.modelLabels!)).toEqual({ "antwars/glm-5-3": "other", "antwars/gpt-6-1-sol-high-fast": "fast" });
+  });
+
+  it("with a released never-joined player: writes nothing, refused or planned, and serves no identity id", async () => {
+    const w = await world();
+    // 100 days without a match or key use releases the name (identity/retention.ts); findById would record that, a write.
+    const old = String(Date.now() - 100 * DAY_MS);
+    await commit(w.store, [{ op: "update", path: `identities/${w.users[0]}`, fields: { claimedAt: old, lastKeyUseAt: old, lastMatchAt: old, hasJoinedMatch: "true" } }]);
+
+    // Refused after the names are read: nothing written.
+    const path = `ratedMatches/${w.lobbies[8]}`;
+    const stored = (await w.store.get(path))!.changes!;
+    const changes = JSON.parse(stored) as { rdAfter: number }[];
+    changes[0]!.rdAfter += 1;
+    await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    const tampered = await w.snapshot();
+    expect(tampered["usernames/absent-player"]).not.toBeNull();
+    await expect(planCorrections(w.store, w.recordings)).rejects.toThrow("stored history not reproduced");
+    expect(await w.snapshot()).toEqual(tampered);
+
+    // Planned: nothing written, and the served plan holds no identity id.
+    await commit(w.store, [{ op: "update", path, fields: { changes: stored } }]);
+    const before = await w.snapshot();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("planned"));
+    info.mockRestore();
+    expect(await w.snapshot()).toEqual(before);
+    const body = served(serve).body;
+    for (const id of [...w.users, ...w.ids.values()]) expect(body).not.toContain(id);
+    expect(body).not.toContain("account:");
+    const plan = JSON.parse(body) as PlanState & { matches: Plan["summary"]["matches"] };
+    expect(plan.matches.find(m => m.match === NEVER_JOINED.replayId)!.before.seats).toEqual([RELEASED_NAME, "joined-player"]);
   });
 
   it("reads the history again when a match ends during planning, instead of refusing", async () => {
