@@ -105,6 +105,11 @@ export interface Identities {
   /** ownerId is the owning username's identity, which the owner key proved. */
   createHandle(ownerKey: string, handleName: string, guard?: CommitGuard): Promise<Outcome<IssuedIdentity & { readonly ownerId: string }>>;
   resolveKey(key: string): Promise<Outcome<Identity>>;
+  /**
+   * The identity id a key currently holds, found by the key's verifier (keyVerifier) rather than the key
+   * itself; undefined once that key is replaced or its identity expired. Records no key use.
+   */
+  holderOfVerifier(verifier: string): Promise<string | undefined>;
   /** identityId is the rotated identity, already proved by the old key. */
   rotateKey(key: string, guard?: CommitGuard): Promise<Outcome<{ readonly key: string; readonly identityId: string }>>;
   /** ownerId is the owning username's identity, which the owner key proved. */
@@ -129,6 +134,8 @@ interface Holder {
 const refuse = (reason: Refusal) => ({ ok: false, reason }) as const;
 const ok = <T>(value: T) => ({ ok: true, value }) as const;
 const verifierOf = (key: string) => createHash("sha256").update(key, "utf8").digest("hex");
+/** A key's stored verifier: lets a holder re-check a key later without keeping the key itself. */
+export const keyVerifier = verifierOf;
 const newKey = () => {
   const key = randomBytes(32).toString("base64url");
   return { key, verifier: verifierOf(key) };
@@ -144,8 +151,12 @@ const issuing = <T>(guard: CommitGuard | undefined, result: T, writes: readonly 
 const identityOf = (id: string, fields: Fields): Identity => ({ id, kind: fields.kind as IdentityKind, displayName: fields.displayName! });
 
 /** The identity a key currently holds, read inside the caller's transaction. */
-async function readHolder(read: TransactionRead, key: string): Promise<Holder | undefined> {
-  const verifier = verifierOf(key);
+function readHolder(read: TransactionRead, key: string): Promise<Holder | undefined> {
+  return readVerifierHolder(read, verifierOf(key));
+}
+
+/** The identity a key verifier currently holds, read inside the caller's transaction. */
+async function readVerifierHolder(read: TransactionRead, verifier: string): Promise<Holder | undefined> {
   const keyDoc = (await read([`keys/${verifier}`])).get(`keys/${verifier}`);
   if (!keyDoc) return undefined;
   const id = keyDoc.identityId!;
@@ -343,6 +354,15 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
       if (!found) return refuse("unknown_key");
       await touch(found, at);
       return ok(project(found));
+    },
+
+    async holderOfVerifier(verifier) {
+      return store.transaction(async (read) => {
+        const writes: Write[] = [];
+        const holder = await readVerifierHolder(read, verifier);
+        const found = holder ? await account(read, holder.id, now(), writes) : undefined;
+        return { result: found?.id, writes: writesOf(writes) };
+      });
     },
 
     async rotateKey(key, guard) {

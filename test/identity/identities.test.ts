@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
+import { createIdentities, keyVerifier, type Outcome } from "../../src/identity/identities.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 
 // Runs inside `firebase emulators:exec --only firestore`, which sets
@@ -169,6 +169,22 @@ describe.skipIf(!host)("identities against the Firestore emulator", () => {
     expect(value(await ids.resolveKey(scoutNext))).toEqual(scout.identity);
   });
 
+  it("finds a key's holder by its verifier until that key is replaced", async () => {
+    const ids = identitiesFor(freshNamespace());
+    const kay = value(await ids.claimUsername("Kite"));
+    const scout = value(await ids.createHandle(kay.key, "scout"));
+    expect(await ids.holderOfVerifier(keyVerifier(kay.key))).toBe(kay.identity.id);
+    expect(await ids.holderOfVerifier(keyVerifier(scout.key))).toBe(scout.identity.id);
+    expect(await ids.holderOfVerifier(keyVerifier(""))).toBeUndefined();
+
+    const { key: kayNext } = value(await ids.rotateKey(kay.key));
+    expect(await ids.holderOfVerifier(keyVerifier(kay.key))).toBeUndefined();
+    expect(await ids.holderOfVerifier(keyVerifier(kayNext))).toBe(kay.identity.id);
+    const { key: scoutNext } = value(await ids.reissueHandleKey(kayNext, "scout"));
+    expect(await ids.holderOfVerifier(keyVerifier(scout.key))).toBeUndefined();
+    expect(await ids.holderOfVerifier(keyVerifier(scoutNext))).toBe(scout.identity.id);
+  });
+
   it("reissues a handle key with the owner key; a username key is replaced only by rotateKey or reissueLostKey", async () => {
     const namespace = freshNamespace();
     const ids = identitiesFor(namespace);
@@ -186,7 +202,7 @@ describe.skipIf(!host)("identities against the Firestore emulator", () => {
     expect(await ids.reissueHandleKey(scout.key, "scout")).toEqual({ ok: false, reason: "unknown_key" });
 
     // Public identity operations, retention initialization and successful-join recording.
-    expect(Object.keys(ids).sort()).toEqual(["claimUsername", "createHandle", "findByDisplayName", "findById", "recordMatchJoin", "reissueHandleKey", "reissueLostKey", "resolveKey", "rotateKey"]);
+    expect(Object.keys(ids).sort()).toEqual(["claimUsername", "createHandle", "findByDisplayName", "findById", "holderOfVerifier", "recordMatchJoin", "reissueHandleKey", "reissueLostKey", "resolveKey", "rotateKey"]);
   });
 
   it("lets exactly one of two simultaneous rotations of the same key succeed", { timeout: RACE_TIMEOUT }, async () => {
