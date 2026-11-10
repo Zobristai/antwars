@@ -16,8 +16,10 @@ import { queueStatusStep } from "./queue.js";
  * A request holds a place on every UTC day its match could still fall on (heldDays), derived from its lobby, never
  * stored: both the creation day and the day of createdAt + the lobby expiry + the countdown while it can still take a
  * slot, its startsAt day once it has, its creation day when it expired full awaiting one, and none when its held seat
- * was never filled, a failed or unavailable report closed it, or its match ended abandoned because the held colony
- * never joined (the lobby's heldAbsent): a house no-show is never charged to the builder.
+ * was never filled, a failed or unavailable report closed it, its builder left it before start (leave_lobby, which ends
+ * it with no startsAt and records leftEmpty; challenge_status then reads expired, reason builder_left), or its match
+ * ended abandoned because the held colony never joined (the lobby's heldAbsent): a house no-show is never charged to
+ * the builder.
  * Places only shrink after admission, and admission needs room on every day it adds, so no day ever holds more than 20
  * places, or 5 for one owner. A game is charged when the house owner reports it launched and its held seat is filled,
  * unless the held colony then never joins its match; a charged game's match day always keeps its place, so charged
@@ -172,6 +174,8 @@ export function stateOf(request: Fields, lobby: Fields | null | undefined, at: n
   }
   // A challenge lobby is never deleted; a missing one is read as ended without a game.
   if (!lobby) return { state: "expired" };
+  // Its builder left before the match started, emptying and ending the lobby: never a finished game.
+  if (lobby.leftEmpty === "true") return { state: "expired", reason: "builder_left" };
   if (rules.isExpired(lobby, at)) return { state: "expired", reason: lobby.state === "open" ? "house_did_not_join" : "no_match_slot" };
   if (lobby.state === "open") return { state: "waiting_for_house" };
   if (lobby.state === "waiting" || (lobby.state === "holding" && !lobby.matchRunId)) return { state: "waiting_for_slot" };

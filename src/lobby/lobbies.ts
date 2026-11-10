@@ -31,7 +31,9 @@ import { lobbyPageUrl } from "./site.js";
  *                         seats (JSON [{id, displayName, colony}]), inviteVerifier,
  *                         startsAt, matchRunId, outcome, mode }
  *                       mode is the ranked mode of a queue-made lobby, "" (or absent,
- *                       in lobbies stored before modes) for a player-created one
+ *                       in lobbies stored before modes) for a player-created one;
+ *                       leftEmpty ("true"), written only when the last seated identity
+ *                       left before the match started and so ended the lobby unplayed
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
  *   queues/{kind}       { lobbies }  waiting lobby ids, earliest first
  *   listings/public     { lobbies }  public lobby ids, pruned of ended/expired ones
@@ -190,7 +192,9 @@ export type LobbyRefusal =
   /** Adopting a saved match the lobby no longer holds this slot with. */
   | "stale_save"
   /** A house challenge's held seat, taken by an identity other than its handle. */
-  | "seat_held";
+  | "seat_held"
+  /** A leave by an identity with no seat in the lobby, or of a lobby that does not exist. */
+  | "not_seated";
 export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal };
 
 export interface CreatedLobby {
@@ -217,6 +221,13 @@ export interface Lobbies {
   isInviteCurrent(lobbyId: string, token: string): Promise<boolean>;
   /** Creator only, once each colony has a seated identity. */
   startEarly(lobbyId: string, creatorKey: string): Promise<LobbyOutcome<Lobby>>;
+  /**
+   * Removes the key's identity's seat from an open lobby, before its match starts; nothing is rated or charged.
+   * When the last seat leaves, the lobby ends unplayed (outcome not_played, no startsAt) and records leftEmpty.
+   * Refused not_seated, with nothing written, when the lobby is missing or holds no seat of this identity (the two
+   * read alike); expired when it expired; started once it no longer accepts joins (any state but open).
+   */
+  leave(lobbyId: string, key: string): Promise<LobbyOutcome<Lobby>>;
   /**
    * Ends a lobby's hold on its slot when its match ends and hands the slot to the
    * earliest-waiting live lobby of that kind, whose id is returned (null if none).
@@ -844,6 +855,28 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         }
         const started = await start(read, lobbyId, fields, seats, at);
         return { result: ok(started.lobby), writes: started.writes };
+      });
+    },
+
+    async leave(lobbyId, key) {
+      const leaver = await identityOf(key);
+      if (!leaver) return refuse("unknown_key");
+      return store.transaction<LobbyOutcome<Lobby>>(async (read) => {
+        const at = now();
+        const fields = (await read([lobbyPath(lobbyId)])).get(lobbyPath(lobbyId));
+        if (!fields) return { result: refuse("not_seated"), writes: [] };
+        const seats = seatsOf(lobbyId, fields);
+        if (!seats.some((seat) => seat.id === leaver.id)) return { result: refuse("not_seated"), writes: [] };
+        if (isExpired(fields, at)) return { result: refuse("expired"), writes: [] };
+        // Starting is where joins stop: any state but open.
+        if (fields.state !== "open") return { result: refuse("started"), writes: [] };
+        const remaining = seats.filter((seat) => seat.id !== leaver.id);
+        // The last seat out closes the lobby unplayed, as a failed house launch does, with no startsAt and so no
+        // challenge place; leftEmpty tells it apart from a finished lobby.
+        const update: Fields = remaining.length > 0
+          ? { seats: JSON.stringify(remaining) }
+          : { seats: "[]", state: "ended", outcome: "not_played", leftEmpty: "true" };
+        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }] };
       });
     },
 

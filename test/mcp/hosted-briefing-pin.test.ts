@@ -20,13 +20,16 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // without that clause every text hashes to its 5df81d04 digest, so nothing else changed.
 // Repinned again when the clause covers every lobby match (", or a seat not joined by the limit from match start or an
 // earlier end"); with the ranked wording every text hashes to its previous pin, so nothing else changed.
+// Repinned for the lobby leave sentence in the non-house lobby guidance ("leave_lobby {key,lobbyId}: leave before
+// start, no rating change or charge; the last leaver closes it. "); without it every house=false text hashes to its
+// previous pin, and the house=true texts, which carry no lobby guidance, are unchanged.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
-  "join house=false undrawn=true nest=false": "5c85776854f5523091f4f910c9ecd4ca629f88f2f534f9bf7573ddbefd360603",
-  "join house=false undrawn=true nest=true": "5be635593b9ee4efc0a4f58344fdf0009877b3917839fd92b8ffd9159c501e2a",
-  "rules house=false undrawn=true": "82d952fd224692763c148bb9cba1126a4f5d68b6ad75e9f9cc6a844f88ba4940",
-  "join house=false undrawn=false nest=false": "dae59916cd9d8ae78539158095e9a41625d8d54074adef719d8a450d6e2cc9de",
-  "join house=false undrawn=false nest=true": "66c51735d977c2715c570d8167afbf6e601219c14a006f8624333c50f0c35692",
-  "rules house=false undrawn=false": "0d114c113e75a229cac4e4fe5b808cf32653c05cddc48c6dfdd4a8d3cb6b9591",
+  "join house=false undrawn=true nest=false": "972460439e046611cc39a2f3163034b9e8138a2c8dea88c37256e560acc783fe",
+  "join house=false undrawn=true nest=true": "c95bc371b833c71d8ff666ad1c23b536e4a589b8953f3fe8435f6b3032fcf5f8",
+  "rules house=false undrawn=true": "2c85f9cd4627343b26f2ea450bde9a174e6b1c26f37f7ab991cfa792b8ed96e3",
+  "join house=false undrawn=false nest=false": "32b3bea4246eb164ac36da75a3d435fb10830ece8b75961c8fec513816813c65",
+  "join house=false undrawn=false nest=true": "49e4de2ff813b01510ce338f958033db4f66605ac6d723d39a4ecbc09a0ec6de",
+  "rules house=false undrawn=false": "b3e013f080a4ebeb339046df87e7cf1ecbf722d6f1803c301fd8ac689d6c13cd",
   "join house=true undrawn=true nest=false": "8238fa2e15595c076df9bf91b910ab2c4a9b7aa69422c4e7b897daf781d7a9a0",
   "join house=true undrawn=true nest=true": "db81dc9ac07a9e9123304f7b1646e03795157801f25465722c3e0aff9c4a1349",
   "rules house=true undrawn=true": "351e906c3bf6a4faf2ca5d1d67878c8dfdcdcc7cb763adf7059d0cb66c0f3745",
@@ -40,20 +43,22 @@ const HOSTED_AT_5DF81D04: Record<string, string> = {
 // barrier, before the seed draws the map, and the rules text of the drawn seed 6006 match.
 // Repinned for the same ranked never-joined idle clause; without it every text hashes to its 5df81d04 digest.
 // Repinned again for that clause covering every lobby match, as above.
+// Repinned for the lobby leave sentence, as above, in the count-marks and redesign texts that carry the lobby guidance;
+// without it each hashes to its previous pin, and the v4 texts are unchanged.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "join v4 players=2": "5c5f62959d1ef08efa3ba6e40a31aede6b967a96ed66b893108ec82d2130d14a",
   "rules v4 players=2": "d74106ae57974263cf40fff2fd2e99c52c1c1e7a8d61be0c074032dc0bc14eae",
   "join v4 players=4": "a5b8a4de730c6992b8a27b29f705e6440724292b1cbe22209c7ddcf873029702",
   "rules v4 players=4": "d57a9e79c59accfa216e17c90e02272ac024a32ffb1d7a02a43d93091364648e",
-  "join count-marks players=2": "881fa8681185930b7c2dc3bb7f3447d4667477836431b26b3185ee9127eec31e",
-  "rules count-marks players=2": "ea3f0365f4c649423355673239db8dc6998dc09f3b904c339e9948e7e1a0e8a0",
-  "join count-marks players=4": "c6b2025829a05e9096ae6853f37d7de58a457d4b1819153a7201eedcb1523bb4",
-  "rules count-marks players=4": "8214bc3f6b5238fb50c75f78cc81f305f5b5f3ac1f07a8ed2d3181806800e13e",
-  "join redesign players=2": "a2d6609c80db63d81fdf99d8b46915f186938358306b726449ae09c1e094958e",
-  "rules redesign players=2": "984799479694888c9ed7ba18b3b9ba60553f0dbc42a835975a0a1d91d92d69c8",
-  "join redesign players=4": "76c022de7087d7743809dc2342a636e995ec4692919921a08f2e5fe661315875",
-  "rules redesign players=4": "445849a3d49637f8c61789c414482ff980de946a42a469343197fc96ee9a37ad",
+  "join count-marks players=2": "3682600f589eef1ab47b0715ea1700b4acda7b8ebdf9c46be44b1535b8d52abd",
+  "rules count-marks players=2": "4926858e7123a556f240cff073e53663fc8457ee7ef2ea7b17c79276265e64d2",
+  "join count-marks players=4": "99407834e3522b30c0ba1450f8d405741a515cd8ac06ef23484f719e0d10f224",
+  "rules count-marks players=4": "6f368f5fbdef5bec5e6adffd513b9fa7fcb7563f99f354c27fce7ac668fd9887",
+  "join redesign players=2": "c3955ec707f0a0ca877f044ce5832b9b541a73eb32c8e9635377b398b5a9acf4",
+  "rules redesign players=2": "2a9dfb16cf945bd0dd8cf93456eeebd4aebc5130a55ee08d86161435e23f300f",
+  "join redesign players=4": "4853cd96415fee9912124c553f36ba49e1f899911070f2b59bc0d0ad1674cefb",
+  "rules redesign players=4": "85f18afae106bb2bd21ec0228feb6a03f5b091ad8012e42a10687548e3a178c8",
 };
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));
@@ -70,7 +75,7 @@ function hostedTexts(extra: Partial<BriefingContext> = {}): Record<string, strin
   return out;
 }
 
-const ACCOUNT_TOOLS = ["list_lobbies", "create_lobby", "join_lobby", "start_lobby", "read_lobby", "locate_match", "join_queue", "queue_status", "leave_queue", "rating", "leaderboard", "create_handle", "rotate_key"];
+const ACCOUNT_TOOLS = ["list_lobbies", "create_lobby", "join_lobby", "start_lobby", "read_lobby", "locate_match", "join_queue", "queue_status", "leave_queue", "leave_lobby", "rating", "leaderboard", "create_handle", "rotate_key"];
 
 describe("hosted briefing stays byte-identical to main 5df81d04", () => {
   it("every hosted join briefing and rules text matches its 5df81d04 digest", () => {

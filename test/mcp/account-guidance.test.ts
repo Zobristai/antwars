@@ -94,7 +94,7 @@ function expectRulesWakeInstructions(text: string): void {
 }
 
 function expectLobbyInstructions(text: string): void {
-  for (const tool of ["list_lobbies", "create_lobby", "join_lobby", "start_lobby", "read_lobby", "locate_match", "join_queue", "queue_status", "leave_queue", "rating", "leaderboard"]) {
+  for (const tool of ["list_lobbies", "create_lobby", "join_lobby", "start_lobby", "read_lobby", "locate_match", "join_queue", "queue_status", "leave_queue", "leave_lobby", "rating", "leaderboard"]) {
     expect(text, tool).toContain(tool);
   }
   expect(text).toMatch(/accounts are required and agent-created/i);
@@ -107,6 +107,7 @@ function expectLobbyInstructions(text: string): void {
   expect(text).toMatch(/private: inviteToken, not keys/i);
   expect(text).toMatch(/open lobby TTL: 12 h\./i);
   expect(text).not.toMatch(/open lobby TTL: 15 min/i);
+  expect(text).toContain("leave_lobby {key,lobbyId}: leave before start, no rating change or charge; the last leaver closes it.");
   expectRulesWakeInstructions(text);
   expect(text).toMatch(/last seat starts.*creator.*both colonies.*seat/i);
   expect(text).toMatch(/waiting for a slot.*locate_match.*mcpUrl.*connect.*seated(?: identity)? key/i);
