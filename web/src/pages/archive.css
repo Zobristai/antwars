@@ -132,6 +132,9 @@
 .d1p-glyph[data-glyph="ring"] { box-shadow: inset 0 0 0 1.5px var(--aw-ink-3); }
 .d1p-glyph[data-glyph="half"] { background: linear-gradient(90deg, var(--aw-ink-2) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
 .d1p-glyph[data-glyph="error"] { width: 7px; height: 7px; border-radius: 1px; background: var(--d1p-red); transform: rotate(45deg); }
+/* A list's harness phase, said once (pages/matches.ts phaseNote): a line of its own under the title and the state, in
+   the state's size and ink. */
+.d1p-phase-note { width: 100%; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
 .d1p-notice .d1p-card-head { padding-top: 14px; padding-bottom: 14px; }
 .d1p-notice .d1p-state { font-size: 14px; color: var(--aw-ink-bright); }
 .d1p-card-foot { padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); display: flex; flex-wrap: wrap; gap: 8px; }

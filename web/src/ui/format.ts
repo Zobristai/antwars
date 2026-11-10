@@ -2,7 +2,7 @@
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import type { StreamResult } from "../../../src/live/format.ts";
 import { resultHow } from "../story.ts";
-import { replayDate } from "../replay.ts";
+import { replayDate, unbrokenTag } from "../replay.ts";
 import { returnTo3dUrl, clear3dRetryUrl } from "../3d-recovery.ts";
 import type { HarnessPhase, LiveMatch, MatchesView, Recording } from "../matches-page/data.ts";
 
@@ -189,6 +189,29 @@ export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string
   if (phase.phase === "unknown") return ["Harness phase unknown"];
   const named = phase.phase.startsWith("from ") ? `Harness ${phase.phase}` : `Harness: ${phase.phase}`;
   return [named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
+}
+
+/** A list's harness phase said once (listPhase): its note, and each row's own tags where the note does not carry them. */
+export interface ListPhase {
+  /** "Index · Harness from round 31 onward", each tag held whole (replay.ts unbrokenTag); null where the list says none. */
+  readonly note: string | null;
+  /** Each row's own tags, in the rows' order: none where the note carries them. */
+  readonly own: readonly (readonly string[])[];
+}
+
+/**
+ * A list's Model Index harness phase, said once in a note over the list rather than on every row. The note carries the
+ * first covered row's tags, Recordings' newest, and a row keeps its own tags only where they differ, so every match's
+ * phase stays identifiable and older rows loaded later change no row already shown. covered: the rows the note speaks
+ * for; a Recordings row its Index badge marks as a Model Index match, and every Live now row, which has no such badge,
+ * so there a note needs every row to be one. No note where a covered row has no tags: it would give that row a phase.
+ */
+export function listPhase(rows: readonly { readonly covered: boolean; readonly phase: readonly string[] }[]): ListPhase {
+  const covered = rows.filter(row => row.covered);
+  const shared = covered[0]?.phase ?? [];
+  if (shared.length === 0 || covered.some(row => row.phase.length === 0)) return { note: null, own: rows.map(row => row.phase) };
+  const same = (tags: readonly string[]) => tags.length === shared.length && tags.every((tag, at) => tag === shared[at]);
+  return { note: ["Index", ...shared].map(unbrokenTag).join(" · "), own: rows.map(row => row.covered && same(row.phase) ? [] : row.phase) };
 }
 
 export function recordingRow(r: Recording, search: string): RecordingRow {

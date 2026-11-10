@@ -53,7 +53,7 @@ export function setFallback(reason: Fallback | null): void {
 }
 
 /** A tag that never breaks across lines: no-break spaces, and a word joiner after each hyphen ("rounds 11-25" stays whole). */
-const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace(/-/g, "-\u2060");
+export const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace(/-/g, "-\u2060");
 
 /**
  * What the line says. livePath is the page without its query; its live view is liveHref(livePath). While the recording
