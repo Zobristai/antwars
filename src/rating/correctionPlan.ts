@@ -260,9 +260,14 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const near = (a: number, b: number | undefined) => b !== undefined && Math.abs(a - b) <= SAME;
   const check = replay(order);
   for (const lobby of window) {
-    for (const c of check.changes.get(lobby.id)!) {
-      const kept = change(lobby, c.identityId);
-      if (!near(c.after, kept.after) || !near(c.rdAfter!, kept.rdAfter)) refuse(`stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`);
+    const [replayed, kept] = [check.changes.get(lobby.id)!, stored.get(lobby.id)!];
+    const ids = (changes: readonly RatingChange[]) => JSON.stringify(changes.map(c => c.identityId).sort());
+    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) refuse(`stored history not reproduced: the players of lobby ${lobby.id}`);
+    for (const c of replayed) {
+      const k = change(lobby, c.identityId);
+      if (!near(c.before, k.before) || !near(c.rdBefore!, k.rdBefore) || !near(c.after, k.after) || !near(c.rdAfter!, k.rdAfter)) {
+        refuse(`stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`);
+      }
     }
   }
   for (const id of players) {

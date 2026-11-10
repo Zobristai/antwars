@@ -178,6 +178,13 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     const old = String(Date.now() - 100 * DAY_MS);
     await commit(w.store, [{ op: "update", path: `identities/${w.users[0]}`, fields: { claimedAt: old, lastKeyUseAt: old, lastMatchAt: old, hasJoinedMatch: "true" } }]);
 
+    // Every planning read goes through a store whose transactions refuse any write.
+    const strict: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
+      const result = await step(read);
+      if (result.writes.length > 0) throw new Error(`planning wrote ${result.writes.map(each => each.path).join(", ")}`);
+      return result;
+    }) };
+
     // Refused after the names are read: nothing written.
     const path = `ratedMatches/${w.lobbies[8]}`;
     const stored = (await w.store.get(path))!.changes!;
@@ -186,14 +193,14 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
     const tampered = await w.snapshot();
     expect(tampered["usernames/absent-player"]).not.toBeNull();
-    await expect(planCorrections(w.store, w.recordings)).rejects.toThrow("stored history not reproduced");
+    await expect(planCorrections(strict, w.recordings)).rejects.toThrow("stored history not reproduced");
     expect(await w.snapshot()).toEqual(tampered);
 
     // Planned: nothing written, and the served plan holds no identity id.
     await commit(w.store, [{ op: "update", path, fields: { changes: stored } }]);
     const before = await w.snapshot();
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
-    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    const { serve } = startCorrectionPlan(strict, w.recordings);
     await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("planned"));
     info.mockRestore();
     expect(await w.snapshot()).toEqual(before);
@@ -228,9 +235,23 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     const w = await world();
     // gpt-6-1-sol-high's last match, so its rating chain still holds.
     const path = `ratedMatches/${w.lobbies[8]}`;
-    const changes = JSON.parse((await w.store.get(path))!.changes!) as { rdAfter: number }[];
-    changes[0]!.rdAfter += 1;
-    await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    const original = (await w.store.get(path))!.changes!;
+    type Stored = { identityId: string; before: number; after: number; rdBefore: number; rdAfter: number };
+    const tamper = async (edit: (changes: Stored[]) => void) => {
+      const changes = JSON.parse(original) as Stored[];
+      edit(changes);
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    };
+    // Each stored figure and the stored players are compared, not only the results.
+    for (const [edit, reason] of [
+      [(c: Stored[]) => { c[0]!.before += 1; }, `antwars/gpt-6-1-sol-high in lobby ${w.lobbies[8]}`],
+      [(c: Stored[]) => { c[0]!.rdBefore += 1; }, `antwars/gpt-6-1-sol-high in lobby ${w.lobbies[8]}`],
+      [(c: Stored[]) => { c.push({ ...c[1]!, identityId: w.users[0]! }); }, `the players of lobby ${w.lobbies[8]}`],
+    ] as const) {
+      await tamper(edit);
+      await expect(planCorrections(w.store, w.recordings)).rejects.toThrow(`stored history not reproduced: ${reason}`);
+    }
+    await tamper(c => { c[0]!.rdAfter += 1; });
     await expect(planCorrections(w.store, w.recordings)).rejects.toThrow(`stored history not reproduced: antwars/gpt-6-1-sol-high in lobby ${w.lobbies[8]}`);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { serve } = startCorrectionPlan(w.store, w.recordings);
