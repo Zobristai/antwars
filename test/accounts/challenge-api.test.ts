@@ -250,7 +250,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(23);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(28);
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
       await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
