@@ -1,12 +1,12 @@
 /// <reference types="node" />
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountStores } from "../../src/accounts/service.ts";
 import { WAIT_STREAM_LIMITS, waitStreamRoutes, type WaitStreamOptions } from "../../src/accounts/waitStream.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createLobbies, type Lobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
-import { expiryField, WAIT_GRACE_MS, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
+import { expiryField, startWaitSweep, WAIT_GRACE_MS, WAIT_SWEEP_INTERVAL_MS, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
@@ -200,6 +200,39 @@ describe("the wait stream route", () => {
   });
 });
 
+describe("the timed wait sweep", () => {
+  it("runs every interval, never overlapping itself, survives a failed tick with a fixed warning, and stops", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let calls = 0;
+      let release: (() => void) | undefined;
+      const stop = startWaitSweep(async () => {
+        calls++;
+        if (calls === 1) throw new Error("a stored failure text");
+        if (calls === 2) await new Promise<void>((resolve) => { release = resolve; });
+      });
+      await vi.advanceTimersByTimeAsync(WAIT_SWEEP_INTERVAL_MS);
+      expect(calls).toBe(1);
+      expect(warn).toHaveBeenCalledWith("antwar wait sweep failed: Error");
+      await vi.advanceTimersByTimeAsync(WAIT_SWEEP_INTERVAL_MS);
+      expect(calls).toBe(2);
+      // The second tick is still running: the next interval does not start another.
+      await vi.advanceTimersByTimeAsync(WAIT_SWEEP_INTERVAL_MS);
+      expect(calls).toBe(2);
+      release!();
+      await vi.advanceTimersByTimeAsync(WAIT_SWEEP_INTERVAL_MS);
+      expect(calls).toBe(3);
+      stop();
+      await vi.advanceTimersByTimeAsync(3 * WAIT_SWEEP_INTERVAL_MS);
+      expect(calls).toBe(3);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});
+
 let counter = 0;
 
 /** The account stores on the emulator with a test clock, served by startServer, plus a fast-polling stream of their own. */
@@ -314,26 +347,27 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
   it("a read that saw the queue token before another re-pointed it, and the entry after a rejoin, follows the lobby", async () => {
     const w = await world();
     const ann = await w.claim("Ann"), bob = await w.claim("Bob");
-    const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
-    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
-    const { queue } = await w.ok("queue_status", { key: ann.key });
-    // A second reader on the same store whose read of Ann's entry is held until the test lets it go.
+    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    // Bob's join makes the pair: his own token is still a queue wait, re-pointed by its first final read.
+    const bobToken = tokenOf(await w.ok("join_queue", { key: bob.key, mode: "1v1" }));
+    const { queue } = await w.ok("queue_status", { key: bob.key });
+    // A second reader on the same store whose read of Bob's entry is held until the test lets it go.
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
     let entryReads = 0;
     const slow = createLobbies({
       ...w.store,
       get: async (path) => {
-        if (path === `queueEntries/${ann.id}` && entryReads++ === 0) await held;
+        if (path === `queueEntries/${bob.id}` && entryReads++ === 0) await held;
         return w.store.get(path);
       },
     }, w.identities, { publicSlots: 1, privateSlots: 1, staleHoldGraceMs: 60_000, now: () => w.clock.t });
-    const overlapping = slow.waitStatus(annToken);
+    const overlapping = slow.waitStatus(bobToken);
     await new Promise((resolve) => setTimeout(resolve, 100));
-    // Meanwhile another stream delivers paired (re-pointing the token) and Ann rejoins, replacing her entry.
-    expect(await w.lobbies.waitStatus(annToken)).toEqual({ state: "paired", lobbyId: queue.lobbyId, lobbyWait: true });
+    // Meanwhile another stream delivers paired (re-pointing the token) and Bob rejoins, replacing his entry.
+    expect(await w.lobbies.waitStatus(bobToken)).toEqual({ state: "paired", lobbyId: queue.lobbyId, lobbyWait: true });
     w.clock.t += 1;
-    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
     release();
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
     expect(await overlapping).toEqual({ state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId });
@@ -363,15 +397,24 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await w.ok("queue_status", { key: ann.key })).queue).toEqual(queue);
   });
 
-  it("leave_queue removes the left join's token, ending an open stream expired: ended; a later join removes an expired one", async () => {
+  it("leave_queue ends the left join's token: an open stream and a reconnect within the grace get expired: ended; then the sweep removes it; a later join removes an expired one", async () => {
     const w = await world();
     const ann = await w.claim("Ann");
     const left = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
     const open = read(w.fast, left);
     await new Promise((resolve) => setTimeout(resolve, 100));
     await w.ok("leave_queue", { key: ann.key });
+    const ended = { event: "expired", data: { state: "expired", reason: "ended" } };
     const live = await open;
-    expect([live.ended, live.frames.at(-1)]).toEqual([true, { event: "expired", data: { state: "expired", reason: "ended" } }]);
+    expect([live.ended, live.frames.at(-1)]).toEqual([true, ended]);
+    // Kept, read ended, for the grace after the leave.
+    expect(await w.store.get(`waits/${left}`)).toMatchObject({ kind: "queue", expiresAt: expiryField(w.clock.t + WAIT_GRACE_MS) });
+    // A stream cut before the leave reconnects within the grace and learns it ended.
+    w.clock.t += WAIT_GRACE_MS - 1;
+    expect((await read(w.fast, left)).frames).toEqual([ended]);
+    expect(await w.lobbies.sweepWaits()).toBe(0);
+    w.clock.t += 1;
+    expect(await w.lobbies.sweepWaits()).toBe(1);
     expect(await w.store.get(`waits/${left}`)).toBeNull();
     expect((await read(w.fast, left)).status).toBe(404);
 
@@ -405,7 +448,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect(await w.store.get(`waits/${tokenOf(requested)}`)).toMatchObject({ kind: "lobby", expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
   });
 
-  it("a wait read final early is removed by the next join's sweep once its grace passes; readable until then", async () => {
+  it("a wait read final early is removed by the timed sweep once its grace passes, with no join; readable until then", async () => {
     const w = await world();
     const cast = await houseCast(w.identities, w.store, 0);
     value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
@@ -417,24 +460,30 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await read(w.fast, token)).frames).toEqual(ended);
     w.clock.t += WAIT_GRACE_MS - 1;
     expect((await read(w.fast, token)).frames).toEqual(ended);
+    expect(await w.lobbies.sweepWaits()).toBe(0);
     // Within the challenge's 15-minute limit, but past the grace after it was read ended.
     w.clock.t += 2;
-    const ann = await w.claim("Ann");
-    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    expect(await w.lobbies.sweepWaits()).toBe(1);
     expect(await w.store.get(`waits/${token}`)).toBeNull();
     expect((await read(w.fast, token)).status).toBe(404);
   });
 
-  it("repeated joins by one identity keep one wait record, and the sweep removes only expired records", async () => {
+  it("repeated joins by one identity keep only the waits left within one grace plus the live one, and the sweep removes only expired records", async () => {
     const w = await world();
-    const ann = await w.claim("Ann"), bob = await w.claim("Bob"), cid = await w.claim("Cid");
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
     const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 100 })).rows.map((row) => row.path);
     let token = "";
+    // Each left wait is kept, read ended, for the grace after its leave, then swept: the count is bounded by leaves in one grace.
+    const leftTokens: string[] = [];
     for (let n = 0; n < 5; n++) {
       token = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
       await w.ok("leave_queue", { key: ann.key });
+      leftTokens.push(token);
       w.clock.t += 1;
     }
+    expect((await records()).sort()).toEqual(leftTokens.map((t) => `waits/${t}`).sort());
+    w.clock.t += WAIT_GRACE_MS;
+    expect(await w.lobbies.sweepWaits()).toBe(5);
     expect(await records()).toEqual([]);
     for (let n = 0; n < 5; n++) {
       token = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
@@ -442,12 +491,12 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     }
     expect(await records()).toEqual([`waits/${token}`]);
 
-    // Ann's last token, never read, passes its limit plus grace; Bob's lobby wait is live; Cid's join sweeps.
+    // Ann's last token, never read, passes its limit plus grace; Bob's lobby wait is live; the sweep runs with no join.
     const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 1));
     const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
     w.clock.t += WAIT_GRACE_MS;
-    const cidToken = tokenOf(await w.ok("join_queue", { key: cid.key, mode: "1v1" }));
-    expect((await records()).sort()).toEqual([`waits/${bobToken}`, `waits/${cidToken}`].sort());
+    expect(await w.lobbies.sweepWaits()).toBe(1);
+    expect(await records()).toEqual([`waits/${bobToken}`]);
   });
 
   it("a paired queue token never read before its identity rejoins still follows the paired lobby", async () => {
@@ -459,8 +508,58 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     w.clock.t += 1;
     await w.ok("join_queue", { key: ann.key, mode: "1v1" });
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
-    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, paired: "true", identityId: ann.id, expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, identityId: ann.id, expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    // Its first read still reports paired, once; the next follows the lobby.
+    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "paired", data: { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true } }]);
     expect((await read(w.fast, annToken)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId } }]);
+  });
+
+  it("a late pairing keeps the waiting partner's record with the lobby: a sweep past its queue limit leaves it, and its first reconnect gets paired, then the lobby", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    const queueExpiry = expiryField(w.clock.t + 12 * HOUR + WAIT_GRACE_MS);
+    // Paired a minute before Ann's queue entry would expire, while she is disconnected.
+    w.clock.t += 12 * HOUR - 60_000;
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
+    const { queue } = await w.ok("queue_status", { key: ann.key });
+    expect(queue.state).toBe("matched");
+    const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, identityId: ann.id, expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    // Past the queue wait's own limit plus grace: the sweep leaves the record, which now follows the lobby.
+    w.clock.t += 20 * 60_000;
+    expect(Number(queueExpiry)).toBeLessThan(w.clock.t);
+    await w.lobbies.sweepWaits();
+    expect(await w.store.get(`waits/${annToken}`)).not.toBeNull();
+    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "paired", data: { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true } }]);
+    expect((await read(w.fast, annToken)).frames.at(-1)!.data).toMatchObject({ lobbyId: queue.lobbyId });
+  });
+
+  it("the timed sweep removes expired records of every kind across more than one page in a quiet period, with lobby-only traffic and no join", async () => {
+    const w = await world();
+    const bob = await w.claim("Bob"), ann = await w.claim("Ann");
+    const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 200 })).rows.map((row) => row.path);
+    const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 2));
+    const seated = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    const cast = await houseCast(w.identities, w.store, 0);
+    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    const builder = await w.claim("builder");
+    const challenger = tokenOf(await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" }));
+    const queued = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    // More expired records than one page holds, of both stored kinds.
+    const past = expiryField(w.clock.t);
+    await w.store.transaction(async () => ({ result: null, writes: Array.from({ length: 40 }, (_, n) => ({
+      op: "create" as const, path: `waits/filler${String(n).padStart(16, "0")}`,
+      fields: (n % 2 === 0 ? { kind: "queue", identityId: "x", joinedAt: "1", expiresAt: past } : { kind: "lobby", lobbyId: "x", identityId: "x", expiresAt: past }) as Record<string, string>,
+    })) }));
+    // The three real waits are within their limits and stay.
+    w.clock.t += 1;
+    expect(await w.lobbies.sweepWaits()).toBe(40);
+    expect((await records()).sort()).toEqual([`waits/${seated}`, `waits/${challenger}`, `waits/${queued}`].sort());
+    // Every wait's own limit plus grace passes with no join at all.
+    w.clock.t += 12 * HOUR + WAIT_GRACE_MS;
+    expect(await w.lobbies.sweepWaits()).toBe(3);
+    expect(await records()).toEqual([]);
   });
 
   it("join_lobby's token waits for a slot, settles as read_lobby does, then sends slot_ready; an open lobby past 12 hours expires", async () => {

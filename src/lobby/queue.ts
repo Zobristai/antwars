@@ -2,7 +2,7 @@ import { isHouseOwned } from "../identity/houseOwnership.js";
 import { isRankedMode, type RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
-import type { WaitState } from "./waits.js";
+import { isWaitToken, repointWrite, waitPath, type WaitState } from "./waits.js";
 
 /**
  * The ranked matchmaking queue, as transaction steps that
@@ -141,11 +141,19 @@ export async function joinQueueStep(
     mode, colonies: pairColonies(table.size, { id: pick, displayName: partner.displayName ?? "" }, joiner),
   }, at);
   const lobbyId = made.lobby.id;
+  // The waiting partner may not read its token again for hours: its record follows the lobby from this commit, with the
+  // lobby's own limit, so it is never swept on its queue expiry while the lobby still waits (src/lobby/waits.ts).
+  const partnerToken = candidateDocs.get(entryPath(pick))?.waitToken;
+  const partnerWait = partnerToken && isWaitToken(partnerToken) ? (await read([waitPath(partnerToken)])).get(waitPath(partnerToken)) : null;
+  const partnerRepoint: Write[] = partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt
+    ? [repointWrite(partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")]
+    : [];
   return {
     result: { ok: true, value: { state: "matched", mode, lobbyId, matchedAt: at } },
     writes: [
       ...made.writes,
       { op: "update", path: entryPath(pick), fields: { state: "matched", lobbyId } },
+      ...partnerRepoint,
       ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId, waitToken }),
       ...listWrite(waiting.filter((id) => id !== pick)),
     ],

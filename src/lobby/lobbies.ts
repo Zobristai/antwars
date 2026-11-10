@@ -8,7 +8,7 @@ import type { Fields, Store, TransactionRead, Write } from "../store/firestore.j
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
-import { endedWrite, isFinal, isWaitToken, lobbyWait, repointWrite, sweepExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
+import { endedWrite, isFinal, isWaitToken, lobbyWait, repointWrite, sweepAllExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -308,6 +308,11 @@ export interface Lobbies {
   /** House challenges (src/lobby/challenges.ts). */
   /** With waitToken, an admitted request also records it as a lobby wait on the challenge's lobby, in the same transaction. */
   requestChallenge(key: string, opponent: string, waitToken?: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly lobbyId: string; readonly seat: number }>>;
+  /**
+   * Removes every expired wait record of every kind (src/lobby/waits.ts, sweepAllExpiredWaits); the server runs it on a
+   * timer (startWaitSweep), never on a join. Safe beside other instances sweeping at once. Returns how many it removed.
+   */
+  sweepWaits(): Promise<number>;
   listChallengeOpponents(): Promise<OpponentList>;
   listChallengeOpponentsFor(key: string): Promise<ChallengeOutcome<OpponentListForUsername>>;
   setChallengeAvailability(key: string, handle: string, available: boolean): Promise<ChallengeOutcome<{ readonly handle: string; readonly available: boolean }>>;
@@ -711,6 +716,10 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   async function decideQueueWait(token: string): Promise<QueueDecision> {
     return store.transaction<QueueDecision>(async (read) => {
       const wait = (await read([waitPath(token)])).get(waitPath(token));
+      // Re-pointed by its pairing but not yet read: this read reports paired, once.
+      if (wait?.kind === "lobby" && wait.lobbyId && wait.paired === "unread") {
+        return { result: { state: { state: "paired", lobbyId: wait.lobbyId, lobbyWait: true } }, writes: [{ op: "update", path: waitPath(token), fields: { paired: "true" } }] };
+      }
       if (wait?.kind === "lobby" && wait.lobbyId) return { result: { lobbyId: wait.lobbyId, paired: wait.paired === "true" }, writes: [] };
       if (wait?.kind !== "queue" || !wait.identityId || !wait.joinedAt) return { result: null, writes: [] };
       const entry = (await read([queueEntryPath(wait.identityId)])).get(queueEntryPath(wait.identityId)) ?? null;
@@ -723,11 +732,12 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   }
 
   /**
-   * The writes removing the wait of the identity's current queue entry, which this transaction's join replaces or leave
+   * The writes ending the wait of the identity's current queue entry, which this transaction's join replaces or leave
    * deletes: only while its record is still that join's queue wait. A matched entry's wait is re-pointed to its paired lobby,
-   * as a read would; any other is deleted, since it could only read ended.
+   * as a read would. Any other could only read ended: a replaced one is deleted, a left one is kept until a grace after
+   * the leave (endedWrite) so a reconnect learns expired: ended, then swept.
    */
-  async function replacedQueueWait(read: TransactionRead, identityId: string, at: number): Promise<Write[]> {
+  async function replacedQueueWait(read: TransactionRead, identityId: string, at: number, how: "replaced" | "left" = "replaced"): Promise<Write[]> {
     const entry = (await read([queueEntryPath(identityId)])).get(queueEntryPath(identityId));
     const token = entry?.waitToken;
     if (!entry || !token || !isWaitToken(token)) return [];
@@ -737,16 +747,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const lobby = (await read([lobbyPath(entry.lobbyId)])).get(lobbyPath(entry.lobbyId));
       return [repointWrite(token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at)];
     }
-    return [{ op: "delete", path: waitPath(token) }];
-  }
-
-  /** Best effort after a token-issuing join: a failed sweep never fails the join; the next one retries. */
-  async function sweepWaits(): Promise<void> {
-    try {
-      await sweepExpiredWaits(store, now());
-    } catch (cause) {
-      console.warn(`antwar wait sweep failed: ${cause instanceof Error ? cause.name : "error"}`);
-    }
+    // A left wait stays readable as ended for the grace, so a stream cut before the leave learns it on reconnect.
+    return how === "left" ? endedWrite(token, wait, at) : [{ op: "delete", path: waitPath(token) }];
   }
 
   /** A lobby wait's state, with the paired lobby's id when the token was re-pointed from a queue pairing. */
@@ -813,11 +815,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   return {
     countdownMs,
 
-    async requestChallenge(key, opponent, waitToken) {
-      const requested = await challenges.requestChallenge(key, opponent, waitToken);
-      if (requested.ok && waitToken !== undefined) await sweepWaits();
-      return requested;
-    },
+    requestChallenge: (key, opponent, waitToken) => challenges.requestChallenge(key, opponent, waitToken),
+
+    sweepWaits: () => sweepAllExpiredWaits(store, now()),
     listChallengeOpponents: challenges.listOpponents,
     listChallengeOpponentsFor: challenges.listOpponentsFor,
     setChallengeAvailability: challenges.setAvailability,
@@ -1053,7 +1053,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     async joinQueue(key, mode, waitToken) {
       const joiner = await queueIdentity(key);
       if (!joiner) return refuse("unknown_key");
-      const joined = await store.transaction(async (read) => {
+      return store.transaction(async (read) => {
         const at = now();
         const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, waitToken);
         if (!step.result.ok) return step;
@@ -1061,8 +1061,6 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         if (waitToken !== undefined) writes.push(waitWrite(waitToken, { kind: "queue", identityId: joiner.id, joinedAt: String(at) }, at + queueTtl(mode)));
         return { result: step.result, writes };
       });
-      if (joined.ok && waitToken !== undefined) await sweepWaits();
-      return joined;
     },
 
     async waitStatus(token) {
@@ -1076,7 +1074,12 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         if (decided === null || "state" in decided) return decided?.state ?? null;
         return lobbyWaitStatus(token, decided.lobbyId, decided.paired);
       }
-      if (wait?.kind === "lobby" && wait.lobbyId) return lobbyWaitStatus(token, wait.lobbyId, wait.paired === "true", wait);
+      if (wait?.kind === "lobby" && wait.lobbyId && wait.paired !== "unread") return lobbyWaitStatus(token, wait.lobbyId, wait.paired === "true", wait);
+      if (wait?.kind === "lobby" && wait.lobbyId) {
+        const decided = await decideQueueWait(token);
+        if (decided === null || "state" in decided) return decided?.state ?? null;
+        return lobbyWaitStatus(token, decided.lobbyId, decided.paired);
+      }
       return null;
     },
 
@@ -1092,8 +1095,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       return store.transaction(async (read) => {
         const at = now();
         const step = await leaveQueueStep(read, identity.id, at);
-        // Only a live waiting entry is left (deleted); its join's wait goes with it.
-        return step.writes.length === 0 ? step : { result: step.result, writes: [...step.writes, ...(await replacedQueueWait(read, identity.id, at))] };
+        // Only a live waiting entry is left (deleted); its join's wait is kept, read ended, until a grace after now.
+        return step.writes.length === 0 ? step : { result: step.result, writes: [...step.writes, ...(await replacedQueueWait(read, identity.id, at, "left"))] };
       });
     },
 

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { GCProfiler } from "node:v8";
 import { createAccountApi } from "./accounts/httpApi.js";
 import { waitStreamRoutes } from "./accounts/waitStream.js";
+import { startWaitSweep } from "./lobby/waits.js";
 import { registerAccountTools } from "./accounts/mcpTools.js";
 import type { AccountStores } from "./accounts/service.js";
 import type { MatchSaves } from "./handover/saveStore.js";
@@ -327,6 +328,8 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
   if (accounts !== undefined) mounts.push({ prefix: "/api", handler: createAccountApi(accounts, { bodyReadMs, maxBodies: maxUnadmittedBodies, maxBodiesPerSource: maxUnadmittedBodiesPerSource }) });
   // The public wait stream for the waiting tokens join_queue, join_lobby and request_challenge return; the stores are read per request, never here.
   if (accounts !== undefined) mounts.push({ prefix: "/wait", handler: waitStreamRoutes({ waitStatus: (token) => accounts.lobbies.waitStatus(token) }) });
+  // Expired wait records of every kind are swept on a timer, never at startup and never only on joins (src/lobby/waits.ts).
+  const stopWaitSweep = accounts === undefined ? undefined : startWaitSweep(() => accounts.lobbies.sweepWaits());
 
   /**
    * Delete the oldest finished logs so at most maxLogs remain; runs before the new match's log exists.
@@ -580,6 +583,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
       mode.close?.();
       game.closeJoinActivity();
       clearTimer();
+      stopWaitSweep?.();
       // A match still running reports nothing more; its GC record is released.
       stretches?.gc.stop();
       stretches = null;

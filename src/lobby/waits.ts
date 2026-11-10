@@ -15,11 +15,16 @@ import type { Lobby } from "./lobbies.js";
  *                  { kind: "lobby", lobbyId, identityId, expiresAt }    a lobby seat, a challenger's included, by the joiner
  * written in the same transaction as the join or the challenge request, so a returned token always resolves.
  * expiresAt (expiryField) is the wait's own limit plus WAIT_GRACE_MS. Once the wait is read final it is lowered to that
- * read plus WAIT_GRACE_MS, so a reconnect within the grace still learns the outcome; sweepExpiredWaits then removes it.
- * A queue wait whose entry a later join replaces, or leave_queue deletes, is removed with it (Lobbies.joinQueue/leaveQueue).
+ * read plus WAIT_GRACE_MS, so a reconnect within the grace still learns the outcome; the server's timed sweep
+ * (startWaitSweep, Lobbies.sweepWaits) then removes it, whether or not anyone joins.
+ * A queue wait whose entry a later join replaces is removed with it (Lobbies.joinQueue); one whose entry leave_queue
+ * deletes is kept, read ended, until a grace after the leave (Lobbies.leaveQueue). A waiting partner's queue wait is
+ * re-pointed to the lobby in the transaction that pairs it (joinQueueStep).
  * A queue wait found paired is re-pointed, once, to a lobby wait on the paired lobby (Lobbies.waitStatus), so
  * the token keeps following that lobby after the identity leaves or rejoins the queue:
  *                  { kind: "lobby", lobbyId, identityId, paired: "true" }  identityId: the queued identity, kept
+ * A waiting partner's queue wait is re-pointed by the pairing itself with paired: "unread", so its next read still
+ * reports paired once, then follows the lobby.
  * Its states then carry lobbyId, so an agent that never received paired still learns its queue lobby. The id
  * of a lobby joined directly is never sent: that lobby may be private. A record's identityId is stored only:
  * every state is built from the queue entry or the lobby, never from record fields, so it is never sent.
@@ -58,7 +63,7 @@ export const waitPath = (token: string): string => `waits/${token}`;
 
 /** How long a wait's record stays readable past its own limit, or past the read that first found it final. */
 export const WAIT_GRACE_MS = 10 * 60 * 1000;
-/** Expired records one sweep reads and removes at most: more than the one record each join adds. */
+/** Expired records one sweep page reads and removes at most. */
 export const WAIT_SWEEP_PAGE = 25;
 
 /** A record's expiresAt as stored: zero-padded milliseconds, so the store orders it as a number. */
@@ -76,10 +81,11 @@ export function waitWrite(token: string, record: WaitRecord, limit: number): Wri
 
 /**
  * Turns a stored queue wait into a lobby wait on the lobby its entry was paired with, in the caller's transaction,
- * keeping identityId, the identity that holds the token; lobbyLimit is that lobby's own limit.
+ * keeping identityId, the identity that holds the token; lobbyLimit is that lobby's own limit. paired "unread", written
+ * by the pairing itself, means paired was not yet reported: the next read reports it once and sets "true" (Lobbies.waitStatus).
  */
-export function repointWrite(token: string, lobbyId: string, identityId: string, lobbyLimit: number): Write {
-  return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, paired: "true", identityId, joinedAt: "", expiresAt: expiryField(lobbyLimit + WAIT_GRACE_MS) } };
+export function repointWrite(token: string, lobbyId: string, identityId: string, lobbyLimit: number, paired: "true" | "unread" = "true"): Write {
+  return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, paired, identityId, joinedAt: "", expiresAt: expiryField(lobbyLimit + WAIT_GRACE_MS) } };
 }
 
 /** The write lowering a record read final at `at` to expire WAIT_GRACE_MS later, or none when it already does by then. */
@@ -94,14 +100,57 @@ export function endedWrite(token: string, record: Fields | null | undefined, at:
  * deleting transaction, so a record re-pointed or lowered meanwhile is judged by its stored value. Returns how many.
  */
 export async function sweepExpiredWaits(store: Store, at: number): Promise<number> {
+  return (await sweepPage(store, at)).removed;
+}
+
+async function sweepPage(store: Store, at: number): Promise<{ readonly due: number; readonly removed: number }> {
   const { rows } = await store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: WAIT_SWEEP_PAGE });
   const due = rows.filter((row) => isPast(row.fields.expiresAt, at)).map((row) => row.path);
-  if (due.length === 0) return 0;
-  return store.transaction<number>(async (read) => {
+  if (due.length === 0) return { due: 0, removed: 0 };
+  const removed = await store.transaction<number>(async (read) => {
     const docs = await read(due);
     const gone = due.filter((path) => isPast(docs.get(path)?.expiresAt, at));
     return { result: gone.length, writes: gone.map((path): Write => ({ op: "delete", path })) };
   });
+  return { due: due.length, removed };
+}
+
+/** Pages one sweep reads at most, so a tick's work is bounded: WAIT_SWEEP_MAX_PAGES * WAIT_SWEEP_PAGE records. */
+export const WAIT_SWEEP_MAX_PAGES = 40;
+/** How often the server sweeps expired wait records, whether or not anyone joins. */
+export const WAIT_SWEEP_INTERVAL_MS = 60 * 1000;
+
+/**
+ * Removes every record past its expiresAt, of every kind, page after page until a page holds fewer than WAIT_SWEEP_PAGE
+ * due or WAIT_SWEEP_MAX_PAGES pages are read. Each page's deletes are rechecked in their transaction, so instances
+ * sweeping at once never delete a record another re-pointed or lowered meanwhile, and a record already deleted is
+ * simply not deleted again. Returns how many it removed.
+ */
+export async function sweepAllExpiredWaits(store: Store, at: number, maxPages = WAIT_SWEEP_MAX_PAGES): Promise<number> {
+  let removed = 0;
+  for (let page = 0; page < maxPages; page++) {
+    const swept = await sweepPage(store, at);
+    removed += swept.removed;
+    if (swept.due < WAIT_SWEEP_PAGE) break;
+  }
+  return removed;
+}
+
+/**
+ * Runs sweep every intervalMs on an unref'd timer, the MCP session sweep's pattern, never overlapping itself; a failed
+ * tick logs a fixed warning and the next tick retries. Returns the stop.
+ */
+export function startWaitSweep(sweep: () => Promise<unknown>, intervalMs = WAIT_SWEEP_INTERVAL_MS): () => void {
+  let running = false;
+  const timer = setInterval(() => {
+    if (running) return;
+    running = true;
+    sweep()
+      .catch((cause: unknown) => console.warn(`antwar wait sweep failed: ${cause instanceof Error ? cause.name : "error"}`))
+      .finally(() => { running = false; });
+  }, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 /**
