@@ -441,6 +441,9 @@ export function createMcpHandler(
           const session = stored;
           if (session === undefined) return undefined;
           const own = requestHold.getStore();
+          // A request that began joined took no place; if its session has since stopped playing (a replaced key
+          // ended the binding), it takes one now under the same rule as an unjoined session's call.
+          if (own !== undefined && !own.ended && session.state.agentId === null && !session.holds.has(own) && mayShield(session)) session.holds.add(own);
           // Joined, or this request's own live place; another request's hold never counts.
           const held = (): boolean => own !== undefined && !own.ended && (session.state.agentId !== null || holdLive(session, own));
           if (!held()) return undefined;

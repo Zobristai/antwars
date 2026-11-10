@@ -12,6 +12,9 @@ import type { AccountStores } from "../../src/accounts/service.js";
 import { Game } from "../../src/mcp/game.js";
 import { createMcpHandler } from "../../src/mcp/http.js";
 import { TEST_MCP_CONFIG } from "./harness.js";
+import { KEY_RECHECK_MS } from "../../src/mcp/tools.js";
+import { PUBLIC_CONFIG } from "../../src/sim/config.js";
+import { playable } from "../playable.ts";
 
 // A key-issuing call whose client drops while its commit is in flight saves a key it never delivers.
 // recover_key, in the same session and presenting the same key the call presented, re-issues a fresh key
@@ -58,7 +61,8 @@ function memoryStore() {
   return { store, seen, docs };
 }
 
-async function start() {
+/** slot: a match-hosting server whose game reads its seats' keys through the real identity code, as a slot does. */
+async function start(options: { slot?: boolean } = {}) {
   const { store, seen, docs } = memoryStore();
   /** How far the identity store's clock runs ahead of real time, so a test can let a username be released. */
   const clock = { offsetMs: 0 };
@@ -79,8 +83,18 @@ async function start() {
     reissueLostKey: async (...args) => keep(await identities.reissueLostKey(...args)),
   };
   const stores = { identities: watched } as unknown as AccountStores;
-  const handler = createMcpHandler(new Game({ mcpConfig: { ...TEST_MCP_CONFIG, maxOpenSessions: 8, maxProtectedSessions: 4 } }), {
-    gameplay: false,
+  const mcpConfig = { ...TEST_MCP_CONFIG, maxOpenSessions: 8, maxProtectedSessions: 4 };
+  const game = options.slot !== true ? new Game({ mcpConfig }) : new Game({ simConfig: playable(PUBLIC_CONFIG), mcpConfig, now: () => Date.now() + clock.offsetMs,
+    slot: {
+      async identityOf(key) {
+        const found = await identities.resolveKey(key);
+        return found.ok ? found.value.id : undefined;
+      },
+      holderOfVerifier: (verifier) => identities.holderOfVerifier(verifier),
+      locate: async () => undefined,
+    } });
+  const handler = createMcpHandler(game, {
+    gameplay: options.slot === true,
     extraTools: (server, session) => registerAccountTools(server, stores, { seatClientAdmission: false, session }),
   });
   /** POST responses that closed before they finished writing, and POSTs still being handled (the client's GET stream stays open). */
@@ -103,7 +117,7 @@ async function start() {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
   const url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
-  return { url, seen, docs, identities, issued, http, clock };
+  return { url, seen, docs, identities, issued, http, clock, game };
 }
 
 type World = Awaited<ReturnType<typeof start>>;
@@ -516,5 +530,33 @@ describe("recovering a key whose reply was lost when the client dropped mid-comm
     expect(await works(world, lost)).toBe(false);
     expect(await world.identities.resolveKey(recovered.body.key as string)).toMatchObject({ ok: true, value: { displayName: "newcomer" } });
     expect(await world.identities.resolveKey(keys.ownerKey)).toMatchObject({ ok: true, value: { id: ownerId, displayName: "renamed" } });
+  });
+
+  it("lets a joined slot session whose rotate_key reply was lost recover, after its key re-check has come due", async () => {
+    const world = await start({ slot: true });
+    const setup = await session(world);
+    const keys = await owner(setup.client);
+    const ownerId = (await world.identities.findByDisplayName("owner"))!.id;
+    world.game.seatLobby("recovery-lobby", [{ identityId: ownerId, displayName: "owner", colony: 0 }, { identityId: "other", displayName: "Other", colony: 1 }]);
+    world.game.beginLobbyStart(7001);
+    const { client, sessionId } = await session(world);
+    expect((await call(client, "join", { key: keys.ownerKey })).isError).toBe(false);
+
+    await dropDuringCommit(world, sessionId, "rotate_key", { key: keys.ownerKey });
+    const lost = world.issued.at(-1)!;
+    // Past the re-check interval, the joining key is found replaced; recover_key still runs, first time.
+    world.clock.offsetMs += KEY_RECHECK_MS;
+    const recovered = await call(client, "recover_key", { key: keys.ownerKey });
+    expect(recovered.isError).toBe(false);
+    const fresh = recovered.body.key as string;
+    expect(await works(world, lost)).toBe(false);
+    expect(await world.identities.resolveKey(fresh)).toMatchObject({ ok: true, value: { id: ownerId } });
+
+    // The old key's seat access is gone: the session plays no seat, and the old key cannot join it.
+    expect((await call(client, "observe", {})).body.error).toMatchObject({ code: "not_joined" });
+    expect((await call(client, "join", { key: keys.ownerKey })).body.error).toMatchObject({ code: "not_seated" });
+    // The recovered key rejoins the seat in the same session, and plays it.
+    expect((await call(client, "join", { key: fresh })).isError).toBe(false);
+    expect((await call(client, "observe", {})).isError).toBe(false);
   });
 });
