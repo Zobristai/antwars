@@ -286,6 +286,49 @@ describe("the Leaderboard's type rules", () => {
   });
 });
 
+describe("the Leaderboard's quieter rules", () => {
+  // Style-contract checks on the source rules; the pass captures show the painted page.
+  const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+  const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
+  it("draws Last 5 a weight lighter and an ink step quieter, keeping every letter, fill, outline and replay link, and brightens a link under the mouse", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark { font-weight: 600; color: var(--aw-ink-3); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark[data-result="W"] { color: var(--aw-ink-2); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] a.d1p-form-mark:hover { color: var(--aw-ink-bright); }');
+    // A link stays underlined; a win stays filled and a loss or a draw outlined.
+    expect(css).toContain(".d1p a.d1p-form-mark { text-decoration: underline; text-underline-offset: 2px; }");
+    expect(css).toContain('.d1p-form-mark[data-result="W"]::before { background: var(--aw-raise); box-shadow: none; }');
+    expect(css).toMatch(/\.d1p-form-mark::before \{[^}]*box-shadow: inset 0 0 0 1px var\(--aw-line\);/);
+    // The Leaderboard's own rules change neither the letters' look nor the link rule in any other way.
+    expect(rules.filter(rule => rule.trim().startsWith('.d1p[data-page="leaderboard"]') && rule.includes("d1p-form-mark")).join("\n")).not.toMatch(/text-decoration|background|box-shadow|content:/);
+  });
+  it("draws each stamp smaller inside an unchanged target: 20 px in the table, 24 px in a phone's 40 × 44 px tap", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 2px 4px; }');
+    const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
+    expect(phone.slice(0, phone.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 10px 8px; }');
+    const coarse = css.slice(css.indexOf("@media (pointer: coarse) and (width >= 46rem) {"));
+    expect(coarse.slice(0, coarse.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 12px 4px; }');
+    // The targets themselves: 28 × 24 px, 40 × 44 px on a phone, 44 px tall on any touch screen.
+    expect(css).toMatch(/\.d1p-form-mark \{ position: relative;[^}]*width: 28px; height: 24px;/);
+    expect(css).toContain(".d1p-form-mark { width: 40px; height: 44px; }");
+    expect(coarse.slice(0, coarse.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark { height: 44px; }');
+  });
+  it("parts one row from the next by the hairline, in the table, the stacked rows and the Challenge list, the first row keeping the line", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb tbody tr + tr > :is(th, td) { border-top-color: var(--d1p-hair); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-rows > li + li { border-top-color: var(--d1p-hair); }');
+  });
+  it("scopes every quieter-pass rule to the Leaderboard, so the front page, Matches and Rules keep the shared stamp and row lines", () => {
+    const own = rules.filter(rule => /d1p-form-mark|tr \+ tr|li \+ li/.test(rule) && rule.includes("data-page"));
+    expect(own.length).toBeGreaterThanOrEqual(8);
+    for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
+    expect(css).toMatch(/\.d1p-form-mark \{ position: relative;[^}]*font-size: 12px; font-weight: 700; line-height: 1; color: var\(--aw-ink-2\);/);
+    expect(css).toContain('.d1p-form-mark[data-result="W"] { color: var(--aw-ink-bright); }');
+    expect(css).toMatch(/\.d1p-form-mark::before \{ content: ""; position: absolute; inset: 0 2px;/);
+    expect(css).toContain(".d1p-form-mark::before { inset: 8px 6px; }");
+    expect(css).toMatch(/\.d1p-table th, \.d1p-table td \{[^}]*border-top: 1px solid var\(--aw-line\);/);
+    expect(css).toMatch(/\.d1p-rows > li \{[^}]*border-top: 1px solid var\(--aw-line\);/);
+  });
+});
+
 describe("rating ± RD", () => {
   it("shows each rating with ± its RD in whole points on the Antwars Model Index and the public rankings, and none for a row without an RD", async () => {
     const p = page();
