@@ -241,6 +241,12 @@ describe("Matches", () => {
     expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])).toEqual([["coffee-ant", 1], ["local", 1]]);
     expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "wren")])).toEqual([["local", 2]]);
     expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["coffee-ant", 2]]);
+    // No reported label, however spelled, joins a seat shown by its handle, in either order.
+    for (const label of ["coffee-ant/local|shown:coffee-ant", '["model:coffee-ant/local","coffee-ant"]']) {
+      const shownAs = modelName(label);
+      expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, label, "kite")])).toEqual([["coffee-ant", 1], [shownAs, 1]]);
+      expect(named([seat(0, label, "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([[shownAs, 1], ["coffee-ant", 1]]);
+    }
     // A handle never joins a model label that reads the same, however the label is spelled.
     expect(seatGroups(colonySeats([seat(0, null, "local"), seat(1, "local", "kite")])![0]!)).toHaveLength(2);
     for (const label of ["@omp-dolphin", "handle:omp-dolphin", "model:omp-dolphin"]) {
