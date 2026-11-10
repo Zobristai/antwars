@@ -339,7 +339,8 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
     },
     matchEnded(result) {
       game.setNextStart(null);
-      runner?.ended(result.reason === "abandoned" ? "abandoned" : stopping ? "stopped" : naturalOutcome(result.winner), game.matchThinkingLevels(), game.matchServiceTiers(), game.matchModelLabels());
+      runner?.ended(result.reason === "abandoned" ? "abandoned" : stopping ? "stopped" : naturalOutcome(result.winner), game.matchThinkingLevels(), game.matchServiceTiers(), game.matchModelLabels(),
+        game.matchAbsentColonies());
     },
     startFailed() {
       // The runner sees no running match and records it not played.

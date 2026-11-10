@@ -16,10 +16,12 @@ import { queueStatusStep } from "./queue.js";
  * A request holds a place on every UTC day its match could still fall on (heldDays), derived from its lobby, never
  * stored: both the creation day and the day of createdAt + the lobby expiry + the countdown while it can still take a
  * slot, its startsAt day once it has, its creation day when it expired full awaiting one, and none when its held seat
- * was never filled or a failed or unavailable report closed it. Places only shrink after admission, and admission needs room on every
- * day it adds, so no day ever holds more than 20 places, or 5 for one owner. A game is charged when the house owner
- * reports it launched and its held seat is filled; a charged game's match day always keeps its place, so charged games
- * per day never exceed the places held. The allowance left today is 20 minus today's places; a username's allowance
+ * was never filled, a failed or unavailable report closed it, or its match ended abandoned because the held colony
+ * never joined (the lobby's absent colonies include HELD_COLONY): a house no-show is never charged to the builder.
+ * Places only shrink after admission, and admission needs room on every day it adds, so no day ever holds more than 20
+ * places, or 5 for one owner. A game is charged when the house owner reports it launched and its held seat is filled,
+ * unless the held colony then never joins its match; a charged game's match day always keeps its place, so charged
+ * games per day never exceed the places held. The allowance left today is 20 minus today's places; a username's allowance
  * left today, listed only for a caller's key, is 5 minus the places it holds today across its handles. Both count
  * today only, while admission also counts the next day near UTC midnight, so either can read 1 or more while a
  * request is refused.
@@ -142,13 +144,16 @@ export function houseHandle(name: string): string | undefined {
 }
 
 const heldSeatFilled = (lobby: Fields) => seatsOf(lobby).some((seat) => seat.colony === HELD_COLONY);
+/** The match ended abandoned because the held (house) colony never joined it. */
+const heldColonyAbsent = (lobby: Fields) =>
+  lobby.state === "ended" && lobby.outcome === "abandoned" && ids(lobby.absent).includes(String(HELD_COLONY));
 const isLive = (lobby: Fields, at: number, rules: ChallengeLobbyRules) =>
   (lobby.state === "open" || lobby.state === "waiting" || lobby.state === "holding") && !rules.isExpired(lobby, at);
 
 /** The UTC days a request's match could still fall on, from its lobby at `at` (see the module comment). */
 export function heldDays(lobby: Fields | null | undefined, at: number, rules: ChallengeLobbyRules): string[] {
   if (!lobby) return [];
-  if (lobby.startsAt) return [utcDay(Number(lobby.startsAt))];
+  if (lobby.startsAt) return heldColonyAbsent(lobby) ? [] : [utcDay(Number(lobby.startsAt))];
   const createdAt = Number(lobby.createdAt);
   const expired = rules.isExpired(lobby, at);
   if (lobby.state === "open") return expired ? [] : [...new Set([utcDay(createdAt), utcDay(createdAt + rules.lobbyTtlMs + rules.countdownMs)])];

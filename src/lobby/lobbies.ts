@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Identities } from "../identity/identities.js";
+import type { ColonyId } from "../sim/types.js";
 import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
@@ -28,7 +29,9 @@ import { lobbyPageUrl } from "./site.js";
  * Documents, under the store's namespace (string fields only):
  *   lobbies/{uuid}      { kind, size, creatorId, createdAt, state, rated, slot,
  *                         seats (JSON [{id, displayName, colony}]), inviteVerifier,
- *                         startsAt, matchRunId, outcome, mode }
+ *                         startsAt, matchRunId, outcome, mode, absent }
+ *                       absent lists, space-separated, the colonies whose seat never joined a
+ *                       match that ended abandoned for it; written only on that ending
  *                       mode is the ranked mode of a queue-made lobby, "" (or absent,
  *                       in lobbies stored before modes) for a player-created one
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
@@ -227,10 +230,11 @@ export interface Lobbies {
    * superseded unless runId is the slot's registered instance; a natural or stopped
    * outcome also needs runId to have begun the match. A natural result of a rated
    * lobby is rated in the same transaction, in the lobby's mode ("1v1" when it has
-   * none), teams by colony with each identity once; nothing else is rated.
+   * none), teams by colony with each identity once; nothing else is rated. An abandoned
+   * outcome records absentColonies, the colonies whose seat never joined, as absent.
    */
   endMatch(lobbyId: string, runId: string, outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers,
-    modelLabels?: ModelLabels): Promise<LobbyOutcome<{ readonly next: string | null }>>;
+    modelLabels?: ModelLabels, absentColonies?: readonly ColonyId[]): Promise<LobbyOutcome<{ readonly next: string | null }>>;
   /**
    * Registers runId as the slot's instance, replacing any earlier one: the last to
    * boot wins. With claim, nothing is written and the owner is returned while the
@@ -606,7 +610,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
    */
   async function release(read: TransactionRead, lobbyId: string, ending?: {
     readonly runId: string; readonly outcome: MatchOutcome; readonly thinkingLevels?: ThinkingLevels; readonly serviceTiers?: ServiceTiers;
-    readonly modelLabels?: ModelLabels;
+    readonly modelLabels?: ModelLabels; readonly absentColonies?: readonly ColonyId[];
   }) {
     type Released = LobbyOutcome<{ readonly next: string | null }>;
     const at = now();
@@ -617,10 +621,12 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     if (docs.get(slotPath)?.lobbyId !== lobbyId) return { result: refuse("not_holding") as Released, writes: [] };
     const writes: Write[] = [];
     let outcome = "";
+    let absent = "";
     if (ending) {
       if (docs.get(instancePath(fields.slot))?.runId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       if (ending.outcome !== "not_played" && fields.matchRunId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       outcome = ending.outcome;
+      if (outcome === "abandoned") absent = (ending.absentColonies ?? []).join(" ");
       const winner = ratedWinner(ending.outcome);
       if (winner !== null && fields.rated === "true") {
         // In a ranked team mode one identity holds every seat of its colony, so each
@@ -637,7 +643,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     const settled = await settleSlots(read, fields.kind as LobbyKind, at, undefined, slotPath);
     return {
       result: ok({ next: settled.handedTo[0] ?? null }) as Released,
-      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}) } }, ...settled.writes, ...writes] as Write[],
+      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}), ...(absent ? { absent } : {}) } }, ...settled.writes, ...writes] as Write[],
     };
   }
 
@@ -845,9 +851,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       return store.transaction((read) => release(read, lobbyId));
     },
 
-    async endMatch(lobbyId, runId, outcome, thinkingLevels, serviceTiers, modelLabels) {
+    async endMatch(lobbyId, runId, outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies) {
       if (!OUTCOMES.includes(outcome)) throw new Error(`invalid match outcome ${outcome}`);
-      return store.transaction((read) => release(read, lobbyId, { runId, outcome, thinkingLevels, serviceTiers, modelLabels }));
+      return store.transaction((read) => release(read, lobbyId, { runId, outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies }));
     },
 
     async registerInstance(slot, instance, claim) {

@@ -237,6 +237,8 @@ interface Match {
   readonly seed: number;
   state: SimState;
   pending: Pending[];
+  /** The lobby colonies whose seat never joined, set only when that ended the match abandoned. */
+  absentColonies?: readonly ColonyId[];
 }
 
 interface AgentRecord {
@@ -656,6 +658,11 @@ export class Game {
       .map((rec) => ({ agentId: rec.agentId, key: rec.seat?.key ?? null, displayName: rec.displayName, sawResult: rec.sawResult }));
   }
 
+  /** The colonies whose lobby seat never joined the current match, when that ended it abandoned; otherwise none. */
+  matchAbsentColonies(): readonly ColonyId[] {
+    return this.current?.state.result?.reason === "abandoned" ? this.current.absentColonies ?? [] : [];
+  }
+
   /** Accepted simulation metadata for the current match, using only each identity's seat 1. */
   matchThinkingLevels(): Readonly<Record<string, string | null>> {
     const levels: Record<string, string | null> = {};
@@ -982,13 +989,15 @@ export class Game {
     // counts, but a refused command or synthetic error-observe cannot save it.
     // Likewise a lobby seat whose join is accepted on its deadline tick has joined.
     const idle = [...new Set(out.state.agents.filter(isIdle).map(agent => agent.colony))].sort();
-    const neverJoined = seated && (tick >= idleTicks || out.state.result !== null) && this.lobbySeatMissing(out.state);
+    const absent = seated && (tick >= idleTicks || out.state.result !== null) ? this.lobbyAbsentColonies(out.state) : [];
+    const neverJoined = absent.length > 0;
     if (!stopNow && (neverJoined || idle.length > 0)) {
       if (start === null) throw new Error(`match ${m.seq} tick ${tick}: idle end without its start state`);
       // The Model Index abandons, unrated, and so does any lobby match with a seat that never joined;
       // every other match: the idle colony loses, both idle draw.
       terminal = house || neverJoined ? "abandoned" : { idle };
       out = advance(start, inputs, undefined, undefined, undefined, terminal, true);
+      if (neverJoined) m.absentColonies = absent;
     }
     this.onLogLine(tickLine(tick, inputs, terminal, true));
     m.state = out.state;
@@ -1402,13 +1411,19 @@ export class Game {
 
   /** Whether any seat of the seated lobby has no agent in this match state: it has never joined the match. */
   private lobbySeatMissing(state: SimState): boolean {
+    return this.lobbyAbsentColonies(state).length > 0;
+  }
+
+  /** The colonies of the seated lobby with a seat that has no agent in this match state, ascending. */
+  private lobbyAbsentColonies(state: SimState): ColonyId[] {
     const lobby = this.lobby;
-    if (lobby === null) return false;
-    for (const key of lobby.seats.keys()) {
+    if (lobby === null) return [];
+    const absent = new Set<ColonyId>();
+    for (const [key, seat] of lobby.seats) {
       const rec = this.bySeat.get(`${lobby.id}/${key}`);
-      if (rec === undefined || !state.agents.some(agent => agent.id === rec.agentId)) return true;
+      if (rec === undefined || !state.agents.some(agent => agent.id === rec.agentId)) absent.add(seat.colony);
     }
-    return false;
+    return [...absent].sort((a, b) => a - b);
   }
 
   /** Authoritative accepted-call idle clock of the live match; internal ids never enter the wire. */
