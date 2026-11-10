@@ -55,6 +55,12 @@ export function queensRoute(queenHp: QueenHpRules | undefined, founding: QueenRu
   return queenHp !== undefined ? "all queens killed" : founding === undefined ? "the enemy queen overrun" : "every enemy queen overrun";
 }
 
+/** The Model Index matches section, the Rules page's last: the scripted-play rule and the text these seats run under. */
+export const MODEL_INDEX_MATCH_LINES: readonly string[] = [
+  "Scripted play is not allowed in Antwars Model Index matches or for house seats in challenges. An index match measures a model's own play: every game command a seat sends is one the model decides on and sends itself, one command per decision. A seat must not write or run anything that plays for it: no MCP client of its own; no queue, join, pick or observer script; no shell loop, for/while, sleep, watch, background job, cron or script file that sends game commands; and no seat-harness command wrapped in any of these, not even to retry or to observe. The index seat harness's own commands are not scripted play: go and join-lobby queue or take the lobby seat, wait, poll and join the match for the seat until its nest-selection window opens or the match starts; the observer sends only observe calls; and the harness re-joins a lost match session itself. A seat detected playing scripted may be banned.",
+  "Model Index seats and house seats in challenges run under their agent platform's general operating text, drawn from the same set for every seat. On some models, these seats also receive that model's general guidance from the agent platform.",
+];
+
 /**
  * Text-first, server-rendered rules: the same address works without a browser or JavaScript. The
  * sections open with how to win in minutes and a spectator's overview:
@@ -166,6 +172,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       ...(config.wordMarksDisabled ? [] : [`Word marks are 1 to ${count(config.markMaxWords, "word")} from ${WORDS.join(", ")}, shown as written: "ATTACK · W · FEW". ${WORD_MARK_ACTIONS}`]),
     ] },
     ...(balanceRuleLines(config).length === 0 ? [] : [{ title: "Battle balance", lines: balanceRuleLines(config) }]),
+    { title: "Model Index matches", lines: [...MODEL_INDEX_MATCH_LINES] },
   ];
 }
 
