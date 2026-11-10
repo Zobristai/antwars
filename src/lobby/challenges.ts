@@ -19,7 +19,10 @@ import { queueStatusStep } from "./queue.js";
  * was never filled or a failed or unavailable report closed it. Places only shrink after admission, and admission needs room on every
  * day it adds, so no day ever holds more than 20 places, or 5 for one owner. A game is charged when the house owner
  * reports it launched and its held seat is filled; a charged game's match day always keeps its place, so charged games
- * per day never exceed the places held. The allowance left today is 20 minus today's places.
+ * per day never exceed the places held. The allowance left today is 20 minus today's places; a username's allowance
+ * left today, listed only for a caller's key, is 5 minus the places it holds today across its handles. Both count
+ * today only, while admission also counts the next day near UTC midnight, so either can read 1 or more while a
+ * request is refused.
  *
  * Launch reports: launched is the charge event. failed and unavailable each need a reason and, before the held seat
  * joins, close the open lobby and end the request house_unavailable uncharged. failed also lists the handle unavailable
@@ -77,6 +80,11 @@ export interface OpponentList {
   readonly allowanceLeft: number;
   /** The next UTC midnight, when the allowances reset. */
   readonly resetsAt: number;
+}
+
+/** The opponent list read with a caller's key: also its username's challenges left today, across its handles. */
+export interface OpponentListForUsername extends OpponentList {
+  readonly usernameAllowanceLeft: number;
 }
 
 export interface ChallengeStatus {
@@ -279,18 +287,34 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     });
   }
 
-  async function listOpponents(): Promise<OpponentList> {
+  /** The opponent list and today's places, read in the caller's transaction. */
+  async function opponentsIn(read: TransactionRead) {
     const handles = Object.keys(HOUSE_LABELS).filter(handle => !NOT_SEATS.has(handle));
-    return store.transaction(async (read) => {
-      const at = rules.now();
-      const docs = await read(handles.map(availabilityPath));
-      const today = await placesOn(read, utcDay(at), at, rules);
-      const opponents = handles.map((handle): Opponent => {
-        const label = HOUSE_LABELS[handle]!;
-        return { handle: `${HOUSE_USERNAME}/${handle}`, displayName: label.displayName, level: label.thinkingLevel, tier: label.serviceTier,
-          ...availabilityOf(handle, docs.get(availabilityPath(handle))) };
-      });
-      return { result: { opponents, allowanceLeft: Math.max(0, CHALLENGE_SHARED_DAILY_LIMIT - today.held.length), resetsAt: nextUtcMidnight(at) }, writes: [] };
+    const at = rules.now();
+    const docs = await read(handles.map(availabilityPath));
+    const today = await placesOn(read, utcDay(at), at, rules);
+    const opponents = handles.map((handle): Opponent => {
+      const label = HOUSE_LABELS[handle]!;
+      return { handle: `${HOUSE_USERNAME}/${handle}`, displayName: label.displayName, level: label.thinkingLevel, tier: label.serviceTier,
+        ...availabilityOf(handle, docs.get(availabilityPath(handle))) };
+    });
+    const list: OpponentList = { opponents, allowanceLeft: Math.max(0, CHALLENGE_SHARED_DAILY_LIMIT - today.held.length), resetsAt: nextUtcMidnight(at) };
+    return { list, today };
+  }
+
+  async function listOpponents(): Promise<OpponentList> {
+    return store.transaction(async (read) => ({ result: (await opponentsIn(read)).list, writes: [] }));
+  }
+
+  /** listOpponents plus the key's username's challenges left today: 5 minus the places its owner holds today. */
+  async function listOpponentsFor(key: string): Promise<ChallengeOutcome<OpponentListForUsername>> {
+    const reader = await caller(key);
+    if (!reader) return refuse("unknown_key");
+    return store.transaction<ChallengeOutcome<OpponentListForUsername>>(async (read) => {
+      const ownerId = (await read([`identities/${reader.id}`])).get(`identities/${reader.id}`)?.ownerId || reader.id;
+      const { list, today } = await opponentsIn(read);
+      const held = today.held.filter((id) => today.ownerOf(id) === ownerId).length;
+      return { result: ok({ ...list, usernameAllowanceLeft: Math.max(0, CHALLENGE_OWNER_DAILY_LIMIT - held) }), writes: [] };
     });
   }
 
@@ -388,7 +412,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     });
   }
 
-  return { requestChallenge, listOpponents, setAvailability, reportLaunch, status };
+  return { requestChallenge, listOpponents, listOpponentsFor, setAvailability, reportLaunch, status };
 }
 
 export type ChallengeSteps = ReturnType<typeof createChallengeSteps>;

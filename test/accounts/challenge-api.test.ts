@@ -256,6 +256,20 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
     });
 
+    it("with a key also lists that username's challenges left today; without one the reply is unchanged; an unknown key is refused", async () => {
+      const w = await serve(open);
+      const owner = await w.claim("owner");
+      const keyless = await okBody(w.call, "list_challenge_opponents");
+      expect(Object.keys(keyless).sort()).toEqual(["allowanceLeft", "opponents", "resetsAt"]);
+      expect(await okBody(w.call, "list_challenge_opponents", { key: owner.key })).toEqual({ ...keyless, usernameAllowanceLeft: 5 });
+      await okBody(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-3" });
+      const keyed = await okBody(w.call, "list_challenge_opponents", { key: owner.key });
+      expect([keyed.allowanceLeft, keyed.usernameAllowanceLeft]).toEqual([19, 4]);
+      expect(Object.keys(await okBody(w.call, "list_challenge_opponents")).sort()).toEqual(["allowanceLeft", "opponents", "resetsAt"]);
+      expect((await okBody(w.call, "list_challenge_opponents", { key: (await w.claim("other")).key })).usernameAllowanceLeft).toBe(5);
+      expect(await refusal(w.call, "list_challenge_opponents", { key: "not-a-key" })).toMatch(/^invalid_key( \d+)?$/);
+    });
+
     it("lets only the house owner set availability; unavailable is refused at once, a playing game continues, available restores it", async () => {
       const w = await serve(open);
       for (const other of [w.glm, w.rival, w.rivalHandle, ...w.lookalikes]) {
@@ -565,6 +579,14 @@ async function ratingTables(call: Call, raw: (path: string) => Promise<unknown>,
   const docs = await Promise.all(people.flatMap((person) => RANKED_MODES.map((mode) => raw(`${ratingCollection(mode)}/${person.id}`))));
   return { boards, ratingsRead, docs };
 }
+
+describe("list_challenge_opponents description", () => {
+  it("names the optional key and usernameAllowanceLeft", () => {
+    const description = ACCOUNT_OPERATIONS.find(op => op.name === "list_challenge_opponents")!.description;
+    expect(description).toMatch(/key is optional/);
+    expect(description).toMatch(/usernameAllowanceLeft is also your username's challenges left today of its 5, across its handles; it resets at resetsAt/);
+  });
+});
 
 describe("noticing a challenge start", () => {
   it("request_challenge and challenge_status carry the same noticing sentence; the lobby and queue joins do not", () => {

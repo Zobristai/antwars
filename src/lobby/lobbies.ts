@@ -5,7 +5,7 @@ import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, 
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
-import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList } from "./challenges.js";
+import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueStatusStep, waitingEntries, type QueueStatus } from "./queue.js";
 import { lobbyPageUrl } from "./site.js";
 
@@ -298,6 +298,7 @@ export interface Lobbies {
   /** House challenges (src/lobby/challenges.ts). */
   requestChallenge(key: string, opponent: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly lobbyId: string; readonly seat: number }>>;
   listChallengeOpponents(): Promise<OpponentList>;
+  listChallengeOpponentsFor(key: string): Promise<ChallengeOutcome<OpponentListForUsername>>;
   setChallengeAvailability(key: string, handle: string, available: boolean): Promise<ChallengeOutcome<{ readonly handle: string; readonly available: boolean }>>;
   reportChallengeLaunch(key: string, requestId: string, outcome: LaunchOutcome, reason?: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly launchReport: LaunchOutcome; readonly state: ChallengeState }>>;
   challengeStatus(key: string, requestId?: string): Promise<ChallengeOutcome<ChallengeStatus>>;
@@ -715,6 +716,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
 
     requestChallenge: challenges.requestChallenge,
     listChallengeOpponents: challenges.listOpponents,
+    listChallengeOpponentsFor: challenges.listOpponentsFor,
     setChallengeAvailability: challenges.setAvailability,
     reportChallengeLaunch: challenges.reportLaunch,
     challengeStatus: challenges.status,
