@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
-import { fakeClock, startFake } from "./fake-server.mjs";
+import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
@@ -29,7 +29,7 @@ async function handle(fakeOptions = {}) {
   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   const seat = async (name, setup = ["--parallel"]) => {
     const env = { ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, name), ANTWARS_ENTRY_URL: fake.url, ANTWARS_MIN_CALL_MS: "600", ANTWARS_POLL_MS: "3000" };
-    const cli = (...argv) => main(argv, { env, clock });
+    const cli = (...argv) => main(argv, { env, clock, readStat: freshShell() });
     const state = (file) => JSON.parse(readFileSync(join(dir, name, file), "utf8"));
     return { env, cli, state, setupExit: await cli(...SETUP, ...setup) };
   };
