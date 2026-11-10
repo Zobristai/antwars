@@ -185,8 +185,8 @@ const DROPPED_VIEW_FIELDS = ["cells", "territory", "enemyQueens"] as const;
  * matched by name at any depth and stored as redactedMarker(name). Enumerated from the source of every tool a match
  * server registers (game tools and the 21 account tools) at main 6b06ecf0:
  * - reconnectToken, token: entry-server join arguments; join reply reconnectToken.
- * - key: slot join argument and every account tool's key argument; claim_username, rotate_key, create_handle and
- *   reissue_handle_key replies.
+ * - key: slot join argument and every account tool's key argument; claim_username, rotate_key, create_handle,
+ *   reissue_handle_key and recover_key replies (recover_key added since that enumeration).
  * - inviteToken: join_lobby and read_lobby arguments; create_lobby and issue_invite replies.
  * - inviteLink: create_lobby and issue_invite replies (the invite token is its #invite= fragment).
  */

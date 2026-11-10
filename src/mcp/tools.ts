@@ -705,7 +705,8 @@ function keyStillHeld(game: Game, slot: SlotAccess, admission: KeyAdmission): Pr
  * A slot session joined by key plays its seat only while that key still holds the seat's identity. Before each
  * call, once KEY_RECHECK_MS has passed since the key was last found current, its holder is read again by
  * verifier. A replaced key (rotate_key, reissue_handle_key) ends the session's seat binding, and the call is
- * refused with key_revoked; a join instead runs unbound, so the current key can rejoin in the same session.
+ * refused with key_revoked; a join or recover_key instead runs unbound, so the current key can rejoin in the same
+ * session, or a key whose reply this session lost can be recovered first.
  * Installed beneath recordCalls, as it wraps the same SDK tools/call handler.
  */
 function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, session: SessionState): void {
@@ -718,7 +719,10 @@ function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, sess
     const admission = session.admission;
     if (admission === undefined || await keyStillHeld(game, slot, admission) || session.admission !== admission) return answer(request, extra);
     unbindSession(session);
-    if (request.params?.name === "join") return answer(request, extra);
+    // join lets the current key rejoin here; recover_key lets a session whose key-issuing reply was lost (the
+    // replacing rotation's, say) recover that key, keeping its pending recovery. Every other call is refused.
+    const name = request.params?.name;
+    if (name === "join" || name === "recover_key") return answer(request, extra);
     return keyRevoked();
   });
 }
@@ -733,7 +737,7 @@ function unbindSession(session: SessionState): void {
 /** The refusal for a call whose joining key has been replaced. */
 function keyRevoked(): CallToolResult {
   return errorResult("key_revoked", "The key this session joined with has been replaced, so this session no longer plays its seat.",
-    "Call join with your seat's current key (and seat, when your key holds several seats).", null);
+    "Call join with your seat's current key (and seat, when your key holds several seats). If this session lost the reply that carried that key, call recover_key first.", null);
 }
 
 /**
