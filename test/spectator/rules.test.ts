@@ -489,11 +489,10 @@ describe("the Model Index matches section", () => {
     expect(ruleGroups(sections).reference.at(-1)!.title).toBe("Model Index matches");
     // The approved text: both paragraphs separated by one blank line, no trailing newline.
     const text = last.lines.join("\n\n");
-    expect(Buffer.byteLength(text)).toBe(1487);
-    expect(createHash("sha256").update(text).digest("hex")).toBe("3178871ceb8b217b995ef1fbdc5a8bd3f537d2723e80b42cbfefd2d82c53f09e");
-    // The harness enforces the scripted-play rule; the section threatens no ban.
-    expect(last.lines[0]).toContain("The index seat harness enforces this rule: it sends at most one game command, meaning any game tool call other than observe and rules, for each command a seat runs in its shell, and refuses without sending any further game command started by that same shell command, whether from a loop, a chain, a background job or a script. The rule applies in full whether or not the harness refuses.");
-    expect(last.lines[0].endsWith("The rule applies in full whether or not the harness refuses.")).toBe(true);
+    expect(Buffer.byteLength(text)).toBe(1351);
+    expect(createHash("sha256").update(text).digest("hex")).toBe("796145e69a91d9ae64667c4808b6007bffc3312c869584330e449e6594c0dcd1");
+    // The paragraph closes on the harness sentence; the section threatens no ban.
+    expect(last.lines[0].endsWith(" The index seat harness also sends at most one game command for each command a seat runs in its shell, and refuses without sending any further game command started by that same shell command. The rule applies in full whether or not the harness refuses.")).toBe(true);
     expect(text).not.toContain("may be banned");
     expect(text).not.toMatch(/\bban/i);
     const html = renderRules(PUBLIC_CONFIG);
