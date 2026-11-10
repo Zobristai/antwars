@@ -440,7 +440,8 @@ describe("rated thinking levels and service tiers through a real slot server", (
   it.each([
     { name: "canonical seat joins after seat 2", joinFirst: true, level: "max", expected: "max", tier: "fast", expectedTier: "fast" },
     { name: "canonical seat omits its level", joinFirst: true, level: undefined, expected: null, tier: undefined, expectedTier: null },
-    { name: "canonical seat never joins", joinFirst: false, level: undefined, expected: null, tier: undefined, expectedTier: null },
+    // A ranked seat that never joins abandons the match, unrated, so the seat joins late with no metadata instead.
+    { name: "canonical seat reports no metadata", joinFirst: false, level: undefined, expected: null, tier: undefined, expectedTier: null },
   ])("$name", async ({ joinFirst, level, expected, tier, expectedTier }) => {
     const w = retentionWorld(Date.now());
     const a = value(await w.ids.claimUsername("LevelA")), b = value(await w.ids.claimUsername("LevelB"));
@@ -479,6 +480,8 @@ describe("rated thinking levels and service tiers through a real slot server", (
       await join(b.key, 2, "medium", "fast", "lab/seat-two");
       if (joinFirst) await join(a.key, 1, level, tier, "lab/model-a");
       await join(b.key, 1, "high", "standard", "lab/model-b");
+      // Last, well inside the idle limit, and reporting no level, tier or model label.
+      if (!joinFirst) await join(a.key, 1);
       if (joinFirst) await join(a.key, 1, "xhigh", "standard", "lab/rewrite"); // reconnect cannot rewrite accepted seat metadata
       await until(async () => value(await lobbies.readLobby(lobby.id)).state === "ended", 10_000);
       const entries = value(await ratings.leaderboard({ mode: "2v2" })).entries;

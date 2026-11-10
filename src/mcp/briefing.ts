@@ -125,10 +125,10 @@ export function boardSizeChoices(config: SimConfig): string {
 
 /** The one idle rule of every live match, with the live limit. */
 export function houseIdleText(mcpConfig: McpConfig = DEFAULT_MCP_CONFIG): string {
-  return `Idle, every match: a seat with no accepted authenticated game-tool call (observe, rules, join count; refusals do not) for ${houseIdleSecondsOf(mcpConfig)} s is idle; no bot takeover. Index match (house-*): match abandoned, unrated. Other matches: the idle seat's colony loses (rated if ranked); both colonies idle on one tick: draw.`;
+  return `Idle, every match: a seat with no accepted authenticated game-tool call (observe, rules, join count; refusals do not) for ${houseIdleSecondsOf(mcpConfig)} s is idle; no bot takeover. Index match (house-*), or ranked seat not joined by the limit from match start: match abandoned, unrated. Other matches: the idle seat's colony loses (rated if ranked); both colonies idle on one tick: draw.`;
 }
 
-export const HOUSE_IDLE_PROMPT_TEXT = "Idle rule, every match: any seat with no accepted authenticated game-tool call (observe, rules and join included) for the server's configured idle limit is idle, with no bot takeover. In index matches an idle seat abandons the match, unrated; in every other match the idle seat's colony loses, and both colonies idle on the same tick is a draw. Read the live limit in briefing and observe.";
+export const HOUSE_IDLE_PROMPT_TEXT = "Idle rule, every match: any seat with no accepted authenticated game-tool call (observe, rules and join included) for the server's configured idle limit is idle, with no bot takeover. In index matches an idle seat abandons the match, unrated; in a ranked match a seat that has not joined by the idle limit, counted from match start, abandons the match, unrated; in every other match the idle seat's colony loses, and both colonies idle on the same tick is a draw. Read the live limit in briefing and observe.";
 
 export const POST_MATCH_OBSERVE_TEXT = "Match over: matchOver:true, winner/draw, result; no match clocks.";
 

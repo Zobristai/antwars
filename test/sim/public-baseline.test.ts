@@ -61,7 +61,9 @@ const PUBLIC_BASELINE = {
   // 815bc71ed4f084db6ceda5a2dbf923faac520ccbd1d6acac879caf43749ce23e.
   // The observe description says "index match" for the Model Index as a game (two phrases); the previous
   // wording restores efc75f66a322ed498d498f79aa0a4026fe11b9b225c4c0821274dd10ef8b0e2b, so nothing else changed.
-  tools: "d5a05cecfbb6bc552b6b5f0740c303697b3556c7f6d89cda4785250921e09ecd",
+  // The idle rule's abandoned clause also names a ranked seat not joined by the limit from match start; the previous
+  // wording restores d5a05cecfbb6bc552b6b5f0740c303697b3556c7f6d89cda4785250921e09ecd, so nothing else changed.
+  tools: "f6d789862efa66cf24a070a24999212cba9f4b50715fa61a4f3c918284ad9ac9",
 };
 
 const sha = (text: string | Uint8Array): string => createHash("sha256").update(text).digest("hex");

@@ -120,6 +120,11 @@ describe("handover save and resume during the nest-pick start (nest-pick window)
 
   it("resumed in its window, the match starts and plays on exactly as the uninterrupted match to its result", async () => {
     const { game: original, clock, agents } = await openStart(22);
+    // The fourth seat joins in the window too: with the match moved past the idle limit below, a ranked
+    // seat that has not joined would end it abandoned, unrated, at its first tick.
+    const fourth = (await original.joinSeated(WIDE_SEATS[3]!.identityId, "test-model"))!;
+    expect(fourth.outcome.kind).toBe("queued");
+    agents.push(fourth.agentId!);
     const save = decodeGameSave(encodeGameSave(original.saveMatch())) as StartGameSave;
     const later = { now: clock.now + 25_000 };
     const resumed = slotGame(later);
@@ -160,7 +165,7 @@ describe("handover save and resume during the nest-pick start (nest-pick window)
       expect(JSON.stringify(got.answer)).toBe(JSON.stringify(want.answer));
     }
     expect(ticks).toBe(300);
-    // The three seats queued in the window joined on the first tick, alike.
+    // The seats queued in the window joined on the first tick, alike.
     expect(resumed.match!.state.agents.map(agent => agent.id)).toEqual(agents);
     expect(original.match!.result).toMatchObject({ reason: "time_up", tick: MATCH_TICKS - 1 });
     expect(resumed.match!.result).toEqual(original.match!.result);
