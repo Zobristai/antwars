@@ -63,6 +63,28 @@ describe("public spectator catalog projection", () => {
     expect(JSON.stringify(result)).not.toMatch(/never-public|secret/);
   });
 
+  it("labels a live Model Index match with its harness phase by its start, and no other match", () => {
+    const pin = Date.parse("2026-11-10T03:03:46.329Z");
+    expect(publicMatchCatalog([{ ...publicMatch, lobbyId: "pin", mode: "house-2v2", startedAt: pin }], []).matches[0]!.harnessPhase)
+      .toEqual({ phase: "from the pin onward", possibleEffortMismatch: false });
+    const roundThirtyOne = Date.parse("2026-11-10T10:32:43.581Z");
+    expect(publicMatchCatalog([{ ...publicMatch, lobbyId: "r31", mode: "house-1v1", startedAt: roundThirtyOne }], []).matches[0]!.harnessPhase)
+      .toEqual({ phase: "from round 31 onward", possibleEffortMismatch: false });
+    const beforePin = Date.parse("2026-11-10T02:00:00Z");
+    const result = publicMatchCatalog([
+      { ...publicMatch, lobbyId: "index", mode: "house-1v1", startedAt: beforePin },
+      { ...publicMatch, lobbyId: "ranked", mode: "1v1", startedAt: beforePin + 1 },
+      { ...publicMatch, lobbyId: "lobby", mode: null, rated: false, startedAt: beforePin + 2 },
+    ], []);
+    expect(result.matches).toEqual([
+      { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 0, colonies: [[], []],
+        harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
+      { lobbyId: "ranked", startedAt: beforePin + 1, rated: true, delaySeconds: 300, colonies: [[], []] },
+      { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []] },
+    ]);
+    expect(result.matches.map(match => "harnessPhase" in match)).toEqual([true, false, false]);
+  });
+
   it("lists only public matches still in playback, oldest first, as the matches whose players are read", () => {
     const later: CatalogMatch = { ...publicMatch, lobbyId: "b", startedAt: 2000 };
     expect(listedMatches([later, { ...publicMatch, lobbyId: "c", playbackFinished: true }, { ...publicMatch, lobbyId: "p", visibility: "private" }, publicMatch])

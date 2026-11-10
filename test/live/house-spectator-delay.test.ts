@@ -68,7 +68,9 @@ describe("house spectator zero-delay wiring", () => {
     const catalog = await (await fetch(`${origin}/watch/catalog`, { signal: abort.signal })).json();
     // Each seat by its stream name, with no model label (its agent reported none), and its unrated-yet figures in the house mode.
     const colony = (name: string) => Array.from({ length: size }, (_, index) => ({ displayName: size > 1 ? `${name} #${index + 1}` : name, modelLabel: null, rating: 1500, rd: 350, ratedMatches: 0 }));
-    expect(catalog.matches).toEqual([{ lobbyId, startedAt: 0, rated: true, delaySeconds: 0, colonies: [colony("antwars/alice"), colony("antwars/bob")] }]);
+    // A Model Index match also carries its harness phase by its start (here time 0, before every boundary).
+    expect(catalog.matches).toEqual([{ lobbyId, startedAt: 0, rated: true, delaySeconds: 0, colonies: [colony("antwars/alice"), colony("antwars/bob")],
+      harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } }]);
     expect(await (await fetch(`${origin}/watch/status/${lobbyId}`, { signal: abort.signal })).json()).toMatchObject({
       lobbyId, started: true, playbackFinished: false, delaySeconds: 0,
     });
