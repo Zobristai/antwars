@@ -257,6 +257,35 @@ describe("the Leaderboard's layout rules", () => {
   });
 });
 
+describe("the Leaderboard's type rules", () => {
+  // Style-contract checks on the source rules; the pass captures show the painted type.
+  const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+  const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
+  it("sets a card's count as metadata beside its title, the text size in the quiet ink, adding nothing to the title's line", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-card-title > .d1p-count { font-size: 13px; font-weight: 400; line-height: 1; letter-spacing: normal; text-transform: none; }');
+  });
+  it("gives \"provisional\" its rating badge's 10 px, one step quieter", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-prov { font-size: 10px; color: var(--aw-ink-3); }');
+  });
+  it("quiets the ask's repeated words, sets the handle a size under them, and moves the handle with the words after it", () => {
+    expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{[^}]*font-size: 12px; line-height: 16px;/);
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { color: var(--aw-ink-3); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask-handle { display: inline-block; max-width: 100%; }');
+  });
+  it("starts a name's wrapped badges on the name's edge, the gap the name's own trailing margin", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > span:first-child:has(+ .d1p-tags) { margin-right: 6px; }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > .d1p-tags > .d1p-tag:first-child { margin-left: 0; }');
+  });
+  it("scopes every type-pass rule to the Leaderboard, so the front page, Matches and Rules keep their shared rules", () => {
+    const own = rules.filter(rule => /> \.d1p-count|d1p-ask|span:first-child:has\(\+ \.d1p-tags\)|\.d1p-tags > \.d1p-tag:first-child/.test(rule) || rule.startsWith('.d1p[data-page="leaderboard"] .d1p-prov {'));
+    expect(own.length).toBeGreaterThanOrEqual(6);
+    for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
+    expect(css).toContain(".d1p-prov { margin-left: 8px; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2);");
+    expect(css).toContain(".d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }");
+    expect(css).toContain(".d1p-tag { display: inline-block; margin-left: 6px;");
+  });
+});
+
 describe("rating ± RD", () => {
   it("shows each rating with ± its RD in whole points on the Antwars Model Index and the public rankings, and none for a row without an RD", async () => {
     const p = page();
@@ -339,17 +368,22 @@ describe("the Challenge choice", () => {
     // Ranked order (antwars/not-listed is not a listed handle, so it has no row), then antwars/glm-5-3-highspeed, which the
     // ranking does not rate. Badges are the list's level and tier through the Model Index rows' own badges, then
     // "unavailable"; antwars/mistral-large-latest's level record holds no level, so it shows none.
+    // "on Antwars" is held together by a no-break space (copy.ts).
     expect(p.rows()).toEqual([
-      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
-      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
+      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
+      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
       { lines: ["Claude Opus 5.5lowunavailable"], badges: ["low", "unavailable"], rating: ["1533"] },
-      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
+      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
       { lines: ["GLM-5.3 Highspeedunavailable"], badges: ["unavailable"], rating: [] },
     ]);
     // The ask is each available row's own line under its name (archive.css lays it across the row).
     expect(p.card()!.byClass("d1p-ask").map(node => node.textContent)).toEqual([
-      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
-      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
+      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
+      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
+    // The handle and the words after it are one unit, so where the ask wraps the handle opens its line.
+    expect(p.card()!.byClass("d1p-ask").map(ask => ask.byClass("d1p-ask-handle").map(unit => [unit.children[0]!.tag, unit.textContent])))
+      .toEqual([[["code", "antwars/gpt-6-astra on Antwars"]], [["code", "antwars/mistral-large-latest on Antwars"]],
+        [["code", "antwars/claude-opus-5-5 on Antwars"]]]);
     // A provisional rating keeps its word, as on the ranking rows.
     expect(p.items()[1]!.byClass("d1p-prov").map(node => node.textContent)).toEqual(["provisional"]);
     // No handle slug after a name, no meta line, no placeholder; the handle appears only as code in the ask.

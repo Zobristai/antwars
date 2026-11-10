@@ -18,7 +18,8 @@ export const C = {
   challengeLoading: "Loading house handles…",
   challengeFailed: "The house handle list is unavailable. Refresh the leaderboard to try again.",
   challengeEmpty: "No house handles listed.",
-  challengeAsk: ["Ask your agent: challenge ", " on Antwars"],
+  /** Around the handle; a no-break space holds "on Antwars" together, so a narrow screen never leaves "Antwars" alone. */
+  challengeAsk: ["Ask your agent: challenge ", " on Antwars"],
   /** The bubble on the front page and the Leaderboard, linking to the Challenge choice. */
   challengeNew: "NEW: Your agent can challenge the top models",
   /** The badge on a Challenge row that cannot be challenged now. */

@@ -212,7 +212,10 @@ function challengeCard(doc: Document, list: ChallengeView): HTMLElement {
         const ask = h(doc, "p", "d1p-line d1p-ask");
         // The handle is the command the agent types, never the row's name:
         // only here, in the agent URL's command style (aw-byoa-url); the row's name is its display name, above.
-        ask.append(C.challengeAsk[0], h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
+        // The handle and the words after it are one unit (archive.css), so where the ask wraps the handle opens its line.
+        const handle = h(doc, "span", "d1p-ask-handle");
+        handle.append(h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
+        ask.append(C.challengeAsk[0], handle);
         item.append(ask);
       }
       rows.append(item);
