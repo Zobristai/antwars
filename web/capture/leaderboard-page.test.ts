@@ -248,7 +248,9 @@ describe("leaderboard page mode choice", () => {
     const request = vi.fn(); const p = mount(request, false);
     expect(request).not.toHaveBeenCalled(); expect(p.root.byClass("d1p-notice")[0]!.textContent).toContain("not enabled");
     expect(p.root.byClass("d1p-fresh")[0]!.hidden).toBe(true);
-    expect(p.shown()).toHaveLength(0); expect(p.root.byClass("d1p-boards")[0]!.hidden).toBe(true); p.dispose();
+    // The board choice goes with the line that holds it and the challenge bubble.
+    expect(p.shown()).toHaveLength(0); expect(p.root.byClass("d1p-lb-strip")[0]!.hidden).toBe(true);
+    expect(p.root.byClass("d1p-boards")[0]!.parentElement === p.root.byClass("d1p-lb-strip")[0]).toBe(true); p.dispose();
   });
   it("keeps the page in one main landmark", () => {
     const p = mount(server({ ...emptyIndex }));

@@ -1,5 +1,6 @@
-// The Archive: the Leaderboard. The band at the container's top holds the title, the freshness line with the page's one Refresh (no eligibility
-// line), and the board choice, the Antwars Model Index first; each table is a record card that says its own state once.
+// The Archive: the Leaderboard. The band at the container's top is two lines: the title, with the freshness line and the page's one
+// Refresh (no eligibility line) at the line's end; then the board choice, the Antwars Model Index first, with the challenge bubble after
+// the Challenge group it opens. Each table is a record card that says its own state once.
 // Rows are the page's data owner's (leaderboard-page/page.ts), read-only; every change goes through its actions.
 import type { LeaderboardMode, LeaderboardRow } from "../leaderboard.ts";
 import { C } from "../leaderboard-page/copy.ts";
@@ -34,11 +35,13 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
   const search = doc.defaultView!.location.search;
   const frame = mountFrame(doc, host, "leaderboard");
 
-  // ---------------------------------------------------------------- the band: summary first, then the board choice beside it
+  // ---------------------------------------------------------------- the band: the title's line, then the board choice
   const summary = h(doc, "div", "d1p-summary");
   const title = h(doc, "h1", "d1p-title", C.title);
   title.tabIndex = -1;
-  // No eligibility line (the old page help goes as editorial copy); the freshness line follows the title.
+  // No eligibility line (the old page help goes as editorial copy). At the title line's end, the time the lists were last
+  // read, then the page's one Refresh, which reads the board shown again: one group, and the time's arrival moves nothing,
+  // since Refresh holds the line's end.
   const fresh = h(doc, "div", "d1p-fresh");
   const loaded = h(doc, "p", "d1p-loaded");
   const refresh = pill(doc, PAGE_WORDS.refresh);
@@ -46,16 +49,11 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
   refresh.classList.add("d1p-refresh");
   refresh.dataset.key = "refresh";
   refresh.addEventListener("click", () => { continuing = new Set(); actions.refresh(); });
-  // Refresh under the title, the time it last read after it: one group, and the time's arrival moves nothing.
-  fresh.append(refresh, loaded);
-  // The challenge bubble: its own row under Refresh, the site's cyan button (deck.css .d1-agent-button),
-  // linking to the Challenge choice as the Waiting card does.
-  const bubbleRow = h(doc, "div", "d1p-fresh");
-  const bubble = h(doc, "a", "d1-agent-button", C.challengeNew);
-  bubble.href = keep(CHALLENGE_HREF, search);
-  bubble.dataset.key = "challenge-new";
-  bubbleRow.append(bubble);
-  summary.append(title, fresh, bubbleRow);
+  fresh.append(loaded, refresh);
+  summary.append(title, fresh);
+  // The board choice, then the challenge bubble after the Challenge group it opens: the site's cyan button
+  // (deck.css .d1-agent-button), linking to the Challenge choice as the Waiting card does.
+  const strip = h(doc, "div", "d1p-lb-strip");
   const boards = h(doc, "div", "d1p-boards");
   boards.setAttribute("role", "group");
   boards.setAttribute("aria-label", C.modes);
@@ -86,7 +84,11 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
     block.append(label, row);
     boards.append(block);
   });
-  frame.band.append(summary, boards);
+  const bubble = h(doc, "a", "d1-agent-button", C.challengeNew);
+  bubble.href = keep(CHALLENGE_HREF, search);
+  bubble.dataset.key = "challenge-new";
+  strip.append(boards, bubble);
+  frame.band.append(summary, strip);
   // The page's own heading takes focus once, unless the visitor is already somewhere else.
   queueMicrotask(() => { if (title.isConnected && (doc.activeElement === null || doc.activeElement === doc.body)) title.focus({ preventScroll: true }); });
 
@@ -114,10 +116,9 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
       if (settled.moved) loadedAt = Date.now();
       const text = loadedAt === null ? "" : loadedText(loadedAt);
       if (loaded.textContent !== text) loaded.textContent = text;
-      // Not enabled: the band keeps its title; the choice, Refresh, freshness and the challenge bubble go.
+      // Not enabled: the band keeps its title; Refresh, freshness, the choice and the challenge bubble go.
       fresh.hidden = !view.enabled;
-      bubbleRow.hidden = !view.enabled;
-      boards.hidden = !view.enabled;
+      strip.hidden = !view.enabled;
       for (const tab of tabs) tab.button.setAttribute("aria-pressed", String(tab.mode === view.mode));
       const next = JSON.stringify([view.enabled, view.mode, view.tables, view.challenge]);
       if (next === drawn) return;
@@ -200,17 +201,21 @@ function challengeCard(doc: Document, list: ChallengeView): HTMLElement {
       const lead = h(doc, "p", "d1p-line is-lead");
       lead.append(...nameNodes(doc, { name: entry.displayName, badges: challengeBadges(entry) }));
       item.append(lead);
-      // The rating beside the name, in the row's second column, as a stacked ranking row has it.
+      // The rating beside the name, in the row's second column, as a stacked ranking row has it; that column is one column
+      // down the whole list (archive.css), so every badge stands under the one above it.
       if (rating !== null) {
         const elo = h(doc, "p", "c-elo");
         elo.append(h(doc, "span", "d1p-sr", `${C.eloColumn} `), ...ratingNodes(doc, rating));
         item.append(elo);
       }
       if (entry.available) {
-        const ask = h(doc, "p", "d1p-line");
+        const ask = h(doc, "p", "d1p-line d1p-ask");
         // The handle is the command the agent types, never the row's name:
         // only here, in the agent URL's command style (aw-byoa-url); the row's name is its display name, above.
-        ask.append(C.challengeAsk[0], h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
+        // The handle and the words after it are one unit (archive.css), so where the ask wraps the handle opens its line.
+        const handle = h(doc, "span", "d1p-ask-handle");
+        handle.append(h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
+        ask.append(C.challengeAsk[0], handle);
         item.append(ask);
       }
       rows.append(item);

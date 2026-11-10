@@ -144,7 +144,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const builder = await w.claim("builder");
       const ordinary = value(await w.lobbies.createLobby(w.rival.key, "public", 1)).lobby;
       const reply = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
-      expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat"]);
+      expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat", "waitToken", "waitUrl"]);
       expect(reply.seat).toBe(1);
       const { lobby } = await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: reply.lobbyId });
       expect(lobby).toMatchObject({ id: reply.lobbyId, kind: "public", size: 1, state: "open", rated: false, creatorId: builder.id,
