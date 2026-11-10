@@ -20,9 +20,9 @@ import {
  *    removed: unrateNeverJoined.ts's verify and Firestore writes, without its recording rewrite.
  * 2. Two 2026-11-01 house-1v1 matches move from the standard Sol handles to the -fast handles that played them
  *    (SOL_MOVES), and house-1v1 ratings are recomputed with rateMatch, in the order they were applied, from each
- *    player's state before the first moved match. Ratings are applied when a match ends, so that order is read from
- *    the stored change records: each player's next match starts from the rating its previous one left. The pass
- *    refuses unless the same replay without the move reproduces every stored change and row.
+ *    player's state before the first moved match. Ratings are applied when a match ends, so that order is the
+ *    createTime of each match's stored change record. The pass refuses unless the same replay without the move
+ *    reproduces every stored change and row.
  *
  * Any failed check refuses the whole plan: the reason is logged and PLAN_PATH says only "refused".
  * CORRECTION_MARKER is created by the apply in the same transaction as these writes: { planDigest, appliedAt }.
@@ -122,7 +122,8 @@ async function houseHistory(store: Store, extra: readonly string[]) {
     for (let i = 0; i < paths.length; i += 100) {
       for (const entry of await store.transaction(async read => ({ result: await read(paths.slice(i, i + 100)), writes: [] }))) docs.set(...entry);
     }
-    if (JSON.stringify(await houseLobbies(store)) === JSON.stringify(lobbies)) return { lobbies, docs };
+    const created = await store.createTimes!(lobbies.map(lobby => `ratedMatches/${lobby.id}`));
+    if (JSON.stringify(await houseLobbies(store)) === JSON.stringify(lobbies)) return { lobbies, docs, created };
     if (attempt === HISTORY_ATTEMPTS) refuse(`${MODE} history changed during each of ${HISTORY_ATTEMPTS} reads`);
   }
 }
@@ -158,7 +159,8 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     return { ...move, lobbyId: lobbyId!, fromId: from!.id, toId: to!.id };
   }));
   const movers = moves.flatMap(move => [move.fromId, move.toId]);
-  const { lobbies, docs } = await houseHistory(store, movers);
+  if (!store.createTimes) refuse("the store cannot read commit times");
+  const { lobbies, docs, created } = await houseHistory(store, movers);
   for (const seat of lobbies.flatMap(lobby => lobby.seats)) names.set(seat.id, seat.displayName);
   const row = (id: string) => docs.get(`${ROWS}/${id}`) ?? null;
   const stored = new Map(lobbies.map(lobby => {
@@ -170,37 +172,15 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     return [lobby.id, changes as RatingChange[]] as const;
   }));
   const change = (lobby: Lobby, id: string) => stored.get(lobby.id)!.find(c => c.identityId === id)!;
+  /** A createTime with its fraction padded to nanoseconds, so that text order is time order. */
+  const createdAt = (lobby: Lobby) => {
+    const at = /^(.+?)(?:\.(\d{1,9}))?Z$/.exec(created.get(`ratedMatches/${lobby.id}`) ?? "");
+    return at ? `${at[1]}.${(at[2] ?? "").padEnd(9, "0")}Z` : refuse(`lobby ${lobby.id}: no change record time`);
+  };
 
-  // The order ratings were applied: each player's matches chained by Glicko state (rating and RD; a match always
-  // narrows RD, so an unchanged rating, as in a draw between equals, still moves the state), merged by match time where
-  // unchained.
-  const follows = (prev: RatingChange, next: RatingChange) => prev.after === next.before
-    && (prev.rdAfter === undefined || next.rdBefore === undefined || prev.rdAfter === next.rdBefore);
-  const after = new Map<string, Set<string>>(lobbies.map(lobby => [lobby.id, new Set()]));
-  const waits = new Map(lobbies.map(lobby => [lobby.id, 0]));
-  for (const id of new Set(lobbies.flatMap(lobby => teamsOf(lobby).flat()))) {
-    const mine = lobbies.filter(lobby => plays(lobby, id));
-    const starts = mine.filter(lobby => !mine.some(other => other !== lobby && follows(change(other, id), change(lobby, id))));
-    const chain = starts.length === 1 ? [starts[0]!] : [];
-    while (chain.length > 0 && chain.length < mine.length) {
-      const last = chain.at(-1)!;
-      const next = mine.filter(lobby => !chain.includes(lobby) && follows(change(last, id), change(lobby, id)));
-      if (next.length !== 1) break;
-      after.get(last.id)!.add(next[0]!.id);
-      chain.push(next[0]!);
-    }
-    if (chain.length !== mine.length) refuse(`order of ${names.get(id)}'s ${MODE} matches not established from their stored ratings`);
-  }
-  for (const next of after.values()) for (const id of next) waits.set(id, waits.get(id)! + 1);
-  const order: Lobby[] = [];
-  const ready = lobbies.filter(lobby => waits.get(lobby.id) === 0);
-  while (ready.length > 0) {
-    ready.sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
-    const lobby = ready.shift()!;
-    order.push(lobby);
-    for (const id of after.get(lobby.id)!) if (waits.set(id, waits.get(id)! - 1).get(id) === 0) ready.push(lobbies.find(each => each.id === id)!);
-  }
-  if (order.length !== lobbies.length) refuse(`order of ${MODE} matches not established: their stored ratings form a cycle`);
+  // The order ratings were applied: each match's change record is created in the commit that rated it, so its
+  // createTime (never its updateTime, which a later write moves) orders the ratings.
+  const order = [...lobbies].sort((a, b) => createdAt(a) < createdAt(b) ? -1 : createdAt(a) > createdAt(b) ? 1 : 0);
   const moved = order.map(lobby => {
     const move = moves.find(each => each.lobbyId === lobby.id);
     if (!move) return lobby;
@@ -210,6 +190,11 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const first = Math.min(...moves.map(move => order.findIndex(lobby => lobby.id === move.lobbyId)));
   if (first < 0) refuse(`a moved lobby is not a rated ${MODE} match`);
   const window = order.slice(first);
+  // Sorted, so equal times are neighbours; the match just before the window counts too.
+  for (let i = Math.max(first, 1); i < order.length; i++) {
+    const [a, b] = [order[i - 1]!, order[i]!];
+    if (createdAt(a) === createdAt(b)) refuse(`order of lobbies ${a.id} and ${b.id} not established: their ratings share a commit time`);
+  }
   const players = [...new Set([...window, ...moved.slice(first)].flatMap(lobby => teamsOf(lobby).flat()))];
 
   // Each player's state entering the window: as its first stored match in the window found it, else its row.

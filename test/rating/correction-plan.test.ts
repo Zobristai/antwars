@@ -5,7 +5,7 @@ import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import { CORRECTION_MARKER, NEVER_JOINED, planCorrections, PLAN_PATH, SOL_MOVES, startCorrectionPlan, type Plan } from "../../src/rating/correctionPlan.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
-import { createFirestore, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
+import { createFirestore, CREATE_TIME_BATCH, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
 import type { RecordingObjects } from "../../src/replays/abandonRecording.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { ratedRecording } from "../replays/never-joined-fixture.ts";
@@ -32,6 +32,8 @@ const HISTORY: readonly [string, string, Winner, number][] = [
   ["glm-5-3", "grok-4-7", "b", 1200], ["glm-5-3", "gpt-6-1-sol-high-fast", "a", 1000],
   // A draw between equal ratings, each player's only match: it leaves both ratings unchanged.
   ["kimi-k3", "qwen-4", "draw", 100],
+  // Started before the first moved match and rated after every other; after the move it shares sol-high-fast with it.
+  ["gpt-6-1-sol-high-fast", "deepseek-v4", "a", -5],
 ];
 const MOVED: Readonly<Record<number, string>> = { 5: "gpt-6-1-sol-high", 6: "gpt-6-1-sol-xhigh" };
 
@@ -162,7 +164,7 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     }
     const record = async (name: string) => storedRecord(name, await w.store.get(`${ratingCollection(MODE)}/${w.ids.get(`antwars/${name}`)}`));
     expect(await record("gpt-6-1-sol-high")).toMatchObject({ wins: 2, losses: 1, draws: 0 });
-    expect(await record("gpt-6-1-sol-high-fast")).toMatchObject({ wins: 1, losses: 3, draws: 0, form: expect.arrayContaining([{ result: "L", matchId: w.lobbies[5] }]) });
+    expect(await record("gpt-6-1-sol-high-fast")).toMatchObject({ wins: 2, losses: 3, draws: 0, form: expect.arrayContaining([{ result: "L", matchId: w.lobbies[5] }]) });
     expect(await record("gpt-6-1-sol-xhigh-fast")).toMatchObject({ wins: 1, losses: 2, draws: 0 });
     expect(JSON.parse((await w.store.get(`watchMatches/${w.lobbies[5]}`))!.modelLabels!)).toEqual({ "antwars/glm-5-3": "other", "antwars/gpt-6-1-sol-high-fast": "fast" });
   });
@@ -200,6 +202,34 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     await vi.waitFor(() => expect(JSON.parse(served(serve).body)).toEqual({ state: "refused" }));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("antwars/gpt-6-1-sol-high"));
     warn.mockRestore();
+  });
+
+  it("orders by each change record's creation: a later rewrite of a record moves nothing; a shared commit time refuses", async () => {
+    const w = await world();
+    const plan = await planCorrections(w.store, w.recordings) as Plan;
+    // A later write to the earliest match's record (as a marker or record fill would make) keeps its createTime.
+    await commit(w.store, [{ op: "update", path: `ratedMatches/${w.lobbies[0]}`, fields: { filled: "true" } }]);
+    // The same plan, digest included (an updateTime order would put that match last and change it).
+    expect(((await planCorrections(w.store, w.recordings)) as Plan).summary).toEqual(plan.summary);
+
+    const [a, b] = [w.lobbies[7]!, w.lobbies[8]!];
+    const tied: Store = { ...w.store, createTimes: async paths => {
+      const times = new Map(await w.store.createTimes!(paths));
+      return times.set(`ratedMatches/${b}`, times.get(`ratedMatches/${a}`)!);
+    } };
+    await expect(planCorrections(tied, w.recordings)).rejects.toThrow(new RegExp(`lobbies (${a} and ${b}|${b} and ${a}) not established`));
+  });
+
+  it("reads commit times for more documents than one batch, and a document's stays put when it is rewritten", async () => {
+    const store = createFirestore({ projectId, namespace: `c${process.pid}-${Date.now().toString(36)}-${counter++}`, emulatorHost: host });
+    const paths = Array.from({ length: 2 * CREATE_TIME_BATCH + 50 }, (_, i) => `probes/${String(i).padStart(4, "0")}`);
+    await commit(store, paths.map(path => ({ op: "create" as const, path, fields: { n: "0" } })));
+    const times = await store.createTimes!([...paths, "probes/missing"]);
+    expect(times.size).toBe(paths.length + 1);
+    expect(times.get("probes/missing")).toBeNull();
+    for (const path of paths) expect(times.get(path)).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z$/);
+    await commit(store, [{ op: "update", path: paths[0]!, fields: { n: "1" } }]);
+    expect((await store.createTimes!([paths[0]!])).get(paths[0]!)).toBe(times.get(paths[0]!));
   });
 
   it("serves the plan at its one path, and plans nothing once the correction marker exists", async () => {
