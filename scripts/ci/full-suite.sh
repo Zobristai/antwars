@@ -13,8 +13,18 @@
 #
 # Runs on Ubuntu 24.04 x86-64 only, and refuses to run elsewhere: the browsers and their system
 # libraries below are the Ubuntu 24.04 x86-64 builds. Needs Node.js 24, git, python3, coreutils,
-# apt and network access; no root. The identifier list stays outside the repository, at
-# <git-common-dir>/antwars-identifiers; without it the script refuses to run.
+# util-linux, apt and network access; no root. The identifier list stays outside the repository,
+# at <git-common-dir>/antwars-identifiers; without it the script refuses to run.
+#
+# npm ci, the typecheck, the build and the tests run the checkout's own code and its
+# dependencies', so they run where the identifier list cannot be read: in unprivileged user,
+# mount and PID namespaces where an empty read-only file is mounted over the list (and over any
+# other path that reaches the same file), then in a further user and mount namespace mapped back
+# to your own user, with no capabilities, where that mount is locked and cannot be removed. The
+# script checks all of this before running anything from the checkout, and refuses to run where
+# those namespaces cannot be created: on Ubuntu 24.04 that is the default, so it needs
+# kernel.apparmor_restrict_unprivileged_userns=0, or an AppArmor profile that allows user
+# namespaces for unshare.
 #
 # Tools, each a release file pinned by SHA-256: gitleaks 8.30.1, firebase-tools 15.35.0 (the
 # standalone release binary, not an npm install), an Eclipse Temurin Java 21 runtime, and the
@@ -44,7 +54,7 @@ fail() { echo "full-suite: $*" >&2; exit 1; }
 os=$( (. /etc/os-release && echo "${ID:-}-${VERSION_ID:-}") 2> /dev/null || true)
 [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] && [ "$os" = ubuntu-24.04 ] ||
   fail "this script runs on Ubuntu 24.04 x86-64 only: its browsers and their system libraries are the Ubuntu 24.04 x86-64 builds."
-for tool in git node python3 sha256sum realpath tar apt-get apt-cache dpkg-query dpkg-deb; do
+for tool in git node python3 sha256sum realpath tar apt-get apt-cache dpkg-query dpkg-deb unshare mount; do
   command -v "$tool" > /dev/null || fail "$tool is not installed."
 done
 
@@ -87,6 +97,103 @@ trap 'exit 143' TERM
 outside "$d" || fail "the temporary directory must be outside the checkout."
 chmod 700 -- "$d"
 mkdir -- "$d/tools" "$d/tools/bin"
+
+list="$common/antwars-identifiers"
+[ -s "$list" ] || fail "the identifier list <git-common-dir>/antwars-identifiers is missing or empty; refusing."
+
+# hidden <command...>: runs the command where the identifier list cannot be read. First stage, as
+# root of new user, mount and PID namespaces (with their own /proc): an empty read-only file is
+# mounted over the list and over every other path at which a mount shows the same file. Second
+# stage, in a further user and mount namespace mapped back to your own user: that mount is locked
+# there, and the user has no capabilities. Before the command runs, the second stage checks that
+# no path still reaches the list, that the covering mounts cannot be removed, that it holds no
+# capabilities and that the script's own processes are not visible. Any failed check refuses.
+cat > "$d/hide.py" << 'PY'
+import ctypes, os, re, subprocess, sys
+
+def die(msg):
+    sys.stderr.write("full-suite: " + msg + "\n")
+    sys.exit(1)
+
+def same(path, ident):
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return (st.st_dev, st.st_ino) == ident
+
+stage = sys.argv[1]
+if stage == "outer":
+    lst, empty, uid, gid, pidns = sys.argv[2:7]
+    cmd = sys.argv[8:]
+    lst = os.path.realpath(lst)
+    st = os.stat(lst)
+    if st.st_nlink != 1:
+        die("the identifier list has more than one hard link; refusing.")
+    ident = (st.st_dev, st.st_ino)
+    dev = "%d:%d" % (os.major(st.st_dev), os.minor(st.st_dev))
+    unesc = lambda s: re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), s)
+    mounts = []
+    with open("/proc/self/mountinfo") as f:
+        for line in f:
+            fields = line.split()
+            if fields[2] == dev:
+                mounts.append((unesc(fields[3]), unesc(fields[4])))
+    inside = lambda path, top: top == "/" or path == top or path.startswith(top + "/")
+    hosts = [m for m in mounts if inside(lst, m[1])]
+    if not hosts:
+        die("cannot find the mount that holds the identifier list; refusing.")
+    root, point = max(hosts, key=lambda m: len(m[1]))
+    fspath = os.path.normpath(root + "/" + os.path.relpath(lst, point))
+    paths = {lst}
+    for root, point in mounts:
+        if inside(fspath, root):
+            paths.add(os.path.normpath(point + "/" + os.path.relpath(fspath, root)))
+    covered = []
+    for path in sorted(paths):
+        if not same(path, ident):
+            continue
+        for args in (["--bind", empty, path], ["-o", "remount,bind,ro", path]):
+            if subprocess.run(["mount", *args], stderr=subprocess.DEVNULL).returncode != 0:
+                die("cannot mount over the identifier list; refusing.")
+        covered.append(path)
+    if lst not in covered or any(same(p, ident) for p in paths):
+        die("the identifier list is still reachable; refusing.")
+    os.execvp("unshare", ["unshare", "--user", "--map-user=" + uid, "--map-group=" + gid, "--mount", "--",
+                          sys.executable, "-I", __file__, "inner", str(ident[0]), str(ident[1]), pidns,
+                          *covered, "--", *cmd])
+elif stage == "inner":
+    ident = (int(sys.argv[2]), int(sys.argv[3]))
+    pidns = sys.argv[4]
+    split = sys.argv.index("--")
+    covered, cmd = sys.argv[5:split], sys.argv[split + 1:]
+    libc = ctypes.CDLL(None, use_errno=True)
+    with open("/proc/self/status") as f:
+        caps = [l.split()[1] for l in f if l.startswith(("CapEff:", "CapPrm:"))]
+    if os.geteuid() == 0 or any(int(c, 16) for c in caps):
+        die("the build and tests would hold privileges; refusing.")
+    if os.readlink("/proc/self/ns/pid") == pidns:
+        die("the build and tests would see the script's own processes; refusing.")
+    for path in covered:
+        if same(path, ident):
+            die("the identifier list is still reachable; refusing.")
+        with open(path, "rb") as f:
+            if f.read(1):
+                die("the identifier list is still readable; refusing.")
+        for flags in (0, 2):
+            if libc.umount2(path.encode(), flags) == 0:
+                die("the mount over the identifier list could be removed; refusing.")
+    os.execvp(cmd[0], cmd)
+PY
+: > "$d/empty"
+chmod 400 -- "$d/empty"
+hidden() {
+  unshare --user --map-root-user --mount --pid --fork --mount-proc --propagation private -- \
+    python3 -I "$d/hide.py" outer "$list" "$d/empty" "$(id -u)" "$(id -g)" "$(readlink /proc/self/ns/pid)" -- "$@"
+}
+# Refuse now, before anything is downloaded, where the namespaces cannot be created.
+hidden true 2> /dev/null ||
+  fail "cannot hide the identifier list from the build and tests: this machine refuses unprivileged user, mount or PID namespaces (on Ubuntu 24.04, set kernel.apparmor_restrict_unprivileged_userns=0 or allow user namespaces for unshare in AppArmor)."
 
 # pinned <url> <sha256> <name>: prints the path of a private copy of the release file, checked
 # against its SHA-256 after copying. A missing or mismatched cache entry is downloaded again.
@@ -293,8 +400,6 @@ EOF
 fi
 
 # The scans.
-list="$common/antwars-identifiers"
-[ -s "$list" ] || fail "the identifier list <git-common-dir>/antwars-identifiers is missing or empty; refusing."
 base=$(git rev-parse --verify 'origin/main^{commit}')
 candidate=$(git rev-parse --verify 'HEAD^{commit}')
 pin=$(git cat-file blob "$base:.githooks/pre-commit" | sed -n 's/^defaults_baseline=\([0-9a-f]\{40\}\)$/\1/p')
@@ -312,29 +417,79 @@ for f in .github/scripts/identifiers-scan.sh .githooks/identifier-config .gitlea
   git cat-file blob "$base:$f" > "$d/base/$f"
 done
 
+# Nothing the scanner or gitleaks prints is written anywhere: gitleaks' own log and error lines
+# can carry file paths. The scanner's output is discarded. gitleaks runs through the wrapper
+# below, which reads its messages through a pipe, never stores or prints them, and only checks
+# them: a scan is complete when gitleaks printed nothing but its completion messages (scanned,
+# commits scanned, no leaks found, leaks found) and exactly one "scanned" line. Anything else,
+# such as a file it could not read or a git error, marks that scan incomplete, and the run fails.
+# gitleaks can report such errors and still exit 0.
+mkdir -- "$d/scanbin"
+cat > "$d/scanbin/gitleaks" << 'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+dir=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
+report=
+prev=
+for arg in "$@"; do
+  [ "$prev" = --report-path ] && report=$(basename -- "$arg")
+  prev=$arg
+done
+{ "$dir/tools/bin/gitleaks" "$@" 2>&1; printf '\001exit %d\n' "$?"; } | LC_ALL=C awk '
+  BEGIN { code = 3; bad = 0; scanned = 0; done = 0 }
+  /^\001exit [0-9]+$/ { code = substr($0, 7) + 0; done = 1; next }
+  {
+    if (done) { bad = 1; next }
+    gsub(/\033\[[0-9;]*m/, "")
+    if (!sub(/^[0-9][0-9]?:[0-9][0-9][AP]M /, "")) { bad = 1; next }
+    if ($0 ~ /^INF scanned ~[0-9]+ bytes \([0-9.]+( [A-Za-z]+)?\) in [0-9][^ ]*$/) { scanned++; next }
+    if ($0 ~ /^INF [0-9]+ commits scanned\.$/ || $0 == "INF no leaks found" || $0 ~ /^WRN leaks found: [0-9]+$/) next
+    bad = 1
+  }
+  END { exit (bad || !done || scanned != 1) ? 3 : code }
+'
+code=$?
+if [ "$code" = 3 ]; then
+  case "$report" in *[!a-z.-]* | "") report=unknown.json ;; esac
+  echo "${report%.json}" >> "$dir/incomplete.txt"
+fi
+exit "$code"
+EOF
+chmod 700 -- "$d/scanbin/gitleaks"
+: > "$d/incomplete.txt"
+# The scans that must have run: the tree and the commits, with each rule set, and the candidate's
+# .gitleaksignore as a file when it has one.
+expected="tree commits tree-defaults commits-defaults"
+if git cat-file -e "$candidate:.gitleaksignore" 2> /dev/null; then
+  expected="$expected ignore ignore-defaults"
+fi
+
 status=0
-# Nothing the scanner or gitleaks prints reaches the output: gitleaks' own log and error lines can
-# carry file paths. Both streams go to a private file, which is never printed and is deleted with
-# the temporary directory; the only output is the reduced report below.
-ANTWARS_IDENTIFIERS=$(cat -- "$list") bash "$d/base/.github/scripts/identifiers-scan.sh" "$d/work" "$candidate" "$base" \
-  > "$d/scan.log" 2>&1 || status=$?
-rm -f -- "$d/scan.log"
+PATH="$d/scanbin:$PATH" ANTWARS_IDENTIFIERS=$(cat -- "$list") \
+  bash "$d/base/.github/scripts/identifiers-scan.sh" "$d/work" "$candidate" "$base" > /dev/null 2>&1 || status=$?
 # Report the reduced findings: scan, rule, commit, line and path sha256 only, each field checked
-# against its expected form; anything else is reported as unreadable.
+# against its expected form. A scan that did not run, did not complete, or left a missing or
+# unreadable report fails the run.
 node --input-type=module -e '
   import { existsSync, readFileSync } from "node:fs";
-  const dir = process.argv[1];
+  const [dir, incompleteFile, expectedList] = process.argv.slice(1);
   const safe = (v, re) => (typeof v === "string" && re.test(v) ? v : null);
-  let ran = [];
-  try { ran = readFileSync(`${dir}/ran.txt`, "utf8").split("\n").filter(Boolean); } catch {}
+  const lines = (file) => { try { return readFileSync(file, "utf8").split("\n").filter(Boolean); } catch { return []; } };
+  const ran = lines(`${dir}/ran.txt`);
+  const incomplete = new Set(lines(incompleteFile));
+  let ok = true;
+  for (const scan of expectedList.split(" ")) {
+    if (!ran.includes(scan)) { console.log(`full-suite: scan=${scan} did not run`); ok = false; }
+  }
   for (const name of ran) {
     const scan = safe(name, /^[a-z-]+$/);
-    if (!scan) { console.log("full-suite: scan=unknown report unreadable"); continue; }
+    if (!scan) { console.log("full-suite: scan=unknown report unreadable"); ok = false; continue; }
+    if (incomplete.has(scan)) { console.log(`full-suite: scan=${scan} incomplete`); ok = false; }
     let items = "missing";
     if (existsSync(`${dir}/${scan}.json`)) {
       try { items = JSON.parse(readFileSync(`${dir}/${scan}.json`, "utf8")); } catch { items = "unreadable"; }
     }
-    if (!Array.isArray(items)) { console.log(`full-suite: scan=${scan} report ${items === "missing" ? "missing" : "unreadable"}`); continue; }
+    if (!Array.isArray(items)) { console.log(`full-suite: scan=${scan} report ${items === "missing" ? "missing" : "unreadable"}`); ok = false; continue; }
     console.log(`full-suite: scan=${scan} findings=${items.length}`);
     for (const f of items) {
       const rule = safe(f?.RuleID, /^[A-Za-z0-9._-]+$/) ?? "rule-redacted";
@@ -344,21 +499,29 @@ node --input-type=module -e '
       console.log(`full-suite: finding: scan=${scan} rule=${rule} commit=${commit} line=${line} path-sha256=${path}`);
     }
   }
-  if (ran.length === 0) console.log("full-suite: no scan ran.");
-' "$d/work/reports"
-[ "$status" = 0 ] || fail "the private identifier or default-rules scan failed."
+  for (const scan of incomplete) {
+    if (!ran.includes(scan)) { console.log("full-suite: a scan did not complete"); ok = false; }
+  }
+  process.exit(ok ? 0 : 1);
+' "$d/work/reports" "$d/incomplete.txt" "$expected" || status=1
+[ "$status" = 0 ] || fail "the private identifier or default-rules scan failed or did not complete."
 rm -rf -- "$d/work" "$d/base"
 
-# Build and the full test set.
-npm ci --no-audit --no-fund
-npx tsc --noEmit
-npm run build:web
-# The tests, split as the full job of .github/workflows/antwar-ci.yml splits them: beside the rest of
-# the suite, the Wide Plain handover's pause and the deploy tooling tests' many fake-deploy
-# processes starve each other past their time limits.
-tests=0
-ANTWAR_REQUIRE_EMULATOR=1 firebase emulators:exec --only firestore \
-  "npx vitest run --maxWorkers=2 --exclude test/slots/handover-wide-plain.test.ts --exclude deploy/cloud-run/deploy.test.ts" || tests=1
-npx vitest run test/slots/handover-wide-plain.test.ts || tests=1
-npx vitest run deploy/cloud-run/deploy.test.ts || tests=1
-[ "$tests" = 0 ] || fail "the full test set failed."
+# Build and the full test set, where the identifier list cannot be read (hidden, above).
+build_and_test() {
+  set -euo pipefail
+  npm ci --no-audit --no-fund
+  npx tsc --noEmit
+  npm run build:web
+  # The tests, split as the full job of .github/workflows/antwar-ci.yml splits them: beside the
+  # rest of the suite, the Wide Plain handover's pause and the deploy tooling tests' many
+  # fake-deploy processes starve each other past their time limits.
+  local tests=0
+  ANTWAR_REQUIRE_EMULATOR=1 firebase emulators:exec --only firestore \
+    "npx vitest run --maxWorkers=2 --exclude test/slots/handover-wide-plain.test.ts --exclude deploy/cloud-run/deploy.test.ts" || tests=1
+  npx vitest run test/slots/handover-wide-plain.test.ts || tests=1
+  npx vitest run deploy/cloud-run/deploy.test.ts || tests=1
+  [ "$tests" = 0 ] || { echo "full-suite: the full test set failed." >&2; exit 1; }
+}
+export -f build_and_test
+hidden bash -c build_and_test || fail "the build or the full test set failed."
