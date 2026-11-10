@@ -445,6 +445,12 @@ export function isExpired(fields: Fields, now: number): boolean {
 /** Ended and expired are both irreversible. */
 const isTerminal = (fields: Fields, now: number) => fields.state === "ended" || isExpired(fields, now);
 
+/** Whether a lobby, read in the caller's transaction, is gone, ended or expired: a wait on it can only be final. */
+const lobbyDone = (read: TransactionRead, now: number) => async (lobbyId: string): Promise<boolean> => {
+  const fields = (await read([lobbyPath(lobbyId)])).get(lobbyPath(lobbyId));
+  return !fields || isTerminal(fields, now);
+};
+
 function toLobby(id: string, fields: Fields, now: number): Lobby {
   const { kind, size, state, seats } = lobbyDocument(id, fields);
   const createdAt = Number(fields.createdAt);
@@ -775,7 +781,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
    */
   async function joinedLobbyWaitWrites(read: TransactionRead, token: string, lobbyId: string, identityId: string, limit: number, at: number): Promise<Write[]> {
     const indexes = waitIndexes(read);
-    const pruned = await prunedLobbyWaitWrites(read, indexes, identityId, at, seatKeyPath(lobbyId, identityId));
+    const pruned = await prunedLobbyWaitWrites(read, indexes, identityId, at, lobbyDone(read, at), seatKeyPath(lobbyId, identityId));
     const created = await lobbyWaitWrites(read, indexes, token, lobbyId, identityId, limit);
     return [...pruned, ...created, ...(await indexes.writes())];
   }
@@ -799,8 +805,10 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   async function endLobbyWait(token: string, lobbyId: string, state: WaitState): Promise<WaitState> {
     return store.transaction<WaitState>(async (read) => {
       const wait = (await read([waitPath(token)])).get(waitPath(token));
-      if (wait?.kind === "lobby" && wait.lobbyId === lobbyId && wait.ended === "true") return { result: LEFT_LOBBY, writes: [] };
-      return { result: state, writes: wait?.kind === "lobby" && wait.lobbyId === lobbyId ? await endedLobbyWaitWrites(read, token, wait, now()) : [] };
+      // A record gone or replaced since the stream read it was removed only once its wait ended (pruned at a join,
+      // replaced, or swept after expiry): the wait ended, whatever the lobby reads now. A fresh connect finds no record and gets 404.
+      if (wait?.kind !== "lobby" || wait.lobbyId !== lobbyId || wait.ended === "true") return { result: LEFT_LOBBY, writes: [] };
+      return { result: state, writes: await endedLobbyWaitWrites(read, token, wait, now()) };
     });
   }
 
@@ -1124,7 +1132,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
           // The identity's previous queue record goes, live or left (unless replacedQueueWait already wrote it), and so do
           // its ended lobby records, so a queue-only player's finished pairings are removed by its next join.
           const handled = new Set(replaced.flatMap((write) => write.path.startsWith("waits/") ? [write.path.slice("waits/".length)] : []));
-          writes.push(...(await replacedWaitWrites(read, indexes, "queue", joiner.id, handled)), ...(await prunedLobbyWaitWrites(read, indexes, joiner.id, at)));
+          writes.push(...(await replacedWaitWrites(read, indexes, "queue", joiner.id, handled)), ...(await prunedLobbyWaitWrites(read, indexes, joiner.id, at, lobbyDone(read, at))));
           // A join matched at once already wrote its wait as a lobby wait on the paired lobby (joinQueueStep).
           if (step.result.value.state !== "matched") writes.push(queueWaitWrite(indexes, waitToken, joiner.id, at, at + queueTtl(mode)));
         }

@@ -918,6 +918,68 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await read(w.fast, annToken)).frames).toEqual([ended]);
   });
 
+  it("a leave, a new join that removes the left record, and a refill between a stream's reads end the leaver's token expired: ended; a fresh connect then gets 404", async () => {
+    const w = await world();
+    const [ann, bob, carl, dee, eve] = await Promise.all(["Ann", "Bob", "Carl", "Dee", "Eve"].map((name) => w.claim(name)));
+    const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 2));
+    const annToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+    await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id });
+    // The stream has read Ann's record; before its lobby read, Ann leaves, joins another lobby (which removes her ended
+    // record), and three players fill the first lobby, which then holds its slot.
+    let between: (() => Promise<void>) | undefined;
+    const gated = new Proxy(w.store, {
+      get(target, prop, receiver) {
+        if (prop !== "get") return Reflect.get(target, prop, receiver);
+        return async (path: string) => {
+          if (path === `lobbies/${lobby.id}` && between) { const run = between; between = undefined; await run(); }
+          return target.get(path);
+        };
+      },
+    });
+    const stream = createLobbies(gated, w.identities, { publicSlots: 1, privateSlots: 1, staleHoldGraceMs: 60_000, now: () => w.clock.t });
+    const port = await streamServer((token) => stream.waitStatus(token));
+    between = async () => {
+      await w.ok("leave_lobby", { key: ann.key, lobbyId: lobby.id });
+      const { lobby: other } = value(await w.lobbies.createLobby(carl.key, "public", 2));
+      await w.ok("join_lobby", { key: ann.key, lobbyId: other.id });
+      expect(await w.store.get(`waits/${annToken}`)).toBeNull();
+      for (const joiner of [carl, dee, eve]) await w.ok("join_lobby", { key: joiner.key, lobbyId: lobby.id });
+    };
+    expect((await read(port, annToken)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "ended" } }]);
+    expect(between).toBeUndefined();
+    expect(value(await w.lobbies.readLobby(lobby.id)).state).toBe("holding");
+    // A fresh connect for a token with no record is unknown, as before.
+    expect((await read(w.fast, annToken)).status).toBe(404);
+  });
+
+  it("lobby waits that finished unread do not pile up across joins: each join removes them, while a live seat's token stays", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), host = await w.claim("Host");
+    const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 200 })).rows.map((row) => row.path).sort();
+    // A seat Ann keeps throughout, in a lobby that stays open.
+    const { lobby: open } = value(await w.lobbies.createLobby(host.key, "public", 2));
+    const liveToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: open.id }));
+    const counts: number[] = [];
+    let latest = "";
+    for (let n = 0; n < 4; n++) {
+      const rival = await w.claim(`Rival${n}`);
+      const { lobby } = value(await w.lobbies.createLobby(rival.key, "public", 1));
+      // Ann's token is never read; her lobby fills, holds the slot and ends.
+      latest = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+      value(await w.lobbies.join(lobby.id, rival.key));
+      value(await w.lobbies.releaseSlot(lobby.id));
+      expect(value(await w.lobbies.readLobby(lobby.id)).state).toBe("ended");
+      w.clock.t += 1;
+      const now = await records();
+      counts.push(now.length);
+      expect(now).toContain(`waits/${liveToken}`);
+      expect(now).toContain(`waits/${latest}`);
+    }
+    // The live seat's record and key, the latest finished record and its key, and Ann's lobby index.
+    expect(counts).toEqual([5, 5, 5, 5]);
+    expect((await w.store.get(waitIndexPath("lobby", ann.id)))?.tokens.split(" ").sort()).toEqual([liveToken, latest].sort());
+  });
+
   it("a failed deciding transaction never sends slot_ready: the first read answers 503, a later read ends with no final event, and the next connect decides", async () => {
     const w = await world();
     const ann = await w.claim("Ann"), bob = await w.claim("Bob"), carl = await w.claim("Carl"), dee = await w.claim("Dee");

@@ -247,10 +247,13 @@ export async function replacedWaitWrites(
 
 /**
  * A join by identityId removes the identity's lobby records that have ended, in the caller's transaction: left (ended),
- * read final (final), or past expiry; each is deleted with its seat key while the key names it, and unlisted. Live lobby
- * waits, on lobbies it still sits in, are kept. keepKey: the seat key this transaction writes for the join itself.
+ * read final (final), past expiry, or waiting on a lobby that is gone or has ended or expired (lobbyDone, read in this
+ * transaction), read or not; each is deleted with its seat key while the key names it, and unlisted. Live lobby waits,
+ * on lobbies still open, waiting or holding a slot, are kept. keepKey: the seat key this transaction writes for the join itself.
  */
-export async function prunedLobbyWaitWrites(read: TransactionRead, indexes: WaitIndexes, identityId: string, at: number, keepKey?: string): Promise<Write[]> {
+export async function prunedLobbyWaitWrites(
+  read: TransactionRead, indexes: WaitIndexes, identityId: string, at: number, lobbyDone: (lobbyId: string) => Promise<boolean>, keepKey?: string,
+): Promise<Write[]> {
   const writes: Write[] = [];
   for (const token of await indexes.stored("lobby", identityId)) {
     const record = (await read([waitPath(token)])).get(waitPath(token));
@@ -258,7 +261,8 @@ export async function prunedLobbyWaitWrites(read: TransactionRead, indexes: Wait
       indexes.remove("lobby", identityId, token);
       continue;
     }
-    if (record.ended !== "true" && record.final !== "true" && !isPast(record.expiresAt, at)) continue;
+    const ended = record.ended === "true" || record.final === "true" || isPast(record.expiresAt, at) || !record.lobbyId || (await lobbyDone(record.lobbyId));
+    if (!ended) continue;
     indexes.remove("lobby", identityId, token);
     writes.push(...(await deleteWaitWrites(read, token, record, keepKey)));
   }
