@@ -67,7 +67,8 @@ describe("leaderboard page mode choice", () => {
     expect(p.pressed()).toEqual(["Antwars Model Index 1v1"]);
     await p.settled();
     expect(sent(request)).toEqual(['{"limit":50,"mode":"house-1v1"}']);
-    expect(p.shown().map(table => table.title)).toEqual(["Antwars Model Index · 1v1"]);
+    // The Model Index 1v1 and, beside it, the committed vanilla baseline, which reads nothing.
+    expect(p.shown().map(table => table.title)).toEqual(["Antwars Model Index · 1v1", C.baselineTitle]);
     for (const mode of SIZES) {
       const before = request.mock.calls.length;
       p.choose(`Ranked ${mode}`); await p.settled();
@@ -126,8 +127,8 @@ describe("leaderboard page mode choice", () => {
       table!.more!.click(); await p.settled();
     }
     const tables = p.shown();
-    expect(tables).toHaveLength(1);
-    expect(tables[0]!.title).toBe(`Antwars Model Index · ${size}`);
+    // The 1v1 board alone has the vanilla baseline beside its one ranking.
+    expect(tables.map(table => table.title)).toEqual([`Antwars Model Index · ${size}`, ...(size === "1v1" ? [C.baselineTitle] : [])]);
     expect(tables[0]!.names).toEqual(["antwars/a", "antwars/b", "antwars/c", "antwars/d"]);
     expect(tables[0]!.settled).toBe("complete"); expect([tables[0]!.count, tables[0]!.state]).toEqual(["4 shown", ""]); expect(tables[0]!.more).toBeNull();
     expect(sent(request).slice(before)).toEqual([`{"limit":50,"mode":"${mode}"}`, `{"limit":50,"mode":"${mode}","cursor":"${mode}#1"}`, `{"limit":50,"mode":"${mode}","cursor":"${mode}#2"}`]);
@@ -229,7 +230,7 @@ describe("leaderboard page mode choice", () => {
     expect(p.root.textContent).not.toMatch(/private-id|not-supported|secret/);
     expect(p.shown().map(table => table.table!.getAttribute("aria-labelledby"))).toEqual(["d1p-aw-house-ranking", "d1p-aw-everyone-ranking"]);
     p.choose("Antwars Model Index 1v1");
-    expect(p.shown().map(table => table.table!.getAttribute("aria-labelledby"))).toEqual(["d1p-aw-house-mode-ranking"]);
+    expect(p.shown().map(table => table.table!.getAttribute("aria-labelledby"))).toEqual(["d1p-aw-house-mode-ranking", "d1p-aw-vanilla-baseline-ranking"]);
     await p.settled(); p.dispose();
   });
   it("aborts and ignores late responses on page exit", async () => {
@@ -258,7 +259,11 @@ describe("leaderboard page mode choice", () => {
   it("shows no lobby, queue or account surface", async () => {
     const p = mount(server({ ...emptyIndex })); await p.settled();
     expect(p.root.textContent).not.toMatch(/lobb|queue|account|sign in|username/i);
-    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=challenge", "/rules", INSPIRED_BY_URL]); p.dispose();
+    // Every other link is a vanilla baseline Last 5 mark, which opens its replay.
+    const links = p.root.querySelectorAll("a").map(link => link.href);
+    expect(links.filter(href => !href.startsWith("/?replay="))).toEqual(["/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=challenge", "/rules", INSPIRED_BY_URL]);
+    const baseline = p.shown()[1]!.section.querySelectorAll("a").map(link => link.href);
+    expect(links.filter(href => href.startsWith("/?replay="))).toEqual(baseline); p.dispose();
   });
 });
 
@@ -405,7 +410,8 @@ describe("record and last-5 form columns", () => {
 
   it("shows Record beside Rated matches and Last 5 on the house, everyone and Antwars Model Index tables", async () => {
     const p = mount(server({ ...emptyIndex, "1v1/house": [rows()], "1v1": [rows()], "house-1v1": [rows()] })); await p.settled();
-    expect(tables(p)).toEqual([expected]);
+    expect(tables(p)[0]).toEqual(expected);
+    expect(p.shown().map(table => table.title)).toEqual(["Antwars Model Index · 1v1", C.baselineTitle]);
     p.choose("Ranked 1v1"); await p.settled();
     expect(tables(p)).toEqual([expected, expected]);
     p.dispose();
