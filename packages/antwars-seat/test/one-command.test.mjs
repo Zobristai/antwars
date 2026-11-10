@@ -250,6 +250,24 @@ describe("guard keys and records", () => {
     expect(claimGameCommand(env, procTable(720, table))).toEqual({ allowed: false, reason: "second_in_shell_command" });
   });
 
+  it("a leader that exits after the key is read: the earlier claim is pruned, and the new claim is refused as ended", () => {
+    const { env, dir } = stateEnv();
+    const leader = statLine({ pid: 730, sid: 730, start: 8 });
+    const first = procTable(731, { 730: leader, 731: statLine({ pid: 731, sid: 730, start: 9 }) });
+    expect(claimGameCommand(env, first)).toEqual({ allowed: true });
+    expect(readdirSync(dir)).toEqual(["game-command.730.8"]);
+    // The second process of the same shell command sees the leader live when it reads its key,
+    // and gone on every later read (the prune and the check after its record is made).
+    let leaderReads = 0;
+    const second = (pid) => {
+      if (pid === "self") return statLine({ pid: 732, sid: 730, start: 10 });
+      if (pid === 730 && leaderReads++ === 0) return leader;
+      throw new Error("no such process");
+    };
+    expect(claimGameCommand(env, second)).toEqual({ allowed: false, reason: "shell_command_ended" });
+    expect(leaderReads).toBe(3);
+  });
+
   it("records of sessions whose leader has exited are dropped; a live session's record is kept", () => {
     const { env, dir } = stateEnv();
     writeFileSync(join(dir, "game-command.801.5"), ""); // leader gone

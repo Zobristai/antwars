@@ -7,7 +7,9 @@
 // file in the seat's state dir named by the key (state/game-command.<session
 // id>.<leader start time>), made by one exclusive create, so two processes of
 // one shell command can never both send. A record is dropped once its session
-// leader has exited.
+// leader has exited, so after making its record a claim checks that the leader
+// is still the same live process; if it has ended meanwhile, the claim is
+// refused like any game command whose shell command has ended.
 //
 // The unit is the process session: a shell that starts each command in a new
 // session gives each command its own game command. Commands typed one after
@@ -91,7 +93,8 @@ function pruneEnded(dir, readStat) {
  * { allowed: false, reason: "second_in_shell_command" | "shell_command_ended" }.
  * The whole key is the record's name and the record is made by one exclusive create,
  * so exactly one process of a shell command can make it, and no other process ever
- * reads, rewrites or replaces a record of a live session.
+ * reads, rewrites or replaces a record of a live session. A claim whose session leader
+ * is no longer the same live process once its record exists is refused as ended.
  */
 export function claimGameCommand(env, readStat = procStat) {
   const key = shellCommandKey(readStat);
@@ -102,11 +105,15 @@ export function claimGameCommand(env, readStat = procStat) {
   pruneEnded(dir, readStat);
   try {
     writeFileSync(join(dir, `game-command.${key.sid}.${key.start}`), "", { flag: "wx" });
-    return { allowed: true };
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     return { allowed: false, reason: "second_in_shell_command" };
   }
+  // The leader may have exited after the key was read, letting the prune above drop an
+  // earlier claim of this shell command. A record only counts while its leader is the
+  // same live process, so re-check it now that the record exists.
+  if (leaderStart(key.sid, readStat) !== key.start) return { allowed: false, reason: "shell_command_ended" };
+  return { allowed: true };
 }
 
 const WHY = {
