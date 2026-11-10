@@ -212,6 +212,13 @@ export function modelName(label: string): string {
   return houseModelEntry(label)?.displayName ?? label.slice(label.indexOf("/") + 1);
 }
 
+/** A seat's reported label as Recordings and Live now name it: the seat's own handle where the label's part before its
+ * first "/" is exactly that handle ("coffee-ant/local" on coffee-ant is "coffee-ant"), else modelName. */
+export function seatModelName(label: string, handle: string | null): string {
+  const slash = label.indexOf("/");
+  return handle !== null && slash >= 0 && label.slice(0, slash) === handle ? handle : modelName(label);
+}
+
 const isHouseHandle = (handle: string): boolean => handle.toLowerCase().startsWith(`${HOUSE_USERNAME}/`);
 
 /** A recorded seat as Recordings shows it, and the HUD's model line: a house handle's own HOUSE_LABELS
@@ -219,10 +226,13 @@ const isHouseHandle = (handle: string): boolean => handle.toLowerCase().startsWi
  * model, its handle ("model unknown" only for a seat that recorded neither); badges (benchmarkLabel) from the seat's own record and its recorded handle: the level it recorded, else a
  * listed house handle's fixed level; a listed house handle's fixed tier, else the tier it recorded; Fast only where that
  * tier is fast. A seat shown as UNLISTED_MODEL has no badges. No rating:
- * a recording carries none. */
-export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">): NameParts {
+ * a recording carries none. Recordings (listed) names a label that starts with the seat's own handle by that handle
+ * (seatModelName); the HUD keeps modelName. */
+export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">,
+  options: { readonly listed?: boolean } = {}): NameParts {
   const house = seat.handle !== null && isHouseHandle(seat.handle);
-  const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? modelName(seat.modelLabel) : seat.handle ?? "model unknown";
+  const label = (text: string) => options.listed ? seatModelName(text, seat.handle) : modelName(text);
+  const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? label(seat.modelLabel) : seat.handle ?? "model unknown";
   if (name === UNLISTED_MODEL) return { name, badges: [], quiet: null };
   const fixed = seat.handle === null ? { thinkingLevel: null, serviceTier: null } : houseLabel(seat.handle);
   const badges = benchmarkLabel({ displayName: "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier }).badges;
@@ -241,7 +251,12 @@ export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatE
   if (seats.length === 0) return null;
   const entries = (colony: 0 | 1) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
-      .map((seat): SeatEntry => ({ who: seatWho(seat), parts: recordedIdentity(seat) }));
+      .map((seat): SeatEntry => {
+        // Shown by its own handle (seatModelName), a seat groups only with seats shown alike: its label alone no longer says how it
+        // shows. That key is a JSON pair, which no "model:"/"handle:" key (seatWho) can spell.
+        const parts = recordedIdentity(seat, { listed: true }), who = seatWho(seat);
+        return { who: parts.name === recordedIdentity(seat).name ? who : JSON.stringify([who, parts.name]), parts };
+      });
     return list.length ? list : null;
   };
   return [entries(0), entries(1)];
