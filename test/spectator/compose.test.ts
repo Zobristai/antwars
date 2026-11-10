@@ -5,7 +5,7 @@
 import { WORDS } from "../../src/sim/types.ts";
 import { describe, expect, it } from "vitest";
 import { BitmapText, Container, Graphics, GraphicsPath, Matrix, Texture, type Particle, type Renderer } from "pixi.js";
-import { CONNECTING_LINE, ENDED_LINE, GLYPHS, RECONNECTING_LINE, TIP_EDGE, TOUCH_TARGET_PX, agentGlyph, agentHandle, badgeAnchors, badgeRadiusPx, glyphPolygon, linkLine, MARK_DOT, tiltOn, tipBand, tipFit, tipHeight, tipRect } from "../../web/src/compose.ts";
+import { CONNECTING_LINE, ENDED_LINE, GLYPHS, RECONNECTING_LINE, TIP_EDGE, TOUCH_TARGET_PX, agentGlyph, agentHandle, agentModel, badgeAnchors, badgeRadiusPx, glyphPolygon, linkLine, MARK_DOT, tiltOn, tipBand, tipFit, tipHeight, tipRect } from "../../web/src/compose.ts";
 import { OPEN_COPY } from "../../web/src/story.ts";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -591,6 +591,9 @@ describe("marks as ground markers", () => {
     expect(squadTipText(0, { modelLabel: "openai/gpt-6.1-sol", thinkingLevel: "high", serviceTier: "fast" })).toBe("Diamond\nModel: GPT-6.1 Sol (high · Fast)");
     expect(squadTipText(0, { modelLabel: "gpt-x" })).toBe("Diamond\nModel: gpt-x");
     expect(squadTipText(2, { modelLabel: "" })).toBe("Square");
+    // The HUD keeps the model's own words for a label whose provider part is the seat's handle (only the Matches lists name
+    // such a seat by its handle).
+    expect(agentModel({ modelLabel: "coffee-ant/local", identity: { displayName: "coffee-ant" } })?.name).toBe("local");
   });
 
   it("adds who laid each mark and how long ago to its tooltip, current to the playback second, in the tooltip font's characters", () => {
