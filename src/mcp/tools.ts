@@ -15,12 +15,31 @@ import { agentLimitText, agentsPerColony, MAX_OBSERVE_WAIT_SECONDS, sessionExpir
 import { nestFields, registerNestTool } from "./nestTools.js";
 import { locatorRefusal, refusesSeatClient } from "../accounts/seatClientAdmission.js";
 import { observeInfo, type FinalResultReceipt, type Game, type GameErrorCode, type NextStart, type Outcome, type SlotAccess } from "./game.js";
+import { keyVerifier } from "../identity/identities.js";
 
 /** Which agent this MCP session plays; set by join. One session is one agent. */
 export interface SessionState {
   agentId: string | null;
   /** The bound seat's result only; no match state, history or token retention. */
   finalResult?: FinalResultReceipt;
+  /** Slot servers: the key that joined this session, so a replaced key ends the session's seat. */
+  admission?: KeyAdmission;
+}
+
+/**
+ * How long a key-joined slot session plays on one check of its key, in wall-clock milliseconds; its next call
+ * after that reads the key's holder again. Bounds how long a replaced key keeps playing.
+ */
+export const KEY_RECHECK_MS = 10_000;
+
+/** The key that joined a slot session, held only as its verifier, never the key itself. */
+interface KeyAdmission {
+  readonly identityId: string;
+  readonly verifier: string;
+  /** game.wallClock() when the key was last found holding identityId. */
+  checkedAt: number;
+  /** The re-check in flight, shared by concurrent calls. */
+  pending?: Promise<boolean>;
 }
 
 export const ORDER_KINDS = ["go_to", "forage", "hold", "attack", "follow_trail"] as const satisfies readonly Order["kind"][];
@@ -418,9 +437,10 @@ async function sessionObserve(game: Game, agentId: string, receipt: FinalResultR
   return outcome;
 }
 
-function bindSession(game: Game, session: SessionState, agentId: string): void {
+function bindSession(game: Game, session: SessionState, agentId: string, admission?: KeyAdmission): void {
   session.agentId = agentId;
   session.finalResult = game.finalResultReceipt(agentId);
+  session.admission = admission;
 }
 
 /** Which tool a refused call came through: join, observe, or a command (order or mark). */
@@ -558,6 +578,8 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
       if (serviceTier !== undefined && !validText(serviceTier, game.mcpConfig.serviceTierMaxChars)) {
         return adapterRefusal(game, session, "join", "bad_service_tier", "Invalid service tier.", `Use 1 to ${game.mcpConfig.serviceTierMaxChars} printable characters, or leave serviceTier out.`);
       }
+      // The key's check time, not the join's end: a join can wait (on its tick and the join record) past a rotation.
+      const keyCheckedAt = game.wallClock();
       const identityId = await slot.identityOf(key);
       // The lobby seating this identity holds the slot but is not seated here yet; nothing touches an older seat.
       if (identityId !== undefined && await game.lobbyLoading(identityId)) {
@@ -579,11 +601,20 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
           "Call locate_match with your lobby id and join at the mcpUrl it returns, with the key of an identity seated in that lobby.");
       }
       const { outcome } = joined;
+      // Re-checked by verifier while the session plays (guardKeyAdmission); the key itself is not kept.
+      const admission = slot.holderOfVerifier === undefined ? undefined
+        : { identityId: identityId!, verifier: keyVerifier(key), checkedAt: keyCheckedAt };
+      // A join that finished KEY_RECHECK_MS or more after its key was checked binds only if the key is still current.
+      if (admission !== undefined && !await keyStillHeld(game, slot, admission)) {
+        // That key's own earlier binding in this session ends with it; a binding by another key stays.
+        if (session.admission?.verifier === admission.verifier) unbindSession(session);
+        return keyRevoked();
+      }
       // An ended lobby seat remains identifiable even when its key rejoin hits the rate limit.
       if (joined.agentId !== null && outcome.kind === "error" &&
-        (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId);
+        (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId, admission);
       if (outcome.kind === "error" || joined.agentId === null) return viewResult(game, joined.config, outcome);
-      bindSession(game, session, joined.agentId);
+      bindSession(game, session, joined.agentId, admission);
       const nest = nestFields(game, joined.agentId, true);
       const base = { agentId: joined.agentId, briefing: joinBriefing(joined.config, game.mcpConfig, "nestSelection" in nest, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId) }) };
       if (outcome.kind === "queued") {
@@ -648,6 +679,62 @@ function stubCode(reply: CallToolResult): string | null {
 }
 
 type RequestHandler = (request: { readonly params?: { readonly name?: unknown; readonly arguments?: unknown } }, extra: unknown) => Promise<unknown>;
+
+/** Whether the session's joining key still holds its identity: read again once KEY_RECHECK_MS has passed since the last check. */
+function keyStillHeld(game: Game, slot: SlotAccess, admission: KeyAdmission): Promise<boolean> | boolean {
+  const holderOf = slot.holderOfVerifier;
+  if (holderOf === undefined || game.wallClock() - admission.checkedAt < KEY_RECHECK_MS) return true;
+  admission.pending ??= (async () => {
+    const at = game.wallClock();
+    try {
+      const held = await holderOf(admission.verifier) === admission.identityId;
+      if (held) admission.checkedAt = at;
+      return held;
+    } catch (error) {
+      // An unreadable store is not a revoked key: play on, and read again on the next call.
+      console.warn(`antwar session key re-check failed; retrying on the next call: ${error instanceof Error ? error.message : String(error)}`);
+      return true;
+    } finally {
+      admission.pending = undefined;
+    }
+  })();
+  return admission.pending;
+}
+
+/**
+ * A slot session joined by key plays its seat only while that key still holds the seat's identity. Before each
+ * call, once KEY_RECHECK_MS has passed since the key was last found current, its holder is read again by
+ * verifier. A replaced key (rotate_key, reissue_handle_key) ends the session's seat binding, and the call is
+ * refused with key_revoked; a join instead runs unbound, so the current key can rejoin in the same session.
+ * Installed beneath recordCalls, as it wraps the same SDK tools/call handler.
+ */
+function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, session: SessionState): void {
+  const handlers = (server.server as unknown as { readonly _requestHandlers?: Map<string, RequestHandler> })._requestHandlers;
+  const answer = handlers?.get("tools/call");
+  if (handlers === undefined || answer === undefined) {
+    throw new Error("the MCP SDK's tools/call handler was not found, so a replaced key could not end its sessions");
+  }
+  handlers.set("tools/call", async (request, extra) => {
+    const admission = session.admission;
+    if (admission === undefined || await keyStillHeld(game, slot, admission) || session.admission !== admission) return answer(request, extra);
+    unbindSession(session);
+    if (request.params?.name === "join") return answer(request, extra);
+    return keyRevoked();
+  });
+}
+
+/** Ends the session's seat binding: it plays no seat until it joins again. */
+function unbindSession(session: SessionState): void {
+  session.agentId = null;
+  session.finalResult = undefined;
+  session.admission = undefined;
+}
+
+/** The refusal for a call whose joining key has been replaced. */
+function keyRevoked(): CallToolResult {
+  return errorResult("key_revoked", "The key this session joined with has been replaced, so this session no longer plays its seat.",
+    "Call join with your seat's current key (and seat, when your key holds several seats).", null);
+}
 
 /**
  * Records every call this session makes for the seat it plays, game and account tools alike, in full or as a
@@ -730,6 +817,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     // The window text omits its founding-price sentence only where this briefing already states it.
     return payload({ rules, ...nestFields(game, agentId, false, rules.includes("starting queens do not count")), ...(result === null ? {} : winnerFields(result)) });
   });
+  if (game.slot !== undefined) guardKeyAdmission(server, game, game.slot, session);
   recordCalls(server, game, session);
   if (options.gameplay === false) return;
   const rootSchema = rootJoinSchema(game.mcpConfig);

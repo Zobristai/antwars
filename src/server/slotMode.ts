@@ -389,6 +389,7 @@ export function slotAccess(wiring: SlotWiring): SlotAccess {
       const resolved = await wiring.identities.resolveKey(key);
       return resolved.ok ? resolved.value.id : undefined;
     },
+    holderOfVerifier: (verifier) => wiring.identities.holderOfVerifier(verifier),
     async locate(lobbyId) {
       const located = await wiring.lobbies.locate(lobbyId);
       return located.ok ? located.value : undefined;
