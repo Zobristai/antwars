@@ -8,7 +8,7 @@ import type { Fields, Store, TransactionRead, Write } from "../store/firestore.j
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
-import { endedWrite, isFinal, isWaitToken, lobbyWait, repointWrite, sweepAllExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
+import { endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, repointWrites, sweepAllExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -726,6 +726,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   async function decideQueueWait(token: string): Promise<QueueDecision> {
     return store.transaction<QueueDecision>(async (read) => {
       const wait = (await read([waitPath(token)])).get(waitPath(token));
+      // Its identity left the lobby (Lobbies.leave).
+      if (wait?.kind === "lobby" && wait.ended === "true") return { result: { state: LEFT_LOBBY }, writes: [] };
       // Re-pointed by its pairing but not yet read: this read reports paired, once.
       if (wait?.kind === "lobby" && wait.lobbyId && wait.paired === "unread") {
         return { result: { state: { state: "paired", lobbyId: wait.lobbyId, lobbyWait: true } }, writes: [{ op: "update", path: waitPath(token), fields: { paired: "true" } }] };
@@ -737,7 +739,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const state = queueWait(entry, wait.joinedAt, at);
       if (state.state !== "paired") return { result: { state }, writes: isFinal(state) ? endedWrite(token, wait, at) : [] };
       const lobby = (await read([lobbyPath(state.lobbyId)])).get(lobbyPath(state.lobbyId));
-      return { result: { state }, writes: [repointWrite(token, state.lobbyId, wait.identityId, lobby ? lobbyLimit(lobby) : at)] };
+      return { result: { state }, writes: await repointWrites(read, token, state.lobbyId, wait.identityId, lobby ? lobbyLimit(lobby) : at) };
     });
   }
 
@@ -756,7 +758,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     if (wait?.kind !== "queue" || wait.joinedAt !== entry.joinedAt) return [];
     if (entry.state === "matched" && entry.lobbyId) {
       const lobby = (await read([lobbyPath(entry.lobbyId)])).get(lobbyPath(entry.lobbyId));
-      return [repointWrite(token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at, "unread")];
+      return repointWrites(read, token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at, "unread");
     }
     // A left wait stays readable as ended for the grace, so a stream cut before the leave learns it on reconnect.
     return how === "left" ? endedWrite(token, wait, at) : [{ op: "delete", path: waitPath(token) }];
@@ -898,7 +900,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const colony: Colony = chosen ?? (seated(0) <= seated(1) ? 0 : 1);
         if (fields.heldFor && colony === HELD_COLONY && !holder) return { result: refuse("seat_held"), writes: [] };
         const next = [...seats, { id: joiner.id, displayName: joiner.displayName, colony }];
-        const wait: Write[] = waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId, identityId: joiner.id }, lobbyLimit(fields))];
+        const wait: Write[] = waitToken === undefined ? [] : await lobbyWaitWrites(read, waitToken, lobbyId, joiner.id, lobbyLimit(fields));
         if (next.length === capacity(lobbyId, fields)) {
           const started = await start(read, lobbyId, fields, next, at);
           return { result: ok(started.lobby), writes: [...started.writes, ...wait] };
@@ -969,14 +971,16 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         // Starting is where joins stop: any state but open.
         if (fields.state !== "open") return { result: refuse("started"), writes: [] };
         const remaining = seats.filter((seat) => seat.id !== leaver.id);
+        // Exactly the leaver's lobby wait ends, found by its seat key; every other seat's wait is left as it is.
+        const leftWait = await leftLobbyWaitWrites(read, lobbyId, leaver.id, at);
         if (remaining.length > 0) {
           const update = { seats: JSON.stringify(remaining) };
-          return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }] };
+          return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }, ...leftWait] };
         }
         // The last seat out closes the lobby unplayed, as a failed house launch does, with no startsAt and so no
         // challenge place. A house challenge's request records that its builder left, for challenge_status.
         const update = { seats: "[]", state: "ended", outcome: "not_played" };
-        const writes: Write[] = [{ op: "update", path: lobbyPath(lobbyId), fields: update }];
+        const writes: Write[] = [{ op: "update", path: lobbyPath(lobbyId), fields: update }, ...leftWait];
         if (fields.challengeId && (await read([`challengeRequests/${fields.challengeId}`])).get(`challengeRequests/${fields.challengeId}`)) {
           writes.push(builderLeftWrite(fields.challengeId));
         }
@@ -1113,6 +1117,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         if (decided === null || "state" in decided) return decided?.state ?? null;
         return lobbyWaitStatus(token, decided.lobbyId, decided.paired);
       }
+      if (wait?.kind === "lobby" && wait.ended === "true") return LEFT_LOBBY;
       if (wait?.kind === "lobby" && wait.lobbyId && wait.paired !== "unread") return lobbyWaitStatus(token, wait.lobbyId, wait.paired === "true", wait);
       if (wait?.kind === "lobby" && wait.lobbyId) {
         const decided = await decideQueueWait(token);

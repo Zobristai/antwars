@@ -6,7 +6,7 @@ import type { AccountStores } from "../../src/accounts/service.ts";
 import { WAIT_STREAM_LIMITS, waitStreamRoutes, type WaitStreamOptions } from "../../src/accounts/waitStream.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createLobbies, type Lobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
-import { expiryField, startWaitSweep, WAIT_GRACE_MS, WAIT_SWEEP_INTERVAL_MS, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
+import { expiryField, seatKeyPath, startWaitSweep, WAIT_GRACE_MS, WAIT_SWEEP_INTERVAL_MS, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
@@ -491,12 +491,12 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     }
     expect(await records()).toEqual([`waits/${token}`]);
 
-    // Ann's last token, never read, passes its limit plus grace; Bob's lobby wait is live; the sweep runs with no join.
+    // Ann's last token, never read, passes its limit plus grace; Bob's lobby wait (and its seat key) is live; the sweep runs with no join.
     const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 1));
     const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
     w.clock.t += WAIT_GRACE_MS;
     expect(await w.lobbies.sweepWaits()).toBe(1);
-    expect(await records()).toEqual([`waits/${bobToken}`]);
+    expect((await records()).sort()).toEqual([`waits/${bobToken}`, seatKeyPath(lobby.id, bob.id)].sort());
   });
 
   it("a paired queue token never read before its identity rejoins still follows the paired lobby", async () => {
@@ -560,7 +560,8 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const cast = await houseCast(w.identities, w.store, 0);
     value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
     const builder = await w.claim("builder");
-    const challenger = tokenOf(await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" }));
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const challenger = tokenOf(requested), challengeLobbyId: string = requested.lobbyId;
     const queued = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
     // More expired records than one page holds, of both stored kinds.
     const past = expiryField(w.clock.t);
@@ -568,13 +569,14 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
       op: "create" as const, path: `waits/filler${String(n).padStart(16, "0")}`,
       fields: (n % 2 === 0 ? { kind: "queue", identityId: "x", joinedAt: "1", expiresAt: past } : { kind: "lobby", lobbyId: "x", identityId: "x", expiresAt: past }) as Record<string, string>,
     })) }));
-    // The three real waits are within their limits and stay.
+    // The three real waits, and the two lobby waits' seat keys, are within their limits and stay.
     w.clock.t += 1;
     expect(await w.lobbies.sweepWaits()).toBe(40);
-    expect((await records()).sort()).toEqual([`waits/${seated}`, `waits/${challenger}`, `waits/${queued}`].sort());
+    const keys = [seatKeyPath(lobby.id, bob.id), seatKeyPath(challengeLobbyId, builder.id)];
+    expect((await records()).sort()).toEqual([`waits/${seated}`, `waits/${challenger}`, `waits/${queued}`, ...keys].sort());
     // Every wait's own limit plus grace passes with no join at all.
     w.clock.t += 12 * HOUR + WAIT_GRACE_MS;
-    expect(await w.lobbies.sweepWaits()).toBe(3);
+    expect(await w.lobbies.sweepWaits()).toBe(5);
     expect(await records()).toEqual([]);
   });
 
@@ -668,6 +670,96 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
       expect(stream.text).not.toContain(id);
       expect(stream.text).not.toContain("identityId");
     }
+  });
+
+  it("leave_lobby ends exactly the leaver's join_lobby token expired: ended; another seat's token in the lobby keeps waiting", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 2));
+    const annToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+    const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    const limit = expiryField(lobby.expiresAt + WAIT_GRACE_MS);
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toEqual({ token: annToken, expiresAt: limit });
+    const bobRecord = await w.store.get(`waits/${bobToken}`), bobKey = await w.store.get(seatKeyPath(lobby.id, bob.id));
+    expect(bobKey).toEqual({ token: bobToken, expiresAt: limit });
+
+    const open = read(w.fast, annToken);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await w.ok("leave_lobby", { key: ann.key, lobbyId: lobby.id });
+    const ended = { event: "expired", data: { state: "expired", reason: "ended" } };
+    const live = await open;
+    expect([live.ended, live.frames.at(-1)]).toEqual([true, ended]);
+    expect((await read(w.fast, annToken)).frames).toEqual([ended]);
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ kind: "lobby", lobbyId: lobby.id, identityId: ann.id, ended: "true", expiresAt: expiryField(w.clock.t + WAIT_GRACE_MS) });
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toBeNull();
+    expect(live.text).not.toContain(ann.id);
+
+    // Bob is still seated: his token keeps waiting on the open lobby, and his record and key are untouched.
+    expect((await read(w.fast, bobToken, 300)).frames).toEqual([{ event: null, data: { state: "waiting", lobby: "open", expiresAt: lobby.expiresAt } }]);
+    expect(await w.store.get(`waits/${bobToken}`)).toEqual(bobRecord);
+    expect(await w.store.get(seatKeyPath(lobby.id, bob.id))).toEqual(bobKey);
+
+    // A grace after the leave the sweep removes the leaver's record, whether or not anyone joins.
+    w.clock.t += WAIT_GRACE_MS;
+    await w.lobbies.sweepWaits();
+    expect((await read(w.fast, annToken)).status).toBe(404);
+    expect(await w.store.get(`waits/${bobToken}`)).not.toBeNull();
+  });
+
+  it("the last seat leaving ends its token too: a join_lobby seat's and a challenger's, with challenge_status still builder_left", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann");
+    const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 1));
+    const annToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+    await w.ok("leave_lobby", { key: ann.key, lobbyId: lobby.id });
+    const ended = [{ event: "expired", data: { state: "expired", reason: "ended" } }];
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ identityId: ann.id, ended: "true", expiresAt: expiryField(w.clock.t + WAIT_GRACE_MS) });
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toBeNull();
+    expect((await read(w.fast, annToken)).frames).toEqual(ended);
+
+    const cast = await houseCast(w.identities, w.store, 0);
+    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    const builder = await w.claim("builder");
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const token = tokenOf(requested);
+    const challengeLobby = value(await w.lobbies.readLobby(requested.lobbyId));
+    expect(await w.store.get(seatKeyPath(requested.lobbyId, builder.id))).toEqual({ token, expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
+    const open = read(w.fast, token);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await w.ok("leave_lobby", { key: builder.key, lobbyId: requested.lobbyId });
+    const live = await open;
+    expect([live.ended, live.frames.at(-1)]).toEqual([true, ended[0]]);
+    expect(await w.store.get(`waits/${token}`)).toMatchObject({ identityId: builder.id, ended: "true" });
+    expect(await w.store.get(seatKeyPath(requested.lobbyId, builder.id))).toBeNull();
+    expect((await read(w.fast, token)).frames).toEqual(ended);
+    expect(await w.ok("challenge_status", { key: builder.key, requestId: requested.requestId })).toMatchObject({ state: "expired", reason: "builder_left" });
+  });
+
+  it("a switched queue token has its seat key, but leave_lobby on a queue-made lobby is refused started and changes nothing", async () => {
+    const w = await world();
+    const { ann, annToken, lobbyId } = await pairedQueue(w);
+    const record = await w.store.get(`waits/${annToken}`);
+    // Re-pointed with the lobby's expiry; its key names it with the same expiry.
+    expect(await w.store.get(seatKeyPath(lobbyId, ann.id))).toEqual({ token: annToken, expiresAt: record!.expiresAt });
+    const refused = await w.call("leave_lobby", { key: ann.key, lobbyId });
+    expect([refused.status, refused.body.error]).toEqual([409, "started"]);
+    expect(await w.store.get(`waits/${annToken}`)).toEqual(record);
+    expect(await w.store.get(seatKeyPath(lobbyId, ann.id))).toEqual({ token: annToken, expiresAt: record!.expiresAt });
+    expect((await read(w.fast, annToken)).frames.at(-1)?.event).toBe("slot_ready");
+  });
+
+  it("a seat key expires with its wait: the sweep removes it after the lobby's limit plus grace", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann");
+    const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 2));
+    const token = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+    w.clock.t = lobby.expiresAt + WAIT_GRACE_MS - 1;
+    await w.lobbies.sweepWaits();
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).not.toBeNull();
+    w.clock.t += 1;
+    await w.lobbies.sweepWaits();
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toBeNull();
+    expect(await w.store.get(`waits/${token}`)).toBeNull();
   });
 
   it("a token grants nothing: it is no key, and a lobby wait sends no lobby id, seat, key or invite", async () => {

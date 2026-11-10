@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { randomBytes } from "node:crypto";
 import type { RankedMode } from "../rating/ratings.js";
-import type { Fields, Store, Write } from "../store/firestore.js";
+import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import type { Lobby } from "./lobbies.js";
 
 /**
@@ -14,6 +14,10 @@ import type { Lobby } from "./lobbies.js";
  *   waits/{token}  { kind: "queue", identityId, joinedAt, expiresAt }  a ranked queue entry, by the join that made it
  *                  { kind: "lobby", lobbyId, identityId, expiresAt }    a lobby seat, a challenger's included, by the joiner
  * written in the same transaction as the join or the challenge request, so a returned token always resolves.
+ *   waits/seat_{lobbyId}_{identityId}  { token, expiresAt }  the lobby wait that identity holds on that lobby, written
+ *                  with every lobby wait record and re-point (lobbyWaitWrites, repointWrites), with its expiresAt, so a
+ *                  leave can find exactly the leaver's token (Lobbies.leave). Never a token: isWaitToken refuses its id.
+ * A lobby wait whose identity left the lobby is marked ended: "true" and reads expired: ended from then on.
  * expiresAt (expiryField) is the wait's own limit plus WAIT_GRACE_MS. Once the wait is read final it is lowered to that
  * read plus WAIT_GRACE_MS, so a reconnect within the grace still learns the outcome; the server's timed sweep
  * (startWaitSweep, Lobbies.sweepWaits) then removes it, whether or not anyone joins.
@@ -87,6 +91,48 @@ export function waitWrite(token: string, record: WaitRecord, limit: number): Wri
 export function repointWrite(token: string, lobbyId: string, identityId: string, lobbyLimit: number, paired: "true" | "unread" = "true"): Write {
   return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, paired, identityId, joinedAt: "", expiresAt: expiryField(lobbyLimit + WAIT_GRACE_MS) } };
 }
+
+/** The key finding the lobby wait an identity holds on a lobby (waits/{token} above). */
+export const seatKeyPath = (lobbyId: string, identityId: string): string => `waits/seat_${lobbyId}_${identityId}`;
+
+async function seatKeyWrite(read: TransactionRead, lobbyId: string, identityId: string, token: string, limit: number): Promise<Write> {
+  const path = seatKeyPath(lobbyId, identityId);
+  const existing = (await read([path])).get(path);
+  return { op: existing ? "update" : "create", path, fields: { token, expiresAt: expiryField(limit + WAIT_GRACE_MS) } };
+}
+
+/** A new lobby wait record and its seat key, in the caller's transaction; limit is the lobby's own limit. */
+export async function lobbyWaitWrites(read: TransactionRead, token: string, lobbyId: string, identityId: string, limit: number): Promise<Write[]> {
+  return [waitWrite(token, { kind: "lobby", lobbyId, identityId }, limit), await seatKeyWrite(read, lobbyId, identityId, token, limit)];
+}
+
+/** repointWrite and the re-pointed wait's seat key, in the caller's transaction. */
+export async function repointWrites(read: TransactionRead, token: string, lobbyId: string, identityId: string, lobbyLimit: number, paired: "true" | "unread" = "true"): Promise<Write[]> {
+  return [repointWrite(token, lobbyId, identityId, lobbyLimit, paired), await seatKeyWrite(read, lobbyId, identityId, token, lobbyLimit)];
+}
+
+/**
+ * The writes a leave makes in its transaction: the leaver's seat key on the lobby is deleted, and the lobby wait it names
+ * is marked ended, expiring a grace from `at`, only while that record is still this identity's wait on this lobby.
+ * No other identity's record or key is read or written.
+ */
+export async function leftLobbyWaitWrites(read: TransactionRead, lobbyId: string, identityId: string, at: number): Promise<Write[]> {
+  const keyPath = seatKeyPath(lobbyId, identityId);
+  const key = (await read([keyPath])).get(keyPath);
+  if (!key) return [];
+  const writes: Write[] = [{ op: "delete", path: keyPath }];
+  if (key.token && isWaitToken(key.token)) {
+    const wait = (await read([waitPath(key.token)])).get(waitPath(key.token));
+    if (wait?.kind === "lobby" && wait.lobbyId === lobbyId && wait.identityId === identityId) {
+      const by = Math.min(at + WAIT_GRACE_MS, wait.expiresAt === undefined ? Infinity : Number(wait.expiresAt));
+      writes.push({ op: "update", path: waitPath(key.token), fields: { ended: "true", expiresAt: expiryField(by) } });
+    }
+  }
+  return writes;
+}
+
+/** The state of a lobby wait whose identity left the lobby. */
+export const LEFT_LOBBY: WaitState = { state: "expired", reason: "ended" };
 
 /** The write lowering a record read final at `at` to expire WAIT_GRACE_MS later, or none when it already does by then. */
 export function endedWrite(token: string, record: Fields | null | undefined, at: number): Write[] {

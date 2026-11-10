@@ -2,7 +2,7 @@ import { isHouseOwned } from "../identity/houseOwnership.js";
 import { isRankedMode, type RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
-import { isWaitToken, repointWrite, waitPath, type WaitState } from "./waits.js";
+import { isWaitToken, repointWrites, waitPath, type WaitState } from "./waits.js";
 
 /**
  * The ranked matchmaking queue, as transaction steps that
@@ -146,7 +146,7 @@ export async function joinQueueStep(
   const partnerToken = candidateDocs.get(entryPath(pick))?.waitToken;
   const partnerWait = partnerToken && isWaitToken(partnerToken) ? (await read([waitPath(partnerToken)])).get(waitPath(partnerToken)) : null;
   const partnerRepoint: Write[] = partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt
-    ? [repointWrite(partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")]
+    ? await repointWrites(read, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")
     : [];
   return {
     result: { ok: true, value: { state: "matched", mode, lobbyId, matchedAt: at } },
