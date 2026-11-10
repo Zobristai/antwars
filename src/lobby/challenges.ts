@@ -95,6 +95,8 @@ export interface ChallengeStatus {
   readonly reason?: string;
   /** The house owner's view only. */
   readonly launchReport?: LaunchOutcome | null;
+  /** The house owner's view only: the reason sent with the launch report when it is in the accepted format, otherwise null. */
+  readonly launchReportReason?: string | null;
 }
 
 /** What lobbies.ts supplies: its lobby rules and the lobby writes a challenge needs. */
@@ -124,6 +126,8 @@ const availabilityPath = (handle: string) => `challengeAvailability/${handle}`;
 const lobbyPath = (id: string) => `lobbies/${id}`;
 const HOUSE_CLAIM = `usernames/${HOUSE_USERNAME}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The only launch-report reason the owner's status view returns; any other stored reason reads null. */
+const LAUNCH_REPORT_REASON = /^pinned harness matched @ [0-9a-f]{40}$/;
 const ids = (list: string | undefined) => (list ?? "").split(" ").filter(Boolean);
 const seatsOf = (fields: Fields): { id: string; colony: number }[] => JSON.parse(fields.seats ?? "[]") as { id: string; colony: number }[];
 
@@ -406,7 +410,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
       const view: ChallengeStatus = {
         requestId: id, lobbyId: request.lobbyId!, handle: `${HOUSE_USERNAME}/${request.handle}`, state,
         ...(reason ? { reason } : {}),
-        ...(owner ? { launchReport: (request.launchReport || null) as LaunchOutcome | null } : {}),
+        ...(owner ? { launchReport: (request.launchReport || null) as LaunchOutcome | null, launchReportReason: LAUNCH_REPORT_REASON.test(request.reportReason ?? "") ? request.reportReason! : null } : {}),
       };
       return { result: ok(view), writes: [] };
     });

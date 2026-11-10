@@ -431,6 +431,26 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     expect(counts.shared).toEqual({});
   });
 
+  it("shows the house owner, and only the house owner, a launched report's reason in the accepted format beside an unchanged launchReport", async () => {
+    const w = await world(at(12, 0));
+    const COMMIT = "0123456789abcdef0123456789abcdef01234567";
+    const MATCHED = `pinned harness matched @ ${COMMIT}`;
+    const builder = await w.claim("builder");
+    const told = value(await w.request(builder));
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId))).toMatchObject({ launchReport: null, launchReportReason: null });
+    value(await w.report(told.requestId, "launched", MATCHED));
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId))).toMatchObject({ launchReport: "launched", launchReportReason: MATCHED });
+    expect(value(await w.main.challengeStatus(builder.key, told.requestId))).not.toHaveProperty("launchReportReason");
+    expect(value(await w.main.challengeStatus(builder.key, told.requestId))).not.toHaveProperty("launchReport");
+    // Any other stored reason, or none, reads null; launchReport is unchanged.
+    const others = [undefined, "checked before launch", `${MATCHED} version`, `revision ${MATCHED}`, `pinned harness matched @ ${COMMIT.toUpperCase()}`, MATCHED.slice(0, -1)];
+    for (const [n, reason] of others.entries()) {
+      const other = value(await w.request(await w.claim(`other${n}`)));
+      value(await w.report(other.requestId, "launched", reason));
+      expect(value(await w.main.challengeStatus(w.house.key, other.requestId)), String(reason)).toMatchObject({ launchReport: "launched", launchReportReason: null });
+    }
+  });
+
   it("ends a challenge reported unavailable before the seat joins: house_unavailable with its reason, uncharged, its place returned, no handle marked", async () => {
     const w = await world(at(12, 0));
     const REASON = "maintenance";
