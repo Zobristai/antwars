@@ -211,6 +211,12 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-status.is-replay .d2-mode-label::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
 .d2-mode-label:empty, .d2-mode-detail:empty, .d2-connection:empty { display: none; }
 .d2-mode-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A line carrying a match's public note wraps rather than cutting it short, as the narrow line does (below), its
+   separators cut away where a part starts a line; on the wide layout its row grows to fit it. */
+.d2-status.is-wrapping { flex-wrap: wrap; row-gap: 2px; column-gap: 0; margin-left: -16px; align-items: center; white-space: normal; overflow: visible; clip-path: inset(-8px -8px -8px 12px); }
+.d2-status.is-wrapping > * { position: relative; margin-left: 16px; overflow: visible; }
+.d2-status.is-wrapping > :not(:first-child)::before { position: absolute; left: -8px; margin: 0; transform: translateX(-50%); }
+.d2-hud:not([data-layout="narrow"]):has(.d2-status.is-wrapping) { grid-template-rows: 8px var(--d2-plate-h) 6px minmax(0, 1fr) 6px minmax(var(--d2-foot), auto) 8px; }
 .d2-connection { flex: none; font-weight: 600; color: var(--aw-ink-bright); }
 /* Its words carry the underline, so the separator before them is never drawn as part of the link. */
 .d2-back { flex: none; display: inline-flex; align-items: center; min-height: 24px; font-weight: 600; color: var(--aw-ink-bright); text-decoration: none; }

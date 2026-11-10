@@ -442,8 +442,8 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     text(modeLabel, label);
     text(modeDetail, withUnits(detail));
     flag(status, "is-replay", recorded);
-    // The wide 2D line stays one line and may cut its detail short; a match's public note is then kept whole in its title.
-    attr(modeDetail, "title", !noMatch && mode?.wraps === true ? withUnits(detail) : null);
+    // A line carrying a match's public note wraps rather than cutting it short; the wide line's row grows to fit (ui.css).
+    flag(status, "is-wrapping", !noMatch && mode?.wraps === true);
     text(connection, view.connection);
     // Live with no agents offers the recording in the pane; only Back to live stays on the line.
     const backHere = href !== null && words !== "" && href !== "?replay";
