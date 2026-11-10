@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Worker as NodeWorker } from "node:worker_threads";
 import { deflateRawSync } from "node:zlib";
 import { afterEach, expect, it, vi } from "vitest";
-import { decodeMessage } from "../../src/live/format.ts";
+import { decodeMessage, encodePublicMessage } from "../../src/live/format.ts";
 import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
 import { Frame, Playback } from "../../web/src/buffer.ts";
 import { Ants } from "../../web/src/ants.ts";
@@ -265,6 +265,28 @@ it("keeps incremental replay precedence, bounded catch-up and the recording cloc
     // The rating-record read starts with the recording; its failure leaves the recording's figures.
     expect(paths).toEqual(["/watch/ratings/2026-10-21T00-00-00-000Z-1", "/replays/2026-10-21T00-00-00-000Z-1", "/matches/2026-10-21T00-00-00-000Z-1"]);
     expect(reject).not.toHaveBeenCalled();
+  } finally { source.close(); }
+});
+
+it.each([
+  ["the server's phase when its stored record answers", true, false, ["Harness: rounds 26-30"]],
+  ["the recording's own Model Index marker and start when the server cannot answer", false, true, ["Harness: rounds 1-7", "Possible effort mismatch"]],
+  ["no phase when the server cannot answer and the recording carries no Model Index marker", false, false, []],
+] as const)("a replay's harness phase: %s", async (_, answered, marked, expected) => {
+  const id = "2026-10-26T01-38-33-692Z-1";
+  const first = decodeMessage(packets[0]!);
+  const setup = marked ? { ...first.full!.setup, houseIdleTicks: 600, modelIndex: true as const } : first.full!.setup;
+  const replayPackets = [encodePublicMessage({ ...first, full: { ...first.full!, setup } }), ...packets.slice(1)];
+  vi.stubGlobal("fetch", async (path: string) => {
+    if (path.startsWith("/watch/ratings/")) return answered
+      ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: false } })
+      : new Response(null, { status: 404 });
+    if (path.startsWith("/matches/")) return Response.json({ format: "antwar.match", version: 1, id, result: { tick: messages.at(-1)!.tick - 1 } });
+    return new Response(new Uint8Array(packMessages(replayPackets)));
+  });
+  const source = (await openSource(new URLSearchParams({ replay: id }), { now: () => 0 }, documentPort().doc, vi.fn()))!;
+  try {
+    await vi.waitFor(() => expect(source.harnessPhase).toEqual(expected));
   } finally { source.close(); }
 });
 

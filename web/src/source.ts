@@ -5,13 +5,14 @@ import { openPreparedFeed, type PreparedFeed } from "./feed.ts";
 import type { Arrival } from "./inbox.ts";
 import type { PreparedTick } from "./buffer.ts";
 import { openRecording, type Recording } from "./recording.ts";
-import { newestStoredReplay, noStoredReplays, recordingError, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
+import { newestStoredReplay, noStoredReplays, recordingError, replayDate, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
 import { loadRecording, streamPath, type LinkState } from "./stream.ts";
 import { randomMatch, watchMatchStatus, type MatchStatus } from "./match-status.ts";
 import { openInviteStream } from "./invite-stream.ts";
 import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.ts";
 import { restateRatings, storedReplayFacts } from "./replay-ratings.ts";
 import { harnessPhaseTags } from "./ui/format.ts";
+import { harnessPhaseAt } from "../../src/rating/harnessPhase.ts";
 import { liveStarting } from "./waiting.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
@@ -185,11 +186,20 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   });
   const fail = (error: Error) => { if (!abort.signal.aborted) { recordingError(doc, error); reject(error); } };
   // A stored match's one read of its stored record: the restatement of its rating figures, and its harness phase tags.
-  let phaseTags: readonly string[] = [];
+  // undefined while the read is pending; null when the server gave no answer, so the recording itself decides (phaseOf).
+  let phaseTags: readonly string[] | null | undefined;
   const storedFacts = (replayId: string, invite: string | null) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
-    phaseTags = harnessPhaseTags(facts.harnessPhase);
+    phaseTags = facts.answered ? harnessPhaseTags(facts.harnessPhase) : null;
     return facts.ratings && restateRatings(facts.ratings);
   });
+  // Without the server's answer, a recording marked as a Model Index match takes its phase from its recorded start, as
+  // the Matches listing does for a recording with no lobby link.
+  const phaseOf = (head: StreamMessage, replayId: string | null): readonly string[] => {
+    if (phaseTags !== null) return phaseTags ?? [];
+    if (head.full?.setup.modelIndex !== true || replayId === null) return [];
+    const started = replayDate(replayId);
+    return harnessPhaseTags(harnessPhaseAt(started === null ? null : Date.parse(started)));
+  };
   // Only startup is timed out, not a large recording's paced, backpressured download.
   const standIn = async (path: string, replayId: string | null) => {
     const startup = new AbortController();
@@ -372,7 +382,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         replayId: replay || fallback !== null ? storedId : null,
         lobbyId: automatic ? selected?.lobbyId ?? null : params.get("lobby"),
       }),
-      get harnessPhase() { return phaseTags; },
+      get harnessPhase() { return phaseOf(head, storedId); },
       linkState: () => state,
       take(realMs) {
         if (recording) {
