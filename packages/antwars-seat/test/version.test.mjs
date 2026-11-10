@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
 import { CLIENT_INFO, McpClient, errorCode } from "../lib/mcp.mjs";
-import { SEAT_CLIENT_REFUSED_TOOLS, UPDATE_SEAT_CLIENT_FIX, UPDATE_SEAT_CLIENT_MESSAGE, fakeClock, startFake } from "./fake-server.mjs";
+import { SEAT_CLIENT_REFUSED_TOOLS, UPDATE_SEAT_CLIENT_FIX, UPDATE_SEAT_CLIENT_MESSAGE, fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
@@ -37,7 +37,7 @@ async function seatRun(fakeOptions, { mode = "house-1v1", setup = [], commands }
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   const env = { ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: fake.url, ANTWARS_MIN_CALL_MS: "600", ANTWARS_POLL_MS: "3000" };
-  const cli = (...argv) => main(argv, { env, clock });
+  const cli = (...argv) => main(argv, { env, clock, readStat: freshShell() });
   expect(await cli("setup", "--handle", "antwars/test", "--key-name", KEY_NAME, "--mode", mode, "--model-label", "claude-opus-5-5", "--thinking-level", "max", ...setup)).toBe(0);
   const exits = [];
   for (const command of commands) exits.push(await cli(...command));

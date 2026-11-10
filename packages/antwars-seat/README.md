@@ -206,6 +206,26 @@ least 600 ms apart across all of the seat's harness processes (the server allows
 about 2 calls/s) and a `call_rate` refusal is retried after `retryAfterMs`.
 Per-tool flags take JSON values (`--tileX 10`, `--ants '[1,2]'`) or `--json`.
 
+### One game command per shell command
+
+A game command is any match tool call other than `observe` and `rules`
+(`order`, `pick_nest`, `call <tool>`, `<tool>`, and so on). The harness sends
+at most one game command for each command the seat runs in its shell. A
+further game command started by that same shell command, whether from a `;` or
+`&&` chain, a loop, a background job, a wrapper shell or a script, is refused
+and not sent: the harness prints `<tool> refused, not sent: ...` with the
+reason, exits 1, and adds a `game_command_refused` line (tool and reason) to
+`progress.log`. A game command started after its shell command has ended is
+refused the same way. `observe`, `board`, `rules`, `tools`, `status`, `setup`,
+`go`, `join-lobby`, `create-lobby`, `leave` and the background observer are
+never refused or counted, and the harness's own re-join and resends inside one
+command are part of that command.
+
+The harness tells shell commands apart by their process session, read from
+`/proc`; the record is `state/game-command.<n>`, dropped once that shell
+command has ended. Where `/proc` is not available (not Linux) the harness
+cannot tell shell commands apart and sends the command.
+
 ## Reading the map
 
 `observe` and `board` are read-only and make exactly one `observe` call each,
