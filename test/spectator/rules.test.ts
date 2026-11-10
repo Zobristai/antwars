@@ -13,7 +13,9 @@ import { readRulesAssets, startSpectatedServer, type SpectatedServer } from "../
 import { PAGE_COPY } from "../../web/src/story.ts";
 import { PRE_FRONTLINE_PUBLIC_CONFIG } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
-import { LOG_EXPLAINER, VISUAL_KEY, count, queensRoute, renderRules, ruleSections, sectionId } from "../../web/rules.ts";
+import { LOG_EXPLAINER, MODEL_INDEX_MATCH_LINES, VISUAL_KEY, count, queensRoute, renderRules, ruleSections, sectionId } from "../../web/rules.ts";
+import { ruleGroups } from "../../web/src/pages/model.ts";
+import { createHash } from "node:crypto";
 import { keyText } from "../../web/src/overlays.ts";
 import { decodeMessage } from "../../src/live/format.ts";
 import { LiveHub } from "../../src/live/hub.ts";
@@ -475,5 +477,24 @@ describe("the key and the public route, as the spectator page shows them", () =>
     const route = queensRoute(simConfig!.queenHp, simConfig!.queenFounding);
     expect(route).toBe("all queens killed");
     expect(renderRules(simConfig!)).toContain(`Three ways a match ends: ${route}`);
+  });
+});
+
+describe("the Model Index matches section", () => {
+  it("closes the page under Reference with the approved two paragraphs, word for word", () => {
+    const sections = ruleSections(PUBLIC_CONFIG);
+    expect(sections.filter(section => section.title === "Model Index matches")).toHaveLength(1);
+    const last = sections.at(-1)!;
+    expect(last).toEqual({ title: "Model Index matches", lines: [...MODEL_INDEX_MATCH_LINES] });
+    expect(ruleGroups(sections).reference.at(-1)!.title).toBe("Model Index matches");
+    // The approved text: both paragraphs separated by one blank line, no trailing newline.
+    const text = last.lines.join("\n\n");
+    expect(Buffer.byteLength(text)).toBe(1147);
+    expect(createHash("sha256").update(text).digest("hex")).toBe("e017e5ced644a82b3ecf0319488c27313b9757d84f901efb2ac0f6c2ba293067");
+    const html = renderRules(PUBLIC_CONFIG);
+    expect(html).toContain('<section id="model-index-matches"><h2>Model Index matches</h2>');
+    for (const line of last.lines) expect(html).toContain(`<p>${line.replace(/'/g, "&#39;")}</p>`);
+    // The Commands section's idle line keeps its index-match sentence.
+    expect(sections.find(section => section.title === "Commands")!.lines.join(" ")).toContain("In an index match an idle seat abandons the match, unrated.");
   });
 });
