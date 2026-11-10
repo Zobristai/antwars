@@ -5,7 +5,7 @@ import { payload } from "./replies.js";
 
 /** foundingBriefed: the same reply's briefing already states that starting queens do not count toward founding prices. */
 function windowRules(required: boolean, foundingBriefed: boolean): string {
-  return "Call pick_nest {tileX,tileY} before closesAt. Whole tiles in your team's half-open box: a mirrored full-height strip in each colony's back quarter (smaller historical boxes). Water, rock, food and teammates' picks are refused. No nest-spacing rule. A legal repick replaces yours; refusal keeps it. "
+  return "pick_nest {tileX,tileY} before closesAt. Whole tiles in your team's half-open box: a mirrored full-height strip in each colony's back quarter (smaller historical boxes). Refused: water, rock, food, teammates' picks. No nest-spacing rule. A legal repick replaces yours; refusal keeps it. "
     + (required
       ? "In index matches every seat must pick before closesAt: any missing pick ends the match as not played, with no rating change and no default nests. "
       : "Unpicked seats get distinct legal defaults, nearest the default nest first, ties by row then column from your colony's back edge. ")

@@ -38,7 +38,8 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
 
 Environment: ANTWARS_KEY_FILE (house key file) or ANTWARS_SEAT_STORE (.git dir holding
 antwars-house-keys.env), needed outside a checkout that has the key file;
-ANTWARS_ENTRY_URL, ANTWARS_SEAT_STATE override defaults.`;
+ANTWARS_ENTRY_URL, ANTWARS_SEAT_STATE override defaults. Servers must be https (plain http
+only to this machine, unless ANTWARS_ALLOW_HTTP=1); redirects are never followed.`;
 
 /** --name value pairs; a flag with no value is true. Positionals are returned in order. */
 export function parseArgs(argv) {
