@@ -62,12 +62,12 @@ describe("durable spectator match identity", () => {
     expect((await registry.read(id))?.modelLabels).toBeUndefined();
     expect((await registry.publicMatches())[0]?.modelLabels).toBeUndefined();
     // Only the run holding the match may write them.
-    expect(await registry.seatLabels(id, match.runId, { "antwarsos-harness": "openai/gpt-6.1-terra" })).toBe(false);
+    expect(await registry.seatLabels(id, match.runId, { "kestrel-harness": "openai/gpt-6.1-terra" })).toBe(false);
     expect(docs.get(`watchMatches/${id}`)?.modelLabels).toBeUndefined();
     holdMatch(docs, id, match.runId);
-    expect(await registry.seatLabels(id, "other-run", { "antwarsos-harness": "openai/gpt-6.1-terra" })).toBe(false);
-    expect(await registry.seatLabels(id, match.runId, { "antwarsos-harness": "openai/gpt-6.1-terra" })).toBe(true);
-    const labels = { "antwarsos-harness": "openai/gpt-6.1-terra" };
+    expect(await registry.seatLabels(id, "other-run", { "kestrel-harness": "openai/gpt-6.1-terra" })).toBe(false);
+    expect(await registry.seatLabels(id, match.runId, { "kestrel-harness": "openai/gpt-6.1-terra" })).toBe(true);
+    const labels = { "kestrel-harness": "openai/gpt-6.1-terra" };
     expect((await createWatchRegistry(store).read(id))?.modelLabels).toEqual(labels);
     expect((await createWatchRegistry(store).publicMatches())[0]?.modelLabels).toEqual(labels);
     // A handover keeps them; a malformed stored value reads as none rather than failing the catalog.

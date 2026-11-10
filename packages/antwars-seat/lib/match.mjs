@@ -3,7 +3,7 @@
 // separate commands reuse it; when it is gone the client re-joins the seat.
 // Only the match client rides out a server handover (HANDOVER_RETRY_MS per
 // command); the entry client reports a failed send at once, as before.
-import { HANDOVER_RETRY_MS, McpClient, errorCode } from "./mcp.mjs";
+import { ALLOW_HTTP_ENV, HANDOVER_RETRY_MS, McpClient, errorCode } from "./mcp.mjs";
 import { envNumber, makeLimiter, progress, readJson, readKey, statePath, writeJson } from "./state.mjs";
 
 export const DEFAULT_MIN_CALL_MS = 600;
@@ -12,6 +12,11 @@ export function seatContext({ config, env = process.env, clock, cwd = process.cw
   const key = readKey(config.keyName, env, cwd);
   const limiter = makeLimiter({ file: statePath("last-call", env), minIntervalMs: envNumber(env, "ANTWARS_MIN_CALL_MS", DEFAULT_MIN_CALL_MS), clock });
   return { config, env, clock, key, limiter };
+}
+
+/** True when the builder opted in to plain http to a host other than this machine. */
+function allowHttp(ctx) {
+  return ctx.env?.[ALLOW_HTTP_ENV] === "1";
 }
 
 /** The join arguments for this seat: always the seat number (a key holding several seats must name one); labels are self-reported; serviceTier only when set (fast). */
@@ -24,7 +29,7 @@ export function joinArgs({ config, key }) {
 }
 
 export function entryClient(ctx) {
-  return new McpClient({ url: ctx.config.entryUrl, clock: ctx.clock, limiter: ctx.limiter,
+  return new McpClient({ url: ctx.config.entryUrl, clock: ctx.clock, limiter: ctx.limiter, allowHttp: allowHttp(ctx),
     log: (step, detail) => progress(step, { server: "entry", ...detail }, ctx.env) });
 }
 
@@ -45,7 +50,7 @@ export function matchClient(ctx, mcpUrl) {
   const sessionFile = statePath("match-session.json", ctx.env);
   const saved = readJson(sessionFile);
   const client = new McpClient({
-    url: mcpUrl, clock: ctx.clock, limiter: ctx.limiter, retryWindowMs: HANDOVER_RETRY_MS,
+    url: mcpUrl, clock: ctx.clock, limiter: ctx.limiter, retryWindowMs: HANDOVER_RETRY_MS, allowHttp: allowHttp(ctx),
     session: saved && saved.mcpUrl === mcpUrl ? { sessionId: saved.sessionId, protocolVersion: saved.protocolVersion } : null,
     onSession: (session) => writeJson(sessionFile, { mcpUrl, ...session }),
     log: (step, detail) => progress(step, { server: "match", ...detail }, ctx.env),

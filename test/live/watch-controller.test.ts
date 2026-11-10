@@ -66,7 +66,7 @@ describe("spectator metadata and final rating lifecycle", () => {
     const clock = new ManualClock(), hub = new LiveHub({ clock, ...controller.hubOptions });
     cleanup.push(() => { hub.close(); controller.close(); });
     await controller.prepare(id, [{ identityId: "h", displayName: "antwars/gpt-6-luna", colony: 0, seat: 1 },
-      { identityId: "b", displayName: "antwarsos-harness", colony: 1, seat: 1 }, { identityId: "c", displayName: "omp-dolphin", colony: 1, seat: 1 }]);
+      { identityId: "b", displayName: "kestrel-harness", colony: 1, seat: 1 }, { identityId: "c", displayName: "omp-dolphin", colony: 1, seat: 1 }]);
     const seatOf: Record<string, string> = { "sim-h": "h", "sim-b": "b", "sim-c": "c" };
     const live = { agentInfo: (agentId: string) => ({ displayName: "", modelLabel: null, seatKey: seatOf[agentId] ?? null }) } as unknown as LiveGame;
     // An unrated public match: spectators watch 60 s behind it. The house seat joined before the start with a label, the
@@ -90,7 +90,7 @@ describe("spectator metadata and final rating lifecycle", () => {
     await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna" }));
     // Playback reaches the builder's join.
     clock.advance(200);
-    await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna", "antwarsos-harness": "openai/gpt-6.1-terra" }));
+    await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna", "kestrel-harness": "openai/gpt-6.1-terra" }));
     // Later records with no change write no labels again, through the end of playback.
     const writes = vi.spyOn(registry, "seatLabels");
     clock.advance(1_000);
@@ -109,7 +109,7 @@ describe("spectator metadata and final rating lifecycle", () => {
     const earlier = createWatchController({ accounts, registry, slot: "public-0", origin: "http://127.0.0.1:9001" });
     const earlierHub = new LiveHub({ clock: new ManualClock(), ...earlier.hubOptions });
     cleanup.push(() => { earlierHub.close(); earlier.close(); });
-    await earlier.prepare(id, [{ identityId: "b", displayName: "antwarsos-harness", colony: 1, seat: 1 }]);
+    await earlier.prepare(id, [{ identityId: "b", displayName: "kestrel-harness", colony: 1, seat: 1 }]);
     const live = { agentInfo: (agentId: string) => ({ displayName: "", modelLabel: null, seatKey: agentId === "sim-b" ? "b" : null }) } as unknown as LiveGame;
     const state = step(createMatch(34, playable(rulesConfig("redesign"))), [{ type: "join", agentId: "sim-b", placement: 1, modelLabel: "openai/gpt-6.1-terra" }]).state;
     earlier.started(1, state, live, earlierHub);
@@ -119,14 +119,14 @@ describe("spectator metadata and final rating lifecycle", () => {
     cleanup.push(() => successor.close());
     const { access } = await successor.resume(save, live);
     // The resumed stream releases a record before this server's run holds the match: nothing is written.
-    const agents = [{ identity: { displayName: "antwarsos-harness" }, colony: 1, modelLabel: "openai/gpt-6.1-terra" }] as unknown as StreamAgent[];
+    const agents = [{ identity: { displayName: "kestrel-harness" }, colony: 1, modelLabel: "openai/gpt-6.1-terra" }] as unknown as StreamAgent[];
     successor.hubOptions.onReleased!(access, agents);
     await new Promise(resolve => setImmediate(resolve));
     expect((await registry.read(id))?.modelLabels).toBeUndefined();
     // Adoption publishes what playback has shown, with no further record (a match that ended on its first resumed tick).
     holdMatch(docs, id, "run-2");
     successor.adopted(id, "run-2");
-    await vi.waitFor(async () => expect((await registry.publicMatches())[0]?.modelLabels).toEqual({ "antwarsos-harness": "openai/gpt-6.1-terra" }));
+    await vi.waitFor(async () => expect((await registry.publicMatches())[0]?.modelLabels).toEqual({ "kestrel-harness": "openai/gpt-6.1-terra" }));
   });
 
   it("refuses start before successful preparation and does not publish a waiting lobby", async () => {

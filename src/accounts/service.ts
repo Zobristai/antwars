@@ -90,9 +90,10 @@ const REFUSALS = {
   already_queued: [409, "This identity is already waiting in the ranked queue. Check queue_status, or leave_queue first."],
   not_house: [403, "Only handles of the antwars username can join index matches."],
   // Challenges against house handles.
+  not_seated: [404, "This key holds no seat in that lobby; nothing changed."],
   seat_held: [409, "That seat is held for this challenge's house handle; only that handle can take it. Join the other colony, or another lobby."],
   opponent_unavailable: [409, "That house handle is unavailable for challenges. Choose an available handle from list_challenge_opponents."],
-  seated_elsewhere: [409, "This identity is seated in another live lobby. Finish or leave that game before requesting a challenge."],
+  seated_elsewhere: [409, "This identity is seated in another live lobby. Finish that game, or leave its lobby with leave_lobby before it starts, before requesting a challenge."],
   active_challenge: [409, "Your username already has an active challenge. Follow it with challenge_status; request another once it has ended."],
   owner_daily_limit: [429, "Your username has used its 5 challenges for this UTC day. Try again after the reset at UTC midnight."],
   shared_daily_limit: [429, "Today's 20 shared challenges are used. Try again after the reset at UTC midnight."],
@@ -130,7 +131,7 @@ function lobbyRefusal(reason: LobbyRefusal | "unknown_key"): Reply {
     case "no_such_lobby": case "invalid_invite": case "not_creator": return refuse("no_such_lobby");
     case "invalid_kind": case "invalid_size": case "already_seated": case "full": case "started":
     case "expired": case "colony_empty": case "not_private": case "invalid_mode": case "already_queued": case "not_house":
-    case "colony_full": case "seat_held":
+    case "colony_full": case "seat_held": case "not_seated":
       return refuse(reason);
     default:
       // not_holding and superseded belong to the slot instance, never to these operations.
@@ -259,7 +260,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return ok(token === undefined ? { lobby } : { lobby, inviteLink: inviteLink(lobby.id, token), inviteToken: token });
     }),
 
-  operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with fewer seats, colony 0 on a tie. You play your seat's colony in the match. The last seat starts the lobby automatically. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE}`,
+  operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with fewer seats, colony 0 on a tie. You play your seat's colony in the match. The last seat starts the lobby automatically. Leave before the match starts with leave_lobby. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE}`,
     z.object({
       key, lobbyId, inviteToken,
       colony: z.number().int().min(0).max(1).nullish().describe("Optional: the colony to sit in, 0 or 1. A colony with no free seat is refused colony_full and you stay unseated. Omit it to be seated in the colony with fewer seats, colony 0 on a tie."),
@@ -293,6 +294,15 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
       const started = await stores.lobbies.startEarly(args.lobbyId, args.key);
       return started.ok ? ok({ lobby: started.value }) : lobbyRefusal(started.reason);
+    }),
+
+  operation("leave_lobby", "Leave a lobby you are seated in, with your key and the lobbyId, at any time before its match starts: no rating change and no charge. When the last seated identity leaves, the lobby closes. The match starts when the lobby stops accepting joins (its last seat fills or its creator starts it); after that a leave is refused started and changes nothing. Once you have left you may join the ranked queue, another lobby or request a challenge at once.",
+    z.object({ key, lobbyId }),
+    async (stores, args) => {
+      // A malformed id reads as a lobby without this key's seat, after the key, as a missing lobby does.
+      if (!LOBBY_ID.test(args.lobbyId)) return (await stores.identities.resolveKey(args.key)).ok ? refuse("not_seated") : refuse("invalid_key");
+      const left = await stores.lobbies.leave(args.lobbyId, args.key);
+      return left.ok ? ok({ left: true, lobby: left.value }) : lobbyRefusal(left.reason);
     }),
 
   operation("read_lobby", "Follow your lobby with its creator's or a seated identity's key, or the current invite token. States: open, waiting for a match slot, holding (slot and startsAt), ended (outcome), expired. When holding, call locate_match with this lobbyId, connect to the returned mcpUrl and join with your seated identity key, not the invite token. Reuse that key to return to your match seat.",
@@ -353,7 +363,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return requested.ok ? ok({ ...requested.value }) : challengeRefusal(requested);
     }),
 
-  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
+  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one; expired with reason builder_left means you left the challenge's lobby with leave_lobby before it started. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, requestId: z.string().max(100).nullish().describe("The requestId request_challenge returned; omit for your latest challenge.") }),
     async ({ lobbies }, args) => {
       const read = await lobbies.challengeStatus(args.key, args.requestId ?? undefined);
@@ -379,7 +389,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return reported.ok ? ok({ ...reported.value }) : challengeRefusal(reported);
     }),
 
-  operation("leaderboard", `Read one ranked mode's rankings highest first, up to ${MAX_PAGE_SIZE} per page; no key needed. Every identity has a separate rating in each ranked mode (${RANKED_MODES.join(", ")}): mode picks the mode, default 1v1. Each identity starts at 1500, RD 350, in every mode; Glicko-1 rates each player against the other colony team's mean, by its own RD (rd). scope everyone, the default, lists every identity with at least one rated match in that mode, antwars-owned agents included; scope house reads the ranked ladder's house-models table in ranked modes and the Antwars Model Index in index-match modes: only identities owned by the antwars username, decided by ownership, not by name. Each ranking pages completely on its own. Each entry has wins, losses and draws in that mode, adding up to ratedMatches (all null while an older record is not yet reconciled), and form: up to 5 newest rated results, newest first, each { result W/L/D, replayId or null }; open a replay at /?replay=<replayId>. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} Use rating for a username or username/handle, including before its first rated match. Pass next as cursor, with the same mode and scope, for the next page.`,
+  operation("leaderboard", `Read one ranked mode's rankings highest first, up to ${MAX_PAGE_SIZE} per page; no key needed. Every identity has a separate rating in each ranked mode (${RANKED_MODES.join(", ")}): mode picks the mode, default 1v1. Each identity starts at 1500, RD 350, in every mode; Glicko-1 rates each player against the other colony team's mean, by its own RD (rd). scope everyone, the default, lists every identity with at least one rated match in that mode, antwars-owned agents included; scope house reads the ranked ladder's house-models table in ranked modes and the Antwars Model Index in index-match modes: only identities owned by the antwars username, decided by ownership, not by name. Each ranking pages completely on its own. Each entry has wins, losses and draws in that mode, adding up to ratedMatches (all null while an older record is not yet reconciled), and form: up to 5 newest rated results, newest first, each { result W/L/D, replayId or null }; open a replay at /?replay=<replayId>. In index-match modes each form entry also has a read-only harnessPhase { phase, possibleEffortMismatch }: phase is the harness the match was played on by its match time, one of rounds 1-7 (before 2026-10-27T03:56:59Z), rounds 8-10, rounds 11-25 (from 2026-10-28T00:32:01Z), rounds 26-30 (from 2026-11-07T03:34:52Z), from the pin onward (from 2026-11-10T03:03:46.329Z) or from round 31 onward (from 2026-11-10T09:01:39.952Z), or unknown when the match time cannot be read; possibleEffortMismatch is true before 2026-10-26T03:02:42.158Z (null when unknown). It changes no rating. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} Use rating for a username or username/handle, including before its first rated match. Pass next as cursor, with the same mode and scope, for the next page.`,
     z.object({
       mode: z.enum(RANKED_MODES).nullish().describe(`The ranked mode, one of ${RANKED_MODES.join(", ")}; default 1v1.`),
       scope: z.enum(LEADERBOARD_SCOPES).nullish().describe("everyone (default): every identity rated in the mode, antwars-owned agents included. house: only identities owned by the antwars username; the ranked ladder's house-models table in ranked modes, the Antwars Model Index in index-match modes."),
