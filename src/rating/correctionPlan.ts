@@ -50,10 +50,10 @@ interface MatchState {
   /** Each seat's self-reported model label, where the plan changes them. */
   readonly labels?: Readonly<Record<string, string>>;
 }
-/** Every planned change in public terms: one entry per changed match (by recording id), one per changed rating row. */
+/** Every planned change in public terms: one entry per changed match (by recording id, else public lobby id), one per changed rating row. */
 export interface PublicPlan {
   readonly digest: string;
-  readonly matches: readonly { readonly match: string | null; readonly startedAt: string; readonly before: MatchState; readonly after: MatchState }[];
+  readonly matches: readonly { readonly match: string; readonly startedAt: string; readonly before: MatchState; readonly after: MatchState }[];
   readonly ratings: readonly { readonly handle: string; readonly mode: string; readonly before: Standing | null; readonly after: Standing | null }[];
 }
 export interface Plan { readonly writes: readonly Write[]; readonly summary: PublicPlan }
@@ -77,7 +77,11 @@ export function planDigest(writes: readonly Write[]): string {
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
-interface Lobby { readonly id: string; readonly at: number; readonly winner: Winner; readonly seats: readonly { id: string; displayName: string; colony: 0 | 1 }[] }
+interface Lobby {
+  readonly id: string; readonly at: number; readonly winner: Winner; readonly seats: readonly { id: string; displayName: string; colony: 0 | 1 }[];
+  /** A public lobby, whose id the watch listing already publishes. */
+  readonly listed: boolean;
+}
 const teamsOf = (lobby: Lobby): [string[], string[]] =>
   [0, 1].map(colony => [...new Set(lobby.seats.filter(seat => seat.colony === colony).map(seat => seat.id))]) as [string[], string[]];
 const plays = (lobby: Lobby, id: string) => lobby.seats.some(seat => seat.id === id);
@@ -96,7 +100,7 @@ async function houseLobbies(store: Store): Promise<Lobby[]> {
       const at = matchTime(fields);
       const seats = lobbySeats(fields.seats) as Lobby["seats"] | null;
       if (at === null || seats === null) refuse(`unreadable rated ${MODE} lobby ${path}`);
-      lobbies.push({ id: path.slice("lobbies/".length), at: at!, winner, seats: seats! });
+      lobbies.push({ id: path.slice("lobbies/".length), at: at!, winner, seats: seats!, listed: fields.kind === "public" });
     }
     const last = page.rows.at(-1);
     if (page.rows.length < MAX_PAGE_SIZE || !last) break;
@@ -167,17 +171,20 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   }));
   const change = (lobby: Lobby, id: string) => stored.get(lobby.id)!.find(c => c.identityId === id)!;
 
-  // The order ratings were applied: each player's matches chained by rating, merged by match time where unchained.
+  // The order ratings were applied: each player's matches chained by Glicko state (rating and RD; a match always
+  // narrows RD, so an unchanged rating, as in a draw between equals, still moves the state), merged by match time where
+  // unchained.
+  const follows = (prev: RatingChange, next: RatingChange) => prev.after === next.before
+    && (prev.rdAfter === undefined || next.rdBefore === undefined || prev.rdAfter === next.rdBefore);
   const after = new Map<string, Set<string>>(lobbies.map(lobby => [lobby.id, new Set()]));
   const waits = new Map(lobbies.map(lobby => [lobby.id, 0]));
   for (const id of new Set(lobbies.flatMap(lobby => teamsOf(lobby).flat()))) {
     const mine = lobbies.filter(lobby => plays(lobby, id));
-    const ends = new Set(mine.map(lobby => change(lobby, id).after));
-    const starts = mine.filter(lobby => !ends.has(change(lobby, id).before));
+    const starts = mine.filter(lobby => !mine.some(other => other !== lobby && follows(change(other, id), change(lobby, id))));
     const chain = starts.length === 1 ? [starts[0]!] : [];
     while (chain.length > 0 && chain.length < mine.length) {
       const last = chain.at(-1)!;
-      const next = mine.filter(lobby => !chain.includes(lobby) && change(lobby, id).before === change(last, id).after);
+      const next = mine.filter(lobby => !chain.includes(lobby) && follows(change(last, id), change(lobby, id)));
       if (next.length !== 1) break;
       after.get(last.id)!.add(next[0]!.id);
       chain.push(next[0]!);
@@ -259,7 +266,9 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     if (relabelled) writes.push({ op: "update", path: `watchMatches/${lobby.id}`, fields: { modelLabels: JSON.stringify(relabelled) } });
     if (rechanged) writes.push({ op: "update", path: `ratedMatches/${lobby.id}`, fields: { changes } });
     if (!move && !rechanged) continue;
-    matches.push({ match: docs.get(`watchMatches/${lobby.id}`)?.replayId ?? null, startedAt: new Date(lobby.at).toISOString(),
+    // A match is named by its recording, or by its public lobby id until a recording is published.
+    const match = docs.get(`watchMatches/${lobby.id}`)?.replayId || (lobby.listed ? lobby.id : refuse(`lobby ${lobby.id}: no public match id`));
+    matches.push({ match, startedAt: new Date(lobby.at).toISOString(),
       before: { status: "rated", seats: was.seats.map(seat => seat.displayName), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels } : {}) },
       after: { status: "rated", seats: lobby.seats.map(seat => seat.displayName), ratingChanges: named(result.changes.get(lobby.id)!),
         ...(relabelled ? { labels: relabelled } : {}) } });

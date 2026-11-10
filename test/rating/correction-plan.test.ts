@@ -23,13 +23,15 @@ const MIN = 60_000;
 const SECOND_LOBBY = SOL_MOVES[1]!.lobbyId!;
 
 // House-1v1 history around the moved matches, in the order rated: [colony 0, colony 1, winner, start in minutes from the
-// first moved match]. The last two share glm-5-3 and end in the opposite order to their starts.
+// first moved match]. The two at 1200 and 1000 share glm-5-3 and end in the opposite order to their starts.
 const HISTORY: readonly [string, string, Winner, number][] = [
   ["gpt-6-1-sol-high", "glm-5-3", "a", -900], ["gpt-6-1-sol-high-fast", "grok-4-7", "b", -800], ["gpt-6-1-sol-xhigh", "glm-5-3", "b", -700],
   ["gpt-6-1-sol-xhigh-fast", "gpt-6-1-sol-high", "a", -600], ["grok-4-7", "gpt-6-1-sol-xhigh", "draw", -500],
   ["gpt-6-1-sol-high", "glm-5-3", "b", 0], ["gpt-6-1-sol-xhigh", "grok-4-7", "b", 6.1],
   ["gpt-6-1-sol-high-fast", "glm-5-3", "a", 300], ["gpt-6-1-sol-high", "grok-4-7", "a", 2000], ["gpt-6-1-sol-xhigh-fast", "gpt-6-1-sol-xhigh", "b", 2600],
   ["glm-5-3", "grok-4-7", "b", 1200], ["glm-5-3", "gpt-6-1-sol-high-fast", "a", 1000],
+  // A draw between equal ratings, each player's only match: it leaves both ratings unchanged.
+  ["kimi-k3", "qwen-4", "draw", 100],
 ];
 const MOVED: Readonly<Record<number, string>> = { 5: "gpt-6-1-sol-high", 6: "gpt-6-1-sol-xhigh" };
 
@@ -96,7 +98,7 @@ async function world() {
     const id = i === 6 ? SECOND_LOBBY : randomUUID(), at = T0 + minutes * MIN;
     const seats = [a, b].map((name, colony) => ({ id: ids.get(`antwars/${name}`)!, displayName: `antwars/${name}`, colony }));
     const outcome = winner === "draw" ? "draw" : `colony_${winner === "a" ? 0 : 1}_won`;
-    await commit(store, [{ op: "create", path: `lobbies/${id}`, fields: { state: "ended", rated: "true", mode: MODE, outcome,
+    await commit(store, [{ op: "create", path: `lobbies/${id}`, fields: { kind: "public", state: "ended", rated: "true", mode: MODE, outcome,
       createdAt: String(at - MIN), startsAt: String(at), seats: JSON.stringify(seats) } }, ...(MOVED[i] ? [{ op: "create" as const, path: `watchMatches/${id}`,
       fields: { visibility: "public", rated: "true", mode: MODE, startedAt: startedAt(SOL_MOVES[i - 5]!.replayId),
       playbackFinished: "true", origin: "https://example.test", slot: "public-1", runId: "run", replayId: SOL_MOVES[i - 5]!.replayId,
@@ -133,8 +135,8 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     expect(withoutTime(plan.writes.slice(0, unrate.length))).toEqual(withoutTime(unrate));
     expect(plan.summary.digest).toMatch(/^[0-9a-f]{64}$/);
     const text = JSON.stringify(plan.summary);
-    for (const id of [...w.users, ...w.ids.values(), ...w.lobbies, NEVER_JOINED.lobbyId]) expect(text).not.toContain(id);
-    const corrected: readonly (string | null)[] = [NEVER_JOINED.replayId, ...SOL_MOVES.map(move => move.replayId)];
+    for (const id of [...w.users, ...w.ids.values(), NEVER_JOINED.lobbyId]) expect(text).not.toContain(id);
+    const corrected: readonly string[] = [NEVER_JOINED.replayId, ...SOL_MOVES.map(move => move.replayId)];
     expect(plan.summary.matches.filter(m => corrected.includes(m.match)).map(m => [m.match, m.before.seats, m.after.status, m.after.seats])).toEqual([
       [NEVER_JOINED.replayId, ["absent-player", "joined-player"], "abandoned, unrated", ["absent-player", "joined-player"]],
       [SOL_MOVES[0]!.replayId, ["antwars/gpt-6-1-sol-high", "antwars/glm-5-3"], "rated", ["antwars/gpt-6-1-sol-high-fast", "antwars/glm-5-3"]],
@@ -143,7 +145,10 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
 
     // Every planned match and rating-row write has its public entry.
     const matchWrites = new Set(plan.writes.filter(each => /^(lobbies|watchMatches|ratedMatches)\//.test(each.path)).map(each => each.path.split("/")[1]));
-    expect(plan.summary.matches).toHaveLength(matchWrites.size);
+    // Each is named by its recording, else (no recording published yet) by its public lobby id.
+    const named = new Map([[NEVER_JOINED.lobbyId, NEVER_JOINED.replayId], [w.lobbies[5]!, SOL_MOVES[0]!.replayId], [w.lobbies[6]!, SOL_MOVES[1]!.replayId]]);
+    expect(plan.summary.matches.map(each => each.match).sort()).toEqual([...matchWrites].map(id => named.get(id!) ?? id).sort());
+    expect(plan.summary.matches.length).toBeGreaterThan(3);
     expect(plan.summary.ratings).toHaveLength(plan.writes.filter(each => each.path.startsWith("ratings")).length);
     expect(plan.summary.matches.filter(each => each.before.labels)).toHaveLength(2);
 
@@ -171,7 +176,7 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
         ended = true;
         // grok-4-7 vs glm-5-3 ends and is rated after the first lobby scan.
         const [a, b] = [w.ids.get("antwars/grok-4-7")!, w.ids.get("antwars/glm-5-3")!], id = randomUUID(), at = T0 + 3000 * MIN;
-        await commit(w.store, [{ op: "create", path: `lobbies/${id}`, fields: { state: "ended", rated: "true", mode: MODE, outcome: "colony_0_won",
+        await commit(w.store, [{ op: "create", path: `lobbies/${id}`, fields: { kind: "public", state: "ended", rated: "true", mode: MODE, outcome: "colony_0_won",
           createdAt: String(at - MIN), startsAt: String(at), seats: JSON.stringify([{ id: a, displayName: "antwars/grok-4-7", colony: 0 }, { id: b, displayName: "antwars/glm-5-3", colony: 1 }]) } }]);
         await w.store.transaction(read => ratingWrites(read, { matchId: id, teams: [[a], [b]], winner: "a", mode: MODE, at }));
       }
@@ -184,15 +189,16 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
 
   it("refuses, naming the handle and match, when the stored history is not reproduced; serves no detail", async () => {
     const w = await world();
-    const path = `ratedMatches/${w.lobbies[7]}`;
+    // gpt-6-1-sol-high's last match, so its rating chain still holds.
+    const path = `ratedMatches/${w.lobbies[8]}`;
     const changes = JSON.parse((await w.store.get(path))!.changes!) as { rdAfter: number }[];
-    changes[1]!.rdAfter += 1;
+    changes[0]!.rdAfter += 1;
     await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
-    await expect(planCorrections(w.store, w.recordings)).rejects.toThrow(`stored history not reproduced: antwars/glm-5-3 in lobby ${w.lobbies[7]}`);
+    await expect(planCorrections(w.store, w.recordings)).rejects.toThrow(`stored history not reproduced: antwars/gpt-6-1-sol-high in lobby ${w.lobbies[8]}`);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { serve } = startCorrectionPlan(w.store, w.recordings);
     await vi.waitFor(() => expect(JSON.parse(served(serve).body)).toEqual({ state: "refused" }));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("antwars/glm-5-3"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("antwars/gpt-6-1-sol-high"));
     warn.mockRestore();
   });
 
