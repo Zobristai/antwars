@@ -8,12 +8,15 @@ import { watchRoutes } from "../../src/live/watch-routes.ts";
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import type { StreamMessage } from "../../src/live/format.ts";
-import { restateRatings, storedReplayRatings } from "../../web/src/replay-ratings.ts";
+import { restateRatings, storedReplayFacts, storedReplayRatings } from "../../web/src/replay-ratings.ts";
 import { holdMatch, memoryWatchStore } from "./watch-fixtures.ts";
 
 const lobbyId = "11111111-2222-4333-8444-555555555555";
 const startedAt = Date.parse("2026-01-02T03:04:05.000Z");
 const replayId = "2026-01-02T03-04-05-000Z-281474976710";
+/** The fixture lobby's match time, in rounds 26-30, and the harness phase it gives a Model Index match. */
+const matchAt = Date.parse("2026-11-07T07:47:00.000Z");
+const round26Phase = { phase: "rounds 26-30", possibleEffortMismatch: false };
 /** The Glicko record the recompute stored; the recording carries the Elo figures 1383.3 → 1399.5 and 1386.6 → 1370.4. */
 const glicko = [
   { identityId: "glm", before: 1412.25, after: 1461.75, rdBefore: 120, rdAfter: 110 },
@@ -23,12 +26,13 @@ const close: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of close.splice(0)) await fn(); });
 
 async function fixture(options: { kind?: "public" | "private"; rated?: boolean; outcome?: MatchOutcome; changes?: unknown[] | null;
-  colonies?: Lobby["colonies"]; finished?: boolean } = {}) {
+  colonies?: Lobby["colonies"]; finished?: boolean; mode?: Lobby["mode"]; startsAt?: number | null } = {}) {
   const { docs, store } = memoryWatchStore();
   const registry = createWatchRegistry(store);
   const kind = options.kind ?? "public";
   const lobby: Lobby = { id: lobbyId, kind, size: 1, state: "ended", rated: options.rated ?? true, slot: `${kind}-0`, creatorId: "glm",
-    createdAt: 0, expiresAt: 0, startsAt: 0, outcome: options.outcome ?? "colony_0_won", mode: "house-1v1",
+    createdAt: 0, expiresAt: 0, startsAt: options.startsAt === undefined ? matchAt : options.startsAt, outcome: options.outcome ?? "colony_0_won",
+    mode: options.mode === undefined ? "house-1v1" : options.mode,
     colonies: options.colonies ?? [[{ id: "glm", displayName: "glm" }], [{ id: "deepseek", displayName: "deepseek" }]] };
   let invite = "current";
   const accounts = {
@@ -90,7 +94,7 @@ describe("a replay's stored rating figures", () => {
     expect(await response.json()).toEqual({ ratings: [
       { colony: 0, displayName: "glm", before: 1412.25, after: 1461.75 },
       { colony: 1, displayName: "deepseek", before: 1430.5, after: 1388 },
-    ] });
+    ], harnessPhase: round26Phase });
     expect(JSON.stringify([...f.docs])).toBe(before);
   });
 
@@ -119,13 +123,58 @@ describe("a replay's stored rating figures", () => {
     ["a record missing a seat", { changes: [glicko[0]] }],
   ])("returns no figures for %s, so the recording's own stay", async (_, options) => {
     const f = await fixture(options);
-    expect(await (await f.get()).json()).toEqual({ ratings: [] });
+    expect(await (await f.get()).json()).toEqual({ ratings: [], harnessPhase: round26Phase });
   });
 
   it("refuses an unknown recording and one whose playback has not finished", async () => {
     expect((await (await fixture()).get("2026-01-02T03-04-05-000Z-1")).status).toBe(404);
     expect((await (await fixture()).get("not-a-replay")).status).toBe(404);
     expect((await (await fixture({ finished: false })).get()).status).toBe(404);
+  });
+});
+
+describe("a replay's harness phase", () => {
+  it("serves a Model Index match's phase by its lobby's startsAt, else createdAt, beside its figures, writing nothing", async () => {
+    const f = await fixture({ startsAt: Date.parse("2026-10-26T01:38:30Z") });
+    const before = JSON.stringify([...f.docs]);
+    const body = await (await f.get()).json();
+    expect(body.harnessPhase).toEqual({ phase: "rounds 1-7", possibleEffortMismatch: true });
+    expect(body.ratings).toHaveLength(2);
+    // createdAt is 0 in the fixture: before every boundary.
+    await expect((await (await fixture({ startsAt: null })).get()).json()).resolves.toMatchObject({ harnessPhase: { phase: "rounds 1-7" } });
+    expect(JSON.stringify([...f.docs])).toBe(before);
+  });
+
+  it("serves an unrated Model Index match's phase with no figures", async () => {
+    expect(await (await (await fixture({ rated: false, startsAt: Date.parse("2026-11-10T02:00:00Z") })).get()).json())
+      .toEqual({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } });
+  });
+
+  it("sends no phase for a match in any other mode", async () => {
+    for (const mode of ["1v1", "4v4", null] as const) {
+      const body = await (await (await fixture({ mode })).get()).json();
+      expect("harnessPhase" in body).toBe(false);
+      expect(body.ratings).toHaveLength(2);
+    }
+  });
+
+  it("is read by the replay page with its figures in one request", async () => {
+    const f = await fixture();
+    let requests = 0;
+    const counted = ((url: string, init?: RequestInit) => { requests++; return f.request(url, init); }) as typeof fetch;
+    const facts = await storedReplayFacts(replayId, null, new AbortController().signal, counted);
+    expect(facts.harnessPhase).toEqual(round26Phase);
+    expect(facts.ratings?.ratings.size).toBe(2);
+    expect(requests).toBe(1);
+    const other = await fixture({ mode: "1v1" });
+    expect((await storedReplayFacts(replayId, null, new AbortController().signal, other.request)).harnessPhase).toBeNull();
+  });
+
+  it("serves and reads a match from 2026-11-10T09:01:39.952Z on as from round 31 onward", async () => {
+    const f = await fixture({ startsAt: Date.parse("2026-11-10T10:32:43.581Z") });
+    const roundThirtyOne = { phase: "from round 31 onward", possibleEffortMismatch: false };
+    expect((await (await f.get()).json()).harnessPhase).toEqual(roundThirtyOne);
+    expect((await storedReplayFacts(replayId, null, new AbortController().signal, f.request)).harnessPhase).toEqual(roundThirtyOne);
   });
 });
 

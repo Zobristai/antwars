@@ -234,7 +234,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   window.__antwar.boardArea = () => overlays.area();
   overlays.setShare(input.share);
   const mode = replay ? "replay" : "live";
-  overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
+  overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds, input.harnessPhase));
   const controls = params.has("replay") && input.recording
     ? mountReplayControls(document, input.recording) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
@@ -261,7 +261,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
     const board = frame.board;
     if (board) {
       const ended = replay && excerptEnded(frame.tick, input.lastTick);
-      overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds));
+      overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds, input.harnessPhase));
     }
     if (board?.result) {
       resultShownAt ??= realMs;
@@ -346,7 +346,7 @@ async function start(): Promise<void> {
   overlays.setShare(input.share);
   // Live or recorded: the HUD's status line (replay.ts modeCopy).
   const mode = replay ? "replay" : "live";
-  overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
+  overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds, input.harnessPhase));
   const controls = params.has("replay") && input.recording
     ? mountReplayControls(document, input.recording) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
@@ -660,7 +660,7 @@ async function start(): Promise<void> {
     else overlays.tips.squad.hide();
     if (board) {
       const ended = replay && excerptEnded(frame.tick, input.lastTick);
-      overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds));
+      overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds, input.harnessPhase));
     }
     if (overlaysOn) {
       overlays.update(frame);
