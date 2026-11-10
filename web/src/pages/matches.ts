@@ -10,7 +10,7 @@
 // action column, where Replay sits; no Lobby and no rating in Live now; no MODELS * head and no self-reported asterisk anywhere.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { SEAT, rowName } from "../compose.ts";
+import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { liveRow, recordingRows, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
@@ -19,7 +19,7 @@ import { mountFrame, rebuild, stateLine } from "./chrome.ts";
 import { nameNodes } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
-  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, recordingsLine, seatGroups, stampWord,
+  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, modelName, recordingsLine, seatGroups, stampWord,
   whenParts, winnerOf, type LoadsSeen, type NameParts, type SeatEntry, type SeatGroup,
 } from "./model.ts";
 
@@ -70,11 +70,18 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
    * and no thinking level for another player: the catalog carries none. An identity holding several seats is "<name> #<seat>" on
    * each (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds, as
    * alike recorded seats are; a seat it holds alone in its colony keeps
-   * its "#<seat>", as before. */
+   * its "#<seat>", as before. A seat that self-reported a model shows that model, named as Recordings names it (modelName), in
+   * its name's place; a seat that reported none shows its name; a house handle always shows its own row's name. */
   const players = (seats: readonly LiveSeat[]): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
-    const shown = (name: string): NameParts => { const named = rowName(name, undefined); return { name: named.name, badges: named.badges, quiet: null }; };
-    return { who, parts: shown(seat.displayName), alike: shown(who) };
+    const model = seat.modelLabel && !isBenchmark(who) ? modelName(seat.modelLabel) : null;
+    // A reported model is drawn as given, never read as a house handle; a seat with none keeps its own row's name.
+    const shown = (name: string): NameParts => {
+      if (model !== null) return { name: `${model}${name.slice(who.length)}`, badges: [], quiet: null };
+      const row = rowName(name, undefined); return { name: row.name, badges: row.badges, quiet: null };
+    };
+    // Seats group by identity and the model each reported, so an identity's seats that differ in model each keep their line.
+    return { who: JSON.stringify([who, model]), parts: shown(seat.displayName), alike: shown(who) };
   })).map(group => seatBlock(group));
   const notRecorded = (text: string) => h(doc, "span", "d1p-model d1p-unknown", text);
   const liveCard = (view: MatchesView): HTMLElement => {
@@ -261,6 +268,9 @@ function rowParts(doc: Document) {
 
 // ---------------------------------------------------------------- Recordings
 
+/** A recorded colony nobody joined: its record holds no seat of it. */
+const NOT_JOINED = "did not join";
+
 /** How the Recordings card is drawn: with the page's Load more (more), or, where a page shows only the newest rows (limit),
  * with that page's own link in the card's foot in place of Load more (foot). The card draws no asterisk,
  * so it reads no tip; the field stays for the landing page, which still passes one. */
@@ -277,11 +287,11 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   const { search } = options;
   const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseTags } = rowParts(doc);
   /** A colony's result badge, in the shared badge style (identity.ts d1p-tag) with its words in the colony's ink: Winner on
-   * the winning colony where the record names a winner and the match was not abandoned, Draw on both colonies in a draw;
-   * none otherwise. */
-  const markOf = (r: Recording, colony: 0 | 1): string | null => {
+   * the winning colony where the record names a winner and the match was not abandoned, never on a colony nobody joined
+   * (no recorded seat); Draw on both colonies in a draw; none otherwise. */
+  const markOf = (r: Recording, colony: 0 | 1, seats: NonNullable<ReturnType<typeof colonySeats>>): string | null => {
     const winner = winnerOf(r);
-    if (winner !== null) return winner === colony ? "Winner" : null;
+    if (winner !== null) return winner === colony && seats[colony] !== null ? "Winner" : null;
     return r.reason !== "abandoned" && r.decidedBy === "draw" ? "Draw" : null;
   };
   /** The record's own word (ui/format.ts recordingResult) where no colony carries a badge and the record names no winner:
@@ -300,15 +310,16 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
    * (seatGroups), in both forms; null for a colony with no recorded seat. No rating: a recording carries none. */
   const recordedSeats = (seats: NonNullable<ReturnType<typeof colonySeats>>) =>
     COLONIES.map(colony => seats[colony] && seatGroups(seats[colony]).map(group => seatBlock(group)));
-  /** Each colony's lines, a colony with no recorded seat "not recorded", its result badge after each of its lines' own words,
-   * so every model the colony fielded carries it, every name keeps its place and no other text stands in for a model. */
+  /** Each colony's lines, a colony with no recorded seat "did not join" (nobody joined it), its result badge after each of its
+   * lines' own words, so every model the colony fielded carries it, every name keeps its place and no other text stands in for
+   * a model. */
   const markedSeats = (r: Recording, seats: NonNullable<ReturnType<typeof colonySeats>>) =>
     recordedSeats(seats).map((models, colony) => {
-      const mark = markOf(r, colony as 0 | 1);
-      if (mark === null) return models ?? [h(doc, "span", "d1p-model d1p-unknown", "not recorded")];
+      const mark = markOf(r, colony as 0 | 1, seats);
+      if (mark === null) return models ?? [h(doc, "span", "d1p-model d1p-unknown", NOT_JOINED)];
       // The line's words stay its first child (archive.css .d1p-model > :first-child), the badge after them.
       const lines = models ?? [h(doc, "span", "d1p-model d1p-unknown")];
-      if (models === null) lines[0]!.append(h(doc, "span", undefined, "not recorded"));
+      if (models === null) lines[0]!.append(h(doc, "span", undefined, NOT_JOINED));
       for (const line of lines) line.append(h(doc, "span", `d1p-tag d1p-c${colony}`, mark));
       return lines;
     });
@@ -345,7 +356,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const r = byId.get(row.id)!;
       const seats = colonySeats(r.seats);
       // A row with no recorded seat has no colony line to carry a badge.
-      const marked = seats !== null && (markOf(r, 0) !== null || markOf(r, 1) !== null);
+      const marked = seats !== null && (markOf(r, 0, seats) !== null || markOf(r, 1, seats) !== null);
       const name = `Replay, recording started ${row.when}`;
       const line = h(doc, "tr");
       const start = startCell(row.when);

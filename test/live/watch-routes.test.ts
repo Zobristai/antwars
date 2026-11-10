@@ -166,7 +166,7 @@ describe("shared spectator HTTP routes", () => {
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     // An unrated-mode registration (no ranked mode) names the seats without ratings.
     expect(catalog.matches).toEqual([{ lobbyId: id, rated: true, startedAt: 0, delaySeconds: 300, colonies: [
-      [{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], [{ displayName: "bob", rating: null, rd: null, ratedMatches: null }],
+      [{ displayName: "alice", modelLabel: null, rating: null, rd: null, ratedMatches: null }], [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
     ] }]);
     expect(JSON.stringify(catalog)).not.toContain(f.ownerOrigin);
     const response = await request(f.gatewayOrigin, `/watch/live/${id}`);
@@ -276,7 +276,7 @@ describe("shared spectator HTTP routes", () => {
     // Each seat with its rating, RD and rated-match count in the match's mode, and the Model Index match's harness phase
     // by its start (here time 0, before every boundary).
     expect(catalog.matches).toContainEqual({ lobbyId: second, rated: true, startedAt: 0, delaySeconds: 0, colonies: [
-      [{ displayName: "alice", rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }],
     ], harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } });
     await f.registry.playbackFinished(second, "run");
     expect(await (await request(f.gatewayOrigin, `/watch/status/${second}`)).json()).toEqual({
@@ -308,10 +308,12 @@ describe("shared spectator HTTP routes", () => {
     await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode: "2v2", startedAt: 5, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     const third = "00000000-0000-4000-8000-000000000003";
     await f.registry.register({ lobbyId: third, visibility: "public", rated: true, mode: "1v1", startedAt: 9, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
+    // The slot published the labels of the seats that reported one; a seat that reported none, or has not joined, carries null.
+    expect(await f.registry.seatLabels(second, "run", { "alice #2": "openai/gpt-6.1-terra", "antwars/gpt-6-luna": "openai/gpt-6-luna" })).toBe(true);
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === second).colonies).toEqual([
-      [{ displayName: "alice #1", rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", rating: 1612.4, rd: 80, ratedMatches: 12 }],
-      [{ displayName: "bob", rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice #1", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", rating: 1612.4, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: 1490, rd: 80, ratedMatches: 12 }],
     ]);
     expect(reads.sort()).toEqual(["a:2v2", "b:2v2", "c:2v2"]);
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === third).colonies).toEqual([[], []]);

@@ -10,7 +10,7 @@ import { listedMatches, matchWatchStatus, publicMatchCatalog, type PublicColonie
 import { publicQueue } from "./queue-catalog.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { harnessPhaseAt, isIndexMode } from "../rating/harnessPhase.js";
-import type { WatchRegistry } from "./watch-registry.js";
+import type { WatchMatch, WatchRegistry } from "./watch-registry.js";
 import type { Lobby } from "../lobby/lobbies.js";
 import { lobbySeats, seatDisplayNames } from "./watch-controller.js";
 import { createAdmissionCap, type CapLimits } from "../net/admission.js";
@@ -194,10 +194,11 @@ export function watchRoutes(options: {
 }
 
 /**
- * A live match's seats by colony: each seat's stream display name (watch-controller seatDisplayNames) and, in
- * a ranked mode, the identity's current rating there, read once per identity. Both colonies empty when the lobby is gone.
+ * A live match's seats by colony: each seat's stream display name (watch-controller seatDisplayNames), the model label its
+ * slot published for it once it joined (null otherwise), and, in a ranked mode, the identity's current rating there, read
+ * once per identity. Both colonies empty when the lobby is gone.
  */
-async function matchPlayers(accounts: AccountStores, match: MatchAccess): Promise<PublicColonies> {
+async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels">): Promise<PublicColonies> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
   if (!lobby.ok) return [[], []];
   const seats = lobbySeats(lobby.value.colonies), names = seatDisplayNames(seats);
@@ -206,10 +207,11 @@ async function matchPlayers(accounts: AccountStores, match: MatchAccess): Promis
     .map(async identityId => [identityId, await accounts.ratings.readRating(identityId, mode)] as const)));
   const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
   seats.forEach((seat, index) => {
-    const rating = ratings.get(seat.identityId);
+    const rating = ratings.get(seat.identityId), displayName = names[index]!;
+    const modelLabel = Object.hasOwn(match.modelLabels ?? {}, displayName) ? match.modelLabels![displayName]! : null;
     colonies[seat.colony].push(rating === undefined
-      ? { displayName: names[index]!, rating: null, rd: null, ratedMatches: null }
-      : { displayName: names[index]!, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
+      ? { displayName, modelLabel, rating: null, rd: null, ratedMatches: null }
+      : { displayName, modelLabel, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
   });
   return colonies;
 }

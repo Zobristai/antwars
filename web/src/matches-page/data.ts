@@ -2,9 +2,12 @@
 import { z } from "zod";
 // A seated player: the stream's seat name, and the rating, RD and rated-match count in the match's ranked mode,
 // all three null for an unrated match.
+// The model label a seat self-reported when it joined; null before it joins or where it reported none, absent from a
+// server that sends none.
+const seatLabel = z.string().nullable().optional();
 const liveSeat = z.union([
-  z.object({ displayName: z.string().min(1), rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
-  z.object({ displayName: z.string().min(1), rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
+  z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
+  z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
 ]);
 // A Model Index match's harness phase (src/rating/harnessPhase.ts); absent where none is sent (any other match), null where
 // it does not read as one: the tag is display only, so a value this page does not know never fails the page.
