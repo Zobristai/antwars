@@ -14,7 +14,8 @@
    Layout pass: Matches' colonies take the width the other columns leave; every seat keeps its name and badges on
    one line, a colony's alike seats once with their count; one head row in both Matches tables.
    Layout pass (the Leaderboard only): its band is two lines, the title's and the board choice's, the choice a table of
-   choices on phones; its table's rating column fits the badge; the Challenge list's ratings stand in one column. */
+   choices on phones; its table's rating column fits the badge; the Challenge list's ratings stand in one column, and
+   from 46rem every Challenge row is two lines tall. */
 
 .d1p {
   /* The HUD's tokens (web/index.html :root), set here as well because /rules declares its own warm ones. */
@@ -333,6 +334,12 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .c-elo)) > .is-lead { grid-column: 1 / -1; }
 .d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { grid-column: 1 / -1; }
 .d1p[data-page="leaderboard"] .d1p-challenge .aw-byoa-url { display: inline-block; max-width: 100%; padding: 1px 8px; line-height: 17px; vertical-align: baseline; }
+/* From 46rem, where every ask fits its one line, every Challenge row is two lines tall: a row without an ask keeps the
+   ask's 20 px line empty under its name, so every row is 66 px and every name and badge stands 66 px under the one above.
+   Spacing only: nothing in a row moves. A phone's rows keep their own heights, their asks wrapping. */
+@media (width >= 46rem) {
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-rows: auto minmax(20px, auto); }
+}
 
 /* ---------------------------------------------------------------- Rules: a sticky index beside two reading cards */
 /* The container splits: the index, the gap, the reading cards taking the rest. */

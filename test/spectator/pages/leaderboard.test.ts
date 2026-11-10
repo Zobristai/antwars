@@ -241,6 +241,9 @@ describe("the Leaderboard's layout rules", () => {
   it("draws the Challenge handle as one unit that moves to the next line whole, never breaking at its hyphens", () => {
     expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{ display: inline-block; max-width: 100%;/);
   });
+  it("makes every Challenge row two lines tall from 46rem, a row without an ask keeping the ask's line empty, so every row is one height", () => {
+    expect(css).toContain('@media (width >= 46rem) {\n  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-rows: auto minmax(20px, auto); }\n}');
+  });
   it("sizes each Challenge row's rating on its own on a phone, so \"provisional\" under its figure narrows only its own row's name", () => {
     const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
     expect(phone.length).toBeLessThan(css.length);
