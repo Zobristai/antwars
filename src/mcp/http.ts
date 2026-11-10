@@ -158,6 +158,11 @@ export interface SessionAccess {
   keyIssuingHold(): KeyIssuingHold | undefined;
   /** The key this session's latest key-issuing call committed but could not deliver, if one is still pending. */
   lostKey(): LostKey | undefined;
+  /**
+   * Settles once every key-issuing turn already taken in this session has ended, so each has decided its key
+   * delivered or lost (a call whose client dropped mid-commit included). Takes no turn and reads no store.
+   */
+  keyTurnsSettled(): Promise<void>;
   /** Clear that pending lost key, only if it is still this one. */
   clearLostKey(lost: LostKey): void;
 }
@@ -428,6 +433,7 @@ export function createMcpHandler(
           if (mayProtect() && protectedFor(identityId) < game.mcpConfig.maxProtectedSessionsPerIdentity) stored!.protectedBy = identityId;
         },
         lostKey: () => stored?.lostKey ?? undefined,
+        keyTurnsSettled: () => stored?.keyTurns ?? Promise.resolve(),
         clearLostKey(lost) {
           if (stored !== undefined && stored.lostKey === lost) stored.lostKey = null;
         },

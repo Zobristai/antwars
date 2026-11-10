@@ -396,6 +396,46 @@ describe("recovering a key whose reply was lost when the client dropped mid-comm
     expect((await call(client, "recover_key", { key: keys.handleKey })).body.error).toBe("nothing_to_recover");
   });
 
+  it("recovers when recover_key arrives while the dropped call's commit is still in flight", async () => {
+    const world = await start();
+    const { client, sessionId } = await session(world);
+    const commits = world.seen.commits.length;
+
+    // claim_username's client drops while its commit is paused; recover_key is sent before the commit completes.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const abort = new AbortController();
+    const cut = world.http.cut;
+    let dropped = false;
+    world.seen.onCommit = async () => {
+      abort.abort();
+      await vi.waitFor(() => expect(world.http.cut).toBe(cut + 1));
+      dropped = true;
+      await gate;
+    };
+    const claimed = rawCall(world, sessionId, "claim_username", { name: "newcomer" }, abort.signal);
+    await vi.waitFor(() => expect(dropped).toBe(true));
+    let answered = false;
+    const recovered = call(client, "recover_key", {}).then((reply) => {
+      answered = true;
+      return reply;
+    });
+    await settle();
+    // recover_key waits for the dropped call to settle instead of answering nothing_to_recover now.
+    expect(answered).toBe(false);
+    expect(world.seen.commits.length).toBe(commits);
+
+    open();
+    expect(await claimed).toBe("dropped");
+    const reply = await recovered;
+    expect(reply.isError).toBe(false);
+    expect(world.seen.commits.length).toBe(commits + 2);
+    expect(await works(world, world.issued[0]!)).toBe(false);
+    expect(await world.identities.resolveKey(reply.body.key as string)).toMatchObject({ ok: true, value: { displayName: "newcomer" } });
+  });
+
   it("clears a pending recovery when its session ends", async () => {
     const world = await start();
     const { client, sessionId } = await session(world);

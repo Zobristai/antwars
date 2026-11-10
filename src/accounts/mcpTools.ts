@@ -99,7 +99,11 @@ export function registerAccountTools(server: McpServer, stores: AccountStores, o
       const lost = session?.lostKey();
       return lost !== undefined && sameProof(lost.proof, proof) ? lost : undefined;
     };
-    if (session === undefined || pending() === undefined) return refused(nothingToRecover());
+    if (session === undefined) return refused(nothingToRecover());
+    // Decide only after any key-issuing call already in this session has settled: a call whose client dropped
+    // mid-commit records its lost key once its commit completes, which may be after this call arrives.
+    await session.keyTurnsSettled();
+    if (pending() === undefined) return refused(nothingToRecover());
     const hold = session.keyIssuingHold();
     if (hold === undefined) return refused(serverBusy());
     // Read again in this session's key-issuing turn: a reply delivered before it has cleared the lost key.
