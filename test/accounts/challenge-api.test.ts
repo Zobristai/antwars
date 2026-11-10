@@ -144,7 +144,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const builder = await w.claim("builder");
       const ordinary = value(await w.lobbies.createLobby(w.rival.key, "public", 1)).lobby;
       const reply = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
-      expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat"]);
+      expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat", "waitToken", "waitUrl"]);
       expect(reply.seat).toBe(1);
       const { lobby } = await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: reply.lobbyId });
       expect(lobby).toMatchObject({ id: reply.lobbyId, kind: "public", size: 1, state: "open", rated: false, creatorId: builder.id,
@@ -223,6 +223,25 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const handle = await w.handle(builder, "second");
       await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
       await refusedUnchanged(handle, { key: handle.key, opponent: "antwars/glm-5-3" }, "active_challenge");
+    });
+
+    it("refuses join_queue and join_lobby live_challenge while the caller's challenge is live, with no wait token and nothing stored", async () => {
+      const w = await serve(open);
+      const builder = await w.claim("builder");
+      await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const { lobby } = value(await w.lobbies.createLobby(w.rival.key, "public", 1));
+      const snapshot = async () => ({
+        docs: await Promise.all([`queueEntries/${builder.id}`, "queueWaiting/1v1", `lobbies/${lobby.id}`].map(w.raw)),
+        waits: (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 500 })).rows,
+      });
+      const before = await snapshot();
+      for (const [op, args] of [["join_queue", { key: builder.key, mode: "1v1" }], ["join_lobby", { key: builder.key, lobbyId: lobby.id }]] as const) {
+        const reply = await w.call(op, args);
+        expect([reply.ok, reply.body.error, reply.body.waitToken], op).toEqual([false, "live_challenge", undefined]);
+        if (reply.status !== 0) expect(reply.status, op).toBe(409);
+        expect(reply.body.message, op).toContain("challenge_status");
+      }
+      expect(await snapshot()).toEqual(before);
     });
 
     it("refuses owner_daily_limit after an owner's 5 games and shared_daily_limit once 20 places are held today", async () => {

@@ -15,6 +15,7 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "claude-opus-5-5-xhigh": ["Claude Opus 5.5", "xhigh", null],
   "claude-opus-5-5-max": ["Claude Opus 5.5", "max", null],
   "claude-fable-5-1": ["Claude Fable 5.1", "max", null],
+  "claude-fable-5-2": ["Claude Fable 5.2", "max", null],
   "claude-sonnet-5-5": ["Claude Sonnet 5.5", "max", null],
   "glm-5-3": ["GLM-5.3", "max", null],
   "k3-1-pro": ["K3.1 Pro", "max", null],
@@ -72,8 +73,8 @@ describe("House table pinned at main 3cad75d2", () => {
     expect(HOUSE_USERNAME).toBe("antwars");
   });
 
-  it("lists exactly 40 handles, each with its display name, level and tier", () => {
-    expect(Object.keys(HOUSE_LABELS)).toHaveLength(40);
+  it("lists exactly 41 handles, each with its display name, level and tier", () => {
+    expect(Object.keys(HOUSE_LABELS)).toHaveLength(41);
     expect(Object.keys(HOUSE_LABELS)).toEqual(Object.keys(PINNED));
     const shown = Object.fromEntries(Object.entries(HOUSE_LABELS)
       .map(([handle, label]) => [handle, [label.displayName, label.thinkingLevel, label.serviceTier]]));

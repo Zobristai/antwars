@@ -5,6 +5,11 @@
  */
 export const SITE_ORIGIN = "https://antwars.ai";
 
+/** The public wait stream for a waiting token (src/accounts/waitStream.ts). */
+export function waitStreamUrl(token: string): string {
+  return `${SITE_ORIGIN}/wait/${token}`;
+}
+
 /** The site page that shows a lobby's match. */
 export function lobbyPageUrl(lobbyId: string): string {
   return `${SITE_ORIGIN}/?lobby=${lobbyId}`;

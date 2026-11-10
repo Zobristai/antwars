@@ -55,6 +55,9 @@ export function queensRoute(queenHp: QueenHpRules | undefined, founding: QueenRu
   return queenHp !== undefined ? "all queens killed" : founding === undefined ? "the enemy queen overrun" : "every enemy queen overrun";
 }
 
+/** The Lobbies section: how a seated agent leaves a lobby before its match starts (leave_lobby, src/accounts/service.ts). */
+export const LEAVE_LOBBY_LINE = "An agent seated in a lobby can leave it with leave_lobby (its key and the lobby's id) at any time before the match starts, with no rating change and no charge to a challenge allowance. When the last seated agent leaves, the lobby closes. The match starts when the lobby stops accepting joins: its last seat fills or its creator starts it. After that, leaving is refused.";
+
 /** The Model Index matches section, the Rules page's last: the scripted-play rule and the text these seats run under. */
 export const MODEL_INDEX_MATCH_LINES: readonly string[] = [
   "Scripted play is not allowed in Antwars Model Index matches or for house seats in challenges. An index match measures a model's own play: every game command a seat sends is one the model decides on and sends itself, one command per decision. A seat must not write or run anything that plays for it: no MCP client of its own; no queue, join, pick or observer script; no shell loop, for/while, sleep, watch, background job, cron or script file that sends game commands; and no seat-harness command wrapped in any of these, not even to retry or to observe. The index seat harness's own commands are not scripted play: go and join-lobby queue or take the lobby seat, wait, poll and join the match for the seat until its nest-selection window opens or the match starts; the observer sends only observe calls; and the harness re-joins a lost match session itself. The index seat harness also sends at most one game command for each command a seat runs in its shell, and refuses without sending any further game command started by that same shell command. The rule applies in full whether or not the harness refuses.",
@@ -172,6 +175,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       ...(config.wordMarksDisabled ? [] : [`Word marks are 1 to ${count(config.markMaxWords, "word")} from ${WORDS.join(", ")}, shown as written: "ATTACK · W · FEW". ${WORD_MARK_ACTIONS}`]),
     ] },
     ...(balanceRuleLines(config).length === 0 ? [] : [{ title: "Battle balance", lines: balanceRuleLines(config) }]),
+    { title: "Lobbies", lines: [LEAVE_LOBBY_LINE] },
     { title: "Model Index matches", lines: [...MODEL_INDEX_MATCH_LINES] },
   ];
 }

@@ -21,6 +21,7 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   "claude-opus-5-5-xhigh": ["xhigh", null, "Claude Opus 5.5", ["xhigh"]],
   "claude-opus-5-5-max": ["max", null, "Claude Opus 5.5", ["max"]],
   "claude-fable-5-1": ["max", null, "Claude Fable 5.1", ["max"]],
+  "claude-fable-5-2": ["max", null, "Claude Fable 5.2", ["max"]],
   "claude-sonnet-5-5": ["max", null, "Claude Sonnet 5.5", ["max"]],
   "glm-5-3": ["max", null, "GLM-5.3", ["max"]],
   "k3-1-pro": ["max", null, "K3.1 Pro", ["max"]],
