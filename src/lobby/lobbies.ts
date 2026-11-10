@@ -777,20 +777,15 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
    * Decides a lobby wait whose lobby was just read final, in one transaction begun after that read: when its holder has
    * left (the leave marks the record ended in the same transaction that changes the seats), the wait ended, whatever the
    * lobby reads now; otherwise the lobby's state, with the record and its seat key lowered to expire WAIT_GRACE_MS from
-   * now, only while the record is still that lobby's wait. Best effort: on a failed write the record is re-read plainly.
+   * now, only while the record is still that lobby's wait. A failed transaction fails the read: no final state is
+   * reported without it, and the stream's next connect decides again (src/accounts/waitStream.ts).
    */
   async function endLobbyWait(token: string, lobbyId: string, state: WaitState): Promise<WaitState> {
-    const left = (wait: Fields | null | undefined) => wait?.kind === "lobby" && wait.lobbyId === lobbyId && wait.ended === "true";
-    try {
-      return await store.transaction<WaitState>(async (read) => {
-        const wait = (await read([waitPath(token)])).get(waitPath(token));
-        if (left(wait)) return { result: LEFT_LOBBY, writes: [] };
-        return { result: state, writes: wait?.kind === "lobby" && wait.lobbyId === lobbyId ? await endedLobbyWaitWrites(read, token, wait, now()) : [] };
-      });
-    } catch (cause) {
-      console.warn(`antwar wait expiry update failed: ${cause instanceof Error ? cause.name : "error"}`);
-      return left(await store.get(waitPath(token)).catch(() => null)) ? LEFT_LOBBY : state;
-    }
+    return store.transaction<WaitState>(async (read) => {
+      const wait = (await read([waitPath(token)])).get(waitPath(token));
+      if (wait?.kind === "lobby" && wait.lobbyId === lobbyId && wait.ended === "true") return { result: LEFT_LOBBY, writes: [] };
+      return { result: state, writes: wait?.kind === "lobby" && wait.lobbyId === lobbyId ? await endedLobbyWaitWrites(read, token, wait, now()) : [] };
+    });
   }
 
   /** The lobby; a waiting one is settled first (Lobbies.readLobby). */

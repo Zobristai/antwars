@@ -797,6 +797,51 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await read(w.fast, annToken)).frames).toEqual([ended]);
   });
 
+  it("a failed deciding transaction never sends slot_ready: the first read answers 503, a later read ends with no final event, and the next connect decides", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob"), carl = await w.claim("Carl"), dee = await w.claim("Dee");
+    // A second instance over the same store whose transactions fail while armed, only those reading the failing token.
+    let failing = "";
+    const gated = new Proxy(w.store, {
+      get(target, prop, receiver) {
+        if (prop !== "transaction") return Reflect.get(target, prop, receiver);
+        return (step: Parameters<typeof target.transaction>[0]) => target.transaction(async (read) => step(async (paths) => {
+          if (failing && paths.includes(`waits/${failing}`)) throw new Error("injected transaction failure");
+          return read(paths);
+        }));
+      },
+    });
+    const stream = createLobbies(gated, w.identities, { publicSlots: 1, privateSlots: 1, staleHoldGraceMs: 60_000, now: () => w.clock.t });
+    const port = await streamServer((token) => stream.waitStatus(token));
+
+    // First read: the lobby already holds its slot, and the deciding transaction fails.
+    const { lobby: first } = value(await w.lobbies.createLobby(ann.key, "public", 1));
+    const annToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: first.id }));
+    await w.ok("join_lobby", { key: bob.key, lobbyId: first.id });
+    const annRecord = await w.store.get(`waits/${annToken}`);
+    failing = annToken;
+    const refused = await read(port, annToken);
+    expect(refused.status).toBe(503);
+    expect(refused.text).not.toContain("slot_ready");
+    expect(await w.store.get(`waits/${annToken}`)).toEqual(annRecord);
+    failing = "";
+    expect((await read(port, annToken)).frames.map((f) => f.event)).toEqual(["slot_ready"]);
+
+    // A later read: the stream opens waiting, the lobby fills, and the deciding transaction fails.
+    const { lobby: second, inviteToken } = value(await w.lobbies.createLobby(carl.key, "private", 1));
+    const carlToken = tokenOf(await w.ok("join_lobby", { key: carl.key, lobbyId: second.id, inviteToken }));
+    failing = carlToken;
+    const open = read(port, carlToken);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await w.ok("join_lobby", { key: dee.key, lobbyId: second.id, inviteToken });
+    const cut = await open;
+    expect([cut.status, cut.ended]).toEqual([200, true]);
+    expect(cut.frames.map((f) => f.event)).toEqual([null]);
+    expect(cut.text).not.toContain("slot_ready");
+    failing = "";
+    expect((await read(port, carlToken)).frames.map((f) => f.event)).toEqual(["slot_ready"]);
+  });
+
   it("a wait first read final lowers its seat key with its record to now plus grace, and the sweep removes both after the grace", async () => {
     const w = await world();
     const ann = await w.claim("Ann"), bob = await w.claim("Bob");
