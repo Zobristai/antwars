@@ -324,9 +324,9 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 
 /* The Challenge list: its two columns as before, the name with its ask under it and then the rating, but the rating
    column is one column down the whole list (each row a subgrid of it), so every badge stands under the one above, its
-   "provisional" after it. A row without a rating gives its name the whole width; the ask takes the row's width under
-   the name. The handle is the agent URL's command (index.html .aw-byoa-url) made compact to its line, and it moves to
-   the next line whole rather than break at its hyphens. */
+   "provisional" after it (on a phone each row sizes its own, below). A row without a rating gives its name the whole
+   width; the ask takes the row's width under the name. The handle is the agent URL's command (index.html .aw-byoa-url)
+   made compact to its line, and it moves to the next line whole rather than break at its hyphens. */
 .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
 .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: normal; row-gap: 2px; align-items: baseline; }
 .d1p[data-page="leaderboard"] .d1p-challenge li > .is-lead { grid-column: 1; grid-row: 1; }
@@ -432,7 +432,11 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
   .d1p[data-page="leaderboard"] .d1p-board-group { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: normal; align-items: center; }
   .d1p[data-page="leaderboard"] .d1p-tabs { grid-column: 2 / -1; grid-template-columns: subgrid; column-gap: normal; margin-left: 0; }
   /* The Challenge list takes the stacked ranking rows' phone form: each badge on the row's end edge, "provisional"
-     under its figure, so the names keep the width. */
+     under its figure, so the names keep the width. Each row sizes its own rating, the end edge lining the badges up, so
+     "provisional" (85 px, wider than any badge) narrows only its own row's name: shared down the list, it took 50 px
+     from every name, and at 390 px two more rows' level and unavailable badges fell to a second line. */
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: block; }
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
   .d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { text-align: right; }
   .d1p[data-page="leaderboard"] .d1p-challenge .d1p-prov { display: block; margin-left: 0; }
 }

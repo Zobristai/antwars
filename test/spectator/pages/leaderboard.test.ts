@@ -252,6 +252,17 @@ describe("the Leaderboard's layout rules", () => {
     expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .d1p-ask)) > .is-lead { grid-column: 1 / 3; }');
     expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> :is(.d1p-ask, .c-elo))) > .is-lead { grid-column: 1 / -1; }');
   });
+  it("sizes each Challenge row's rating on its own on a phone, so \"provisional\" under its figure narrows only its own row's name", () => {
+    const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
+    expect(phone.length).toBeLessThan(css.length);
+    const block = phone.slice(0, phone.indexOf("\n}\n"));
+    expect(block).toContain("@media (width < 46rem) {");
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: block; }');
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }');
+    // Each badge on its row's end edge, "provisional" under its figure.
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { text-align: right; }');
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-prov { display: block; margin-left: 0; }');
+  });
 });
 
 describe("rating ± RD", () => {
