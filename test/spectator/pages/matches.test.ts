@@ -210,7 +210,7 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     const challenge: LiveMatch = { ...unrated, lobbyId: "lobby-m", colonies: [
       [{ displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: null, rd: null, ratedMatches: null },
         { displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
-      [{ displayName: "antwarsos-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null },
+      [{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null },
         { displayName: "kite #1", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
         { displayName: "kite #2", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null }],
     ] };
@@ -410,7 +410,7 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
   it("names a builder seat that reported no model by its handle, never \"model unknown\", and keeps two such players apart", () => {
     const builder = (seat: number, colony: 0 | 1, handle: string) => ({ seat, colony, modelLabel: null, thinkingLevel: null, serviceTier: null, handle });
     const handles = at("rec-handles", "06", { winner: 1, seats: [builder(0, 0, "omp-dolphin"), builder(1, 0, "coffeebot-ant"), builder(2, 0, "omp-dolphin"),
-      { seat: 3, colony: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "max", serviceTier: "fast", handle: "antwarsos-harness" }] });
+      { seat: 3, colony: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "max", serviceTier: "fast", handle: "kestrel-harness" }] });
     const { p, table, list } = show(handles);
     expect(seats(bodyRows(table)[0]!)).toEqual([["omp-dolphin×2, 2 seats", "coffeebot-ant"], ["GPT-6.1 TerramaxFastWinner"]]);
     expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["omp-dolphin×2, 2 seats", "coffeebot-ant"]], ["Lake Hodges Colony", ["GPT-6.1 TerramaxFastWinner"]]]);
@@ -427,7 +427,7 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     // and a builder's self-reported label.
     const rows = [
       real("2026-11-10T00-30-31-578Z-3107964399993", 1, [seat(0, 1, null, null, null, "omp-dolphin"), seat(1, 0, "openai/gpt-6-astra", "max", "fast", "antwars/gpt-6-astra")]),
-      real("2026-11-09T20-46-21-996Z-71180376741910", 0, [seat(0, 0, "openai/gpt-6.1-sol", "max", "fast", "antwars/gpt-6-1-sol"), seat(1, 1, "openai/gpt-6.1-terra", "max", "fast", "antwarsos-harness")]),
+      real("2026-11-09T20-46-21-996Z-71180376741910", 0, [seat(0, 0, "openai/gpt-6.1-sol", "max", "fast", "antwars/gpt-6-1-sol"), seat(1, 1, "openai/gpt-6.1-terra", "max", "fast", "kestrel-harness")]),
       real("2026-11-09T14-53-30-810Z-231559008937012", 0, [seat(0, 0, "openai/gpt-6-astra", "max", "fast", "antwars/gpt-6-astra")]),
       real("2026-11-09T13-26-59-840Z-160375822867893", 1, [seat(0, 1, null, null, null, "omp-dolphin")]),
       real("2026-11-09T09-07-02-696Z-7115159364110", 1, [seat(0, 0, "anthropic/claude-opus-5-5", "medium", null, "antwars/claude-opus-5-5-medium")]),

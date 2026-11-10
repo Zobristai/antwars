@@ -29,7 +29,7 @@ describe("matches page data", () => {
       { lobbyId: "unrated", startedAt: 2, rated: false, delaySeconds: 60, colonies: [[{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], []] },
       { lobbyId: "rated", startedAt: 3, rated: true, delaySeconds: 300, colonies: [[], []] },
       // Each seat's self-reported model label, null where it reported none.
-      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "antwarsos-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null }],
+      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null }],
         [{ displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }]] },
     ];
     const request = async (path: RequestInfo | URL) => new Response(JSON.stringify(
