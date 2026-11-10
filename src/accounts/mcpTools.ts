@@ -75,10 +75,11 @@ export function registerAccountTools(server: McpServer, stores: AccountStores, o
       try {
         reply = await op.run(stores, input, extra.requestInfo?.headers ?? {}, guard);
         // A newly issued key, by verifier only, kept by the session if its reply is not delivered. A key the call
-        // presented and kept (claim_username for a released account) was delivered before: it is never recorded.
+        // presented and kept (claim_username for a released account) was delivered before: it is never recorded as
+        // lost, but its delivered reply still clears any pending lost key, like every key-issuing reply.
         if (reply.ok && guard !== undefined && typeof reply.body.key === "string") {
           const issued = { verifier: digest(reply.body.key), proof: proofOf(input.key) };
-          if (!sameProof(issued.verifier, issued.proof)) guard.issued(issued);
+          guard.issued(sameProof(issued.verifier, issued.proof) ? null : issued);
         }
       } finally {
         guard?.finish();

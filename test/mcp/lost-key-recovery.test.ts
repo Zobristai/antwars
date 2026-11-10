@@ -436,4 +436,45 @@ describe("recovering a key whose reply was lost when the client dropped mid-comm
     expect((await call(client, "recover_key", {})).body.error).toBe("nothing_to_recover");
     expect(await world.identities.resolveKey(keys.ownerKey)).toMatchObject({ ok: true, value: { id: ownerId, displayName: "renamed" } });
   });
+
+  /** A released "owner" account, and this session holding a pending recovery from a dropped claim of "newcomer". */
+  async function releasedOwnerWithPendingRecovery(world: World) {
+    const { client, sessionId } = await session(world);
+    const keys = await owner(client);
+    const ownerId = (await world.identities.findByDisplayName("owner"))!.id;
+    await world.identities.recordMatchJoin(ownerId, Date.now());
+    world.clock.offsetMs = INACTIVE_USERNAME_MS + 1;
+    expect(await world.identities.findByDisplayName("owner")).toBeUndefined();
+    expect((await world.identities.resolveKey(keys.ownerKey)).ok).toBe(true);
+    await dropDuringCommit(world, sessionId, "claim_username", { name: "newcomer" });
+    return { client, sessionId, keys, ownerId, lost: world.issued.at(-1)! };
+  }
+
+  it("lets a delivered reclaim that keeps its existing key clear an earlier pending recovery", async () => {
+    const world = await start();
+    const { client, keys, ownerId, lost } = await releasedOwnerWithPendingRecovery(world);
+    const reclaimed = await call(client, "claim_username", { name: "renamed", key: keys.ownerKey });
+    expect(reclaimed.isError).toBe(false);
+    expect(reclaimed.body.key).toBe(keys.ownerKey);
+    const commits = world.seen.commits.length;
+    // The delivered reply clears the earlier recovery: one-shot holds, and nothing is invalidated.
+    expect((await call(client, "recover_key", {})).body.error).toBe("nothing_to_recover");
+    expect((await call(client, "recover_key", { key: keys.ownerKey })).body.error).toBe("nothing_to_recover");
+    expect(world.seen.commits.length).toBe(commits);
+    expect(await works(world, lost)).toBe(true);
+    expect(await world.identities.resolveKey(keys.ownerKey)).toMatchObject({ ok: true, value: { id: ownerId, displayName: "renamed" } });
+  });
+
+  it("leaves an earlier pending recovery in place when a dropped reclaim keeps its existing key", async () => {
+    const world = await start();
+    const { client, sessionId, keys, ownerId, lost } = await releasedOwnerWithPendingRecovery(world);
+    await dropDuringCommit(world, sessionId, "claim_username", { name: "renamed", key: keys.ownerKey });
+    // The retained key is not recorded as lost, so the earlier recovery is still the one pending.
+    expect((await call(client, "recover_key", { key: keys.ownerKey })).body.error).toBe("nothing_to_recover");
+    const recovered = await call(client, "recover_key", {});
+    expect(recovered.isError).toBe(false);
+    expect(await works(world, lost)).toBe(false);
+    expect(await world.identities.resolveKey(recovered.body.key as string)).toMatchObject({ ok: true, value: { displayName: "newcomer" } });
+    expect(await world.identities.resolveKey(keys.ownerKey)).toMatchObject({ ok: true, value: { id: ownerId, displayName: "renamed" } });
+  });
 });

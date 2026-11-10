@@ -64,8 +64,11 @@ interface Hold {
   readonly until: number;
   pinned: boolean;
   ended: boolean;
-  /** The key its key-issuing call committed, decided at the response's close: delivered, or lost (Session.lostKey). */
-  issued?: LostKey;
+  /**
+   * The key its key-issuing call returned, decided at the response's close: delivered, or lost (Session.lostKey).
+   * null when the call returned a key it did not newly issue (KeyIssuingHold.issued).
+   */
+  issued?: LostKey | null;
   /** This request's key-issuing turn, once taken: resolves when the turn is this request's. */
   turn?: Promise<void>;
   /** Ends this request's key-issuing turn once it has both ended (its response closed) and finished its call. */
@@ -105,11 +108,12 @@ export interface KeyIssuingHold {
   /** The call that took the turn has returned, issued key recorded or none issued: always called, even on a throw. */
   finish(): void;
   /**
-   * Called once the call's commit has issued a key, before its reply. If the call's response has already closed,
+   * Called once the call's commit has returned a key, before its reply. If the call's response has already closed,
    * or closes before the reply finishes writing, the key is kept on the session as lost (recover_key); once the
-   * reply has finished writing, any lost key the session held is cleared.
+   * reply has finished writing, any lost key the session held is cleared. null for a key the call presented and
+   * kept rather than newly issued: its delivered reply still clears a pending lost key, but its loss records nothing.
    */
-  issued(lost: LostKey): void;
+  issued(lost: LostKey | null): void;
 }
 
 /**
@@ -355,7 +359,11 @@ export function createMcpHandler(
       hold.ended = true;
       session.holds.delete(hold);
       // A key this call issued: delivered only when its reply finished writing; otherwise it is the session's lost key.
-      if (hold.issued !== undefined) session.lostKey = res.writableFinished ? null : hold.issued;
+      // A delivered reply always clears any pending lost key; a key the call did not newly issue is never recorded as lost.
+      if (hold.issued !== undefined) {
+        if (res.writableFinished) session.lostKey = null;
+        else if (hold.issued !== null) session.lostKey = hold.issued;
+      }
       // Only once that is decided does the session's next key-issuing turn begin.
       hold.endTurn?.();
     };
@@ -461,8 +469,8 @@ export function createMcpHandler(
             },
             issued(lost) {
               // Its response already closed: the reply cannot be written, so the key is lost now.
-              if (own!.ended) session.lostKey = lost;
-              else own!.issued = lost;
+              if (!own!.ended) own!.issued = lost;
+              else if (lost !== null) session.lostKey = lost;
             },
           };
         },
