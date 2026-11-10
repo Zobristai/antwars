@@ -567,7 +567,9 @@ describe("Model Index matches show their harness phase", () => {
     const liveIndex: LiveMatch = { ...live("lobby-i"), harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } };
     p.mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [liveIndex, live("lobby-r")] },
       recordings: { status: "ready", rows: [indexRecording, ranked] }, next: null });
-    const tags = (scope: ElementPort) => scope.byClass("d1p-phase").map(node => node.textContent);
+    // A word joiner follows each hyphen, so "rounds 26-30" never breaks at its hyphen when the tag wraps.
+    const tags = (scope: ElementPort) => scope.byClass("d1p-phase").map(node => node.textContent?.replace(/-\u2060/g, "-"));
+    expect(p.body.byClass("d1p-phase").every(node => !/-(?!\u2060)/.test(node.textContent ?? ""))).toBe(true);
     const [liveTable, recTable] = p.body.byClass("d1p-wide");
     const [liveList, recList] = p.body.byClass("d1p-narrow");
     const rows = (scope: ElementPort) => scope.querySelector("tbody")!.querySelectorAll("tr");

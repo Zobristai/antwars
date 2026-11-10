@@ -264,8 +264,9 @@ function rowParts(doc: Document) {
   };
   /** The one six-column grid every Matches list stands on. */
   const matchGrid = (table: HTMLTableElement) => columns(table, MATCH_COLUMNS);
-  /** A Model Index match's harness phase tags (ui/format.ts harnessPhaseTags), in the match-type badge's style. */
-  const phaseTags = (tags: readonly string[]) => tags.map(tag => h(doc, "span", "d1p-tag d1p-type d1p-phase", tag));
+  /** A Model Index match's harness phase tags (ui/format.ts harnessPhaseTags), in the match-type badge's style. A tag wraps
+   * at its spaces inside its column (archive.css .d1p-phase); a word joiner after each hyphen keeps "11-25" whole. */
+  const phaseTags = (tags: readonly string[]) => tags.map(tag => h(doc, "span", "d1p-tag d1p-type d1p-phase", tag.replace(/-/g, "-\u2060")));
   return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, colonyList, phaseTags };
 }
 
