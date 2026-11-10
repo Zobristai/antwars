@@ -11,18 +11,31 @@
 # identifier rules and once with the default rules. Each finding is reported only as its scan,
 # rule, commit, line and the sha256 of its path (CONTRIBUTING.md says how to find the file).
 #
-# Needs Node.js 24, git, python3, coreutils and network access. The identifier list stays outside
-# the repository, at <git-common-dir>/antwars-identifiers; without it the script refuses to run.
+# Runs on Linux x86-64 only: every download below is the linux-x64 build. Needs Node.js 24, git,
+# python3, coreutils and network access. The identifier list stays outside the repository, at
+# <git-common-dir>/antwars-identifiers; without it the script refuses to run.
 #
-# Tools: gitleaks 8.30.1, firebase-tools 15.35.0 (the standalone release binary) and an Eclipse
-# Temurin Java 21 runtime, each a release file pinned by SHA-256. Downloads are kept in
-# ANTWARS_CI_CACHE (an absolute path outside the checkout; default
-# ${XDG_CACHE_HOME:-$HOME/.cache}/antwars-ci). On every run each one is copied into a private
-# temporary directory and checked against its SHA-256 there before it is unpacked or run.
+# Tools, each a release file pinned by SHA-256: gitleaks 8.30.1, firebase-tools 15.35.0 (the
+# standalone release binary, not an npm install), an Eclipse Temurin Java 21 runtime, and the
+# browsers the browser tests launch, at the builds playwright-core 1.61.1 uses: Chrome for
+# Testing and Chrome Headless Shell 149.0.7827.55, and WebKit 26.5 (Playwright build 2311, made
+# for Ubuntu 24.04). Downloads are kept in ANTWARS_CI_CACHE (an absolute path outside the
+# checkout; default ${XDG_CACHE_HOME:-$HOME/.cache}/antwars-ci). On every run each one is copied
+# into a private temporary directory and checked against its SHA-256 there before it is unpacked
+# or run.
+#
+# WebKit also needs system libraries. Any that are not installed are fetched without root on
+# Ubuntu 24.04: apt, with a private state directory, reads the Ubuntu archive snapshot of
+# 2026-11-01, checks its signature with the system's Ubuntu archive keyring and each package
+# against the signed index, and the packages are unpacked into the temporary directory (no
+# package scripts run) for WebKit alone. Cached packages are checked against the signed index on
+# every run. On another distribution, install them first as root with
+# `npx playwright-core install-deps webkit`.
 set -euo pipefail
 umask 077
 
 fail() { echo "full-suite: $*" >&2; exit 1; }
+[ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || fail "this script runs on Linux x86-64 only."
 for tool in git node python3 sha256sum realpath tar; do
   command -v "$tool" > /dev/null || fail "$tool is not installed."
 done
@@ -111,6 +124,134 @@ tar -xzf "$jre" -C "$d/tools/jre"
 export JAVA_HOME="$d/tools/jre/jdk-21.0.13+9-jre"
 export PATH="$d/tools/bin:$JAVA_HOME/bin:$PATH"
 rm -f -- "$gl" "$jre"
+
+# unzip_to <zip> <directory>: unpacks with file modes, refusing absolute or parent paths and
+# symlinks that point outside the directory.
+unzip_to() {
+  python3 -I - "$1" "$2" <<'PY'
+import os, sys, zipfile
+src, dest = sys.argv[1], os.path.realpath(sys.argv[2])
+with zipfile.ZipFile(src) as zf:
+    for i in zf.infolist():
+        parts = i.filename.rstrip("/").split("/")
+        if i.filename.startswith("/") or any(p in ("", ".", "..") for p in parts):
+            sys.exit("full-suite: unsafe path in " + os.path.basename(src))
+        out = os.path.join(dest, *parts)
+        mode = i.external_attr >> 16
+        if i.filename.endswith("/"):
+            os.makedirs(out, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        if mode & 0o170000 == 0o120000:
+            target = zf.read(i).decode()
+            resolved = os.path.realpath(os.path.join(os.path.dirname(out), target))
+            if os.path.isabs(target) or not resolved.startswith(dest + os.sep):
+                sys.exit("full-suite: unsafe symlink in " + os.path.basename(src))
+            os.symlink(target, out)
+            continue
+        with zf.open(i) as r, open(out, "xb") as w:
+            while chunk := r.read(1 << 20):
+                w.write(chunk)
+        os.chmod(out, (mode & 0o700) or 0o600)
+PY
+}
+
+# Browsers, at the builds playwright-core 1.61.1 (package-lock.json) uses.
+cft=$(pinned https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/linux64/chrome-linux64.zip \
+  13113b963ac22fffdad898a677591028e4397c46c1daa9e61811258eed6e35b5 chrome-for-testing-149.0.7827.55-linux64.zip)
+unzip_to "$cft" "$d/tools/chrome"
+shell=$(pinned https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip \
+  410c9407d5de3fea80d9398666be06f2aa09154a3fa7b327dc254e336bb4c4b7 chrome-headless-shell-149.0.7827.55-linux64.zip)
+unzip_to "$shell" "$d/tools/chrome-headless-shell"
+wk=$(pinned https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit/2311/webkit-ubuntu-24.04.zip \
+  b15753f528e990ca941cbd6d0c61a5dac09abcf04cbd8969ea077f1901aeac92 webkit-2311-ubuntu-24.04.zip)
+unzip_to "$wk" "$d/tools/browsers/webkit-2311"
+rm -f -- "$cft" "$shell" "$wk"
+export CHROME_BIN="$d/tools/chrome/chrome-linux64/chrome"
+export HEADLESS_SHELL="$d/tools/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell"
+export PLAYWRIGHT_BROWSERS_PATH="$d/tools/browsers"
+
+# WebKit's system libraries: the packages its build lists that are not installed, with their
+# dependencies, from the pinned Ubuntu snapshot (see the top of this file).
+wpe="$d/tools/browsers/webkit-2311/minibrowser-wpe"
+missing=$(bash "$wpe/install-dependencies.sh" --printonly 2>&1 | sed -n 's/^Need to install the following extra packages: *//p')
+if [ -n "$missing" ]; then
+  os=$(. /etc/os-release && echo "${ID:-}-${VERSION_ID:-}")
+  [ "$os" = ubuntu-24.04 ] && command -v apt-get > /dev/null && command -v dpkg-deb > /dev/null &&
+    [ -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ] ||
+    fail "WebKit needs system packages that are not installed: $missing. Install them as root (npx playwright-core install-deps webkit), or run on Ubuntu 24.04, where this script fetches them."
+  apt="$d/apt"
+  mkdir -p -- "$apt/lists/partial" "$apt/archives/partial" "$apt/sources" "$apt/prefs" "$apt/dl" "$apt/debs" "$cache/debs"
+  cat > "$apt/sources/noble.sources" << 'EOF'
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/20261101T000000Z
+Suites: noble noble-updates noble-security
+Components: main universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+  aptopts=(-o "Dir::State=$apt" -o Dir::State::status=/var/lib/dpkg/status -o "Dir::Cache=$apt"
+    -o Dir::Etc::sourcelist=/dev/null -o "Dir::Etc::sourceparts=$apt/sources" -o "Dir::Etc::preferencesparts=$apt/prefs"
+    -o "APT::Sandbox::User=$(id -un)" -o Debug::NoLocking=1 -o Acquire::Languages=none)
+  apt-get "${aptopts[@]}" -qq update > /dev/null
+  # Packages to unpack: only those not installed at all (upgrades of installed ones are skipped).
+  # shellcheck disable=SC2086
+  apt-get "${aptopts[@]}" -s --no-install-recommends install $missing 2> /dev/null |
+    sed -n 's/^Inst \([^ ]*\) (\([^ ]*\) .*/\1=\2/p' > "$apt/specs"
+  [ -s "$apt/specs" ] || fail "could not resolve WebKit's system packages from the Ubuntu snapshot."
+  # Each package's SHA-256 from the signed index, as "<sha256> <package>=<version>".
+  # shellcheck disable=SC2046
+  apt-cache "${aptopts[@]}" show $(cat "$apt/specs") |
+    awk '/^Package: /{p=$2} /^Version: /{v=$2} /^SHA256: /{print $2, p "=" v}' | sort -u > "$apt/sums"
+  [ "$(wc -l < "$apt/sums")" = "$(wc -l < "$apt/specs")" ] || fail "the Ubuntu snapshot index does not list every WebKit system package once."
+  # use_cached: copies every cached package into the temporary directory and checks it there;
+  # prints the packages still missing or mismatched.
+  use_cached() {
+    local sum spec
+    while read -r sum spec; do
+      [ -f "$apt/debs/$sum.deb" ] && continue
+      if [ -f "$cache/debs/$sum.deb" ] && [ ! -L "$cache/debs/$sum.deb" ]; then
+        cp -- "$cache/debs/$sum.deb" "$apt/debs/$sum.deb"
+        echo "$sum  $apt/debs/$sum.deb" | sha256sum -c --quiet - > /dev/null 2>&1 && continue
+        rm -f -- "$cache/debs/$sum.deb" "$apt/debs/$sum.deb"
+      fi
+      echo "$spec"
+    done < "$apt/sums"
+  }
+  need=$(use_cached)
+  if [ -n "$need" ]; then
+    # apt checks each download against the signed index; it is filed in the cache by its SHA-256.
+    # shellcheck disable=SC2086
+    (cd "$apt/dl" && apt-get "${aptopts[@]}" -qq download $need > /dev/null)
+    for f in "$apt/dl"/*.deb; do
+      sum=$(sha256sum -- "$f" | cut -d' ' -f1)
+      mv -- "$f" "$cache/debs/$sum.deb.$$" && mv -- "$cache/debs/$sum.deb.$$" "$cache/debs/$sum.deb"
+    done
+    [ -z "$(use_cached)" ] || fail "a WebKit system package does not match the Ubuntu snapshot's signed index."
+  fi
+  lib="$d/tools/webkit-deps"
+  mkdir -- "$lib"
+  for f in "$apt/debs"/*.deb; do dpkg-deb -x "$f" "$lib"; done
+  rm -rf -- "$apt"
+  # WebKit's own launcher sets its library path; this one adds the unpacked libraries for WebKit
+  # alone. Playwright cannot see them, so its host check is skipped.
+  multiarch="$lib/usr/lib/x86_64-linux-gnu"
+  cat > "$wpe/MiniBrowser" << EOF
+#!/bin/sh
+MYDIR="$wpe"
+export WEBKIT_EXEC_PATH="\${MYDIR}/bin"
+export WEBKIT_INJECTED_BUNDLE_PATH="\${MYDIR}/lib"
+export WEBKIT_INSPECTOR_RESOURCES_PATH="\${MYDIR}/share"
+export LD_LIBRARY_PATH="\${MYDIR}/lib:\${MYDIR}/sys/lib:$multiarch"
+export GST_PLUGIN_SYSTEM_PATH="$multiarch/gstreamer-1.0"
+export GST_REGISTRY="$d/tools/gstreamer-registry.bin"
+export GIO_EXTRA_MODULES="$multiarch/gio/modules"
+export LIBGL_DRIVERS_PATH="$multiarch/dri"
+export __EGL_VENDOR_LIBRARY_DIRS="$lib/usr/share/glvnd/egl_vendor.d"
+exec "\${MYDIR}/bin/MiniBrowser" "\$@"
+EOF
+  chmod 700 -- "$wpe/MiniBrowser"
+  export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
+fi
 
 # The scans.
 list="$common/antwars-identifiers"
