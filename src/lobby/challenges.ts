@@ -44,6 +44,7 @@ import { lobbyWaitWrites, replacedWaitWrites, waitIndexes } from "./waits.js";
  *   challengeAllowance/{YYYY-MM-DD} { requests }  ids of requests admitted with a place that day, pruned of released ones
  *   challengeOwners/{ownerId}       { requestId }  the owner's latest request: one active challenge per owner
  *   challengeChallengers/{id}       { requestId }  the identity's latest request, for challenge_status without an id
+ *                                     and the live_challenge refusal of queue and lobby joins (liveChallenge)
  *   challengeAvailability/{handle}  { marked ("" | "unavailable"), lastLaunch ("" | launched | failed), failureReason },
  *                                     written only by launched and failed reports and set_challenge_availability
  */
@@ -257,6 +258,20 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     }
   }
 
+  /**
+   * The lobby id of identityId's latest challenge while that lobby is live (isLive, the rule active_challenge uses),
+   * else undefined. Read in the caller's transaction: the challenger pointer it reads is the one requestChallenge
+   * writes, so a join that checks it and a concurrent request for the same identity cannot both commit.
+   */
+  async function liveChallenge(read: TransactionRead, identityId: string, at: number): Promise<string | undefined> {
+    const requestId = (await read([challengerPath(identityId)])).get(challengerPath(identityId))?.requestId;
+    if (!requestId) return undefined;
+    const lobbyId = (await read([requestPath(requestId)])).get(requestPath(requestId))?.lobbyId;
+    if (!lobbyId) return undefined;
+    const lobby = (await read([lobbyPath(lobbyId)])).get(lobbyPath(lobbyId));
+    return lobby && isLive(lobby, at, rules) ? lobbyId : undefined;
+  }
+
   /** The challenger's lobby wait record and seat key, its index, and the removal of its previous challenge record. */
   async function challengeWaitWrites(read: TransactionRead, waitToken: string, lobbyId: string, builderId: string, limit: number): Promise<Write[]> {
     const indexes = waitIndexes(read);
@@ -444,7 +459,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     });
   }
 
-  return { requestChallenge, listOpponents, listOpponentsFor, setAvailability, reportLaunch, status };
+  return { requestChallenge, liveChallenge, listOpponents, listOpponentsFor, setAvailability, reportLaunch, status };
 }
 
 export type ChallengeSteps = ReturnType<typeof createChallengeSteps>;

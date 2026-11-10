@@ -197,7 +197,9 @@ export type LobbyRefusal =
   /** A house challenge's held seat, taken by an identity other than its handle. */
   | "seat_held"
   /** A leave by an identity with no seat in the lobby, or of a lobby that does not exist. */
-  | "not_seated";
+  | "not_seated"
+  /** A queue or lobby join by an identity whose latest challenge's lobby is live (another lobby, for a lobby join). */
+  | "live_challenge";
 export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal };
 
 export interface CreatedLobby {
@@ -910,6 +912,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
           return { result: refuse("invalid_invite"), writes: [] };
         }
         if (isExpired(fields, at)) return { result: refuse("expired"), writes: [] };
+        // A live challenge keeps its builder out of every other lobby; its own lobby keeps the rules below.
+        const challengeLobby = await challenges.liveChallenge(read, joiner.id, at);
+        if (challengeLobby !== undefined && challengeLobby !== lobbyId) return { result: refuse("live_challenge"), writes: [] };
         const seats = seatsOf(lobbyId, fields);
         const seated = (colony: Colony) => seats.filter((seat) => seat.colony === colony).length;
         // A house challenge's held seat is its handle's alone; that handle may hold it beside its own
@@ -1123,6 +1128,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!joiner) return refuse("unknown_key");
       return store.transaction(async (read) => {
         const at = now();
+        // Refused before any queue or wait write: a live challenge keeps its builder out of the queue.
+        if (await challenges.liveChallenge(read, joiner.id, at) !== undefined) return { result: refuse("live_challenge"), writes: [] };
         const indexes = waitIndexes(read);
         const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, indexes, waitToken);
         if (!step.result.ok) return step;
