@@ -205,6 +205,25 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
+  it("shows no public match note: a noted match's Recordings card is drawn exactly as it is without the note", async () => {
+    const NOTE = "Self-reported scripted-play breach: one accepted command, at tick 6556";
+    const shape = (node: ElementPort): unknown => [node.tag, node.className, (node as unknown as { href?: string }).href ?? "",
+      node.children.length === 0 ? node.textContent : node.children.map(shape)];
+    const drawn = async (recordings: Recording[]) => {
+      const p = landing({ matches: () => new Response(JSON.stringify({ matches: recordings, nextPageToken: null })) });
+      await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));
+      const card = p.card("Recordings")!;
+      const seen = { text: card.textContent, notes: card.byClass("d1p-note").length, shape: shape(card) };
+      p.dispose();
+      return seen;
+    };
+    const plain = await drawn([saved(3), saved(2)]);
+    const noted = await drawn([{ ...saved(3), note: NOTE } as Recording, saved(2)]);
+    expect(noted.text).not.toContain(NOTE);
+    expect(noted.notes).toBe(0);
+    expect(noted.shape).toEqual(plain.shape);
+  });
+
   it("gives each recording's Replay the site's cyan primary button, as the Matches page does", async () => {
     const p = landing({ matches: () => new Response(JSON.stringify({ matches: [saved(3), saved(2)], nextPageToken: null })) });
     await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));
