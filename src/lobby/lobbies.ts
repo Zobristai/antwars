@@ -718,7 +718,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const state = queueWait(entry, wait.joinedAt, at);
       if (state.state !== "paired") return { result: { state }, writes: isFinal(state) ? endedWrite(token, wait, at) : [] };
       const lobby = (await read([lobbyPath(state.lobbyId)])).get(lobbyPath(state.lobbyId));
-      return { result: { state }, writes: [repointWrite(token, state.lobbyId, lobby ? lobbyLimit(lobby) : at)] };
+      return { result: { state }, writes: [repointWrite(token, state.lobbyId, wait.identityId, lobby ? lobbyLimit(lobby) : at)] };
     });
   }
 
@@ -735,7 +735,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     if (wait?.kind !== "queue" || wait.joinedAt !== entry.joinedAt) return [];
     if (entry.state === "matched" && entry.lobbyId) {
       const lobby = (await read([lobbyPath(entry.lobbyId)])).get(lobbyPath(entry.lobbyId));
-      return [repointWrite(token, entry.lobbyId, lobby ? lobbyLimit(lobby) : at)];
+      return [repointWrite(token, entry.lobbyId, identityId, lobby ? lobbyLimit(lobby) : at)];
     }
     return [{ op: "delete", path: waitPath(token) }];
   }

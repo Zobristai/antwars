@@ -19,7 +19,7 @@ import type { Lobby } from "./lobbies.js";
  * A queue wait whose entry a later join replaces, or leave_queue deletes, is removed with it (Lobbies.joinQueue/leaveQueue).
  * A queue wait found paired is re-pointed, once, to a lobby wait on the paired lobby (Lobbies.waitStatus), so
  * the token keeps following that lobby after the identity leaves or rejoins the queue:
- *                  { kind: "lobby", lobbyId, paired: "true" }
+ *                  { kind: "lobby", lobbyId, identityId, paired: "true" }  identityId: the queued identity, kept
  * Its states then carry lobbyId, so an agent that never received paired still learns its queue lobby. The id
  * of a lobby joined directly is never sent: that lobby may be private. A record's identityId is stored only:
  * every state is built from the queue entry or the lobby, never from record fields, so it is never sent.
@@ -75,11 +75,11 @@ export function waitWrite(token: string, record: WaitRecord, limit: number): Wri
 }
 
 /**
- * Turns a stored queue wait into a lobby wait on the lobby its entry was paired with, in the caller's transaction;
- * lobbyLimit is that lobby's own limit.
+ * Turns a stored queue wait into a lobby wait on the lobby its entry was paired with, in the caller's transaction,
+ * keeping identityId, the identity that holds the token; lobbyLimit is that lobby's own limit.
  */
-export function repointWrite(token: string, lobbyId: string, lobbyLimit: number): Write {
-  return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, paired: "true", identityId: "", joinedAt: "", expiresAt: expiryField(lobbyLimit + WAIT_GRACE_MS) } };
+export function repointWrite(token: string, lobbyId: string, identityId: string, lobbyLimit: number): Write {
+  return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, paired: "true", identityId, joinedAt: "", expiresAt: expiryField(lobbyLimit + WAIT_GRACE_MS) } };
 }
 
 /** The write lowering a record read final at `at` to expire WAIT_GRACE_MS later, or none when it already does by then. */
