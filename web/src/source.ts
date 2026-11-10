@@ -233,8 +233,8 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   };
   // Without the server's answer, a replay is typed by the rule the Matches listing applies to a recording with no lobby
   // link (recordedMatchType): from its Model Index marker, else from its stored record. A Model Index match takes its
-  // phase from its recorded start. Until that record is read, or where it cannot be, a replay that may be a Model Index
-  // match by what has played reads unknown.
+  // phase from its recorded start. Until that record is read, where it cannot be, or where it cannot decide, a replay
+  // that may be a Model Index match by what has played reads unknown; only a definite other type shows none.
   const phaseOf = (head: StreamMessage, replayId: string | null): readonly string[] => {
     if (phaseTags !== null) return phaseTags ?? [];
     if (!head.full || replayId === null) return [];
@@ -242,7 +242,9 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     const started = replayDate(replayId);
     const atStart = () => harnessPhaseTags(harnessPhaseAt(started === null ? null : Date.parse(started)));
     if (modelIndex === true) return atStart();
-    if (recorded) return recordedMatchType(recorded)?.kind === "index" ? atStart() : [];
+    // A stored record that cannot decide the match type (an unavailable record, a blank seat handle) counts as unread.
+    const stored = recorded ? recordedMatchType(recorded) : null;
+    if (stored) return stored.kind === "index" ? atStart() : [];
     const played = recordedMatchType({ rated: rated === true, seats: [...seats.values()] });
     return played === null || played.kind === "index" ? harnessPhaseTags(harnessPhaseAt(null)) : [];
   };

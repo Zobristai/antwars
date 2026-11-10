@@ -272,7 +272,8 @@ it("keeps incremental replay precedence, bounded catch-up and the recording cloc
 
 // A replay with no lobby link: its opening snapshot's rated flag and Model Index marker, the seats that join after it,
 // and its stored record (GET /matches/<id>), readable or not.
-type Opening = { rated: boolean; modelIndex: boolean; handles: readonly string[]; record: "readable" | "unreadable" };
+// "unavailable" is a readable record with no setup and no seats; "blank handle" a rated record with one seat handle blank.
+type Opening = { rated: boolean; modelIndex: boolean; handles: readonly string[]; record: "readable" | "unreadable" | "unavailable" | "blank handle" };
 const PHASE = ["Harness: rounds 1-7", "Possible effort mismatch"], UNKNOWN = ["Harness phase unknown"];
 const replayWith = (answered: boolean, opening: Opening) => {
   const id = "2026-10-26T01-38-33-692Z-1";
@@ -284,14 +285,16 @@ const replayWith = (answered: boolean, opening: Opening) => {
     .map(m => encodePublicMessage(m));
   const record = { format: "antwar.match", version: 1, id, result: { tick: messages.at(-1)!.tick - 1 },
     setup: { rated: opening.rated, ...(opening.modelIndex ? { modelIndex: true } : {}) },
-    seats: opening.handles.map((name, seat) => ({ seat, colony: seat % 2, modelLabel: null, handle: name.replace(/ #\d+$/, "") })) };
-  vi.stubGlobal("fetch", async (path: string) => {
+    seats: opening.handles.map((name, seat) => ({ seat, colony: seat % 2, modelLabel: null,
+      handle: opening.record === "blank handle" && seat === 0 ? null : name.replace(/ #\d+$/, "") })) };
+  const stored = opening.record === "unavailable" ? { ...record, status: "unavailable", setup: null, seats: [] } : record;
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
     if (path.startsWith("/watch/ratings/")) return answered
       ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } })
       : new Response(null, { status: 404 });
-    if (path.startsWith("/matches/")) return opening.record === "readable" ? Response.json(record) : new Response(null, { status: 500 });
+    if (path.startsWith("/matches/")) return opening.record === "unreadable" ? new Response(null, { status: 500 }) : Response.json(stored);
     return new Response(new Uint8Array(packMessages(replayPackets)));
-  });
+  }));
   return openSource(new URLSearchParams({ replay: id }), { now: () => 0 }, documentPort().doc, vi.fn());
 };
 /** Plays the whole recording, then seeks back to its start, before any seat joined. */
@@ -332,11 +335,14 @@ it("types a lobby-less recording without the marker from its stored record, as t
   } finally { source.close(); }
 });
 
-it("reads unknown for that recording when its stored record cannot be read, from the first frame and after a seek back", async () => {
-  const source = (await replayWith(false, { ...legacy, record: "unreadable" }))!;
+it.each(["unreadable", "unavailable", "blank handle"] as const)("reads unknown for that recording when its stored record is %s, from the first frame and after a seek back", async record => {
+  const source = (await replayWith(false, { ...legacy, record }))!;
   try {
     expect(source.harnessPhase).toEqual(UNKNOWN);
     await playThenSeekBack(source);
+    // Both reads of the stored record (end tick, then type) have answered, and the label stays.
+    await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([path]) => String(path).startsWith("/matches/"))).toHaveLength(2));
+    await new Promise(resolve => setImmediate(resolve));
     expect(source.harnessPhase).toEqual(UNKNOWN);
   } finally { source.close(); }
 });
