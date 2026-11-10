@@ -268,15 +268,26 @@ it("keeps incremental replay precedence, bounded catch-up and the recording cloc
   } finally { source.close(); }
 });
 
+// A replay's opening snapshot: its setup's rated flag and Model Index marker. Its agents join after it, as in a recording.
+type Opening = { rated: boolean; modelIndex: boolean; handles: readonly string[] };
+const marked: Opening = { rated: true, modelIndex: true, handles: ["antwars/a", "antwars/b"] };
 it.each([
-  ["the server's phase when its stored record answers", true, false, ["Harness: rounds 26-30"]],
-  ["the recording's own Model Index marker and start when the server cannot answer", false, true, ["Harness: rounds 1-7", "Possible effort mismatch"]],
-  ["no phase when the server cannot answer and the recording carries no Model Index marker", false, false, []],
-] as const)("a replay's harness phase: %s", async (_, answered, marked, expected) => {
+  ["the server's phase when its stored record answers", true, { rated: true, modelIndex: false, handles: [] }, ["Harness: rounds 26-30"]],
+  ["the recording's own Model Index marker and start when the server cannot answer", false, marked, ["Harness: rounds 1-7", "Possible effort mismatch"]],
+  ["a rated recording without the marker whose every seat is an antwars one, as the listing types it", false,
+    { rated: true, modelIndex: false, handles: ["antwars/a #1", "antwars/b"] }, ["Harness: rounds 1-7", "Possible effort mismatch"]],
+  ["no phase for a rated recording without the marker with any other seat handle", false,
+    { rated: true, modelIndex: false, handles: ["antwars/a", "alice/bot"] }, []],
+  ["no phase for an unrated recording without the marker", false, { rated: false, modelIndex: false, handles: ["antwars/a", "antwars/b"] }, []],
+] as const)("a replay's harness phase: %s", async (_, answered, opening: Opening, expected) => {
+  // A replay's start is its id's: a link whose id is not a readable time opens no replay at all.
   const id = "2026-10-26T01-38-33-692Z-1";
-  const first = decodeMessage(packets[0]!);
-  const setup = marked ? { ...first.full!.setup, houseIdleTicks: 600, modelIndex: true as const } : first.full!.setup;
-  const replayPackets = [encodePublicMessage({ ...first, full: { ...first.full!, setup } }), ...packets.slice(1)];
+  const [first, second, ...rest] = packets.map(decodeMessage);
+  const setup = { ...first!.full!.setup, rated: opening.rated, houseIdleTicks: 600, ...(opening.modelIndex ? { modelIndex: true as const } : {}) };
+  const joins = opening.handles.map((displayName, agent) =>
+    ({ kind: "join" as const, agent, colony: (agent % 2) as 0 | 1, modelLabel: "", identity: { displayName, elo: 1500 } }));
+  const replayPackets = [{ ...first!, full: { ...first!.full!, setup, agents: [] } }, { ...second!, events: [...joins, ...second!.events] }, ...rest]
+    .map(m => encodePublicMessage(m));
   vi.stubGlobal("fetch", async (path: string) => {
     if (path.startsWith("/watch/ratings/")) return answered
       ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } })
@@ -286,7 +297,14 @@ it.each([
   });
   const source = (await openSource(new URLSearchParams({ replay: id }), { now: () => 0 }, documentPort().doc, vi.fn()))!;
   try {
-    await vi.waitFor(() => expect(source.harnessPhase).toEqual(expected));
+    let at = 0;
+    await vi.waitFor(() => {
+      source.take(at += 1000);
+      expect(source.harnessPhase).toEqual(expected);
+      // Every seat has joined: the answer is final, not a reading taken before the joins arrived.
+      expect(source.recording!.complete).toBe(true);
+    });
+    expect(source.harnessPhase).toEqual(expected);
   } finally { source.close(); }
 });
 

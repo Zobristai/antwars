@@ -8,6 +8,7 @@ import { encodePublicMessage } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
+import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
 import { cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
@@ -240,6 +241,20 @@ describe("Model Index Recordings carry their harness phase", () => {
       const { harnessPhase: _, matchType: __, ...rest } = match;
       expect(rest).toEqual(rows[index]);
     });
+  });
+
+  it("labels a recording without the Model Index marker or a lobby by the shared rule: rated with every seat an antwars one", async () => {
+    // The same rule (recordedMatchType) types a replay whose lobby cannot be read (web/src/source.ts).
+    const legacy = "2026-10-26T01-38-33-692Z-1", unrated = "2026-10-26T02-00-00-000Z-1", noTime = "2026-10-26T03-00-00-000Z-1";
+    const rows = [started(legacy, "2026-10-26T01:38:33.692Z"), started(unrated, "2026-10-26T02:00:00.000Z", { rated: false }),
+      started(noTime, "not a time")];
+    const listed = await recordingMatchTypes(undefined)(page(...rows));
+    expect(listed.matches.map(match => [match.matchType?.kind, match.harnessPhase])).toEqual([
+      ["index", { phase: "rounds 1-7", possibleEffortMismatch: true }],
+      ["unrated", undefined],
+      ["index", { phase: "unknown", possibleEffortMismatch: null }],
+    ]);
+    expect(recordedMatchType({ rated: true, seats: [{ colony: 0, handle: HOUSE }, { colony: 1, handle: HOUSE_FAST }] })).toEqual({ kind: "index", size: 1 });
   });
 
   it("serves the phase on GET /matches", async () => {

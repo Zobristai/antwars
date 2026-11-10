@@ -13,6 +13,7 @@ import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.t
 import { restateRatings, storedReplayFacts } from "./replay-ratings.ts";
 import { harnessPhaseTags } from "./ui/format.ts";
 import { harnessPhaseAt } from "../../src/rating/harnessPhase.ts";
+import { recordedMatchType, seatHandle, type RecordedMatch } from "../../src/replays/recorded-match-type.ts";
 import { liveStarting } from "./waiting.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
@@ -192,11 +193,20 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     phaseTags = facts.answered ? harnessPhaseTags(facts.harnessPhase) : null;
     return facts.ratings && restateRatings(facts.ratings);
   });
-  // Without the server's answer, a recording marked as a Model Index match takes its phase from its recorded start, as
-  // the Matches listing does for a recording with no lobby link.
+  // A recording's seats as played so far, by agent: its snapshots' agents and its join events, each seat's handle read
+  // as the record writer reads it (seatHandle). A recording's agents join after its opening snapshot.
+  const seats = new Map<number, RecordedMatch["seats"][number]>();
+  const seatsOf = (m: StreamMessage) => {
+    if (m.full) { seats.clear(); m.full.agents.forEach((agent, i) => seats.set(i, { colony: agent.colony, handle: seatHandle(agent.identity) })); }
+    for (const event of m.events) if (event.kind === "join") seats.set(event.agent, { colony: event.colony, handle: seatHandle(event.identity) });
+  };
+  // Without the server's answer, a recording its own setup and seats type as a Model Index match takes its phase from its
+  // recorded start, by the rule the Matches listing applies to a recording with no lobby link (recordedMatchType).
   const phaseOf = (head: StreamMessage, replayId: string | null): readonly string[] => {
     if (phaseTags !== null) return phaseTags ?? [];
-    if (head.full?.setup.modelIndex !== true || replayId === null) return [];
+    if (!head.full || replayId === null) return [];
+    const { rated, modelIndex } = head.full.setup;
+    if (recordedMatchType({ rated: rated === true, modelIndex: modelIndex === true, seats: [...seats.values()] })?.kind !== "index") return [];
     const started = replayDate(replayId);
     return harnessPhaseTags(harnessPhaseAt(started === null ? null : Date.parse(started)));
   };
@@ -387,6 +397,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       take(realMs) {
         if (recording) {
           const arrivals = recording.take(realMs).map(arrival => ({ ...arrival, kind: "recorded" as const }));
+          for (const arrival of arrivals) seatsOf(arrival.m);
           shown = arrivals.at(-1)?.m.tick ?? shown;
           if (fallback && shown >= recording.lastTick) reload();
           return arrivals;

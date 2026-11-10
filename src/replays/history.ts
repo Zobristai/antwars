@@ -1,7 +1,8 @@
 import { Worker } from "node:worker_threads";
 import { gunzipSync } from "node:zlib";
-import { decodeMessage, type StreamIdentity, type StreamMessage, type StreamEvent, type StreamResult, type StreamSetup } from "../live/format.js";
+import { decodeMessage, type StreamMessage, type StreamEvent, type StreamResult, type StreamSetup } from "../live/format.js";
 import { isReplayId } from "./access.js";
+import { seatHandle } from "./recorded-match-type.js";
 import { parseLog, terminalAt, type ParsedLog } from "../sim/log.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
 import { createMatch } from "../sim/map.js";
@@ -138,12 +139,6 @@ function* messagesOf(binary: Uint8Array): Generator<StreamMessage> {
 }
 
 /** Decode recorded facts only. Stream versions select their own decoder; no current sim rules run. */
-/** "name #seat" is one identity holding several seats (web/src/compose.ts SEAT); the handle is the name alone. */
-const SEAT_SUFFIX = /^(.+) #\d+$/;
-function handleOf(identity: StreamIdentity | undefined): string | null {
-  if (identity === undefined) return null;
-  return SEAT_SUFFIX.exec(identity.displayName)?.[1] ?? identity.displayName;
-}
 
 export function binaryRecord(input: HistoryInput): MatchRecord {
   const record = unavailableRecord(input.id, "");
@@ -161,7 +156,7 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
       record.setup = setup;
       record.result = message.full.result;
       record.seats = message.full.agents.map((agent, seat) => ({ seat, colony: agent.colony, modelLabel: agent.modelLabel || null, thinkingLevel: agent.thinkingLevel ?? null,
-        serviceTier: agent.serviceTier ?? null, handle: handleOf(agent.identity),
+        serviceTier: agent.serviceTier ?? null, handle: seatHandle(agent.identity),
         joinedTick: agent.joinTick, commands: [] }));
     }
     previous = message.tick;
@@ -170,7 +165,7 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
       if (event.kind === "join") {
         if (event.agent !== record.seats.length) throw new Error("replay seat sequence is invalid");
         record.seats.push({ seat: event.agent, colony: event.colony, modelLabel: event.modelLabel || null, thinkingLevel: event.thinkingLevel ?? null,
-          serviceTier: event.serviceTier ?? null, handle: handleOf(event.identity), joinedTick: tick, commands: [] });
+          serviceTier: event.serviceTier ?? null, handle: seatHandle(event.identity), joinedTick: tick, commands: [] });
       }
       if (event.kind === "call") {
         const seat = record.seats[event.agent];

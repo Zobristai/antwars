@@ -4,10 +4,10 @@ import { peek } from "../net/relay.js";
 import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
 import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
-import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { RankedMode } from "../rating/ratings.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
+import { recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -86,22 +86,15 @@ export function cachedLobbyLookup(lookup: RecordingLobbyLookup): RecordingLobbyL
   };
 }
 
-/** What kind of match a recording was; the web words it (web/src/ui/format.ts), so no mode slug is ever shown. */
-export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" | "unrated";
-/** A recording's match type and agents per colony; size null where neither the lobby nor recorded seats tell it. */
-export interface RecordingMatchType { readonly kind: RecordingMatchKind; readonly size: 1 | 2 | 3 | 4 | null }
+export type { RecordingMatchKind, RecordingMatchType } from "./recorded-match-type.js";
 /** harnessPhase is present only on a Model Index row (src/rating/harnessPhase.ts). */
 export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null; readonly harnessPhase?: HarnessPhase };
-
-const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.startsWith(`${HOUSE_USERNAME}/`);
 
 /**
  * A recording's match type, from its lobby where one was read (undefined: pending or failed this listing; null: it has
  * none). Lobby: a house-* mode is the Antwars Model Index, any other mode the ranked queue, a modeless lobby a house
- * challenge or else a player-made (unranked) lobby. Without a lobby, the record's own setup: its Model Index marker, then
- * unrated; rated with every seat handle an antwars one is the Index, rated with any other handle is Ranked. Null (no
- * badge) where that cannot be told: a rated record with no marker, no non-house handle and a blank handle (never
- * "Ranked" on the rated flag alone), and a record with no setup, whose rated flag is unknown.
+ * challenge or else a player-made (unranked) lobby. Without a lobby, the record's own facts (recordedMatchType), the
+ * same rule a replay applies to its opening snapshot.
  */
 export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" | "modelIndex">,
   lobby: RecordingLobby | null | undefined): RecordingMatchType | null {
@@ -110,15 +103,7 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
       : lobby.challenge?.kind === "house" ? "challenge" : "unranked";
     return { kind, size: lobby.size };
   }
-  const perColony = Math.max(...([0, 1] as const).map(colony => row.seats.filter(seat => seat.colony === colony).length));
-  const size = perColony >= 1 && perColony <= 4 ? perColony as 1 | 2 | 3 | 4 : null;
-  if (row.rated == null) return null;
-  if (row.modelIndex) return { kind: "index", size };
-  if (!row.rated) return { kind: "unrated", size };
-  const handles = row.seats.map(seat => seat.handle);
-  if (handles.some(handle => handle !== null && !isHouseHandle(handle))) return { kind: "ranked", size };
-  if (handles.length > 0 && handles.every(handle => handle !== null)) return { kind: "index", size };
-  return null;
+  return recordedMatchType(row);
 }
 
 /**
