@@ -463,8 +463,10 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect(await w.lobbies.sweepWaits()).toBe(0);
     // Within the challenge's 15-minute limit, but past the grace after it was read ended.
     w.clock.t += 2;
-    expect(await w.lobbies.sweepWaits()).toBe(1);
+    // The record and its seat key, lowered together when it was first read final.
+    expect(await w.lobbies.sweepWaits()).toBe(2);
     expect(await w.store.get(`waits/${token}`)).toBeNull();
+    expect(await w.store.get(seatKeyPath(requested.lobbyId, builder.id))).toBeNull();
     expect((await read(w.fast, token)).status).toBe(404);
   });
 
@@ -760,6 +762,65 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     await w.lobbies.sweepWaits();
     expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toBeNull();
     expect(await w.store.get(`waits/${token}`)).toBeNull();
+  });
+
+  it("a leave and a refill between a stream's record read and its lobby read end the leaver's token expired: ended, never slot_ready", async () => {
+    const w = await world();
+    const [ann, bob, carl, dee, eve] = await Promise.all(["Ann", "Bob", "Carl", "Dee", "Eve"].map((name) => w.claim(name)));
+    const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 2));
+    const annToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+    const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    // A second instance over the same store whose next read of this lobby first lets Ann leave and three players fill
+    // the lobby: the stream has read Ann's record before her leave, and reads the lobby after the refill.
+    let between: (() => Promise<void>) | undefined;
+    const gated = new Proxy(w.store, {
+      get(target, prop, receiver) {
+        if (prop !== "get") return Reflect.get(target, prop, receiver);
+        return async (path: string) => {
+          if (path === `lobbies/${lobby.id}` && between) { const run = between; between = undefined; await run(); }
+          return target.get(path);
+        };
+      },
+    });
+    const stream = createLobbies(gated, w.identities, { publicSlots: 1, privateSlots: 1, staleHoldGraceMs: 60_000, now: () => w.clock.t });
+    const port = await streamServer((token) => stream.waitStatus(token));
+    between = async () => {
+      expect((await w.store.get(`waits/${annToken}`))?.ended).toBeUndefined();
+      await w.ok("leave_lobby", { key: ann.key, lobbyId: lobby.id });
+      for (const joiner of [carl, dee, eve]) await w.ok("join_lobby", { key: joiner.key, lobbyId: lobby.id });
+    };
+    const ended = { event: "expired", data: { state: "expired", reason: "ended" } };
+    expect((await read(port, annToken)).frames).toEqual([ended]);
+    expect(between).toBeUndefined();
+    // The lobby that read did report holds its slot: Bob's token, still seated, gets slot_ready.
+    expect((await read(port, bobToken)).frames.at(-1)?.event).toBe("slot_ready");
+    expect((await read(w.fast, annToken)).frames).toEqual([ended]);
+  });
+
+  it("a wait first read final lowers its seat key with its record to now plus grace, and the sweep removes both after the grace", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 1));
+    const annToken = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
+    const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toEqual({ token: annToken, expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    // A key naming another token is not this wait's: it is left as it is.
+    await w.store.transaction(async () => ({ result: null, writes: [{ op: "update" as const, path: seatKeyPath(lobby.id, bob.id), fields: { token: "another" } }] }));
+    const bobKey = await w.store.get(seatKeyPath(lobby.id, bob.id));
+
+    w.clock.t += 60_000;
+    expect((await read(w.fast, annToken)).frames.at(-1)?.event).toBe("slot_ready");
+    expect((await read(w.fast, bobToken)).frames.at(-1)?.event).toBe("slot_ready");
+    const by = expiryField(w.clock.t + WAIT_GRACE_MS);
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ expiresAt: by });
+    expect(Number((await w.store.get(seatKeyPath(lobby.id, ann.id)))!.expiresAt)).toBeLessThanOrEqual(Number(by));
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toEqual({ token: annToken, expiresAt: by });
+    expect(await w.store.get(seatKeyPath(lobby.id, bob.id))).toEqual(bobKey);
+
+    w.clock.t += WAIT_GRACE_MS;
+    await w.lobbies.sweepWaits();
+    expect(await w.store.get(`waits/${annToken}`)).toBeNull();
+    expect(await w.store.get(seatKeyPath(lobby.id, ann.id))).toBeNull();
   });
 
   it("a token grants nothing: it is no key, and a lobby wait sends no lobby id, seat, key or invite", async () => {

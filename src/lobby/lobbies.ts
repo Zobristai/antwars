@@ -8,7 +8,7 @@ import type { Fields, Store, TransactionRead, Write } from "../store/firestore.j
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
-import { endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, repointWrites, sweepAllExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
+import { endedLobbyWaitWrites, endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, repointWrites, sweepAllExpiredWaits, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -765,25 +765,31 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   }
 
   /** A lobby wait's state, with the paired lobby's id when the token was re-pointed from a queue pairing. */
-  async function lobbyWaitStatus(token: string, lobbyId: string, paired: boolean, record?: Fields): Promise<WaitState> {
+  async function lobbyWaitStatus(token: string, lobbyId: string, paired: boolean): Promise<WaitState> {
     const lobby = await readLobby(lobbyId);
-    const state: WaitState = lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
-    if (isFinal(state) && (record === undefined || endedWrite(token, record, now()).length > 0)) await endLobbyWait(token, lobbyId);
+    const read: WaitState = lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
+    // A final state is decided only after this lobby read, against the record as it stands then (endLobbyWait).
+    const state = isFinal(read) ? await endLobbyWait(token, lobbyId, read) : read;
     return paired ? withPairedLobby(state, lobbyId) : state;
   }
 
   /**
-   * Lowers a lobby wait read final to expire WAIT_GRACE_MS from now, only while its record is still that lobby's wait.
-   * Best effort: a failed write leaves the record to its full limit and never fails the read.
+   * Decides a lobby wait whose lobby was just read final, in one transaction begun after that read: when its holder has
+   * left (the leave marks the record ended in the same transaction that changes the seats), the wait ended, whatever the
+   * lobby reads now; otherwise the lobby's state, with the record and its seat key lowered to expire WAIT_GRACE_MS from
+   * now, only while the record is still that lobby's wait. Best effort: on a failed write the record is re-read plainly.
    */
-  async function endLobbyWait(token: string, lobbyId: string): Promise<void> {
+  async function endLobbyWait(token: string, lobbyId: string, state: WaitState): Promise<WaitState> {
+    const left = (wait: Fields | null | undefined) => wait?.kind === "lobby" && wait.lobbyId === lobbyId && wait.ended === "true";
     try {
-      await store.transaction(async (read) => {
+      return await store.transaction<WaitState>(async (read) => {
         const wait = (await read([waitPath(token)])).get(waitPath(token));
-        return { result: null, writes: wait?.kind === "lobby" && wait.lobbyId === lobbyId ? endedWrite(token, wait, now()) : [] };
+        if (left(wait)) return { result: LEFT_LOBBY, writes: [] };
+        return { result: state, writes: wait?.kind === "lobby" && wait.lobbyId === lobbyId ? await endedLobbyWaitWrites(read, token, wait, now()) : [] };
       });
     } catch (cause) {
       console.warn(`antwar wait expiry update failed: ${cause instanceof Error ? cause.name : "error"}`);
+      return left(await store.get(waitPath(token)).catch(() => null)) ? LEFT_LOBBY : state;
     }
   }
 
@@ -1118,7 +1124,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         return lobbyWaitStatus(token, decided.lobbyId, decided.paired);
       }
       if (wait?.kind === "lobby" && wait.ended === "true") return LEFT_LOBBY;
-      if (wait?.kind === "lobby" && wait.lobbyId && wait.paired !== "unread") return lobbyWaitStatus(token, wait.lobbyId, wait.paired === "true", wait);
+      if (wait?.kind === "lobby" && wait.lobbyId && wait.paired !== "unread") return lobbyWaitStatus(token, wait.lobbyId, wait.paired === "true");
       if (wait?.kind === "lobby" && wait.lobbyId) {
         const decided = await decideQueueWait(token);
         if (decided === null || "state" in decided) return decided?.state ?? null;

@@ -142,6 +142,22 @@ export function endedWrite(token: string, record: Fields | null | undefined, at:
 }
 
 /**
+ * The writes ending a lobby wait read final at `at`, in the caller's transaction: its record lowered as endedWrite does,
+ * and its seat key lowered to the same expiry, only while that key still names this token.
+ */
+export async function endedLobbyWaitWrites(read: TransactionRead, token: string, record: Fields, at: number): Promise<Write[]> {
+  const writes = endedWrite(token, record, at);
+  if (!record.lobbyId || !record.identityId) return writes;
+  const keyPath = seatKeyPath(record.lobbyId, record.identityId);
+  const key = (await read([keyPath])).get(keyPath);
+  const by = at + WAIT_GRACE_MS;
+  if (key?.token === token && !(key.expiresAt !== undefined && Number(key.expiresAt) <= by)) {
+    writes.push({ op: "update", path: keyPath, fields: { expiresAt: expiryField(by) } });
+  }
+  return writes;
+}
+
+/**
  * Removes up to WAIT_SWEEP_PAGE records past their expiresAt, earliest first: one ordered page, each rechecked in the
  * deleting transaction, so a record re-pointed or lowered meanwhile is judged by its stored value. Returns how many.
  */
