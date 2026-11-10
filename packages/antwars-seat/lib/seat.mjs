@@ -198,12 +198,23 @@ export async function createLobby(ctx) {
   return { lobbyId, state: lobby?.state ?? null, next: `antwars-seat join-lobby ${lobbyId} --detach` };
 }
 
-/** `join-lobby <lobbyId>`: one join_lobby, then the same locate_match -> join -> nest window as go. No queue call. */
+/**
+ * `join-lobby <lobbyId>`: one join_lobby, then the same locate_match -> join -> nest window as go. No queue call.
+ * A join_lobby answered already_seated means the seat is already in this lobby, so it continues as after a
+ * successful join; every other refusal fails.
+ */
 export async function joinLobby(ctx, lobbyId) {
   const { pollMs, maxWaitMs } = waits(ctx.env);
   const entry = entryClient(ctx);
-  const { lobby } = await tool(entry, "join_lobby", { key: ctx.key, lobbyId });
-  progress("joined_lobby", { lobbyId, state: lobby?.state ?? null }, ctx.env);
+  let lobby = null;
+  let alreadySeated = false;
+  try {
+    ({ lobby } = await tool(entry, "join_lobby", { key: ctx.key, lobbyId }));
+  } catch (error) {
+    if (error?.code !== "already_seated") throw error;
+    alreadySeated = true;
+  }
+  progress("joined_lobby", { lobbyId, state: lobby?.state ?? null, ...(alreadySeated ? { alreadySeated } : {}) }, ctx.env);
   return enterMatch({ entry, ctx, pairing: { lobbyId, matchedAt: null }, pollMs, maxWaitMs });
 }
 

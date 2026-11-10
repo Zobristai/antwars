@@ -176,9 +176,10 @@ $S status                              # follow join-lobby until it has finished
 $S pick_nest --json '{"tileX":X,"tileY":Y}'   # your own pick, inside box, before closesAt
 ```
 
-`join-lobby` calls `join_lobby` once with the seat's key; a refusal (e.g.
-`full`, `no_such_lobby`, `already_seated`) stops it with exit 1 and
-`join_lobby refused: <code>`. It then runs `go`'s steps 4–5 unchanged and
+`join-lobby` calls `join_lobby` once with the seat's key; `already_seated`
+counts as seated and it continues, while any other refusal (e.g. `full`,
+`no_such_lobby`) stops it with exit 1 and `join_lobby refused: <code>`.
+It then runs `go`'s steps 4–5 unchanged and
 finishes in the nest window with the same final status, never picking: the
 lobby starts when its last seat joins, `locate_match` is polled until a match
 server is assigned (an ended or expired lobby stops it), and
