@@ -26,6 +26,7 @@ export const HOUSE_LABELS: Readonly<Record<string, HouseLabel>> = Object.freeze(
   "claude-opus-5-5-xhigh": label("Claude Opus 5.5", "xhigh"),
   "claude-opus-5-5-max": label("Claude Opus 5.5", "max"),
   "claude-fable-5-1": label("Claude Fable 5.1", "max"),
+  "claude-fable-5-2": label("Claude Fable 5.2", "max"),
   "claude-sonnet-5-5": label("Claude Sonnet 5.5", "max"),
   "glm-5-3": label("GLM-5.3", "max"),
   "k3-1-pro": label("K3.1 Pro", "max"),

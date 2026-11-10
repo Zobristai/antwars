@@ -6,8 +6,11 @@ import { identityDisplay, KEY_ACTIVITY_WINDOW_MS, nameState, timestamp } from ".
 /**
  * Usernames and owner/agent handles held by once-issued keys.
  * A key is 32 random bytes returned once; the store keeps only its
- * SHA-256 verifier, as the keys/{verifier} document ID and on the identity. There is
- * deliberately no operation that recovers a lost username key.
+ * SHA-256 verifier, as the keys/{verifier} document ID and on the identity. No operation
+ * returns or recovers an issued key. The one exception to a lost key staying lost:
+ * reissueLostKey gives a fresh key, replacing the lost one, to the identity a key holds when
+ * that key's issuing reply never reached its caller and the caller's MCP session proves that
+ * call (recover_key, accounts/mcpTools.ts); the session keeps only the verifier.
  *
  * Documents, under the store's namespace:
  *   usernames/{canonical}                     { identityId }
@@ -102,10 +105,22 @@ export interface Identities {
   /** ownerId is the owning username's identity, which the owner key proved. */
   createHandle(ownerKey: string, handleName: string, guard?: CommitGuard): Promise<Outcome<IssuedIdentity & { readonly ownerId: string }>>;
   resolveKey(key: string): Promise<Outcome<Identity>>;
+  /**
+   * The identity id a key currently holds, found by the key's verifier (keyVerifier) rather than the key
+   * itself; undefined once that key is replaced or its identity expired. Records no key use.
+   */
+  holderOfVerifier(verifier: string): Promise<string | undefined>;
   /** identityId is the rotated identity, already proved by the old key. */
   rotateKey(key: string, guard?: CommitGuard): Promise<Outcome<{ readonly key: string; readonly identityId: string }>>;
   /** ownerId is the owning username's identity, which the owner key proved. */
   reissueHandleKey(ownerKey: string, handleName: string, guard?: CommitGuard): Promise<Outcome<{ readonly key: string; readonly ownerId: string }>>;
+  /**
+   * A fresh key for the identity whose current key has this verifier, replacing that key in the same commit.
+   * Only for a key whose issuing reply was lost, with the issuing call proved by its session (recover_key):
+   * this layer checks only that the verifier is still the identity's current key and the identity has not
+   * expired, refusing unknown_key otherwise. Spends no rotation budget: each lost key came from a budgeted call.
+   */
+  reissueLostKey(verifier: string, guard?: CommitGuard): Promise<Outcome<{ readonly key: string; readonly identityId: string }>>;
   /** Public name lookup; may lazily materialize expiration, but never records key activity. */
   findByDisplayName(displayName: string): Promise<Identity | undefined>;
 }
@@ -119,6 +134,8 @@ interface Holder {
 const refuse = (reason: Refusal) => ({ ok: false, reason }) as const;
 const ok = <T>(value: T) => ({ ok: true, value }) as const;
 const verifierOf = (key: string) => createHash("sha256").update(key, "utf8").digest("hex");
+/** A key's stored verifier: lets a holder re-check a key later without keeping the key itself. */
+export const keyVerifier = verifierOf;
 const newKey = () => {
   const key = randomBytes(32).toString("base64url");
   return { key, verifier: verifierOf(key) };
@@ -134,8 +151,12 @@ const issuing = <T>(guard: CommitGuard | undefined, result: T, writes: readonly 
 const identityOf = (id: string, fields: Fields): Identity => ({ id, kind: fields.kind as IdentityKind, displayName: fields.displayName! });
 
 /** The identity a key currently holds, read inside the caller's transaction. */
-async function readHolder(read: TransactionRead, key: string): Promise<Holder | undefined> {
-  const verifier = verifierOf(key);
+function readHolder(read: TransactionRead, key: string): Promise<Holder | undefined> {
+  return readVerifierHolder(read, verifierOf(key));
+}
+
+/** The identity a key verifier currently holds, read inside the caller's transaction. */
+async function readVerifierHolder(read: TransactionRead, verifier: string): Promise<Holder | undefined> {
   const keyDoc = (await read([`keys/${verifier}`])).get(`keys/${verifier}`);
   if (!keyDoc) return undefined;
   const id = keyDoc.identityId!;
@@ -335,6 +356,15 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
       return ok(project(found));
     },
 
+    async holderOfVerifier(verifier) {
+      return store.transaction(async (read) => {
+        const writes: Write[] = [];
+        const holder = await readVerifierHolder(read, verifier);
+        const found = holder ? await account(read, holder.id, now(), writes) : undefined;
+        return { result: found?.id, writes: writesOf(writes) };
+      });
+    },
+
     async rotateKey(key, guard) {
       if (!(await api.resolveKey(key)).ok) return refuse("unknown_key");
       return store.transaction<Outcome<{ readonly key: string; readonly identityId: string }>>(async (read) => {
@@ -366,6 +396,20 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
         const next = replaceKey(handle.id, handle.fields.verifier!);
         if (busy(guard)) return { result: refuse("server_busy"), writes: [] };
         return issuing(guard, ok({ key: next.key, ownerId: owner.id }), writesOf([...writes, ...next.writes, ...budget]));
+      });
+    },
+
+    async reissueLostKey(verifier, guard) {
+      return store.transaction<Outcome<{ readonly key: string; readonly identityId: string }>>(async (read) => {
+        const at = now(), writes: Write[] = [];
+        const keyDoc = (await read([`keys/${verifier}`])).get(`keys/${verifier}`);
+        const id = keyDoc?.identityId;
+        const fields = id === undefined ? undefined : (await read([`identities/${id}`])).get(`identities/${id}`);
+        if (id === undefined || !fields || fields.verifier !== verifier) return { result: refuse("unknown_key"), writes: [] };
+        if (!(await account(read, id, at, writes))) return { result: refuse("unknown_key"), writes: writesOf(writes) };
+        const next = replaceKey(id, verifier);
+        if (busy(guard)) return { result: refuse("server_busy"), writes: [] };
+        return issuing(guard, ok({ key: next.key, identityId: id }), writesOf([...writes, ...next.writes]));
       });
     },
 
