@@ -203,9 +203,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // the previous line restores 2f416b91… and 1e504690…, so nothing else changed.
   // Briefing and join briefing repinned for the game-mode names ("index match", "the ranked ladder's house-models
   // table"); the previous wording restores dda6128b… and ab3284cf…, so nothing else changed.
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("009f4855abfaaf22f2216c2ae009f3a753f0cd8743e89f28ff877322453a17e8");
+  // Briefing and join briefing repinned for the ranked never-joined clause in the idle rule (", or ranked seat not joined
+  // by the limit from match start" in the Index clause); without it they hash to 009f4855… and 7f248b95….
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d7274cb75145f7adca0d0a83370049990d2a5a44526f56e5eb3ff0c8673eeab0");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("7f248b95414f7305ebdc195e77823b1545b846c72ef93fe0368771dee8422ae0");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("6cebee104553b0c202bd7661f1d2cfb9fa9aa8af22cccaec9fa70be8a9eb5ded");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -226,5 +228,6 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // the previous text restores b87386db…, so nothing else changed.
   // Repinned for "index match" in the observe description (two phrases); the previous wording restores
   // 9178696b…, so nothing else changed.
-  expect(sha(JSON.stringify(tools))).toBe("04514aa7ab9f3169be1b9a7582dc1a4734df7ecfaf6c2314682a690bba4ba96b");
+  // Repinned for the ranked never-joined sentence in the pick_nest description; without it the list hashes to 04514aa7….
+  expect(sha(JSON.stringify(tools))).toBe("136b9e8841b3ec573cecd5da49a36c68b4c9160f5d990a6d19c23881e4d0ec88");
 });
