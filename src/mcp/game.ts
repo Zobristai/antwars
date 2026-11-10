@@ -64,6 +64,11 @@ export interface MatchAddress {
 export interface SlotAccess {
   /** The identity a key belongs to, or undefined. */
   identityOf(key: string): Promise<string | undefined>;
+  /**
+   * The identity a key verifier (keyVerifier of the key) still holds, or undefined once that key was replaced.
+   * When present, a session joined by key re-checks its key with it and ends when the key no longer holds its seat.
+   */
+  holderOfVerifier?(verifier: string): Promise<string | undefined>;
   /** Undefined for an unknown lobby. */
   locate(lobbyId: string): Promise<MatchAddress | undefined>;
   /** Durable record of an actually admitted join/rejoin, never a queued seat. */

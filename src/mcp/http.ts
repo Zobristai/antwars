@@ -33,6 +33,27 @@ interface Session {
    * each lasts until its response closes or the call throws, and never past its deadline unless pinned.
    */
   readonly holds: Set<Hold>;
+  /**
+   * The key this session's latest key-issuing call committed but could not deliver, as its verifier, for
+   * recover_key; null when none. One-shot: cleared when recovered, when a later key-issuing call's reply is
+   * delivered, and with the session. A later undelivered key replaces it.
+   */
+  lostKey: LostKey | null;
+  /**
+   * The tail of this session's key-issuing turns (KeyIssuingHold.turn): it settles once every turn taken so far
+   * has ended, so each key-issuing call commits, and its key is decided delivered or lost, before the next begins.
+   */
+  keyTurns: Promise<void>;
+}
+
+/**
+ * A committed key whose reply never finished writing, held only as what proves it: never the key itself.
+ */
+export interface LostKey {
+  /** The issued key's verifier (SHA-256, lowercase hex), as the store keeps it. */
+  readonly verifier: string;
+  /** SHA-256 of the key argument the issuing call presented, or null when it presented none (a new username). */
+  readonly proof: string | null;
 }
 
 /**
@@ -43,6 +64,17 @@ interface Hold {
   readonly until: number;
   pinned: boolean;
   ended: boolean;
+  /**
+   * The key its key-issuing call returned, decided at the response's close: delivered, or lost (Session.lostKey).
+   * null when the call returned a key it did not newly issue (KeyIssuingHold.issued).
+   */
+  issued?: LostKey | null;
+  /** This request's key-issuing turn, once taken: resolves when the turn is this request's. */
+  turn?: Promise<void>;
+  /** Ends this request's key-issuing turn once it has both ended (its response closed) and finished its call. */
+  endTurn?: () => void;
+  /** The key-issuing call holding this request's turn has returned (KeyIssuingHold.finish). */
+  finished?: boolean;
 }
 
 /** The hold of the HTTP request whose handling is running, so a call can check its own hold and no other. */
@@ -64,13 +96,31 @@ export interface KeyIssuingHold {
    * the store's): the store launches the commit only before it and cuts the commit off at it.
    */
   readonly commitBy: number;
+  /**
+   * Wait for this request's key-issuing turn in its session, before reading a pending lost key or committing.
+   * Turns run one at a time in the order taken; a turn lasts until the request's response closes (or its handling
+   * throws), after its key is decided delivered or lost, so a delivered reply always settles before a later
+   * recover_key reads the pending lost key, and no lost key is recorded after a later reply was delivered.
+   * Calls in the same request share its one turn. The turn ends only once the response has closed and finish has
+   * been called, so a call whose client dropped mid-commit still settles its key before the next turn begins.
+   */
+  turn(): Promise<void>;
+  /** The call that took the turn has returned, issued key recorded or none issued: always called, even on a throw. */
+  finish(): void;
+  /**
+   * Called once the call's commit has returned a key, before its reply. If the call's response has already closed,
+   * or closes before the reply finishes writing, the key is kept on the session as lost (recover_key); once the
+   * reply has finished writing, any lost key the session held is cleared. null for a key the call presented and
+   * kept rather than newly issued: its delivered reply still clears a pending lost key, but its loss records nothing.
+   */
+  issued(lost: LostKey | null): void;
 }
 
 /**
  * The account calls that issue a one-time key, held on every server so the reply carrying the key
  * cannot be lost to an eviction mid-call.
  */
-export const KEY_ISSUING_TOOLS: ReadonlySet<string> = new Set(["claim_username", "rotate_key", "create_handle", "reissue_handle_key"]);
+export const KEY_ISSUING_TOOLS: ReadonlySet<string> = new Set(["claim_username", "rotate_key", "create_handle", "reissue_handle_key", "recover_key"]);
 /** On a server hosting matches, the seat join is held too; the entry service registers no join. */
 const MATCH_HOST_HELD_TOOLS: ReadonlySet<string> = new Set(["join", ...KEY_ISSUING_TOOLS]);
 
@@ -106,6 +156,15 @@ export interface SessionAccess {
    * session never counts. The same on every server.
    */
   keyIssuingHold(): KeyIssuingHold | undefined;
+  /** The key this session's latest key-issuing call committed but could not deliver, if one is still pending. */
+  lostKey(): LostKey | undefined;
+  /**
+   * Settles once every key-issuing turn already taken in this session has ended, so each has decided its key
+   * delivered or lost (a call whose client dropped mid-commit included). Takes no turn and reads no store.
+   */
+  keyTurnsSettled(): Promise<void>;
+  /** Clear that pending lost key, only if it is still this one. */
+  clearLostKey(lost: LostKey): void;
 }
 
 export interface McpHandler {
@@ -301,8 +360,17 @@ export function createMcpHandler(
     const hold: Hold = { until: session.lastSeen + game.mcpConfig.sessionIdleMs, pinned: false, ended: false };
     if (session.state.agentId === null && mayShield(session)) session.holds.add(hold);
     const release = (): void => {
+      if (hold.ended) return;
       hold.ended = true;
       session.holds.delete(hold);
+      // A key this call issued: delivered only when its reply finished writing; otherwise it is the session's lost key.
+      // A delivered reply always clears any pending lost key; a key the call did not newly issue is never recorded as lost.
+      if (hold.issued !== undefined) {
+        if (res.writableFinished) session.lostKey = null;
+        else if (hold.issued !== null) session.lostKey = hold.issued;
+      }
+      // Only once that is decided does the session's next key-issuing turn begin.
+      hold.endTurn?.();
     };
     res.once("close", release);
     return { hold, release };
@@ -364,10 +432,18 @@ export function createMcpHandler(
           // Never past one identity's share either, counted by identity so rotating a key does not reset it.
           if (mayProtect() && protectedFor(identityId) < game.mcpConfig.maxProtectedSessionsPerIdentity) stored!.protectedBy = identityId;
         },
+        lostKey: () => stored?.lostKey ?? undefined,
+        keyTurnsSettled: () => stored?.keyTurns ?? Promise.resolve(),
+        clearLostKey(lost) {
+          if (stored !== undefined && stored.lostKey === lost) stored.lostKey = null;
+        },
         keyIssuingHold() {
           const session = stored;
           if (session === undefined) return undefined;
           const own = requestHold.getStore();
+          // A request that began joined took no place; if its session has since stopped playing (a replaced key
+          // ended the binding), it takes one now under the same rule as an unjoined session's call.
+          if (own !== undefined && !own.ended && session.state.agentId === null && !session.holds.has(own) && mayShield(session)) session.holds.add(own);
           // Joined, or this request's own live place; another request's hold never counts.
           const held = (): boolean => own !== undefined && !own.ended && (session.state.agentId !== null || holdLive(session, own));
           if (!held()) return undefined;
@@ -382,6 +458,29 @@ export function createMcpHandler(
               own!.pinned = true;
               return true;
             },
+            turn() {
+              if (own!.turn !== undefined) return own!.turn;
+              const previous = session.keyTurns;
+              let end!: () => void;
+              const ended = new Promise<void>((resolve) => {
+                end = resolve;
+              });
+              session.keyTurns = previous.then(() => ended);
+              own!.turn = previous;
+              own!.endTurn = () => {
+                if (own!.ended && own!.finished === true) end();
+              };
+              return previous;
+            },
+            finish() {
+              own!.finished = true;
+              own!.endTurn?.();
+            },
+            issued(lost) {
+              // Its response already closed: the reply cannot be written, so the key is lost now.
+              if (!own!.ended) own!.issued = lost;
+              else if (lost !== null) session.lostKey = lost;
+            },
           };
         },
       });
@@ -389,11 +488,12 @@ export function createMcpHandler(
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           release();
-          stored = { transport, server, state, lastSeen: now(), protectedBy: null, holds: new Set() };
+          stored = { transport, server, state, lastSeen: now(), protectedBy: null, holds: new Set(), lostKey: null, keyTurns: Promise.resolve() };
           sessions.set(id, stored);
         },
       });
       transport.onclose = () => {
+        if (stored !== undefined) stored.lostKey = null;
         if (transport.sessionId !== undefined) sessions.delete(transport.sessionId);
       };
       await server.connect(transport);
