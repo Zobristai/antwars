@@ -356,6 +356,68 @@ describe("recovering a key whose reply was lost when the client dropped mid-comm
     expect((await call(client, "recover_key", { key: keys.handleKey })).body.error).toBe("nothing_to_recover");
   });
 
+  it("keeps a call whose commit completes late from recording its key as lost after a later reply was delivered", async () => {
+    const world = await start();
+    const { client, sessionId } = await session(world);
+    const keys = await owner(client);
+    const commits = world.seen.commits.length;
+
+    // rotate_key's client drops while its commit is paused; create_handle is sent only after that response closed.
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const abort = new AbortController();
+    const cut = world.http.cut;
+    let dropped = false;
+    world.seen.onCommit = async () => {
+      abort.abort();
+      await vi.waitFor(() => expect(world.http.cut).toBe(cut + 1));
+      dropped = true;
+      await gate;
+    };
+    const rotated = rawCall(world, sessionId, "rotate_key", { key: keys.handleKey }, abort.signal);
+    await vi.waitFor(() => expect(dropped).toBe(true));
+    let delivered = false;
+    const created = call(client, "create_handle", { key: keys.ownerKey, handle: "third" }).then((reply) => {
+      delivered = true;
+      return reply;
+    });
+    await settle();
+    // The later call cannot commit or be delivered while the dropped call's commit is still in flight.
+    expect(delivered).toBe(false);
+    expect(world.seen.commits.length).toBe(commits);
+
+    // The rotation's commit completes late; only then does create_handle run, and its delivered reply wins.
+    open();
+    expect(await rotated).toBe("dropped");
+    expect((await created).isError).toBe(false);
+    expect(world.seen.commits.length).toBe(commits + 2);
+    expect((await call(client, "recover_key", { key: keys.handleKey })).body.error).toBe("nothing_to_recover");
+  });
+
+  it("clears a pending recovery when its session ends", async () => {
+    const world = await start();
+    const { client, sessionId } = await session(world);
+    const keys = await owner(client);
+    await dropDuringCommit(world, sessionId, "rotate_key", { key: keys.ownerKey });
+    const commits = world.seen.commits.length;
+
+    const ended = await fetch(world.url, { method: "DELETE", headers: { "mcp-session-id": sessionId, "mcp-protocol-version": "2025-06-18" } });
+    expect(ended.ok).toBe(true);
+    // The ended session takes no further calls, and a new session presenting the same key has nothing to recover.
+    const stale = await fetch(world.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-session-id": sessionId, "mcp-protocol-version": "2025-06-18" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 902, method: "tools/call", params: { name: "recover_key", arguments: { key: keys.ownerKey } } }),
+    });
+    expect(stale.status).toBe(404);
+    await stale.text();
+    const next = await session(world);
+    expect((await call(next.client, "recover_key", { key: keys.ownerKey })).body.error).toBe("nothing_to_recover");
+    expect(world.seen.commits.length).toBe(commits);
+  });
+
   it("records nothing when a dropped claim for a released account keeps its existing, already delivered key", async () => {
     const world = await start();
     const { client, sessionId } = await session(world);
