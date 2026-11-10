@@ -3,11 +3,17 @@
 // chain, a loop, a background job, a wrapper shell, a script and its children)
 // shares that shell command's process session, so the harness keys each game
 // command on the session id plus its leader's start time (safe against pid
-// reuse) and sends at most one game command per key. The record lives in the
-// seat's state dir (state/game-command.<session id>, holding the leader's
-// start time) and is created exclusively, so two processes of one shell
-// command can never both send. A record is dropped once its session leader has
-// exited.
+// reuse) and sends at most one game command per key. The record is an empty
+// file in the seat's state dir named by the key (state/game-command.<session
+// id>.<leader start time>), made by one exclusive create, so two processes of
+// one shell command can never both send. A record is dropped once its session
+// leader has exited.
+//
+// The unit is the process session: a shell that starts each command in a new
+// session gives each command its own game command. Commands typed one after
+// another into one long-lived shell share that shell's session, so after its
+// first game command that shell's further game commands are refused until it
+// exits.
 //
 // Where the key cannot be read:
 // - no /proc (not Linux): the harness cannot tell shell commands apart and
@@ -18,7 +24,7 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { stateDir } from "./state.mjs";
 
-const RECORD = /^game-command\.(\d+)$/;
+const RECORD = /^game-command\.(\d+)\.(\d+)$/;
 
 /** Match tools that are never counted and never refused by this guard. */
 export const UNCOUNTED_TOOLS = Object.freeze(new Set(["observe", "rules"]));
@@ -66,8 +72,8 @@ export function shellCommandKey(readStat = procStat) {
   return start === null ? { status: "leader_gone" } : { status: "ok", sid, start };
 }
 
-/** Drop records whose session leader is no longer the live process that started it. */
-function pruneEnded(dir, readStat, keep) {
+/** Drop records whose session leader is no longer the live process they were made for. A live session's record always matches, so it is never dropped. */
+function pruneEnded(dir, readStat) {
   let names = [];
   try {
     names = readdirSync(dir);
@@ -75,32 +81,17 @@ function pruneEnded(dir, readStat, keep) {
     return;
   }
   for (const name of names) {
-    const sid = Number(RECORD.exec(name)?.[1]);
-    if (!sid || sid === keep) continue;
-    let recorded;
-    try {
-      recorded = readFileSync(join(dir, name), "utf8");
-    } catch {
-      continue;
-    }
-    if (leaderStart(sid, readStat) !== recorded) rmSync(join(dir, name), { force: true });
-  }
-}
-
-/** Exclusive create of this session's record; true when this process made it. */
-function claim(file, start) {
-  try {
-    writeFileSync(file, start, { flag: "wx" });
-    return true;
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
-    return false;
+    const match = RECORD.exec(name);
+    if (match && leaderStart(Number(match[1]), readStat) !== match[2]) rmSync(join(dir, name), { force: true });
   }
 }
 
 /**
  * Claims this shell command's one game command. Returns { allowed: true } or
  * { allowed: false, reason: "second_in_shell_command" | "shell_command_ended" }.
+ * The whole key is the record's name and the record is made by one exclusive create,
+ * so exactly one process of a shell command can make it, and no other process ever
+ * reads, rewrites or replaces a record of a live session.
  */
 export function claimGameCommand(env, readStat = procStat) {
   const key = shellCommandKey(readStat);
@@ -108,21 +99,14 @@ export function claimGameCommand(env, readStat = procStat) {
   if (key.status === "leader_gone") return { allowed: false, reason: "shell_command_ended" };
   const dir = stateDir(env);
   mkdirSync(dir, { recursive: true });
-  pruneEnded(dir, readStat, key.sid);
-  const file = join(dir, `game-command.${key.sid}`);
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (claim(file, key.start)) return { allowed: true };
-    let recorded = null;
-    try {
-      recorded = readFileSync(file, "utf8");
-    } catch {
-      // Removed meanwhile: try again.
-    }
-    if (recorded === key.start) return { allowed: false, reason: "second_in_shell_command" };
-    // A record from an earlier session whose leader had this pid: it has ended.
-    if (recorded !== null) rmSync(file, { force: true });
+  pruneEnded(dir, readStat);
+  try {
+    writeFileSync(join(dir, `game-command.${key.sid}.${key.start}`), "", { flag: "wx" });
+    return { allowed: true };
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    return { allowed: false, reason: "second_in_shell_command" };
   }
-  return { allowed: false, reason: "second_in_shell_command" };
 }
 
 const WHY = {

@@ -222,9 +222,13 @@ never refused or counted, and the harness's own re-join and resends inside one
 command are part of that command.
 
 The harness tells shell commands apart by their process session, read from
-`/proc`; the record is `state/game-command.<n>`, dropped once that shell
-command has ended. Where `/proc` is not available (not Linux) the harness
-cannot tell shell commands apart and sends the command.
+`/proc`: a shell that starts each command in a new session gives each command
+its own game command. Commands typed one after another into one long-lived
+shell share that shell's session, so after its first game command further game
+commands from that shell are refused until it exits. The record is an empty
+`state/game-command.<session>.<start>` file, dropped once that session has
+ended. Where `/proc` is not available (not Linux) the harness cannot tell
+shell commands apart and sends the command.
 
 ## Reading the map
 

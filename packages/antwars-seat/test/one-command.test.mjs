@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { claimGameCommand, isGameCommand, refusalMessage, shellCommandKey } from "../lib/guard.mjs";
 import { startFake, statLine } from "./fake-server.mjs";
 
-const KEY = "sk-antwars-test-0f3c9a7e51d2";
+const KEY = "a".repeat(24); // a stand-in seat key
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
 const BIN = fileURLToPath(new URL("../bin/antwars-seat", import.meta.url));
 const REFUSED = "refused, not sent: this shell command has already sent a game command";
@@ -46,7 +46,7 @@ async function joinedSeat() {
   const setup = await shell(`$S setup --handle antwars/test --key-name ${KEY_NAME} --mode house-1v1 --model-label m --thinking-level high && $S go`);
   expect(setup.code).toBe(0);
   const state = (name) => readFileSync(join(dir, ".antwars-seat", "state", name), "utf8");
-  return { fake, dir, shell, state };
+  return { fake, dir, env, shell, state };
 }
 
 const ORDER = (n) => `$S order --ants '[${n}]'`;
@@ -131,6 +131,35 @@ for (const n of [4, 5]) {
     expect(tools.filter((t) => t === "observe").length).toBeGreaterThanOrEqual(2);
   }, 30_000);
 
+  it("many processes of one shell command racing for the claim: exactly one game command is sent", async () => {
+    const s = await joinedSeat();
+    const run = await s.shell(`for i in 1 2 3 4 5 6 7 8; do ${ORDER("$i")} & done; wait`);
+    expect(s.fake.orders()).toHaveLength(1);
+    expect(refusals(run.output)).toBe(7);
+  }, 30_000);
+
+  it("commands typed one after another into one long-lived shell share its session: only its first game command is sent", async () => {
+    const s = await joinedSeat();
+    const shell = spawn("bash", ["-s"], { cwd: s.dir, env: s.env, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    let output = "";
+    shell.stdout.on("data", (chunk) => { output += chunk; });
+    shell.stderr.on("data", (chunk) => { output += chunk; });
+    const closed = new Promise((resolve) => shell.on("close", resolve));
+    const typed = async (line, marker) => {
+      shell.stdin.write(`${line}; echo ${marker}\n`);
+      for (let i = 0; i < 200 && !output.includes(marker); i += 1) await new Promise((r) => setTimeout(r, 25));
+    };
+    await typed(ORDER(1), "done-1");
+    await typed("$S observe", "done-2");
+    await typed(ORDER(2), "done-3");
+    shell.stdin.end();
+    await closed;
+    expect(s.fake.orders()).toEqual([{ ants: [1] }]);
+    expect(refusals(output)).toBe(1);
+    expect((await s.shell(ORDER(3))).code).toBe(0); // a new shell is a new session
+    expect(s.fake.orders()).toEqual([{ ants: [1] }, { ants: [3] }]);
+  }, 30_000);
+
   it("a game command whose shell command has already ended is refused, not sent", async () => {
     const s = await joinedSeat();
     const run = await s.shell(`(sleep 1; ${ORDER(1)} > late.out 2>&1) > /dev/null 2>&1 & exit 0`);
@@ -198,20 +227,39 @@ describe("guard keys and records", () => {
     expect(claimGameCommand(env, first)).toEqual({ allowed: false, reason: "second_in_shell_command" });
     const reusedPid = procTable(700, { 700: statLine({ pid: 700, sid: 700, start: 2 }) });
     expect(claimGameCommand(env, reusedPid)).toEqual({ allowed: true });
-    expect(readFileSync(join(dir, "game-command.700"), "utf8")).toBe("2");
+    expect(readdirSync(dir)).toEqual(["game-command.700.2"]);
     expect(claimGameCommand(env, reusedPid)).toEqual({ allowed: false, reason: "second_in_shell_command" });
+  });
+
+  it("a live session's record refuses by its name alone, whatever its content, even while its creator has not finished with it", () => {
+    const { env, dir } = stateEnv();
+    const table = { 710: statLine({ pid: 710, sid: 710, start: 3 }) };
+    writeFileSync(join(dir, "game-command.710.3"), ""); // made by the exclusive create, nothing written yet
+    expect(claimGameCommand(env, procTable(710, table))).toEqual({ allowed: false, reason: "second_in_shell_command" });
+    writeFileSync(join(dir, "game-command.710.3"), "anything");
+    expect(claimGameCommand(env, procTable(710, table))).toEqual({ allowed: false, reason: "second_in_shell_command" });
+    expect(readdirSync(dir)).toEqual(["game-command.710.3"]);
+  });
+
+  it("another session's claim never drops a live session's record, so that session's next game command is still refused", () => {
+    const { env, dir } = stateEnv();
+    const table = { 720: statLine({ pid: 720, sid: 720, start: 4 }), 721: statLine({ pid: 721, sid: 721, start: 5 }) };
+    expect(claimGameCommand(env, procTable(720, table))).toEqual({ allowed: true });
+    expect(claimGameCommand(env, procTable(721, table))).toEqual({ allowed: true });
+    expect(readdirSync(dir).sort()).toEqual(["game-command.720.4", "game-command.721.5"]);
+    expect(claimGameCommand(env, procTable(720, table))).toEqual({ allowed: false, reason: "second_in_shell_command" });
   });
 
   it("records of sessions whose leader has exited are dropped; a live session's record is kept", () => {
     const { env, dir } = stateEnv();
-    writeFileSync(join(dir, "game-command.801"), "5"); // leader gone
-    writeFileSync(join(dir, "game-command.802"), "6"); // pid reused by a later session
-    writeFileSync(join(dir, "game-command.803"), "7"); // still live
+    writeFileSync(join(dir, "game-command.801.5"), ""); // leader gone
+    writeFileSync(join(dir, "game-command.802.6"), ""); // pid reused by a later session
+    writeFileSync(join(dir, "game-command.803.7"), ""); // still live
     writeFileSync(join(dir, "last-call"), "0");
     const table = { 802: statLine({ pid: 802, sid: 802, start: 60 }), 803: statLine({ pid: 803, sid: 803, start: 7 }),
       900: statLine({ pid: 900, sid: 900, start: 1 }) };
     expect(claimGameCommand(env, procTable(900, table))).toEqual({ allowed: true });
-    expect(readdirSync(dir).sort()).toEqual(["game-command.803", "game-command.900", "last-call"]);
+    expect(readdirSync(dir).sort()).toEqual(["game-command.803.7", "game-command.900.1", "last-call"]);
   });
 
   it("the refusal says what was refused and why", () => {
