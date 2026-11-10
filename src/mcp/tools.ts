@@ -605,7 +605,11 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
       const admission = slot.holderOfVerifier === undefined ? undefined
         : { identityId: identityId!, verifier: keyVerifier(key), checkedAt: keyCheckedAt };
       // A join that finished KEY_RECHECK_MS or more after its key was checked binds only if the key is still current.
-      if (admission !== undefined && !await keyStillHeld(game, slot, admission)) return keyRevoked();
+      if (admission !== undefined && !await keyStillHeld(game, slot, admission)) {
+        // That key's own earlier binding in this session ends with it; a binding by another key stays.
+        if (session.admission?.verifier === admission.verifier) unbindSession(session);
+        return keyRevoked();
+      }
       // An ended lobby seat remains identifiable even when its key rejoin hits the rate limit.
       if (joined.agentId !== null && outcome.kind === "error" &&
         (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId, admission);
@@ -713,12 +717,17 @@ function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, sess
   handlers.set("tools/call", async (request, extra) => {
     const admission = session.admission;
     if (admission === undefined || await keyStillHeld(game, slot, admission) || session.admission !== admission) return answer(request, extra);
-    session.agentId = null;
-    session.finalResult = undefined;
-    session.admission = undefined;
+    unbindSession(session);
     if (request.params?.name === "join") return answer(request, extra);
     return keyRevoked();
   });
+}
+
+/** Ends the session's seat binding: it plays no seat until it joins again. */
+function unbindSession(session: SessionState): void {
+  session.agentId = null;
+  session.finalResult = undefined;
+  session.admission = undefined;
 }
 
 /** The refusal for a call whose joining key has been replaced. */

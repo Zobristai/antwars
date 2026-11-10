@@ -32,10 +32,16 @@ function setup() {
   const keys = new Map<string, string>([["ann-first", "ann"], ["bob-first", "bob"]]);
   const store = { failing: false, reads: 0 };
   /** While held, a join's durable record (and so its reply) waits until release. */
+  const keyReads = { held: false, waiting: [] as (() => void)[], release() { this.held = false; for (const done of this.waiting.splice(0)) done(); } };
   const joinRecords = { held: false, waiting: [] as (() => void)[], release() { this.held = false; for (const done of this.waiting.splice(0)) done(); } };
   const game = new Game({ simConfig: playable(PUBLIC_CONFIG), mcpConfig: TEST_MCP_CONFIG, now: () => clock.now,
     slot: {
-      identityOf: async key => keys.get(key),
+      async identityOf(key) {
+        // The key is read at once; while held, its answer waits (a join's key check outrunning a rotation).
+        const identityId = keys.get(key);
+        if (keyReads.held) await new Promise<void>(resolve => keyReads.waiting.push(resolve));
+        return identityId;
+      },
       async holderOfVerifier(verifier) {
         store.reads += 1;
         if (store.failing) throw new Error("store unavailable");
@@ -51,7 +57,7 @@ function setup() {
     keys.delete(from);
     keys.set(to, identityId);
   };
-  return { game, clock, store, rotate, joinRecords };
+  return { game, clock, store, rotate, joinRecords, keyReads };
 }
 
 async function connect(game: Game) {
@@ -166,6 +172,41 @@ describe("rotating a key ends the sessions that key admitted", () => {
     expect(joined.error).toBe(false);
     clock.now += 1;
     expect((await rejoin("order", { kind: "hold" })).data.error.code).toBe("key_revoked");
+  });
+
+  it("ends the old key's own binding when its delayed rejoin in the same session is refused, even if the next key read fails", async () => {
+    const { game, clock, store, rotate, joinRecords } = setup();
+    const session = await connect(game);
+    await session("join", { key: "ann-first" });
+    await startMatch(game, clock);
+    expect((await session("order", { kind: "hold" })).error).toBe(false);
+
+    joinRecords.held = true;
+    const pending = session("join", { key: "ann-first" });
+    while (joinRecords.waiting.length === 0) await new Promise(resolve => setImmediate(resolve));
+    rotate("ann-first", "ann-second");
+    clock.now += KEY_RECHECK_MS;
+    joinRecords.release();
+    expect((await pending).data.error.code).toBe("key_revoked");
+    // No binding by the revoked key is left for a failed re-check to keep alive.
+    store.failing = true;
+    expect((await session("order", { kind: "hold" })).data.error.code).toBe("not_joined");
+    expect((await session("observe")).data.error.code).toBe("not_joined");
+  });
+
+  it("keeps a binding by the current key when a concurrent join by the old key in the same session is refused", async () => {
+    const { game, clock, rotate, keyReads } = setup();
+    const session = await connect(game);
+    keyReads.held = true;
+    const old = session("join", { key: "ann-first" });
+    while (keyReads.waiting.length === 0) await new Promise(resolve => setImmediate(resolve));
+    rotate("ann-first", "ann-second");
+    keyReads.held = false;
+    expect((await session("join", { key: "ann-second" })).error).toBe(false);
+    clock.now += KEY_RECHECK_MS;
+    keyReads.release();
+    expect((await old).data.error.code).toBe("key_revoked");
+    expect((await session("pick_nest", ANN_TILE)).data.accepted).toBe(true);
   });
 
   it("leaves a session joined by the current key playing, reading its key at most once per interval", async () => {
