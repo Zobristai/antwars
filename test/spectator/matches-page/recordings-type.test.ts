@@ -7,7 +7,7 @@ import { dom, type ElementPort } from "../pages/dom.ts";
 
 const recording = (minute: number, matchType: Recording["matchType"]): Recording => ({
   id: `2026-11-04T08-${String(minute).padStart(2, "0")}-00-000Z-1`, startedAt: `2026-11-04T08:${String(minute).padStart(2, "0")}:00.000Z`,
-  endedAt: null, simulationEndedAt: null, winner: 1, reason: "queens_killed", decidedBy: "queens_killed", seats: [], status: "complete",
+  endedAt: null, simulationEndedAt: null, winner: 1, reason: "queens_killed", decidedBy: "queens_killed", seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "complete",
   unavailable: [], matchType,
 });
 

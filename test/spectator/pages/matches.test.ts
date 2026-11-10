@@ -10,7 +10,7 @@ import { dom, type ElementPort } from "./dom.ts";
 const live = (lobbyId: string): LiveMatch => ({ lobbyId, startedAt: Date.parse("2026-10-27T10:00:00Z"), rated: true, delaySeconds: 60, colonies: [[], []] });
 const recording: Recording = {
   id: "2026-10-27T09-00-00-000Z-1", startedAt: "2026-10-27T09:00:00.000Z", endedAt: null, simulationEndedAt: null, winner: 0,
-  reason: "queens_killed", decidedBy: null, seats: [], status: "complete", unavailable: [],
+  reason: "queens_killed", decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "complete", unavailable: [],
 };
 
 function page() {
@@ -210,7 +210,7 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     const challenge: LiveMatch = { ...unrated, lobbyId: "lobby-m", colonies: [
       [{ displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: null, rd: null, ratedMatches: null },
         { displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
-      [{ displayName: "antwarsos-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null },
+      [{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null },
         { displayName: "kite #1", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
         { displayName: "kite #2", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null }],
     ] };
@@ -234,6 +234,26 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     expect(lookalike.table.byClass("c-model").filter(node => node.tag === "td")[0]!.byClass("d1p-model").map(seat => seat.textContent))
       .toEqual(["antwars/gpt-6-luna"]);
     lookalike.p.mounted.destroy();
+    // A label whose provider part is the seat's own name shows that name; a label naming another provider keeps its model.
+    const own = show({ ...unrated, lobbyId: "lobby-o", colonies: [[
+      { displayName: "coffee-ant", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null }], [
+      { displayName: "coffee-ant #1", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
+      { displayName: "coffee-ant #2", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null }]] });
+    const [ownFirst, ownSecond] = own.table.byClass("c-model").filter(node => node.tag === "td");
+    expect(ownFirst!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["coffee-ant"]);
+    expect(ownSecond!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["coffee-ant×2, 2 seats"]);
+    expect(colonies(own.list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["coffee-ant"]], ["Lake Hodges Colony", ["coffee-ant×2, 2 seats"]]]);
+    own.p.mounted.destroy();
+    // One identity's seats that report different models keep their own lines even where both show its name.
+    const split = show({ ...unrated, lobbyId: "lobby-s", colonies: [[
+      { displayName: "coffee-ant #1", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
+      { displayName: "coffee-ant #2", modelLabel: "other/coffee-ant", rating: null, rd: null, ratedMatches: null }], [
+      { displayName: "kite #3", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
+      { displayName: "kite #4", modelLabel: "z/local", rating: null, rd: null, ratedMatches: null }]] });
+    const [splitFirst, splitSecond] = split.table.byClass("c-model").filter(node => node.tag === "td");
+    expect(splitFirst!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["coffee-ant #1", "coffee-ant #2"]);
+    expect(splitSecond!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["local×2, 2 seats"]);
+    split.p.mounted.destroy();
     // A catalog with no labels (an older server) names the players as before.
     expect(bodyRows(table)[1]!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["alice", "bob"]);
     p.mounted.destroy();
@@ -329,30 +349,36 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     p.mounted.destroy();
   });
 
-  it("puts the Winner badge after a winning colony's own words where its model is unknown, never on a colony nobody joined, and none on a row with no recorded seat", () => {
+  it("puts the Winner badge after a winning colony's own words where its model is unknown, lists no match a colony never joined, and none on a row with no recorded seat", () => {
     const unknownModel = at("rec-unknown-model", "06", { winner: 0, seats: [seat(0, 0, null), seat(0, 1, "zai/glm-5.3", "max")] });
     const noColonySeat = at("rec-no-colony", "05", { winner: 1, seats: [seat(0, 0, "zai/glm-5.3", "max")] });
-    const noSeats = at("rec-no-seats", "04", { winner: 1, seats: [] });
-    const noSeatsDraw = at("rec-no-seats-draw", "03", { winner: null, reason: "time_up", decidedBy: "draw", seats: [] });
-    const { p, table, list } = show(unknownModel, noColonySeat, noSeats, noSeatsDraw);
-    const [first, second, third, fourth] = bodyRows(table);
+    // Records whose seat data is unavailable: their seats are unknown, so they stay listed.
+    const noSeats = at("rec-no-seats", "04", { winner: 1, seats: [], status: "unavailable" });
+    const noSeatsDraw = at("rec-no-seats-draw", "03", { winner: null, reason: "time_up", decidedBy: "draw", seats: [], status: "unavailable" });
+    // A complete record that holds no seat: played with nobody joined.
+    const nobody = at("rec-nobody", "02", { winner: null, seats: [], status: "complete" });
+    // A partial record without seats does not show that nobody joined: it stays listed.
+    const nobodyPartial = at("rec-nobody-partial", "01", { winner: null, seats: [], status: "partial" });
+    const { p, card, table, list } = show(unknownModel, noColonySeat, noSeats, noSeatsDraw, nobody, nobodyPartial);
+    // A match a colony never joined was never played: neither form lists it, nor says "did not join".
+    expect(bodyRows(table)).toHaveLength(4);
+    expect(list.querySelectorAll("li")).toHaveLength(4);
+    const hrefs = card.byClass("d1p-row-pill").map(link => link.getAttribute("href") ?? "");
+    for (const hidden of ["rec-no-colony", "rec-nobody"]) expect(hrefs.some(href => href.includes(`replay=${hidden}&`) || href.endsWith(`replay=${hidden}`))).toBe(false);
+    expect(hrefs.filter(href => href.includes("replay=rec-no-seats"))).toHaveLength(4);
+    expect(hrefs.filter(href => href.includes("replay=rec-nobody-partial"))).toHaveLength(2);
+    expect(card.textContent).not.toMatch(/did not join/);
+    const [first, third, fourth] = bodyRows(table);
     // With no colony line to carry a badge, a draw keeps its own word under the time; a winner's word names a colony, so none.
     expect([third!, fourth!].map(row => row.byClass("c-start")[0]!.byClass("d1p-result").map(node => node.textContent))).toEqual([[], ["Draw"]]);
-    expect(list.byClass("is-lead").slice(2).map(line => line.textContent)).toEqual(["", "Draw"]);
+    expect(list.byClass("is-lead").slice(1).map(line => line.textContent)).toEqual(["", "Draw", "Result unknown"]);
     const lines = (scope: ElementPort) => scope.byClass("d1p-model").map(line => line.children.map(node => [node.className, node.textContent]));
     expect(lines(first!)).toEqual([[["", "model unknown"], ["d1p-tag d1p-c0", "Winner"]], [["", "GLM-5.3"], ["d1p-tags", "max"]]]);
-    // The record names the colony nobody joined as winner: it says "did not join" exactly as an unmarked colony nobody
-    // joined does, with no badge, and no word stands in for one.
-    expect(lines(second!)).toEqual([[["", "GLM-5.3"], ["d1p-tags", "max"]], []]);
-    expect(second!.byClass("d1p-unknown").map(node => node.textContent)).toEqual(["did not join"]);
-    expect(second!.byClass("c-start")[0]!.byClass("d1p-result").map(node => node.textContent)).toEqual([]);
     // A row with no recorded seat keeps its one spanning cell, with no badge.
     expect(third!.byClass("c-model").map(cell => [cell.colSpan, cell.textContent])).toEqual([[2, "Seats not recorded"]]);
     const resultTags = (scope: ElementPort) => scope.byClass("d1p-tag").filter(node => !node.classes().includes("d1p-type"));
-    expect(second!.textContent).not.toMatch(/Winner/);
     expect(resultTags(third!)).toEqual([]);
-    const [, , stacked] = list.querySelectorAll("li");
-    expect(colonies(list.querySelectorAll("li")[1]!)).toEqual([["Very Large Colony", ["GLM-5.3max"]], ["Lake Hodges Colony", ["did not join"]]]);
+    const [, stacked] = list.querySelectorAll("li");
     expect(resultTags(stacked!)).toEqual([]);
     expect(table.querySelector("tbody")!.textContent).not.toMatch(/Very Large Colony|Lake Hodges Colony/);
     p.mounted.destroy();
@@ -360,14 +386,15 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
 
   it("lists a colony's alike seats once with how many, each seat's name and badges on one line, and every seat that differs", () => {
     const { p, table } = show(team, mixed, oneSided);
-    const [first, second, third] = bodyRows(table);
+    // The match one colony never joined is not listed.
+    expect(bodyRows(table)).toHaveLength(2);
+    const [first, second] = bodyRows(table);
     expect(seats(first!)).toEqual([["GPT-6.1 SolmaxFast×4, 4 seats"], ["Claude Opus 5.5high×4, 4 seatsWinner"]]);
     // One line: the name, its badges as one unit, then the count.
     expect(first!.byClass("d1p-model")[0]!.children.map(node => node.className)).toEqual(["", "d1p-tags", "d1p-count"]);
     expect(first!.byClass("d1p-tags").map(tags => tags.children.map(tag => [tag.className, tag.textContent]))).toEqual([[["d1p-tag", "max"], ["d1p-tag", "Fast"]], [["d1p-tag", "high"]]]);
-    // Seats that differ keep their own lines, in seat order; a colony with no recorded seat says nobody joined it.
+    // Seats that differ keep their own lines, in seat order.
     expect(seats(second!)).toEqual([["GPT-6 LunamaxFastWinner", "model unknownWinner"], ["some-model.2"]]);
-    expect(seats(third!)).toEqual([["GLM-5.3maxWinner"], ["did not join"]]);
     expect(table.byClass("d1p-elo").concat(table.byClass("d1p-rd"), table.byClass("d1-elo"), table.byClass("d1p-prov"))).toEqual([]);
     p.mounted.destroy();
   });
@@ -383,7 +410,7 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
   it("names a builder seat that reported no model by its handle, never \"model unknown\", and keeps two such players apart", () => {
     const builder = (seat: number, colony: 0 | 1, handle: string) => ({ seat, colony, modelLabel: null, thinkingLevel: null, serviceTier: null, handle });
     const handles = at("rec-handles", "06", { winner: 1, seats: [builder(0, 0, "omp-dolphin"), builder(1, 0, "coffeebot-ant"), builder(2, 0, "omp-dolphin"),
-      { seat: 3, colony: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "max", serviceTier: "fast", handle: "antwarsos-harness" }] });
+      { seat: 3, colony: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "max", serviceTier: "fast", handle: "kestrel-harness" }] });
     const { p, table, list } = show(handles);
     expect(seats(bodyRows(table)[0]!)).toEqual([["omp-dolphin×2, 2 seats", "coffeebot-ant"], ["GPT-6.1 TerramaxFastWinner"]]);
     expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["omp-dolphin×2, 2 seats", "coffeebot-ant"]], ["Lake Hodges Colony", ["GPT-6.1 TerramaxFastWinner"]]]);
@@ -391,7 +418,7 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     p.mounted.destroy();
   });
 
-  it("shows real recorded rows with each seat's model, else its handle, and \"did not join\" for a colony nobody joined", () => {
+  it("shows real recorded rows with each seat's model, else its handle, its handle where its label starts with it, and none a colony never joined", () => {
     const real = (id: string, winner: 0 | 1, seats: Recording["seats"]): Recording => ({ ...recording, id, startedAt: `${id.slice(0, 13)}:${id.slice(14, 16)}:${id.slice(17, 19)}.${id.slice(20, 24)}`,
       winner, reason: "queens_killed", decidedBy: "queens_killed", seats });
     const seat = (seat: number, colony: 0 | 1, modelLabel: string | null, thinkingLevel: string | null, serviceTier: string | null, handle: string) =>
@@ -400,26 +427,23 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     // and a builder's self-reported label.
     const rows = [
       real("2026-11-10T00-30-31-578Z-3107964399993", 1, [seat(0, 1, null, null, null, "omp-dolphin"), seat(1, 0, "openai/gpt-6-astra", "max", "fast", "antwars/gpt-6-astra")]),
-      real("2026-11-09T20-46-21-996Z-71180376741910", 0, [seat(0, 0, "openai/gpt-6.1-sol", "max", "fast", "antwars/gpt-6-1-sol"), seat(1, 1, "openai/gpt-6.1-terra", "max", "fast", "antwarsos-harness")]),
+      real("2026-11-09T20-46-21-996Z-71180376741910", 0, [seat(0, 0, "openai/gpt-6.1-sol", "max", "fast", "antwars/gpt-6-1-sol"), seat(1, 1, "openai/gpt-6.1-terra", "max", "fast", "kestrel-harness")]),
       real("2026-11-09T14-53-30-810Z-231559008937012", 0, [seat(0, 0, "openai/gpt-6-astra", "max", "fast", "antwars/gpt-6-astra")]),
       real("2026-11-09T13-26-59-840Z-160375822867893", 1, [seat(0, 1, null, null, null, "omp-dolphin")]),
       real("2026-11-09T09-07-02-696Z-7115159364110", 1, [seat(0, 0, "anthropic/claude-opus-5-5", "medium", null, "antwars/claude-opus-5-5-medium")]),
       real("2026-11-08T13-12-31-473Z-190550962654674", 0, [seat(0, 1, "coffee-ant/local", null, null, "coffee-ant"), seat(1, 0, "anthropic/claude-opus-5-5", "low", null, "antwars/claude-opus-5-5-low")]),
     ];
     const { p, table, list } = show(...rows);
+    // The three matches a colony never joined (14:53, 13:26, 09:07) are not listed.
     const shown = [
       [["GPT-6 AstramaxFast"], ["omp-dolphinWinner"]],
       [["GPT-6.1 SolmaxFastWinner"], ["GPT-6.1 TerramaxFast"]],
-      [["GPT-6 AstramaxFastWinner"], ["did not join"]],
-      [["did not join"], ["omp-dolphinWinner"]],
-      // Its record names the colony nobody joined as winner; that colony carries no Winner badge.
-      [["Claude Opus 5.5medium"], ["did not join"]],
-      // A self-reported label keeps its own words after its provider, as before.
-      [["Claude Opus 5.5lowWinner"], ["local"]],
+      // A self-reported label whose provider part is the seat's own handle shows that handle.
+      [["Claude Opus 5.5lowWinner"], ["coffee-ant"]],
     ];
     expect(bodyRows(table).map(seats)).toEqual(shown);
     expect(list.querySelectorAll("li").map(item => colonies(item).map(([, lines]) => lines))).toEqual(shown);
-    expect(table.textContent + list.textContent).not.toMatch(/model unknown|not recorded/);
+    expect(table.textContent + list.textContent).not.toMatch(/model unknown|not recorded|did not join|local/);
     p.mounted.destroy();
   });
 

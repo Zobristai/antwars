@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import type { Identities } from "../../src/identity/identities.ts";
 import { LAUNCHABLE_HANDLES } from "../../src/lobby/houseLaunchable.ts";
-import { createChallengeSteps, type ChallengeLobbyRules, type ChallengeOutcome, type LaunchOutcome } from "../../src/lobby/challenges.ts";
+import { createChallengeSteps, heldDays, type ChallengeLobbyRules, type ChallengeOutcome, type LaunchOutcome } from "../../src/lobby/challenges.ts";
 import { createLobbies, type LobbyOutcome, type LobbySettings } from "../../src/lobby/lobbies.ts";
 import { HOUSE_LABELS } from "../../src/rating/house.ts";
 import { createFirestore, type Store } from "../../src/store/firestore.ts";
@@ -431,6 +431,26 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     expect(counts.shared).toEqual({});
   });
 
+  it("shows the house owner, and only the house owner, a launched report's reason in the accepted format beside an unchanged launchReport", async () => {
+    const w = await world(at(12, 0));
+    const COMMIT = "0123456789abcdef0123456789abcdef01234567";
+    const MATCHED = `pinned harness matched @ ${COMMIT}`;
+    const builder = await w.claim("builder");
+    const told = value(await w.request(builder));
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId))).toMatchObject({ launchReport: null, launchReportReason: null });
+    value(await w.report(told.requestId, "launched", MATCHED));
+    expect(value(await w.main.challengeStatus(w.house.key, told.requestId))).toMatchObject({ launchReport: "launched", launchReportReason: MATCHED });
+    expect(value(await w.main.challengeStatus(builder.key, told.requestId))).not.toHaveProperty("launchReportReason");
+    expect(value(await w.main.challengeStatus(builder.key, told.requestId))).not.toHaveProperty("launchReport");
+    // Any other stored reason, or none, reads null; launchReport is unchanged.
+    const others = [undefined, "checked before launch", `${MATCHED} version`, `revision ${MATCHED}`, `pinned harness matched @ ${COMMIT.toUpperCase()}`, MATCHED.slice(0, -1)];
+    for (const [n, reason] of others.entries()) {
+      const other = value(await w.request(await w.claim(`other${n}`)));
+      value(await w.report(other.requestId, "launched", reason));
+      expect(value(await w.main.challengeStatus(w.house.key, other.requestId)), String(reason)).toMatchObject({ launchReport: "launched", launchReportReason: null });
+    }
+  });
+
   it("ends a challenge reported unavailable before the seat joins: house_unavailable with its reason, uncharged, its place returned, no handle marked", async () => {
     const w = await world(at(12, 0));
     const REASON = "maintenance";
@@ -786,18 +806,46 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 23 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 28 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(23);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(28);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(28);
+    // The five indexed handles that can launch are listed available.
+    for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+    }
     expect(opponents.filter(o => o.available).map(o => o.handle).sort()).toEqual([...onTable].sort());
     for (const o of opponents) {
       expect([o.handle, o.available, o.reason]).toEqual(onTable.has(o.handle) ? [o.handle, true, null] : [o.handle, false, "not on the house launch table"]);
     }
     // antwars/mistral-large-latest, the reported case: on the House table, off the launch table, closed with no record.
     expect(opponents.find(o => o.handle === "antwars/mistral-large-latest")).toMatchObject({ available: false, reason: "not on the house launch table" });
+  });
+});
+
+describe("the place a started challenge holds", () => {
+  const rules = { lobbyTtlMs: TTL, countdownMs: COUNTDOWN, isExpired: (fields: { state?: string; createdAt?: string }, t: number) =>
+    (fields.state === "open" || fields.state === "waiting") && t >= Number(fields.createdAt) + TTL } as unknown as ChallengeLobbyRules;
+  const startsAt = at(23, 58);
+  const seats = JSON.stringify([{ id: "house-handle", displayName: "antwars/glm-5-3", colony: 0 }, { id: "builder", displayName: "builder", colony: 1 }]);
+  const ended = (outcome: string, heldAbsent = false) => ({ state: "ended", createdAt: String(at(23, 50)), startsAt: String(startsAt), seats, outcome,
+    challengeId: "request", ...(heldAbsent ? { heldAbsent: "true" } : {}) });
+
+  it("holds none once its match ended abandoned with the house colony absent", () => {
+    expect(heldDays(ended("abandoned", true), at(23, 59), rules)).toEqual([]);
+  });
+
+  it("keeps its match day for a builder no-show, a match played to a result, any other abandon, and while playing", () => {
+    for (const lobby of [ended("abandoned"), ended("colony_1_won"), ended("draw"), { ...ended(""), state: "holding", outcome: "" }]) {
+      expect(heldDays(lobby, at(23, 59), rules)).toEqual([day(startsAt)]);
+    }
+  });
+
+  it("holds none, as before, when the house never took its seat and the lobby expired open", () => {
+    expect(heldDays({ state: "open", createdAt: String(at(10, 0)), startsAt: "", seats: "[]" }, at(10, 0) + TTL, rules)).toEqual([]);
   });
 });

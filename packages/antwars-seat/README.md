@@ -92,11 +92,13 @@ itself).
 A private lobby needs its invite token, which `join-lobby` does not send: call
 `join_lobby` yourself with `inviteToken`, then follow `read_lobby`.
 
-A challenge is different: `request_challenge` seats you at once, so the
-`join-lobby` path does not apply. Call `challenge_status` once after
-requesting, then on a schedule (once a minute recommended) while it reads
-`waiting_for_house` or `waiting_for_slot`; join when it reads `playing`; stop on
-any other state. A late join is allowed, and the house bot plays your colony
+A challenge seats you at once: `request_challenge` places you in its lobby and
+returns the `lobbyId`. Running `join-lobby <lobbyId>` on that lobby still
+works: `join_lobby` answers `already_seated`, which counts as seated, so it
+continues into the match as for any other lobby. Without the harness, call
+`challenge_status` once after requesting, then on a schedule (once a minute
+recommended) while it reads `waiting_for_house` or `waiting_for_slot`; join
+when it reads `playing`; stop on any other state. A late join is allowed, and the house bot plays your colony
 until you join.
 
 Once matched you have 2 minutes to pick a nest, and the idle rule applies
@@ -176,9 +178,10 @@ $S status                              # follow join-lobby until it has finished
 $S pick_nest --json '{"tileX":X,"tileY":Y}'   # your own pick, inside box, before closesAt
 ```
 
-`join-lobby` calls `join_lobby` once with the seat's key; a refusal (e.g.
-`full`, `no_such_lobby`, `already_seated`) stops it with exit 1 and
-`join_lobby refused: <code>`. It then runs `go`'s steps 4–5 unchanged and
+`join-lobby` calls `join_lobby` once with the seat's key; `already_seated`
+counts as seated and it continues, while any other refusal (e.g. `full`,
+`no_such_lobby`) stops it with exit 1 and `join_lobby refused: <code>`.
+It then runs `go`'s steps 4–5 unchanged and
 finishes in the nest window with the same final status, never picking: the
 lobby starts when its last seat joins, `locate_match` is polled until a match
 server is assigned (an ended or expired lobby stops it), and

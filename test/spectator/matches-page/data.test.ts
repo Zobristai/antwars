@@ -6,7 +6,8 @@ import { recordingRows, recordingsState } from "../../../web/src/ui/format.ts";
 const saved = (minute: number): Recording => ({
   id: `2026-10-25T00-${String(minute).padStart(2, "0")}-00-000Z-1`, startedAt: `2026-10-25T00:${String(minute).padStart(2, "0")}:00.000Z`,
   endedAt: null, simulationEndedAt: null, winner: 1, reason: "queens_killed", decidedBy: "queens_killed",
-  seats: [{ seat: 0, colony: 0, modelLabel: "saved model", thinkingLevel: null, serviceTier: null, handle: null }], status: "complete", unavailable: [],
+  seats: [{ seat: 0, colony: 0, modelLabel: "saved model", thinkingLevel: null, serviceTier: null, handle: null },
+    { seat: 1, colony: 1, modelLabel: "other model", thinkingLevel: null, serviceTier: null, handle: null }], status: "complete", unavailable: [],
 });
 const turn = () => new Promise<void>(resolve => setImmediate(resolve));
 describe("matches page data", () => {
@@ -28,7 +29,7 @@ describe("matches page data", () => {
       { lobbyId: "unrated", startedAt: 2, rated: false, delaySeconds: 60, colonies: [[{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], []] },
       { lobbyId: "rated", startedAt: 3, rated: true, delaySeconds: 300, colonies: [[], []] },
       // Each seat's self-reported model label, null where it reported none.
-      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "antwarsos-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null }],
+      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null }],
         [{ displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }]] },
     ];
     const request = async (path: RequestInfo | URL) => new Response(JSON.stringify(
@@ -72,7 +73,7 @@ describe("newest saved history without recent-upload discovery", () => {
     expect(calls).toEqual(["/watch/catalog", "/matches"]);
     const first = recordingRows(data.view, "");
     expect(first.map(row => row.id)).toEqual(records.slice(0, 20).map(row => row.id));
-    for (const row of first) expect(row).toMatchObject({ result: "Lake Hodges Colony won", models: "Very Large Colony: saved model", record: "Record complete" });
+    for (const row of first) expect(row).toMatchObject({ result: "Lake Hodges Colony won", models: "Very Large Colony: saved model · Lake Hodges Colony: other model", record: "Record complete" });
     expect(recordingsState(data.view, first.length).text).toBe("20 recordings loaded, newest first · more remain");
     data.more(); await vi.waitFor(() => expect(data.view.recordings.rows).toHaveLength(40));
     data.more(); await vi.waitFor(() => expect(data.view.next).toBeNull());

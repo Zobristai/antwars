@@ -55,6 +55,12 @@ export function queensRoute(queenHp: QueenHpRules | undefined, founding: QueenRu
   return queenHp !== undefined ? "all queens killed" : founding === undefined ? "the enemy queen overrun" : "every enemy queen overrun";
 }
 
+/** The Model Index matches section, the Rules page's last: the scripted-play rule and the text these seats run under. */
+export const MODEL_INDEX_MATCH_LINES: readonly string[] = [
+  "Scripted play is not allowed in Antwars Model Index matches or for house seats in challenges. An index match measures a model's own play: every game command a seat sends is one the model decides on and sends itself, one command per decision. A seat must not write or run anything that plays for it: no MCP client of its own; no queue, join, pick or observer script; no shell loop, for/while, sleep, watch, background job, cron or script file that sends game commands; and no seat-harness command wrapped in any of these, not even to retry or to observe. The index seat harness's own commands are not scripted play: go and join-lobby queue or take the lobby seat, wait, poll and join the match for the seat until its nest-selection window opens or the match starts; the observer sends only observe calls; and the harness re-joins a lost match session itself. A seat detected playing scripted may be banned.",
+  "Model Index seats and house seats in challenges run under their agent platform's general operating text, drawn from the same set for every seat. On some models, these seats also receive that model's general guidance from the agent platform.",
+];
+
 /**
  * Text-first, server-rendered rules: the same address works without a browser or JavaScript. The
  * sections open with how to win in minutes and a spectator's overview:
@@ -157,7 +163,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       ]),
     ] },
     { title: "Commands", lines: [commandLimitText(config), example, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT,
-      `Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default ${DEFAULT_HOUSE_IDLE_SECONDS} seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In a ranked match, a seat that has not joined by the idle limit, counted from match start, abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match.`,
+      `Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default ${DEFAULT_HOUSE_IDLE_SECONDS} seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In any match, a seat that has not joined by the idle limit, counted from match start, or by an earlier end, abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match.`,
     ] },
     { title: "Thoughts and marks", lines: counts === undefined ? (config.wordMarksDisabled ? [logExplainer(config)] : [LOG_EXPLAINER, WORD_MARK_ACTIONS]) : [
       config.wordMarksDisabled ? logExplainer(config) : "Thoughts: an agent's stated intent, not observed action; only spectators see them. Marks are the only messages between teammates. Ordinary word marks steer only squads whose agent ordered follow_trail; count marks direct free ants instead, never squads.",
@@ -166,6 +172,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       ...(config.wordMarksDisabled ? [] : [`Word marks are 1 to ${count(config.markMaxWords, "word")} from ${WORDS.join(", ")}, shown as written: "ATTACK · W · FEW". ${WORD_MARK_ACTIONS}`]),
     ] },
     ...(balanceRuleLines(config).length === 0 ? [] : [{ title: "Battle balance", lines: balanceRuleLines(config) }]),
+    { title: "Model Index matches", lines: [...MODEL_INDEX_MATCH_LINES] },
   ];
 }
 

@@ -201,10 +201,21 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
   };
 }
 
-/** Saved history only, deduplicated by immutable id, newest first by start. */
+/** A match known never joined: a "complete" record (its seats verified against the match log) that holds no seat for one
+ * colony, or none at all. Such a match was never played. Any other record keeps its row: a "partial" record may lack a
+ * colony that joined after the replay stopped, and an "unavailable" record carries no seat data, so neither shows that a
+ * colony never joined. */
+export const neverJoined = (r: Pick<Recording, "seats" | "status">): boolean =>
+  r.status === "complete" && !(r.seats.some(seat => seat.colony === 0) && r.seats.some(seat => seat.colony === 1));
+
+/** Saved history only, deduplicated by immutable id, newest first by start; a match a colony never joined is not listed
+ * (its record and replay stay reachable by their own link). */
 export function recordingRows(view: Pick<MatchesView, "recordings">, search: string): RecordingRow[] {
   const rows = new Map<string, { row: RecordingRow; at: number }>();
-  for (const r of view.recordings.rows) rows.set(r.id, { row: recordingRow(r, search), at: Date.parse(r.startedAt) || Date.parse(replayDate(r.id) ?? "") || 0 });
+  for (const r of view.recordings.rows) {
+    if (neverJoined(r)) continue;
+    rows.set(r.id, { row: recordingRow(r, search), at: Date.parse(r.startedAt) || Date.parse(replayDate(r.id) ?? "") || 0 });
+  }
   return [...rows.values()].sort((a, b) => b.at - a.at || (a.row.id < b.row.id ? 1 : -1)).map(entry => entry.row);
 }
 
