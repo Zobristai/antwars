@@ -84,7 +84,7 @@ const isPast = (expiresAt: string | undefined, at: number): boolean => expiresAt
 
 export type WaitRecord =
   | { readonly kind: "queue"; readonly identityId: string; readonly joinedAt: string }
-  | { readonly kind: "lobby"; readonly lobbyId: string; readonly identityId: string };
+  | { readonly kind: "lobby"; readonly lobbyId: string; readonly identityId: string; readonly paired?: "unread" };
 
 /** The token's document, created in the caller's transaction; limit is the wait's own limit, in ms. */
 export function waitWrite(token: string, record: WaitRecord, limit: number): Write {
@@ -182,6 +182,19 @@ export async function lobbyWaitWrites(
 ): Promise<Write[]> {
   indexes.add(kind, identityId, token, limit + WAIT_GRACE_MS);
   return [waitWrite(token, { kind: "lobby", lobbyId, identityId }, limit), await seatKeyWrite(read, lobbyId, identityId, token, limit)];
+}
+
+/**
+ * The wait of a queue join matched in its own transaction (joinQueueStep): from its first write a lobby wait on the paired
+ * lobby, with that lobby's limit, its seat key and an entry in its identity's lobby index, marked paired "unread" so its
+ * first read reports paired once, then follows the lobby. It is never a queue wait, so no queue expiry can sweep it while
+ * the lobby still waits.
+ */
+export async function matchedQueueWaitWrites(
+  read: TransactionRead, indexes: WaitIndexes, token: string, lobbyId: string, identityId: string, lobbyLimit: number,
+): Promise<Write[]> {
+  indexes.add("lobby", identityId, token, lobbyLimit + WAIT_GRACE_MS);
+  return [waitWrite(token, { kind: "lobby", lobbyId, identityId, paired: "unread" }, lobbyLimit), await seatKeyWrite(read, lobbyId, identityId, token, lobbyLimit)];
 }
 
 /** A new queue wait record, listed in its identity's queue index; limit is the entry's own limit. */

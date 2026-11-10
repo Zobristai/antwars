@@ -2,7 +2,7 @@ import { isHouseOwned } from "../identity/houseOwnership.js";
 import { isRankedMode, type RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
-import { isWaitToken, repointWrites, waitPath, type WaitIndexes, type WaitState } from "./waits.js";
+import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type WaitIndexes, type WaitState } from "./waits.js";
 
 /**
  * The ranked matchmaking queue, as transaction steps that
@@ -95,7 +95,8 @@ async function statusOf(read: TransactionRead, entry: Fields | null, at: number)
 
 /**
  * waitToken: the join's waiting token (src/lobby/waits.ts), kept on the entry so a later join or leave can remove its wait;
- * indexes: the transaction's wait index edits, which a re-pointed partner's token moves through.
+ * indexes: the transaction's wait index edits, which a re-pointed partner's token moves through. A join matched here
+ * writes its own wait as a lobby wait on the paired lobby (matchedQueueWaitWrites); the caller writes a waiting join's.
  */
 export async function joinQueueStep(
   read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites, indexes: WaitIndexes, waitToken = "",
@@ -151,12 +152,17 @@ export async function joinQueueStep(
   const partnerRepoint: Write[] = partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt
     ? await repointWrites(read, indexes, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")
     : [];
+  // The joiner's own token is bound to the paired lobby the same way, from its first write.
+  const ownWait = waitToken && isWaitToken(waitToken)
+    ? await matchedQueueWaitWrites(read, indexes, waitToken, lobbyId, joiner.id, made.lobby.expiresAt)
+    : [];
   return {
     result: { ok: true, value: { state: "matched", mode, lobbyId, matchedAt: at } },
     writes: [
       ...made.writes,
       { op: "update", path: entryPath(pick), fields: { state: "matched", lobbyId } },
       ...partnerRepoint,
+      ...ownWait,
       ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId, waitToken }),
       ...listWrite(waiting.filter((id) => id !== pick)),
     ],

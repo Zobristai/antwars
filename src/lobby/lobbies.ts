@@ -1125,7 +1125,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
           // its ended lobby records, so a queue-only player's finished pairings are removed by its next join.
           const handled = new Set(replaced.flatMap((write) => write.path.startsWith("waits/") ? [write.path.slice("waits/".length)] : []));
           writes.push(...(await replacedWaitWrites(read, indexes, "queue", joiner.id, handled)), ...(await prunedLobbyWaitWrites(read, indexes, joiner.id, at)));
-          writes.push(queueWaitWrite(indexes, waitToken, joiner.id, at, at + queueTtl(mode)));
+          // A join matched at once already wrote its wait as a lobby wait on the paired lobby (joinQueueStep).
+          if (step.result.value.state !== "matched") writes.push(queueWaitWrite(indexes, waitToken, joiner.id, at, at + queueTtl(mode)));
         }
         return { result: step.result, writes: [...writes, ...(await indexes.writes())] };
       });
