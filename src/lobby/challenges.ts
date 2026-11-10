@@ -17,7 +17,8 @@ import { queueStatusStep } from "./queue.js";
  * stored: both the creation day and the day of createdAt + the lobby expiry + the countdown while it can still take a
  * slot, its startsAt day once it has, its creation day when it expired full awaiting one, and none when its held seat
  * was never filled, a failed or unavailable report closed it, its builder left it before start (leave_lobby, which ends
- * it with no startsAt and records leftEmpty; challenge_status then reads expired, reason builder_left), or its match
+ * it with no startsAt and marks the request builderLeft; challenge_status then reads expired, reason builder_left, even
+ * once the lobby document is gone), or its match
  * ended abandoned because the held colony never joined (the lobby's heldAbsent): a house no-show is never charged to
  * the builder.
  * Places only shrink after admission, and admission needs room on every day it adds, so no day ever holds more than 20
@@ -37,7 +38,8 @@ import { queueStatusStep } from "./queue.js";
  * Documents, under the store's namespace:
  *   challengeRequests/{requestId}   { challengerId, ownerId, handle, lobbyId, createdAt, launchReport ("" | launched |
  *                                     failed | unavailable), reportReason, reportedAt, closedByFailure ("" | "true"),
- *                                     set when a failed or unavailable report closed the lobby }
+ *                                     set when a failed or unavailable report closed the lobby, builderLeft ("true"),
+ *                                     set when its builder left the lobby before start and so emptied and ended it }
  *   challengeAllowance/{YYYY-MM-DD} { requests }  ids of requests admitted with a place that day, pruned of released ones
  *   challengeOwners/{ownerId}       { requestId }  the owner's latest request: one active challenge per owner
  *   challengeChallengers/{id}       { requestId }  the identity's latest request, for challenge_status without an id
@@ -172,10 +174,11 @@ export function stateOf(request: Fields, lobby: Fields | null | undefined, at: n
     const reason = request.reportReason ?? "";
     return { state: "house_unavailable", reason: request.launchReport === "unavailable" ? `${CHALLENGES_UNAVAILABLE}: ${reason}` : reason };
   }
+  // Its builder left before the match started, emptying and ending the lobby: never a finished game. Read from the
+  // request, so the reason holds whatever becomes of the lobby document.
+  if (request.builderLeft === "true") return { state: "expired", reason: "builder_left" };
   // A challenge lobby is never deleted; a missing one is read as ended without a game.
   if (!lobby) return { state: "expired" };
-  // Its builder left before the match started, emptying and ending the lobby: never a finished game.
-  if (lobby.leftEmpty === "true") return { state: "expired", reason: "builder_left" };
   if (rules.isExpired(lobby, at)) return { state: "expired", reason: lobby.state === "open" ? "house_did_not_join" : "no_match_slot" };
   if (lobby.state === "open") return { state: "waiting_for_house" };
   if (lobby.state === "waiting" || (lobby.state === "holding" && !lobby.matchRunId)) return { state: "waiting_for_slot" };
@@ -206,6 +209,11 @@ async function placesOn(read: TransactionRead, day: string, at: number, rules: C
     return !!request && heldDays(lobbies.get(lobbyPath(request.lobbyId!)), at, rules).includes(day);
   });
   return { doc, held, ownerOf: (id: string) => requests.get(requestPath(id))?.ownerId };
+}
+
+/** Marks a challenge request whose builder left its lobby before start, emptying it (see stateOf); written by lobbies.ts leave. */
+export function builderLeftWrite(requestId: string): Write {
+  return { op: "update", path: requestPath(requestId), fields: { builderLeft: "true" } };
 }
 
 export function createChallengeSteps(store: Store, identities: Identities, rules: ChallengeLobbyRules) {

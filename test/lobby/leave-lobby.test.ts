@@ -38,8 +38,9 @@ function world() {
   const claim = async (name: string): Promise<Keyed> => { const c = value(await ids.claimUsername(name)); return { id: c.identity.id, key: c.key }; };
   const handleOf = async (owner: Keyed, name: string): Promise<Keyed> => { const c = value(await ids.createHandle(owner.key, name)); return { id: c.identity.id, key: c.key }; };
   const raw = (path: string) => store.get(path);
+  const remove = (path: string) => store.transaction(async () => ({ result: null, writes: [{ op: "delete", path }] }));
   const allRatings = (id: string) => Promise.all(RANKED_MODES.map((mode) => ratings.readRating(id, mode)));
-  return { clock, lobbies, claim, handleOf, raw, allRatings };
+  return { clock, lobbies, claim, handleOf, raw, remove, allRatings };
 }
 
 describe.skipIf(!host)("leaving a lobby before its match starts", { timeout: 60_000 }, () => {
@@ -55,7 +56,7 @@ describe.skipIf(!host)("leaving a lobby before its match starts", { timeout: 60_
     expect(left.colonies.flat().map((seat) => seat.id)).toEqual([bea.id]);
     const stored = (await w.raw(`lobbies/${lobby.id}`))!;
     expect(JSON.parse(stored.seats!).map((seat: { id: string }) => seat.id)).toEqual([bea.id]);
-    expect([stored.state, stored.leftEmpty]).toEqual(["open", undefined]);
+    expect(stored.state).toBe("open");
     // Still listed and joinable, the creator's start_lobby still its own.
     expect((await w.lobbies.listPublic()).map((listed) => listed.id)).toEqual([lobby.id]);
   });
@@ -68,7 +69,7 @@ describe.skipIf(!host)("leaving a lobby before its match starts", { timeout: 60_
 
     const left = value(await w.lobbies.leave(lobby.id, ann.key));
     expect(left).toMatchObject({ state: "ended", outcome: "not_played", startsAt: null, slot: null, rated: null, colonies: [[], []] });
-    expect(await w.raw(`lobbies/${lobby.id}`)).toMatchObject({ state: "ended", outcome: "not_played", startsAt: "", seats: "[]", leftEmpty: "true" });
+    expect(await w.raw(`lobbies/${lobby.id}`)).toMatchObject({ state: "ended", outcome: "not_played", startsAt: "", seats: "[]" });
     expect(await w.lobbies.listPublic()).toEqual([]);
     expect(reasonOf(await w.lobbies.join(lobby.id, ann.key))).toBe("started");
   });
@@ -178,6 +179,20 @@ describe.skipIf(!host)("leaving a lobby before its match starts", { timeout: 60_
         requestId, lobbyId, handle: `antwars/${HANDLE}`, state: "expired", reason: "builder_left", launchReport: null, launchReportReason: null });
       // The builder's latest challenge, read without an id.
       expect(value(await w.lobbies.challengeStatus(builder.key))).toMatchObject({ state: "expired", reason: "builder_left" });
+      expect((await w.raw(`challengeRequests/${requestId}`))!.builderLeft).toBe("true");
+    });
+
+    it("still reads expired with reason builder_left once the emptied lobby is removed", async () => {
+      const { w, house, builder, requestId, lobbyId, allowances, fresh } = await challenged();
+      value(await w.lobbies.leave(lobbyId, builder.key));
+      await w.remove(`lobbies/${lobbyId}`);
+      expect(await w.raw(`lobbies/${lobbyId}`)).toBeNull();
+      expect(value(await w.lobbies.challengeStatus(builder.key, requestId))).toEqual({ requestId, lobbyId, handle: `antwars/${HANDLE}`, state: "expired", reason: "builder_left" });
+      expect(value(await w.lobbies.challengeStatus(house.key, requestId))).toEqual({
+        requestId, lobbyId, handle: `antwars/${HANDLE}`, state: "expired", reason: "builder_left", launchReport: null, launchReportReason: null });
+      expect(value(await w.lobbies.reportChallengeLaunch(house.key, requestId, "launched"))).toEqual({ requestId, launchReport: "launched", state: "expired" });
+      expect(value(await w.lobbies.challengeStatus(builder.key, requestId))).toMatchObject({ state: "expired", reason: "builder_left" });
+      expect(await allowances()).toEqual(fresh);
     });
 
     it("never reads finished, nor charges, after a launched report; the held seat cannot be taken", async () => {
@@ -192,6 +207,16 @@ describe.skipIf(!host)("leaving a lobby before its match starts", { timeout: 60_
       expect(await allowances()).toEqual(fresh);
       // A new challenge is admitted at once: the left one is no longer active.
       value(await w.lobbies.requestChallenge(builder.key, `antwars/${HANDLE}`));
+    });
+
+    it("marks no request when a seat other than the builder's last one leaves a player lobby", async () => {
+      const { w, builder, requestId } = await challenged();
+      const { lobby } = value(await w.lobbies.createLobby(builder.key, "public", 1));
+      const other = await w.claim("Bea");
+      value(await w.lobbies.join(lobby.id, other.key));
+      value(await w.lobbies.leave(lobby.id, other.key));
+      expect((await w.raw(`challengeRequests/${requestId}`))!.builderLeft).toBeUndefined();
+      expect(value(await w.lobbies.challengeStatus(builder.key, requestId)).state).toBe("waiting_for_house");
     });
 
     it("leaves a failed-launch close reading house_unavailable, and refuses the builder's later leave as started", async () => {

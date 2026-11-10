@@ -6,7 +6,7 @@ import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, 
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
-import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
+import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueStatusStep, waitingEntries, type QueueStatus } from "./queue.js";
 import { lobbyPageUrl } from "./site.js";
 
@@ -31,9 +31,7 @@ import { lobbyPageUrl } from "./site.js";
  *                         seats (JSON [{id, displayName, colony}]), inviteVerifier,
  *                         startsAt, matchRunId, outcome, mode }
  *                       mode is the ranked mode of a queue-made lobby, "" (or absent,
- *                       in lobbies stored before modes) for a player-created one;
- *                       leftEmpty ("true"), written only when the last seated identity
- *                       left before the match started and so ended the lobby unplayed
+ *                       in lobbies stored before modes) for a player-created one
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
  *   queues/{kind}       { lobbies }  waiting lobby ids, earliest first
  *   listings/public     { lobbies }  public lobby ids, pruned of ended/expired ones
@@ -223,7 +221,8 @@ export interface Lobbies {
   startEarly(lobbyId: string, creatorKey: string): Promise<LobbyOutcome<Lobby>>;
   /**
    * Removes the key's identity's seat from an open lobby, before its match starts; nothing is rated or charged.
-   * When the last seat leaves, the lobby ends unplayed (outcome not_played, no startsAt) and records leftEmpty.
+   * When the last seat leaves, the lobby ends unplayed (outcome not_played, no startsAt); a house challenge's request is
+   * marked builderLeft in the same commit, so challenge_status reads expired, builder_left.
    * Refused not_seated, with nothing written, when the lobby is missing or holds no seat of this identity (the two
    * read alike); expired when it expired; started once it no longer accepts joins (any state but open).
    */
@@ -871,12 +870,18 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         // Starting is where joins stop: any state but open.
         if (fields.state !== "open") return { result: refuse("started"), writes: [] };
         const remaining = seats.filter((seat) => seat.id !== leaver.id);
+        if (remaining.length > 0) {
+          const update = { seats: JSON.stringify(remaining) };
+          return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }] };
+        }
         // The last seat out closes the lobby unplayed, as a failed house launch does, with no startsAt and so no
-        // challenge place; leftEmpty tells it apart from a finished lobby.
-        const update: Fields = remaining.length > 0
-          ? { seats: JSON.stringify(remaining) }
-          : { seats: "[]", state: "ended", outcome: "not_played", leftEmpty: "true" };
-        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }] };
+        // challenge place. A house challenge's request records that its builder left, for challenge_status.
+        const update = { seats: "[]", state: "ended", outcome: "not_played" };
+        const writes: Write[] = [{ op: "update", path: lobbyPath(lobbyId), fields: update }];
+        if (fields.challengeId && (await read([`challengeRequests/${fields.challengeId}`])).get(`challengeRequests/${fields.challengeId}`)) {
+          writes.push(builderLeftWrite(fields.challengeId));
+        }
+        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes };
       });
     },
 
