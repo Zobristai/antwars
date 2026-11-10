@@ -10,7 +10,7 @@ import { dom, type ElementPort } from "./dom.ts";
 const live = (lobbyId: string): LiveMatch => ({ lobbyId, startedAt: Date.parse("2026-10-27T10:00:00Z"), rated: true, delaySeconds: 60, colonies: [[], []] });
 const recording: Recording = {
   id: "2026-10-27T09-00-00-000Z-1", startedAt: "2026-10-27T09:00:00.000Z", endedAt: null, simulationEndedAt: null, winner: 0,
-  reason: "queens_killed", decidedBy: null, seats: [], status: "complete", unavailable: [],
+  reason: "queens_killed", decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "complete", unavailable: [],
 };
 
 function page() {
@@ -352,13 +352,19 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
   it("puts the Winner badge after a winning colony's own words where its model is unknown, lists no match a colony never joined, and none on a row with no recorded seat", () => {
     const unknownModel = at("rec-unknown-model", "06", { winner: 0, seats: [seat(0, 0, null), seat(0, 1, "zai/glm-5.3", "max")] });
     const noColonySeat = at("rec-no-colony", "05", { winner: 1, seats: [seat(0, 0, "zai/glm-5.3", "max")] });
-    const noSeats = at("rec-no-seats", "04", { winner: 1, seats: [] });
-    const noSeatsDraw = at("rec-no-seats-draw", "03", { winner: null, reason: "time_up", decidedBy: "draw", seats: [] });
-    const { p, card, table, list } = show(unknownModel, noColonySeat, noSeats, noSeatsDraw);
-    // A match one colony never joined was never played: neither form lists it, nor says "did not join".
+    // Records whose seat data is unavailable: their seats are unknown, so they stay listed.
+    const noSeats = at("rec-no-seats", "04", { winner: 1, seats: [], status: "unavailable" });
+    const noSeatsDraw = at("rec-no-seats-draw", "03", { winner: null, reason: "time_up", decidedBy: "draw", seats: [], status: "unavailable" });
+    // Records read from the match itself that hold no seat: played with nobody joined.
+    const nobody = at("rec-nobody", "02", { winner: null, seats: [], status: "complete" });
+    const nobodyPartial = at("rec-nobody-partial", "01", { winner: null, seats: [], status: "partial" });
+    const { p, card, table, list } = show(unknownModel, noColonySeat, noSeats, noSeatsDraw, nobody, nobodyPartial);
+    // A match a colony never joined was never played: neither form lists it, nor says "did not join".
     expect(bodyRows(table)).toHaveLength(3);
     expect(list.querySelectorAll("li")).toHaveLength(3);
-    expect(card.byClass("d1p-row-pill").map(link => link.getAttribute("href"))).not.toContain("/?replay=rec-no-colony");
+    const hrefs = card.byClass("d1p-row-pill").map(link => link.getAttribute("href") ?? "");
+    for (const hidden of ["rec-no-colony", "rec-nobody", "rec-nobody-partial"]) expect(hrefs.some(href => href.includes(`replay=${hidden}&`) || href.endsWith(`replay=${hidden}`))).toBe(false);
+    expect(hrefs.filter(href => href.includes("replay=rec-no-seats"))).toHaveLength(4);
     expect(card.textContent).not.toMatch(/did not join/);
     const [first, third, fourth] = bodyRows(table);
     // With no colony line to carry a badge, a draw keeps its own word under the time; a winner's word names a colony, so none.

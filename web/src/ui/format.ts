@@ -190,10 +190,12 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
   };
 }
 
-/** A match one colony never joined: its record holds seats, none of them that colony's. Such a match was never played.
- * A record with no seat at all is not one (its seats were not recorded). */
-export const neverJoined = (r: Pick<Recording, "seats">): boolean =>
-  r.seats.length > 0 && !(r.seats.some(seat => seat.colony === 0) && r.seats.some(seat => seat.colony === 1));
+/** A match a colony never joined, as its record knows it: a record whose seats were read from the match itself (status
+ * "complete", verified against its log, or "partial", decoded from the replay's own player list and join events) and that
+ * holds no seat for one colony, or none at all. Such a match was never played. An "unavailable" record carries no seat data
+ * (its seats are unknown, not absent), so it is never counted as one. */
+export const neverJoined = (r: Pick<Recording, "seats" | "status">): boolean =>
+  r.status !== "unavailable" && !(r.seats.some(seat => seat.colony === 0) && r.seats.some(seat => seat.colony === 1));
 
 /** Saved history only, deduplicated by immutable id, newest first by start; a match a colony never joined is not listed
  * (its record and replay stay reachable by their own link). */

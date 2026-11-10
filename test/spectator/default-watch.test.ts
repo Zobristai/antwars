@@ -17,7 +17,7 @@ it("Matches renders only catalog-live and saved-recording rows, including a trul
   mounted.update({ ...view,
     live: { status: "ready", rows: [{ lobbyId: "ongoing", startedAt: 1, rated: false, delaySeconds: 60, colonies: [[], []] }] },
     recordings: { status: "ready", rows: [{ id: "2026-10-21T13-58-00-000Z-1", startedAt: "2026-10-21T13:58:00Z", endedAt: null, simulationEndedAt: null,
-      winner: null, reason: null, decidedBy: null, seats: [], status: "partial", unavailable: [] }] },
+      winner: null, reason: null, decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "partial", unavailable: [] }] },
   });
   expect(links().map(row => row.href)).toEqual(["/?lobby=ongoing&watch=1&board=2d", "/?replay=2026-10-21T13-58-00-000Z-1&board=2d"]);
   expect(host.textContent).not.toMatch(/Watch current playback|Recent upload|recent uploads/);
