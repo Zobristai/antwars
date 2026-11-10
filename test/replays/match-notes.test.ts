@@ -7,6 +7,7 @@ import { publicMatchCatalog, type CatalogMatch } from "../../src/live/match-cata
 import { matchNote as noteSchema, type Recording } from "../../web/src/matches-page/data.ts";
 import { recordingRow } from "../../web/src/ui/format.ts";
 import { modeCopy } from "../../web/src/replay.ts";
+import { legend } from "../../web/src/ui/deck/model.ts";
 
 const NOTED = "c0bce8df-1c3f-46c0-b6dd-1ffec3e15f82";
 const TEXT = "Self-reported scripted-play breach: one accepted command, at tick 6556";
@@ -77,5 +78,15 @@ describe("the page's reading of a note", () => {
     expect(modeCopy("replay", 2, false, "/", base.id, true, undefined, tags, TEXT).detail).toBe(`10 Nov 2026 · ${whole} · ${TEXT}`);
     expect(modeCopy("replay", 2, true, "/", base.id, true, undefined, tags, TEXT).detail).toBe(`· recording ended · ${whole} · ${TEXT}`);
     expect(modeCopy("replay", 2, false, "/", base.id, true, undefined, tags, null)).toEqual(modeCopy("replay", 2, false, "/", base.id, true, undefined, tags));
+  });
+
+  it("marks a line carrying a note to wrap rather than cut it short, in both HUDs, and no other line", () => {
+    const noted = modeCopy("replay", 2, false, "/", base.id, true, undefined, [], TEXT);
+    const plain = modeCopy("replay", 2, false, "/", base.id, true, undefined, []);
+    expect(noted.wraps).toBe(true);
+    expect("wraps" in plain).toBe(false);
+    expect(legend(true, 2, "", noted, false).wraps).toBe(true);
+    expect(legend(true, 2, "", noted, false).words).toContain(TEXT);
+    expect("wraps" in legend(true, 2, "", plain, false)).toBe(false);
   });
 });

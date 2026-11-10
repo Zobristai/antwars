@@ -90,9 +90,11 @@ export interface Legend {
   readonly rule: Rule;
   /** A recording's Back to live, as today's HUD offers it; the live page's own recording offer stays in the footer. */
   readonly back: { readonly text: string; readonly href: string } | null;
+  /** Present when the line carries a match's public note (ModeCopy.wraps): the legend wraps rather than truncating. */
+  readonly wraps?: true;
 }
 /** The page's mode line, as the board computes it (web/src/replay.ts modeCopy). */
-export type ModeText = Pick<ModeCopy, "label" | "detail"> & Partial<Pick<ModeCopy, "link">>;
+export type ModeText = Pick<ModeCopy, "label" | "detail"> & Partial<Pick<ModeCopy, "link" | "wraps">>;
 
 /** The detail may carry a no-break space between the figure and its unit (ui/format.ts withUnits). */
 const DELAY = /^(\d+)\s+s behind the match$/;
@@ -132,7 +134,7 @@ export function legend(hasFrame: boolean, agents: number | null, connection: str
   // As today's HUD: the live page's "?replay" offer is not a way back.
   const link = mode?.link ?? null;
   const back = link && link.text !== "" && link.href !== "?replay" ? { text: link.text, href: link.href } : null;
-  return { dot, words, rule, back };
+  return { dot, words, rule, back, ...(mode?.wraps ? { wraps: true as const } : {}) };
 }
 
 // ---------------------------------------------------------------- the clock and whether the result shows

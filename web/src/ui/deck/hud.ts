@@ -169,10 +169,12 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   // ---------------------------------------------------------------- painting
   let legendKey = "";
   const paintLegend = (l: Legend) => {
-    const keyNow = `${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
+    const keyNow = `${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}|${l.wraps === true}`;
     if (keyNow === legendKey) return;
     legendKey = keyNow;
     frameEl.dataset.rule = l.rule;
+    // A line carrying a match's public note wraps rather than cutting it short (deck.css).
+    if (l.wraps) legendEl.dataset.wraps = ""; else delete legendEl.dataset.wraps;
     setHidden(dot, l.dot === null);
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");

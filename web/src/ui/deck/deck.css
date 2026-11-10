@@ -78,6 +78,10 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-dot[data-kind="recording"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
 .d1-mode { flex: none; font-weight: 800; color: var(--aw-ink-bright); }
 .d1-legend-rest { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A line carrying a match's public note wraps rather than truncating, as the narrow legend does; its first line stays on the rule. */
+.d1-legend[data-wraps] { display: block; white-space: normal; }
+.d1-legend[data-wraps] .d1-dot { display: inline-block; vertical-align: 0; }
+.d1-legend[data-wraps] .d1-legend-rest { overflow: visible; }
 
 /* The lane under the window: the one event at its left, the board controls at its right. Nothing covers the board. */
 .d1-lane {

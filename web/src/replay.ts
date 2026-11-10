@@ -22,6 +22,8 @@ export interface ModeCopy {
   /** Descriptive tail; the only part that may be cut short on a narrow screen. */
   detail: string;
   link: { text: string; href: string } | null;
+  /** Present when the detail carries a match's public note, which is never cut short: the line wraps instead. */
+  wraps?: true;
 }
 
 export const LIVE_LABEL = "LIVE";
@@ -66,7 +68,7 @@ const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace
  * Standing in for the live page (source.ts), the recording's line
  * says why in place of "not live": "RECORDING · no live match · rated match · 4 agents".
  * A stored Model Index recording's harness phase tags follow its detail: "15 Oct 2026 · Harness: rounds 26-30".
- * A stored recording's public note follows them, wrapping as ordinary text.
+ * A stored recording's public note follows them, wrapping as ordinary text; the line then wraps rather than cutting it short.
  */
 export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: string, storedId: string | null = null, rated?: boolean, delaySeconds?: number,
   harnessPhase: readonly string[] = [], note: string | null = null): ModeCopy {
@@ -80,10 +82,11 @@ export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: s
     const phase = [...harnessPhase.map(unbrokenTag), ...(note ? [note] : [])].join(" · ");
     const after = (text: string) => phase === "" ? text : text === "" ? phase : `${text} · ${phase}`;
     const detail = after(storedId === null ? "" : recordedDateLabel(storedId));
-    if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, link: null };
+    const wraps = note ? { wraps: true as const } : {};
+    if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, link: null, ...wraps };
     const link = { text: BACK_TEXT, href: liveHref(livePath) };
     const label = RECORDING_LABEL + rating;
-    return ended ? { label, detail: after("· recording ended"), link } : { label: `${label} · ${agents} agents`, detail, link };
+    return ended ? { label, detail: after("· recording ended"), link, ...wraps } : { label: `${label} · ${agents} agents`, detail, link, ...wraps };
   }
   if (agents === 0) return { label: LIVE_LABEL + rating, detail: `${AUTOPILOT_DETAIL} · ${delay}`, link: { text: OFFER_TEXT, href: "?replay" } };
   return { label: LIVE_LABEL + rating, detail: delay, link: null };
