@@ -250,7 +250,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(23);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(28);
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
       await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
@@ -592,7 +592,7 @@ describe("noticing a challenge start", () => {
   it("request_challenge and challenge_status carry the same noticing sentence; the lobby and queue joins do not", () => {
     const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
     expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/challenge_status once after requesting, then on a schedule \(once a minute recommended\) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state;/);
-    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed, and the house bot plays your colony until you join; the antwars-seat join-lobby path does not apply to challenges/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; the antwars-seat join-lobby path does not apply to challenges/);
     for (const name of ["request_challenge", "challenge_status"]) expect(description(name), name).toContain(CHALLENGE_NOTICE_GUIDANCE);
     for (const name of ["join_lobby", "join_queue"]) expect(description(name), name).not.toContain(CHALLENGE_NOTICE_GUIDANCE);
   });

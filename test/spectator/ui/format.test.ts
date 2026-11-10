@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, liveRow, liveState,
-  recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
+  neverJoined, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
 } from "../../../web/src/ui/format.ts";
 import { EARLY_WIN_RULES } from "../../../src/sim/config.ts";
 import type { MatchesView, Recording } from "../../../web/src/matches-page/data.ts";
@@ -121,13 +121,31 @@ describe("matches rows", () => {
     expect(recordingModels([{ seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: null }, { seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }])).toBe("Very Large Colony: m-a · Lake Hodges Colony: model unknown");
   });
   it("deduplicates saved history by id and keeps newest-first display and saved metadata", () => {
-    const recentSaved = recording({ winner: 1, reason: "queens_killed", decidedBy: "queens_killed", seats: [{ seat: 0, colony: 0, modelLabel: "saved model", thinkingLevel: null, serviceTier: null, handle: null }] });
-    const view = { recordings: { status: "ready", rows: [recording({ id: "2026-10-20T22-00-00-000Z-1", startedAt: "2026-10-20T22:00:00.000Z" }), recentSaved, recentSaved] } } as const;
+    const recentSaved = recording({ winner: 1, reason: "queens_killed", decidedBy: "queens_killed", seats: [{ seat: 0, colony: 0, modelLabel: "saved model", thinkingLevel: null, serviceTier: null, handle: null },
+      { seat: 1, colony: 1, modelLabel: "other model", thinkingLevel: null, serviceTier: null, handle: null }] });
+    const view = { recordings: { status: "ready", rows: [recording({ id: "2026-10-20T22-00-00-000Z-1", startedAt: "2026-10-20T22:00:00.000Z", status: "unavailable" }), recentSaved, recentSaved] } } as const;
     const rows = recordingRows(view, "?board=2d");
     expect(rows.map(r => r.id)).toEqual(["2026-10-23T03-36-00-000Z-6", "2026-10-20T22-00-00-000Z-1"]);
-    expect(rows[0]).toMatchObject({ result: "Lake Hodges Colony won", models: "Very Large Colony: saved model", record: "Record complete" });
+    expect(rows[0]).toMatchObject({ result: "Lake Hodges Colony won", models: "Very Large Colony: saved model · Lake Hodges Colony: other model", record: "Record complete" });
     expect(rows[0]!.href).toBe("/?replay=2026-10-23T03-36-00-000Z-6&board=2d");
 
+  });
+  it("lists no match known never joined, a played match nobody joined included, and keeps a record whose seats are partial or unknown", () => {
+    const seat = (n: number, colony: 0 | 1) => ({ seat: n, colony, modelLabel: "m", thinkingLevel: null, serviceTier: null, handle: null });
+    const played = recording({ id: "2026-10-23T03-36-00-000Z-6", seats: [seat(0, 0), seat(1, 1)] });
+    const onlyFirst = recording({ id: "2026-10-23T03-35-00-000Z-5", startedAt: "2026-10-23T03:35:00.000Z", seats: [seat(0, 0), seat(1, 0)] });
+    const onlySecond = recording({ id: "2026-10-23T03-34-00-000Z-4", startedAt: "2026-10-23T03:34:00.000Z", seats: [seat(0, 1)] });
+    // A record unavailable carries no seat data: its seats are unknown, so it stays listed.
+    const unrecorded = recording({ id: "2026-10-23T03-33-00-000Z-3", startedAt: "2026-10-23T03:33:00.000Z", seats: [], status: "unavailable" });
+    // A complete record (seats verified against the match log) that holds no seat was played with nobody joined: it is not listed.
+    const nobody = recording({ id: "2026-10-23T03-32-00-000Z-2", startedAt: "2026-10-23T03:32:00.000Z", seats: [], status: "complete" });
+    // A partial record may lack a colony that joined after the replay stopped: missing seats do not show it never joined.
+    const nobodyPartial = recording({ id: "2026-10-23T03-31-00-000Z-1", startedAt: "2026-10-23T03:31:00.000Z", seats: [], status: "partial" });
+    const onlyFirstPartial = recording({ id: "2026-10-23T03-30-00-000Z-0", startedAt: "2026-10-23T03:30:00.000Z", seats: [seat(0, 0)], status: "partial" });
+    const all = [played, onlyFirst, onlySecond, unrecorded, nobody, nobodyPartial, onlyFirstPartial];
+    expect(all.map(neverJoined)).toEqual([false, true, true, false, true, false, false]);
+    const view = { recordings: { status: "ready", rows: [onlySecond, unrecorded, nobody, played, nobodyPartial, onlyFirst, onlyFirstPartial] } } as const;
+    expect(recordingRows(view, "").map(r => r.id)).toEqual([played.id, unrecorded.id, nobodyPartial.id, onlyFirstPartial.id]);
   });
   it("words each recording's match type as its badge, never a mode slug, and gives no badge without a type", () => {
     expect(recordingType({ kind: "index", size: 2 })).toBe("Index · 2v2");

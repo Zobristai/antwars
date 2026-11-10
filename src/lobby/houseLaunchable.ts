@@ -1,7 +1,7 @@
 /**
  * The house handles a named-lobby challenge can seat. A handle not in this list is not launchable and is never
- * substituted. gpt-6-1-sol-high and gpt-6-1-sol-xhigh cannot be launched (their standard tier cannot be requested at
- * launch) and are deliberately absent.
+ * substituted. The list must name exactly the handles the house launcher can launch: a handle listed here that the
+ * launcher cannot launch has its request reported failed, which then shows that opponent as unavailable.
  */
 export const LAUNCHABLE_HANDLES: readonly string[] = [
   "claude-opus-5-5",
@@ -27,6 +27,11 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "qwen3-8-max",
   "mimo-v2-6-flash",
   "mimo-v2-6-pro",
+  "abliterated-large-v2",
+  "mistral-large-4",
+  "gpt-6-1-sol-high",
+  "gpt-6-1-sol-xhigh",
+  "claude-haiku-5-5",
 ];
 
 const LAUNCHABLE = new Set(LAUNCHABLE_HANDLES);

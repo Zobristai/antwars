@@ -174,7 +174,7 @@ it.each(NEW_MATCH_REPLY_MAP_IDS.flatMap(mapId => [180, 45].map(houseIdleSeconds 
         expect(data.nestSelection.picks).toHaveLength(4);
         // The one idle rule opens the rules for every match type.
         expect(data.rules.split("\n")[0]).toBe(houseIdleText({ ...DEFAULT_MCP_CONFIG, houseIdleSeconds }));
-        expect(data.rules).toContain(`for ${houseIdleSeconds} s is idle; no bot takeover. Index match (house-*), or ranked seat not joined by the limit from match start: match abandoned, unrated.`);
+        expect(data.rules).toContain(`for ${houseIdleSeconds} s is idle; no bot takeover. Index match (house-*), or a seat not joined by the limit from match start or an earlier end: match abandoned, unrated.`);
         const size = { map: mapId, houseIdleSeconds, textChars: text.length, completeBytes: Buffer.byteLength(JSON.stringify(result)) };
         console.log(`House rules budget: ${JSON.stringify(size)}`);
         expect(size.textChars).toBeLessThanOrEqual(MAX_RULES_TEXT_CHARS);
