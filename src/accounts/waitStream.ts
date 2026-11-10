@@ -13,7 +13,9 @@ import { clientSource } from "../server/clientSource.js";
  *
  * Wire: each connect first sends the wait's current state. While it is waiting that is one unnamed message (data: the
  * waiting state as JSON); then, once the wait ends, or at once when it already has, one final event named paired,
- * slot_ready or expired with its state as JSON data, and the stream closes. No other event names are sent. A comment
+ * slot_ready or expired with its state as JSON data, and the stream closes. No other event names are sent. paired
+ * carries lobbyWait: true: the same token is now a wait on the paired lobby, so the next connect sends that lobby's
+ * current state, then slot_ready or expired. A comment
  * keeps an idle stream alive. Every connect re-reads, so a reconnect after a cut or a missed event still learns the
  * outcome, across a wait of any length.
  *

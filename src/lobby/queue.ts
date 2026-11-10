@@ -154,11 +154,11 @@ export async function joinQueueStep(
 /**
  * A queue wait (src/lobby/waits.ts), from the identity's entry as stored now and the joinedAt of the join that
  * issued its token. An entry from another join (left, or replaced by a later join) or none at all ended; a matched
- * entry is paired; a waiting one waits until its lifetime ends, then ran out of time. Reads nothing, writes nothing.
+ * entry is paired (the caller re-points the token to its lobby); a waiting one waits until its lifetime ends, then ran out of time. Reads nothing, writes nothing.
  */
 export function queueWait(entry: Fields | null, joinedAt: string, at: number): WaitState {
   if (!entry || entry.joinedAt !== joinedAt || !isRankedMode(entry.mode)) return { state: "expired", reason: "ended" };
-  if (entry.state === "matched" && entry.lobbyId) return { state: "paired", lobbyId: entry.lobbyId };
+  if (entry.state === "matched" && entry.lobbyId) return { state: "paired", lobbyId: entry.lobbyId, lobbyWait: true };
   if (entry.state !== "waiting") return { state: "expired", reason: "ended" };
   const expiresAt = Number(joinedAt) + queueTtl(entry.mode);
   return at < expiresAt ? { state: "waiting", mode: entry.mode, expiresAt } : { state: "expired", reason: "time_limit" };

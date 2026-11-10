@@ -14,6 +14,8 @@ import type { Lobby } from "./lobbies.js";
  *   waits/{token}  { kind: "queue", identityId, joinedAt }  a ranked queue entry, by the join that made it
  *                  { kind: "lobby", lobbyId }                a lobby seat, a challenger's included
  * written in the same transaction as the join or the challenge request, so a returned token always resolves.
+ * A queue wait found paired is re-pointed, once, to a lobby wait on the paired lobby (Lobbies.waitStatus), so
+ * the token keeps following that lobby after the identity leaves or rejoins the queue.
  */
 
 /** A wait's state. Only paired, slot_ready and expired are final. */
@@ -22,8 +24,11 @@ export type WaitState =
   | { readonly state: "waiting"; readonly mode: RankedMode; readonly expiresAt: number }
   /** A lobby open for seats or waiting for a match slot; an open or waiting lobby expires at expiresAt. */
   | { readonly state: "waiting"; readonly lobby: "open" | "waiting"; readonly expiresAt: number }
-  /** The queue entry was paired: follow lobbyId with read_lobby and locate_match. */
-  | { readonly state: "paired"; readonly lobbyId: string }
+  /**
+   * The queue entry was paired with lobbyId. lobbyWait: the same token is now a wait on that lobby, so
+   * reconnecting with it sends the lobby's current state, then slot_ready or expired.
+   */
+  | { readonly state: "paired"; readonly lobbyId: string; readonly lobbyWait: true }
   /** The lobby holds a match slot; its match starts at startsAt. */
   | { readonly state: "slot_ready"; readonly startsAt: number }
   /** The wait ended without a match: time_limit when its own time ran out, ended for any other reason. */
@@ -48,6 +53,11 @@ export type WaitRecord =
 /** The token's document, created in the caller's transaction. */
 export function waitWrite(token: string, record: WaitRecord): Write {
   return { op: "create", path: waitPath(token), fields: { ...record } };
+}
+
+/** Turns a stored queue wait into a lobby wait on the lobby its entry was paired with, in the caller's transaction. */
+export function repointWrite(token: string, lobbyId: string): Write {
+  return { op: "update", path: waitPath(token), fields: { kind: "lobby", lobbyId, identityId: "", joinedAt: "" } };
 }
 
 /**

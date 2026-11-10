@@ -92,7 +92,7 @@ const WAITING_QUEUE: WaitState = { state: "waiting", mode: "1v1", expiresAt: 1_0
 
 describe("the wait stream route", () => {
   it("sends the current state, then the one final event when a re-read finds it, then closes", async () => {
-    const port = await streamServer(sequence(WAITING_QUEUE, WAITING_QUEUE, { state: "paired", lobbyId: "q-1" }));
+    const port = await streamServer(sequence(WAITING_QUEUE, WAITING_QUEUE, { state: "paired", lobbyId: "q-1", lobbyWait: true }));
     const stream = await read(port, TOKEN);
     expect(stream.status).toBe(200);
     expect(stream.headers.get("content-type")).toBe("text/event-stream");
@@ -100,7 +100,7 @@ describe("the wait stream route", () => {
     expect(stream.ended).toBe(true);
     expect(stream.frames).toEqual([
       { event: null, data: WAITING_QUEUE },
-      { event: "paired", data: { state: "paired", lobbyId: "q-1" } },
+      { event: "paired", data: { state: "paired", lobbyId: "q-1", lobbyWait: true } },
     ]);
   });
 
@@ -199,25 +199,76 @@ function tokenOf(reply: Body): string {
 }
 
 describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeout: 60_000 }, () => {
-  it("join_queue's token waits, is paired when a second agent joins, and reconnecting after it still learns paired", async () => {
-    const w = await world();
+  /** Ann waiting in the 1v1 queue with her token, and Bob's join pairing them into a lobby that takes the public slot. */
+  async function pairedQueue(w: Awaited<ReturnType<typeof world>>) {
     const ann = await w.claim("Ann"), bob = await w.claim("Bob");
     const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
     const waiting = { state: "waiting", mode: "1v1", expiresAt: w.clock.t + 12 * HOUR };
     expect((await read(w.fast, annToken, 300)).frames).toEqual([{ event: null, data: waiting }]);
-
     const open = read(w.fast, annToken);
     await new Promise((resolve) => setTimeout(resolve, 100));
     const bobToken = tokenOf(await w.ok("join_queue", { key: bob.key, mode: "1v1" }));
     const { queue } = await w.ok("queue_status", { key: ann.key });
     expect(queue.state).toBe("matched");
-    const paired = { event: "paired", data: { state: "paired", lobbyId: queue.lobbyId } };
+    const paired = { event: "paired", data: { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true } };
     const live = await open;
     expect([live.ended, live.frames]).toEqual([true, [{ event: null, data: waiting }, paired]]);
+    return { ann, bob, annToken, bobToken, lobbyId: queue.lobbyId as string, paired };
+  }
 
-    // The server's own mount answers too; every connect re-reads, so each token learns paired at once.
-    expect((await read(w.port, annToken)).frames).toEqual([paired]);
+  it("join_queue's token is paired with lobbyWait, then reconnecting follows the paired lobby to slot_ready", async () => {
+    const w = await world();
+    const { annToken, bobToken, lobbyId, paired } = await pairedQueue(w);
+    const lobby = value(await w.lobbies.readLobby(lobbyId));
+    expect(lobby.state).toBe("holding");
+    const ready = [{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt } }];
+    // Ann's live connection already got paired; her next connect is a wait on the lobby.
+    expect((await read(w.port, annToken)).frames).toEqual(ready);
+    // Bob first connects after the pairing: that connection gets paired, the next one the lobby.
     expect((await read(w.port, bobToken)).frames).toEqual([paired]);
+    expect((await read(w.port, bobToken)).frames).toEqual(ready);
+  });
+
+  it("a reconnect after paired ends expired: ended when the paired lobby ends without its match being played", async () => {
+    const w = await world();
+    const { annToken, lobbyId } = await pairedQueue(w);
+    // The hold never begins a match; past the grace, reading settles it ended, not played.
+    w.clock.t += HOUR;
+    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "ended" } }]);
+    expect(value(await w.lobbies.readLobby(lobbyId))).toMatchObject({ state: "ended", outcome: "not_played" });
+  });
+
+  it("after paired, the token keeps following the lobby when its queue entry is left or replaced by a new join", async () => {
+    const w = await world();
+    const { ann, annToken, lobbyId } = await pairedQueue(w);
+    const before = value(await w.lobbies.readLobby(lobbyId));
+    const ready = [{ event: "slot_ready", data: { state: "slot_ready", startsAt: before.startsAt } }];
+    // leave_queue leaves a matched entry as it is; a new join replaces it.
+    await w.ok("leave_queue", { key: ann.key });
+    w.clock.t += 1;
+    const next = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    expect((await w.ok("queue_status", { key: ann.key })).queue.state).toBe("waiting");
+    expect((await read(w.fast, annToken)).frames).toEqual(ready);
+    expect((await read(w.fast, next, 300)).frames[0]!.data.state).toBe("waiting");
+  });
+
+  it("re-points a paired queue wait once, with the stored entry's lobbyId, however many reads race to it", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
+    const { queue } = await w.ok("queue_status", { key: ann.key });
+    const raced = await Promise.all([1, 2, 3].map(() => w.lobbies.waitStatus(annToken)));
+    const paired = { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true };
+    // Each read is paired, or, once another read has re-pointed the token, already the lobby's state.
+    for (const state of raced) expect([paired, { state: "slot_ready", startsAt: expect.any(Number) }]).toContainEqual(state);
+    expect(raced).toContainEqual(paired);
+    const stored = { kind: "lobby", lobbyId: queue.lobbyId, identityId: "", joinedAt: "" };
+    expect(await w.store.get(`waits/${annToken}`)).toEqual(stored);
+    expect((await w.lobbies.waitStatus(annToken))!.state).toBe("slot_ready");
+    expect(await w.store.get(`waits/${annToken}`)).toEqual(stored);
+    // Polling reads the matched entry exactly as before.
+    expect((await w.ok("queue_status", { key: ann.key })).queue).toEqual(queue);
   });
 
   it("a queue token ends expired: ended after leave_queue or a later join, time_limit after the 12 hours", async () => {

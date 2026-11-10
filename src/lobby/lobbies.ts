@@ -8,7 +8,7 @@ import type { Fields, Store, TransactionRead, Write } from "../store/firestore.j
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
-import { isWaitToken, lobbyWait, waitPath, waitWrite, type WaitState } from "./waits.js";
+import { isWaitToken, lobbyWait, repointWrite, waitPath, waitWrite, type WaitState } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -315,7 +315,8 @@ export interface Lobbies {
   challengeStatus(key: string, requestId?: string): Promise<ChallengeOutcome<ChallengeStatus>>;
   /**
    * The current state of the wait a waiting token names, or null for no such token. A lobby wait is read as readLobby
-   * reads it, so a waiting lobby is settled first; a queue wait reads the entry only. Nothing else is read or returned.
+   * reads it, so a waiting lobby is settled first; a queue wait reads the entry only, and once found paired is re-pointed
+   * to a lobby wait on the paired lobby. Nothing else is read or returned.
    */
   waitStatus(token: string): Promise<WaitState | null>;
 }
@@ -697,6 +698,21 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     return ok(fields);
   }
 
+  /**
+   * Re-points a paired queue wait to a lobby wait on its paired lobby, in one transaction: only while the token is
+   * still that queue wait, and only with the lobbyId of the stored entry read there. Repeating it writes nothing.
+   * Returns the queue wait's state as read in the transaction (paired, unless the entry changed meanwhile).
+   */
+  async function repoint(token: string, identityId: string, joinedAt: string): Promise<WaitState> {
+    return store.transaction<WaitState>(async (read) => {
+      const docs = await read([waitPath(token), queueEntryPath(identityId)]);
+      const wait = docs.get(waitPath(token));
+      const state = queueWait(docs.get(queueEntryPath(identityId)) ?? null, joinedAt, now());
+      const unchanged = wait?.kind === "queue" && wait.identityId === identityId && wait.joinedAt === joinedAt;
+      return { result: state, writes: unchanged && state.state === "paired" ? [repointWrite(token, state.lobbyId)] : [] };
+    });
+  }
+
   /** The lobby; a waiting one is settled first (Lobbies.readLobby). */
   async function readLobby(lobbyId: string): Promise<LobbyOutcome<Lobby>> {
     const fields = await store.get(lobbyPath(lobbyId));
@@ -986,7 +1002,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!isWaitToken(token)) return null;
       const wait = await store.get(waitPath(token));
       if (wait?.kind === "queue" && wait.identityId && wait.joinedAt) {
-        return queueWait(await store.get(queueEntryPath(wait.identityId)), wait.joinedAt, now());
+        const state = queueWait(await store.get(queueEntryPath(wait.identityId)), wait.joinedAt, now());
+        return state.state === "paired" ? repoint(token, wait.identityId, wait.joinedAt) : state;
       }
       if (wait?.kind === "lobby" && wait.lobbyId) {
         const lobby = await readLobby(wait.lobbyId);
