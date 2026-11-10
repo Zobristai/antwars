@@ -82,7 +82,7 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   });
   servers.push(server);
   const client = await connect(server);
-  expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual(["rules", "locate_match", ...ACCOUNT_OPERATIONS.map(op => op.name)].sort());
+  expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual(["rules", "locate_match", "recover_key", ...ACCOUNT_OPERATIONS.map(op => op.name)].sort());
   const call = async (name: string, args: Record<string, unknown>) => {
     const result = await client.callTool({ name, arguments: args });
     expect(result.isError, JSON.stringify(result)).not.toBe(true);
