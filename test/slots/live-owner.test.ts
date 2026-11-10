@@ -96,6 +96,21 @@ function freshStatus(port: number, path: string, init: { method?: string; header
 const mcpPost = { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "standby-test", version: "0" } } }) };
 
+/**
+ * Each seat joins the server's lobby through its own session, which then closes: a ranked seat that never
+ * joins ends the match abandoned, unrated, at its natural end.
+ */
+async function joinSeats(port: number, keys: readonly string[]): Promise<void> {
+  for (const key of keys) {
+    const seat = await connect(port);
+    try {
+      await until(async () => !(await seat.call("join", { key })).isError);
+    } finally {
+      await seat.close().catch(() => {});
+    }
+  }
+}
+
 /** The owner's begun match: its run stamped on the lobby. */
 async function begun(lobbies: Lobbies): Promise<string> {
   return until(async () => (await lobbies.slotHolder("public-0"))?.matchRunId ?? undefined);
@@ -104,10 +119,11 @@ async function begun(lobbies: Lobbies): Promise<string> {
 describe("a same-revision instance starting during the owner's begun match", { timeout: 30_000 }, () => {
   it("neither registers nor serves while the owner's heartbeat is fresh; the match records its natural, rated result, then the waiting instance takes the slot", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const { w, lobbies, outcome, rated } = await world();
+    const { w, lobbies, outcome, rated, keys } = await world();
     // A 100 ms heartbeat against a 1 s staleness window: only a refreshed heartbeat keeps the owner live for the 4 s match.
     const owner = await slotServer(lobbies, w.ids, "owner", 0, { revision: "r1", heartbeatMs: 100 });
     const ownerRun = await begun(lobbies);
+    await joinSeats(owner.port, keys);
     expect((await lobbies.resolveSlot("public-0"))?.runId).toBe(ownerRun);
     expect(await status(owner.port, SLOT_READY_PATH)).toBe(200);
 
@@ -277,12 +293,14 @@ describe("an owner players can no longer reach while a same-revision instance wa
 
   it("keeps the slot while its own self-probe reaches it, however quiet its players: the match records its natural, rated result", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    const { w, lobbies, outcome, rated } = await world();
+    const { w, lobbies, outcome, rated, keys } = await world();
     // Its public URL is its own address: each beat's GET /wake arrives, as through a front end that still routes to it.
     const ownerPort = await freePort();
     const owner = await slotServer(lobbies, w.ids, "owner", ownerPort, { revision: "r1", heartbeatMs: 100, publicUrl: `http://127.0.0.1:${ownerPort}` });
     const ownerRun = await begun(lobbies);
     expect(owner.port).toBe(ownerPort);
+    // The seats join once, as the match begins; from then on its players are quiet.
+    await joinSeats(owner.port, keys);
 
     const port = await freePort();
     let standbyReady = false;
@@ -480,6 +498,8 @@ async function superseded(force: boolean): Promise<void> {
     const seat = await connect(next.port);
     try {
       await until(async () => !(await seat.call("join", { key: keys[0] })).isError);
+      // The other seat joins the newcomer's match too.
+      await joinSeats(next.port, [keys[1]]);
       expect(await until(async () => (await outcome()) ?? undefined)).toMatch(/^(colony_[01]_won|draw)$/);
       expect(await rated()).toEqual([1, 1]);
       expect(next.game.match?.result).not.toBeNull();

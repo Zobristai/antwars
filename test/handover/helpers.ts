@@ -110,10 +110,15 @@ export function memoryObjects(): SaveObjects & { readonly objects: Map<string, U
   };
 }
 
-/** Production's slot-server config (src/server.ts comparisonOptions without ANTWAR_RULES), on Wide Plain. */
-export function widePlainConfig(): SimConfig {
+/**
+ * Production's slot-server config (src/server.ts comparisonOptions without ANTWAR_RULES), on Wide Plain;
+ * given `matchTicks`, its match is cut to that many ticks so that it reaches its natural result in a bounded test.
+ */
+export function widePlainConfig(matchTicks?: number): SimConfig {
   const base = newMatchConfig(rulesConfig("redesign"));
-  return { ...base, terrain: { ...base.terrain!, mapId: "wide-plain" } };
+  const terrain = { ...base.terrain!, mapId: "wide-plain" };
+  if (matchTicks === undefined) return { ...base, terrain };
+  return { ...base, terrain: { ...terrain, maps: terrain.maps.map((map) => map.id === "wide-plain" ? { ...map, matchTicks } : map) } };
 }
 
 export const WIDE_SEATS: readonly LobbySeat[] = [
@@ -134,11 +139,13 @@ export interface WideMatch {
  * A seated 2v2 slot-server Game on Wide Plain whose pick window has just finished: three seats joined
  * during the window (queued for the first tick), the fourth not yet. Both colonies are filled to their
  * 1,024-ant cap as the rated harness fills them (test/tuning/seated.ts), and, when `fromTick` is given,
- * the match is moved to that tick so that it reaches its natural time_up result in a bounded test.
+ * the match is moved to that tick so that it reaches its natural time_up result in a bounded test. Moved
+ * past the idle limit, a seat that has not joined ends this ranked match abandoned at its first tick, so a
+ * test that needs the fourth seat to join after the start cuts the match with `matchTicks` instead.
  */
-export async function wideMatch(options: { readonly seed: number; readonly fromTick?: number }): Promise<WideMatch> {
+export async function wideMatch(options: { readonly seed: number; readonly fromTick?: number; readonly matchTicks?: number }): Promise<WideMatch> {
   const clock = { now: 1_000 };
-  const game = new Game({ simConfig: widePlainConfig(), startPickWindowMs: 1_000, now: () => clock.now,
+  const game = new Game({ simConfig: widePlainConfig(options.matchTicks), startPickWindowMs: 1_000, now: () => clock.now,
     slot: { identityOf: async () => undefined, locate: async () => undefined } });
   game.seatLobby("lobby-wide", WIDE_SEATS, "2v2");
   const closesAt = game.beginLobbyStart(options.seed);

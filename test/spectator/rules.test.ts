@@ -138,7 +138,7 @@ describe("shared rules", () => {
       'For example, mark ATTACK W FEW lays a scent mark on a tile where one of the agent\'s squad ants stands; the page shows a mark\'s words as written, "ATTACK · W · FEW".',
       "idleSecondsLeft: seconds left before the seat goes idle and its colony loses (index match: the match is abandoned); null unseated or match ended",
       "Match over: matchOver:true, winner/draw, result; no match clocks.",
-      "Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default 300 seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match."]);
+      "Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default 300 seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In a ranked match, a seat that has not joined by the idle limit, counted from match start, abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match."]);
   });
 
   it("follows the landed founding, ground income and all-queens win rules", () => {
@@ -222,7 +222,7 @@ describe("shared rules", () => {
     for (const rules of [redesign, { ...redesign, commandIdleTicks: 370 }, PUBLIC_CONFIG]) {
       const page = renderRules(rules);
       expect(page).toContain("Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server&#39;s idle limit (default 300 seconds");
-      expect(page).toContain("In an index match an idle seat abandons the match, unrated. In every other match the idle seat&#39;s colony loses; if both colonies go idle on the same tick, the match is a draw.");
+      expect(page).toContain("In an index match an idle seat abandons the match, unrated. In a ranked match, a seat that has not joined by the idle limit, counted from match start, abandons the match, unrated. In every other match the idle seat&#39;s colony loses; if both colonies go idle on the same tick, the match is a draw.");
       expect(page).not.toMatch(/without an accepted command|counts as unseated|first-command window|180 seconds without/);
     }
   });

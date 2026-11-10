@@ -965,8 +965,13 @@ export class Game {
     // The tick advances the match in place. An idle end re-runs it from its start state,
     // so keep a copy only when an idle end is possible: a seat already at its deadline
     // before this tick's calls (calls only move a seat's activity later), a seat joining
-    // this tick, or no idle allowance at all.
-    const start = !stopNow && (idleTicks <= 0 || inputs.some((input) => input.type === "join") || m.state.agents.some(isIdle))
+    // this tick, a ranked seat that has not joined, or no idle allowance at all.
+    // A ranked seat that never joins ends the match abandoned, unrated: at its deadline, counted from
+    // match start (tick 0) since it has no join tick, or at any earlier natural end. Until then
+    // (at most the idle limit) each tick keeps a copy, since a natural end cannot be known in advance.
+    const ranked = !stopNow && this.isRankedLobby(m.seq);
+    const start = !stopNow && (idleTicks <= 0 || inputs.some((input) => input.type === "join") || m.state.agents.some(isIdle)
+      || (ranked && this.lobbySeatMissing(m.state)))
       ? cloneState(m.state) : null;
     let terminal: ServerTerminal = stopNow;
     let out = advance(m.state, inputs, undefined, undefined, undefined, terminal, true);
@@ -975,11 +980,14 @@ export class Game {
     });
     // Settle accepted calls first: an observe arriving on the deadline tick
     // counts, but a refused command or synthetic error-observe cannot save it.
+    // Likewise a ranked seat whose join is accepted on its deadline tick has joined.
     const idle = [...new Set(out.state.agents.filter(isIdle).map(agent => agent.colony))].sort();
-    if (!stopNow && idle.length > 0) {
+    const neverJoined = ranked && (tick >= idleTicks || out.state.result !== null) && this.lobbySeatMissing(out.state);
+    if (!stopNow && (neverJoined || idle.length > 0)) {
       if (start === null) throw new Error(`match ${m.seq} tick ${tick}: idle end without its start state`);
-      // The Model Index abandons, unrated; every other match: the idle colony loses, both idle draw.
-      terminal = house ? "abandoned" : { idle };
+      // The Model Index abandons, unrated, and so does a ranked match with a seat that never joined;
+      // every other match: the idle colony loses, both idle draw.
+      terminal = house || neverJoined ? "abandoned" : { idle };
       out = advance(start, inputs, undefined, undefined, undefined, terminal, true);
     }
     this.onLogLine(tickLine(tick, inputs, terminal, true));
@@ -1384,6 +1392,23 @@ export class Game {
 
   private isRatedHouse(seq: number): boolean {
     return this.lobby?.matchSeq === seq && this.lobby.mode?.startsWith("house-") === true;
+  }
+
+  /** The seated lobby plays match seq in a ranked queue mode outside the Model Index (1v1 to 4v4). */
+  private isRankedLobby(seq: number): boolean {
+    const lobby = this.lobby;
+    return lobby !== null && lobby.matchSeq === seq && lobby.mode !== null && !lobby.mode.startsWith("house-");
+  }
+
+  /** Whether any seat of the seated lobby has no agent in this match state: it has never joined the match. */
+  private lobbySeatMissing(state: SimState): boolean {
+    const lobby = this.lobby;
+    if (lobby === null) return false;
+    for (const key of lobby.seats.keys()) {
+      const rec = this.bySeat.get(`${lobby.id}/${key}`);
+      if (rec === undefined || !state.agents.some(agent => agent.id === rec.agentId)) return true;
+    }
+    return false;
   }
 
   /** Authoritative accepted-call idle clock of the live match; internal ids never enter the wire. */
