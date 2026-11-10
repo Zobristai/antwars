@@ -2,6 +2,7 @@ import { isHouseOwned } from "../identity/houseOwnership.js";
 import { isRankedMode, type RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
+import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type WaitIndexes, type WaitState } from "./waits.js";
 
 /**
  * The ranked matchmaking queue, as transaction steps that
@@ -92,8 +93,13 @@ async function statusOf(read: TransactionRead, entry: Fields | null, at: number)
   return at < expiresAt ? { state: "waiting", mode, joinedAt, expiresAt } : { state: "expired", mode, expiresAt };
 }
 
+/**
+ * waitToken: the join's waiting token (src/lobby/waits.ts), kept on the entry so a later join or leave can remove its wait;
+ * indexes: the transaction's wait index edits, which a re-pointed partner's token moves through. A join matched here
+ * writes its own wait as a lobby wait on the paired lobby (matchedQueueWaitWrites); the caller writes a waiting join's.
+ */
 export async function joinQueueStep(
-  read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites,
+  read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites, indexes: WaitIndexes, waitToken = "",
 ): Promise<Step> {
   const table = isRankedMode(mode) ? QUEUE_MODES[mode] : undefined;
   if (!isRankedMode(mode) || !table) return { result: { ok: false, reason: "invalid_mode" }, writes: [] };
@@ -127,7 +133,7 @@ export async function joinQueueStep(
   const ownWrite = (fields: Fields): Write => ({ op: own ? "update" : "create", path: entryPath(joiner.id), fields });
 
   if (eligible.length === 0) {
-    const fields = { mode, joinedAt: String(at), state: "waiting", lobbyId: "" };
+    const fields = { mode, joinedAt: String(at), state: "waiting", lobbyId: "", waitToken };
     return {
       result: { ok: true, value: { state: "waiting", mode, joinedAt: at, expiresAt: at + queueTtl(mode) } },
       writes: [ownWrite(fields), ...listWrite([...waiting, joiner.id])],
@@ -139,16 +145,45 @@ export async function joinQueueStep(
     mode, colonies: pairColonies(table.size, { id: pick, displayName: partner.displayName ?? "" }, joiner),
   }, at);
   const lobbyId = made.lobby.id;
+  // The waiting partner may not read its token again for hours: its record follows the lobby from this commit, with the
+  // lobby's own limit, so it is never swept on its queue expiry while the lobby still waits (src/lobby/waits.ts).
+  const partnerToken = candidateDocs.get(entryPath(pick))?.waitToken;
+  const partnerWait = partnerToken && isWaitToken(partnerToken) ? (await read([waitPath(partnerToken)])).get(waitPath(partnerToken)) : null;
+  const partnerRepoint: Write[] = partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt
+    ? await repointWrites(read, indexes, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")
+    : [];
+  // The joiner's own token is bound to the paired lobby the same way, from its first write.
+  const ownWait = waitToken && isWaitToken(waitToken)
+    ? await matchedQueueWaitWrites(read, indexes, waitToken, lobbyId, joiner.id, made.lobby.expiresAt)
+    : [];
   return {
     result: { ok: true, value: { state: "matched", mode, lobbyId, matchedAt: at } },
     writes: [
       ...made.writes,
       { op: "update", path: entryPath(pick), fields: { state: "matched", lobbyId } },
-      ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId }),
+      ...partnerRepoint,
+      ...ownWait,
+      ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId, waitToken }),
       ...listWrite(waiting.filter((id) => id !== pick)),
     ],
   };
 }
+
+/**
+ * A queue wait (src/lobby/waits.ts), from the identity's entry as stored now and the joinedAt of the join that
+ * issued its token. An entry from another join (left, or replaced by a later join) or none at all ended; a matched
+ * entry is paired (the caller re-points the token to its lobby); a waiting one waits until its lifetime ends, then ran out of time. Reads nothing, writes nothing.
+ */
+export function queueWait(entry: Fields | null, joinedAt: string, at: number): WaitState {
+  if (!entry || entry.joinedAt !== joinedAt || !isRankedMode(entry.mode)) return { state: "expired", reason: "ended" };
+  if (entry.state === "matched" && entry.lobbyId) return { state: "paired", lobbyId: entry.lobbyId, lobbyWait: true };
+  if (entry.state !== "waiting") return { state: "expired", reason: "ended" };
+  const expiresAt = Number(joinedAt) + queueTtl(entry.mode);
+  return at < expiresAt ? { state: "waiting", mode: entry.mode, expiresAt } : { state: "expired", reason: "time_limit" };
+}
+
+/** The stored path of an identity's queue entry. */
+export const queueEntryPath = (identityId: string): string => entryPath(identityId);
 
 export async function queueStatusStep(read: TransactionRead, identityId: string, at: number): Promise<Step> {
   const entry = (await read([entryPath(identityId)])).get(entryPath(identityId)) ?? null;

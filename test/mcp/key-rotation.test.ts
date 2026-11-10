@@ -4,7 +4,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { Game } from "../../src/mcp/game.js";
 import { KEY_RECHECK_MS, registerTools } from "../../src/mcp/tools.js";
-import { keyVerifier } from "../../src/identity/identities.js";
+import { createIdentities, keyVerifier } from "../../src/identity/identities.js";
+import type { Fields, Store } from "../../src/store/firestore.js";
 import { PUBLIC_CONFIG } from "../../src/sim/config.js";
 import { TEST_MCP_CONFIG } from "./harness.js";
 import { playable } from "../playable.ts";
@@ -225,6 +226,54 @@ describe("rotating a key ends the sessions that key admitted", () => {
     expect((await ann("order", { kind: "hold" })).error).toBe(false);
     expect((await bob("order", { kind: "hold" })).error).toBe(false);
     expect(store.reads).toBe(4);
+  });
+
+  it("ends the session a lost key admitted once recover_key's reissue replaces that key", async () => {
+    // The real identity code on an in-memory store: recover_key replaces a lost key through reissueLostKey.
+    const docs = new Map<string, Fields>();
+    const store: Store = {
+      namespace: "key-rotation-recovery",
+      get: async (path) => docs.get(path) ?? null,
+      async transaction(step) {
+        const next = await step(async (paths) => new Map(paths.map((path) => [path, docs.get(path) ?? null])));
+        for (const write of next.writes) {
+          if (write.op === "delete") docs.delete(write.path);
+          else docs.set(write.path, { ...docs.get(write.path), ...write.fields });
+        }
+        return next.result;
+      },
+      query: async () => { throw new Error("not used"); },
+    };
+    const identities = createIdentities(store);
+    const claimed = await identities.claimUsername("Ann");
+    if (!claimed.ok) throw new Error("claim refused");
+    // The claim's key, whose reply (in this story) never reached its caller in full, still admits a session.
+    const lost = claimed.value.key, ann = claimed.value.identity.id;
+    const clock = { now: 0 };
+    const game = new Game({ simConfig: playable(PUBLIC_CONFIG), mcpConfig: TEST_MCP_CONFIG, now: () => clock.now,
+      slot: {
+        async identityOf(key) {
+          const found = await identities.resolveKey(key);
+          return found.ok ? found.value.id : undefined;
+        },
+        holderOfVerifier: (verifier) => identities.holderOfVerifier(verifier),
+        locate: async () => undefined,
+        recordJoin: () => Promise.resolve(),
+      } });
+    game.seatLobby("recovery-lobby", [{ ...SEATS[0], identityId: ann }, SEATS[1]]);
+    game.beginLobbyStart(7001);
+    const old = await connect(game);
+    expect((await old("join", { key: lost })).error).toBe(false);
+    expect((await old("pick_nest", ANN_TILE)).data.accepted).toBe(true);
+
+    const recovered = await identities.reissueLostKey(keyVerifier(lost));
+    if (!recovered.ok) throw new Error("recovery refused");
+    clock.now += KEY_RECHECK_MS;
+    expect((await old("pick_nest", ANN_TILE)).data.error.code).toBe("key_revoked");
+    expect((await old("join", { key: lost })).data.error.code).toBe("not_seated");
+    // The recovered key plays the seat.
+    expect((await old("join", { key: recovered.value.key })).error).toBe(false);
+    expect((await old("pick_nest", ANN_TILE)).data.accepted).toBe(true);
   });
 
   it("keeps the seat when the key cannot be read, and checks again on the next call", async () => {

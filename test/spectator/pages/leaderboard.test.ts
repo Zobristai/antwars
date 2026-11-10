@@ -179,14 +179,21 @@ describe("the band and its cyan Refresh", () => {
     p.dispose();
   });
 
-  it("holds the challenge bubble under Refresh, its words exactly, the cyan button to the Challenge choice keeping the board", () => {
+  it("puts Loaded then Refresh on the title's line, and the challenge bubble after the board choice, its words exactly, the cyan button to the Challenge choice keeping the board", () => {
     const port = dom({ search: "?page=leaderboard&board=2d", meta: { "antwar-public-matches": "true" } });
     const dispose = mountLeaderboardPage(port.doc, port.win, { request: vi.fn(() => new Promise<Response>(() => {})) });
-    const summary = port.body.all().find(node => node.id === "aw-leaderboard-page")!.byClass("d1p-summary")[0]!;
-    const row = summary.children[2]!;
-    expect(summary.children.map(node => node.className)).toEqual(["d1p-title", "d1p-fresh", "d1p-fresh"]);
-    expect(row.hidden).toBe(false);
-    const bubble = row.children[0]!;
+    const band = port.body.all().find(node => node.id === "aw-leaderboard-page")!.byClass("d1p-band")[0]!;
+    // Two lines: the title's line, then the board choice's.
+    expect(band.children.map(node => node.className)).toEqual(["d1p-summary", "d1p-lb-strip"]);
+    const [summary, strip] = band.children as [ElementPort, ElementPort];
+    // The title, then at its line's end the time and Refresh, in that order, so Refresh holds the end.
+    expect(summary.children.map(node => node.className)).toEqual(["d1p-title", "d1p-fresh"]);
+    expect(summary.children[1]!.children.map(node => node.className)).toEqual(["d1p-loaded", "d2-pill d1p-refresh"]);
+    // The bubble right after the board choice, whose last group is Challenge.
+    expect(strip.hidden).toBe(false);
+    expect(strip.children.map(node => node.className)).toEqual(["d1p-boards", "d1-agent-button"]);
+    expect(strip.children[0]!.children.at(-1)!.byClass("d1p-kicker")[0]!.textContent).toBe("Challenge");
+    const bubble = strip.children[1]!;
     expect([bubble.tag, bubble.className, bubble.dataset.key]).toEqual(["a", "d1-agent-button", "challenge-new"]);
     // Its words wrap inside the cyan button on a narrow phone; the grey bubble's rule is gone from ui/ui.css.
     const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
@@ -201,9 +208,124 @@ describe("the band and its cyan Refresh", () => {
     const port = dom({ search: "?page=leaderboard" });
     const dispose = mountLeaderboardPage(port.doc, port.win, { request: vi.fn(() => new Promise<Response>(() => {})) });
     const root = port.body.all().find(node => node.id === "aw-leaderboard-page")!;
-    expect(root.byClass("d1p-boards")[0]!.hidden).toBe(true);
-    expect(root.all().find(node => node.dataset.key === "challenge-new")!.parentElement!.hidden).toBe(true);
+    // The board choice and the bubble share one line, which goes; the title stays, its freshness and Refresh gone.
+    const strip = root.byClass("d1p-lb-strip")[0]!;
+    expect(strip.hidden).toBe(true);
+    expect(root.byClass("d1p-boards")[0]!.parentElement === strip).toBe(true);
+    expect(root.all().find(node => node.dataset.key === "challenge-new")!.parentElement === strip).toBe(true);
+    expect(root.byClass("d1p-fresh")[0]!.hidden).toBe(true);
+    expect(root.byClass("d1p-title")[0]!.hidden).toBe(false);
     dispose();
+  });
+});
+
+describe("the Leaderboard's layout rules", () => {
+  // Style-contract checks on the source rules; the pass captures show the painted layout.
+  const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+  const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
+  it("scopes every rule for the band's board line, the Challenge list and the rating badge's tap area to the Leaderboard, so the front page, Matches and Rules are unchanged", () => {
+    const own = rules.filter(rule => /d1p-lb-strip|d1p-challenge|d1p-elo-badge::before/.test(rule));
+    expect(own.length).toBeGreaterThan(0);
+    for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
+    // The band's two lines and the tabs' spacing are the Leaderboard's own as well.
+    for (const part of [".d1p-band {", ".d1p-summary {", ".d1p-fresh {", ".d1p-boards {", ".d1p-board-group {", ".d1p-tabs {", ".d1p-tab {"]) {
+      expect(css).toContain(`.d1p[data-page="leaderboard"] ${part}`);
+    }
+  });
+  it("keeps the table's columns, resizing only the Leaderboard's rating and Rated matches columns, while the front page's card keeps its widths", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 144px); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb thead th.c-matches { white-space: nowrap; }');
+    expect(css).toContain(".d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 184px); text-align: left; }");
+    expect(css).toContain(".d1p-lb thead th.c-matches { white-space: normal; }");
+  });
+  it("draws the Challenge handle as one unit that moves to the next line whole, never breaking at its hyphens", () => {
+    expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{ display: inline-block; max-width: 100%;/);
+  });
+  it("makes every Challenge row two lines tall from 46rem, a row without an ask keeping the ask's line empty, so every row is one height", () => {
+    expect(css).toContain('@media (width >= 46rem) {\n  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-rows: auto minmax(20px, auto); }\n}');
+  });
+  it("sizes each Challenge row's rating on its own on a phone, so \"provisional\" under its figure narrows only its own row's name", () => {
+    const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
+    expect(phone.length).toBeLessThan(css.length);
+    const block = phone.slice(0, phone.indexOf("\n}\n"));
+    expect(block).toContain("@media (width < 46rem) {");
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: block; }');
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }');
+    // Each badge on its row's end edge, "provisional" under its figure.
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { text-align: right; }');
+    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-prov { display: block; margin-left: 0; }');
+  });
+});
+
+describe("the Leaderboard's type rules", () => {
+  // Style-contract checks on the source rules; the pass captures show the painted type.
+  const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+  const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
+  it("sets a card's count as metadata beside its title, the text size in the quiet ink, adding nothing to the title's line", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-card-title > .d1p-count { font-size: 13px; font-weight: 400; line-height: 1; letter-spacing: normal; text-transform: none; }');
+  });
+  it("gives \"provisional\" its rating badge's 10 px, one step quieter", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-prov { font-size: 10px; color: var(--aw-ink-3); }');
+  });
+  it("quiets the ask's repeated words, sets the handle a size under them, and moves the handle with the words after it", () => {
+    expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{[^}]*font-size: 12px; line-height: 16px;/);
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { color: var(--aw-ink-3); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask-handle { display: inline-block; max-width: 100%; }');
+  });
+  it("starts a name's wrapped badges on the name's edge, the gap the name's own trailing margin", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > span:first-child:has(+ .d1p-tags) { margin-right: 6px; }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > .d1p-tags > .d1p-tag:first-child { margin-left: 0; }');
+  });
+  it("scopes every type-pass rule to the Leaderboard, so the front page, Matches and Rules keep their shared rules", () => {
+    const own = rules.filter(rule => /> \.d1p-count|d1p-ask|span:first-child:has\(\+ \.d1p-tags\)|\.d1p-tags > \.d1p-tag:first-child/.test(rule) || rule.startsWith('.d1p[data-page="leaderboard"] .d1p-prov {'));
+    expect(own.length).toBeGreaterThanOrEqual(6);
+    for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
+    expect(css).toContain(".d1p-prov { margin-left: 8px; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2);");
+    expect(css).toContain(".d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }");
+    expect(css).toContain(".d1p-tag { display: inline-block; margin-left: 6px;");
+  });
+});
+
+describe("the Leaderboard's quieter rules", () => {
+  // Style-contract checks on the source rules; the pass captures show the painted page.
+  const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+  const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
+  it("draws Last 5 a weight lighter and an ink step quieter, keeping every letter, fill, outline and replay link, and brightens a link under the mouse", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark { font-weight: 600; color: var(--aw-ink-3); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark[data-result="W"] { color: var(--aw-ink-2); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] a.d1p-form-mark:hover { color: var(--aw-ink-bright); }');
+    // A link stays underlined; a win stays filled and a loss or a draw outlined.
+    expect(css).toContain(".d1p a.d1p-form-mark { text-decoration: underline; text-underline-offset: 2px; }");
+    expect(css).toContain('.d1p-form-mark[data-result="W"]::before { background: var(--aw-raise); box-shadow: none; }');
+    expect(css).toMatch(/\.d1p-form-mark::before \{[^}]*box-shadow: inset 0 0 0 1px var\(--aw-line\);/);
+    // The Leaderboard's own rules change neither the letters' look nor the link rule in any other way.
+    expect(rules.filter(rule => rule.trim().startsWith('.d1p[data-page="leaderboard"]') && rule.includes("d1p-form-mark")).join("\n")).not.toMatch(/text-decoration|background|box-shadow|content:/);
+  });
+  it("draws each stamp smaller inside an unchanged target: 20 px in the table, 24 px in a phone's 40 × 44 px tap", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 2px 4px; }');
+    const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
+    expect(phone.slice(0, phone.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 10px 8px; }');
+    const coarse = css.slice(css.indexOf("@media (pointer: coarse) and (width >= 46rem) {"));
+    expect(coarse.slice(0, coarse.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 12px 4px; }');
+    // The targets themselves: 28 × 24 px, 40 × 44 px on a phone, 44 px tall on any touch screen.
+    expect(css).toMatch(/\.d1p-form-mark \{ position: relative;[^}]*width: 28px; height: 24px;/);
+    expect(css).toContain(".d1p-form-mark { width: 40px; height: 44px; }");
+    expect(coarse.slice(0, coarse.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark { height: 44px; }');
+  });
+  it("parts one row from the next by the hairline, in the table, the stacked rows and the Challenge list, the first row keeping the line", () => {
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb tbody tr + tr > :is(th, td) { border-top-color: var(--d1p-hair); }');
+    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-rows > li + li { border-top-color: var(--d1p-hair); }');
+  });
+  it("scopes every quieter-pass rule to the Leaderboard, so the front page, Matches and Rules keep the shared stamp and row lines", () => {
+    const own = rules.filter(rule => /d1p-form-mark|tr \+ tr|li \+ li/.test(rule) && rule.includes("data-page"));
+    expect(own.length).toBeGreaterThanOrEqual(8);
+    for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
+    expect(css).toMatch(/\.d1p-form-mark \{ position: relative;[^}]*font-size: 12px; font-weight: 700; line-height: 1; color: var\(--aw-ink-2\);/);
+    expect(css).toContain('.d1p-form-mark[data-result="W"] { color: var(--aw-ink-bright); }');
+    expect(css).toMatch(/\.d1p-form-mark::before \{ content: ""; position: absolute; inset: 0 2px;/);
+    expect(css).toContain(".d1p-form-mark::before { inset: 8px 6px; }");
+    expect(css).toMatch(/\.d1p-table th, \.d1p-table td \{[^}]*border-top: 1px solid var\(--aw-line\);/);
+    expect(css).toMatch(/\.d1p-rows > li \{[^}]*border-top: 1px solid var\(--aw-line\);/);
   });
 });
 
@@ -289,13 +411,22 @@ describe("the Challenge choice", () => {
     // Ranked order (antwars/not-listed is not a listed handle, so it has no row), then antwars/glm-5-3-highspeed, which the
     // ranking does not rate. Badges are the list's level and tier through the Model Index rows' own badges, then
     // "unavailable"; antwars/mistral-large-latest's level record holds no level, so it shows none.
+    // "on Antwars" is held together by a no-break space (copy.ts).
     expect(p.rows()).toEqual([
-      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
-      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
+      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
+      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
       { lines: ["Claude Opus 5.5lowunavailable"], badges: ["low", "unavailable"], rating: ["1533"] },
-      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
+      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
       { lines: ["GLM-5.3 Highspeedunavailable"], badges: ["unavailable"], rating: [] },
     ]);
+    // The ask is each available row's own line under its name (archive.css lays it across the row).
+    expect(p.card()!.byClass("d1p-ask").map(node => node.textContent)).toEqual([
+      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
+      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
+    // The handle and the words after it are one unit, so where the ask wraps the handle opens its line.
+    expect(p.card()!.byClass("d1p-ask").map(ask => ask.byClass("d1p-ask-handle").map(unit => [unit.children[0]!.tag, unit.textContent])))
+      .toEqual([[["code", "antwars/gpt-6-astra on Antwars"]], [["code", "antwars/mistral-large-latest on Antwars"]],
+        [["code", "antwars/claude-opus-5-5 on Antwars"]]]);
     // A provisional rating keeps its word, as on the ranking rows.
     expect(p.items()[1]!.byClass("d1p-prov").map(node => node.textContent)).toEqual(["provisional"]);
     // No handle slug after a name, no meta line, no placeholder; the handle appears only as code in the ask.
