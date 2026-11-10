@@ -8,7 +8,8 @@ import { encodePublicMessage } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
-import { cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchType, recordingMatchTypes, type RecordingLobby,
+import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
+import { cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
@@ -194,6 +195,80 @@ describe("Recordings carry each recording's match type", () => {
   it("types every row from its record when the server has no lobby lookup", async () => {
     const listed = await recordingMatchTypes(undefined)(page({ ...row("2026-10-31T12-00-00-000Z-1", twoVsTwo), rated: true, modelIndex: true }));
     expect(listed.matches.map(match => match.matchType)).toEqual([{ kind: "index", size: 2 }]);
+  });
+});
+
+describe("Model Index Recordings carry their harness phase", () => {
+  const indexLobby = (fields: Partial<RecordingLobby> = {}): RecordingLobby =>
+    ({ kind: "public", size: 1, mode: "house-1v1", colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]], ...fields });
+  const started = (id: string, startedAt: string, extra: Partial<HistorySummary> = {}) =>
+    ({ ...row(id, [{ colony: 0, handle: HOUSE }, { colony: 1, handle: HOUSE_FAST }]), startedAt, rated: true, modelIndex: false, ...extra });
+
+  it("decides the match time by the lobby's startsAt, else createdAt, and the recorded start without a lobby", () => {
+    const record = started("2026-11-07T07-47-08-869Z-1", "2026-11-07T07:47:08.869Z");
+    expect(recordingMatchTime(record, indexLobby({ startsAt: 5, createdAt: 4 }))).toBe(5);
+    expect(recordingMatchTime(record, indexLobby({ startsAt: null, createdAt: 4 }))).toBe(4);
+    expect(recordingMatchTime(record, null)).toBe(Date.parse("2026-11-07T07:47:08.869Z"));
+    expect(recordingMatchTime(record, undefined)).toBe(Date.parse("2026-11-07T07:47:08.869Z"));
+    expect(recordingMatchTime({ startedAt: "not a time" }, null)).toBeNull();
+  });
+
+  it("labels index rows only, by match time, leaving every other field as it was", async () => {
+    const r8 = "2026-10-27T07-12-16-231Z-1", r26 = "2026-11-07T07-47-08-869Z-1", early = "2026-10-26T01-38-33-692Z-1";
+    const ranked = "2026-11-08T10-00-00-000Z-1", byMarker = "2026-11-09T07-00-00-000Z-1", noTime = "2026-11-08T11-00-00-000Z-1";
+    const { lookup } = lobbies({
+      // The lobby's time decides where it was read: here a minute before the recorded start.
+      [r8]: indexLobby({ startsAt: Date.parse("2026-10-27T07:11:16Z"), createdAt: 0 }),
+      [r26]: indexLobby({ startsAt: null, createdAt: Date.parse("2026-11-07T07:40:00Z") }),
+      [early]: indexLobby({ startsAt: Date.parse("2026-10-26T01:38:30Z") }),
+      [ranked]: { ...indexLobby(), mode: "1v1" },
+    });
+    const rows = [started(r8, "2026-10-27T07:12:16.231Z"), started(r26, "2026-11-07T07:47:08.869Z"), started(early, "2026-10-26T01:38:33.692Z"),
+      started(ranked, "2026-11-08T10:00:00.000Z"), started(byMarker, "2026-11-09T07:00:00.000Z", { modelIndex: true }),
+      started(noTime, "not a time", { modelIndex: true })];
+    const listed = await recordingMatchTypes(lookup)(page(...rows));
+    expect(listed.matches.map(match => match.harnessPhase)).toEqual([
+      { phase: "rounds 8-10", possibleEffortMismatch: false },
+      { phase: "rounds 26-30", possibleEffortMismatch: false },
+      { phase: "rounds 1-7", possibleEffortMismatch: true },
+      undefined,
+      // No lobby: the record's Model Index marker types it and its recorded start places it.
+      { phase: "rounds 26-30", possibleEffortMismatch: false },
+      { phase: "unknown", possibleEffortMismatch: null },
+    ]);
+    expect(listed.matches.map(match => "harnessPhase" in match)).toEqual([true, true, true, false, true, true]);
+    listed.matches.forEach((match, index) => {
+      const { harnessPhase: _, matchType: __, ...rest } = match;
+      expect(rest).toEqual(rows[index]);
+    });
+  });
+
+  it("labels a recording without the Model Index marker or a lobby by the shared rule: rated with every seat an antwars one", async () => {
+    // The same rule (recordedMatchType) types a replay whose lobby cannot be read (web/src/source.ts).
+    const legacy = "2026-10-26T01-38-33-692Z-1", unrated = "2026-10-26T02-00-00-000Z-1", noTime = "2026-10-26T03-00-00-000Z-1";
+    const rows = [started(legacy, "2026-10-26T01:38:33.692Z"), started(unrated, "2026-10-26T02:00:00.000Z", { rated: false }),
+      started(noTime, "not a time")];
+    const listed = await recordingMatchTypes(undefined)(page(...rows));
+    expect(listed.matches.map(match => [match.matchType?.kind, match.harnessPhase])).toEqual([
+      ["index", { phase: "rounds 1-7", possibleEffortMismatch: true }],
+      ["unrated", undefined],
+      ["index", { phase: "unknown", possibleEffortMismatch: null }],
+    ]);
+    expect(recordedMatchType({ rated: true, seats: [{ colony: 0, handle: HOUSE }, { colony: 1, handle: HOUSE_FAST }] })).toEqual({ kind: "index", size: 1 });
+  });
+
+  it("serves the phase on GET /matches", async () => {
+    const id = "2026-11-07T07-47-08-869Z-1";
+    const source: HistorySource = { async list() { return page(started(id, "2026-11-07T07:47:08.869Z")); }, async open() { return null; } };
+    const handler = historyRoutes(source, lobbies({ [id]: indexLobby({ startsAt: Date.parse("2026-11-07T07:47:00Z") }) }).lookup);
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const listed = (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`)).json()) as { matches: TypedHistorySummary[] };
+      expect(listed.matches.map(match => [match.matchType, match.harnessPhase])).toEqual([[{ kind: "index", size: 1 },
+        { phase: "rounds 26-30", possibleEffortMismatch: false }]]);
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 });
 

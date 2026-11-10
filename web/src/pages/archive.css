@@ -181,6 +181,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-tags { display: inline-block; white-space: nowrap; }
 /* A recording's match type: the seat badge, on its own line, in its words as written ("1v1"). */
 .d1p-tag.d1p-type { display: block; width: fit-content; margin: 4px 0 0; text-transform: none; letter-spacing: normal; }
+/* A Model Index match's harness phase: wraps at its spaces to stay inside its column. */
+.d1p-tag.d1p-phase { max-width: 100%; white-space: normal; }
 /* In Recordings' Game type column it is the cell's first line, so it rides the row's first baseline. */
 .d1p-rec td.c-result > .d1p-type { margin-top: 0; }
 /* Last 5, newest first: a result stamp each, a win filled, a loss or a draw outlined; a stored replay makes it a link,
