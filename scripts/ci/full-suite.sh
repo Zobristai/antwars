@@ -11,8 +11,9 @@
 # identifier rules and once with the default rules. Each finding is reported only as its scan,
 # rule, commit, line and the sha256 of its path (CONTRIBUTING.md says how to find the file).
 #
-# Runs on Linux x86-64 only: every download below is the linux-x64 build. Needs Node.js 24, git,
-# python3, coreutils and network access. The identifier list stays outside the repository, at
+# Runs on Ubuntu 24.04 x86-64 only, and refuses to run elsewhere: the browsers and their system
+# libraries below are the Ubuntu 24.04 x86-64 builds. Needs Node.js 24, git, python3, coreutils,
+# apt and network access; no root. The identifier list stays outside the repository, at
 # <git-common-dir>/antwars-identifiers; without it the script refuses to run.
 #
 # Tools, each a release file pinned by SHA-256: gitleaks 8.30.1, firebase-tools 15.35.0 (the
@@ -24,19 +25,26 @@
 # into a private temporary directory and checked against its SHA-256 there before it is unpacked
 # or run.
 #
-# WebKit also needs system libraries. Any that are not installed are fetched without root on
-# Ubuntu 24.04: apt, with a private state directory, reads the Ubuntu archive snapshot of
+# The browsers also need system libraries: the packages WebKit's build lists and those
+# playwright-core 1.61.1 lists for Chromium on Ubuntu 24.04. Any that are not installed are
+# fetched without root: apt, with a private state directory, reads the Ubuntu archive snapshot of
 # 2026-11-01, checks its signature with the system's Ubuntu archive keyring and each package
 # against the signed index, and the packages are unpacked into the temporary directory (no
-# package scripts run) for WebKit alone. Cached packages are checked against the signed index on
-# every run. On another distribution, install them first as root with
-# `npx playwright-core install-deps webkit`.
+# package scripts run), where only the browsers' launchers use them. Cached packages are checked
+# against the signed index on every run.
+#
+# The tests run in three steps, like the full job of the `antwar ci` workflow: the full
+# set except the Wide Plain handover and the deploy tooling tests, against the Firestore
+# emulator; then the Wide Plain handover on its own; then the deploy tooling tests on their own.
+# Every step runs even when an earlier one fails, and the script fails if any of them does.
 set -euo pipefail
 umask 077
 
 fail() { echo "full-suite: $*" >&2; exit 1; }
-[ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || fail "this script runs on Linux x86-64 only."
-for tool in git node python3 sha256sum realpath tar; do
+os=$( (. /etc/os-release && echo "${ID:-}-${VERSION_ID:-}") 2> /dev/null || true)
+[ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] && [ "$os" = ubuntu-24.04 ] ||
+  fail "this script runs on Ubuntu 24.04 x86-64 only: its browsers and their system libraries are the Ubuntu 24.04 x86-64 builds."
+for tool in git node python3 sha256sum realpath tar apt-get apt-cache dpkg-query dpkg-deb; do
   command -v "$tool" > /dev/null || fail "$tool is not installed."
 done
 
@@ -57,9 +65,15 @@ outside() {
 cache="${ANTWARS_CI_CACHE:-${XDG_CACHE_HOME:-${HOME:?}/.cache}/antwars-ci}"
 case "$cache" in /*) ;; *) fail "the cache path must be absolute (set ANTWARS_CI_CACHE)." ;; esac
 outside "$cache" || fail "the cache path must be outside the checkout and its Git directory."
-mkdir -p -- "$cache"
-[ -d "$cache" ] && [ ! -L "$cache" ] && [ -O "$cache" ] || fail "the cache path must be a directory owned by you, not a symlink."
-chmod 700 -- "$cache"
+# private_dir <dir> <what>: creates the directory if missing, then refuses it unless it is a real
+# directory (not a symlink) owned by this user; makes it private.
+private_dir() {
+  mkdir -p -- "$1"
+  [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ] || fail "$2 must be a directory owned by you, not a symlink."
+  chmod 700 -- "$1"
+}
+private_dir "$cache" "the cache path"
+cache=$(realpath -e -- "$cache")
 
 # Private temporary directory outside the checkout, removed however the script ends.
 tmpbase=${TMPDIR:-/tmp}
@@ -167,21 +181,45 @@ wk=$(pinned https://cdn.playwright.dev/dbazure/download/playwright/builds/webkit
   b15753f528e990ca941cbd6d0c61a5dac09abcf04cbd8969ea077f1901aeac92 webkit-2311-ubuntu-24.04.zip)
 unzip_to "$wk" "$d/tools/browsers/webkit-2311"
 rm -f -- "$cft" "$shell" "$wk"
-export CHROME_BIN="$d/tools/chrome/chrome-linux64/chrome"
-export HEADLESS_SHELL="$d/tools/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell"
 export PLAYWRIGHT_BROWSERS_PATH="$d/tools/browsers"
 
-# WebKit's system libraries: the packages its build lists that are not installed, with their
-# dependencies, from the pinned Ubuntu snapshot (see the top of this file).
+# Each Chrome build runs through a launcher that adds the unpacked system libraries (below) for
+# that browser alone. The launcher is fixed text: it finds its directories from its own location
+# at run time, so no path is written into it.
+for bin in "$d/tools/chrome/chrome-linux64/chrome" \
+  "$d/tools/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell"; do
+  cat > "$bin-run" << 'EOF'
+#!/bin/sh
+SELF=$(readlink -f -- "$0")
+TOOLS=$(cd -- "$(dirname -- "$SELF")/../.." && pwd -P)
+LD_LIBRARY_PATH="$TOOLS/browser-deps/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "${SELF%-run}" "$@"
+EOF
+  chmod 700 -- "$bin-run"
+done
+export CHROME_BIN="$d/tools/chrome/chrome-linux64/chrome-run"
+export HEADLESS_SHELL="$d/tools/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell-run"
+mkdir -- "$d/tools/browser-deps"
+
+# The browsers' system libraries, from the pinned Ubuntu snapshot (see the top of this file): the
+# packages WebKit's build lists, and the packages playwright-core 1.61.1 lists for Chromium on
+# Ubuntu 24.04, that are not installed, with their dependencies.
 wpe="$d/tools/browsers/webkit-2311/minibrowser-wpe"
 missing=$(bash "$wpe/install-dependencies.sh" --printonly 2>&1 | sed -n 's/^Need to install the following extra packages: *//p')
-if [ -n "$missing" ]; then
-  os=$(. /etc/os-release && echo "${ID:-}-${VERSION_ID:-}")
-  [ "$os" = ubuntu-24.04 ] && command -v apt-get > /dev/null && command -v dpkg-deb > /dev/null &&
-    [ -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ] ||
-    fail "WebKit needs system packages that are not installed: $missing. Install them as root (npx playwright-core install-deps webkit), or run on Ubuntu 24.04, where this script fetches them."
+for pkg in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 \
+  libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
+  libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2; do
+  [ "$(dpkg-query -W -f='${db:Status-Status}' "$pkg:amd64" 2> /dev/null)" = installed ] || missing="$missing $pkg:amd64"
+done
+missing=$(printf '%s\n' $missing | sort -u | tr '\n' ' ')
+if [ -n "${missing// /}" ]; then
+  [ -f /usr/share/keyrings/ubuntu-archive-keyring.gpg ] ||
+    fail "the browsers need system packages that are not installed ($missing), and the Ubuntu archive keyring to fetch them is missing."
   apt="$d/apt"
-  mkdir -p -- "$apt/lists/partial" "$apt/archives/partial" "$apt/sources" "$apt/prefs" "$apt/dl" "$apt/debs" "$cache/debs"
+  mkdir -p -- "$apt/lists/partial" "$apt/archives/partial" "$apt/sources" "$apt/prefs" "$apt/dl" "$apt/debs"
+  # The package cache gets the same checks as the cache root, and must resolve to a directory
+  # directly inside it, before anything in it is read, deleted or written.
+  private_dir "$cache/debs" "the package cache $cache/debs"
+  [ "$(realpath -e -- "$cache/debs")" = "$cache/debs" ] || fail "the package cache must be inside the cache directory."
   cat > "$apt/sources/noble.sources" << 'EOF'
 Types: deb
 URIs: https://snapshot.ubuntu.com/ubuntu/20261101T000000Z
@@ -197,12 +235,12 @@ EOF
   # shellcheck disable=SC2086
   apt-get "${aptopts[@]}" -s --no-install-recommends install $missing 2> /dev/null |
     sed -n 's/^Inst \([^ ]*\) (\([^ ]*\) .*/\1=\2/p' > "$apt/specs"
-  [ -s "$apt/specs" ] || fail "could not resolve WebKit's system packages from the Ubuntu snapshot."
+  [ -s "$apt/specs" ] || fail "could not resolve the browsers' system packages from the Ubuntu snapshot."
   # Each package's SHA-256 from the signed index, as "<sha256> <package>=<version>".
   # shellcheck disable=SC2046
   apt-cache "${aptopts[@]}" show $(cat "$apt/specs") |
     awk '/^Package: /{p=$2} /^Version: /{v=$2} /^SHA256: /{print $2, p "=" v}' | sort -u > "$apt/sums"
-  [ "$(wc -l < "$apt/sums")" = "$(wc -l < "$apt/specs")" ] || fail "the Ubuntu snapshot index does not list every WebKit system package once."
+  [ "$(wc -l < "$apt/sums")" = "$(wc -l < "$apt/specs")" ] || fail "the Ubuntu snapshot index does not list every browser system package once."
   # use_cached: copies every cached package into the temporary directory and checks it there;
   # prints the packages still missing or mismatched.
   use_cached() {
@@ -226,28 +264,29 @@ EOF
       sum=$(sha256sum -- "$f" | cut -d' ' -f1)
       mv -- "$f" "$cache/debs/$sum.deb.$$" && mv -- "$cache/debs/$sum.deb.$$" "$cache/debs/$sum.deb"
     done
-    [ -z "$(use_cached)" ] || fail "a WebKit system package does not match the Ubuntu snapshot's signed index."
+    [ -z "$(use_cached)" ] || fail "a browser system package does not match the Ubuntu snapshot's signed index."
   fi
-  lib="$d/tools/webkit-deps"
-  mkdir -- "$lib"
+  lib="$d/tools/browser-deps"
   for f in "$apt/debs"/*.deb; do dpkg-deb -x "$f" "$lib"; done
   rm -rf -- "$apt"
   # WebKit's own launcher sets its library path; this one adds the unpacked libraries for WebKit
-  # alone. Playwright cannot see them, so its host check is skipped.
-  multiarch="$lib/usr/lib/x86_64-linux-gnu"
-  cat > "$wpe/MiniBrowser" << EOF
+  # alone. Playwright cannot see them, so its host check is skipped. The launcher is fixed text:
+  # it finds every directory from its own location at run time, so no path is written into it.
+  cat > "$wpe/MiniBrowser" << 'EOF'
 #!/bin/sh
-MYDIR="$wpe"
-export WEBKIT_EXEC_PATH="\${MYDIR}/bin"
-export WEBKIT_INJECTED_BUNDLE_PATH="\${MYDIR}/lib"
-export WEBKIT_INSPECTOR_RESOURCES_PATH="\${MYDIR}/share"
-export LD_LIBRARY_PATH="\${MYDIR}/lib:\${MYDIR}/sys/lib:$multiarch"
-export GST_PLUGIN_SYSTEM_PATH="$multiarch/gstreamer-1.0"
-export GST_REGISTRY="$d/tools/gstreamer-registry.bin"
-export GIO_EXTRA_MODULES="$multiarch/gio/modules"
-export LIBGL_DRIVERS_PATH="$multiarch/dri"
-export __EGL_VENDOR_LIBRARY_DIRS="$lib/usr/share/glvnd/egl_vendor.d"
-exec "\${MYDIR}/bin/MiniBrowser" "\$@"
+MYDIR=$(dirname -- "$(readlink -f -- "$0")")
+TOOLS=$(cd -- "$MYDIR/../../.." && pwd -P)
+LIB="$TOOLS/browser-deps/usr/lib/x86_64-linux-gnu"
+export WEBKIT_EXEC_PATH="$MYDIR/bin"
+export WEBKIT_INJECTED_BUNDLE_PATH="$MYDIR/lib"
+export WEBKIT_INSPECTOR_RESOURCES_PATH="$MYDIR/share"
+export LD_LIBRARY_PATH="$MYDIR/lib:$MYDIR/sys/lib:$LIB"
+export GST_PLUGIN_SYSTEM_PATH="$LIB/gstreamer-1.0"
+export GST_REGISTRY="$TOOLS/gstreamer-registry.bin"
+export GIO_EXTRA_MODULES="$LIB/gio/modules"
+export LIBGL_DRIVERS_PATH="$LIB/dri"
+export __EGL_VENDOR_LIBRARY_DIRS="$TOOLS/browser-deps/usr/share/glvnd/egl_vendor.d"
+exec "$MYDIR/bin/MiniBrowser" "$@"
 EOF
   chmod 700 -- "$wpe/MiniBrowser"
   export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
@@ -274,21 +313,35 @@ for f in .github/scripts/identifiers-scan.sh .githooks/identifier-config .gitlea
 done
 
 status=0
-ANTWARS_IDENTIFIERS=$(cat -- "$list") bash "$d/base/.github/scripts/identifiers-scan.sh" "$d/work" "$candidate" "$base" || status=$?
-# Report the reduced findings: scan, rule, commit, line and path sha256 only.
+# Nothing the scanner or gitleaks prints reaches the output: gitleaks' own log and error lines can
+# carry file paths. Both streams go to a private file, which is never printed and is deleted with
+# the temporary directory; the only output is the reduced report below.
+ANTWARS_IDENTIFIERS=$(cat -- "$list") bash "$d/base/.github/scripts/identifiers-scan.sh" "$d/work" "$candidate" "$base" \
+  > "$d/scan.log" 2>&1 || status=$?
+rm -f -- "$d/scan.log"
+# Report the reduced findings: scan, rule, commit, line and path sha256 only, each field checked
+# against its expected form; anything else is reported as unreadable.
 node --input-type=module -e '
   import { existsSync, readFileSync } from "node:fs";
   const dir = process.argv[1];
-  const ran = existsSync(`${dir}/ran.txt`) ? readFileSync(`${dir}/ran.txt`, "utf8").split("\n").filter(Boolean) : [];
-  let total = 0;
-  for (const scan of ran) {
-    const file = `${dir}/${scan}.json`;
-    let items = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : "missing";
-    if (!Array.isArray(items)) { console.log(`full-suite: scan=${scan} report ${items}`); total++; continue; }
+  const safe = (v, re) => (typeof v === "string" && re.test(v) ? v : null);
+  let ran = [];
+  try { ran = readFileSync(`${dir}/ran.txt`, "utf8").split("\n").filter(Boolean); } catch {}
+  for (const name of ran) {
+    const scan = safe(name, /^[a-z-]+$/);
+    if (!scan) { console.log("full-suite: scan=unknown report unreadable"); continue; }
+    let items = "missing";
+    if (existsSync(`${dir}/${scan}.json`)) {
+      try { items = JSON.parse(readFileSync(`${dir}/${scan}.json`, "utf8")); } catch { items = "unreadable"; }
+    }
+    if (!Array.isArray(items)) { console.log(`full-suite: scan=${scan} report ${items === "missing" ? "missing" : "unreadable"}`); continue; }
     console.log(`full-suite: scan=${scan} findings=${items.length}`);
     for (const f of items) {
-      total++;
-      console.log(`full-suite: finding: scan=${scan} rule=${f.RuleID} commit=${f.Commit || "-"} line=${f.StartLine} path-sha256=${f.PathSHA256}`);
+      const rule = safe(f?.RuleID, /^[A-Za-z0-9._-]+$/) ?? "rule-redacted";
+      const commit = safe(f?.Commit, /^[0-9a-f]{40}$/) ?? "-";
+      const line = Number.isInteger(f?.StartLine) ? f.StartLine : 0;
+      const path = safe(f?.PathSHA256, /^[0-9a-f]{64}$/) ?? "path-redacted";
+      console.log(`full-suite: finding: scan=${scan} rule=${rule} commit=${commit} line=${line} path-sha256=${path}`);
     }
   }
   if (ran.length === 0) console.log("full-suite: no scan ran.");
@@ -300,4 +353,12 @@ rm -rf -- "$d/work" "$d/base"
 npm ci --no-audit --no-fund
 npx tsc --noEmit
 npm run build:web
-firebase emulators:exec --only firestore "npx vitest run --maxWorkers=2"
+# The tests, split as the full job of .github/workflows/antwar-ci.yml splits them: beside the rest of
+# the suite, the Wide Plain handover's pause and the deploy tooling tests' many fake-deploy
+# processes starve each other past their time limits.
+tests=0
+ANTWAR_REQUIRE_EMULATOR=1 firebase emulators:exec --only firestore \
+  "npx vitest run --maxWorkers=2 --exclude test/slots/handover-wide-plain.test.ts --exclude deploy/cloud-run/deploy.test.ts" || tests=1
+npx vitest run test/slots/handover-wide-plain.test.ts || tests=1
+npx vitest run deploy/cloud-run/deploy.test.ts || tests=1
+[ "$tests" = 0 ] || fail "the full test set failed."
