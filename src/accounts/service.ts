@@ -96,6 +96,7 @@ const REFUSALS = {
   opponent_unavailable: [409, "That house handle is unavailable for challenges. Choose an available handle from list_challenge_opponents."],
   seated_elsewhere: [409, "This identity is seated in another live lobby. Finish that game, or leave its lobby with leave_lobby before it starts, before requesting a challenge."],
   active_challenge: [409, "Your username already has an active challenge. Follow it with challenge_status; request another once it has ended."],
+  live_challenge: [409, "This identity has a live challenge, so it cannot also join the ranked queue or another lobby; nothing changed. Follow it with challenge_status; join once it has ended, or after leaving its lobby with leave_lobby before it starts."],
   owner_daily_limit: [429, "Your username has used its 5 challenges for this UTC day. Try again after the reset at UTC midnight."],
   shared_daily_limit: [429, "Today's 20 shared challenges are used. Try again after the reset at UTC midnight."],
   not_house_owner: [403, "Only the antwars username's own key can do this, not a handle's key or any other key."],
@@ -138,7 +139,7 @@ function lobbyRefusal(reason: LobbyRefusal | "unknown_key"): Reply {
     case "no_such_lobby": case "invalid_invite": case "not_creator": return refuse("no_such_lobby");
     case "invalid_kind": case "invalid_size": case "already_seated": case "full": case "started":
     case "expired": case "colony_empty": case "not_private": case "invalid_mode": case "already_queued": case "not_house":
-    case "colony_full": case "seat_held": case "not_seated":
+    case "colony_full": case "seat_held": case "not_seated": case "live_challenge":
       return refuse(reason);
     default:
       // not_holding and superseded belong to the slot instance, never to these operations.

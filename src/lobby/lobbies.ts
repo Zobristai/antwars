@@ -46,6 +46,9 @@ import { lobbyPageUrl } from "./site.js";
  *   queueEntries/{id}, queueWaiting/{mode}  the ranked queue (src/lobby/queue.ts)
  *   challenge*                             house challenges (src/lobby/challenges.ts)
  *   waits/{token}                          waiting tokens (src/lobby/waits.ts)
+ *   lobbySeats/{identityId} { lobbyId }  the lobby the identity last joined, written by every successful join and
+ *                       never removed; request_challenge reads it, so a join and a challenge request for one identity
+ *                       touch one document and cannot both commit. It may be stale and names only the latest join.
  *   withheld/{kind}-{n} { }  present while the slot is withheld from new matches;
  *                       any fields are ignored. Written and removed outside the app, by
  *                       deploy/cloud-run/deploy.sh over Firestore REST (PATCH to set,
@@ -197,7 +200,9 @@ export type LobbyRefusal =
   /** A house challenge's held seat, taken by an identity other than its handle. */
   | "seat_held"
   /** A leave by an identity with no seat in the lobby, or of a lobby that does not exist. */
-  | "not_seated";
+  | "not_seated"
+  /** A queue or lobby join by an identity whose latest challenge's lobby is live (another lobby, for a lobby join). */
+  | "live_challenge";
 export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal };
 
 export interface CreatedLobby {
@@ -396,6 +401,7 @@ const ok = <T>(value: T) => ({ ok: true, value }) as const;
 const verifierOf = (token: string) => createHash("sha256").update(token, "utf8").digest("hex");
 const newToken = () => randomBytes(32).toString("base64url");
 const lobbyPath = (id: string) => `lobbies/${id}`;
+const seatPointerPath = (identityId: string) => `lobbySeats/${identityId}`;
 const ids = (list: string | undefined) => (list ?? "").split(" ").filter(Boolean);
 const KINDS: readonly LobbyKind[] = ["public", "private"];
 const SIZES: readonly LobbySize[] = [1, 2, 3, 4];
@@ -831,8 +837,10 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     lobbyTtlMs: CHALLENGE_LOBBY_TTL_MS,
     now,
     scanPageSize: settings.challengeScanPageSize ?? CHALLENGE_SCAN_PAGE_SIZE,
+    scanLookbackMs: LOBBY_TTL_MS,
     isExpired,
     slotPaths: (["public", "private"] as const).flatMap((kind) => Array.from({ length: slots[kind] }, (_, n) => `slots/${kind}-${n}`)),
+    seatPointerPath,
     async challengeLobbyWrites(read, { id, requestId, handle, builder, at }) {
       const seats: StoredSeat[] = [{ id: builder.id, displayName: builder.displayName, colony: 1 }]; // the colony not held
       const fields: Fields = {
@@ -910,6 +918,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
           return { result: refuse("invalid_invite"), writes: [] };
         }
         if (isExpired(fields, at)) return { result: refuse("expired"), writes: [] };
+        // A live challenge keeps its builder out of every other lobby; its own lobby keeps the rules below.
+        const challengeLobby = await challenges.liveChallenge(read, joiner.id, at);
+        if (challengeLobby !== undefined && challengeLobby !== lobbyId) return { result: refuse("live_challenge"), writes: [] };
         const seats = seatsOf(lobbyId, fields);
         const seated = (colony: Colony) => seats.filter((seat) => seat.colony === colony).length;
         // A house challenge's held seat is its handle's alone; that handle may hold it beside its own
@@ -926,12 +937,15 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         if (fields.heldFor && colony === HELD_COLONY && !holder) return { result: refuse("seat_held"), writes: [] };
         const next = [...seats, { id: joiner.id, displayName: joiner.displayName, colony }];
         const wait: Write[] = waitToken === undefined ? [] : await joinedLobbyWaitWrites(read, waitToken, lobbyId, joiner.id, lobbyLimit(fields), at);
+        // Every successful join, with or without a waiting token, points the joiner's seat pointer at this lobby.
+        const pointer = (await read([seatPointerPath(joiner.id)])).get(seatPointerPath(joiner.id));
+        const seatPointer: Write = { op: pointer ? "update" : "create", path: seatPointerPath(joiner.id), fields: { lobbyId } };
         if (next.length === capacity(lobbyId, fields)) {
           const started = await start(read, lobbyId, fields, next, at);
-          return { result: ok(started.lobby), writes: [...started.writes, ...wait] };
+          return { result: ok(started.lobby), writes: [...started.writes, ...wait, seatPointer] };
         }
         const update = { seats: JSON.stringify(next) };
-        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }, ...wait] };
+        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }, ...wait, seatPointer] };
       });
     },
 
@@ -1123,6 +1137,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!joiner) return refuse("unknown_key");
       return store.transaction(async (read) => {
         const at = now();
+        // Refused before any queue or wait write: a live challenge keeps its builder out of the queue.
+        if (await challenges.liveChallenge(read, joiner.id, at) !== undefined) return { result: refuse("live_challenge"), writes: [] };
         const indexes = waitIndexes(read);
         const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, indexes, waitToken);
         if (!step.result.ok) return step;
