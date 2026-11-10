@@ -432,6 +432,9 @@ describe("Continuation through the real superseded and resumed servers", { timeo
     const ownerRun = await until(async () => (await t.lobbies.slotHolder("public-0"))?.matchRunId ?? undefined);
     const seat = await seatSession(owner.server);
     const joined = (await seat.call("join", { key: t.keys[0] })).structuredContent as any;
+    // The other seat joins too: a ranked seat that never joins ends the match abandoned, unrated, at its natural end.
+    const other = await seatSession(owner.server);
+    expect(((await other.call("join", { key: t.keys[1] })).structuredContent as any).agentId).toEqual(expect.any(String));
     await until(() => (owner.server.game.match?.state.tick ?? 0) >= 2);
     // Both colonies at their 1,024-ant cap, filled between two ticks; the uninterrupted match starts from this state.
     const live = owner.server.game.match!.state;

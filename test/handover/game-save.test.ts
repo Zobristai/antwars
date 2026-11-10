@@ -12,7 +12,11 @@ import type { SimInput, StepOutput } from "../../src/sim/types.js";
 import { compareTicks } from "../tuning/equality.js";
 import { memoryObjects, testFirestore, WIDE_SEATS, wideMatch, widePlainConfig } from "./helpers.js";
 
-const MATCH_TICKS = 36_000;
+/**
+ * The continuation test's Wide Plain match, cut to 300 ticks so it reaches its natural time_up result here,
+ * and its fourth seat joins after the start yet within the idle limit, as a ranked seat must.
+ */
+const MATCH_TICKS = 300;
 
 /** The same agent calls, by tick, for both games: one call every 10 ticks, rotating seats and kinds. */
 function callAt(tick: number, agents: readonly string[]): SimInput | null {
@@ -42,14 +46,13 @@ function matchSave(save: GameSave): MatchGameSave {
   return save;
 }
 
-function freshGame(clock: { now: number }): Game {
-  return new Game({ simConfig: widePlainConfig(), now: () => clock.now, slot: { identityOf: async () => undefined, locate: async () => undefined } });
+function freshGame(clock: { now: number }, matchTicks?: number): Game {
+  return new Game({ simConfig: widePlainConfig(matchTicks), now: () => clock.now, slot: { identityOf: async () => undefined, locate: async () => undefined } });
 }
 
 describe("handover game save at Game level (continuation)", () => {
   it("a Wide Plain match at 1,024 ants a side resumed from the store continues as the uninterrupted match to its result", async () => {
-    // The match is moved near its end so it reaches its natural time_up result here (helpers.ts wideMatch).
-    const { game: original, agents: joined, clock } = await wideMatch({ seed: 11, fromTick: MATCH_TICKS - 300 });
+    const { game: original, agents: joined, clock } = await wideMatch({ seed: 11, matchTicks: MATCH_TICKS });
     const start = original.match!.state;
     expect([0, 1].map(colony => start.ants.filter(ant => ant.colony === colony).length)).toEqual([1024, 1024]);
     const agents = [...joined];
@@ -82,7 +85,7 @@ describe("handover game save at Game level (continuation)", () => {
     expect(read!.game).toStrictEqual(game);
     expect(stateHash(matchSave(read!.game).state)).toBe(beforeHash);
 
-    const resumed = freshGame(clock);
+    const resumed = freshGame(clock, MATCH_TICKS);
     resumed.resumeMatch(read!.game);
     expect(resumed.match!.state.tick).toBe(game.tick);
     expect(matchSave(read!.game).holdBehaviour).toBe("ant115");

@@ -145,6 +145,20 @@ async function seatSession(server: GameServer) {
     ((await client.callTool({ name, arguments: args })) as CallToolResult).structuredContent as any;
 }
 
+/**
+ * The seat with `key` joins on the server, through its own session, once the server's restored lobby has
+ * loaded: a ranked seat that never joins ends the match abandoned, unrated, at its natural end.
+ */
+async function joinSeat(server: GameServer, key: string) {
+  const call = await seatSession(server);
+  const joined = await until(async () => {
+    const reply = await call("join", { key });
+    return reply.error?.code === "lobby_loading" ? undefined : reply;
+  });
+  expect(joined.agentId, JSON.stringify(joined)).toEqual(expect.any(String));
+  return joined.agentId as string;
+}
+
 /** The server's Game: openStart and nestSelection are not on its LiveGame view. */
 const gameOf = (server: GameServer): Game => server.game as Game;
 
@@ -212,6 +226,8 @@ async function resumesAndPlays(t: World, successor: Awaited<ReturnType<typeof sl
   expect(back.agentId, JSON.stringify(back)).toBe(owner.agentId);
   expect(gameOf(successor.server).nestSelection(owner.agentId)!.picks.filter((pick) => pick.mine))
     .toEqual([expect.objectContaining(owner.tile)]);
+  // The other seat joins in the window, so both seats play the match.
+  await joinSeat(successor.server, t.keys[1]);
   expect(successor.server.game.match).toBeNull();
 
   await until(() => successor.server.game.match !== null, WINDOW_MS + 5000);
@@ -334,6 +350,8 @@ describe("a begun match handed over in its nest-pick window, through startSpecta
     expect(gameOf(successor.server).openStart).toMatchObject({ lobbyId: t.lobby.id, seed: owner.open.seed });
     expect(successor.server.game.match).toBeNull();
     expect(await t.watchRegistry.read(t.lobby.id)).toBeNull();
+    // Both seats join in the window, so both play the match.
+    for (const key of t.keys) await joinSeat(successor.server, key);
 
     // The window closes; matchStarted registers the lobby's watch entry under the successor's run and origin.
     await until(() => successor.server.game.match !== null, WINDOW_MS + 5000);
