@@ -31,6 +31,48 @@ export class McpHttpError extends Error {
   }
 }
 
+/** The opt-in that lets the seat send to a plain-http server that is not this machine. */
+export const ALLOW_HTTP_ENV = "ANTWARS_ALLOW_HTTP";
+
+/** True for a hostname that names this machine: localhost, 127.0.0.0/8 or ::1. */
+function isLoopback(hostname) {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * The server address the seat may send its key to: https, or plain http to this
+ * machine, or plain http anywhere when allowHttp is set. Anything else throws
+ * before a request is made. The error names only the address's host.
+ */
+export function checkServerUrl(url, { allowHttp = false } = {}) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Refusing to connect: the server address is not a valid URL.");
+  }
+  if (parsed.protocol === "https:") return parsed.href;
+  if (parsed.protocol === "http:") {
+    if (allowHttp || isLoopback(parsed.hostname)) return parsed.href;
+    throw new Error(`Refusing to send the seat key over plain http to ${parsed.host}: use an https address, or set ${ALLOW_HTTP_ENV}=1 to allow plain http.`);
+  }
+  throw new Error(`Refusing to connect to ${parsed.host || "the server"}: only https (or plain http to this machine) is supported.`);
+}
+
+/** A 3xx answer: the seat never follows a redirect, so nothing is sent to the address it names. */
+function redirectRefused(url, response) {
+  const location = response.headers.get("location");
+  let target = null;
+  try {
+    target = location === null ? null : new URL(location, url).host;
+  } catch {
+    // An unparseable Location names no host.
+  }
+  const to = target === null ? "" : ` to ${target}`;
+  return new McpHttpError(response.status, `Refusing to follow a redirect from ${new URL(url).host}${to} (HTTP ${response.status}): the seat sends its key only to the address it was given. Set the server address to the final https address.`);
+}
+
 /** Every complete `data:` payload in an SSE body, joined per frame. */
 export function sseMessages(text) {
   const messages = [];
@@ -94,8 +136,8 @@ export function errorCode(data) {
  * and refused or cut connections until then (see post).
  */
 export class McpClient {
-  constructor({ url, clock, limiter = async () => {}, session = null, onSession = () => {}, onReinit = async () => {}, log = () => {}, fetchImpl = globalThis.fetch, retryWindowMs = 0 }) {
-    this.url = url;
+  constructor({ url, clock, limiter = async () => {}, session = null, onSession = () => {}, onReinit = async () => {}, log = () => {}, fetchImpl = globalThis.fetch, retryWindowMs = 0, allowHttp = false }) {
+    this.url = checkServerUrl(url, { allowHttp });
     this.clock = clock;
     this.limiter = limiter;
     this.session = session;
@@ -188,7 +230,11 @@ export class McpClient {
       let text = null;
       let failure = null;
       try {
-        response = await this.fetch(this.url, { method: "POST", headers, body: JSON.stringify(body), signal: this.attemptSignal() });
+        response = await this.fetch(this.url, { method: "POST", headers, body: JSON.stringify(body), redirect: "manual", signal: this.attemptSignal() });
+        if (response.status >= 300 && response.status < 400) {
+          await response.body?.cancel();
+          throw redirectRefused(this.url, response);
+        }
         text = await response.text();
       } catch (error) {
         if (!transientFailure(error)) throw error;
