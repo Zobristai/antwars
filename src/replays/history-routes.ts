@@ -7,6 +7,7 @@ import { validHistoryPageToken, type HistoryPage, type HistorySource, type Histo
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { RankedMode } from "../rating/ratings.js";
+import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -19,6 +20,9 @@ export interface RecordingLobby {
   readonly mode: RankedMode | null;
   readonly challenge?: { readonly kind: "house" };
   readonly colonies: readonly [readonly LobbySeat[], readonly LobbySeat[]];
+  /** The lobby's match time in milliseconds: startsAt, else createdAt. */
+  readonly startsAt?: number | null;
+  readonly createdAt?: number;
 }
 /**
  * Replay id -> the lobby that recording came from; null when it has none (a scheduled match); "pending" when its lobby
@@ -86,7 +90,8 @@ export function cachedLobbyLookup(lookup: RecordingLobbyLookup): RecordingLobbyL
 export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" | "unrated";
 /** A recording's match type and agents per colony; size null where neither the lobby nor recorded seats tell it. */
 export interface RecordingMatchType { readonly kind: RecordingMatchKind; readonly size: 1 | 2 | 3 | 4 | null }
-export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null };
+/** harnessPhase is present only on a Model Index row (src/rating/harnessPhase.ts). */
+export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null; readonly harnessPhase?: HarnessPhase };
 
 const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.startsWith(`${HOUSE_USERNAME}/`);
 
@@ -117,7 +122,8 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
 }
 
 /**
- * Each listed row with its match type (recordingMatchType). A pending or failed lookup types the row from its record for
+ * Each listed row with its match type (recordingMatchType), and a Model Index row with its harness phase by match time
+ * (recordingMatchTime). A pending or failed lookup types the row from its record for
  * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again.
  */
 export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
@@ -125,8 +131,19 @@ export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (
     if (lookup === undefined) return null;
     try { const lobby = await lookup(replayId); return lobby === "pending" ? undefined : lobby; } catch { return undefined; }
   }
-  return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row =>
-    ({ ...row, matchType: recordingMatchType(row, await lobbyOf(row.id)) }))) });
+  return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row => {
+    const lobby = await lobbyOf(row.id);
+    const matchType = recordingMatchType(row, lobby);
+    return matchType?.kind === "index" ? { ...row, matchType, harnessPhase: harnessPhaseAt(recordingMatchTime(row, lobby)) } : { ...row, matchType };
+  })) });
+}
+
+/** A recording's match time: its lobby's startsAt, else createdAt, where the lobby was read; else the recorded start. */
+export function recordingMatchTime(row: Pick<HistorySummary, "startedAt">, lobby: RecordingLobby | null | undefined): number | null {
+  const at = lobby ? lobby.startsAt ?? lobby.createdAt : undefined;
+  if (typeof at === "number" && Number.isFinite(at)) return at;
+  const started = Date.parse(row.startedAt);
+  return Number.isFinite(started) ? started : null;
 }
 
 /**

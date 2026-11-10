@@ -61,6 +61,22 @@ describe("public spectator catalog projection", () => {
     expect(JSON.stringify(result)).not.toMatch(/never-public|secret/);
   });
 
+  it("labels a live Model Index match with its harness phase by its start, and no other match", () => {
+    const afterRound30 = Date.parse("2026-11-10T02:00:00Z");
+    const result = publicMatchCatalog([
+      { ...publicMatch, lobbyId: "index", mode: "house-1v1", startedAt: afterRound30 },
+      { ...publicMatch, lobbyId: "ranked", mode: "1v1", startedAt: afterRound30 + 1 },
+      { ...publicMatch, lobbyId: "lobby", mode: null, rated: false, startedAt: afterRound30 + 2 },
+    ], []);
+    expect(result.matches).toEqual([
+      { lobbyId: "index", startedAt: afterRound30, rated: true, delaySeconds: 0, colonies: [[], []],
+        harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: true } },
+      { lobbyId: "ranked", startedAt: afterRound30 + 1, rated: true, delaySeconds: 300, colonies: [[], []] },
+      { lobbyId: "lobby", startedAt: afterRound30 + 2, rated: false, delaySeconds: 60, colonies: [[], []] },
+    ]);
+    expect(result.matches.map(match => "harnessPhase" in match)).toEqual([true, false, false]);
+  });
+
   it("lists only public matches still in playback, oldest first, as the matches whose players are read", () => {
     const later: CatalogMatch = { ...publicMatch, lobbyId: "b", startedAt: 2000 };
     expect(listedMatches([later, { ...publicMatch, lobbyId: "c", playbackFinished: true }, { ...publicMatch, lobbyId: "p", visibility: "private" }, publicMatch])

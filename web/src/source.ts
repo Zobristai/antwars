@@ -10,7 +10,8 @@ import { loadRecording, streamPath, type LinkState } from "./stream.ts";
 import { randomMatch, watchMatchStatus, type MatchStatus } from "./match-status.ts";
 import { openInviteStream } from "./invite-stream.ts";
 import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.ts";
-import { restateRatings, storedReplayRatings } from "./replay-ratings.ts";
+import { restateRatings, storedReplayFacts } from "./replay-ratings.ts";
+import { harnessPhaseTags } from "./ui/format.ts";
 import { liveStarting } from "./waiting.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
@@ -39,6 +40,9 @@ export interface SpectatorSource {
   readonly lastTick: number;
   /** The link the result's Share on X names (watchUrl); null for a private match or a bundled recording. */
   readonly share: string | null;
+  /** A stored Model Index recording's harness phase tags (ui/format.ts harnessPhaseTags), once its stored record is read;
+   * empty before then and for any other match. */
+  readonly harnessPhase?: readonly string[];
   linkState(): LinkState;
   take(realMs: number): SourceArrival[];
   now(realMs: number): number;
@@ -180,6 +184,12 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     abort.signal.addEventListener("abort", () => resolve(null), { once: true });
   });
   const fail = (error: Error) => { if (!abort.signal.aborted) { recordingError(doc, error); reject(error); } };
+  // A stored match's one read of its stored record: the restatement of its rating figures, and its harness phase tags.
+  let phaseTags: readonly string[] = [];
+  const storedFacts = (replayId: string, invite: string | null) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
+    phaseTags = harnessPhaseTags(facts.harnessPhase);
+    return facts.ratings && restateRatings(facts.ratings);
+  });
   // Only startup is timed out, not a large recording's paced, backpressured download.
   const standIn = async (path: string, replayId: string | null) => {
     const startup = new AbortController();
@@ -191,7 +201,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     // A stored stand-in is a past match's public replay: its stored rating record restates it, as on a
     // replay page. The bundled excerpt has no stored id and plays as recorded.
     recording = openRecording(path, error => { if (ready) fail(error); }, request,
-      replayId === null ? {} : { restate: storedReplayRatings(replayId, null, abort.signal).then(stored => stored && restateRatings(stored)) });
+      replayId === null ? {} : { restate: storedFacts(replayId, null) });
     try { const head = await recording.first; ready = true; return head; }
     finally { clearTimeout(recordingTimer); }
   };
@@ -267,7 +277,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         controls: true,
         endTick: lobbyRecording ? undefined : signal => recordedEndTick(storedId!, signal),
         // A stored match's rating figures come from its stored change record; the bundled excerpt has none.
-        ...(storedId === null ? {} : { restate: storedReplayRatings(storedId, lobbyRecording ? invite : null, abort.signal).then(stored => stored && restateRatings(stored)) }),
+        ...(storedId === null ? {} : { restate: storedFacts(storedId, lobbyRecording ? invite : null) }),
       });
       head = await recording.first;
     } else if (name) {
@@ -362,6 +372,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         replayId: replay || fallback !== null ? storedId : null,
         lobbyId: automatic ? selected?.lobbyId ?? null : params.get("lobby"),
       }),
+      get harnessPhase() { return phaseTags; },
       linkState: () => state,
       take(realMs) {
         if (recording) {

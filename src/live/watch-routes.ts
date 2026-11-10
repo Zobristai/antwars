@@ -9,6 +9,7 @@ import { admitMatchWatch, type MatchAccess } from "./match-access.js";
 import { listedMatches, matchWatchStatus, publicMatchCatalog, type PublicColonies, type PublicSeat } from "./match-catalog.js";
 import { publicQueue } from "./queue-catalog.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
+import { harnessPhaseAt, isIndexMode } from "../rating/harnessPhase.js";
 import type { WatchRegistry } from "./watch-registry.js";
 import type { Lobby } from "../lobby/lobbies.js";
 import { lobbySeats, seatDisplayNames } from "./watch-controller.js";
@@ -110,7 +111,10 @@ export function watchRoutes(options: {
       const retained = await options.registry.read(lobbyId);
       if (kind === "ratings") {
         if (!retained || retained.replayId !== route[3] || !retained.playbackFinished) { reply(res, 404); return; }
-        reply(res, 200, { ratings: await storedRatings(options.accounts, lobby.value) }); return;
+        const ratingsBody = { ratings: await storedRatings(options.accounts, lobby.value) };
+        // A Model Index match also gets its harness phase by its lobby's match time (src/rating/harnessPhase.ts).
+        reply(res, 200, isIndexMode(lobby.value.mode)
+          ? { ...ratingsBody, harnessPhase: harnessPhaseAt(lobby.value.startsAt ?? lobby.value.createdAt) } : ratingsBody); return;
       }
       if (kind === "recording") {
         reply(res, 200, { replayId: retained?.playbackFinished ? retained.replayId ?? null : null }); return;

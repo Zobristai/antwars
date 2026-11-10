@@ -112,7 +112,9 @@ it("keeps both anonymous routes correct across warm summaries, HEAD, changed gen
   expect(individual.headers.get("content-encoding")).toBeNull();
   expect(await individual.json()).toEqual(full);
   // The record's setup gives its rated flag, Model Index marker and so its match type; no other setup field.
-  const expected = { matches: [{ ...summary, rated: true, modelIndex: true, matchType: { kind: "index", size: 4 } }], nextPageToken: null };
+  // A Model Index row also carries its harness phase by its recorded start (no lobby here).
+  const expected = { matches: [{ ...summary, rated: true, modelIndex: true, matchType: { kind: "index", size: 4 },
+    harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true, pinBoundaryOpen: false } }], nextPageToken: null };
   expect(await (await fetch(`${s.url}/matches`)).json()).toEqual(expected);
   const head = await fetch(`${s.url}/matches`, { method: "HEAD" });
   expect(head.status).toBe(200); expect(await head.text()).toBe("");

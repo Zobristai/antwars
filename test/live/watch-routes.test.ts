@@ -273,10 +273,11 @@ describe("shared spectator HTTP routes", () => {
     await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode, startedAt: 0,
       origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
-    // Each seat with its rating, RD and rated-match count in the match's mode.
+    // Each seat with its rating, RD and rated-match count in the match's mode, and the Model Index match's harness phase
+    // by its start (here time 0, before every boundary).
     expect(catalog.matches).toContainEqual({ lobbyId: second, rated: true, startedAt: 0, delaySeconds: 0, colonies: [
       [{ displayName: "alice", rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", rating: 1490, rd: 80, ratedMatches: 12 }],
-    ] });
+    ], harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true, pinBoundaryOpen: false } });
     await f.registry.playbackFinished(second, "run");
     expect(await (await request(f.gatewayOrigin, `/watch/status/${second}`)).json()).toEqual({
       lobbyId: second, started: true, playbackFinished: true, delaySeconds: 0,
