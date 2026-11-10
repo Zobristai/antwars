@@ -227,13 +227,13 @@ describe("Model Index Recordings carry their harness phase", () => {
       started(noTime, "not a time", { modelIndex: true })];
     const listed = await recordingMatchTypes(lookup)(page(...rows));
     expect(listed.matches.map(match => match.harnessPhase)).toEqual([
-      { phase: "rounds 8-10", possibleEffortMismatch: false, pinBoundaryOpen: false },
-      { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: false },
-      { phase: "rounds 1-7", possibleEffortMismatch: true, pinBoundaryOpen: false },
+      { phase: "rounds 8-10", possibleEffortMismatch: false },
+      { phase: "rounds 26-30", possibleEffortMismatch: false },
+      { phase: "rounds 1-7", possibleEffortMismatch: true },
       undefined,
-      // No lobby: the record's Model Index marker types it and its recorded start, after round 30, places it.
-      { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: true },
-      { phase: "unknown", possibleEffortMismatch: null, pinBoundaryOpen: false },
+      // No lobby: the record's Model Index marker types it and its recorded start places it.
+      { phase: "rounds 26-30", possibleEffortMismatch: false },
+      { phase: "unknown", possibleEffortMismatch: null },
     ]);
     expect(listed.matches.map(match => "harnessPhase" in match)).toEqual([true, true, true, false, true, true]);
     listed.matches.forEach((match, index) => {
@@ -252,7 +252,7 @@ describe("Model Index Recordings carry their harness phase", () => {
     try {
       const listed = (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`)).json()) as { matches: TypedHistorySummary[] };
       expect(listed.matches.map(match => [match.matchType, match.harnessPhase])).toEqual([[{ kind: "index", size: 1 },
-        { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: false }]]);
+        { phase: "rounds 26-30", possibleEffortMismatch: false }]]);
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 });

@@ -62,17 +62,20 @@ describe("public spectator catalog projection", () => {
   });
 
   it("labels a live Model Index match with its harness phase by its start, and no other match", () => {
-    const afterRound30 = Date.parse("2026-11-10T02:00:00Z");
+    const pin = Date.parse("2026-11-10T03:03:46.329Z");
+    expect(publicMatchCatalog([{ ...publicMatch, lobbyId: "pin", mode: "house-2v2", startedAt: pin }], []).matches[0]!.harnessPhase)
+      .toEqual({ phase: "from the pin onward", possibleEffortMismatch: false });
+    const beforePin = Date.parse("2026-11-10T02:00:00Z");
     const result = publicMatchCatalog([
-      { ...publicMatch, lobbyId: "index", mode: "house-1v1", startedAt: afterRound30 },
-      { ...publicMatch, lobbyId: "ranked", mode: "1v1", startedAt: afterRound30 + 1 },
-      { ...publicMatch, lobbyId: "lobby", mode: null, rated: false, startedAt: afterRound30 + 2 },
+      { ...publicMatch, lobbyId: "index", mode: "house-1v1", startedAt: beforePin },
+      { ...publicMatch, lobbyId: "ranked", mode: "1v1", startedAt: beforePin + 1 },
+      { ...publicMatch, lobbyId: "lobby", mode: null, rated: false, startedAt: beforePin + 2 },
     ], []);
     expect(result.matches).toEqual([
-      { lobbyId: "index", startedAt: afterRound30, rated: true, delaySeconds: 0, colonies: [[], []],
-        harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: true } },
-      { lobbyId: "ranked", startedAt: afterRound30 + 1, rated: true, delaySeconds: 300, colonies: [[], []] },
-      { lobbyId: "lobby", startedAt: afterRound30 + 2, rated: false, delaySeconds: 60, colonies: [[], []] },
+      { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 0, colonies: [[], []],
+        harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
+      { lobbyId: "ranked", startedAt: beforePin + 1, rated: true, delaySeconds: 300, colonies: [[], []] },
+      { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []] },
     ]);
     expect(result.matches.map(match => "harnessPhase" in match)).toEqual([true, false, false]);
   });

@@ -59,10 +59,10 @@ const PHASES: readonly HarnessPhase["phase"][] = ["rounds 1-7", "rounds 8-10", "
 /** A harness phase as the server sends it (src/rating/harnessPhase.ts); null when absent or not one. Display only. */
 function readHarnessPhase(value: unknown): HarnessPhase | null {
   if (typeof value !== "object" || value === null) return null;
-  const { phase, possibleEffortMismatch, pinBoundaryOpen } = value as Record<string, unknown>;
-  if (!PHASES.includes(phase as HarnessPhase["phase"]) || typeof pinBoundaryOpen !== "boolean"
+  const { phase, possibleEffortMismatch } = value as Record<string, unknown>;
+  if (!PHASES.includes(phase as HarnessPhase["phase"])
     || (possibleEffortMismatch !== null && typeof possibleEffortMismatch !== "boolean")) return null;
-  return { phase: phase as HarnessPhase["phase"], possibleEffortMismatch, pinBoundaryOpen };
+  return { phase: phase as HarnessPhase["phase"], possibleEffortMismatch };
 }
 
 /** The stored figures by seat key; null when there are none, a row does not read, or two seats share a key. */

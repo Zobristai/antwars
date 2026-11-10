@@ -183,15 +183,12 @@ export function recordingType(type: Recording["matchType"]): string | null {
   return type.size === null ? MATCH_TYPE_WORDS[type.kind] : `${MATCH_TYPE_WORDS[type.kind]} · ${type.size}v${type.size}`;
 }
 
-/**
- * A Model Index match's harness phase as its tags read: the phase, with the open pin boundary noted on a rounds 26-30
- * match after round 30, then "Possible effort mismatch" where flagged. None for any other match.
- */
+/** A Model Index match's harness phase as its tags read: the phase, then "Possible effort mismatch" where flagged. None for any other match. */
 export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string[] {
   if (phase == null) return [];
   if (phase.phase === "unknown") return ["Harness phase unknown"];
   const named = phase.phase === "from the pin onward" ? "Harness from the pin onward" : `Harness: ${phase.phase}`;
-  return [phase.pinBoundaryOpen ? `${named} · pin boundary not yet set` : named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
+  return [named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
 }
 
 export function recordingRow(r: Recording, search: string): RecordingRow {

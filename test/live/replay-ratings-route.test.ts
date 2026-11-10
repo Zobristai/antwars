@@ -16,7 +16,7 @@ const startedAt = Date.parse("2026-01-02T03:04:05.000Z");
 const replayId = "2026-01-02T03-04-05-000Z-281474976710";
 /** The fixture lobby's match time, in rounds 26-30, and the harness phase it gives a Model Index match. */
 const matchAt = Date.parse("2026-11-07T07:47:00.000Z");
-const round26Phase = { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: false };
+const round26Phase = { phase: "rounds 26-30", possibleEffortMismatch: false };
 /** The Glicko record the recompute stored; the recording carries the Elo figures 1383.3 → 1399.5 and 1386.6 → 1370.4. */
 const glicko = [
   { identityId: "glm", before: 1412.25, after: 1461.75, rdBefore: 120, rdAfter: 110 },
@@ -138,7 +138,7 @@ describe("a replay's harness phase", () => {
     const f = await fixture({ startsAt: Date.parse("2026-10-26T01:38:30Z") });
     const before = JSON.stringify([...f.docs]);
     const body = await (await f.get()).json();
-    expect(body.harnessPhase).toEqual({ phase: "rounds 1-7", possibleEffortMismatch: true, pinBoundaryOpen: false });
+    expect(body.harnessPhase).toEqual({ phase: "rounds 1-7", possibleEffortMismatch: true });
     expect(body.ratings).toHaveLength(2);
     // createdAt is 0 in the fixture: before every boundary.
     await expect((await (await fixture({ startsAt: null })).get()).json()).resolves.toMatchObject({ harnessPhase: { phase: "rounds 1-7" } });
@@ -147,7 +147,7 @@ describe("a replay's harness phase", () => {
 
   it("serves an unrated Model Index match's phase with no figures", async () => {
     expect(await (await (await fixture({ rated: false, startsAt: Date.parse("2026-11-10T02:00:00Z") })).get()).json())
-      .toEqual({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: true } });
+      .toEqual({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } });
   });
 
   it("sends no phase for a match in any other mode", async () => {

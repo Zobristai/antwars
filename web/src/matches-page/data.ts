@@ -11,7 +11,6 @@ const liveSeat = z.union([
 export const harnessPhase = z.object({
   phase: z.enum(["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "unknown"]),
   possibleEffortMismatch: z.boolean().nullable(),
-  pinBoundaryOpen: z.boolean(),
 }).nullable().optional().catch(null);
 export type HarnessPhase = NonNullable<z.infer<typeof harnessPhase>>;
 const liveRow = z.object({

@@ -279,7 +279,7 @@ it.each([
   const replayPackets = [encodePublicMessage({ ...first, full: { ...first.full!, setup } }), ...packets.slice(1)];
   vi.stubGlobal("fetch", async (path: string) => {
     if (path.startsWith("/watch/ratings/")) return answered
-      ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: false } })
+      ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } })
       : new Response(null, { status: 404 });
     if (path.startsWith("/matches/")) return Response.json({ format: "antwar.match", version: 1, id, result: { tick: messages.at(-1)!.tick - 1 } });
     return new Response(new Uint8Array(packMessages(replayPackets)));

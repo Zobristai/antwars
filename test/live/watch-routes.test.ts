@@ -277,7 +277,7 @@ describe("shared spectator HTTP routes", () => {
     // by its start (here time 0, before every boundary).
     expect(catalog.matches).toContainEqual({ lobbyId: second, rated: true, startedAt: 0, delaySeconds: 0, colonies: [
       [{ displayName: "alice", rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", rating: 1490, rd: 80, ratedMatches: 12 }],
-    ], harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true, pinBoundaryOpen: false } });
+    ], harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } });
     await f.registry.playbackFinished(second, "run");
     expect(await (await request(f.gatewayOrigin, `/watch/status/${second}`)).json()).toEqual({
       lobbyId: second, started: true, playbackFinished: true, delaySeconds: 0,

@@ -32,16 +32,16 @@ describe("leaderboard form entries in a Model Index mode carry each match's harn
     const before = JSON.stringify([...docs]);
     const alpha = entries(await ratings.leaderboard({ mode: "house-1v1" })).find(entry => entry.identityId === "alpha");
     expect(alpha!.form).toEqual([
-      { result: "W", replayId: null, harnessPhase: { phase: "unknown", possibleEffortMismatch: null, pinBoundaryOpen: false } },
-      { result: "W", replayId: null, harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: true } },
-      { result: "W", replayId: REPLAY, harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false, pinBoundaryOpen: false } },
-      { result: "W", replayId: null, harnessPhase: { phase: "rounds 8-10", possibleEffortMismatch: false, pinBoundaryOpen: false } },
-      { result: "W", replayId: null, harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true, pinBoundaryOpen: false } },
+      { result: "W", replayId: null, harnessPhase: { phase: "unknown", possibleEffortMismatch: null } },
+      { result: "W", replayId: null, harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
+      { result: "W", replayId: REPLAY, harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
+      { result: "W", replayId: null, harnessPhase: { phase: "rounds 8-10", possibleEffortMismatch: false } },
+      { result: "W", replayId: null, harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } },
     ]);
     // A match with no stored lobby has no readable time.
     const missing = await world("house-2v2", ["gone"]);
     expect(entries(await missing.ratings.leaderboard({ mode: "house-2v2" })).find(entry => entry.identityId === "alpha")!.form)
-      .toEqual([{ result: "W", replayId: null, harnessPhase: { phase: "unknown", possibleEffortMismatch: null, pinBoundaryOpen: false } }]);
+      .toEqual([{ result: "W", replayId: null, harnessPhase: { phase: "unknown", possibleEffortMismatch: null } }]);
     // Reading changes no stored rating, RD, record or change record.
     expect(JSON.stringify([...docs])).toBe(before);
   });

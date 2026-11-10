@@ -5,16 +5,15 @@ import { harnessPhase } from "../../../web/src/matches-page/data.ts";
 import { modeCopy } from "../../../web/src/replay.ts";
 import type { LiveMatch, Recording } from "../../../web/src/matches-page/data.ts";
 
-const phase = (name: string, possibleEffortMismatch: boolean | null = false, pinBoundaryOpen = false) =>
-  ({ phase: name, possibleEffortMismatch, pinBoundaryOpen }) as NonNullable<Recording["harnessPhase"]>;
+const phase = (name: string, possibleEffortMismatch: boolean | null = false) =>
+  ({ phase: name, possibleEffortMismatch }) as NonNullable<Recording["harnessPhase"]>;
 
 describe("harness phase tags", () => {
-  it("words each phase, notes the open pin boundary and adds the effort flag where set", () => {
+  it("words each phase and adds the effort flag where set", () => {
     expect(harnessPhaseTags(phase("rounds 1-7", true))).toEqual(["Harness: rounds 1-7", "Possible effort mismatch"]);
     expect(harnessPhaseTags(phase("rounds 8-10"))).toEqual(["Harness: rounds 8-10"]);
     expect(harnessPhaseTags(phase("rounds 11-25"))).toEqual(["Harness: rounds 11-25"]);
     expect(harnessPhaseTags(phase("rounds 26-30"))).toEqual(["Harness: rounds 26-30"]);
-    expect(harnessPhaseTags(phase("rounds 26-30", false, true))).toEqual(["Harness: rounds 26-30 · pin boundary not yet set"]);
     expect(harnessPhaseTags(phase("from the pin onward"))).toEqual(["Harness from the pin onward"]);
     expect(harnessPhaseTags(phase("unknown", null))).toEqual(["Harness phase unknown"]);
   });
@@ -26,9 +25,9 @@ describe("harness phase tags", () => {
 
   it("reads a phase the page does not know as none, never failing the page", () => {
     expect(harnessPhase.parse(undefined)).toBeUndefined();
-    expect(harnessPhase.parse({ phase: "rounds 31-40", possibleEffortMismatch: false, pinBoundaryOpen: false })).toBeNull();
-    expect(harnessPhase.parse({ phase: "rounds 8-10", possibleEffortMismatch: false, pinBoundaryOpen: false }))
-      .toEqual({ phase: "rounds 8-10", possibleEffortMismatch: false, pinBoundaryOpen: false });
+    expect(harnessPhase.parse({ phase: "rounds 31-40", possibleEffortMismatch: false })).toBeNull();
+    expect(harnessPhase.parse({ phase: "rounds 8-10", possibleEffortMismatch: false }))
+      .toEqual({ phase: "rounds 8-10", possibleEffortMismatch: false });
   });
 
   it("carries the tags on Recordings and Live now rows", () => {
@@ -37,7 +36,7 @@ describe("harness phase tags", () => {
     expect(recordingRow({ ...base, harnessPhase: phase("rounds 26-30") }, "").phase).toEqual(["Harness: rounds 26-30"]);
     expect(recordingRow(base, "").phase).toEqual([]);
     const live: LiveMatch = { lobbyId: "l", startedAt: Date.parse("2026-11-10T02:00:00Z"), rated: true, delaySeconds: 300, colonies: [[], []] };
-    expect(liveRow({ ...live, harnessPhase: phase("rounds 26-30", false, true) }, "").phase).toEqual(["Harness: rounds 26-30 · pin boundary not yet set"]);
+    expect(liveRow({ ...live, harnessPhase: phase("from the pin onward") }, "").phase).toEqual(["Harness from the pin onward"]);
     expect(liveRow(live, "").phase).toEqual([]);
   });
 
