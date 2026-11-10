@@ -10,7 +10,7 @@ import { Texture, type Particle, type Renderer } from "pixi.js";
 import { Waiting } from "../../web/src/waiting.ts";
 import { INBOX_CAP } from "../../web/src/inbox.ts";
 import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/intake.ts";
-import { openSource } from "../../web/src/source.ts";
+import { openSource, RECORD_FACTS_LIMITS } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
@@ -273,7 +273,22 @@ it("keeps incremental replay precedence, bounded catch-up and the recording cloc
 // A replay with no lobby link: its opening snapshot's rated flag and Model Index marker, the seats that join after it,
 // and its stored record (GET /matches/<id>), readable or not.
 // "unavailable" is a readable record with no setup and no seats; "blank handle" a rated record with one seat handle blank.
-type Opening = { rated: boolean; modelIndex: boolean; handles: readonly string[]; record: "readable" | "unreadable" | "unavailable" | "blank handle" };
+// "timed out" never sends a byte; "too large" never ends. Each read of those is stopped at its bound (storedReadsStopped),
+// cancelled by the reader or ended by its request's abort, as fetch ends a body.
+type Opening = { rated: boolean; modelIndex: boolean; handles: readonly string[];
+  record: "readable" | "unreadable" | "unavailable" | "blank handle" | "timed out" | "too large" };
+const stoppedReads = new Set<ReadableStream>();
+let storedReadsStopped = 0;
+const MIB = new Uint8Array(1024 * 1024);
+const endlessRecord = (record: "timed out" | "too large", signal?: AbortSignal | null) => {
+  const stopped = () => { if (!stoppedReads.has(body)) { stoppedReads.add(body); storedReadsStopped++; } };
+  const body: ReadableStream<Uint8Array> = new ReadableStream<Uint8Array>({
+    start: controller => signal?.addEventListener("abort", () => { stopped(); controller.error(signal.reason); }, { once: true }),
+    pull: controller => { if (record === "too large") controller.enqueue(MIB); else return new Promise<void>(() => undefined); },
+    cancel: stopped,
+  }, { highWaterMark: 0 });
+  return new Response(body);
+};
 const PHASE = ["Harness: rounds 1-7", "Possible effort mismatch"], UNKNOWN = ["Harness phase unknown"];
 const replayWith = (answered: boolean, opening: Opening) => {
   const id = "2026-10-26T01-38-33-692Z-1";
@@ -288,11 +303,15 @@ const replayWith = (answered: boolean, opening: Opening) => {
     seats: opening.handles.map((name, seat) => ({ seat, colony: seat % 2, modelLabel: null,
       handle: opening.record === "blank handle" && seat === 0 ? null : name.replace(/ #\d+$/, "") })) };
   const stored = opening.record === "unavailable" ? { ...record, status: "unavailable", setup: null, seats: [] } : record;
-  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+  storedReadsStopped = 0;
+  vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
     if (path.startsWith("/watch/ratings/")) return answered
       ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } })
       : new Response(null, { status: 404 });
-    if (path.startsWith("/matches/")) return opening.record === "unreadable" ? new Response(null, { status: 500 }) : Response.json(stored);
+    if (path.startsWith("/matches/")) {
+      if (opening.record === "timed out" || opening.record === "too large") return endlessRecord(opening.record, options?.signal);
+      return opening.record === "unreadable" ? new Response(null, { status: 500 }) : Response.json(stored);
+    }
     return new Response(new Uint8Array(packMessages(replayPackets)));
   }));
   return openSource(new URLSearchParams({ replay: id }), { now: () => 0 }, documentPort().doc, vi.fn());
@@ -346,6 +365,21 @@ it.each(["unreadable", "unavailable", "blank handle"] as const)("reads unknown f
     expect(source.harnessPhase).toEqual(UNKNOWN);
   } finally { source.close(); }
 });
+
+it.each(["timed out", "too large"] as const)("bounds the read that types a replay: a stored record that has %s reads unknown, from the first frame and after a seek back", async record => {
+  // Only the read's time limit is shortened (a minute to 50 ms); its size limit is the real one.
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => timeout(ms === RECORD_FACTS_LIMITS.timeoutMs ? 50 : ms));
+  const source = (await replayWith(false, { ...legacy, record }))!;
+  try {
+    expect(source.harnessPhase).toEqual(UNKNOWN);
+    await playThenSeekBack(source);
+    // Both reads of the stored record (end tick, then type) were cut off at their bounds, and the label stays.
+    await vi.waitFor(() => expect(storedReadsStopped).toBe(2), { timeout: 10_000 });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(source.harnessPhase).toEqual(UNKNOWN);
+  } finally { source.close(); }
+}, 20_000);
 
 it("all three renderer paths adopt prepared live arrivals and choose buffering from the resolved source", () => {
   const page = readFileSync(new URL("../../web/src/main.ts", import.meta.url), "utf8");

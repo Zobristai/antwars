@@ -63,16 +63,40 @@ export function watchUrl(origin: string, o: { private: boolean; replayId: string
   return o.lobbyId ? `${origin}/?lobby=${encodeURIComponent(o.lobbyId)}` : null;
 }
 
+/** The type read of a stored record: stored records run to about 10 MB, so 32 MB and one minute leave room. */
+export const RECORD_FACTS_LIMITS = { timeoutMs: 60_000, maxBytes: 32 * 1024 * 1024 } as const;
+
 /**
  * A public stored match's recorded setup and seats from its stored record (GET /matches/<id>), read the way the Matches
  * listing reads them (src/replays/history-summary-worker.ts), so a replay with no lobby link is typed as the listing types
- * it, whatever has played. Read in full, once; null when it cannot be read. Never sent a private recording's invite.
+ * it, whatever has played. Read once, bounded in time and size (RECORD_FACTS_LIMITS); null when it cannot be read
+ * within them. Never sent a private recording's invite.
  */
-export async function recordedMatchFacts(id: string, signal: AbortSignal, request: typeof fetch = fetch): Promise<RecordedMatch | null> {
+export async function recordedMatchFacts(id: string, signal: AbortSignal, request: typeof fetch = fetch,
+  limits: { readonly timeoutMs: number; readonly maxBytes: number } = RECORD_FACTS_LIMITS): Promise<RecordedMatch | null> {
+  const bounded = AbortSignal.any([signal, AbortSignal.timeout(limits.timeoutMs)]);
   try {
-    const response = await request(`/matches/${encodeURIComponent(id)}`, { signal, redirect: "error", credentials: "omit" });
-    if (!response.ok) { await response.body?.cancel(); return null; }
-    const record: unknown = await response.json();
+    const response = await request(`/matches/${encodeURIComponent(id)}`, { signal: bounded, redirect: "error", credentials: "omit" });
+    if (!response.ok || !response.body) { await response.body?.cancel(); return null; }
+    const reader = response.body.getReader();
+    const stop = () => { void reader.cancel().catch(() => undefined); };
+    bounded.addEventListener("abort", stop, { once: true });
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (bounded.aborted) return null;
+        if (done) break;
+        size += value.length;
+        if (size > limits.maxBytes) return null;
+        chunks.push(value);
+      }
+    } finally { bounded.removeEventListener("abort", stop); stop(); reader.releaseLock(); }
+    const bytes = new Uint8Array(size);
+    let at = 0;
+    for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
+    const record: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (typeof record !== "object" || record === null) return null;
     const { format, version, id: recordId, setup, seats } = record as Record<string, unknown>;
     if (format !== "antwar.match" || version !== 1 || recordId !== id || !Array.isArray(seats)) return null;
