@@ -8,7 +8,7 @@ import type { Fields, Store, TransactionRead, Write } from "../store/firestore.j
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
-import { isWaitToken, lobbyWait, repointWrite, waitPath, waitWrite, type WaitState } from "./waits.js";
+import { isWaitToken, lobbyWait, repointWrite, waitPath, waitWrite, withPairedLobby, type WaitState } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -1007,7 +1007,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       }
       if (wait?.kind === "lobby" && wait.lobbyId) {
         const lobby = await readLobby(wait.lobbyId);
-        return lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
+        const state: WaitState = lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
+        return wait.paired === "true" ? withPairedLobby(state, wait.lobbyId) : state;
       }
       return null;
     },

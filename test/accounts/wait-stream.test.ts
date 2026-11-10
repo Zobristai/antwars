@@ -6,7 +6,7 @@ import type { AccountStores } from "../../src/accounts/service.ts";
 import { waitStreamRoutes, type WaitStreamOptions } from "../../src/accounts/waitStream.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createLobbies, type Lobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
-import type { WaitState } from "../../src/lobby/waits.ts";
+import { withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
@@ -221,7 +221,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const { annToken, bobToken, lobbyId, paired } = await pairedQueue(w);
     const lobby = value(await w.lobbies.readLobby(lobbyId));
     expect(lobby.state).toBe("holding");
-    const ready = [{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt } }];
+    const ready = [{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt, lobbyId } }];
     // Ann's live connection already got paired; her next connect is a wait on the lobby.
     expect((await read(w.port, annToken)).frames).toEqual(ready);
     // Bob first connects after the pairing: that connection gets paired, the next one the lobby.
@@ -234,7 +234,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const { annToken, lobbyId } = await pairedQueue(w);
     // The hold never begins a match; past the grace, reading settles it ended, not played.
     w.clock.t += HOUR;
-    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "ended" } }]);
+    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "ended", lobbyId } }]);
     expect(value(await w.lobbies.readLobby(lobbyId))).toMatchObject({ state: "ended", outcome: "not_played" });
   });
 
@@ -242,7 +242,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const w = await world();
     const { ann, annToken, lobbyId } = await pairedQueue(w);
     const before = value(await w.lobbies.readLobby(lobbyId));
-    const ready = [{ event: "slot_ready", data: { state: "slot_ready", startsAt: before.startsAt } }];
+    const ready = [{ event: "slot_ready", data: { state: "slot_ready", startsAt: before.startsAt, lobbyId } }];
     // leave_queue leaves a matched entry as it is; a new join replaces it.
     await w.ok("leave_queue", { key: ann.key });
     w.clock.t += 1;
@@ -250,6 +250,20 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await w.ok("queue_status", { key: ann.key })).queue.state).toBe("waiting");
     expect((await read(w.fast, annToken)).frames).toEqual(ready);
     expect((await read(w.fast, next, 300)).frames[0]!.data.state).toBe("waiting");
+  });
+
+  it("a paired event lost to a cut after the re-point is recovered: the lobby states carry the paired lobbyId", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
+    const { queue } = await w.ok("queue_status", { key: ann.key });
+    // A read that re-points the token, as a stream does, whose paired never reaches the agent.
+    expect(await w.lobbies.waitStatus(annToken)).toEqual({ state: "paired", lobbyId: queue.lobbyId, lobbyWait: true });
+    const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
+    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId } }]);
+    // Before its slot, the lobby's waiting state carries the id too.
+    expect(withPairedLobby({ state: "waiting", lobby: "waiting", expiresAt: 1 }, queue.lobbyId)).toEqual({ state: "waiting", lobby: "waiting", expiresAt: 1, lobbyId: queue.lobbyId });
   });
 
   it("re-points a paired queue wait once, with the stored entry's lobbyId, however many reads race to it", async () => {
@@ -261,9 +275,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const raced = await Promise.all([1, 2, 3].map(() => w.lobbies.waitStatus(annToken)));
     const paired = { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true };
     // Each read is paired, or, once another read has re-pointed the token, already the lobby's state.
-    for (const state of raced) expect([paired, { state: "slot_ready", startsAt: expect.any(Number) }]).toContainEqual(state);
+    for (const state of raced) expect([paired, { state: "slot_ready", startsAt: expect.any(Number), lobbyId: queue.lobbyId }]).toContainEqual(state);
     expect(raced).toContainEqual(paired);
-    const stored = { kind: "lobby", lobbyId: queue.lobbyId, identityId: "", joinedAt: "" };
+    const stored = { kind: "lobby", lobbyId: queue.lobbyId, paired: "true", identityId: "", joinedAt: "" };
     expect(await w.store.get(`waits/${annToken}`)).toEqual(stored);
     expect((await w.lobbies.waitStatus(annToken))!.state).toBe("slot_ready");
     expect(await w.store.get(`waits/${annToken}`)).toEqual(stored);
