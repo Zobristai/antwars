@@ -851,11 +851,12 @@ describe("the place a started challenge holds", () => {
   });
 });
 
-/** What a refused join must leave as it was: the caller's queue entry, the 1v1 waiting list, a lobby and every wait record. */
+/** What a refused join must leave as it was: the caller's queue entry and seat pointer, the 1v1 waiting list, a lobby and every wait record. */
 async function joinState(w: World, identityId: string, lobbyId: string) {
   const store = storeFor(w.namespace);
   return {
     entry: await w.raw(`queueEntries/${identityId}`),
+    seatPointer: await w.raw(`lobbySeats/${identityId}`),
     waiting: await w.raw("queueWaiting/1v1"),
     lobby: await w.raw(`lobbies/${lobbyId}`),
     waits: (await store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 500 })).rows,
@@ -933,5 +934,71 @@ describe.skipIf(!host)("queue and lobby joins while a challenge is live, against
       const entry = await w.raw(`queueEntries/${who.id}`), pointer = await w.raw(`challengeChallengers/${who.id}`);
       expect([entry === null, pointer === null]).toEqual(requested.ok ? [true, false] : [false, true]);
     }
+  });
+
+  it("refuses the second of a challenge request and a lobby join for one identity, in either commit order", async () => {
+    const w = await world(at(12, 0));
+    const host1 = await w.claim("host1");
+    // The challenge commits first: the lobby join is refused live_challenge and writes nothing.
+    const a = await w.claim("first-challenge");
+    const first = value(await w.main.createLobby(host1.key, "public", 1)).lobby;
+    let challenged: Requested | undefined;
+    const token = newWaitToken();
+    const joined = await w.lobbies(committedFirst(async () => { challenged = await w.request(a); })).join(first.id, a.key, undefined, undefined, token);
+    expect([reasonOf(challenged!), reasonOf(joined)]).toEqual(["ok", "live_challenge"]);
+    expect([await w.raw(`lobbySeats/${a.id}`), await w.raw(`waits/${token}`), await seatedIn(w, first.id, a.id)]).toEqual([null, null, false]);
+    // The lobby join, with no waiting token, commits first: the challenge request is refused seated_elsewhere.
+    const b = await w.claim("first-join");
+    const second = value(await w.main.createLobby(host1.key, "public", 1)).lobby;
+    let seated: Joined | undefined;
+    const requested = await w.request(b, HANDLES[1], w.lobbies(committedFirst(async () => { seated = await w.main.join(second.id, b.key); })));
+    expect([reasonOf(seated!), reasonOf(requested)]).toEqual(["ok", "seated_elsewhere"]);
+    expect([await w.raw(`challengeChallengers/${b.id}`), (await w.raw(`lobbySeats/${b.id}`))?.lobbyId]).toEqual([null, second.id]);
+  });
+
+  it("lets exactly one of a concurrent challenge request and lobby join for one identity commit", async () => {
+    const w = await world(at(12, 0));
+    const host1 = await w.claim("host1");
+    for (let round = 0; round < 3; round++) {
+      const who = await w.claim(`racer${round}`);
+      const { lobby } = value(await w.main.createLobby(host1.key, "public", 1));
+      const gate = startGate(2);
+      const [requested, joined] = await Promise.all([
+        w.request(who, HANDLES[round % HANDLES.length], w.lobbies(gate.contender(0))),
+        w.lobbies(gate.contender(1)).join(lobby.id, who.key),
+      ]);
+      gate.check(`challenge and lobby join, round ${round}`);
+      const outcome = [reasonOf(requested), reasonOf(joined)];
+      expect([["ok", "live_challenge"], ["seated_elsewhere", "ok"]], JSON.stringify(outcome)).toContainEqual(outcome);
+      // Only the winner's records are stored.
+      const pointer = await w.raw(`lobbySeats/${who.id}`), challenger = await w.raw(`challengeChallengers/${who.id}`);
+      expect([pointer === null, challenger === null, await seatedIn(w, lobby.id, who.id)]).toEqual(requested.ok ? [true, false, false] : [false, true, true]);
+    }
+  });
+
+  it("never refuses a join for a stale seat pointer, and refuses a challenge for one only while its lobby is live and seats the caller", async () => {
+    const w = await world(at(12, 0));
+    const host1 = await w.claim("host1"), player = await w.claim("player");
+    // A 2v2 lobby the host also sits in, so it stays open when the player leaves.
+    const { lobby: left } = value(await w.main.createLobby(host1.key, "public", 2));
+    value(await w.main.join(left.id, host1.key));
+    value(await w.main.join(left.id, player.key));
+    expect((await w.raw(`lobbySeats/${player.id}`))?.lobbyId).toBe(left.id);
+    expect(reasonOf(await w.request(player))).toBe("seated_elsewhere");
+    // Left: the pointer still names the lobby, which no longer seats the player. Joins are admitted, and so is a challenge.
+    value(await w.main.leave(left.id, player.key));
+    value(await w.main.join(left.id, player.key));
+    value(await w.main.leave(left.id, player.key));
+    expect((await w.raw(`lobbySeats/${player.id}`))?.lobbyId).toBe(left.id);
+    expect(reasonOf(await w.request(player))).toBe("ok");
+    // Ended: the pointer names a lobby whose game has finished.
+    const one = await w.claim("one"), two = await w.claim("two");
+    const { lobby: game } = value(await w.main.createLobby(host1.key, "public", 1));
+    value(await w.main.join(game.id, one.key));
+    expect(value(await w.main.join(game.id, two.key)).state).toBe("holding");
+    expect(reasonOf(await w.request(one, HANDLES[1]))).toBe("seated_elsewhere");
+    value(await w.main.releaseSlot(game.id));
+    expect((await w.raw(`lobbySeats/${one.id}`))?.lobbyId).toBe(game.id);
+    expect(reasonOf(await w.request(one, HANDLES[1]))).toBe("ok");
   });
 });

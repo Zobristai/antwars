@@ -117,6 +117,8 @@ export interface ChallengeLobbyRules {
   isExpired(fields: Fields, at: number): boolean;
   /** The slot documents of both kinds, as slots/{kind}-{n}. */
   readonly slotPaths: readonly string[];
+  /** The identity's seat pointer, lobbySeats/{identityId}: the lobby its latest successful join seated it in. */
+  seatPointerPath(identityId: string): string;
   /** Creates the public challenge lobby (builder seated in the other colony, HELD_COLONY held) and lists it. */
   challengeLobbyWrites(read: TransactionRead, lobby: {
     readonly id: string; readonly requestId: string; readonly handle: string;
@@ -232,7 +234,8 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
   /**
    * Whether identityId holds a seat in a live lobby.
    * Rerun on every transaction attempt: the slot and public queue indexes and their lobbies are read in the transaction,
-   * then the lobbies created since the cutoff are queried newest first, every page at the first page's read time.
+   * then the lobbies created since the cutoff are queried newest first, every page at the first page's read time, and
+   * last the identity's seat pointer and its lobby are read in the transaction.
    */
   async function seatedElsewhere(read: TransactionRead, identityId: string, at: number): Promise<boolean> {
     const seated = (fields: Fields | null | undefined) => !!fields && isLive(fields, at, rules) && seatsOf(fields).some((seat) => seat.id === identityId);
@@ -253,9 +256,15 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
       readTime ??= page.readTime;
       if (page.rows.some((row) => seated(row.fields))) return true;
       const last = page.rows.at(-1);
-      if (!last || page.rows.length < rules.scanPageSize || Number(last.fields.createdAt) < cutoff) return false;
+      if (!last || page.rows.length < rules.scanPageSize || Number(last.fields.createdAt) < cutoff) break;
       startAfter = { value: last.fields.createdAt!, path: last.path };
     }
+    // Read by exact path, last: every successful lobby join writes this pointer, so a join that commits after this read
+    // touches a document this transaction read and the two cannot both commit, while one that committed before it is
+    // named here. It names only the latest join and may be stale, so its lobby refuses only while live and seating
+    // the caller; the reads above cover earlier seats.
+    const pointed = (await read([rules.seatPointerPath(identityId)])).get(rules.seatPointerPath(identityId))?.lobbyId;
+    return !!pointed && seated((await read([lobbyPath(pointed)])).get(lobbyPath(pointed)));
   }
 
   /**
