@@ -807,17 +807,15 @@ describe("the place a started challenge holds", () => {
     (fields.state === "open" || fields.state === "waiting") && t >= Number(fields.createdAt) + TTL } as unknown as ChallengeLobbyRules;
   const startsAt = at(23, 58);
   const seats = JSON.stringify([{ id: "house-handle", displayName: "antwars/glm-5-3", colony: 0 }, { id: "builder", displayName: "builder", colony: 1 }]);
-  const ended = (outcome: string, absent?: string) => ({ state: "ended", createdAt: String(at(23, 50)), startsAt: String(startsAt), seats, outcome,
-    ...(absent === undefined ? {} : { absent }) });
+  const ended = (outcome: string, heldAbsent = false) => ({ state: "ended", createdAt: String(at(23, 50)), startsAt: String(startsAt), seats, outcome,
+    challengeId: "request", ...(heldAbsent ? { heldAbsent: "true" } : {}) });
 
-  it("holds none once its match ended abandoned with the house colony absent, alone or with the builder's", () => {
-    expect(heldDays(ended("abandoned", "0"), at(23, 59), rules)).toEqual([]);
-    expect(heldDays(ended("abandoned", "0 1"), at(23, 59), rules)).toEqual([]);
+  it("holds none once its match ended abandoned with the house colony absent", () => {
+    expect(heldDays(ended("abandoned", true), at(23, 59), rules)).toEqual([]);
   });
 
-  it("keeps its match day for a builder no-show, a match played to a result, an abandon with no absent colony, and while playing", () => {
-    for (const lobby of [ended("abandoned", "1"), ended("colony_1_won"), ended("draw"), ended("abandoned"),
-      { ...ended(""), state: "holding", outcome: "" }]) {
+  it("keeps its match day for a builder no-show, a match played to a result, any other abandon, and while playing", () => {
+    for (const lobby of [ended("abandoned"), ended("colony_1_won"), ended("draw"), { ...ended(""), state: "holding", outcome: "" }]) {
       expect(heldDays(lobby, at(23, 59), rules)).toEqual([day(startsAt)]);
     }
   });

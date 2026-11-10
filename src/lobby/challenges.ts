@@ -17,7 +17,7 @@ import { queueStatusStep } from "./queue.js";
  * stored: both the creation day and the day of createdAt + the lobby expiry + the countdown while it can still take a
  * slot, its startsAt day once it has, its creation day when it expired full awaiting one, and none when its held seat
  * was never filled, a failed or unavailable report closed it, or its match ended abandoned because the held colony
- * never joined (the lobby's absent colonies include HELD_COLONY): a house no-show is never charged to the builder.
+ * never joined (the lobby's heldAbsent): a house no-show is never charged to the builder.
  * Places only shrink after admission, and admission needs room on every day it adds, so no day ever holds more than 20
  * places, or 5 for one owner. A game is charged when the house owner reports it launched and its held seat is filled,
  * unless the held colony then never joins its match; a charged game's match day always keeps its place, so charged
@@ -145,8 +145,7 @@ export function houseHandle(name: string): string | undefined {
 
 const heldSeatFilled = (lobby: Fields) => seatsOf(lobby).some((seat) => seat.colony === HELD_COLONY);
 /** The match ended abandoned because the held (house) colony never joined it. */
-const heldColonyAbsent = (lobby: Fields) =>
-  lobby.state === "ended" && lobby.outcome === "abandoned" && ids(lobby.absent).includes(String(HELD_COLONY));
+const heldColonyAbsent = (lobby: Fields) => lobby.state === "ended" && lobby.outcome === "abandoned" && lobby.heldAbsent === "true";
 const isLive = (lobby: Fields, at: number, rules: ChallengeLobbyRules) =>
   (lobby.state === "open" || lobby.state === "waiting" || lobby.state === "holding") && !rules.isExpired(lobby, at);
 

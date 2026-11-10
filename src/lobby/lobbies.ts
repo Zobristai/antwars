@@ -29,9 +29,7 @@ import { lobbyPageUrl } from "./site.js";
  * Documents, under the store's namespace (string fields only):
  *   lobbies/{uuid}      { kind, size, creatorId, createdAt, state, rated, slot,
  *                         seats (JSON [{id, displayName, colony}]), inviteVerifier,
- *                         startsAt, matchRunId, outcome, mode, absent }
- *                       absent lists, space-separated, the colonies whose seat never joined a
- *                       match that ended abandoned for it; written only on that ending
+ *                         startsAt, matchRunId, outcome, mode }
  *                       mode is the ranked mode of a queue-made lobby, "" (or absent,
  *                       in lobbies stored before modes) for a player-created one
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
@@ -50,7 +48,8 @@ import { lobbyPageUrl } from "./site.js";
  *
  * A house challenge lobby is a public 1v1 player lobby created by request_challenge with rated "false",
  * its builder already seated in colony 1 and colony 0 held for one House-table handle, plus the lobby fields
- * challengeId (its request), heldFor (the canonical handle) and challenge ("house"). Only the antwars username's handle
+ * challengeId (its request), heldFor (the canonical handle) and challenge ("house"), plus heldAbsent ("true"), written
+ * only when its match ended abandoned because the held colony never joined it. Only the antwars username's handle
  * of that name may take the held seat, the builder included when it is that handle (a mirror game); every other rule
  * is an ordinary player lobby's. A failed house launch ends it, still open, with outcome not_played.
  *
@@ -231,7 +230,8 @@ export interface Lobbies {
    * outcome also needs runId to have begun the match. A natural result of a rated
    * lobby is rated in the same transaction, in the lobby's mode ("1v1" when it has
    * none), teams by colony with each identity once; nothing else is rated. An abandoned
-   * outcome records absentColonies, the colonies whose seat never joined, as absent.
+   * house challenge whose absentColonies (the colonies whose seat never joined) include its
+   * held colony records heldAbsent; no other lobby records absentColonies.
    */
   endMatch(lobbyId: string, runId: string, outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers,
     modelLabels?: ModelLabels, absentColonies?: readonly ColonyId[]): Promise<LobbyOutcome<{ readonly next: string | null }>>;
@@ -621,12 +621,12 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     if (docs.get(slotPath)?.lobbyId !== lobbyId) return { result: refuse("not_holding") as Released, writes: [] };
     const writes: Write[] = [];
     let outcome = "";
-    let absent = "";
+    let heldAbsent = false;
     if (ending) {
       if (docs.get(instancePath(fields.slot))?.runId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       if (ending.outcome !== "not_played" && fields.matchRunId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       outcome = ending.outcome;
-      if (outcome === "abandoned") absent = (ending.absentColonies ?? []).join(" ");
+      heldAbsent = outcome === "abandoned" && !!fields.challengeId && (ending.absentColonies ?? []).includes(HELD_COLONY);
       const winner = ratedWinner(ending.outcome);
       if (winner !== null && fields.rated === "true") {
         // In a ranked team mode one identity holds every seat of its colony, so each
@@ -643,7 +643,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     const settled = await settleSlots(read, fields.kind as LobbyKind, at, undefined, slotPath);
     return {
       result: ok({ next: settled.handedTo[0] ?? null }) as Released,
-      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}), ...(absent ? { absent } : {}) } }, ...settled.writes, ...writes] as Write[],
+      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}), ...(heldAbsent ? { heldAbsent: "true" } : {}) } }, ...settled.writes, ...writes] as Write[],
     };
   }
 
