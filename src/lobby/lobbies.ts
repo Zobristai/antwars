@@ -6,7 +6,7 @@ import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, 
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
-import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
+import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueStatusStep, waitingEntries, type QueueStatus } from "./queue.js";
 import { lobbyPageUrl } from "./site.js";
 
@@ -190,7 +190,9 @@ export type LobbyRefusal =
   /** Adopting a saved match the lobby no longer holds this slot with. */
   | "stale_save"
   /** A house challenge's held seat, taken by an identity other than its handle. */
-  | "seat_held";
+  | "seat_held"
+  /** A leave by an identity with no seat in the lobby, or of a lobby that does not exist. */
+  | "not_seated";
 export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal };
 
 export interface CreatedLobby {
@@ -217,6 +219,14 @@ export interface Lobbies {
   isInviteCurrent(lobbyId: string, token: string): Promise<boolean>;
   /** Creator only, once each colony has a seated identity. */
   startEarly(lobbyId: string, creatorKey: string): Promise<LobbyOutcome<Lobby>>;
+  /**
+   * Removes the key's identity's seat from an open lobby, before its match starts; nothing is rated or charged.
+   * When the last seat leaves, the lobby ends unplayed (outcome not_played, no startsAt); a house challenge's request is
+   * marked builderLeft in the same commit, so challenge_status reads expired, builder_left.
+   * Refused not_seated, with nothing written, when the lobby is missing or holds no seat of this identity (the two
+   * read alike); expired when it expired; started once it no longer accepts joins (any state but open).
+   */
+  leave(lobbyId: string, key: string): Promise<LobbyOutcome<Lobby>>;
   /**
    * Ends a lobby's hold on its slot when its match ends and hands the slot to the
    * earliest-waiting live lobby of that kind, whose id is returned (null if none).
@@ -844,6 +854,34 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         }
         const started = await start(read, lobbyId, fields, seats, at);
         return { result: ok(started.lobby), writes: started.writes };
+      });
+    },
+
+    async leave(lobbyId, key) {
+      const leaver = await identityOf(key);
+      if (!leaver) return refuse("unknown_key");
+      return store.transaction<LobbyOutcome<Lobby>>(async (read) => {
+        const at = now();
+        const fields = (await read([lobbyPath(lobbyId)])).get(lobbyPath(lobbyId));
+        if (!fields) return { result: refuse("not_seated"), writes: [] };
+        const seats = seatsOf(lobbyId, fields);
+        if (!seats.some((seat) => seat.id === leaver.id)) return { result: refuse("not_seated"), writes: [] };
+        if (isExpired(fields, at)) return { result: refuse("expired"), writes: [] };
+        // Starting is where joins stop: any state but open.
+        if (fields.state !== "open") return { result: refuse("started"), writes: [] };
+        const remaining = seats.filter((seat) => seat.id !== leaver.id);
+        if (remaining.length > 0) {
+          const update = { seats: JSON.stringify(remaining) };
+          return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }] };
+        }
+        // The last seat out closes the lobby unplayed, as a failed house launch does, with no startsAt and so no
+        // challenge place. A house challenge's request records that its builder left, for challenge_status.
+        const update = { seats: "[]", state: "ended", outcome: "not_played" };
+        const writes: Write[] = [{ op: "update", path: lobbyPath(lobbyId), fields: update }];
+        if (fields.challengeId && (await read([`challengeRequests/${fields.challengeId}`])).get(`challengeRequests/${fields.challengeId}`)) {
+          writes.push(builderLeftWrite(fields.challengeId));
+        }
+        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes };
       });
     },
 
