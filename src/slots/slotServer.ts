@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { InstanceClaim, Lobbies, MatchOutcome, SlotHolder } from "../lobby/lobbies.js";
 import type { LobbySeat } from "../mcp/game.js";
 import type { ModelLabels, ServiceTiers, ThinkingLevels } from "../rating/ratings.js";
+import type { ColonyId } from "../sim/types.js";
 import { slotActivity } from "./activity.js";
 
 /**
@@ -137,8 +138,12 @@ export interface SlotRunner {
   readonly runId: string;
   /** True once a later boot took the slot. */
   readonly superseded: boolean;
-  /** The local match ended: its natural result, or the operator stop. Recorded by the next poll. */
-  ended(outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers, modelLabels?: ModelLabels): void;
+  /**
+   * The local match ended: its natural result, or the operator stop. Recorded by the next poll, with the colonies
+   * whose seat never joined when that abandoned it.
+   */
+  ended(outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers, modelLabels?: ModelLabels,
+    absentColonies?: readonly ColonyId[]): void;
   /** Stops polling; publishes no outcome (a restart's successor records it). */
   close(): void;
 }
@@ -176,7 +181,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
   /** An ending not yet recorded; kept until its release commits. */
   let pending: { readonly lobbyId: string; readonly outcome: MatchOutcome;
     readonly thinkingLevels?: ThinkingLevels; readonly serviceTiers?: ServiceTiers; readonly modelLabels?: ModelLabels;
-    readonly identityIds?: readonly string[] } | null = null;
+    readonly absentColonies?: readonly ColonyId[]; readonly identityIds?: readonly string[] } | null = null;
   /** A save this run restored and has not yet adopted: its lobby, the run it takes the match over from, and the lobby's seated identities. */
   let restored: { readonly lobbyId: string; readonly fromRunId: string; readonly identityIds: readonly string[] } | null = null;
   /** The earlier run whose save this run is waiting for, so the wait is logged once. */
@@ -297,7 +302,8 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
   async function poll(): Promise<void> {
     if ((await lobbies.resolveSlot(slot))?.runId !== runId) return supersede();
     if (pending !== null) {
-      const released = await lobbies.endMatch(pending.lobbyId, runId, pending.outcome, pending.thinkingLevels, pending.serviceTiers, pending.modelLabels);
+      const released = await lobbies.endMatch(pending.lobbyId, runId, pending.outcome, pending.thinkingLevels, pending.serviceTiers, pending.modelLabels,
+        pending.absentColonies);
       if (!released.ok && released.reason === "superseded") return supersede();
       // Released, or already released by an earlier attempt whose reply was lost.
       if (pending.identityIds !== undefined) host.notPlayed(pending.lobbyId, pending.identityIds);
@@ -366,11 +372,11 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
     get superseded() {
       return superseded;
     },
-    ended(outcome, thinkingLevels, serviceTiers, modelLabels) {
+    ended(outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies) {
       if (superseded || current === null) return;
       // Snapshot metadata with the outcome: retries must not read a later match's agents.
       pending = { lobbyId: current, outcome, thinkingLevels: thinkingLevels && { ...thinkingLevels }, serviceTiers: serviceTiers && { ...serviceTiers },
-        modelLabels: modelLabels && { ...modelLabels } };
+        modelLabels: modelLabels && { ...modelLabels }, ...(absentColonies?.length ? { absentColonies: [...absentColonies] } : {}) };
     },
     close() {
       closed = true;
