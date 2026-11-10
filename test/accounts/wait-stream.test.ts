@@ -266,6 +266,34 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect(withPairedLobby({ state: "waiting", lobby: "waiting", expiresAt: 1 }, queue.lobbyId)).toEqual({ state: "waiting", lobby: "waiting", expiresAt: 1, lobbyId: queue.lobbyId });
   });
 
+  it("a read that saw the queue token before another re-pointed it, and the entry after a rejoin, follows the lobby", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
+    const { queue } = await w.ok("queue_status", { key: ann.key });
+    // A second reader on the same store whose read of Ann's entry is held until the test lets it go.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let entryReads = 0;
+    const slow = createLobbies({
+      ...w.store,
+      get: async (path) => {
+        if (path === `queueEntries/${ann.id}` && entryReads++ === 0) await held;
+        return w.store.get(path);
+      },
+    }, w.identities, { publicSlots: 1, privateSlots: 1, staleHoldGraceMs: 60_000, now: () => w.clock.t });
+    const overlapping = slow.waitStatus(annToken);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Meanwhile another stream delivers paired (re-pointing the token) and Ann rejoins, replacing her entry.
+    expect(await w.lobbies.waitStatus(annToken)).toEqual({ state: "paired", lobbyId: queue.lobbyId, lobbyWait: true });
+    w.clock.t += 1;
+    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    release();
+    const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
+    expect(await overlapping).toEqual({ state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId });
+  });
+
   it("re-points a paired queue wait once, with the stored entry's lobbyId, however many reads race to it", async () => {
     const w = await world();
     const ann = await w.claim("Ann"), bob = await w.claim("Bob");

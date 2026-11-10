@@ -699,18 +699,29 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   }
 
   /**
-   * Re-points a paired queue wait to a lobby wait on its paired lobby, in one transaction: only while the token is
-   * still that queue wait, and only with the lobbyId of the stored entry read there. Repeating it writes nothing.
-   * Returns the queue wait's state as read in the transaction (paired, unless the entry changed meanwhile).
+   * Decides a queue wait whose plain reads gave a final state, from one consistent transaction: the token and its
+   * entry are read together, so a stream that read the token before another re-pointed it never reports an entry
+   * replaced after the pairing as ended. A token already re-pointed is returned as its lobby wait. A queue wait still
+   * paired here is re-pointed to a lobby wait on its paired lobby, only while the token is that queue wait and only
+   * with the lobbyId of the stored entry read here; repeating it writes nothing.
    */
-  async function repoint(token: string, identityId: string, joinedAt: string): Promise<WaitState> {
-    return store.transaction<WaitState>(async (read) => {
-      const docs = await read([waitPath(token), queueEntryPath(identityId)]);
-      const wait = docs.get(waitPath(token));
-      const state = queueWait(docs.get(queueEntryPath(identityId)) ?? null, joinedAt, now());
-      const unchanged = wait?.kind === "queue" && wait.identityId === identityId && wait.joinedAt === joinedAt;
-      return { result: state, writes: unchanged && state.state === "paired" ? [repointWrite(token, state.lobbyId)] : [] };
+  type QueueDecision = { readonly state: WaitState } | { readonly lobbyId: string; readonly paired: boolean } | null;
+  async function decideQueueWait(token: string): Promise<QueueDecision> {
+    return store.transaction<QueueDecision>(async (read) => {
+      const wait = (await read([waitPath(token)])).get(waitPath(token));
+      if (wait?.kind === "lobby" && wait.lobbyId) return { result: { lobbyId: wait.lobbyId, paired: wait.paired === "true" }, writes: [] };
+      if (wait?.kind !== "queue" || !wait.identityId || !wait.joinedAt) return { result: null, writes: [] };
+      const entry = (await read([queueEntryPath(wait.identityId)])).get(queueEntryPath(wait.identityId)) ?? null;
+      const state = queueWait(entry, wait.joinedAt, now());
+      return { result: { state }, writes: state.state === "paired" ? [repointWrite(token, state.lobbyId)] : [] };
     });
+  }
+
+  /** A lobby wait's state, with the paired lobby's id when the token was re-pointed from a queue pairing. */
+  async function lobbyWaitStatus(lobbyId: string, paired: boolean): Promise<WaitState> {
+    const lobby = await readLobby(lobbyId);
+    const state: WaitState = lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
+    return paired ? withPairedLobby(state, lobbyId) : state;
   }
 
   /** The lobby; a waiting one is settled first (Lobbies.readLobby). */
@@ -1002,14 +1013,14 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!isWaitToken(token)) return null;
       const wait = await store.get(waitPath(token));
       if (wait?.kind === "queue" && wait.identityId && wait.joinedAt) {
+        // Two plain reads suffice while waiting; a final state is decided from one consistent read.
         const state = queueWait(await store.get(queueEntryPath(wait.identityId)), wait.joinedAt, now());
-        return state.state === "paired" ? repoint(token, wait.identityId, wait.joinedAt) : state;
+        if (state.state === "waiting") return state;
+        const decided = await decideQueueWait(token);
+        if (decided === null || "state" in decided) return decided?.state ?? null;
+        return lobbyWaitStatus(decided.lobbyId, decided.paired);
       }
-      if (wait?.kind === "lobby" && wait.lobbyId) {
-        const lobby = await readLobby(wait.lobbyId);
-        const state: WaitState = lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
-        return wait.paired === "true" ? withPairedLobby(state, wait.lobbyId) : state;
-      }
+      if (wait?.kind === "lobby" && wait.lobbyId) return lobbyWaitStatus(wait.lobbyId, wait.paired === "true");
       return null;
     },
 
