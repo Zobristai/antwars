@@ -241,17 +241,6 @@ describe("the Leaderboard's layout rules", () => {
   it("draws the Challenge handle as one unit that moves to the next line whole, never breaking at its hyphens", () => {
     expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{ display: inline-block; max-width: 100%;/);
   });
-  it("lays each Challenge row on one line in a 56rem card, the name, the ask and the rating in three columns down the list", () => {
-    const wide = css.slice(css.indexOf("@container d1p-card (width >= 56rem) {"));
-    expect(wide.length).toBeLessThan(css.length);
-    const block = wide.slice(0, wide.indexOf("\n}\n"));
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { grid-template-columns: max-content minmax(0, 1fr) auto; }');
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li > .d1p-ask { grid-column: 2; grid-row: 1; }');
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { grid-column: 3; }');
-    // A row without an ask gives its name the ask's room; one with neither an ask nor a rating, the whole row.
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .d1p-ask)) > .is-lead { grid-column: 1 / 3; }');
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> :is(.d1p-ask, .c-elo))) > .is-lead { grid-column: 1 / -1; }');
-  });
   it("sizes each Challenge row's rating on its own on a phone, so \"provisional\" under its figure narrows only its own row's name", () => {
     const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
     expect(phone.length).toBeLessThan(css.length);
@@ -354,7 +343,7 @@ describe("the Challenge choice", () => {
       { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
       { lines: ["GLM-5.3 Highspeedunavailable"], badges: ["unavailable"], rating: [] },
     ]);
-    // The ask is each available row's own line: under its name, or in a wide card beside it in a column of its own (archive.css).
+    // The ask is each available row's own line under its name (archive.css lays it across the row).
     expect(p.card()!.byClass("d1p-ask").map(node => node.textContent)).toEqual([
       "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
       "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);

@@ -201,9 +201,8 @@ function challengeCard(doc: Document, list: ChallengeView): HTMLElement {
       const lead = h(doc, "p", "d1p-line is-lead");
       lead.append(...nameNodes(doc, { name: entry.displayName, badges: challengeBadges(entry) }));
       item.append(lead);
-      // The rating beside the name, in the row's last column, as a stacked ranking row has it; that column is one column
-      // down the whole list (archive.css), so every badge stands under the one above it. In a wide card the ask stands
-      // between them on the same line; in a narrower one it takes the line under the name.
+      // The rating beside the name, in the row's second column, as a stacked ranking row has it; that column is one column
+      // down the whole list (archive.css), so every badge stands under the one above it.
       if (rating !== null) {
         const elo = h(doc, "p", "c-elo");
         elo.append(h(doc, "span", "d1p-sr", `${C.eloColumn} `), ...ratingNodes(doc, rating));
