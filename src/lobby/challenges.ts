@@ -16,10 +16,12 @@ import { queueStatusStep } from "./queue.js";
  * A request holds a place on every UTC day its match could still fall on (heldDays), derived from its lobby, never
  * stored: both the creation day and the day of createdAt + the lobby expiry + the countdown while it can still take a
  * slot, its startsAt day once it has, its creation day when it expired full awaiting one, and none when its held seat
- * was never filled or a failed or unavailable report closed it. Places only shrink after admission, and admission needs room on every
- * day it adds, so no day ever holds more than 20 places, or 5 for one owner. A game is charged when the house owner
- * reports it launched and its held seat is filled; a charged game's match day always keeps its place, so charged games
- * per day never exceed the places held. The allowance left today is 20 minus today's places; a username's allowance
+ * was never filled, a failed or unavailable report closed it, or its match ended abandoned because the held colony
+ * never joined (the lobby's heldAbsent): a house no-show is never charged to the builder.
+ * Places only shrink after admission, and admission needs room on every day it adds, so no day ever holds more than 20
+ * places, or 5 for one owner. A game is charged when the house owner reports it launched and its held seat is filled,
+ * unless the held colony then never joins its match; a charged game's match day always keeps its place, so charged
+ * games per day never exceed the places held. The allowance left today is 20 minus today's places; a username's allowance
  * left today, listed only for a caller's key, is 5 minus the places it holds today across its handles. Both count
  * today only, while admission also counts the next day near UTC midnight, so either can read 1 or more while a
  * request is refused.
@@ -95,6 +97,8 @@ export interface ChallengeStatus {
   readonly reason?: string;
   /** The house owner's view only. */
   readonly launchReport?: LaunchOutcome | null;
+  /** The house owner's view only: the reason sent with the launch report when it is in the accepted format, otherwise null. */
+  readonly launchReportReason?: string | null;
 }
 
 /** What lobbies.ts supplies: its lobby rules and the lobby writes a challenge needs. */
@@ -124,6 +128,8 @@ const availabilityPath = (handle: string) => `challengeAvailability/${handle}`;
 const lobbyPath = (id: string) => `lobbies/${id}`;
 const HOUSE_CLAIM = `usernames/${HOUSE_USERNAME}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The only launch-report reason the owner's status view returns; any other stored reason reads null. */
+const LAUNCH_REPORT_REASON = /^pinned harness matched @ [0-9a-f]{40}$/;
 const ids = (list: string | undefined) => (list ?? "").split(" ").filter(Boolean);
 const seatsOf = (fields: Fields): { id: string; colony: number }[] => JSON.parse(fields.seats ?? "[]") as { id: string; colony: number }[];
 
@@ -142,13 +148,15 @@ export function houseHandle(name: string): string | undefined {
 }
 
 const heldSeatFilled = (lobby: Fields) => seatsOf(lobby).some((seat) => seat.colony === HELD_COLONY);
+/** The match ended abandoned because the held (house) colony never joined it. */
+const heldColonyAbsent = (lobby: Fields) => lobby.state === "ended" && lobby.outcome === "abandoned" && lobby.heldAbsent === "true";
 const isLive = (lobby: Fields, at: number, rules: ChallengeLobbyRules) =>
   (lobby.state === "open" || lobby.state === "waiting" || lobby.state === "holding") && !rules.isExpired(lobby, at);
 
 /** The UTC days a request's match could still fall on, from its lobby at `at` (see the module comment). */
 export function heldDays(lobby: Fields | null | undefined, at: number, rules: ChallengeLobbyRules): string[] {
   if (!lobby) return [];
-  if (lobby.startsAt) return [utcDay(Number(lobby.startsAt))];
+  if (lobby.startsAt) return heldColonyAbsent(lobby) ? [] : [utcDay(Number(lobby.startsAt))];
   const createdAt = Number(lobby.createdAt);
   const expired = rules.isExpired(lobby, at);
   if (lobby.state === "open") return expired ? [] : [...new Set([utcDay(createdAt), utcDay(createdAt + rules.lobbyTtlMs + rules.countdownMs)])];
@@ -406,7 +414,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
       const view: ChallengeStatus = {
         requestId: id, lobbyId: request.lobbyId!, handle: `${HOUSE_USERNAME}/${request.handle}`, state,
         ...(reason ? { reason } : {}),
-        ...(owner ? { launchReport: (request.launchReport || null) as LaunchOutcome | null } : {}),
+        ...(owner ? { launchReport: (request.launchReport || null) as LaunchOutcome | null, launchReportReason: LAUNCH_REPORT_REASON.test(request.reportReason ?? "") ? request.reportReason! : null } : {}),
       };
       return { result: ok(view), writes: [] };
     });

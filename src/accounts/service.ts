@@ -353,7 +353,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return requested.ok ? ok({ ...requested.value }) : challengeRefusal(requested);
     }),
 
-  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
+  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, requestId: z.string().max(100).nullish().describe("The requestId request_challenge returned; omit for your latest challenge.") }),
     async ({ lobbies }, args) => {
       const read = await lobbies.challengeStatus(args.key, args.requestId ?? undefined);
