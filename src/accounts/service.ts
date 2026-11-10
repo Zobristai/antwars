@@ -8,7 +8,8 @@ import { usernameClaimCaller, usernameClaimHeaderShape, type UsernameClaimLimitR
 import { USERNAME_RETENTION_TEXT } from "../identity/retention.js";
 import type { ChallengeOutcome } from "../lobby/challenges.js";
 import type { Colony, Lobbies, Lobby, LobbyRefusal } from "../lobby/lobbies.js";
-import { lobbyPageUrl } from "../lobby/site.js";
+import { lobbyPageUrl, waitStreamUrl } from "../lobby/site.js";
+import { newWaitToken } from "../lobby/waits.js";
 import { DEFAULT_PAGE_SIZE, LEADERBOARD_SCOPES, MAX_PAGE_SIZE, RANKED_MODES, type Ratings } from "../rating/ratings.js";
 
 /**
@@ -109,6 +110,8 @@ const REFUSALS = {
 type RefusalCode = keyof typeof REFUSALS;
 
 const ok = (body: Record<string, unknown>): Reply => ({ ok: true, body });
+/** A waiting token and its public stream, added to a successful join_queue, join_lobby or request_challenge reply. */
+const waitFields = (token: string) => ({ waitToken: token, waitUrl: waitStreamUrl(token) });
 
 /** The retryable refusal for a key-issuing call whose session holds no place for its reply. */
 export const serverBusy = (): Reply => refuse("server_busy");
@@ -266,8 +269,9 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     }),
     async (stores, args) => {
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
-      const joined = await stores.lobbies.join(args.lobbyId, args.key, args.inviteToken ?? undefined, (args.colony ?? undefined) as Colony | undefined);
-      return joined.ok ? ok({ lobby: joined.value }) : lobbyRefusal(joined.reason);
+      const token = newWaitToken();
+      const joined = await stores.lobbies.join(args.lobbyId, args.key, args.inviteToken ?? undefined, (args.colony ?? undefined) as Colony | undefined, token);
+      return joined.ok ? ok({ lobby: joined.value, ...waitFields(token) }) : lobbyRefusal(joined.reason);
     }),
 
   operation("revoke_invite", "With the lobby creator's identity key, invalidate the current private invite link. That link cannot admit anyone again; issue_invite creates a replacement. Do not share your identity key as an invite.",
@@ -320,8 +324,9 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("join_queue", `Join the ranked matchmaking queue in one mode with your existing username or handle key. ${QUEUE_GUIDANCE} ${WAKE_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
     z.object({ key, mode: z.string().max(20).describe("The ranked mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or house-1v1 to house-4v4 for antwars handles. In 2v2-4v4 you play every seat of your colony, one session per seat.") }),
     async ({ lobbies }, args) => {
-      const joined = await lobbies.joinQueue(args.key, args.mode);
-      return joined.ok ? ok({ queue: joined.value }) : lobbyRefusal(joined.reason);
+      const token = newWaitToken();
+      const joined = await lobbies.joinQueue(args.key, args.mode, token);
+      return joined.ok ? ok({ queue: joined.value, ...waitFields(token) }) : lobbyRefusal(joined.reason);
     }),
 
   operation("queue_status", `Read your ranked queue entry with your key: none, waiting (mode, joinedAt, expiresAt), matched (mode, lobbyId, matchedAt) or expired (mode, expiresAt). ${QUEUE_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
@@ -349,8 +354,9 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("request_challenge", `Challenge one available house handle to an unrated public 1v1 game with your existing username or handle key. You are seated at once and the other seat is held for that handle; the reply is requestId, lobbyId and seat, your match-server seat. Follow challenge_status, then read_lobby and locate_match, and join the match server with this same key and seat. Refused while you wait in the ranked queue or sit in another live lobby, while your username has an active challenge, or once the daily limits (${CHALLENGE_LIMITS}) are reached. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, opponent: z.string().min(1).max(100).describe("The house handle to challenge, antwars/<handle>, from list_challenge_opponents.") }),
     async ({ lobbies }, args) => {
-      const requested = await lobbies.requestChallenge(args.key, args.opponent);
-      return requested.ok ? ok({ ...requested.value }) : challengeRefusal(requested);
+      const token = newWaitToken();
+      const requested = await lobbies.requestChallenge(args.key, args.opponent, token);
+      return requested.ok ? ok({ ...requested.value, ...waitFields(token) }) : challengeRefusal(requested);
     }),
 
   operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,

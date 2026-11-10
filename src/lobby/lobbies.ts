@@ -7,7 +7,8 @@ import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
-import { joinQueueStep, leaveQueueStep, queueStatusStep, waitingEntries, type QueueStatus } from "./queue.js";
+import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
+import { isWaitToken, lobbyWait, waitPath, waitWrite, type WaitState } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
 
 /**
@@ -41,6 +42,7 @@ import { lobbyPageUrl } from "./site.js";
  *                       time a request arrived at it, as of its last heartbeat
  *   queueEntries/{id}, queueWaiting/{mode}  the ranked queue (src/lobby/queue.ts)
  *   challenge*                             house challenges (src/lobby/challenges.ts)
+ *   waits/{token}                          waiting tokens (src/lobby/waits.ts)
  *   withheld/{kind}-{n} { }  present while the slot is withheld from new matches;
  *                       any fields are ignored. Written and removed outside the app, by
  *                       deploy/cloud-run/deploy.sh over Firestore REST (PATCH to set,
@@ -207,8 +209,9 @@ export interface Lobbies {
    * inviteToken is required for a private lobby and ignored for a public one. With
    * colony, the joiner takes a seat in that colony or is refused colony_full and stays
    * unseated; without it, the colony with fewer seats, colony 0 on a tie.
+   * With waitToken, a successful join also records it as a lobby wait (src/lobby/waits.ts) in the same transaction.
    */
-  join(lobbyId: string, key: string, inviteToken?: string, colony?: Colony): Promise<LobbyOutcome<Lobby>>;
+  join(lobbyId: string, key: string, inviteToken?: string, colony?: Colony, waitToken?: string): Promise<LobbyOutcome<Lobby>>;
   /** Creator only; a revoked token is never current again. */
   revokeInvite(lobbyId: string, creatorKey: string): Promise<LobbyOutcome<null>>;
   /** Creator only; replaces any current token. */
@@ -281,8 +284,11 @@ export interface Lobbies {
     match: { readonly mode: RankedMode; readonly colonies: readonly [readonly Seat[], readonly Seat[]] },
     at: number,
   ): Promise<{ readonly writes: readonly Write[]; readonly lobby: Lobby }>;
-  /** Joins the ranked queue in a mode: waits, or pairs at once with a waiting entry. */
-  joinQueue(key: string, mode: string): Promise<LobbyOutcome<QueueStatus>>;
+  /**
+   * Joins the ranked queue in a mode: waits, or pairs at once with a waiting entry. With waitToken, a successful
+   * join also records it as a queue wait for this join (src/lobby/waits.ts) in the same transaction.
+   */
+  joinQueue(key: string, mode: string, waitToken?: string): Promise<LobbyOutcome<QueueStatus>>;
   queueStatus(key: string): Promise<LobbyOutcome<QueueStatus>>;
   /** Removes the identity's waiting entry; any other status is returned unchanged. */
   leaveQueue(key: string): Promise<LobbyOutcome<QueueStatus>>;
@@ -300,12 +306,18 @@ export interface Lobbies {
    */
   listUnstarted(): Promise<readonly UnstartedLobby[]>;
   /** House challenges (src/lobby/challenges.ts). */
-  requestChallenge(key: string, opponent: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly lobbyId: string; readonly seat: number }>>;
+  /** With waitToken, an admitted request also records it as a lobby wait on the challenge's lobby, in the same transaction. */
+  requestChallenge(key: string, opponent: string, waitToken?: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly lobbyId: string; readonly seat: number }>>;
   listChallengeOpponents(): Promise<OpponentList>;
   listChallengeOpponentsFor(key: string): Promise<ChallengeOutcome<OpponentListForUsername>>;
   setChallengeAvailability(key: string, handle: string, available: boolean): Promise<ChallengeOutcome<{ readonly handle: string; readonly available: boolean }>>;
   reportChallengeLaunch(key: string, requestId: string, outcome: LaunchOutcome, reason?: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly launchReport: LaunchOutcome; readonly state: ChallengeState }>>;
   challengeStatus(key: string, requestId?: string): Promise<ChallengeOutcome<ChallengeStatus>>;
+  /**
+   * The current state of the wait a waiting token names, or null for no such token. A lobby wait is read as readLobby
+   * reads it, so a waiting lobby is settled first; a queue wait reads the entry only. Nothing else is read or returned.
+   */
+  waitStatus(token: string): Promise<WaitState | null>;
 }
 
 /** A live waiting queue entry by its identity's current display name; nothing else about the identity. */
@@ -685,6 +697,12 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     return ok(fields);
   }
 
+  /** The lobby; a waiting one is settled first (Lobbies.readLobby). */
+  async function readLobby(lobbyId: string): Promise<LobbyOutcome<Lobby>> {
+    const fields = await store.get(lobbyPath(lobbyId));
+    return fields ? ok(toLobby(lobbyId, await settledIfWaiting(lobbyId, fields), now())) : refuse("no_such_lobby");
+  }
+
   /** Whether identityId is the antwars username's handle named handle, by stored owner, in the caller's transaction. */
   async function holdsHeldSeat(read: TransactionRead, identityId: string, handle: string): Promise<boolean> {
     const docs = await read([`identities/${identityId}`, `usernames/${HOUSE_USERNAME}`]);
@@ -764,7 +782,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       return ok({ lobby: toLobby(id, fields, createdAt) });
     },
 
-    async join(lobbyId, key, inviteToken, chosen) {
+    async join(lobbyId, key, inviteToken, chosen, waitToken) {
       const joiner = await identityOf(key);
       if (!joiner) return refuse("unknown_key");
       return store.transaction<LobbyOutcome<Lobby>>(async (read) => {
@@ -790,12 +808,13 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const colony: Colony = chosen ?? (seated(0) <= seated(1) ? 0 : 1);
         if (fields.heldFor && colony === HELD_COLONY && !holder) return { result: refuse("seat_held"), writes: [] };
         const next = [...seats, { id: joiner.id, displayName: joiner.displayName, colony }];
+        const wait: Write[] = waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId })];
         if (next.length === capacity(lobbyId, fields)) {
           const started = await start(read, lobbyId, fields, next, at);
-          return { result: ok(started.lobby), writes: started.writes };
+          return { result: ok(started.lobby), writes: [...started.writes, ...wait] };
         }
         const update = { seats: JSON.stringify(next) };
-        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }] };
+        return { result: ok(toLobby(lobbyId, { ...fields, ...update }, at)), writes: [{ op: "update", path: lobbyPath(lobbyId), fields: update }, ...wait] };
       });
     },
 
@@ -948,17 +967,32 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       });
     },
 
-    async readLobby(lobbyId) {
-      const fields = await store.get(lobbyPath(lobbyId));
-      return fields ? ok(toLobby(lobbyId, await settledIfWaiting(lobbyId, fields), now())) : refuse("no_such_lobby");
-    },
+    readLobby,
 
     queuedMatchWrites,
 
-    async joinQueue(key, mode) {
+    async joinQueue(key, mode, waitToken) {
       const joiner = await queueIdentity(key);
       if (!joiner) return refuse("unknown_key");
-      return store.transaction((read) => joinQueueStep(read, joiner, mode, now(), random, queuedMatchWrites));
+      return store.transaction(async (read) => {
+        const at = now();
+        const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites);
+        if (waitToken === undefined || !step.result.ok) return step;
+        return { result: step.result, writes: [...step.writes, waitWrite(waitToken, { kind: "queue", identityId: joiner.id, joinedAt: String(at) })] };
+      });
+    },
+
+    async waitStatus(token) {
+      if (!isWaitToken(token)) return null;
+      const wait = await store.get(waitPath(token));
+      if (wait?.kind === "queue" && wait.identityId && wait.joinedAt) {
+        return queueWait(await store.get(queueEntryPath(wait.identityId)), wait.joinedAt, now());
+      }
+      if (wait?.kind === "lobby" && wait.lobbyId) {
+        const lobby = await readLobby(wait.lobbyId);
+        return lobby.ok ? lobbyWait(lobby.value) : { state: "expired", reason: "ended" };
+      }
+      return null;
     },
 
     async queueStatus(key) {

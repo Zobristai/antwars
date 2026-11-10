@@ -2,6 +2,7 @@ import { isHouseOwned } from "../identity/houseOwnership.js";
 import { isRankedMode, type RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
+import type { WaitState } from "./waits.js";
 
 /**
  * The ranked matchmaking queue, as transaction steps that
@@ -149,6 +150,22 @@ export async function joinQueueStep(
     ],
   };
 }
+
+/**
+ * A queue wait (src/lobby/waits.ts), from the identity's entry as stored now and the joinedAt of the join that
+ * issued its token. An entry from another join (left, or replaced by a later join) or none at all ended; a matched
+ * entry is paired; a waiting one waits until its lifetime ends, then ran out of time. Reads nothing, writes nothing.
+ */
+export function queueWait(entry: Fields | null, joinedAt: string, at: number): WaitState {
+  if (!entry || entry.joinedAt !== joinedAt || !isRankedMode(entry.mode)) return { state: "expired", reason: "ended" };
+  if (entry.state === "matched" && entry.lobbyId) return { state: "paired", lobbyId: entry.lobbyId };
+  if (entry.state !== "waiting") return { state: "expired", reason: "ended" };
+  const expiresAt = Number(joinedAt) + queueTtl(entry.mode);
+  return at < expiresAt ? { state: "waiting", mode: entry.mode, expiresAt } : { state: "expired", reason: "time_limit" };
+}
+
+/** The stored path of an identity's queue entry. */
+export const queueEntryPath = (identityId: string): string => entryPath(identityId);
 
 export async function queueStatusStep(read: TransactionRead, identityId: string, at: number): Promise<Step> {
   const entry = (await read([entryPath(identityId)])).get(entryPath(identityId)) ?? null;

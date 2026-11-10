@@ -4,6 +4,7 @@ import type { Identities } from "../identity/identities.js";
 import { HOUSE_LABELS, HOUSE_USERNAME } from "../rating/house.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { queueStatusStep } from "./queue.js";
+import { waitWrite } from "./waits.js";
 
 /**
  * House challenges: a builder's agent asks for an unrated public 1v1 game against one handle of the House
@@ -244,7 +245,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     }
   }
 
-  async function requestChallenge(key: string, opponent: string): Promise<ChallengeOutcome<{ requestId: string; lobbyId: string; seat: number }>> {
+  async function requestChallenge(key: string, opponent: string, waitToken?: string): Promise<ChallengeOutcome<{ requestId: string; lobbyId: string; seat: number }>> {
     const builder = await caller(key);
     if (!builder) return refuse("unknown_key");
     const handle = houseHandle(opponent);
@@ -287,6 +288,8 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
           return places[i]!.doc ? { op: "update", path: allowancePath(day), fields: { requests } } : { op: "create", path: allowancePath(day), fields: { requests } };
         }),
         ...(await rules.challengeLobbyWrites(read, { id: lobbyId, requestId, handle, builder: { id: builder.id, displayName: builder.displayName }, at })),
+        // The challenger's waiting token is a lobby wait on this challenge's lobby (src/lobby/waits.ts).
+        ...(waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId })]),
       ];
       // A mirror challenge (the held handle challenging itself) plays colony 1 as match seat 2; seat 1 is the house seat.
       const docsHouseId = docs.get(HOUSE_CLAIM)?.identityId;

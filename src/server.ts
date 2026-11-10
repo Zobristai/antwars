@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { GCProfiler } from "node:v8";
 import { createAccountApi } from "./accounts/httpApi.js";
+import { waitStreamRoutes } from "./accounts/waitStream.js";
 import { registerAccountTools } from "./accounts/mcpTools.js";
 import type { AccountStores } from "./accounts/service.js";
 import type { MatchSaves } from "./handover/saveStore.js";
@@ -130,7 +131,8 @@ export interface ServerOptions {
   readonly slot?: SlotWiring;
   /**
    * The shared store's identities, lobbies and ratings: when set, their
-   * operations are served as MCP tools on /mcp and as POST /api/<operation>.
+   * operations are served as MCP tools on /mcp and as POST /api/<operation>,
+   * and waiting tokens' streams on GET /wait/<token>.
    */
   readonly accounts?: AccountStores;
 }
@@ -323,6 +325,8 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
   // /api bodies: MCP's read deadline and body-read cap values, counted in a pool of their own.
   const { bodyReadMs, maxUnadmittedBodies, maxUnadmittedBodiesPerSource } = game.mcpConfig;
   if (accounts !== undefined) mounts.push({ prefix: "/api", handler: createAccountApi(accounts, { bodyReadMs, maxBodies: maxUnadmittedBodies, maxBodiesPerSource: maxUnadmittedBodiesPerSource }) });
+  // The public wait stream for the waiting tokens join_queue, join_lobby and request_challenge return; the stores are read per request, never here.
+  if (accounts !== undefined) mounts.push({ prefix: "/wait", handler: waitStreamRoutes({ waitStatus: (token) => accounts.lobbies.waitStatus(token) }) });
 
   /**
    * Delete the oldest finished logs so at most maxLogs remain; runs before the new match's log exists.
