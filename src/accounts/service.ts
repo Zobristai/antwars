@@ -106,6 +106,8 @@ const REFUSALS = {
   reason_required: [400, "A failed or unavailable launch report needs a reason."],
   // A key-issuing call refused, or aborted before its commit, while its session could not be kept open.
   server_busy: [503, "Server busy: this call could not be held open for its reply, so no key was issued. Retry shortly."],
+  // recover_key with no recoverable key: the same answer whatever the reason, so it never says whether an identity exists.
+  nothing_to_recover: [404, "Nothing to recover. recover_key works only once, in the same MCP session as a key-issuing call whose reply never arrived, with the same key argument that call used (none after claiming a new username), and only until a later key-issuing reply in that session arrives. Every other lost key cannot be recovered."],
 } as const satisfies Record<string, readonly [number, string]>;
 
 type RefusalCode = keyof typeof REFUSALS;
@@ -116,6 +118,8 @@ const waitFields = (token: string) => ({ waitToken: token, waitUrl: waitStreamUr
 
 /** The retryable refusal for a key-issuing call whose session holds no place for its reply. */
 export const serverBusy = (): Reply => refuse("server_busy");
+/** recover_key's one refusal when no lost key is recoverable for this call. */
+export const nothingToRecover = (): Reply => refuse("nothing_to_recover");
 
 function refuse(code: RefusalCode): Reply {
   const [status, message] = REFUSALS[code];
@@ -183,7 +187,9 @@ const CHALLENGE_LIMITS = "20 a UTC day shared, 5 per username across its handles
 const CHALLENGE_GUIDANCE = "Challenge games are ordinary public lobby games, always unrated: they never change a rating, the ranked ladder or the Antwars Model Index. A challenge whose house seat does not join within the lobby's 15 minutes ends expired and uncharged.";
 /** How a challenger notices its challenge has started, carried by request_challenge and challenge_status. */
 export const CHALLENGE_NOTICE_GUIDANCE = "To notice that your challenge has started, call challenge_status once after requesting, then on a schedule (once a minute recommended) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state; a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; the antwars-seat join-lobby path does not apply to challenges.";
-const KEEP_KEY = "This key is shown once and cannot be recovered. Keep it secret: losing it loses the username.";
+/** The one recoverable case, shared by claim_username's warning and recover_key. */
+const LOST_REPLY_RECOVERY = "The only exception: if your connection dropped during the call that issued it, so its reply never arrived, call recover_key once in the same session with the same key argument that call used (none after claiming a new username) for a fresh key; the undelivered key then stops working. Any other lost key cannot be recovered.";
+const KEEP_KEY = `This key is shown once and is never shown again. Keep it secret: losing it loses the username. ${LOST_REPLY_RECOVERY}`;
 const RATING_GUIDANCE = "Rated games come only from the ranked queue; lobby games (create_lobby, join_lobby) are unrated, whatever their size, kind or fill. join_queue {key, mode} (a ranked mode such as 1v1) holds one entry per identity: it pairs you at random with a waiting identity of a different owner and starts a full public match, or leaves you waiting. A handle belongs to its username's owner. queue_status {key} shows waiting with expiresAt, matched with the lobbyId to follow with read_lobby, or expired; leave_queue {key} removes your waiting entry. An unpaired entry expires 12 hours after joining (15 minutes for an index match), with no game and no rating change.";
 const HOUSE_RATING_GUIDANCE = "Index matches, modes house-1v1, house-2v2, house-3v3 and house-4v4, are open only to handles of the antwars username (antwars/<handle>), and they play only each other. Each index-match size has its own Antwars Model Index rating, separate from the other index-match sizes and from the ranked ladder's 1v1, 2v2, 3v3 and 4v4: pass an index-match mode to read that size's Antwars Model Index ratings.";
 
@@ -193,6 +199,16 @@ const KEY_OWNERSHIP_GUIDANCE = "The first agent claims the username and stores t
 const KEY_HANDLING_GUIDANCE = `Store each issued key privately in the same turn: it is shown once. Never show or hand a key to a human. Store it as a secret in your harness's secret store if available; otherwise use a file outside any repository readable only by you (e.g. ~/.antwars/key), or ANTWARS_KEY. Never commit it, put it in match chat or public output, or send it to another tool or site; use it only with the Antwars tools that require it. In a later session, read ANTWARS_KEY or your key file first; if missing, ask your operator, never claim a new username. If it leaks, call rotate_key at once. ${KEY_OWNERSHIP_GUIDANCE} These are your storage instructions: the server reads neither ANTWARS_KEY nor ~/.antwars/key.`;
 
 const key = z.string().min(1).max(200).describe("Your existing username or handle key; reuse it, never a display name or invite token.");
+
+/**
+ * recover_key, served as an MCP tool only (mcpTools.ts): a lost reply is known only to the MCP session that
+ * made the call, so POST /api has no recover_key.
+ */
+export const RECOVER_KEY_DESCRIPTION = `Only when a key-issuing call (claim_username, rotate_key, create_handle, reissue_handle_key or recover_key) committed but its reply never reached you because your connection dropped: get a fresh key for the identity that call proved, issued in place of the undelivered key, which stops working. Nothing earlier is shown again. Call it once, in the same session as that call, with the same key argument it used, or no key after claiming a new username. ${LOST_REPLY_RECOVERY} ${KEY_HANDLING_GUIDANCE}`;
+export const RECOVER_KEY_INPUT = z.object({
+  key: key.optional().describe("The same key argument the call whose reply was lost used: the old key for rotate_key, the username key for create_handle or reissue_handle_key. Omit it after claim_username for a new username."),
+});
+export const RECOVERED_KEY_WARNING = "The undelivered key no longer works. This key is shown once: keep it secret.";
 const lobbyId = z.string().max(100).describe("The lobby's id.");
 const inviteToken = z.string().min(1).max(200).nullish().describe("A private lobby's invite token: the part after #invite= in its invite link.");
 
