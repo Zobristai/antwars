@@ -93,8 +93,9 @@ async function statusOf(read: TransactionRead, entry: Fields | null, at: number)
   return at < expiresAt ? { state: "waiting", mode, joinedAt, expiresAt } : { state: "expired", mode, expiresAt };
 }
 
+/** waitToken: the join's waiting token (src/lobby/waits.ts), kept on the entry so a later join or leave can remove its wait. */
 export async function joinQueueStep(
-  read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites,
+  read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites, waitToken = "",
 ): Promise<Step> {
   const table = isRankedMode(mode) ? QUEUE_MODES[mode] : undefined;
   if (!isRankedMode(mode) || !table) return { result: { ok: false, reason: "invalid_mode" }, writes: [] };
@@ -128,7 +129,7 @@ export async function joinQueueStep(
   const ownWrite = (fields: Fields): Write => ({ op: own ? "update" : "create", path: entryPath(joiner.id), fields });
 
   if (eligible.length === 0) {
-    const fields = { mode, joinedAt: String(at), state: "waiting", lobbyId: "" };
+    const fields = { mode, joinedAt: String(at), state: "waiting", lobbyId: "", waitToken };
     return {
       result: { ok: true, value: { state: "waiting", mode, joinedAt: at, expiresAt: at + queueTtl(mode) } },
       writes: [ownWrite(fields), ...listWrite([...waiting, joiner.id])],
@@ -145,7 +146,7 @@ export async function joinQueueStep(
     writes: [
       ...made.writes,
       { op: "update", path: entryPath(pick), fields: { state: "matched", lobbyId } },
-      ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId }),
+      ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId, waitToken }),
       ...listWrite(waiting.filter((id) => id !== pick)),
     ],
   };

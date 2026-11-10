@@ -3,10 +3,10 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AccountStores } from "../../src/accounts/service.ts";
-import { waitStreamRoutes, type WaitStreamOptions } from "../../src/accounts/waitStream.ts";
+import { WAIT_STREAM_LIMITS, waitStreamRoutes, type WaitStreamOptions } from "../../src/accounts/waitStream.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createLobbies, type Lobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
-import { withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
+import { expiryField, WAIT_GRACE_MS, withPairedLobby, type WaitState } from "../../src/lobby/waits.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
@@ -17,7 +17,8 @@ import { shortConfig, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
 /**
  * The waiting token join_queue, join_lobby and request_challenge return, and its public stream GET /wait/<token>:
  * the current state on every connect, then one final event (paired, slot_ready or expired) and the close; the life
- * bound, the open-stream caps and the 404/405/503 answers; and the token granting nothing else.
+ * bound, the open-stream caps and the 404/405/503 answers; the token granting nothing else; and each token's record
+ * expiring a grace after its wait's limit, or after its wait was read final, and being removed then.
  */
 
 // The store tests run inside `firebase emulators:exec --only firestore`, which sets
@@ -144,7 +145,7 @@ describe("the wait stream route", () => {
     expect([stream.ended, stream.frames]).toEqual([true, [{ event: null, data: WAITING_QUEUE }]]);
   });
 
-  it("caps open streams per source and overall with the retryable 503, and frees a place when a stream closes", async () => {
+  it("caps open streams per source with the retryable 503, and frees a place when a stream closes", async () => {
     const port = await streamServer(sequence(WAITING_QUEUE), { limits: { max: 2, perSource: 1 }, maxMs: 400 });
     const open = read(port, TOKEN);
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -152,6 +153,50 @@ describe("the wait stream route", () => {
     expect([refused.status, refused.headers.get("retry-after")]).toEqual([503, "1"]);
     expect((await open).status).toBe(200);
     expect((await read(port, TOKEN)).status).toBe(200);
+  });
+
+  it("caps open streams overall at the default limits: 256 from distinct sources, then the retryable 503 for a new source", async () => {
+    const port = await streamServer(sequence(WAITING_QUEUE));
+    const aborts: AbortController[] = [];
+    closers.push(async () => { for (const abort of aborts) abort.abort(); });
+    // One stream per source, so no source comes near its own limit.
+    const open = async (n: number) => {
+      const abort = new AbortController();
+      aborts.push(abort);
+      const res = await fetch(`http://127.0.0.1:${port}/wait/${TOKEN}`, { signal: abort.signal, headers: { "x-forwarded-for": `10.0.${n >> 8}.${n & 255}` } });
+      return { status: res.status, retryAfter: res.headers.get("retry-after") };
+    };
+    expect(WAIT_STREAM_LIMITS).toEqual({ max: 256, perSource: 16 });
+    const admitted = await Promise.all(Array.from({ length: 256 }, (_, n) => open(n)));
+    expect(admitted.every((stream) => stream.status === 200)).toBe(true);
+    expect(await open(256)).toEqual({ status: 503, retryAfter: "1" });
+  });
+
+  it("answers a first read slower than its timeout with the retryable 503 and frees its place", async () => {
+    let reads = 0;
+    const slowFirst: Lobbies["waitStatus"] = () => (reads++ === 0 ? new Promise<WaitState | null>(() => {}) : Promise.resolve({ state: "slot_ready", startsAt: 5 }));
+    const port = await streamServer(slowFirst, { limits: { max: 1 }, firstReadMs: 100 });
+    const started = Date.now();
+    const slow = await read(port, TOKEN);
+    expect([slow.status, slow.headers.get("retry-after"), Date.now() - started < 1_000]).toEqual([503, "1", true]);
+    // With one place, a 200 now shows the timed-out request released it.
+    expect((await read(port, TOKEN)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: 5 } }]);
+  });
+
+  it("counts the life bound from admission, so a slow first read does not extend it", async () => {
+    let reads = 0;
+    const delayed: Lobbies["waitStatus"] = async () => {
+      if (reads++ === 0) await new Promise((resolve) => setTimeout(resolve, 400));
+      return WAITING_QUEUE;
+    };
+    const port = await streamServer(delayed, { maxMs: 600, firstReadMs: 2_000 });
+    const started = Date.now();
+    const stream = await read(port, TOKEN);
+    const lasted = Date.now() - started;
+    expect([stream.status, stream.ended, stream.frames[0]]).toEqual([200, true, { event: null, data: WAITING_QUEUE }]);
+    // From admission the bound is 600 ms; counted from after the 400 ms read it would be about 1000 ms.
+    expect(lasted).toBeGreaterThanOrEqual(550);
+    expect(lasted).toBeLessThan(850);
   });
 });
 
@@ -305,31 +350,117 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     // Each read is paired, or, once another read has re-pointed the token, already the lobby's state.
     for (const state of raced) expect([paired, { state: "slot_ready", startsAt: expect.any(Number), lobbyId: queue.lobbyId }]).toContainEqual(state);
     expect(raced).toContainEqual(paired);
+    // The re-pointed record expires a grace after the paired lobby's own limit, or, once a racing read found slot_ready,
+    // a grace after that read.
+    const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
     const stored = { kind: "lobby", lobbyId: queue.lobbyId, paired: "true", identityId: "", joinedAt: "" };
-    expect(await w.store.get(`waits/${annToken}`)).toEqual(stored);
+    expect(await w.store.get(`waits/${annToken}`)).toEqual({ ...stored, expiresAt: expect.any(String) });
+    expect([expiryField(lobby.expiresAt + WAIT_GRACE_MS), expiryField(w.clock.t + WAIT_GRACE_MS)]).toContain((await w.store.get(`waits/${annToken}`))!.expiresAt);
+    // Read final (slot_ready), it expires a grace after that read; a later read never raises it again.
     expect((await w.lobbies.waitStatus(annToken))!.state).toBe("slot_ready");
-    expect(await w.store.get(`waits/${annToken}`)).toEqual(stored);
+    expect(await w.store.get(`waits/${annToken}`)).toEqual({ ...stored, expiresAt: expiryField(w.clock.t + WAIT_GRACE_MS) });
     // Polling reads the matched entry exactly as before.
     expect((await w.ok("queue_status", { key: ann.key })).queue).toEqual(queue);
   });
 
-  it("a queue token ends expired: ended after leave_queue or a later join, time_limit after the 12 hours", async () => {
+  it("leave_queue removes the left join's token, ending an open stream expired: ended; a later join removes an expired one", async () => {
     const w = await world();
     const ann = await w.claim("Ann");
     const left = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    const open = read(w.fast, left);
+    await new Promise((resolve) => setTimeout(resolve, 100));
     await w.ok("leave_queue", { key: ann.key });
+    const live = await open;
+    expect([live.ended, live.frames.at(-1)]).toEqual([true, { event: "expired", data: { state: "expired", reason: "ended" } }]);
+    expect(await w.store.get(`waits/${left}`)).toBeNull();
+    expect((await read(w.fast, left)).status).toBe(404);
+
     w.clock.t += 1;
-    const replaced = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
-    w.clock.t += 1;
-    await w.ok("leave_queue", { key: ann.key });
-    const current = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
-    const ended = [{ event: "expired", data: { state: "expired", reason: "ended" } }];
-    expect((await read(w.fast, left)).frames).toEqual(ended);
-    expect((await read(w.fast, replaced)).frames).toEqual(ended);
+    const expired = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
     w.clock.t += 12 * HOUR;
-    expect((await read(w.fast, current)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "time_limit" } }]);
-    // Polling reads the same entry exactly as before.
+    expect((await read(w.fast, expired)).frames).toEqual([{ event: "expired", data: { state: "expired", reason: "time_limit" } }]);
+    // Read final, its record now expires a grace after that read.
+    expect((await w.store.get(`waits/${expired}`))?.expiresAt).toBe(expiryField(w.clock.t + WAIT_GRACE_MS));
     expect((await w.ok("queue_status", { key: ann.key })).queue.state).toBe("expired");
+    const current = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    expect(await w.store.get(`waits/${expired}`)).toBeNull();
+    expect((await read(w.fast, current, 300)).frames[0]!.data.state).toBe("waiting");
+  });
+
+  it("each record expires a grace after its wait's own limit: queue, lobby and challenge", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const queued = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    expect(await w.store.get(`waits/${queued}`)).toMatchObject({ kind: "queue", expiresAt: expiryField(w.clock.t + 12 * HOUR + WAIT_GRACE_MS) });
+    const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 1));
+    const seated = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    expect(await w.store.get(`waits/${seated}`)).toMatchObject({ kind: "lobby", expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+
+    const cast = await houseCast(w.identities, w.store, 0);
+    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    const builder = await w.claim("builder");
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const challengeLobby = value(await w.lobbies.readLobby(requested.lobbyId));
+    expect(challengeLobby.expiresAt - challengeLobby.createdAt).toBe(15 * 60 * 1000);
+    expect(await w.store.get(`waits/${tokenOf(requested)}`)).toMatchObject({ kind: "lobby", expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
+  });
+
+  it("a wait read final early is removed by the next join's sweep once its grace passes; readable until then", async () => {
+    const w = await world();
+    const cast = await houseCast(w.identities, w.store, 0);
+    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    const builder = await w.claim("builder");
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const token = tokenOf(requested);
+    await w.ok("report_challenge_launch", { key: cast.house.key, requestId: requested.requestId, outcome: "failed", reason: "failed" });
+    const ended = [{ event: "expired", data: { state: "expired", reason: "ended" } }];
+    expect((await read(w.fast, token)).frames).toEqual(ended);
+    w.clock.t += WAIT_GRACE_MS - 1;
+    expect((await read(w.fast, token)).frames).toEqual(ended);
+    // Within the challenge's 15-minute limit, but past the grace after it was read ended.
+    w.clock.t += 2;
+    const ann = await w.claim("Ann");
+    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    expect(await w.store.get(`waits/${token}`)).toBeNull();
+    expect((await read(w.fast, token)).status).toBe(404);
+  });
+
+  it("repeated joins by one identity keep one wait record, and the sweep removes only expired records", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob"), cid = await w.claim("Cid");
+    const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 100 })).rows.map((row) => row.path);
+    let token = "";
+    for (let n = 0; n < 5; n++) {
+      token = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+      await w.ok("leave_queue", { key: ann.key });
+      w.clock.t += 1;
+    }
+    expect(await records()).toEqual([]);
+    for (let n = 0; n < 5; n++) {
+      token = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+      w.clock.t += 12 * HOUR; // the entry expires unread; the next join replaces it
+    }
+    expect(await records()).toEqual([`waits/${token}`]);
+
+    // Ann's last token, never read, passes its limit plus grace; Bob's lobby wait is live; Cid's join sweeps.
+    const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 1));
+    const bobToken = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
+    w.clock.t += WAIT_GRACE_MS;
+    const cidToken = tokenOf(await w.ok("join_queue", { key: cid.key, mode: "1v1" }));
+    expect((await records()).sort()).toEqual([`waits/${bobToken}`, `waits/${cidToken}`].sort());
+  });
+
+  it("a paired queue token never read before its identity rejoins still follows the paired lobby", async () => {
+    const w = await world();
+    const ann = await w.claim("Ann"), bob = await w.claim("Bob");
+    const annToken = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
+    await w.ok("join_queue", { key: bob.key, mode: "1v1" });
+    const { queue } = await w.ok("queue_status", { key: ann.key });
+    w.clock.t += 1;
+    await w.ok("join_queue", { key: ann.key, mode: "1v1" });
+    const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
+    expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, paired: "true", expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
+    expect((await read(w.fast, annToken)).frames).toEqual([{ event: "slot_ready", data: { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId } }]);
   });
 
   it("join_lobby's token waits for a slot, settles as read_lobby does, then sends slot_ready; an open lobby past 12 hours expires", async () => {

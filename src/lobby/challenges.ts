@@ -289,7 +289,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
         }),
         ...(await rules.challengeLobbyWrites(read, { id: lobbyId, requestId, handle, builder: { id: builder.id, displayName: builder.displayName }, at })),
         // The challenger's waiting token is a lobby wait on this challenge's lobby (src/lobby/waits.ts).
-        ...(waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId })]),
+        ...(waitToken === undefined ? [] : [waitWrite(waitToken, { kind: "lobby", lobbyId }, at + rules.lobbyTtlMs)]),
       ];
       // A mirror challenge (the held handle challenging itself) plays colony 1 as match seat 2; seat 1 is the house seat.
       const docsHouseId = docs.get(HOUSE_CLAIM)?.identityId;
