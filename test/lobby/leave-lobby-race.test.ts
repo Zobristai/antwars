@@ -56,57 +56,75 @@ function world() {
 type World = ReturnType<typeof world>;
 
 /**
- * Runs `first` to completion before `second`'s first transaction begins. Both are in flight together, `second` having
- * already resolved its key, so the order of their transactions is forced and nothing else.
+ * Whether a request reads the lobby document: a transactional batchGet naming it, or a plain GET of it. The key lookup
+ * each operation makes first (its own transaction) reads identity documents only, so this matches the operation's
+ * lobby transaction, never the key lookup.
  */
-async function inOrder<A, B>(w: World, first: Op<A>, second: Op<B>): Promise<[A, B]> {
+function readsLobby(lobbyId: string, input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) {
+  const url = String(input);
+  const body = typeof init?.body === "string" ? init.body : "";
+  if (url.endsWith(":batchGet")) return body.includes(`/lobbies/${lobbyId}"`);
+  return (init?.method ?? "GET") === "GET" && url.endsWith(`/lobbies/${encodeURIComponent(lobbyId)}`);
+}
+const transactionOf = (init: Parameters<typeof fetch>[1]) => {
+  try { return (JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { transaction?: string }).transaction ?? null; } catch { return null; }
+};
+
+/**
+ * Runs `first` to completion just before `second` first reads the lobby. By then `second` has resolved its key and
+ * begun its lobby transaction, which has read nothing yet, so `first` commits unhindered and `second` then reads what
+ * `first` wrote: the order of the two lobby transactions is forced and nothing else.
+ */
+async function inOrder<A, B>(w: World, lobbyId: string, first: Op<A>, second: Op<B>): Promise<[A, B]> {
   let firstResult: A | undefined;
   let fired = false;
   const after: typeof fetch = async (input, init) => {
-    if (!fired && String(input).endsWith(":beginTransaction")) {
+    if (!fired && readsLobby(lobbyId, input, init)) {
       fired = true;
       firstResult = await first(w.main);
     }
     return fetch(input, init);
   };
   const secondResult = await second(w.lobbies(after));
-  expect(fired, "the second operation never began a transaction").toBe(true);
+  expect(fired, "the second operation never read the lobby").toBe(true);
   return [firstResult as A, secondResult];
 }
 
 /**
- * Runs two operations with their transactions open together: each one's first transactional read is held until both
- * have begun a transaction. Retries pass unheld, so whichever commit the emulator refuses reruns against fresh reads.
- * Fails if either operation committed before both transactions were open.
+ * Runs two operations with their lobby transactions open together. Each contender's first read of the lobby document
+ * is held at a barrier until both contenders have reached theirs, so both lobby transactions have begun and neither has
+ * read the lobby, let alone committed, when either proceeds. The held transactions are tracked: every commit either
+ * contender sends after reaching the barrier (the held transaction's, or a retry's after the emulator aborts it) must
+ * come after both reached it. Retries pass unheld and rerun against fresh reads.
  */
-async function together<A, B>(w: World, a: Op<A>, b: Op<B>): Promise<[A, B]> {
-  const events: string[] = [];
-  let begun = 0;
-  let open!: () => void;
-  const opened = new Promise<void>((resolve) => { open = resolve; });
-  const contender = (who: string): typeof fetch => {
-    let inTransaction = false, held = false;
-    return async (input, init) => {
-      const url = String(input);
-      if (inTransaction && !held && url.endsWith(":batchGet")) {
-        held = true;
-        await Promise.race([opened, sleep(20_000, undefined, { ref: false }).then(() => {
-          throw new Error("together: both operations did not begin a transaction within 20 s");
-        })]);
-      }
-      if (url.endsWith(":commit")) events.push(`commit ${who}`);
-      const response = await fetch(input, init);
-      if (!inTransaction && url.endsWith(":beginTransaction")) {
-        inTransaction = true;
-        if (++begun === 2) { events.push("open"); open(); }
-      }
-      return response;
-    };
+async function together<A, B>(w: World, lobbyId: string, a: Op<A>, b: Op<B>): Promise<[A, B]> {
+  type Event = { readonly who: string; readonly kind: "reach" | "commit"; readonly transaction: string | null; status?: number };
+  const events: Event[] = [];
+  const held = new Map<string, string | null>();
+  let release!: () => void;
+  const both = new Promise<void>((resolve) => { release = resolve; });
+  const contender = (who: string): typeof fetch => async (input, init) => {
+    if (!held.has(who) && readsLobby(lobbyId, input, init)) {
+      held.set(who, transactionOf(init));
+      events.push({ who, kind: "reach", transaction: held.get(who)! });
+      if (held.size === 2) release();
+      await Promise.race([both, sleep(20_000, undefined, { ref: false }).then(() => {
+        throw new Error("together: both lobby transactions did not reach the barrier within 20 s");
+      })]);
+    }
+    const commit: Event | undefined = held.has(who) && String(input).endsWith(":commit") ? { who, kind: "commit", transaction: transactionOf(init) } : undefined;
+    if (commit) events.push(commit);
+    const response = await fetch(input, init);
+    if (commit) commit.status = response.status;
+    return response;
   };
   const results = await Promise.all([a(w.lobbies(contender("a"))), b(w.lobbies(contender("b")))]);
-  const openedAt = events.indexOf("open");
-  expect(openedAt, "the two transactions were never open together").toBeGreaterThan(-1);
-  expect(events.slice(0, openedAt), "an operation committed before both transactions were open").toEqual([]);
+  const reaches = events.flatMap((event, i) => event.kind === "reach" ? [i] : []);
+  const commits = events.flatMap((event, i) => event.kind === "commit" ? [i] : []);
+  expect(reaches, "both lobby transactions reach the barrier").toHaveLength(2);
+  expect(commits.every((i) => i > reaches[1]!), "a lobby transaction committed before both reached the barrier").toBe(true);
+  console.log(`[together] held lobby transactions and commits: ${JSON.stringify(events.map((event) => ({
+    who: event.who, kind: event.kind, heldTransaction: event.transaction !== null && event.transaction === held.get(event.who), status: event.status })))}`);
   return results;
 }
 
@@ -161,13 +179,13 @@ describe.skipIf(!host)("a leave racing the final join or an early start", { time
 
     it("join first: the lobby starts with the leaver seated and the leave is refused started, changing nothing", async () => {
       const fixture = await threeSeated();
-      const [joined, left] = await inOrder(fixture.w, fixture.join, fixture.leave);
+      const [joined, left] = await inOrder(fixture.w, fixture.lobbyId, fixture.join, fixture.leave);
       expect(await settled(fixture, left, joined)).toBe("join");
     });
 
     it("leave first: the seat goes, the join succeeds without starting, and the leaver is never seated once it starts", async () => {
       const fixture = await threeSeated();
-      const [left, joined] = await inOrder(fixture.w, fixture.leave, fixture.join);
+      const [left, joined] = await inOrder(fixture.w, fixture.lobbyId, fixture.leave, fixture.join);
       expect(await settled(fixture, left, joined)).toBe("leave");
     });
 
@@ -175,7 +193,7 @@ describe.skipIf(!host)("a leave racing the final join or an early start", { time
       const winners: string[] = [];
       for (let round = 0; round < CONCURRENT_ROUNDS; round++) {
         const fixture = await threeSeated();
-        const [left, joined] = await together(fixture.w, fixture.leave, fixture.join);
+        const [left, joined] = await together(fixture.w, fixture.lobbyId, fixture.leave, fixture.join);
         winners.push(await settled(fixture, left, joined));
       }
       console.log(`[leave vs final join] winners per round: ${JSON.stringify(winners)}`);
@@ -239,13 +257,13 @@ describe.skipIf(!host)("a leave racing the final join or an early start", { time
       describe(`the leaver is ${leaverName === "Cat" ? "one of two in its colony" : "its colony's only seat"}`, () => {
         it("start first: the lobby starts with the leaver seated and the leave is refused started, changing nothing", async () => {
           const fixture = await startable(leaverName);
-          const [started, left] = await inOrder(fixture.w, fixture.start, fixture.leave);
+          const [started, left] = await inOrder(fixture.w, fixture.lobbyId, fixture.start, fixture.leave);
           expect(await settled(fixture, left, started)).toBe("start");
         });
 
         it("leave first: the leave applies and the lobby never starts with the leaver seated", async () => {
           const fixture = await startable(leaverName);
-          const [left, started] = await inOrder(fixture.w, fixture.leave, fixture.start);
+          const [left, started] = await inOrder(fixture.w, fixture.lobbyId, fixture.leave, fixture.start);
           expect(await settled(fixture, left, started)).toBe("leave");
         });
 
@@ -253,7 +271,7 @@ describe.skipIf(!host)("a leave racing the final join or an early start", { time
           const winners: string[] = [];
           for (let round = 0; round < CONCURRENT_ROUNDS; round++) {
             const fixture = await startable(leaverName);
-            const [left, started] = await together(fixture.w, fixture.leave, fixture.start);
+            const [left, started] = await together(fixture.w, fixture.lobbyId, fixture.leave, fixture.start);
             winners.push(await settled(fixture, left, started));
           }
           console.log(`[leave ${leaverName} vs early start] winners per round: ${JSON.stringify(winners)}`);
