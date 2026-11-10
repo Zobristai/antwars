@@ -63,6 +63,32 @@ export function watchUrl(origin: string, o: { private: boolean; replayId: string
   return o.lobbyId ? `${origin}/?lobby=${encodeURIComponent(o.lobbyId)}` : null;
 }
 
+/**
+ * A public stored match's recorded setup and seats from its stored record (GET /matches/<id>), read the way the Matches
+ * listing reads them (src/replays/history-summary-worker.ts), so a replay with no lobby link is typed as the listing types
+ * it, whatever has played. Read in full, once; null when it cannot be read. Never sent a private recording's invite.
+ */
+export async function recordedMatchFacts(id: string, signal: AbortSignal, request: typeof fetch = fetch): Promise<RecordedMatch | null> {
+  try {
+    const response = await request(`/matches/${encodeURIComponent(id)}`, { signal, redirect: "error", credentials: "omit" });
+    if (!response.ok) { await response.body?.cancel(); return null; }
+    const record: unknown = await response.json();
+    if (typeof record !== "object" || record === null) return null;
+    const { format, version, id: recordId, setup, seats } = record as Record<string, unknown>;
+    if (format !== "antwar.match" || version !== 1 || recordId !== id || !Array.isArray(seats)) return null;
+    if (setup !== undefined && setup !== null && typeof setup !== "object") return null;
+    const read: RecordedMatch["seats"][number][] = [];
+    for (const seat of seats as unknown[]) {
+      if (typeof seat !== "object" || seat === null) return null;
+      const { colony, handle } = seat as Record<string, unknown>;
+      if ((colony !== 0 && colony !== 1) || (handle !== undefined && handle !== null && typeof handle !== "string")) return null;
+      read.push({ colony, handle: handle ?? null });
+    }
+    const facts = setup as { rated?: unknown; modelIndex?: unknown } | null | undefined;
+    return { rated: facts == null ? null : facts.rated === true, modelIndex: facts?.modelIndex === true, seats: read };
+  } catch { return null; }
+}
+
 /** Optional public metadata; never transfer a private recording's invite to history.
  * Full history may be large: refuse oversized metadata instead of retaining event arrays. */
 export async function recordedEndTick(id: string, signal: AbortSignal, request: typeof fetch = fetch): Promise<number | null> {
@@ -189,26 +215,36 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   // A stored match's one read of its stored record: the restatement of its rating figures, and its harness phase tags.
   // undefined while the read is pending; null when the server gave no answer, so the recording itself decides (phaseOf).
   let phaseTags: readonly string[] | null | undefined;
-  const storedFacts = (replayId: string, invite: string | null) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
+  // Without that answer, a public replay's recorded setup and seats (recordedMatchFacts), read once alongside playback,
+  // never holding it: undefined until read, null when it cannot be.
+  let recorded: RecordedMatch | null | undefined;
+  // A private lobby's recording (lobbyRecording) never reads public history, invite or not.
+  const storedFacts = (replayId: string, invite: string | null, lobbyRecording = false) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
     phaseTags = facts.answered ? harnessPhaseTags(facts.harnessPhase) : null;
+    if (!facts.answered && !lobbyRecording) void recordedMatchFacts(replayId, abort.signal).then(read => { recorded = read; });
     return facts.ratings && restateRatings(facts.ratings);
   });
-  // A recording's seats as played so far, by agent: its snapshots' agents and its join events, each seat's handle read
-  // as the record writer reads it (seatHandle). A recording's agents join after its opening snapshot.
+  // A recording's seats as played so far, by agent, from its snapshots' agents and its join events (a recording's
+  // agents join after its opening snapshot); a seek back keeps the seats already seen.
   const seats = new Map<number, RecordedMatch["seats"][number]>();
   const seatsOf = (m: StreamMessage) => {
-    if (m.full) { seats.clear(); m.full.agents.forEach((agent, i) => seats.set(i, { colony: agent.colony, handle: seatHandle(agent.identity) })); }
+    m.full?.agents.forEach((agent, i) => seats.set(i, { colony: agent.colony, handle: seatHandle(agent.identity) }));
     for (const event of m.events) if (event.kind === "join") seats.set(event.agent, { colony: event.colony, handle: seatHandle(event.identity) });
   };
-  // Without the server's answer, a recording its own setup and seats type as a Model Index match takes its phase from its
-  // recorded start, by the rule the Matches listing applies to a recording with no lobby link (recordedMatchType).
+  // Without the server's answer, a replay is typed by the rule the Matches listing applies to a recording with no lobby
+  // link (recordedMatchType): from its Model Index marker, else from its stored record. A Model Index match takes its
+  // phase from its recorded start. Until that record is read, or where it cannot be, a replay that may be a Model Index
+  // match by what has played reads unknown.
   const phaseOf = (head: StreamMessage, replayId: string | null): readonly string[] => {
     if (phaseTags !== null) return phaseTags ?? [];
     if (!head.full || replayId === null) return [];
     const { rated, modelIndex } = head.full.setup;
-    if (recordedMatchType({ rated: rated === true, modelIndex: modelIndex === true, seats: [...seats.values()] })?.kind !== "index") return [];
     const started = replayDate(replayId);
-    return harnessPhaseTags(harnessPhaseAt(started === null ? null : Date.parse(started)));
+    const atStart = () => harnessPhaseTags(harnessPhaseAt(started === null ? null : Date.parse(started)));
+    if (modelIndex === true) return atStart();
+    if (recorded) return recordedMatchType(recorded)?.kind === "index" ? atStart() : [];
+    const played = recordedMatchType({ rated: rated === true, seats: [...seats.values()] });
+    return played === null || played.kind === "index" ? harnessPhaseTags(harnessPhaseAt(null)) : [];
   };
   // Only startup is timed out, not a large recording's paced, backpressured download.
   const standIn = async (path: string, replayId: string | null) => {
@@ -297,7 +333,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         controls: true,
         endTick: lobbyRecording ? undefined : signal => recordedEndTick(storedId!, signal),
         // A stored match's rating figures come from its stored change record; the bundled excerpt has none.
-        ...(storedId === null ? {} : { restate: storedFacts(storedId, lobbyRecording ? invite : null) }),
+        ...(storedId === null ? {} : { restate: storedFacts(storedId, lobbyRecording ? invite : null, lobbyRecording) }),
       });
       head = await recording.first;
     } else if (name) {
