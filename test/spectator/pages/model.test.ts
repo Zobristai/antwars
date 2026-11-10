@@ -234,6 +234,13 @@ describe("Matches", () => {
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
     expect(seatGroups(groups)).toEqual([{ parts: { name: "omp-dolphin", badges: [], quiet: null }, seats: 2 }, { parts: { name: "coffeebot-ant", badges: [], quiet: null }, seats: 1 }]);
+    // Seats with one label group only where they show alike: a seat shown by its own handle keeps its line, in either order,
+    // while seats that show the label's model words still group as before.
+    const named = (list: Recording["seats"]) => seatGroups(colonySeats(list)![0]!).map(group => [group.parts.name, group.seats]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["local", 1], ["coffee-ant", 1]]);
+    expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])).toEqual([["coffee-ant", 1], ["local", 1]]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "wren")])).toEqual([["local", 2]]);
+    expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["coffee-ant", 2]]);
     // A handle never joins a model label that reads the same, however the label is spelled.
     expect(seatGroups(colonySeats([seat(0, null, "local"), seat(1, "local", "kite")])![0]!)).toHaveLength(2);
     for (const label of ["@omp-dolphin", "handle:omp-dolphin", "model:omp-dolphin"]) {

@@ -251,7 +251,11 @@ export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatE
   if (seats.length === 0) return null;
   const entries = (colony: 0 | 1) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
-      .map((seat): SeatEntry => ({ who: seatWho(seat), parts: recordedIdentity(seat, { listed: true }) }));
+      .map((seat): SeatEntry => {
+        // Shown by its own handle (seatModelName), a seat groups only with seats shown alike: its label alone no longer says how it shows.
+        const parts = recordedIdentity(seat, { listed: true }), who = seatWho(seat);
+        return { who: parts.name === recordedIdentity(seat).name ? who : `${who}|shown:${parts.name}`, parts };
+      });
     return list.length ? list : null;
   };
   return [entries(0), entries(1)];

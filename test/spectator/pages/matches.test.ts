@@ -244,6 +244,16 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     expect(ownSecond!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["coffee-ant×2, 2 seats"]);
     expect(colonies(own.list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["coffee-ant"]], ["Lake Hodges Colony", ["coffee-ant×2, 2 seats"]]]);
     own.p.mounted.destroy();
+    // One identity's seats that report different models keep their own lines even where both show its name.
+    const split = show({ ...unrated, lobbyId: "lobby-s", colonies: [[
+      { displayName: "coffee-ant #1", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
+      { displayName: "coffee-ant #2", modelLabel: "other/coffee-ant", rating: null, rd: null, ratedMatches: null }], [
+      { displayName: "kite #3", modelLabel: "coffee-ant/local", rating: null, rd: null, ratedMatches: null },
+      { displayName: "kite #4", modelLabel: "z/local", rating: null, rd: null, ratedMatches: null }]] });
+    const [splitFirst, splitSecond] = split.table.byClass("c-model").filter(node => node.tag === "td");
+    expect(splitFirst!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["coffee-ant #1", "coffee-ant #2"]);
+    expect(splitSecond!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["local×2, 2 seats"]);
+    split.p.mounted.destroy();
     // A catalog with no labels (an older server) names the players as before.
     expect(bodyRows(table)[1]!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["alice", "bob"]);
     p.mounted.destroy();

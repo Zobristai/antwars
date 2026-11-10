@@ -19,7 +19,7 @@ import { mountFrame, rebuild, stateLine } from "./chrome.ts";
 import { nameNodes } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
-  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, recordingsLine, seatGroups, seatModelName, stampWord,
+  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, modelName, recordingsLine, seatGroups, seatModelName, stampWord,
   whenParts, winnerOf, type LoadsSeen, type NameParts, type SeatEntry, type SeatGroup,
 } from "./model.ts";
 
@@ -75,14 +75,16 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
    * shows its name; a house handle always shows its own row's name. */
   const players = (seats: readonly LiveSeat[]): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
-    const model = seat.modelLabel && !isBenchmark(who) ? seatModelName(seat.modelLabel, who) : null;
+    const reported = seat.modelLabel && !isBenchmark(who) ? seat.modelLabel : null;
+    const model = reported !== null ? seatModelName(reported, who) : null;
     // A reported model is drawn as given, never read as a house handle; a seat with none keeps its own row's name.
     const shown = (name: string): NameParts => {
       if (model !== null) return { name: `${model}${name.slice(who.length)}`, badges: [], quiet: null };
       const row = rowName(name, undefined); return { name: row.name, badges: row.badges, quiet: null };
     };
-    // Seats group by identity and the model each reported, so an identity's seats that differ in model each keep their line.
-    return { who: JSON.stringify([who, model]), parts: shown(seat.displayName), alike: shown(who) };
+    // Seats group by identity, the model each reported and the name it shows, so an identity's seats that differ in either
+    // each keep their line.
+    return { who: JSON.stringify([who, reported !== null ? modelName(reported) : null, model]), parts: shown(seat.displayName), alike: shown(who) };
   })).map(group => seatBlock(group));
   const notRecorded = (text: string) => h(doc, "span", "d1p-model d1p-unknown", text);
   const liveCard = (view: MatchesView): HTMLElement => {
