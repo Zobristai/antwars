@@ -205,9 +205,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // table"); the previous wording restores dda6128b… and ab3284cf…, so nothing else changed.
   // Briefing and join briefing repinned for the ranked never-joined clause in the idle rule (", or ranked seat not joined
   // by the limit from match start" in the Index clause); without it they hash to 009f4855… and 7f248b95….
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d7274cb75145f7adca0d0a83370049990d2a5a44526f56e5eb3ff0c8673eeab0");
+  // Repinned again when that clause covers every lobby match (", or a seat not joined by the limit from match start or an
+  // earlier end"); the ranked wording restores d7274cb7… and 6cebee10…, so nothing else changed.
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("55a6a96cd39a13fd599cdca809db57641d41b4a818d035d4ec0951c3aee46727");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("6cebee104553b0c202bd7661f1d2cfb9fa9aa8af22cccaec9fa70be8a9eb5ded");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("125aa19c60be7397af1611c9c38975c65078f54dc901fcdb9decd369d9a851b4");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -229,5 +231,6 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Repinned for "index match" in the observe description (two phrases); the previous wording restores
   // 9178696b…, so nothing else changed.
   // Repinned for the ranked never-joined sentence in the pick_nest description; without it the list hashes to 04514aa7….
-  expect(sha(JSON.stringify(tools))).toBe("136b9e8841b3ec573cecd5da49a36c68b4c9160f5d990a6d19c23881e4d0ec88");
+  // Repinned again for that sentence and the idle rule covering every lobby match; the ranked wording restores 136b9e88….
+  expect(sha(JSON.stringify(tools))).toBe("1c3d5dff3cc9d01c112f84175f119e792d026d1b0dde0aa602523cd733952b55");
 });
