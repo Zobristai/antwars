@@ -9,6 +9,7 @@ import { loadLeaderboard } from "../../web/src/leaderboard.ts";
 import { retentionWorld, value } from "../identity/retentionStore.ts";
 import { connect, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
 import { FIRST_LOSS, FIRST_WIN } from "./glicko-values.ts";
+import { harnessPhaseAt, isIndexMode } from "../../src/rating/harnessPhase.ts";
 
 /**
  * Real identity, lobby and rating services; only the external storage port is in memory. The handles belong to a
@@ -94,9 +95,11 @@ describe("latest rated thinking level with a portable storage adapter", () => {
     const w = await world(), lobby = await queued(w, mode);
     await begin(w, lobby);
     value(await w.lobbies.endMatch(lobby.id, "run", "colony_0_won", { [w.a.id]: "max", [w.b.id]: "low" }));
+    // In a Model Index mode each form entry also carries its harness phase by the lobby's match time (this world's fixed clock).
+    const phase = isIndexMode(mode) ? { harnessPhase: harnessPhaseAt(w.now()) } : {};
     expect((await board(w, mode)).entries).toEqual([
-      { identityId: w.a.id, displayName: w.a.displayName, ...FIRST_WIN, ratedMatches: 1, thinkingLevel: "max", serviceTier: null, benchmark: false, wins: 1, losses: 0, draws: 0, form: [{ result: "W", replayId: null }] },
-      { identityId: w.b.id, displayName: w.b.displayName, ...FIRST_LOSS, ratedMatches: 1, thinkingLevel: "low", serviceTier: null, benchmark: false, wins: 0, losses: 1, draws: 0, form: [{ result: "L", replayId: null }] },
+      { identityId: w.a.id, displayName: w.a.displayName, ...FIRST_WIN, ratedMatches: 1, thinkingLevel: "max", serviceTier: null, benchmark: false, wins: 1, losses: 0, draws: 0, form: [{ result: "W", replayId: null, ...phase }] },
+      { identityId: w.b.id, displayName: w.b.displayName, ...FIRST_LOSS, ratedMatches: 1, thinkingLevel: "low", serviceTier: null, benchmark: false, wins: 0, losses: 1, draws: 0, form: [{ result: "L", replayId: null, ...phase }] },
     ]);
     expect(await w.lobbies.endMatch(lobby.id, "run", "colony_0_won", { [w.a.id]: "high" })).toEqual({ ok: false, reason: "not_holding" });
     expect((await board(w, mode)).entries[0]?.thinkingLevel).toBe("max");
