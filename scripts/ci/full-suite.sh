@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# For trusted checkouts only: this repository's own branches, never a branch or pull request from
+# an outside contributor. It is not a sandbox for untrusted code. npm ci, the build and the tests
+# run the checkout's code and its dependencies' as you, with access to your files, credentials,
+# sockets and network. Only the identifier list is hidden from them (below), as defence in depth.
+#
 # Runs the full local check from the repository root: the private identifier scan and gitleaks'
 # default rules, then npm ci, the typecheck, the web build and the full test set against the
 # Firestore emulator.
@@ -16,15 +21,12 @@
 # util-linux, apt and network access; no root. The identifier list stays outside the repository,
 # at <git-common-dir>/antwars-identifiers; without it the script refuses to run.
 #
-# npm ci, the typecheck, the build and the tests run the checkout's own code and its
-# dependencies', so they run where the identifier list cannot be read: in unprivileged user,
-# mount and PID namespaces where an empty read-only file is mounted over the list (and over any
-# other path that reaches the same file), then in a further user and mount namespace mapped back
-# to your own user, with no capabilities, where that mount is locked and cannot be removed. The
-# script checks all of this before running anything from the checkout, and refuses to run where
-# those namespaces cannot be created: on Ubuntu 24.04 that is the default, so it needs
-# kernel.apparmor_restrict_unprivileged_userns=0, or an AppArmor profile that allows user
-# namespaces for unshare.
+# npm ci, the typecheck, the build and the tests run where the identifier list cannot be read:
+# in unprivileged user, mount and PID namespaces where an empty read-only file is mounted over the
+# list (and over any other path that reaches the same file), then in a further user and mount
+# namespace mapped back to your own user, with no capabilities, where that mount is locked and
+# cannot be removed. The script checks all of this before running anything from the checkout, and
+# refuses to run on a host that does not allow unprivileged user namespaces.
 #
 # Tools, each a release file pinned by SHA-256: gitleaks 8.30.1, firebase-tools 15.35.0 (the
 # standalone release binary, not an npm install), an Eclipse Temurin Java 21 runtime, and the
@@ -193,7 +195,7 @@ hidden() {
 }
 # Refuse now, before anything is downloaded, where the namespaces cannot be created.
 hidden true 2> /dev/null ||
-  fail "cannot hide the identifier list from the build and tests: this machine refuses unprivileged user, mount or PID namespaces (on Ubuntu 24.04, set kernel.apparmor_restrict_unprivileged_userns=0 or allow user namespaces for unshare in AppArmor)."
+  fail "cannot hide the identifier list from the build and tests: this host does not allow unprivileged user, mount and PID namespaces. Run the script on a host that allows them, or where an AppArmor profile allows user namespaces for unshare alone."
 
 # pinned <url> <sha256> <name>: prints the path of a private copy of the release file, checked
 # against its SHA-256 after copying. A missing or mismatched cache entry is downloaded again.
