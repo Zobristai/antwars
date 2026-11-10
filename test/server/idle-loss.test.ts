@@ -228,10 +228,96 @@ describe("a ranked seat that never joins", () => {
       .toMatchObject({ status: "complete", result: { reason: "abandoned" }, setup: { rated: false } });
   });
 
-  it("an unranked lobby match plays on past the limit with a seat that never joined", async () => {
+  it("an unranked lobby match with a seat that never joined abandons, unrated, at the same limit", async () => {
     const { game } = await partlyJoined(null, colony => colony === 0);
-    for (let tick = 0; tick < 30; tick++) expect((await activeTick(game))!.state.result).toBeNull();
+    for (let tick = 0; tick < 10; tick++) expect((await activeTick(game))!.state.result).toBeNull();
+    expect((await activeTick(game))!.state.result).toEqual({ winner: null, reason: "abandoned", decidedBy: "draw", tick: 10 });
   });
+});
+
+const LOBBY_KINDS = ["house challenge", "unranked"] as const;
+type LobbyKind = typeof LOBBY_KINDS[number];
+/** The default idle limit in ticks at 10 ticks a second: 3000. */
+const LIMIT = DEFAULT_HOUSE_IDLE_SECONDS * 10;
+
+/**
+ * A modeless 1v1 lobby match at the default idle limit where only colony 0's seat joins at start. A house challenge
+ * seats the house handle in colony 0 and the builder in colony 1; an unranked lobby seats two players. `both` joins
+ * colony 1's seat at start too.
+ */
+async function oneSeatJoined(kind: LobbyKind, matchTicks = 10_000, mode: RankedMode | null = null, both = false) {
+  const logs: string[] = [];
+  const game = new Game({ mcpConfig: { ...DEFAULT_MCP_CONFIG, callsPerSecond: 100 },
+    simConfig: { ...HISTORICAL_CONFIG, ticksPerSecond: 10, commandIdleTicks: 1800, matchTicks, startAnts: 0 }, onLogLine: line => logs.push(line),
+    slot: { identityOf: async () => undefined, locate: async () => undefined } });
+  const seats = kind === "house challenge"
+    ? [{ identityId: "house-handle", displayName: "antwars/glm-5-3", colony: 0 as const, seat: 1 }, { identityId: "builder", displayName: "builder", colony: 1 as const, seat: 1 }]
+    : [{ identityId: "red", displayName: "red", colony: 0 as const, seat: 1 }, { identityId: "blue", displayName: "blue", colony: 1 as const, seat: 1 }];
+  game.seatLobby(`${kind}-lobby`, seats, mode);
+  for (const seat of both ? seats : seats.slice(0, 1)) await game.joinSeated(seat.identityId, undefined, 1);
+  game.startMatch(429);
+  return { game, logs, absent: seats[1]! };
+}
+
+/** Ticks with no calls until the match reaches tick `until` (the next tick to run), each one still undecided. */
+function silentUntil(game: Game, until: number): void {
+  while (game.match!.state.tick < until) expect(game.tick()!.state.result).toBeNull();
+}
+
+describe("every lobby match: a colony that never joined never wins", () => {
+  it.each(LOBBY_KINDS)("%s: colony 0 joins at tick 0 and goes silent, colony 1 never joins: abandoned, unrated, at the limit", async kind => {
+    const { game, logs } = await oneSeatJoined(kind);
+    silentUntil(game, LIMIT);
+    expect(game.match!.state.agents.map(agent => agent.colony)).toEqual([0]);
+    const terminal = game.tick()!;
+    // Colony 0's idle deadline and colony 1's join deadline fall on the same tick: abandoned, never colony 1's win.
+    expect(terminal.state.result).toEqual({ winner: null, reason: "abandoned", decidedBy: "draw", tick: LIMIT });
+    expect(terminal.events.filter(event => event.type === "match_end")).toHaveLength(1);
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({ tick: LIMIT, abandoned: true });
+    expect(logs.some(line => "idle" in JSON.parse(line))).toBe(false);
+    expect(stateHash(replay(logs, Infinity))).toBe(stateHash(terminal.state));
+    expect(matchRecord({ id: "2026-11-09T09-07-02-696Z-429", binary: packMessages(recordLog(logs)), logLines: logs }))
+      .toMatchObject({ status: "complete", result: { reason: "abandoned", winner: null }, setup: { rated: false } });
+    expect(game.tick()).toBeNull();
+  });
+
+  it.each(LOBBY_KINDS)("%s: colony 1 joining at tick 2400, four minutes in, plays on; silent colony 0 loses at its own limit", async kind => {
+    const { game, absent } = await oneSeatJoined(kind);
+    silentUntil(game, 2400);
+    const late = game.joinSeated(absent.identityId, undefined, 1);
+    expect(game.tick()!.state.result).toBeNull();
+    expect((await late)!.outcome.kind).toBe("view");
+    expect(game.match!.state.agents).toHaveLength(2);
+    silentUntil(game, LIMIT);
+    expect(game.tick()!.state.result).toEqual({ winner: 1, reason: "idle", decidedBy: "idle", tick: LIMIT });
+  });
+
+  it.each(LOBBY_KINDS)("%s: colony 1's join accepted on the deadline tick counts as joined: silent colony 0 loses", async kind => {
+    const { game, logs, absent } = await oneSeatJoined(kind);
+    silentUntil(game, LIMIT);
+    const onDeadline = game.joinSeated(absent.identityId, undefined, 1);
+    const terminal = game.tick()!;
+    expect((await onDeadline)!.outcome.kind).toBe("view");
+    expect(terminal.state.result).toEqual({ winner: 1, reason: "idle", decidedBy: "idle", tick: LIMIT });
+    expect(JSON.parse(logs.at(-1)!)).toMatchObject({ tick: LIMIT, idle: [0] });
+    expect(logs.some(line => JSON.parse(line).abandoned)).toBe(false);
+  });
+
+  it.each([...LOBBY_KINDS.map(kind => [kind, null] as const), ["unranked", "house-1v1"] as const])(
+    "%s (mode %s): a natural end with a colony that never joined is abandoned, unrated; joined in full it stays natural", async (kind, mode) => {
+      // The match's time limit (5 ticks) falls long before the idle limit.
+      const { game, logs } = await oneSeatJoined(kind, 5, mode);
+      let out = await activeTick(game);
+      while (out!.state.result === null) out = await activeTick(game);
+      expect(out!.state.result).toEqual({ winner: null, reason: "abandoned", decidedBy: "draw", tick: 4 });
+      expect(stateHash(replay(logs, Infinity))).toBe(stateHash(out!.state));
+      expect(matchRecord({ id: "2026-11-09T21-30-00-000Z-431", binary: packMessages(recordLog(logs)), logLines: logs }))
+        .toMatchObject({ status: "complete", result: { reason: "abandoned", winner: null }, setup: { rated: false } });
+      const full = await oneSeatJoined(kind, 5, mode, true);
+      let natural = await activeTick(full.game);
+      while (natural!.state.result === null) natural = await activeTick(full.game);
+      expect(natural!.state.result).toMatchObject({ reason: "time_up", tick: 4 });
+    });
 });
 
 describe("idle-end logs replay through every consumer", () => {
@@ -285,7 +371,7 @@ describe("the one rule in briefing and rules text", () => {
     const config = { ...HISTORICAL_CONFIG, commandIdleTicks: 1800 };
     for (const text of [briefing(config, DEFAULT_MCP_CONFIG, { house }), joinBriefing(config, DEFAULT_MCP_CONFIG, false, { house })]) {
       expect(text).toContain(`for ${DEFAULT_HOUSE_IDLE_SECONDS} s is idle`);
-      expect(text).toContain("Index match (house-*), or ranked seat not joined by the limit from match start: match abandoned, unrated.");
+      expect(text).toContain("Index match (house-*), or a seat not joined by the limit from match start or an earlier end: match abandoned, unrated.");
       expect(text).toContain("both colonies idle on one tick: draw");
       expect(text).not.toMatch(/idle timeout|without accepted commands|without an accepted command/);
       expect(text).not.toMatch(/Accepted commands alone reset/);
@@ -406,6 +492,59 @@ it("the real ranked server records a never-joined seat as abandoned: lobby, rati
     expect(record).toMatchObject({ status: "complete", setup: { rated: false }, result: { reason: "abandoned", winner: null } });
     expect(record.result).not.toHaveProperty("ratingChanges");
     expect((await client.call("observe")).data).toMatchObject({ matchOver: true, result: { reason: "abandoned", winner: null } });
+  } finally {
+    await client?.close();
+    await server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 15_000);
+
+it("the real server records a house challenge whose builder never joined as abandoned and unrated", async () => {
+  const { store } = memoryWatchStore();
+  const identities = createIdentities(store);
+  const lobbies = createLobbies(store, identities, { countdownMs: 5, publicSlots: 1 });
+  const ratings = createRatings(store, identities);
+  function value<T>(outcome: { ok: true; value: T } | { ok: false; reason: string }): T {
+    if (!outcome.ok) throw new Error(outcome.reason);
+    return outcome.value;
+  }
+  // The house holds colony 0 for its handle; the builder sits in colony 1.
+  const house = value(await identities.claimUsername("antwars"));
+  const handle = value(await identities.createHandle(house.key, "glm-5-3"));
+  const builder = value(await identities.claimUsername("builder-player"));
+  const { lobbyId } = value(await lobbies.requestChallenge(builder.key, "antwars/glm-5-3"));
+  value(await lobbies.join(lobbyId, handle.key));
+  const config = { ...PUBLIC_CONFIG, startAnts: 0, commandIdleTicks: 1800 };
+  const idleTicks = config.ticksPerSecond; // a 1 s server idle limit
+  const dir = tempDir(), clock = new ManualClock(), submitted: MatchInputs[] = [];
+  const server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, simConfig: config, seed: 429,
+    startPickWindowMs: 200, mcpConfig: { ...DEFAULT_MCP_CONFIG, callsPerSecond: 100, houseIdleSeconds: 1 }, spectatorClock: clock,
+    accounts: { identities, lobbies, ratings }, watchRegistry: createWatchRegistry(store),
+    recordHandoff: { submit: inputs => { submitted.push(inputs); } }, replayStore: { create: async () => {} },
+    slot: { slot: "public-0", publicUrl: "http://127.0.0.1:1", lobbies, identities, pollMs: 10 } });
+  let client: Agent | undefined;
+  try {
+    await waitFor(() => server.game.nextStart?.kind === "scheduled");
+    // The house seat joins and then makes no further call; the builder never reaches the match server.
+    client = await connect(server.port);
+    expect((await client.call("join", { key: handle.key })).isError).toBe(false);
+    await waitFor(() => server.game.match?.state.result !== null && server.game.match?.state.result !== undefined);
+    expect(server.game.match!.state.agents.map(agent => agent.colony)).toEqual([0]);
+    expect(server.game.match!.result).toMatchObject({ winner: null, reason: "abandoned", decidedBy: "draw", tick: idleTicks });
+    let ended: Lobby | undefined;
+    for (let n = 0; n < 100; n++) {
+      ended = value(await lobbies.readLobby(lobbyId));
+      if (ended.state === "ended") break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    expect(ended).toMatchObject({ outcome: "abandoned", rated: false, state: "ended" });
+    expect(await ratings.readMatchChanges(lobbyId)).toBeNull();
+    clock.advance(10 * 60_000);
+    await waitFor(() => submitted.length === 1);
+    const record = matchRecord(submitted[0]!);
+    expect(submitted[0]!.rated).toBe(false);
+    expect(record).toMatchObject({ status: "complete", setup: { rated: false }, result: { reason: "abandoned", winner: null } });
+    expect(record.result).not.toHaveProperty("ratingChanges");
   } finally {
     await client?.close();
     await server.close();

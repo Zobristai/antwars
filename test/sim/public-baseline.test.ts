@@ -63,7 +63,9 @@ const PUBLIC_BASELINE = {
   // wording restores efc75f66a322ed498d498f79aa0a4026fe11b9b225c4c0821274dd10ef8b0e2b, so nothing else changed.
   // The idle rule's abandoned clause also names a ranked seat not joined by the limit from match start; the previous
   // wording restores d5a05cecfbb6bc552b6b5f0740c303697b3556c7f6d89cda4785250921e09ecd, so nothing else changed.
-  tools: "f6d789862efa66cf24a070a24999212cba9f4b50715fa61a4f3c918284ad9ac9",
+  // That clause and the pick_nest sentence now cover a seat not joined in every lobby match; the ranked wording
+  // restores f6d789862efa66cf24a070a24999212cba9f4b50715fa61a4f3c918284ad9ac9, so nothing else changed.
+  tools: "592ede74f818dff12b1238528b36f8aefdb39b7e1648386cab8c67498987ae0b",
 };
 
 const sha = (text: string | Uint8Array): string => createHash("sha256").update(text).digest("hex");
