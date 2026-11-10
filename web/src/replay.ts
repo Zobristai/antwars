@@ -52,6 +52,9 @@ export function setFallback(reason: Fallback | null): void {
   fallback = reason;
 }
 
+/** A tag that never breaks across lines: no-break spaces, and a word joiner after each hyphen ("rounds 11-25" stays whole). */
+const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace(/-/g, "-\u2060");
+
 /**
  * What the line says. livePath is the page without its query; its live view is liveHref(livePath). While the recording
  * plays, its agent count, from the data, is part of its label, so a narrow screen never cuts it
@@ -72,8 +75,8 @@ export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: s
     : `${delaySeconds} s behind the match`;
   if (mode === "replay") {
     // The live page's stand-in: one label line, a recording and why, with no Back to live (the page goes live by itself).
-    // A Model Index recording's harness phase tags follow the detail.
-    const phase = harnessPhase.join(" · ");
+    // A Model Index recording's harness phase tags follow the detail, each kept whole on the line.
+    const phase = harnessPhase.map(unbrokenTag).join(" · ");
     const after = (text: string) => phase === "" ? text : text === "" ? phase : `${text} · ${phase}`;
     const detail = after(storedId === null ? "" : recordedDateLabel(storedId));
     if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, link: null };

@@ -46,8 +46,10 @@ describe("harness phase tags", () => {
   it("follows a replay's date on its mode line, and leaves the line as it was without one", () => {
     const id = "2026-10-26T01-38-33-692Z-1";
     const tags = ["Harness: rounds 1-7", "Possible effort mismatch"];
-    expect(modeCopy("replay", 2, false, "/", id, true, undefined, tags).detail).toBe("26 Oct 2026 · Harness: rounds 1-7 · Possible effort mismatch");
-    expect(modeCopy("replay", 2, true, "/", id, true, undefined, tags).detail).toBe("· recording ended · Harness: rounds 1-7 · Possible effort mismatch");
+    // Each tag holds together: no-break spaces, and a word joiner after its hyphen.
+    const whole = "Harness:\u00a0rounds\u00a01-\u20607 · Possible\u00a0effort\u00a0mismatch";
+    expect(modeCopy("replay", 2, false, "/", id, true, undefined, tags).detail).toBe(`26 Oct 2026 · ${whole}`);
+    expect(modeCopy("replay", 2, true, "/", id, true, undefined, tags).detail).toBe(`· recording ended · ${whole}`);
     expect(modeCopy("replay", 2, false, "/", id, true, undefined, [])).toEqual(modeCopy("replay", 2, false, "/", id, true));
   });
 });
