@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { LAUNCHABLE_HANDLES } from "../../src/lobby/houseLaunchable.ts";
 import { HOUSE_USERNAME } from "../../src/identity/houseOwnership.ts";
-import { HOUSE_LABELS, UNLISTED_MODEL, houseDisplayName } from "../../src/rating/houseLabels.ts";
+import { HOUSE_LABELS, UNLISTED_MODEL, houseDisplayName, houseLabel } from "../../src/rating/houseLabels.ts";
 
 /**
  * The Model Index draw. It is not held in this repository: each handle is derived from its catalog model id. These are
@@ -18,8 +18,11 @@ const INDEX_DRAW: readonly string[] = [
   "gpt-6-1-terra-max-fast", "claude-opus-5-5-xhigh", "claude-sonnet-5-5", "claude-opus-5-5-low", "mimo-v2-6-flash", "mimo-v2-6-pro",
 ];
 
-/** Every seatable handle: the launchable list and the index draw, each once. */
-const SEATABLE: readonly string[] = [...new Set([...LAUNCHABLE_HANDLES, ...INDEX_DRAW])];
+/** Handles seated since round 26's draw. Like INDEX_DRAW, a handle is caught here only once it is added. */
+const DRAWN_SINCE: readonly string[] = ["claude-fable-5-2"];
+
+/** Every seatable handle: the launchable list, the index draw and the handles seated since, each once. */
+const SEATABLE: readonly string[] = [...new Set([...LAUNCHABLE_HANDLES, ...INDEX_DRAW, ...DRAWN_SINCE])];
 
 /** The handles among `handles` that HOUSE_LABELS does not list, so a page would show them as "Unlisted model". */
 const unlabelled = (handles: readonly string[]): string[] =>
@@ -39,6 +42,12 @@ describe("every seatable handle has a HOUSE_LABELS row", () => {
   it("names the two Live now handles of 2026-11-07 by their rows", () => {
     expect(houseDisplayName("antwars/abliterated-large-v2")).toBe("Abliterated GLM-5.3");
     expect(houseDisplayName("antwars/mistral-large-4")).toBe("Mistral Large 4");
+  });
+
+  it("names claude-fable-5-2 Claude Fable 5.2 at max with no tier", () => {
+    expect(SEATABLE).toContain("claude-fable-5-2");
+    expect(houseDisplayName("antwars/claude-fable-5-2")).toBe("Claude Fable 5.2");
+    expect(houseLabel("antwars/claude-fable-5-2")).toEqual({ thinkingLevel: "max", serviceTier: null });
   });
 
   it("fails for a seatable handle without a row, naming it", () => {
