@@ -4,10 +4,11 @@
  * labels matches and never changes a rating.
  *
  * Each phase starts at its instant and runs until the next phase's start. The first phase has no lower bound; the last,
- * from the pin onward, has no upper bound.
+ * from round 31 onward, has no upper bound.
  */
 
-export type HarnessPhaseName = "rounds 1-7" | "rounds 8-10" | "rounds 11-25" | "rounds 26-30" | "from the pin onward";
+export type HarnessPhaseName = "rounds 1-7" | "rounds 8-10" | "rounds 11-25" | "rounds 26-30" | "from the pin onward"
+  | "from round 31 onward";
 
 export interface HarnessPhaseRow {
   readonly phase: HarnessPhaseName;
@@ -22,6 +23,7 @@ export const HARNESS_PHASES: readonly HarnessPhaseRow[] = Object.freeze([
   { phase: "rounds 11-25", startsAt: Date.parse("2026-10-28T00:32:01Z") },
   { phase: "rounds 26-30", startsAt: Date.parse("2026-11-07T03:34:52Z") },
   { phase: "from the pin onward", startsAt: Date.parse("2026-11-10T03:03:46.329Z") },
+  { phase: "from round 31 onward", startsAt: Date.parse("2026-11-10T09:01:39.952Z") },
 ] as const satisfies readonly HarnessPhaseRow[]);
 
 /** Matches before this instant carry the possible effort mismatch flag. */

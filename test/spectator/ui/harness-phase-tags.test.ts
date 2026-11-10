@@ -15,6 +15,7 @@ describe("harness phase tags", () => {
     expect(harnessPhaseTags(phase("rounds 11-25"))).toEqual(["Harness: rounds 11-25"]);
     expect(harnessPhaseTags(phase("rounds 26-30"))).toEqual(["Harness: rounds 26-30"]);
     expect(harnessPhaseTags(phase("from the pin onward"))).toEqual(["Harness from the pin onward"]);
+    expect(harnessPhaseTags(phase("from round 31 onward"))).toEqual(["Harness from round 31 onward"]);
     expect(harnessPhaseTags(phase("unknown", null))).toEqual(["Harness phase unknown"]);
   });
 
@@ -26,6 +27,8 @@ describe("harness phase tags", () => {
   it("reads a phase the page does not know as none, never failing the page", () => {
     expect(harnessPhase.parse(undefined)).toBeUndefined();
     expect(harnessPhase.parse({ phase: "rounds 31-40", possibleEffortMismatch: false })).toBeNull();
+    expect(harnessPhase.parse({ phase: "from round 31 onward", possibleEffortMismatch: false }))
+      .toEqual({ phase: "from round 31 onward", possibleEffortMismatch: false });
     expect(harnessPhase.parse({ phase: "rounds 8-10", possibleEffortMismatch: false }))
       .toEqual({ phase: "rounds 8-10", possibleEffortMismatch: false });
   });

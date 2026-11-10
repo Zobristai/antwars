@@ -12,7 +12,7 @@ const liveSeat = z.union([
 // A Model Index match's harness phase (src/rating/harnessPhase.ts); absent where none is sent (any other match), null where
 // it does not read as one: the tag is display only, so a value this page does not know never fails the page.
 export const harnessPhase = z.object({
-  phase: z.enum(["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "unknown"]),
+  phase: z.enum(["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "from round 31 onward", "unknown"]),
   possibleEffortMismatch: z.boolean().nullable(),
 }).nullable().optional().catch(null);
 export type HarnessPhase = NonNullable<z.infer<typeof harnessPhase>>;

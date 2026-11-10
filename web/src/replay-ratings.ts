@@ -54,7 +54,7 @@ export async function storedReplayFacts(replayId: string, invite: string | null,
   } catch { return none; }
 }
 
-const PHASES: readonly HarnessPhase["phase"][] = ["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "unknown"];
+const PHASES: readonly HarnessPhase["phase"][] = ["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "from round 31 onward", "unknown"];
 
 /** A harness phase as the server sends it (src/rating/harnessPhase.ts); null when absent or not one. Display only. */
 function readHarnessPhase(value: unknown): HarnessPhase | null {

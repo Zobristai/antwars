@@ -187,7 +187,7 @@ export function recordingType(type: Recording["matchType"]): string | null {
 export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string[] {
   if (phase == null) return [];
   if (phase.phase === "unknown") return ["Harness phase unknown"];
-  const named = phase.phase === "from the pin onward" ? "Harness from the pin onward" : `Harness: ${phase.phase}`;
+  const named = phase.phase.startsWith("from ") ? `Harness ${phase.phase}` : `Harness: ${phase.phase}`;
   return [named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
 }
 
