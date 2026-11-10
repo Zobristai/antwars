@@ -130,22 +130,22 @@ describe("matches rows", () => {
     expect(rows[0]!.href).toBe("/?replay=2026-10-23T03-36-00-000Z-6&board=2d");
 
   });
-  it("lists no match a colony never joined, a played match nobody joined included, and keeps a record whose seats are unknown", () => {
+  it("lists no match known never joined, a played match nobody joined included, and keeps a record whose seats are partial or unknown", () => {
     const seat = (n: number, colony: 0 | 1) => ({ seat: n, colony, modelLabel: "m", thinkingLevel: null, serviceTier: null, handle: null });
     const played = recording({ id: "2026-10-23T03-36-00-000Z-6", seats: [seat(0, 0), seat(1, 1)] });
     const onlyFirst = recording({ id: "2026-10-23T03-35-00-000Z-5", startedAt: "2026-10-23T03:35:00.000Z", seats: [seat(0, 0), seat(1, 0)] });
     const onlySecond = recording({ id: "2026-10-23T03-34-00-000Z-4", startedAt: "2026-10-23T03:34:00.000Z", seats: [seat(0, 1)] });
     // A record unavailable carries no seat data: its seats are unknown, so it stays listed.
     const unrecorded = recording({ id: "2026-10-23T03-33-00-000Z-3", startedAt: "2026-10-23T03:33:00.000Z", seats: [], status: "unavailable" });
-    // A record read from the match itself (complete, or partial from the replay's own player list) that holds no seat was
-    // played with nobody joined: it is not listed.
+    // A complete record (seats verified against the match log) that holds no seat was played with nobody joined: it is not listed.
     const nobody = recording({ id: "2026-10-23T03-32-00-000Z-2", startedAt: "2026-10-23T03:32:00.000Z", seats: [], status: "complete" });
+    // A partial record may lack a colony that joined after the replay stopped: missing seats do not show it never joined.
     const nobodyPartial = recording({ id: "2026-10-23T03-31-00-000Z-1", startedAt: "2026-10-23T03:31:00.000Z", seats: [], status: "partial" });
     const onlyFirstPartial = recording({ id: "2026-10-23T03-30-00-000Z-0", startedAt: "2026-10-23T03:30:00.000Z", seats: [seat(0, 0)], status: "partial" });
     const all = [played, onlyFirst, onlySecond, unrecorded, nobody, nobodyPartial, onlyFirstPartial];
-    expect(all.map(neverJoined)).toEqual([false, true, true, false, true, true, true]);
+    expect(all.map(neverJoined)).toEqual([false, true, true, false, true, false, false]);
     const view = { recordings: { status: "ready", rows: [onlySecond, unrecorded, nobody, played, nobodyPartial, onlyFirst, onlyFirstPartial] } } as const;
-    expect(recordingRows(view, "").map(r => r.id)).toEqual([played.id, unrecorded.id]);
+    expect(recordingRows(view, "").map(r => r.id)).toEqual([played.id, unrecorded.id, nobodyPartial.id, onlyFirstPartial.id]);
   });
   it("words each recording's match type as its badge, never a mode slug, and gives no badge without a type", () => {
     expect(recordingType({ kind: "index", size: 2 })).toBe("Index · 2v2");

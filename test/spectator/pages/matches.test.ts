@@ -355,21 +355,23 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     // Records whose seat data is unavailable: their seats are unknown, so they stay listed.
     const noSeats = at("rec-no-seats", "04", { winner: 1, seats: [], status: "unavailable" });
     const noSeatsDraw = at("rec-no-seats-draw", "03", { winner: null, reason: "time_up", decidedBy: "draw", seats: [], status: "unavailable" });
-    // Records read from the match itself that hold no seat: played with nobody joined.
+    // A complete record that holds no seat: played with nobody joined.
     const nobody = at("rec-nobody", "02", { winner: null, seats: [], status: "complete" });
+    // A partial record without seats does not show that nobody joined: it stays listed.
     const nobodyPartial = at("rec-nobody-partial", "01", { winner: null, seats: [], status: "partial" });
     const { p, card, table, list } = show(unknownModel, noColonySeat, noSeats, noSeatsDraw, nobody, nobodyPartial);
     // A match a colony never joined was never played: neither form lists it, nor says "did not join".
-    expect(bodyRows(table)).toHaveLength(3);
-    expect(list.querySelectorAll("li")).toHaveLength(3);
+    expect(bodyRows(table)).toHaveLength(4);
+    expect(list.querySelectorAll("li")).toHaveLength(4);
     const hrefs = card.byClass("d1p-row-pill").map(link => link.getAttribute("href") ?? "");
-    for (const hidden of ["rec-no-colony", "rec-nobody", "rec-nobody-partial"]) expect(hrefs.some(href => href.includes(`replay=${hidden}&`) || href.endsWith(`replay=${hidden}`))).toBe(false);
+    for (const hidden of ["rec-no-colony", "rec-nobody"]) expect(hrefs.some(href => href.includes(`replay=${hidden}&`) || href.endsWith(`replay=${hidden}`))).toBe(false);
     expect(hrefs.filter(href => href.includes("replay=rec-no-seats"))).toHaveLength(4);
+    expect(hrefs.filter(href => href.includes("replay=rec-nobody-partial"))).toHaveLength(2);
     expect(card.textContent).not.toMatch(/did not join/);
     const [first, third, fourth] = bodyRows(table);
     // With no colony line to carry a badge, a draw keeps its own word under the time; a winner's word names a colony, so none.
     expect([third!, fourth!].map(row => row.byClass("c-start")[0]!.byClass("d1p-result").map(node => node.textContent))).toEqual([[], ["Draw"]]);
-    expect(list.byClass("is-lead").slice(1).map(line => line.textContent)).toEqual(["", "Draw"]);
+    expect(list.byClass("is-lead").slice(1).map(line => line.textContent)).toEqual(["", "Draw", "Result unknown"]);
     const lines = (scope: ElementPort) => scope.byClass("d1p-model").map(line => line.children.map(node => [node.className, node.textContent]));
     expect(lines(first!)).toEqual([[["", "model unknown"], ["d1p-tag d1p-c0", "Winner"]], [["", "GLM-5.3"], ["d1p-tags", "max"]]]);
     // A row with no recorded seat keeps its one spanning cell, with no badge.
