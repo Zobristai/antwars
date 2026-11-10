@@ -271,6 +271,36 @@ describe.skipIf(!host)("house challenge limits against the Firestore emulator", 
     expect(counts.owner(owner.id, day(at(12, 0)))).toBe(5);
   });
 
+  it("lists a key's username's challenges left today across its handles, from places held, and refuses an unknown key", async () => {
+    const w = await world(at(12, 0));
+    const owner = await w.claim("owner");
+    const handles = await Promise.all(["h1", "h2", "h3"].map((name) => w.handleOf(owner, name)));
+    const left = async (who: Keyed) => value(await w.main.listChallengeOpponentsFor(who.key)).usernameAllowanceLeft;
+    // Without a key the list is unchanged: no per-username field.
+    expect(Object.keys(await w.main.listChallengeOpponents()).sort()).toEqual(["allowanceLeft", "opponents", "resetsAt"]);
+    expect(await left(owner)).toBe(5);
+    await w.play(handles[0]!);
+    await w.play(handles[1]!);
+    // The username's count is shared by its own key and every handle; another username's is its own.
+    expect([await left(owner), await left(handles[2]!), await left(await w.claim("other"))]).toEqual([3, 3, 5]);
+    // The keyed list carries the keyless list's fields and values.
+    const { usernameAllowanceLeft, ...rest } = value(await w.main.listChallengeOpponentsFor(owner.key));
+    expect([usernameAllowanceLeft, rest]).toEqual([3, await w.main.listChallengeOpponents()]);
+    // A pending request holds a place; a failed close before the held seat joins releases it.
+    const pending = value(await w.request(handles[2]!, HANDLES[1]));
+    expect(await left(owner)).toBe(2);
+    value(await w.report(pending.requestId, "failed", "could not launch"));
+    expect(await left(owner)).toBe(3);
+    await w.play(handles[2]!);
+    await w.play(owner);
+    expect(await left(owner)).toBe(1);
+    await w.play(handles[0]!);
+    expect(await left(handles[1]!)).toBe(0);
+    expect(reasonOf(await w.request(handles[1]!))).toBe("owner_daily_limit");
+    expect(reasonOf(await w.main.listChallengeOpponentsFor("not-a-key"))).toBe("unknown_key");
+    expect((await oracle(w)).owner(owner.id, day(at(12, 0)))).toBe(5);
+  });
+
   it("gives an owner one active challenge across its handles under concurrent requests", async () => {
     const w = await world(at(12, 0));
     const owner = await w.claim("owner");
