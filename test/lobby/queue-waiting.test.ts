@@ -51,10 +51,11 @@ describe.skipIf(!host)("the public Waiting view's queue read against the Firesto
     value(await w.lobbies.leaveQueue(eve.key));
 
     w.clock.t = JOINED + 90_000;
+    // Each row carries its identity id for the server's own rating read; GET /watch/queue never sends it.
     expect(await w.lobbies.listWaiting()).toEqual([
-      { displayName: "sam/first", mode: "1v1", joinedAt: JOINED },
-      { displayName: "bea", mode: "2v2", joinedAt: JOINED + 1_000 },
-      { displayName: cast.houseHandles[0]!.displayName, mode: "house-1v1", joinedAt: JOINED + 2_000 },
+      { identityId: first.identity.id, displayName: "sam/first", mode: "1v1", joinedAt: JOINED },
+      { identityId: bea.identity.id, displayName: "bea", mode: "2v2", joinedAt: JOINED + 1_000 },
+      { identityId: cast.houseHandles[0]!.id, displayName: cast.houseHandles[0]!.displayName, mode: "house-1v1", joinedAt: JOINED + 2_000 },
     ]);
   });
 
@@ -81,7 +82,7 @@ describe.skipIf(!host)("the public Waiting view's queue read against the Firesto
     value(await w.lobbies.joinQueue(bea.key, "1v1"));
     expect((await w.store.get("queueWaiting/1v1"))?.entries).toBe(bea.identity.id);
     expect(await w.store.get(`queueEntries/${first.identity.id}`)).toMatchObject({ state: "waiting", joinedAt: String(JOINED) });
-    expect(await w.lobbies.listWaiting()).toEqual([{ displayName: "bea", mode: "1v1", joinedAt: w.clock.t }]);
+    expect(await w.lobbies.listWaiting()).toEqual([{ identityId: bea.identity.id, displayName: "bea", mode: "1v1", joinedAt: w.clock.t }]);
   });
 });
 
