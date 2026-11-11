@@ -28,18 +28,20 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // Repinned for the lobby guidance's nest-pick line stating both window lengths ("Matched: nest-pick window 4 min in
 // index matches, 2 min in other matches;"); only the house=false and preview texts carry that guidance, and the previous
 // line ("Matched: 2 min to pick a nest;") restores the previous pins, so nothing else changed.
+// Repinned for the join briefing's same-tick ending reading "(queens killed)" under queen HP, where overrun never
+// happens; the previous "(double overrun/queens killed)" restores the previous pins. The rules digests are unchanged.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
-  "join house=false undrawn=true nest=false": "55e98cad88494bc6587a1329018231e63f40ff9844e1a1ee451799a54b31990f",
-  "join house=false undrawn=true nest=true": "990113f5d4a81a3c658ebeb7e2de786090c05a1074daeafd00ee663b84fc9407",
+  "join house=false undrawn=true nest=false": "041d477331cf1542c9c2c324e7917802503c8802a9c4b7a54cdafa22171f4eec",
+  "join house=false undrawn=true nest=true": "fb5a6cb9191bab5f817aa725646c6034e9a9d8d7941bdd892a6aeedcddcd7efc",
   "rules house=false undrawn=true": "22a99ee04de2f18bafd3d0f63862e6c6514fa85109d1478aa58f9d3fd095b85d",
-  "join house=false undrawn=false nest=false": "db86a6f8c5db5b21c8c43e57f63ef096fd578866aa27980de5f41de4795497f2",
-  "join house=false undrawn=false nest=true": "3096fc4fcc51e1d763609db494c10a25c68707cb4bddc05fb8f9d6c303796db5",
+  "join house=false undrawn=false nest=false": "8610e98444f71b495f0a8112f8e35d87459672fae4527e77360f10d9aba08861",
+  "join house=false undrawn=false nest=true": "ecb3f81ee0650b2d17888cd3df91ca7adbd4bb98ad5e3c3540f17a00daaa7921",
   "rules house=false undrawn=false": "0e623889f1326ed042ac876881285cb249e0a4148599b7bd3d230c2aa781ccda",
-  "join house=true undrawn=true nest=false": "8238fa2e15595c076df9bf91b910ab2c4a9b7aa69422c4e7b897daf781d7a9a0",
-  "join house=true undrawn=true nest=true": "db81dc9ac07a9e9123304f7b1646e03795157801f25465722c3e0aff9c4a1349",
+  "join house=true undrawn=true nest=false": "17d024367b16cfd5125c5105103de6ee7d382ed1c407b4e31e18aa2c23ecce67",
+  "join house=true undrawn=true nest=true": "bcfe50a2b0e5dd1da5b4d25676138a958cc876c81f524c33a245d4b1c9a6c6cc",
   "rules house=true undrawn=true": "351e906c3bf6a4faf2ca5d1d67878c8dfdcdcc7cb763adf7059d0cb66c0f3745",
-  "join house=true undrawn=false nest=false": "ed07560b81c278bb3f573d06927cb1a0e49646d1f73692e2c3c2d26b17731cd7",
-  "join house=true undrawn=false nest=true": "99c46321328cc0899325524a38ac872b11373281843ca7bf7aa6bf43726c2fc1",
+  "join house=true undrawn=false nest=false": "e1ab9ff196b40d29aa79bb46d860d94374436310312fbdc08d85ad0133f57845",
+  "join house=true undrawn=false nest=true": "52d03a98f0f52c96f2175d626842a50a21648daf96a09093de8a839bc10741a2",
   "rules house=true undrawn=false": "15c5b74b707424acdacedd7c1ace8f0afa030a737979b8f6bf29e9f1237e27c6",
 };
 
@@ -51,6 +53,7 @@ const HOSTED_AT_5DF81D04: Record<string, string> = {
 // Repinned for the same lobby-guidance wait-stream change as above; the v4 digests are unchanged.
 // Repinned again for the same "wait for done" pointer as above; the v4 digests are unchanged.
 // Repinned for the same nest-pick line stating both window lengths as above; the v4 digests are unchanged.
+// Repinned for the same queen-HP "(queens killed)" wording as above; only the redesign join digests change.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "join v4 players=2": "5c5f62959d1ef08efa3ba6e40a31aede6b967a96ed66b893108ec82d2130d14a",
@@ -61,9 +64,9 @@ const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "rules count-marks players=2": "74e50fc4f49e3bd3f30fec1484e01e319270592227a5301feb366a38df8166ee",
   "join count-marks players=4": "6ee40f2fed373eb907d39d6e9e28c12908372e05f586092d9fa331a82bca7aa1",
   "rules count-marks players=4": "d493637afc5ca34792863292f9575984a4995eb660e2e4e005f5d830b940e16c",
-  "join redesign players=2": "efdc488f5ccc456d544b14ab9794cb2776d33b2171be18cf89c1c1b0bb0a64c6",
+  "join redesign players=2": "d8689b092f1b1c0a720ea0b52521e5e435d0e26236d9ba77c965ce596fb36605",
   "rules redesign players=2": "53210f12f6031c23f5a7e74fedd4b512b7097fd715c164916e2fe6628865cc3f",
-  "join redesign players=4": "e9a6471ad3507f3c3fdb64ef5a31c5494ff7c3d46c9127849521b499c45258e8",
+  "join redesign players=4": "aef59f5de77da55482b86a3faa2586b457cf0b87330ea876005ed37f2e3cec90",
   "rules redesign players=4": "7cc47e6550d905d85cadc6310c6387990eacd492e2138ae3281566539ec1d9d6",
 };
 
