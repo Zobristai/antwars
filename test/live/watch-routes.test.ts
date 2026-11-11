@@ -166,7 +166,7 @@ describe("shared spectator HTTP routes", () => {
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     // A modeless (player-made) match shows each seat its public 1v1 rating, as its stream does, and its type from its lobby.
     expect(catalog.matches).toEqual([{ lobbyId: id, rated: true, startedAt: 0, delaySeconds: 300, colonies: [
-      [{ displayName: "alice", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
     ], matchType: { kind: "unranked", size: 1 } }]);
     expect(JSON.stringify(catalog)).not.toContain(f.ownerOrigin);
     const response = await request(f.gatewayOrigin, `/watch/live/${id}`);
@@ -276,7 +276,7 @@ describe("shared spectator HTTP routes", () => {
     // Each seat with its rating, RD and rated-match count in the match's mode, and the Model Index match's harness phase
     // by its start (here time 0, before every boundary).
     expect(catalog.matches).toContainEqual({ lobbyId: second, rated: true, startedAt: 0, delaySeconds: 0, colonies: [
-      [{ displayName: "alice", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
     ], matchType: { kind: "index", size: 1 }, harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } });
     await f.registry.playbackFinished(second, "run");
     expect(await (await request(f.gatewayOrigin, `/watch/status/${second}`)).json()).toEqual({
@@ -326,11 +326,13 @@ describe("shared spectator HTTP routes", () => {
     const third = "00000000-0000-4000-8000-000000000003";
     await f.registry.register({ lobbyId: third, visibility: "public", rated: true, mode: "1v1", startedAt: 9, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     // The slot published the labels of the seats that reported one; a seat that reported none, or has not joined, carries null.
-    expect(await f.registry.seatLabels(second, "run", { "alice #2": "openai/gpt-6.1-terra", "antwars/gpt-6-luna": "openai/gpt-6-luna" })).toBe(true);
+    // The builder's seat also reported its level and tier; the house seat reported neither.
+    expect(await f.registry.seatLabels(second, "run", { "alice #2": "openai/gpt-6.1-terra", "antwars/gpt-6-luna": "openai/gpt-6-luna" },
+      { thinkingLevels: { "alice #2": "high" }, serviceTiers: { "alice #2": "fast" } })).toBe(true);
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === second).colonies).toEqual([
-      [{ displayName: "alice #1", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", rating: 1612.4, rd: 80, ratedMatches: 12 }],
-      [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice #1", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: 1612.4, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
     ]);
     // One read per identity per match: the 2v2 match's in 2v2, the fixture's modeless match's in public 1v1.
     expect(reads.sort()).toEqual(["a:1v1", "a:2v2", "b:1v1", "b:2v2", "c:2v2"]);

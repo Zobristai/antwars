@@ -45,8 +45,8 @@ describe("public spectator catalog projection", () => {
     expect(result.lobbies[0]!.colonies).toEqual([["original"], []]);
   });
 
-  it("carries each listed match's players with exactly their five public fields, copied", () => {
-    const rated = { displayName: "alice", modelLabel: "openai/gpt-6.1-terra", rating: 1612.4, rd: 80, ratedMatches: 4, identityId: "never-public", key: "secret" };
+  it("carries each listed match's players with exactly their seven public fields, copied", () => {
+    const rated = { displayName: "alice", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: 1612.4, rd: 80, ratedMatches: 4, identityId: "never-public", key: "secret" };
     const unrated = { displayName: "bob", rating: null, rd: null, ratedMatches: null, identityId: "never-public" };
     const players = new Map([
       ["first", [[rated], [unrated]]],
@@ -54,9 +54,9 @@ describe("public spectator catalog projection", () => {
     ]) as unknown as Parameters<typeof publicMatchCatalog>[2];
     const result = publicMatchCatalog([publicMatch, { ...publicMatch, lobbyId: "secret", visibility: "private" }], [], players);
     expect(result.matches).toEqual([{ lobbyId: "first", startedAt: 1000, rated: true, delaySeconds: 300, colonies: [
-      [{ displayName: "alice", modelLabel: "openai/gpt-6.1-terra", rating: 1612.4, rd: 80, ratedMatches: 4 }],
-      // A seat with no label (absent from its caller) carries null.
-      [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
+      [{ displayName: "alice", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: 1612.4, rd: 80, ratedMatches: 4 }],
+      // A seat with no label, level or tier (absent from its caller) carries null for each.
+      [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: null, rd: null, ratedMatches: null }],
     ], matchType: null }]);
     rated.displayName = "changed";
     expect(result.matches[0]!.colonies[0][0]!.displayName).toBe("alice");
