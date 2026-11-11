@@ -46,6 +46,8 @@ export const PLAN_PATH = "/rating-correction";
 const MODE = "house-1v1";
 const ROWS = ratingCollection(MODE);
 const SAME = 1e-9;
+/** A run id as a slot server makes one (randomUUID). */
+const RUN_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Re-reads allowed when a house-1v1 match ends while the history is being read. */
 const HISTORY_ATTEMPTS = 5;
 
@@ -176,6 +178,9 @@ const refusedNeverJoined = (v: Verification) =>
  */
 async function neverJoinedPart(store: Store, v: Verification, names: Map<string, string>, at: number) {
   if (!v.ok || v.stage !== "rated") refusedNeverJoined(v);
+  // The run id is written to the correction record, and so logged: only a run id as a run makes one (a UUID). The
+  // checks found the watch entry's equal to it. Every other logged field is a constant or already constrained.
+  if (!RUN_ID.test(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)?.matchRunId ?? "")) refuse(`${NEVER_JOINED.lobbyId}: unexpected run id`);
   const writes: Write[] = firestoreWrites(v, new Date(at));
   for (const id of v.identities) names.set(id, names.get(id) ?? await currentName(store, id, at) ?? refuse(`unknown identity ${id}`));
   const unrated = v.identities.map(id => shown(names.get(id)!));

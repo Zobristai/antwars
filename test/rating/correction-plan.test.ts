@@ -26,6 +26,8 @@ const MODE: RankedMode = "house-1v1";
 const T0 = Date.parse("2026-11-01T21:29:08.783Z");
 const MIN = 60_000;
 const SECOND_LOBBY = SOL_MOVES[1]!.lobbyId!;
+/** The never-joined lobby's run. */
+const RUN = "3f2b8c1e-6a4d-4e2f-9b7c-0d1e2f3a4b5c";
 
 // House-1v1 history around the moved matches, in the order rated: [colony 0, colony 1, winner, start in minutes from the
 // first moved match]. The two at 1200 and 1000 share glm-5-3 and end in the opposite order to their starts.
@@ -84,9 +86,9 @@ async function world() {
   const lobby = NEVER_JOINED.lobbyId;
   await commit(store, [
     { op: "create", path: `lobbies/${lobby}`, fields: { state: "ended", rated: "true", mode: "1v1", outcome: "colony_1_won", createdAt: String(at - MIN),
-      startsAt: String(at), matchRunId: "run-1", seats: JSON.stringify([{ id: users[0], colony: 0 }, { id: users[1], colony: 1 }]) } },
+      startsAt: String(at), matchRunId: RUN, seats: JSON.stringify([{ id: users[0], colony: 0 }, { id: users[1], colony: 1 }]) } },
     { op: "create", path: `watchMatches/${lobby}`, fields: { visibility: "public", rated: "true", mode: "1v1", startedAt: startedAt(NEVER_JOINED.replayId),
-      playbackFinished: "true", origin: "https://example.test", slot: "public-1", runId: "run-1", replayId: NEVER_JOINED.replayId } },
+      playbackFinished: "true", origin: "https://example.test", slot: "public-1", runId: RUN, replayId: NEVER_JOINED.replayId } },
   ]);
   await store.transaction(read => ratingWrites(read, { matchId: lobby, teams: [[users[0]!], [users[1]!]], winner: "b", mode: "1v1", at }));
   const recording = ratedRecording([1]);
@@ -490,6 +492,31 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(sol.summary.matches.map(match => match.match)).not.toContain(NEVER_JOINED.replayId);
     expect(sol.summary.matches).toEqual(both.summary.matches.filter(match => match.match !== NEVER_JOINED.replayId));
     expect(sol.summary.digest).toBe(planDigest(sol.writes));
+  });
+
+  it("refuses a run id not made as a run makes one, and never logs it", async () => {
+    const malformed = "zz-malformed-run-id";
+    // Both run-id fields set to it (the checks require them equal), the lobby's alone, and the watch entry's alone.
+    for (const fields of [
+      [["lobbies", "matchRunId"], ["watchMatches", "runId"]],
+      [["lobbies", "matchRunId"]],
+      [["watchMatches", "runId"]],
+    ] as const) {
+      for (const value of [malformed, `${RUN}\n${malformed}`, RUN.toUpperCase()]) {
+        const w = await world();
+        await commit(w.store, fields.map(([collection, field]) => ({ op: "update" as const, path: `${collection}/${NEVER_JOINED.lobbyId}`, fields: { [field]: value } })));
+        const before = await w.snapshot();
+        const spies = quiet();
+        const { body } = await started(w.store, w.recordings);
+        expect(body()).toEqual({ state: "refused" });
+        expect(spies[1]!.mock.calls).toEqual([["antwar rating correction plan refused"]]);
+        const logged = JSON.stringify(spies.flatMap(spy => spy.mock.calls));
+        expect(logged).not.toContain(malformed);
+        expect(logged.toLowerCase()).not.toContain(RUN);
+        expect(await w.snapshot()).toEqual(before);
+        spies.forEach(spy => spy.mockRestore());
+      }
+    }
   });
 
   it("applies once under the matching digest; a second start serves applied and writes nothing", async () => {
