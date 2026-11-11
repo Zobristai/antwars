@@ -10,9 +10,10 @@ import { HISTORICAL_CONFIG, SNAPSHOT_EVERY, addAnt, emptyMatch, run, squadOf } f
 import { playable } from "../playable.ts";
 
 // Every match plays at grid scale 2: distances below are fine tiles, reference distances doubled.
-// This file plays its own house-only match on the shared fixture's config with seed 1. Under the one current rules
-// generation it ends by overrun at tick 2886.
-const HOUSE_SEED = 1;
+// This file plays its own house-only match on the shared fixture's config with seed 7. Under the one current rules
+// generation it runs to time and is decided by territory at tick 7199. (Seed 1, once opening food lay in the start
+// ants' fine row, ran on until a colony had no ants left before its overrun, so no longer moved both colonies throughout.)
+const HOUSE_SEED = 7;
 let memo: { initial: SimState; final: SimState; snapshots: ReadonlyMap<number, SimState>; events: readonly SimEvent[] } | null = null;
 function houseOnlyMatch() {
   if (memo !== null) return memo;
@@ -103,7 +104,7 @@ describe("house bot behaviour", () => {
     expect(back.x).toBeLessThan(0);
   });
 
-  // Rules 27: seed 1 is decided by overrun at tick 2886, so the losing colony is pushed back late in
+  // Rules 27: seed 7 runs to time and is decided by territory at tick 7199, so the losing colony is pushed back late in
   // the match. Both colonies advance until they meet; the winner keeps pressing forward to the end.
   it("moves its ants toward the front as the match goes on", () => {
     const { initial, final, snapshots } = houseOnlyMatch();
@@ -155,14 +156,12 @@ describe("the house bot with agents", () => {
       { type: "order", agentId: "a", order: { kind: "hold" } },
       { type: "order", agentId: "b", order: { kind: "hold" } },
     ]).state;
-    expect(s.ants.filter((a) => a.squad !== null)).toHaveLength(12);
-    // A squad ant already carrying food still takes it home under any order; every other held ant stays put.
-    const held = new Map(s.ants.filter((a) => a.squad !== null && !a.carrying).map((a) => [a.id, [a.x, a.y]]));
-    expect(held.size).toBeGreaterThan(0);
+    const held = new Map(s.ants.filter((a) => a.squad !== null).map((a) => [a.id, [a.x, a.y]]));
+    expect(held.size).toBe(12);
     for (let i = 0; i < 300; i += 1) {
       s = run(s, 1).state;
       for (const ant of s.ants) {
-        if (held.has(ant.id)) expect([ant.x, ant.y]).toEqual(held.get(ant.id));
+        if (ant.squad !== null) expect([ant.x, ant.y]).toEqual(held.get(ant.id));
       }
       for (const c of [0, 1] as const) {
         expect(s.ants.some((a) => a.colony === c && a.squad === null && (a.vx !== 0 || a.vy !== 0))).toBe(true);

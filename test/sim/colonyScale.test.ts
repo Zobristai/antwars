@@ -71,9 +71,8 @@ describe("30-minute larger colonies", () => {
 
   it("preserves the recorded ground-income growth scenario and its deterministic replay", () => {
     const recorded = playable(PRE_FRONTLINE_PUBLIC_CONFIG);
-    // Seed 6007: seed 6006 fell one ant short of 200 once opening food moved to the start ants' fine row.
-    let state = createMatch(6007, recorded);
-    let groundOff = createMatch(6007, { ...recorded, groundFoodIntervalTicks: undefined });
+    let state = createMatch(6006, recorded);
+    let groundOff = createMatch(6006, { ...recorded, groundFoodIntervalTicks: undefined });
     for (let i = 0; i < 2400; i++) {
       state = step(state).state;
       groundOff = step(groundOff).state;
@@ -85,7 +84,7 @@ describe("30-minute larger colonies", () => {
       expect(live[colony]).toBeGreaterThanOrEqual(200);
       expect(live[colony]).toBeGreaterThan(without[colony] + 30);
     }
-    const replayed = replay([headerLine(6007, recorded)], 2400);
+    const replayed = replay([headerLine(6006, recorded)], 2400);
     expect(stateHash(replayed)).toBe(stateHash(state));
   }, 30_000);
 

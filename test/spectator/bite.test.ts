@@ -117,7 +117,7 @@ const renderer = { resolution: 1, generateTexture: () => Texture.WHITE } as unkn
  describe("encoded playback and simulation hit fidelity", () => {
   const messages: StreamMessage[] = [], samples: EngagementSample[] = [], truth = new Map<number, Map<number, number>>();
   beforeAll(() => {
-    const o = { seed: 6013, config: playable(HISTORICAL_DEFAULT_CONFIG), agents: 10, ticks: 1800, attack: true };
+    const o = { seed: 6006, config: playable(HISTORICAL_DEFAULT_CONFIG), agents: 10, ticks: 1800, attack: true };
     let state = createMatch(o.seed, o.config); const rec = new SpectatorRecorder(state);
     messages.push(decodeMessage(encodeMessage({ ...rec.initial(), full: rec.initialFull() })));
     while (state.tick < o.ticks && !state.result) {
@@ -144,7 +144,7 @@ const renderer = { resolution: 1, generateTexture: () => Texture.WHITE } as unkn
     }
   }, 120_000);
 
-  it("measures final tracker eligibility: 2467 terminal shown, 192 unknown omitted; zero unsupported", () => {
+  it("measures final tracker eligibility: 2622 terminal shown, 170 unknown omitted; zero unsupported", () => {
     // The spectator playback tracks at the recording's grid scale (web/src/buffer.ts); every match plays at 2.
     const reach = gridScale(messages[0]!.full!.setup);
     const tracker = new EngagementTracker(); let hits = 0, continuing = 0, terminal = 0, terminalShown = 0, missed = 0, unsupported = 0;
@@ -159,10 +159,10 @@ const renderer = { resolution: 1, generateTexture: () => Texture.WHITE } as unkn
       for (const [a, b] of actual) if (real.get(a) !== b) unsupported++;
     }
     const counts = { hits, continuing, terminal, terminalShown, terminalMissed: terminal - terminalShown, missed, unsupported };
-    console.log("seed-6013 ticks-0-1800 tracker fidelity", counts);
-    // Seed 6013 at grid scale 2 under the one current rules generation, tracked at the match reach as the spectator playback does.
-    // Seed 6006 drew 3 unsupported engagements once opening food moved to the start ants' fine row; 6013 is the next seed with none.
-    expect(counts).toEqual({ hits: 8434, continuing: 5775, terminal: 2659, terminalShown: 2467, terminalMissed: 192, missed: 192, unsupported: 0 });
+    console.log("seed-6006 ticks-0-1800 tracker fidelity", counts);
+    // Seed 6006 at grid scale 2 under the one current rules generation, tracked at the match reach as the spectator playback does;
+    // re-pinned when opening food within the start ants' sight moved to their fine row.
+    expect(counts).toEqual({ hits: 7831, continuing: 5039, terminal: 2792, terminalShown: 2622, terminalMissed: 170, missed: 170, unsupported: 0 });
     expect(missed / hits).toBeLessThanOrEqual(0.05);
     const playback = new Playback(), frame = new Frame(), bites = new Bites();
     let poseMissed = 0, terminalPoses = 0, poseUnsupported = 0;
@@ -183,7 +183,7 @@ const renderer = { resolution: 1, generateTexture: () => Texture.WHITE } as unkn
       for (const [a, b] of rendered) if (truth.get(m.tick)?.get(a) !== b) poseUnsupported++;
     }
     console.log("actual delayed contact poses", { terminalPoses, terminalMissed: terminal - terminalPoses, poseMissed, poseUnsupported, hits });
-    expect(terminalPoses).toBe(2467); expect(poseUnsupported).toBe(0); expect(poseMissed / hits).toBeLessThanOrEqual(0.05);
+    expect(terminalPoses).toBe(2622); expect(poseUnsupported).toBe(0); expect(poseMissed / hits).toBeLessThanOrEqual(0.05);
     // The grid-scale-2 board samples four times the cells per message: the harness limit, not an assertion, is raised.
   }, 30_000);
   it("repeats on held ticks with stable seek results and no invented target across reconnects/gaps", () => {
@@ -208,7 +208,7 @@ const renderer = { resolution: 1, generateTexture: () => Texture.WHITE } as unkn
     expect(tracker.observe({ ...at, tick: at.tick + 2, events: [] }, reach)).toEqual([]);
     expect(tracker.observe({ ...at, full: messages[0]!.full, events: [] }, reach)).toEqual([]);
     const cadence = biteCadence(samples, messages, new Set([0, ...truth.keys()]));
-    expect(cadence.coverageComplete).toBe(true); expect(cadence.explicitDeadAttackerTerminalEligible).toBe(20);
+    expect(cadence.coverageComplete).toBe(true); expect(cadence.explicitDeadAttackerTerminalEligible).toBe(22);
     expect(cadence.missed).toBe(0); expect(cadence.unsupported).toBe(0); expect(cadence.hitsPerSecond).toBe(10); expect(cadence.chompsPerSecond).toBe(4);
     expect(contactSheetFrames).toHaveLength(8); expect(new Set(contactSheetFrames).size).toBe(8);
     expect(contactSheetFrames.some((k) => Math.round(k * 1000 / 30) % BITE_MS >= 125 && Math.round(k * 1000 / 30) % BITE_MS < BITE_CONTACT_END_MS)).toBe(true);

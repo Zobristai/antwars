@@ -20,13 +20,13 @@ describe("recording writer compatibility", () => {
   it("keeps queen-founding rules output byte-for-byte identical to the pinned writer output", () => {
     // This pin belongs to the pre-terrain queen-founding rules, not today's public map pool.
     // Every match plays at grid scale 2, so the pin is this
-    // writer's grid-scale-2 output, re-pinned when opening food moved to the fine row its start ants stand in. The reference-grid pin from main 7690c1563aa462b8bf4438b09ff008a49f11e94a's writer
+    // writer's grid-scale-2 output, re-pinned when opening food within the start ants' sight moved to their fine row. The reference-grid pin from main 7690c1563aa462b8bf4438b09ff008a49f11e94a's writer
     // was 106825 bytes, fc9053014935e5d33aa889d04fffc307db7261189b83de668ce15ae650718c30.
     const config = playable({ ...PUBLIC_CONFIG, terrain: undefined, matchTicks: 200 });
     const { lines } = playScripted({ seed: 17, config, agents: 2, ticks: 200 });
     const bytes = packMessages(recordLog(lines));
     expect(bytes.length).toBe(120303);
-    expect(sha256(bytes)).toBe("fba7d759586ef0e91e771eef98ccf47ebbf1902aefcc70b8bbeb784efea60a6b");
+    expect(sha256(bytes)).toBe("55f8923277c56bb9ab41da2e47d5186866bb9602bfe12e710741fb2169dcad2b");
   });
 
   it("every new header and ordinary live/scripted recording names ant115", () => {
