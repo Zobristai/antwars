@@ -212,9 +212,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // -> located slot only."; REJOIN_GUIDANCE still says it); undoing both restores 55a6a96c… and 125aa19c….
   // Repinned for that pointer reading "Or wait for done on your waitUrl (SSE; see join_queue)."; the previous pointer
   // restores 458f680a… and 0967acce….
+  // Join briefing repinned for its same-tick ending reading "(queens killed)" under queen HP, where overrun never
+  // happens; "(double overrun/queens killed)" restores ed113dd0…. The briefing pin is unchanged.
   expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d540dc30f8d1be66d098e28983fc5c38cf1a4620648fd7dec6559a4361c7a095");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("ed113dd0845f6719070687b7386b51cda329f7d3a5a8db3aaecae4f94a101b5c");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("71a716207584753203e28736f16d9f21d6eed4a08853a848076064e89efa6f53");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.

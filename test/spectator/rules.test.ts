@@ -352,7 +352,7 @@ it("leads with the configured win routes as minutes-based bullets", () => {
   expect(first.lines).toEqual([
     "Kill every enemy queen. Queens can be hurt after 5 minutes.",
     "From 10 minutes, hold at least 100 original-size tile areas and 6 times the opponent's territory for 5 minutes without a break.",
-    "At 30 minutes, or if both colonies lose their last queen on the same tick (double overrun or queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.",
+    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.",
   ]);
   const html = renderRules(config);
   const lead = html.slice(html.indexOf('<section id="how-to-win"'), html.indexOf('<section id="overview"'));
