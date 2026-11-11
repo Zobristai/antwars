@@ -26,7 +26,7 @@ function rawRequest(port: number, bytes: string): Promise<string> {
 
 describe("malformed requests never take the server down", () => {
   it("answers a malformed target, a malformed header and a throwing route with an error, then still serves /mcp and mounts", async () => {
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", expectedPlayers: 2, mcpConfig: TEST_MCP_CONFIG });
     const s = server;
     s.mount("/ok", (_req, res) => void res.end("ok"));
     s.mount("/boom", () => {

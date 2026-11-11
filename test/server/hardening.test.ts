@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { startServer, type GameServer } from "../../src/server.js";
-import { connect, matchLogs, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, matchLogs, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 import { playable } from "../playable.ts";
 
 let server: GameServer | null = null;
@@ -54,9 +54,9 @@ function postInitialize(url: string): Promise<Response> {
 describe("a failed match-log write or prune does not end the server", () => {
   it("a match-log write that fails mid-match is reported on stderr, and the server and match carry on to the result", async () => {
     const dataDir = tempDir();
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "held", simConfig: playable(shortConfig(30)), mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(0), simConfig: playable(shortConfig(30)), mcpConfig: TEST_MCP_CONFIG });
     const s = server;
-    s.startMatch();
+    agents.push(...await startComparisonMatch(s, 0));
     // The log file becomes a directory: the next appended line fails with EISDIR inside the tick timer.
     const logPath = matchLogs(dataDir).get(1)!;
     rmSync(logPath);
@@ -85,8 +85,9 @@ describe("a failed match-log write or prune does not end the server", () => {
     writeFileSync(join(stuck, "keep"), "x");
     writeFileSync(join(dataDir, "match-2000-01-01T00-00-01-000Z-8.jsonl"), "{}\n");
 
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "immediate", maxMatchLogs: 1, simConfig: playable(shortConfig(5)), mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(0), maxMatchLogs: 1, simConfig: playable(shortConfig(5)), mcpConfig: TEST_MCP_CONFIG });
     const s = server;
+    agents.push(...await startComparisonMatch(s, 0));
     expect(s.game.match?.seq).toBe(1);
     await waitFor(() => s.game.match!.result !== null, 5_000);
     expect(uncaught).toEqual([]);
@@ -96,7 +97,7 @@ describe("a failed match-log write or prune does not end the server", () => {
 
 describe("a 500 logs its method, route class and cause, never the URL or query", () => {
   it("through a mounted route", async () => {
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(2), mcpConfig: TEST_MCP_CONFIG });
     server.mount("/boom", () => {
       throw new Error("mount exploded");
     });
@@ -111,7 +112,7 @@ describe("a 500 logs its method, route class and cause, never the URL or query",
   });
 
   it("through /mcp", async () => {
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(2), mcpConfig: TEST_MCP_CONFIG });
     vi.spyOn(StreamableHTTPServerTransport.prototype, "handleRequest").mockRejectedValueOnce(new Error("transport exploded"));
     const res = await postInitialize(`http://127.0.0.1:${server.port}/mcp?key=query-value-q2`);
     expect(res.status).toBe(500);
@@ -125,8 +126,9 @@ describe("a 500 logs its method, route class and cause, never the URL or query",
 
 describe("match start, match end and late ticks are logged", () => {
   it("one stdout line marks the match start and one marks its end", async () => {
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(5)), mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(0), simConfig: playable(shortConfig(5)), mcpConfig: TEST_MCP_CONFIG });
     const s = server;
+    agents.push(...await startComparisonMatch(s, 0));
     await waitFor(() => s.game.match!.result !== null, 5_000);
     const out = lines(stdout);
     expect(out.filter((l) => l.includes("match 1 started"))).toHaveLength(1);
@@ -136,8 +138,8 @@ describe("match start, match end and late ticks are logged", () => {
 
   it("a tick that runs late produces one warning; ticks on time produce none", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", simConfig: playable(shortConfig(100)), mcpConfig: TEST_MCP_CONFIG });
-    server.startMatch();
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(0), simConfig: playable(shortConfig(100)), mcpConfig: TEST_MCP_CONFIG });
+    agents.push(...await startComparisonMatch(server, 0));
     vi.advanceTimersByTime(500); // five ticks, each exactly on time
     expect(server.game.match!.state.tick).toBe(5);
     expect(lines(warn)).toEqual([]);
@@ -165,8 +167,9 @@ describe("a publish that throws does not stop the match", () => {
         if (ticked.length === 3) throw new Error(`feed broke\n${"x".repeat(1000)}`);
       },
     };
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(30)), mcpConfig: TEST_MCP_CONFIG, feed });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(0), simConfig: playable(shortConfig(30)), mcpConfig: TEST_MCP_CONFIG, feed });
     const s = server;
+    agents.push(...await startComparisonMatch(s, 0));
     await waitFor(() => s.game.match!.result !== null || uncaught.length > 0, 8_000);
     expect(uncaught).toEqual([]);
     // Its own result at its full length, not abandoned, and every later tick still reached the feed.

@@ -69,7 +69,7 @@ afterEach(async () => {
 });
 
 async function serve(stores: AccountStores) {
-  const server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate",
+  const server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), 
     simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores });
   servers.push(server);
   return server.port;

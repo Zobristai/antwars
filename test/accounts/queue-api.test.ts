@@ -68,7 +68,7 @@ function world() {
 
 async function serve(accounts: AccountStores): Promise<number> {
   const server = await startServer({
-    port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts,
+    port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts,
   });
   servers.push(server);
   return server.port;

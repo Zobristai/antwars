@@ -351,7 +351,7 @@ async function world() {
   const lobbies = createLobbies(store, identities, { publicSlots: 1, privateSlots: 1, staleHoldGraceMs: 60_000, now: () => clock.t });
   const stores: AccountStores = { identities, lobbies, ratings: createRatings(store) };
   const server: GameServer = await startServer({
-    port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores,
+    port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores,
   });
   closers.push(() => server.close());
   const fast = await streamServer((token) => lobbies.waitStatus(token));

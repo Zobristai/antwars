@@ -190,7 +190,7 @@ describe("/api body reads", () => {
     const identities = createIdentities(store);
     const accounts: AccountStores = { identities, lobbies: createLobbies(store, identities), ratings: createRatings(store) };
     const server = await startServer({
-      port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(60_000)),
+      port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: playable(shortConfig(60_000)),
       mcpConfig: { ...TEST_MCP_CONFIG, bodyReadMs: 30_000 }, accounts,
     });
     gameServers.push(server);

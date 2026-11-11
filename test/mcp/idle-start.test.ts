@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { observeInfo } from "../../src/mcp/game.js";
 import { startServer, type GameServer } from "../../src/server.js";
 import { rulesConfig } from "../../src/sim/config.js";
-import { connect, tempDir, type Agent } from "../server/helpers.js";
+import { comparison, connect, tempDir, type Agent } from "../server/helpers.js";
 import { startHarness, TEST_MCP_CONFIG, type Harness } from "./harness.js";
 import { playable } from "../playable.ts";
 
@@ -22,12 +22,12 @@ afterEach(async () => {
 const config = playable({ ...rulesConfig("redesign"), commandIdleTicks: 100, commandFloorTicks: 1, antSpeedTilesPerSecond: 0 });
 
 describe("the idle clock starts when the seat enters its match", () => {
-  it("gives a queued agent a full countdown on the first tick after an explicit private held start, even after waiting longer than the timeout", async () => {
+  it("gives a queued agent a full countdown on the first tick after a held start, even after waiting longer than the timeout", async () => {
     dataDir = tempDir();
     const short = { ...config, commandIdleTicks: config.ticksPerSecond };
     let capture!: (snapshot: { secondsLeft: number | null; joinedTick: number | undefined; lastCommandTick: number | null; idle: boolean }) => void;
     const firstTick = new Promise<Parameters<typeof capture>[0]>(resolve => { capture = resolve; });
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "held",
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(2),
       simConfig: short, mcpConfig: TEST_MCP_CONFIG,
       onTickTiming: sample => {
         if (sample.tick !== 1) return;
@@ -44,7 +44,9 @@ describe("the idle clock starts when the seat enters its match", () => {
     expect(server.game.match).toBeNull();
     expect(server.game.queuedAgents).toBe(1);
     expect((await agent.call("observe")).data.status[0]).toBeNull();
-    server.startMatch();
+    // The second player's join releases the held match.
+    const second = await connect(server.port); agents.push(second);
+    expect((await second.call("join")).isError).toBe(false);
     expect(await firstTick).toEqual({ secondsLeft: 1, joinedTick: 0, lastCommandTick: null, idle: false });
   });
 

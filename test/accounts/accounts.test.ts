@@ -10,7 +10,7 @@ import { createLobbies, LOBBY_TTL_MS, type Lobby } from "../../src/lobby/lobbies
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
-import { connect, matchLogs, shortConfig, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
+import { comparison, connect, matchLogs, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
 import { FIRST_LOSS, FIRST_WIN } from "../rating/glicko-values.ts";
 import { playable } from "../playable.ts";
 
@@ -75,9 +75,10 @@ const TRANSPORTS: readonly [string, (port: number, headers?: Headers) => Promise
 async function serve(accounts: AccountStores) {
   const dataDir = tempDir();
   const server = await startServer({
-    port: 0, host: "127.0.0.1", dataDir, match: "immediate", simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts,
+    port: 0, host: "127.0.0.1", dataDir, ...comparison(0), simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts,
   });
   servers.push(server);
+  await startComparisonMatch(server, 0);
   return { port: server.port, dataDir };
 }
 

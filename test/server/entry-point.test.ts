@@ -55,8 +55,6 @@ it("has no playable match, game tools, live routes, operator controls, logs or r
       expect((await fetch(`${origin}/operator/${action}`, { method, headers: { authorization: "Bearer retired-test-token" } })).status).toBe(404);
     }
   }
-  expect(() => server.startMatch()).toThrow("does not host matches");
-  expect(() => server.stopMatch()).toThrow();
   await new Promise(resolve => setTimeout(resolve, 150));
   expect(server.game.match).toBeNull();
   expect(server.game.nextStart).toBeNull();
