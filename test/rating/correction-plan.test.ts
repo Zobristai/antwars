@@ -663,6 +663,24 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
+  it("serves kind null when the largest deviation is null: a later change missing only rdAfter", async () => {
+    const w = await appliedWorld();
+    const path = `ratedMatches/${w.lobbies[8]}`;
+    const changes = JSON.parse((await w.store.get(path))!.changes!) as { identityId: string; rdAfter?: number }[];
+    delete changes[0]!.rdAfter;
+    await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    const handle = [...w.ids].find(([, id]) => id === changes[0]!.identityId)![0];
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(dated(w), w.recordings);
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change", deviation: null, count: 1, kind: null,
+      earliestChangeDay: "2026-10-18" });
+    // The log line is as before: the entry, its handle and source, with no deviation.
+    expect(warn.mock.calls).toEqual([["antwar house-1v1 rating correction plan refused", { reason: "not-reproduced-change",
+      deviation: { deviation: null, handle, source: path, count: 1 } }]]);
+    for (const text of privateNames(w)) expect(served(serve, SOL_PLAN_PATH).body).not.toContain(text);
+    info.mockRestore(); warn.mockRestore();
+  });
+
   it("serves earliestChangeDay only from a strict UTC commit time that is a real instant, never from other text", async () => {
     const w = await appliedWorld();
     for (const i of [7, 8]) {

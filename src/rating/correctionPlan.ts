@@ -93,8 +93,8 @@ export type ValueKind = "before" | "after" | "rdBefore" | "rdAfter" | "rating" |
 
 /**
  * A not-reproduced refusal's public figures, numbers and kinds only: the largest deviation and how many values fail (as
- * in Deviation), the kind of the value the largest deviation is in (null for a mismatch with no number: the players, a
- * count, a time or a record), and the UTC day (YYYY-MM-DD) of the earliest commit among the failing change records, null
+ * in Deviation), the kind of the value the largest deviation is in (null whenever that deviation is null: a missing value,
+ * the players, a count, a time or a record), and the UTC day (YYYY-MM-DD) of the earliest commit among the failing change records, null
  * when only rating rows fail. Never a handle, identity, row, lobby, match or record name.
  */
 export interface RefusalFigures {
@@ -437,10 +437,11 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     // The largest finite deviation over every value; a missing value counts but never masks one; the first wins a tie.
     const most = failures.reduce((a, b) => (b.deviation ?? -1) > (a.deviation ?? -1) ? b : a);
     const first = failures[0]!;
+    // kind names where the largest numeric deviation is, so it is null whenever there is none (a missing value only).
     // Only strict UTC timestamps that are real instants count; padded alike, so text order is time order among them.
     const earliest = failures.flatMap(f => f.committedAt !== null && utcDay(f.committedAt) !== null ? [f.committedAt] : []).sort()[0];
     throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length },
-      { deviation: most.deviation, count: failures.length, kind: most.kind, earliestChangeDay: earliest === undefined ? null : utcDay(earliest) });
+      { deviation: most.deviation, count: failures.length, kind: most.deviation === null ? null : most.kind, earliestChangeDay: earliest === undefined ? null : utcDay(earliest) });
   }
 
   // The move: lobbies' seats, watch-entry labels, changed change records and rating rows.
