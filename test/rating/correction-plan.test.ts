@@ -4,14 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, planCorrections, planDigest, planNeverJoined, PLAN_PATH, SOL_MOVES, startCorrectionPlan,
+  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, NEVER_JOINED_CLAIM, planCorrections, planDigest, planNeverJoined, PLAN_PATH, SOL_MOVES, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
 import { createFirestore, CREATE_TIME_BATCH, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
-import { RecordingChangedError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
+import { HoldUnknownError, RecordingChangedError, RecordingHeldError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { ratedRecording } from "../replays/never-joined-fixture.ts";
 
@@ -68,19 +68,23 @@ function independentReplay(moved: boolean): Map<string, { r: number; rd: number 
 }
 
 /**
- * The recording bucket in memory, as Cloud Storage keeps it: each object at a generation, a hold set or cleared only at
- * its generation, and a held object never replaced. The correction itself never replaces one; `overwrite` stands for
- * any other writer.
+ * The recording bucket in memory, as Cloud Storage keeps it: each object at a generation and a metageneration that
+ * each hold change advances, a hold set only on an unheld object at its generation, cleared only at the generation
+ * and metageneration it was set at, and a held object never replaced. The correction itself never replaces one;
+ * `overwrite` stands for any other writer and `holdElsewhere` for a hold another party set.
  */
 type Recordings = RecordingObjects & RecordingHolds & {
   overwrite(name: string): Promise<void>;
+  holdElsewhere(name: string): void;
   readonly held: ReadonlySet<string>;
   readonly holdCalls: [string, boolean][];
 };
 function bucket(bodies: Map<string, Uint8Array>): Recordings {
   const generations = new Map([...bodies.keys()].map(name => [name, 1]));
+  const metagenerations = new Map([...bodies.keys()].map(name => [name, 1]));
   const held = new Set<string>();
   const holdCalls: [string, boolean][] = [];
+  const toggle = (name: string, on: boolean) => { if (on) held.add(name); else held.delete(name); metagenerations.set(name, metagenerations.get(name)! + 1); };
   return {
     held, holdCalls,
     async read(name) {
@@ -89,11 +93,20 @@ function bucket(bodies: Map<string, Uint8Array>): Recordings {
     },
     async generation(name) { return bodies.has(name) ? String(generations.get(name)) : null; },
     async replace() { throw new Error("the correction must never replace a recording"); },
-    async hold(name, generation, on) {
-      holdCalls.push([name, on]);
+    async hold(name, generation) {
+      holdCalls.push([name, true]);
       if (!bodies.has(name) || String(generations.get(name)) !== generation) throw new RecordingChangedError(name);
-      if (on) held.add(name); else held.delete(name);
+      if (held.has(name)) throw new RecordingHeldError(name);
+      toggle(name, true);
+      return { name, generation, metageneration: String(metagenerations.get(name)) };
     },
+    async release(hold) {
+      holdCalls.push([hold.name, false]);
+      if (String(generations.get(hold.name)) !== hold.generation || String(metagenerations.get(hold.name)) !== hold.metageneration) return false;
+      toggle(hold.name, false);
+      return true;
+    },
+    holdElsewhere(name) { toggle(name, true); },
     async overwrite(name) {
       if (held.has(name)) throw new Error(`object ${name} is under a hold`);
       generations.set(name, generations.get(name)! + 1);
@@ -144,7 +157,7 @@ async function world() {
     lobbies.push(id);
   }
   const paths = [...users.flatMap(id => RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`)), ...[...ids.values()].map(id => `${ratingCollection(MODE)}/${id}`),
-    ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, CORRECTION_MARKER,
+    ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, NEVER_JOINED_CLAIM, CORRECTION_MARKER,
     ...[...users, house.value.identity.id, ...ids.values()].map(id => `identities/${id}`), "usernames/absent-player", "usernames/joined-player", "usernames/antwars"];
   const snapshot = async () => Object.fromEntries(await Promise.all(paths.map(async path => [path, await store.get(path)] as const)));
   return { store, recordings: bucket(objects), users, ids, lobbies, snapshot };
@@ -156,6 +169,8 @@ function served(serve: ReturnType<typeof startCorrectionPlan>["serve"], url = PL
   void serve({ url, method } as IncomingMessage, res as unknown as ServerResponse, {} as LiveGame);
   return out;
 }
+
+type ApplyOutcomes = Awaited<ReturnType<typeof applyNeverJoined>>[];
 
 describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, () => {
   it("plans both corrections exactly, writes nothing, and the planned writes give the independently replayed ratings", async () => {
@@ -421,9 +436,10 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
     const names = [`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`];
     const during: { held: string[]; refused: boolean[] }[] = [];
-    // Inside the transaction, before its commit: another writer tries to replace each object.
+    // Inside the apply's transaction (the one after both holds are set), before its commit: another writer tries to
+    // replace each object. The claim's transaction, before any hold, and the claim's release, after both, are not it.
     const watched: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
-      during.push({ held: [...w.recordings.held].sort(),
+      if (w.recordings.holdCalls.length === 2) during.push({ held: [...w.recordings.held].sort(),
         refused: await Promise.all(names.map(name => w.recordings.overwrite(name).then(() => false, () => true))) });
       return step(read);
     }) };
@@ -434,18 +450,20 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     for (const name of names) expect(await w.recordings.generation(name)).toBe("1");
     expect(w.recordings.held.size).toBe(0);
     expect(w.recordings.holdCalls).toEqual([[names[0], true], [names[1], true], [names[0], false], [names[1], false]]);
+    expect(await w.store.get(NEVER_JOINED_CLAIM)).toBeNull();
     expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ binaryGeneration: "1", recordGeneration: "1" });
   });
 
-  it("writes nothing and releases its holds when a hold cannot be set; keeps them when the commit's outcome is unknown", async () => {
+  it("writes nothing and releases its holds when a hold cannot be set; keeps them and the claim when the commit's outcome is unknown", async () => {
     {
       const w = await world();
       const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
       const before = await w.snapshot();
       const record = `${NEVER_JOINED.replayId}.json`;
-      const refusing: Recordings = { ...w.recordings, hold: (name, generation, on) =>
-        on && name === record ? Promise.reject(new Error("object hold failed: HTTP 403")) : w.recordings.hold(name, generation, on) };
+      const refusing: Recordings = { ...w.recordings, hold: (name, generation) =>
+        name === record ? Promise.reject(new Error("object hold failed: HTTP 403")) : w.recordings.hold(name, generation) };
       await expect(applyNeverJoined(w.store, refusing, plan, plan.summary.digest)).rejects.toThrow("HTTP 403");
+      // Nothing written, no hold left, and the claim released.
       expect(await w.snapshot()).toEqual(before);
       expect(w.recordings.held.size).toBe(0);
     }
@@ -453,10 +471,95 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
       const w = await world();
       const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
       const before = await w.snapshot();
-      const failing: Store = { ...w.store, transaction: () => Promise.reject(new Error("commit outcome unknown")) };
+      // The claim's transaction runs; the apply's throws.
+      let calls = 0;
+      const failing: Store = { ...w.store, transaction: step => ++calls === 1 ? w.store.transaction(step) : Promise.reject(new Error("commit outcome unknown")) };
       await expect(applyNeverJoined(failing, w.recordings, plan, plan.summary.digest)).rejects.toThrow("commit outcome unknown");
-      expect(await w.snapshot()).toEqual(before);
+      expect({ ...await w.snapshot(), [NEVER_JOINED_CLAIM]: null }).toEqual(before);
       expect([...w.recordings.held].sort()).toEqual([`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`]);
+      expect(JSON.parse((await w.store.get(NEVER_JOINED_CLAIM))!.objects!)).toEqual([
+        { name: `${NEVER_JOINED.replayId}.bin`, generation: "1" }, { name: `${NEVER_JOINED.replayId}.json`, generation: "1" }]);
+    }
+  });
+
+  it("runs one apply at a time: a second apply while the first holds its claim touches nothing, and a left claim blocks every later one", async () => {
+    const w = await world();
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    const second: ApplyOutcomes = [];
+    let calls: [string, boolean][] = [];
+    // Inside the first apply's transaction, with both its holds set: a second start applies the same plan.
+    let nested = false;
+    const watched: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
+      if (!nested && w.recordings.held.size === 2) {
+        nested = true;
+        const mark = w.recordings.holdCalls.length;
+        second.push(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest));
+        calls = w.recordings.holdCalls.slice(mark);
+        // The first apply's holds are untouched.
+        expect(w.recordings.held.size).toBe(2);
+      }
+      return step(read);
+    }) };
+    expect(await applyNeverJoined(watched, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    expect(second).toEqual(["already claimed"]);
+    expect(calls).toEqual([]);
+    expect(w.recordings.held.size).toBe(0);
+    expect(await w.store.get(NEVER_JOINED_CLAIM)).toBeNull();
+
+    // A claim left behind (a kept hold): a later apply sets no hold and writes nothing.
+    const v = await world();
+    const later = await planNeverJoined(v.store, v.recordings) as NeverJoinedPlan;
+    await commit(v.store, [{ op: "create", path: NEVER_JOINED_CLAIM, fields: { token: "earlier" } }]);
+    const before = await v.snapshot();
+    expect(await applyNeverJoined(v.store, v.recordings, later, later.summary.digest)).toBe("already claimed");
+    expect(v.recordings.holdCalls).toEqual([]);
+    expect(await v.snapshot()).toEqual(before);
+  });
+
+  it("never clears a hold it did not set: an object already held refuses the apply and keeps that hold", async () => {
+    for (const name of [`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`]) {
+      const w = await world();
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      w.recordings.holdElsewhere(name);
+      const before = await w.snapshot();
+      expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("recording already held");
+      expect(await w.snapshot()).toEqual(before);
+      expect([...w.recordings.held]).toEqual([name]);
+    }
+  });
+
+  it("keeps the claim, writing nothing, when whether a hold was set is unknown or a hold is not confirmed released", async () => {
+    const record = `${NEVER_JOINED.replayId}.json`;
+    {
+      // The hold is set but its reply is lost and cannot be read back.
+      const w = await world();
+      const [info, warn] = quiet();
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      const before = await w.snapshot();
+      const lost: Recordings = { ...w.recordings, hold: async (name, generation) => {
+        const set = await w.recordings.hold(name, generation);
+        if (name === record) throw new HoldUnknownError(name);
+        return set;
+      } };
+      await expect(applyNeverJoined(w.store, lost, plan, plan.summary.digest)).rejects.toBeInstanceOf(HoldUnknownError);
+      expect({ ...await w.snapshot(), [NEVER_JOINED_CLAIM]: null }).toEqual(before);
+      expect(await w.store.get(NEVER_JOINED_CLAIM)).not.toBeNull();
+      // The hold it set and knows of is released; the unknown one is left, named by the claim.
+      expect([...w.recordings.held]).toEqual([record]);
+      expect(warn).toHaveBeenCalledWith("antwar rating correction recording hold unknown; its claim names the objects");
+      info.mockRestore(); warn.mockRestore();
+    }
+    {
+      // A release that is not confirmed: the apply's outcome stands and the claim is kept.
+      const w = await world();
+      const [info, warn] = quiet();
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      const stuck: Recordings = { ...w.recordings, release: async hold => hold.name === record ? false : w.recordings.release(hold) };
+      expect(await applyNeverJoined(w.store, stuck, plan, plan.summary.digest)).toBe("applied");
+      expect(await w.store.get(NEVER_JOINED_CLAIM)).not.toBeNull();
+      expect([...w.recordings.held]).toEqual([record]);
+      expect(warn).toHaveBeenCalledWith("antwar rating correction recording hold kept; its claim names the objects");
+      info.mockRestore(); warn.mockRestore();
     }
   });
 

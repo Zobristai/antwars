@@ -1,8 +1,10 @@
 /// <reference types="node" />
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { Fields, Store, Write } from "../store/firestore.js";
-import { binaryName, RecordingChangedError, recordName, type RecordingHolds, type RecordingObjects } from "../replays/abandonRecording.js";
+import {
+  binaryName, HoldUnknownError, RecordingChangedError, RecordingHeldError, recordName, type HeldObject, type RecordingHolds, type RecordingObjects,
+} from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
 import { identityDisplay, nameState } from "../identity/retention.js";
 import { publicWaitingName } from "../live/queue-catalog.js";
@@ -231,47 +233,76 @@ export async function planNeverJoined(store: Store, recordings: RecordingObjects
  * published. A placeholder until then: it is not a SHA-256, so it matches no plan and nothing is applied.
  */
 export const NEVER_JOINED_APPLY_DIGEST = "placeholder: not yet set, matches no plan";
-export type ApplyOutcome = "applied" | "digest differs" | "changed since planned";
+export type ApplyOutcome = "applied" | "digest differs" | "changed since planned" | "already claimed" | "recording already held";
+
+/** The one apply's claim on the never-joined correction: created only where absent, so only one apply runs at a time. */
+export const NEVER_JOINED_CLAIM = `ratingCorrectionClaims/${NEVER_JOINED.lobbyId}`;
 
 /**
  * Applies the never-joined plan only when its digest is `digest`, writing nothing if anything it depends on changed
  * since the plan: the Firestore documents its checks read, or either recording object.
  *
+ * Exclusive: the apply first creates NEVER_JOINED_CLAIM where it is absent, naming its own token, the digest and both
+ * recording objects it may hold. Another apply (a concurrent start) finds the claim and touches nothing. The claim is
+ * deleted only once every hold this apply set is confirmed cleared; otherwise it stays, naming the objects to check.
+ *
  * The recording: the writes depend on it through what the checks read from it (which colony never joined), and only
- * the recording holds that. So both objects are first held at the generations the checks read, before the transaction:
- * a hold is set only at that generation, so an object replaced or deleted since the plan fails it, and nothing is
- * written. While held, Cloud Storage refuses to replace or delete either object, so both stay at those generations
- * until the commit. Then one transaction re-reads every document the checks read and commits the writes only while
- * every one is unchanged. Both holds are released once the transaction's outcome is known. If the transaction throws,
- * its commit may still land, so the holds are kept and must be released by hand. The recording itself is never
- * rewritten. The writes create the correction record (ratingCorrections/<lobbyId>): a later plan reads the correction
- * as applied (neverJoinedApplied), even after either player has played again, so it is written once.
+ * the recording holds that. So both objects are then held at the generations the checks read, before the transaction.
+ * A hold is set only on an unheld object at that generation, conditioned on its metadata, so an object replaced or
+ * deleted since the plan, or already held, fails it, and nothing is written; a hold this apply did not set is never
+ * cleared. A hold whose reply is lost is read back; if whether it was set cannot be established, the apply stops,
+ * writing nothing, and keeps its claim. While held, Cloud Storage refuses to replace or delete either object, so both
+ * stay at those generations until the commit. Then one transaction re-reads every document the checks read and the
+ * claim, and commits the writes only while every one is unchanged and the claim is this apply's. Both holds are
+ * released once the transaction's outcome is known. If the transaction throws, its commit may still land, so the holds
+ * and the claim are kept and must be released by hand. The recording itself is never rewritten. The writes create the
+ * correction record (ratingCorrections/<lobbyId>): a later plan reads the correction as applied (neverJoinedApplied),
+ * even after either player has played again, so it is written once.
  */
 export async function applyNeverJoined(store: Store, recordings: RecordingObjects & RecordingHolds, plan: NeverJoinedPlan,
   digest = NEVER_JOINED_APPLY_DIGEST): Promise<ApplyOutcome> {
   if (plan.summary.digest !== digest) return "digest differs";
   const { snapshot, recording, replayId } = plan.verification;
   const objects = [{ name: binaryName(replayId!), generation: recording!.binary.generation }, { name: recordName(replayId!), generation: recording!.record.generation }];
-  const held: typeof objects = [];
-  const release = async () => {
-    for (const object of held.splice(0)) {
-      try { await recordings.hold(object.name, object.generation, false); } catch { console.warn("antwar rating correction recording hold not released"); }
-    }
+  const token = randomUUID();
+  const claimed = await store.transaction(async read => (await read([NEVER_JOINED_CLAIM])).get(NEVER_JOINED_CLAIM)
+    ? { result: false, writes: [] }
+    : { result: true, writes: [{ op: "create" as const, path: NEVER_JOINED_CLAIM, fields: { token, digest, objects: JSON.stringify(objects), at: String(Date.now()) } }] });
+  if (!claimed) return "already claimed";
+
+  const held: HeldObject[] = [];
+  /** Clears this apply's holds; the claim is deleted only once every one is confirmed cleared. */
+  const finish = async () => {
+    let cleared = true;
+    for (const hold of held.splice(0)) if (!await recordings.release(hold)) cleared = false;
+    if (!cleared) { console.warn("antwar rating correction recording hold kept; its claim names the objects"); return; }
+    try {
+      await store.transaction(async read => ({ result: undefined,
+        writes: (await read([NEVER_JOINED_CLAIM])).get(NEVER_JOINED_CLAIM)?.token === token ? [{ op: "delete" as const, path: NEVER_JOINED_CLAIM }] : [] }));
+    } catch { console.warn("antwar rating correction claim not released"); }
   };
   try {
-    for (const object of objects) { await recordings.hold(object.name, object.generation, true); held.push(object); }
+    for (const object of objects) held.push(await recordings.hold(object.name, object.generation));
   } catch (error) {
-    await release();
+    if (error instanceof HoldUnknownError) {
+      // A hold may be set and is not tracked here: everything is kept, named by the claim.
+      for (const hold of held.splice(0)) await recordings.release(hold);
+      console.warn("antwar rating correction recording hold unknown; its claim names the objects");
+      throw error;
+    }
+    await finish();
     if (error instanceof RecordingChangedError) return "changed since planned";
+    if (error instanceof RecordingHeldError) return "recording already held";
     throw error;
   }
   const paths = [...snapshot.keys()];
   const outcome = await store.transaction(async read => {
-    const now = await read(paths);
+    const now = await read([...paths, NEVER_JOINED_CLAIM]);
+    if (now.get(NEVER_JOINED_CLAIM)?.token !== token) return { result: "already claimed" as const, writes: [] };
     if (!paths.every(path => isDeepStrictEqual(now.get(path) ?? null, snapshot.get(path) ?? null))) return { result: "changed since planned" as const, writes: [] };
     return { result: "applied" as const, writes: [...plan.writes] };
   });
-  await release();
+  await finish();
   return outcome;
 }
 
