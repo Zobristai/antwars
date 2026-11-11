@@ -89,6 +89,8 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
   const counts = config.countMarks;
   const local = config.localAnts;
   const early = config.earlyWin;
+  // Under queen HP overrun is never evaluated, so a same-tick loss of both last queens is always "queens killed".
+  const sameTickEnd = queenHp !== undefined ? "queens killed" : "double overrun or queens killed";
   const route = queenHp !== undefined ? `${queensRoute(queenHp, founding)}: a colony loses when every one of its queens is dead` : queensRoute(queenHp, founding);
   const earlyRoute = early === undefined ? [] : [`a sustained territory lead: from ${minutes(early.minTick)}, holding at least ${area(early.minHeldTiles)} and ${early.territoryRatioPermille / 1000} times the opponent's territory for ${minutes(early.holdTicks)} without a break`];
   const example = counts === undefined && config.wordMarksDisabled
@@ -103,7 +105,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
         : `${founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"}: hold an enemy majority near her for ${minutes(config.overrunTicks)}${config.overrunGraceTicks > 0 ? `, after the first ${minutes(config.overrunGraceTicks)}` : ""}.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold at least ${area(early.minHeldTiles)} and ${early.territoryRatioPermille / 1000} times the opponent's territory for ${minutes(early.holdTicks)} without a break.`]),
       config.adjudication === "kills-first"
-        ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (double overrun or queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.`
+        ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.`
         : `At ${matchLength}, hold more territory. Ties go to living ants, then food delivered; if still equal, the match is a draw.`,
     ] },
     { title: "Overview", lines: [
@@ -112,7 +114,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       `Key: ${VISUAL_KEY}.`,
     ] },
     { title: "Winning", lines: [
-      `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.adjudication === "kills-first" ? "At time-up, or if both colonies lose their last queen on the same tick (double overrun or queens killed), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw." : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
+      `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.adjudication === "kills-first" ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.` : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
     ] },
     { title: "Maps", lines: [
       board === null ? `The map the seed selects sets the playable board: ${boardSizeChoices(config)} tiles, width by height.`
@@ -142,7 +144,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       // Alive = started with + hatched − lost, so no count reads as a contradiction without its missing term.
       `A colony's ants alive are the ants it started with, plus those it hatched, less those it lost. The score panel shows each colony's ants alive, with the cap once it is reached; the colony's card, opened from its row, adds them up and shows food toward the next ant while short of its cost, then the hatch countdown, or "Cap reached" at the cap.`,
       ...(config.castes ? [`A soldier costs ${config.castes.soldierCost} food and carries no food.${config.hatchTiming === undefined ? "" : ` Each soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config.hatchIntervalTicks * config.hatchTiming.soldierIntervalMultiplier)}) at its own queen; workers take one interval.`} ${queenBroodText(config, DEFAULT_MCP_CONFIG.callsPerSecond)}`] : []),
-      "Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat. Carriers do not count toward overrunning an enemy queen.",
+      `Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat.${queenHp === undefined ? " Carriers do not count toward overrunning an enemy queen." : ""}`,
       ...frontlineFoodLines(config),
     ] },
     ...(local === undefined ? [] : [{ title: "Autonomous ants", lines: [
