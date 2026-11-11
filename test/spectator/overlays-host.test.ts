@@ -127,6 +127,13 @@ describe("the 3D board's legend from the shared view", () => {
     expect(rest.children.filter(node => node.tag === "#text").map(node => node.textContent)).toEqual([" · ", " ", " ", " ", " ", " "]);
     expect(readFileSync(new URL("../../web/src/ui/deck/deck.css", import.meta.url), "utf8")).toContain(".d1-legend-word { white-space: nowrap; }");
   });
+
+  // Catches: a phone's wrapped legend splitting its Back to live link into "Back" at one line's end and "to live" at
+  // the next's start, as it did in Roboto at 390px.
+  it("keeps Back to live whole, so a wrapped legend moves it to the next line instead of splitting it", () => {
+    const css = readFileSync(new URL("../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    expect(css).toMatch(/^\.d1-back \{[^}]* white-space: nowrap; \}$/m);
+  });
 });
 
 describe("the board's live controls handed to each HUD", () => {

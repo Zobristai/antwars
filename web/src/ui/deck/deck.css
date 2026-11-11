@@ -116,8 +116,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1 .aw-replay-time { font-size: 12px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
 .d1 .aw-replay-state { position: absolute; min-height: 0; right: 12px; bottom: calc(100% + 4px); padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
 .d1 .aw-replay-state:empty { display: none; }
-/* A recording's Back to live, at the legend's end, as today's HUD offers it on its status line. */
-.d1-back { flex: none; margin-left: 10px; color: var(--aw-ink-bright); font-weight: 600; letter-spacing: 0; text-transform: none; text-underline-offset: 3px; }
+/* A recording's Back to live, at the legend's end, as today's HUD offers it on its status line. Held whole: on a phone,
+   where the legend wraps, it moves to the next line rather than splitting "Back" from "to live". */
+.d1-back { flex: none; margin-left: 10px; color: var(--aw-ink-bright); font-weight: 600; letter-spacing: 0; text-transform: none; text-underline-offset: 3px; white-space: nowrap; }
 
 /* ---------------------------------------------------------------- the deck: the shared score in the middle, a team at each side */
 .d1-deck {
