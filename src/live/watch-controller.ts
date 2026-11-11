@@ -1,5 +1,5 @@
 import type { AccountStores } from "../accounts/service.js";
-import type { Rating } from "../rating/ratings.js";
+import type { RankedMode, Rating } from "../rating/ratings.js";
 import { seatKeyOf, type LobbySeat } from "../mcp/game.js";
 import type { LiveGame } from "../server.js";
 import type { SimState } from "../sim/types.js";
@@ -145,17 +145,25 @@ export function createWatchController(options: {
       const [lobby, instance] = await Promise.all([accounts.lobbies.readLobby(lobbyId), accounts.lobbies.resolveSlot(options.slot)]);
       if (!lobby.ok || lobby.value.state !== "holding" || lobby.value.slot !== options.slot || lobby.value.rated === null || !instance) throw new Error("Spectator lobby not ready");
       const { challenge, mode } = lobby.value;
+      // Each identity's rating is read once per mode, shared by the stream's seats and the catalog's figures.
+      const reads = new Map<string, Promise<Rating>>();
+      const readRating = (identityId: string, readMode: RankedMode) => {
+        const at = `${readMode}\u0000${identityId}`;
+        let read = reads.get(at);
+        if (!read) reads.set(at, read = accounts.ratings.readRating(identityId, readMode));
+        return read;
+      };
       const [members, seatRatings] = await Promise.all([Promise.all(seats.map(async seat => {
         // A house challenge's held seat shows its handle's Model Index 1v1 rating, and none before the Index has rated
         // it; every other seat shows its rating in the lobby's mode (a challenge's builder, its public 1v1 rating).
         const house = challenge !== undefined && seat.colony === challenge.heldColony;
-        const read = await accounts.ratings.readRating(seat.identityId, house ? "house-1v1" : mode ?? "1v1");
+        const read = await readRating(seat.identityId, house ? "house-1v1" : mode ?? "1v1");
         return { ...seat, ...(house && read.ratedMatches === 0 ? {} : { elo: read.rating }) };
       })),
       // The catalog's figures: each identity's rating in the lobby's ranked mode, read once here, before the match can
       // have a result, so Live now never shows a rating the match itself moved.
       mode == null ? undefined : Promise.all([...new Set(seats.map(seat => seat.identityId))]
-        .map(async identityId => [identityId, await accounts.ratings.readRating(identityId, mode)] as const)).then(Object.fromEntries)]);
+        .map(async identityId => [identityId, await readRating(identityId, mode)] as const)).then(Object.fromEntries)]);
       if (closed) throw new Error("Spectator server closed");
       current = { access: { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated, mode: lobby.value.mode }, runId: instance.runId,
         bySeat: seatIdentities(members), ...(seatRatings === undefined ? {} : { seatRatings }) };

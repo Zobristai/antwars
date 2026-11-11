@@ -2,6 +2,7 @@ import { addAbortListener, once } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { pipeline } from "node:stream/promises";
 import type { AccountStores } from "../accounts/service.js";
+import type { Rating } from "../rating/ratings.js";
 import { isReplayId, type ReplayRead, type ReplaySource } from "../replays/access.js";
 import type { PrivateArchive } from "../replays/private-archive.js";
 import type { LiveHub } from "./hub.js";
@@ -69,7 +70,7 @@ export function watchRoutes(options: {
         const slots = new Map(await Promise.all([...new Set(matches.map(match => match.slot))].map(async slot => [slot, await options.accounts.lobbies.resolveSlot(slot)] as const)));
         // A restarted slot has no retained in-memory playback from its previous process.
         const live = matches.filter(match => slots.get(match.slot)?.runId === match.runId);
-        const players = new Map(await Promise.all(listedMatches(live).map(async match => [match.lobbyId, await matchPlayers(options.accounts, match)] as const)));
+        const players = await matchPlayers(options.accounts, listedMatches(matches), new Set(live.map(match => match.lobbyId)));
         const catalog = publicMatchCatalog(live, lobbies, players);
         // Live now and Waiting show an unlisted house handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("watch catalog", [...catalog.matches.flatMap(match => match.colonies.flat().map(seat => seat.displayName)), ...catalog.lobbies.flatMap(lobby => lobby.colonies.flat())]);
@@ -194,25 +195,46 @@ export function watchRoutes(options: {
 }
 
 /**
- * A live match's seats by colony: each seat's stream display name (watch-controller seatDisplayNames), the model label its
- * slot published for it once it joined (null otherwise), and, in a ranked mode, the identity's rating there as stored when
- * the match was registered, read before it started (registry seatRatings), never its current rating; none where none was
- * stored. Both colonies empty when the lobby is gone.
+ * The seats of each listed match in shown, by colony: each seat's stream display name (watch-controller seatDisplayNames),
+ * the model label its slot published for it once it joined (null otherwise), and, in a ranked mode, a rating stored before
+ * a match started (registry seatRatings), never a current one. An identity seated in several unfinished matches of one
+ * mode shows, in each, the figures stored for the earliest-started of them, so no match shows a rating another unfinished
+ * match moved; none where that match stored none. listed is every unfinished public match, oldest first, shown or not.
+ * Both colonies empty when a lobby is gone.
  */
-async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "seatRatings">): Promise<PublicColonies> {
-  const lobby = await accounts.lobbies.readLobby(match.lobbyId);
-  if (!lobby.ok) return [[], []];
-  const seats = lobbySeats(lobby.value.colonies), names = seatDisplayNames(seats);
-  const ratings = match.mode == null ? {} : match.seatRatings ?? {};
-  const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
-  seats.forEach((seat, index) => {
-    const rating = Object.hasOwn(ratings, seat.identityId) ? ratings[seat.identityId]! : undefined, displayName = names[index]!;
-    const modelLabel = Object.hasOwn(match.modelLabels ?? {}, displayName) ? match.modelLabels![displayName]! : null;
-    colonies[seat.colony].push(rating === undefined
-      ? { displayName, modelLabel, rating: null, rd: null, ratedMatches: null }
-      : { displayName, modelLabel, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
+async function matchPlayers(accounts: AccountStores, listed: readonly WatchMatch[], shown: ReadonlySet<string>): Promise<Map<string, PublicColonies>> {
+  const lobbies = await Promise.all(listed.map(async match => {
+    const lobby = await accounts.lobbies.readLobby(match.lobbyId);
+    return lobby.ok ? lobbySeats(lobby.value.colonies) : null;
+  }));
+  /** By mode and identity: the figures of the earliest-started unfinished match seating that identity, or null for none. */
+  const earliest = new Map<string, Rating | null>();
+  const key = (mode: string, identityId: string) => `${mode}\u0000${identityId}`;
+  listed.forEach((match, index) => {
+    const mode = match.mode;
+    if (mode == null) return;
+    for (const seat of lobbies[index] ?? []) {
+      const ratings = match.seatRatings ?? {};
+      if (!earliest.has(key(mode, seat.identityId))) earliest.set(key(mode, seat.identityId), Object.hasOwn(ratings, seat.identityId) ? ratings[seat.identityId]! : null);
+    }
   });
-  return colonies;
+  const players = new Map<string, PublicColonies>();
+  listed.forEach((match, index) => {
+    if (!shown.has(match.lobbyId)) return;
+    const seats = lobbies[index];
+    if (!seats) { players.set(match.lobbyId, [[], []]); return; }
+    const names = seatDisplayNames(seats), mode = match.mode;
+    const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
+    seats.forEach((seat, seatIndex) => {
+      const rating = mode == null ? null : earliest.get(key(mode, seat.identityId)) ?? null, displayName = names[seatIndex]!;
+      const modelLabel = Object.hasOwn(match.modelLabels ?? {}, displayName) ? match.modelLabels![displayName]! : null;
+      colonies[seat.colony].push(rating === null
+        ? { displayName, modelLabel, rating: null, rd: null, ratedMatches: null }
+        : { displayName, modelLabel, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
+    });
+    players.set(match.lobbyId, colonies);
+  });
+  return players;
 }
 
 /**

@@ -40,7 +40,7 @@ function lobby(lobbyId: string, kind: "public" | "private", rated = true): Lobby
 interface RelayOptions { readonly relayLimits?: CapLimits; readonly gatewayKey?: Uint8Array; readonly ownerKey?: Uint8Array }
 async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: number, relay: RelayOptions = {}) {
   const { docs, store } = memoryWatchStore(); const registry = createWatchRegistry(store);
-  for (const lobbyId of [id, second]) holdMatch(docs, lobbyId, "run");
+  for (const lobbyId of [id, second, "00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000004"]) holdMatch(docs, lobbyId, "run");
   const lobbies = new Map([[id, lobby(id, kind, rated)]]);
   const streams: { origin: string; writes: string[]; endedAfter: number | null; closed: Promise<void> }[] = [];
   let invite = "current";
@@ -314,6 +314,31 @@ describe("shared spectator HTTP routes", () => {
       [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: 1490, rd: 80, ratedMatches: 12 }],
     ]);
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === third).colonies).toEqual([[], []]);
+  });
+
+  it("shows an identity seated in several unfinished matches of one mode with the earliest one's start figures, or none where it stored none", async () => {
+    const f = await fixture("public");
+    const third = "00000000-0000-4000-8000-000000000003", fourth = "00000000-0000-4000-8000-000000000004";
+    const seat = (identityId: string, displayName: string) => ({ id: identityId, displayName });
+    // b's earlier 1v1 match stored no figures; a's earlier 1v1 match stored 1612.4; a 2v2 match is another mode.
+    f.lobbies.set(second, { ...lobby(second, "public"), mode: "1v1", colonies: [[seat("a", "alice")], [seat("c", "carol")]] });
+    f.lobbies.set(third, { ...lobby(third, "public"), mode: "1v1", colonies: [[seat("b", "bob")], [seat("d", "dave")]] });
+    f.lobbies.set(fourth, { ...lobby(fourth, "public"), mode: "1v1", colonies: [[seat("a", "alice")], [seat("b", "bob")]] });
+    const register = (lobbyId: string, startedAt: number, seatRatings?: Record<string, { rating: number; rd: number; ratedMatches: number }>) =>
+      f.registry.register({ lobbyId, visibility: "public", rated: true, mode: "1v1", startedAt, origin: f.ownerOrigin, slot: "public-0", runId: "run", ...(seatRatings ? { seatRatings } : {}) });
+    await register(second, 5, { a: startRatings.a, c: startRatings.c });
+    await register(third, 6);
+    await register(fourth, 9, { a: { rating: 1640, rd: 78, ratedMatches: 13 }, b: { rating: 1520, rd: 79, ratedMatches: 13 } });
+    const colonies = async (lobbyId: string) => (await (await request(f.gatewayOrigin, "/watch/catalog")).json()).matches.find((match: { lobbyId: string }) => match.lobbyId === lobbyId).colonies;
+    expect(await colonies(fourth)).toEqual([
+      [{ displayName: "alice", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
+    ]);
+    // Once the earlier matches' playback has finished, the later match shows its own start figures.
+    await f.registry.playbackFinished(second, "run");
+    await f.registry.playbackFinished(third, "run");
+    expect(await colonies(fourth)).toEqual([
+      [{ displayName: "alice", modelLabel: null, rating: 1640, rd: 78, ratedMatches: 13 }], [{ displayName: "bob", modelLabel: null, rating: 1520, rd: 79, ratedMatches: 13 }],
+    ]);
   });
 
   it("shows a ranked match registered without start ratings with none, never a current rating", async () => {
