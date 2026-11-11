@@ -61,7 +61,10 @@ export function writeConfig(fields, env = process.env) {
   return config;
 }
 
-/** state/seat.json: readyAt (ms, written once) and ownJoinedAt (joinedAt of this seat's own join_queue). */
+/**
+ * state/seat.json: readyAt (ms, written once), ownJoinedAt (joinedAt of this seat's own join_queue), and the wait link of
+ * the latest go or join-lobby: waitUrl, waitToken (not a secret), waitFrom (the reply it came from) and waitSavedAt.
+ */
 export function readSeat(env = process.env) {
   return readJson(statePath("seat.json", env), {});
 }

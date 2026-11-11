@@ -93,19 +93,21 @@ function expectRulesWakeInstructions(text: string): void {
   expect(text).toMatch(/private: inviteToken, not keys/i);
   // The wait stream beside the harness; the full contract is in the join_queue, join_lobby and request_challenge
   // descriptions (the rules reply must fit 20000 characters).
-  expect(text).toMatch(/stay in turn on it or run it as a background job that wakes you\. Or wait on the waitUrl your join returns \(SSE; see join_queue\)\./);
+  expect(text).toMatch(/stay in turn on it or run it as a background job that wakes you\. Or wait for done on your waitUrl \(SSE; see join_queue\)\./);
 }
 
 // The wait stream as the join, lobby and challenge replies return it (src/accounts/waitStream.ts), polling kept beside it.
 function expectWaitStreamInstructions(text: string): void {
-  expect(text).toMatch(/join_queue, join_lobby and request_challenge also return waitToken and waitUrl \(https:\/\/antwars\.ai\/wait\/<waitToken>\)/);
-  // A wait already ended at connect gets its named final event first and only (src/accounts/waitStream.ts).
-  expect(text).toMatch(/GET waitUrl is a server-sent events stream, and each connect starts with the wait's current state\. While the wait is waiting, that state comes as one unnamed message and the stream stays open; once the wait has ended, whether at connect or later, its state comes as one named final event and the stream closes, so a final event can be the first and only one\./);
-  expect(text).toMatch(/paired \(lobbyId and lobbyWait: true: [^)]*reconnect to the same waitUrl, which now follows that lobby\)/);
-  // slot_ready also reports a match already played (src/lobby/waits.ts lobbyWait), so the guidance says when to stop.
-  expect(text).toMatch(/slot_ready \(startsAt: the lobby holds, or has held, a match slot; call locate_match until it assigns a match server, then join with your seated key; if read_lobby reads ended, that match is already over\)/);
-  expect(text).toMatch(/expired \(reason time_limit: the wait's own time limit passed; ended: any other end/);
-  expect(text).toMatch(/may also close without a final event, after at most 5 minutes: reconnect with the same token and the current state is sent again\./);
+  expect(text).toMatch(/join_queue, join_lobby and request_challenge also return waitToken and waitUrl \(https:\/\/antwars\.ai\/wait\/<waitToken>\), and queue_status, read_lobby and challenge_status return them again while you hold that wait/);
+  // The simple path first: one link, one event, its end state in the data (src/accounts/waitStream.ts).
+  expect(text).toMatch(/The simple path: get the link, GET waitUrl \(a server-sent events stream\), wait for the one event named done, then act on its data alone\./);
+  // done's joinable decides alone: slot_ready also reports a match already played (src/lobby/waits.ts lobbyWait).
+  expect(text).toMatch(/data\.joinable true: the match can still be joined, so call locate_match until it assigns a match server, then join with your seated key\./);
+  expect(text).toMatch(/data\.joinable false: there is nothing to join; data\.state says why: slot_ready \(startsAt\) when the lobby's match has already been played, or expired \(reason time_limit: the wait's own time limit passed; ended: any other end/);
+  expect(text).toMatch(/Every way a wait ends comes as done\./);
+  expect(text).toMatch(/Each end is also sent under its own name, slot_ready \(startsAt and joinable: the lobby holds, or has held, a match slot\) or expired, just before done, and the stream closes after done, so done can come at once when the wait has already ended\./);
+  expect(text).toMatch(/A queue wait that is paired sends paired \(lobbyId and lobbyWait: true\) and stays open on the same connection, following that lobby to slot_ready or expired, then done\./);
+  expect(text).toMatch(/may also close without done, after at most 5 minutes: reconnect with the same waitUrl and the current state is sent again\./);
   expect(text).toMatch(/If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge\./);
   expect(text).not.toMatch(/house challenge/i);
 }
@@ -163,10 +165,11 @@ describe("account guidance without issuing identities", () => {
     expect(description("create_lobby")).not.toMatch(/lobby expires 15 minutes/i);
     for (const name of ["join_queue", "join_lobby"]) expectWakeInstructions(description(name));
     for (const name of ["join_queue", "join_lobby", "request_challenge"]) expectWaitStreamInstructions(description(name));
-    for (const name of ["join_queue", "join_lobby"]) expect(description(name)).toMatch(/notice you have been matched: wait on the stream at the waitUrl your join returns \(see Wait stream\), poll, or use the antwars-seat harness\./);
+    for (const name of ["join_queue", "join_lobby"]) expect(description(name)).toMatch(/notice you have been matched: wait for done on the stream at your waitUrl \(see Wait stream\), poll, or use the antwars-seat harness, which saves and prints the waitUrl \(`antwars-seat wait-url` reads it back\)\./);
     // Polling stays documented on the status tools, with the stream named beside it.
-    expect(description("queue_status")).toMatch(/this is the polling path; instead of polling, you can wait on the waitUrl join_queue returned\./i);
-    expect(description("read_lobby")).toMatch(/this is the polling path; instead of polling, a seated agent can wait on the waitUrl join_lobby or request_challenge returned\./i);
+    expect(description("queue_status")).toMatch(/while your entry's wait is live, waiting or paired, the reply also carries its waitToken and waitUrl, the ones join_queue returned\. this is the polling path; instead of polling, you can wait for done on that waitUrl\./i);
+    expect(description("read_lobby")).toMatch(/a seated identity's reply also carries its own waitToken and waitUrl for this lobby while that wait is live; an invite reader's or an unseated creator's never does\. this is the polling path; instead of polling, a seated agent can wait for done on that waitUrl\./i);
+    expect(description("challenge_status")).toMatch(/your own reply also carries waitToken and waitUrl while your wait on the challenge's lobby is live\./i);
     expect(description("join_lobby")).toMatch(/private lobby.*invite token.*locate_match.*mcpUrl.*same seated key/i);
     expect(description("start_lobby")).toMatch(/both colonies.*lobby games.*unrated.*wait for a free slot/i);
     expect(description("issue_invite")).toMatch(/invalidating the previous.*never your key/i);
