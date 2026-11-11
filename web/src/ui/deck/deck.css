@@ -142,8 +142,13 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
    seat count and result never do. */
 .d1-team-player { flex: 0 1 auto; display: inline-flex; align-items: baseline; gap: 0 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d1-team-player[hidden] { display: none; }
+/* With one player the colony name takes its own line and the player's line follows under it, its seat icons leading it,
+   so neither the name nor the line gives way to the other. */
+.d1-team-head:has(> .d1-team-player:not([hidden])) { flex-wrap: wrap; row-gap: 4px; }
+.d1-team-head:has(> .d1-team-player:not([hidden])) > .d1-name { flex-basis: 100%; }
+.d1-team-head:has(> .d1-team-player:not([hidden])) > .d1-team-members { flex: none; }
+.d1-team-head > .d1-team-player { flex: 1 1 0; }
 .d1-team-player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.d1-team-player-name > .d1-model { margin-left: 6px; }
 .d1-team-player > :not(.d1-team-player-name) { flex: none; }
 .d1-seats { font-weight: 400; color: var(--aw-ink-3); }
 /* The economy: a cell per measure, its label over its figure. */
@@ -240,7 +245,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* The name is never cut: as on the Leaderboard it wraps, its badges moving whole onto the next line. */
 .d1-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; padding-block: 2px; }
 .d1-title-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
-.d1-model-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
+.d1-model-box { flex: 0 1 auto; display: inline-flex; align-items: baseline; column-gap: 6px; min-width: 0; }
 .d1-title { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); }
 .d1-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
 /* A Benchmark handle's level and Fast badges, as the Leaderboard's d1p-tags: one unit, never split or shrunk. */

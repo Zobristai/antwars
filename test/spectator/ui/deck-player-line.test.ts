@@ -37,8 +37,9 @@ function mounted() {
   const update = (frame: Frame) => teams.update({ frame, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
   const team = (colony: 0 | 1) => teams.teams[colony] as unknown as ElementPort;
   /** A part's visible words: hidden parts and screen-reader-only text left out. */
-  const shown = (node: ElementPort): string => node.hidden ? "" : node.tag === "#text" ? node.textContent
-    : node.children.length === 0 ? node.textContent : node.children.map(shown).filter(Boolean).join(" ");
+  const parts = (node: ElementPort): string => node.hidden ? "" : node.tag === "#text" ? node.textContent
+    : node.children.length === 0 ? node.textContent : node.children.map(parts).filter(Boolean).join(" ");
+  const shown = (node: ElementPort): string => parts(node).replace(/\s+/g, " ").trim();
   const tip = () => team(0).byClass("d1-tip")[0]!;
   return { port, update, team, shown, tip, picked };
 }
@@ -112,6 +113,12 @@ describe("a colony panel's player line", () => {
     expect([results(0), results(1)]).toEqual([[["Draw", "d1-tag d1-result c0"]], [["Draw", "d1-tag d1-result c1"]]]);
     m.update(frameOf(agents, end({ winner: 0, reason: "abandoned" })));
     expect([results(0), results(1)]).toEqual([[["Abandoned", "d1-tag d1-result c0"]], [["Abandoned", "d1-tag d1-result c1"]]]);
+  });
+
+  it("shows a builder whose label only repeats its own name by its name alone, as a Matches line does", () => {
+    const m = mounted();
+    m.update(frameOf([agent(0, { displayName: "omp-dolphin", elo: 1351 }, "omp-dolphin/local"), agent(1, kite, "x")]));
+    expect(m.shown(m.team(0).byClass("d1-who")[0]!)).toBe("omp-dolphin 1351");
   });
 
   it("keeps the asterisk after a self-reported model and the seat icons' tips", () => {

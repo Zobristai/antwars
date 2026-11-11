@@ -133,7 +133,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // The one player's line in the Matches order: its name and model, which give way first, then its level and Fast badges,
     // its rating, its seat count and the colony's result, always shown in full.
     const playerName = h(doc, "span", "d1-team-player-name"), playerTitle = h(doc, "span", "d1-title"), playerModel = h(doc, "span", "d1-model");
-    playerName.append(playerTitle, playerModel);
+    playerName.append(playerTitle, " ", playerModel);
     const playerTags = h(doc, "span", "d1-tags"), playerElo = h(doc, "span", "d1-tag d1-elo");
     const playerSeats = h(doc, "span", "d1-seats"), playerResult = h(doc, "span", `d1-tag d1-result c${colony}`);
     player.append(playerName, playerTags, playerElo, playerSeats, playerResult);

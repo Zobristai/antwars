@@ -14,6 +14,7 @@ import {
 import { OPEN_COPY, PAGE_COPY, SCORE_COPY, clockTime, decisive, resultHow, significant } from "../../story.ts";
 import { CONNECTING_LINE, ENDED_LINE, SEAT, agentHandle, agentModel, isBenchmark, namedText, ratingResultRows, rowName, type RatingRow, type RowName } from "../../compose.ts";
 import { agentShade, cssColour } from "../../squads.ts";
+import { seatModelName } from "../../pages/model.ts";
 import { boardQueenHp } from "../../variant.ts";
 import type { ModeCopy } from "../../replay.ts";
 import { WAITING_COPY } from "../../waiting.ts";
@@ -744,7 +745,11 @@ function lineParts(a: StreamAgent, reported: boolean) {
   const builder = reported && named !== null;
   // The model as the HUD names it, with its own badges; without an identity it is the title and its badges the title's.
   const shownModel = agentModel(a);
-  const beside = named !== null && !named.benchmark ? shownModel : null;
+  // A builder whose label only repeats its own name ("coffee-ant/local" on coffee-ant) shows its name alone, as on a Matches
+  // line (pages/model.ts seatModelName).
+  const handle = a.identity ? SEAT.exec(a.identity.displayName)?.[1] ?? a.identity.displayName : null;
+  const repeats = handle !== null && a.modelLabel !== "" && seatModelName(a.modelLabel, handle) === handle;
+  const beside = named !== null && !named.benchmark && !repeats ? shownModel : null;
   // A level the stream carries with no model to badge it is a badge after the name, never quiet text; a builder outside the
   // Index shows a level only with a model, as on a Matches line.
   const level = !builder && beside === null && (named === null ? shownModel === null : !named.benchmark) && a.thinkingLevel ? [a.thinkingLevel] : [];
