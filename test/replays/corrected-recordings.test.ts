@@ -245,6 +245,21 @@ describe("the matches the rating corrections changed, as served", () => {
     expect(solRow.seats.map(seat => seat.modelLabel)).toEqual([`${SOL.to} (row)`, `${SOL.to} (row)`]);
     expect(JSON.stringify(solRow)).not.toMatch(OLD_HANDLE);
   });
+  it("answers 503 for a Sol replay that does not open with a full snapshot, once the Sol move is applied", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let first = true;
+    const headless = rewriteMessages(bucket().objects.get(SOL.replayId)!.binary, message => {
+      const opening = first; first = false;
+      return opening ? { ...message, full: null } : null;
+    }).body!;
+    const before = await serve({}, { [SOL.replayId]: { binary: headless } });
+    expect(new Uint8Array((await before.get(`/replays/${SOL.replayId}`)).body)).toEqual(headless);
+    const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: { binary: headless } });
+    const response = await w.get(`/replays/${SOL.replayId}`);
+    expect([response.status, response.cache]).toEqual([503, "no-store"]);
+    expect(response.body.toString("latin1")).not.toMatch(OLD_HANDLE);
+  });
+
   it("corrects a Sol row's seat handle the lobby fills in, after the fill: the -fast handle, or 503 when the old one is left", async () => {
     // An older row records no handle for the moved seat; the route fills it from the lobby, which names the old handle.
     const row = bucket().objects.get(SOL.replayId)!.row;

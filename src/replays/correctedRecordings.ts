@@ -20,7 +20,7 @@ import { seatHandle } from "./recorded-match-type.js";
  *   the -fast handle wherever they named the moved one.
  *
  * Until then the stored bytes are served unchanged. Once a correction reads applied, a recording that cannot be
- * corrected (undecodable, a message that does not re-encode to its stored bytes, too large, or a moved match whose
+ * corrected (undecodable, a moved match's replay that renames no seat or does not open with a full snapshot, a message that does not re-encode to its stored bytes, too large, or a moved match whose
  * corrected replay, record or listing row still holds the moved handle in any string) and a failed correction read
  * answer CorrectedRecordingUnavailable, served as a 503: never the stored bytes, never the old handle or result.
  * The recorded rating figures are kept as recorded. Every other recording passes straight through, with no store read.
@@ -122,14 +122,19 @@ function holdsHandle(value: unknown, from: string): boolean {
 }
 
 function correctBinary(correction: Correction, binary: Uint8Array): Uint8Array {
+  let first = true;
   try {
     const out = correction.kind === "never-joined" ? abandonBinary(binary)
       : rewriteMessages(binary, message => {
+        // A replay opens with a full snapshot (the seats it names); one that does not is not served corrected.
+        if (first && message.full === null) throw new Error("no opening snapshot");
+        first = false;
         const moved = moveMessage(message, correction.from, correction.to);
         if (holdsHandle(moved ?? message, correction.from)) throw new Error("moved handle still present");
         return moved;
       });
-    // A moved match's replay names the moved seat: one that renames nothing (empty, or without that seat) is not served.
+    // A moved match's replay names the moved seat: one that renames nothing (empty, or without that seat), or that does
+    // not open with a full snapshot, is not served.
     if (correction.kind === "sol" && out.rewritten === 0) throw new Error("no moved seat");
     return out.body ?? binary;
   } catch { throw new CorrectedRecordingUnavailable("replay not correctable"); }
