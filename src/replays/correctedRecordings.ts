@@ -62,10 +62,17 @@ function appliedReader(store: Pick<Store, "get">): (correction: Correction) => P
   };
 }
 
+/** The moved handle wherever it stands whole: not where it merely begins a longer handle (the -fast one does). */
+const handlePattern = (from: string) => new RegExp(`${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
+
 /** A seat named `from`, alone or as "from #n", renamed to `to` with its seat suffix kept. */
 function moveIdentity(identity: StreamIdentity | undefined, from: string, to: string): StreamIdentity | undefined {
   return identity !== undefined && seatHandle(identity) === from ? { ...identity, displayName: `${to}${identity.displayName.slice(from.length)}` } : identity;
 }
+/**
+ * The message with each seat named `from` renamed, and the handle replaced wherever it stands whole in an agent's or
+ * join's model label and an agent's or order's intent line. null when nothing changed.
+ */
 function moveMessage(message: StreamMessage, from: string, to: string): StreamMessage | null {
   let changed = false;
   const move = (identity: StreamIdentity | undefined) => {
@@ -73,25 +80,34 @@ function moveMessage(message: StreamMessage, from: string, to: string): StreamMe
     if (next !== identity) changed = true;
     return next;
   };
+  const pattern = handlePattern(from);
+  const text = (value: string) => {
+    const next = value.replace(pattern, to);
+    if (next !== value) changed = true;
+    return next;
+  };
   const full = message.full === null ? null : { ...message.full, agents: message.full.agents.map(agent => {
-    const identity = move(agent.identity);
-    return identity === agent.identity ? agent : { ...agent, identity };
+    const [identity, modelLabel, intent] = [move(agent.identity), text(agent.modelLabel), text(agent.intent)];
+    return identity === agent.identity && modelLabel === agent.modelLabel && intent === agent.intent ? agent
+      : { ...agent, ...(identity === undefined ? {} : { identity }), modelLabel, intent };
   }) };
   const events = message.events.map(event => {
+    if (event.kind === "order") {
+      const intent = text(event.intent);
+      return intent === event.intent ? event : { ...event, intent };
+    }
     if (event.kind !== "join") return event;
-    const identity = move(event.identity);
-    return identity === event.identity ? event : { ...event, identity };
+    const [identity, modelLabel] = [move(event.identity), text(event.modelLabel)];
+    return identity === event.identity && modelLabel === event.modelLabel ? event
+      : { ...event, ...(identity === undefined ? {} : { identity }), modelLabel };
   });
   return changed ? { ...message, full, events } : null;
 }
 
-/** The moved handle wherever it stands whole: not where it merely begins a longer handle (the -fast one does). */
-const handlePattern = (from: string) => new RegExp(`${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
-
 /**
  * Whether any string in a corrected value, object keys included, still holds the moved handle whole. The correction
- * renames only seats and join identities, so a corrected match is checked before it is served: a handle left in any
- * other field makes it CorrectedRecordingUnavailable rather than served.
+ * renames seats and replaces the handle only in the fields it names, so a corrected match is checked before it is
+ * served: a handle left in any other field makes it CorrectedRecordingUnavailable rather than served.
  */
 function holdsHandle(value: unknown, from: string): boolean {
   const pattern = new RegExp(handlePattern(from).source);
@@ -113,6 +129,8 @@ function correctBinary(correction: Correction, binary: Uint8Array): Uint8Array {
         if (holdsHandle(moved ?? message, correction.from)) throw new Error("moved handle still present");
         return moved;
       });
+    // A moved match's replay names the moved seat: one that renames nothing (empty, or without that seat) is not served.
+    if (correction.kind === "sol" && out.rewritten === 0) throw new Error("no moved seat");
     return out.body ?? binary;
   } catch { throw new CorrectedRecordingUnavailable("replay not correctable"); }
 }
@@ -131,7 +149,9 @@ function correctRecord(id: string, correction: Correction, body: Uint8Array): Ui
 
 function correctSummary(correction: Correction, row: HistorySummary): HistorySummary {
   if (correction.kind === "never-joined") return { ...row, winner: null, reason: "abandoned", decidedBy: "draw", rated: false };
-  const moved = { ...row, seats: row.seats.map(seat => seat.handle === correction.from ? { ...seat, handle: correction.to } : seat) };
+  const pattern = handlePattern(correction.from);
+  const moved = { ...row, seats: row.seats.map(seat => ({ ...seat, handle: seat.handle === correction.from ? correction.to : seat.handle,
+    modelLabel: seat.modelLabel === null ? null : seat.modelLabel.replace(pattern, correction.to) })) };
   if (holdsHandle(moved, correction.from)) throw new CorrectedRecordingUnavailable("listing row not correctable");
   return moved;
 }

@@ -1,8 +1,10 @@
 import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { StreamAgent, StreamEvent, StreamMessage } from "../../src/live/format.ts";
+import { packMessages } from "../../src/live/snapshot.ts";
 import { CORRECTION_MARKER, NEVER_JOINED, SOL_MOVES } from "../../src/rating/correctionPlan.ts";
 import { CORRECTION_KIND } from "../../src/rating/unrateNeverJoined.ts";
 import { isAbandonedRecord, isAbandonedResult, rewriteMessages } from "../../src/replays/abandonRecording.ts";
@@ -183,13 +185,13 @@ describe("the matches the rating corrections changed, as served", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const original = bucket().objects.get(SOL.replayId)!;
     const mapName = `Field of ${SOL.from}`;
-    // The old handle stored outside every seat and join identity: in the replay's map name, the record's, and a row's model label.
+    // The old handle stored where the move replaces nothing: the replay's map name, the record's, and a row's thinking level.
     const binary = rewriteMessages(original.binary, message => message.full === null ? null
       : { ...message, full: { ...message.full, setup: { ...message.full.setup, terrain: { ...message.full.setup.terrain!, mapName } } } }).body!;
     expect(Buffer.from(unzip(Buffer.from(binary))).toString("latin1")).toMatch(OLD_HANDLE);
     const record = new TextEncoder().encode(Buffer.from(original.record).toString().replaceAll('"Open Field"', JSON.stringify(mapName)));
     expect(Buffer.from(record).toString()).toMatch(OLD_HANDLE);
-    const row = { ...original.row, seats: original.row.seats.map(seat => seat.seat === 1 ? { ...seat, modelLabel: SOL.from } : seat) };
+    const row = { ...original.row, seats: original.row.seats.map(seat => seat.seat === 1 ? { ...seat, thinkingLevel: SOL.from } : seat) };
     const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: { binary, record, row } });
 
     const replay = await w.get(`/replays/${SOL.replayId}`);
@@ -207,6 +209,52 @@ describe("the matches the rating corrections changed, as served", () => {
     const before = await serve({}, { [SOL.replayId]: { binary, record, row } });
     expect(new Uint8Array((await before.get(`/replays/${SOL.replayId}`)).body)).toEqual(binary);
     expect((await before.get("/matches")).status).toBe(200);
+  });
+
+  it("replaces the old handle in model labels and intent lines on the Sol replay and row, and serves none of it", async () => {
+    const original = bucket().objects.get(SOL.replayId)!;
+    const agent: StreamAgent = { identity: { displayName: SOL.from, elo: 1500 }, colony: 0, modelLabel: `${SOL.from} (agents)`, joinTick: 0,
+      lastCallTick: 0, prevCallTick: -1, order: "hold", orderX: 1, orderY: 1, intent: `agent holds for ${SOL.from}` };
+    let first = true;
+    const binary = rewriteMessages(original.binary, (message): StreamMessage | null => {
+      const full = message.full !== null && first ? { ...message.full, agents: [agent] } : message.full;
+      first = false;
+      const events = message.events.flatMap((event): StreamEvent[] => event.kind !== "join" ? [event]
+        : [{ ...event, modelLabel: `${SOL.from} (join ${event.agent})` },
+          { kind: "order" as const, agent: event.agent, order: "hold" as const, tileX: 1, tileY: 1, intent: `order for ${SOL.from}` }]);
+      return { ...message, full, events };
+    }).body!;
+    const row = { ...original.row, seats: original.row.seats.map(seat => ({ ...seat, modelLabel: `${SOL.from} (row)` })) };
+    const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: { binary, row } });
+
+    const response = await w.get(`/replays/${SOL.replayId}`);
+    expect(response.status).toBe(200);
+    expect(Buffer.from(unzip(response.body)).toString("latin1")).not.toMatch(OLD_HANDLE);
+    const seen: StreamMessage[] = [];
+    const messages = rewriteMessages(new Uint8Array(response.body), message => { seen.push(message); return null; });
+    const events = seen.flatMap(message => message.events);
+    const joins = events.flatMap(event => event.kind === "join" ? [[event.identity?.displayName, event.modelLabel]] : []);
+    expect(joins).toEqual([[SOL.to, `${SOL.to} (join 0)`], ["antwars/glm-5-3", `${SOL.to} (join 1)`]]);
+    expect(events.flatMap(event => event.kind === "order" ? [event.intent] : [])).toEqual([`order for ${SOL.to}`, `order for ${SOL.to}`]);
+    expect(messages.messages).toBeGreaterThan(0);
+    expect(seen[0]!.full!.agents).toHaveLength(1);
+    expect(seen[0]!.full!.agents[0]).toMatchObject({ identity: { displayName: SOL.to }, modelLabel: `${SOL.to} (agents)`, intent: `agent holds for ${SOL.to}` });
+
+    const rows = await w.list();
+    const solRow = rows.find(r => r.id === SOL.replayId)!;
+    expect(solRow.seats.map(seat => seat.modelLabel)).toEqual([`${SOL.to} (row)`, `${SOL.to} (row)`]);
+    expect(JSON.stringify(solRow)).not.toMatch(OLD_HANDLE);
+  });
+  it("answers 503 for an empty Sol replay, or one that names no moved seat, once the Sol move is applied", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const empties = [new Uint8Array(0), new Uint8Array(gzipSync(packMessages([]))), bucket().objects.get(SOL2.replayId)!.binary];
+    for (const binary of empties) {
+      const before = await serve({}, { [SOL.replayId]: { binary } });
+      expect(new Uint8Array((await before.get(`/replays/${SOL.replayId}`)).body)).toEqual(binary);
+      const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: { binary } });
+      const response = await w.get(`/replays/${SOL.replayId}`);
+      expect([response.status, response.cache]).toEqual([503, "no-store"]);
+    }
   });
 
   it("answers 503 for the three when the correction state cannot be read, and never reads it for any other recording", async () => {
