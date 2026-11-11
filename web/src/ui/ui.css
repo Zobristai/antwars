@@ -45,7 +45,21 @@ html[data-d2-hud] #aw-match-status { top: var(--d2-notice-top, 124px); }
   grid-template-columns: var(--d2-gap) minmax(0, 1fr) var(--d2-gap) var(--d2-pane) var(--d2-gap);
   grid-template-rows: 8px var(--d2-plate-h) 6px minmax(0, 1fr) 6px var(--d2-foot) 8px;
 }
+/* From 1280 px the pane takes its widest, so every player's model and level fit on one line in its rows and card. */
+@media (min-width: 1280px) { .d2-hud { --d2-pane: 296px; } }
 .d2-hud[data-short] { --d2-foot: 28px; --d2-lane: 40px; --d2-tap: 32px; }
+/* With the pane at its widest, the line under the window takes two rows, as on a narrow screen: the stream's state on its
+   own line, the full width of the window, and Bring your agent under it, so neither is cut. */
+@media (min-width: 1280px) {
+  .d2-hud { --d2-foot: 60px; }
+  .d2-hud[data-short] { --d2-foot: 56px; }
+  .d2-hud:not([data-layout="narrow"]) .d2-foot { flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; }
+  /* Each row keeps its own height, the state line never shrinking to nothing under Bring your agent; Copy stays the
+     one-row line's height rather than taking both rows'. */
+  .d2-hud:not([data-layout="narrow"]) .d2-foot > * { flex: none; }
+  .d2-hud:not([data-layout="narrow"]) .aw-byoa-copy { min-height: 32px; }
+  .d2-hud[data-short]:not([data-layout="narrow"]) .aw-byoa-copy { min-height: 28px; }
+}
 body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibility: hidden; }
 .d2-score { grid-column: 2; grid-row: 2; position: relative; z-index: 3; display: flex; justify-content: center; min-width: 0; pointer-events: none; }
 .d2-stage { grid-column: 2; grid-row: 4; position: relative; min-height: 0; }
@@ -252,12 +266,14 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-agent-item.c0 { --d2-side: var(--aw-c0); }
 .d2-agent-item.c1 { --d2-side: var(--aw-c1); }
 .d2-agent-item.is-first { border-top: 6px solid var(--aw-bg); }
-.d2-agent { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto auto; grid-template-areas: "badge name elo order idle" ". said said said said"; align-items: center; column-gap: 6px; row-gap: 1px; width: 100%; min-height: 40px; margin: 0; padding: 5px 10px 5px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; cursor: pointer; }
+.d2-agent { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto auto; grid-template-areas: "badge name name name name" ". sub sub sub sub" ". said elo order idle"; align-items: center; column-gap: 6px; row-gap: 1px; width: 100%; min-height: 40px; margin: 0; padding: 5px 10px 5px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; cursor: pointer; }
 .d2-agent:hover, .d2-agent-item.is-open .d2-agent { background: var(--aw-raise); }
 .d2-badge { grid-area: badge; width: 16px; height: 16px; }
-.d2-agent-name { grid-area: name; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.d2-agent-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: var(--aw-ink-bright); }
-.d2-agent-sub { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
+/* The name and, under it, the model with its level each take the row's full width, so neither is cut; the rating,
+   order and idle marks end the line below them. */
+.d2-agent-name { display: contents; }
+.d2-agent-title { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: var(--aw-ink-bright); }
+.d2-agent-sub { grid-area: sub; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
 .d2-agent-sub:empty, .d2-agent-elo:empty { display: none; }
 .d2-agent-elo { grid-area: elo; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--aw-ink-2); }
 .d2-order { grid-area: order; display: inline-flex; align-items: center; gap: 2px; color: var(--aw-ink-2); }
@@ -272,7 +288,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-said.is-mark:not(.is-words) { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
 .d2-said.is-faded { font-weight: 400; color: var(--aw-ink-2); }
 .d2-said-when { grid-column: 3; font-size: 11px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.d2-agent-detail { padding: 2px 10px 8px 36px; background: var(--aw-raise); }
+.d2-agent-detail { padding: 2px 10px 8px 10px; background: var(--aw-raise); }
 .d2-agent-lines { margin: 0 0 4px; font-size: 11px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; color: var(--aw-ink-2); }
 .d2-history { margin: 0; padding: 0; list-style: none; }
 .d2-history-button { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 5px; width: 100%; min-height: 24px; margin: 0; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; }
