@@ -9,6 +9,7 @@ import { NATURAL_OUTCOMES, type RankedMode } from "../rating/ratings.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -252,7 +253,8 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
           if (res.destroyed) return;
           const start = Buffer.concat(head);
           const complete = start.subarray(0, prefix.length).equals(prefix);
-          res.writeHead(200, { "content-type": "application/json", "cache-control": complete ? IMMUTABLE : SHORT });
+          // A record a rating correction may change (correctedRecordings.ts) is never cached as immutable.
+          res.writeHead(200, { "content-type": "application/json", "cache-control": complete && !CORRECTED_REPLAY_IDS.has(id) ? IMMUTABLE : SHORT });
           if (req.method === "HEAD") { res.end(); return; }
           res.write(start);
           // Each chunk the response takes is progress; under backpressure a stalled client takes none.
