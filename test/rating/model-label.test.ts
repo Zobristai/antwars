@@ -6,7 +6,7 @@ import { FIRST_LOSS, FIRST_WIN } from "./glicko-values.ts";
 
 /**
  * Each rated identity's rating row stores the model label its seat 1 self-reported in its latest rated match in
- * that mode; the leaderboard does not serve it. Real identity, lobby and rating services over in-memory storage.
+ * that mode; the leaderboard serves it only with its model option (leaderboard-model.test.ts). Real identity, lobby and rating services over in-memory storage.
  */
 async function world(ownerName: "antwars" | "kite" = "kite") {
   const w = retentionWorld(Date.now());

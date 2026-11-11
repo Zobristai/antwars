@@ -162,9 +162,13 @@ export function whenParts(when: string): { date: string; time: string | null } {
 /** A recorded "<provider>/<model id>" label as the Leaderboard names that model: its src/rating/houseLabels.ts
  * HOUSE_LABELS row by model label (houseModelEntry), else the label after its provider prefix. A builder's self-reported
  * model keeps its own words: UNLISTED_MODEL is for house seats only,
- * named by their antwars/ handle (recordedIdentity, houseDisplayName). */
+ * named by their antwars/ handle (recordedIdentity, houseDisplayName). A label with nothing but whitespace after its
+ * prefix ("local/", "local/ ") keeps the whole label, so an accepted label never shows as no model. */
 export function modelName(label: string): string {
-  return houseModelEntry(label)?.displayName ?? label.slice(label.indexOf("/") + 1);
+  const named = houseModelEntry(label)?.displayName;
+  if (named !== undefined) return named;
+  const after = label.slice(label.indexOf("/") + 1);
+  return after.trim() === "" ? label : after;
 }
 
 /** A seat's reported label as Recordings and Live now name it: the seat's own handle where the label's part before its

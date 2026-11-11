@@ -7,7 +7,7 @@ import { startServer, type GameServer } from "../../src/server.js";
 import { PUBLIC_CONFIG } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
-import { startBoxes, type StartTile } from "../../src/sim/startPlacement.js";
+import { START_PICK_WINDOW_MS, startBoxes, startPickWindowMsFor, type StartTile } from "../../src/sim/startPlacement.js";
 import { isRockTile, isWaterTile } from "../../src/sim/terrain.js";
 import { createFirestore } from "../../src/store/firestore.js";
 import { connect, matchLogs, tempDir, waitFor, type Agent } from "./helpers.js";
@@ -68,6 +68,9 @@ async function setup(mode: RankedMode | null, size: 1 | 2 | 3 | 4) {
   for (const key of nextKeys) value(await lobbies.join(nextCreated.lobby.id, key.key));
   expect(value(await lobbies.readLobby(nextCreated.lobby.id)).state).toBe("waiting");
 
+  // This lobby's nest window: 240 s in index matches, 120 s otherwise. The next lobby's 120 s window is captured too.
+  const windowMs = startPickWindowMsFor(mode?.startsWith("house-") === true);
+  const isWindowDelay = (delay: number) => [windowMs, START_PICK_WINDOW_MS].some(ms => delay > ms - 1_000 && delay <= ms);
   let finishWindow: (() => void) | undefined;
   let clock: number | undefined;
   const realNow = Date.now;
@@ -75,8 +78,8 @@ async function setup(mode: RankedMode | null, size: 1 | 2 | 3 | 4) {
   const realTimeout = globalThis.setTimeout;
   const captured: NodeJS.Timeout[] = [];
   vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
-    if (delay !== undefined && delay > 119_000 && delay <= 120_000) {
-      const handle = realTimeout(() => {}, 120_000);
+    if (delay !== undefined && isWindowDelay(delay)) {
+      const handle = realTimeout(() => {}, delay);
       captured.push(handle);
       finishWindow = () => { clearTimeout(handle); callback(...args); };
       return handle;
@@ -94,8 +97,8 @@ async function setup(mode: RankedMode | null, size: 1 | 2 | 3 | 4) {
   const nextStart = server.game.nextStart;
   if (nextStart?.kind !== "scheduled") throw new Error("No nest-window deadline");
   const deadline = nextStart.at.getTime();
-  expect(deadline - realNow()).toBeGreaterThan(119_000);
-  expect(deadline - realNow()).toBeLessThanOrEqual(120_000);
+  expect(deadline - realNow()).toBeGreaterThan(windowMs - 1_000);
+  expect(deadline - realNow()).toBeLessThanOrEqual(windowMs);
   const finish = finishWindow!;
   const board = createMatch(seed, config);
   const tiles = ([0, 1] as const).map(colony => {

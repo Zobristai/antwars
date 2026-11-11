@@ -14,7 +14,7 @@ import { GAME_SAVE_FORMAT, type GameSave, type SavedAgentRecord, type StartGameS
 import { finishedStart, LobbyStart, type FinishedStart } from "./lobbyStart.js";
 import type { RankedMode } from "../rating/ratings.js";
 import { captureCells, cellOffset, type CellSnapshot } from "./cellPages.js";
-import { START_PICK_WINDOW_MS, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
+import { startPickWindowMsFor, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
 import { agentsPerColony, DEFAULT_MCP_CONFIG, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { keepsStub, replyLine, stubLine, STUBS_PER_WINDOW, textLine, type ReplyEntry, type StubCall } from "../replays/recording.js";
 import type { ServedText } from "./replies.js";
@@ -115,6 +115,8 @@ export type Outcome = (
 export interface NestSelection {
   /** Every seat must pick in house modes; no missing seat receives a default. */
   readonly required: boolean;
+  /** This lobby's window length in ms: 240 s in index matches, 120 s otherwise. */
+  readonly windowMs: number;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly closesAt: number;
   readonly terrain?: StartTerrain;
@@ -168,7 +170,7 @@ export interface QueuedPlacement {
 export interface GameOptions {
   /** Config for matches started without one, and for briefings before a match starts. */
   readonly simConfig?: SimConfig;
-  /** Explicit test-only duration; omission keeps the production 120-second pick window. */
+  /** Explicit test-only duration; omission keeps the production pick window: 240 s in index matches, 120 s otherwise. */
   readonly startPickWindowMs?: number;
   /**
    * How long a seated seat waits before its nest pick opens on a slot server: the lobby countdown plus one slot poll
@@ -317,13 +319,8 @@ export class Game {
    * cannot grow the record; calls beyond it are stubs.
    */
   private readonly heldFull = new Map<string, { readonly seq: number; count: number }>();
-  /** The pre-match allowance of full entries: the recording budget's rate over the countdown, a poll and the nest pick. */
-  private readonly preMatchFullEntries: number;
-  /**
-   * The pre-match bound on held stubs: the stub rule's rate (STUBS_PER_WINDOW a second) over the same period, so a stuck
-   * or held start holds a fixed number of stubs and the calls past it only raise the closing stub's omitted count.
-   */
-  private readonly preMatchStubs: number;
+  /** The countdown plus one slot poll before a seat's nest pick opens; with the lobby's window, its pre-match period. */
+  private readonly preStartMs: number;
   private replyFailureReported = false;
   /** Per seat, the answer times of its calls recorded in full in the last second: its recording budget (recordsInFull). */
   private readonly recordedTimes = new Map<string, number[]>();
@@ -394,9 +391,7 @@ export class Game {
     this.houseIdleSeconds = houseIdleSecondsOf(this.mcpConfig);
     this.now = options.now ?? Date.now;
     this.startPickWindowMs = options.startPickWindowMs;
-    const preMatchMs = (options.preStartMs ?? 0) + (options.startPickWindowMs ?? START_PICK_WINDOW_MS);
-    this.preMatchFullEntries = Math.floor(this.mcpConfig.callsPerSecond * preMatchMs / 1000);
-    this.preMatchStubs = Math.floor(STUBS_PER_WINDOW * preMatchMs / 1000);
+    this.preStartMs = options.preStartMs ?? 0;
     this.onLogLine = options.onLogLine ?? (() => {});
     this.onInputQueued = options.onInputQueued ?? (() => {});
     this.onReply = options.onReply ?? (() => {});
@@ -435,10 +430,15 @@ export class Game {
     if (this.starting !== null) throw new Error("Lobby pick window already open");
     // Picks are per seat: the starting roster is keyed by seat key, never by identity.
     const roster = [...this.lobby.seats].map(([key, seat]) => ({ identityId: key, colony: seat.colony }));
-    const window = new LobbyStart(seed, this.undrawnConfig, roster, this.now(), this.startPickWindowMs, this.lobby.mode?.startsWith("house-") === true);
+    const window = new LobbyStart(seed, this.undrawnConfig, roster, this.now(), this.nestWindowMs(), this.lobby.mode?.startsWith("house-") === true);
     this.starting = { seed, window };
     this.setNextStart({ kind: "scheduled", at: new Date(window.closesAt) });
     return window.closesAt;
+  }
+
+  /** The seated lobby's nest-pick window length: the test override, else 240 s in index matches and 120 s otherwise. */
+  nestWindowMs(): number {
+    return this.startPickWindowMs ?? startPickWindowMsFor(this.lobby?.mode?.startsWith("house-") === true);
   }
 
   /** Finalization is atomic; a premature call leaves every pick intact. */
@@ -457,7 +457,7 @@ export class Game {
     if (rec === undefined || rec.finalResult.notPlayed || rec.seat === null || this.lobby === null
       || rec.seatKey !== `${this.lobby.id}/${rec.seat.key}` || this.starting === null) return null;
     const view = this.starting.window.teamView(rec.seat.key, includeTerrain && this.now() < this.starting.window.closesAt);
-    return view === null ? null : { required: this.lobby.mode?.startsWith("house-") === true, box: view.box, closesAt: view.closesAt,
+    return view === null ? null : { required: this.lobby.mode?.startsWith("house-") === true, windowMs: this.nestWindowMs(), box: view.box, closesAt: view.closesAt,
       ...(view.terrain === undefined ? {} : { terrain: view.terrain }), picks: view.picks.map(pick => ({
       displayName: this.seatName(this.lobby!.seats.get(pick.identityId)!), mine: pick.identityId === rec.seat!.key,
       tileX: pick.tileX, tileY: pick.tileY,
@@ -1171,11 +1171,24 @@ export class Game {
     return this.now();
   }
 
+  /** The pre-match allowance of full entries: the recording budget's rate over the countdown, a poll and the seated lobby's nest pick. */
+  private preMatchFullEntries(): number {
+    return Math.floor(this.mcpConfig.callsPerSecond * (this.preStartMs + this.nestWindowMs()) / 1000);
+  }
+
+  /**
+   * The pre-match bound on held stubs: the stub rule's rate (STUBS_PER_WINDOW a second) over the same period, so a stuck
+   * or held start holds a fixed number of stubs and the calls past it only raise the closing stub's omitted count.
+   */
+  private preMatchStubs(): number {
+    return Math.floor(STUBS_PER_WINDOW * (this.preStartMs + this.nestWindowMs()) / 1000);
+  }
+
   /** Whether the seat may still record a full entry before match seq begins: fewer than preMatchFullEntries so far. */
   private preMatchAllows(seq: number, agentId: string): boolean {
     let held = this.heldFull.get(agentId);
     if (held === undefined || held.seq !== seq) this.heldFull.set(agentId, held = { seq, count: 0 });
-    return held.count < this.preMatchFullEntries;
+    return held.count < this.preMatchFullEntries();
   }
 
   /**
@@ -1186,7 +1199,7 @@ export class Game {
   private holdStub(seq: number, agentId: string, call: StubCall): void {
     let seat = this.heldStubs.get(agentId);
     if (seat === undefined || seat.seq !== seq) this.heldStubs.set(agentId, seat = { seq, kept: [], omitted: 0, last: null, held: 0 });
-    if (seat.held >= this.preMatchStubs - 1 || !keepsStub(seat, call.answeredAt)) {
+    if (seat.held >= this.preMatchStubs() - 1 || !keepsStub(seat, call.answeredAt)) {
       seat.omitted += 1;
       seat.last = { tool: call.tool, receivedAt: call.receivedAt, answeredAt: call.answeredAt, code: call.code };
       return;

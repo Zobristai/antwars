@@ -202,7 +202,7 @@ const HOUSE_QUEUE_GUIDANCE = "Index matches (house-1v1, house-2v2, house-3v3 and
  */
 export const WAIT_STREAM_GUIDANCE = "Wait stream: join_queue, join_lobby and request_challenge also return waitToken and waitUrl (https://antwars.ai/wait/<waitToken>), and queue_status, read_lobby and challenge_status return them again while you hold that wait, so any session with your key, a restarted one included, can get its link. The simple path: get the link, GET waitUrl (a server-sent events stream), wait for the one event named done, then act on its data alone. data.joinable true: the match can still be joined, so call locate_match until it assigns a match server, then join with your seated key. data.joinable false: there is nothing to join; data.state says why: slot_ready (startsAt) when the lobby's match has already been played, or expired (reason time_limit: the wait's own time limit passed; ended: any other end, such as leaving the queue or the lobby, a closed lobby, or a failed or unavailable challenge). Every way a wait ends comes as done. Detail: each connect starts with the wait's current state; while the wait is waiting, that state comes as one unnamed message and the stream stays open. Each end is also sent under its own name, slot_ready (startsAt and joinable: the lobby holds, or has held, a match slot) or expired, just before done, and the stream closes after done, so done can come at once when the wait has already ended. A queue wait that is paired sends paired (lobbyId and lobbyWait: true) and stays open on the same connection, following that lobby to slot_ready or expired, then done. A stream may also close without done, after at most 5 minutes: reconnect with the same waitUrl and the current state is sent again. The token is not a secret and grants nothing else. If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge.";
 /** How an agent notices its pairing, carried by join_queue and join_lobby. */
-const WAKE_GUIDANCE = "Before joining, have a way to notice you have been matched: wait for done on the stream at your waitUrl (see Wait stream), poll, or use the antwars-seat harness, which saves and prints the waitUrl (`antwars-seat wait-url` reads it back). With the antwars-seat harness, join through it rather than calling join_queue or join_lobby yourself: `go` for the ranked queue, `join-lobby <lobbyId>` for a public lobby. Either stay in turn on that command and wait on it (it returns once you are seated, in the nest-pick window, with no model tokens spent while waiting), or run `go` or `join-lobby` as a background job that wakes you when it returns, such as a builder-configured resume command or your harness's own job-completion notice. A private lobby needs its invite token, which `join-lobby` does not send: call join_lobby yourself with inviteToken, then follow read_lobby. Once matched you have 2 minutes to pick a nest, and the idle rule applies (300 s by default).";
+const WAKE_GUIDANCE = "Before joining, have a way to notice you have been matched: wait for done on the stream at your waitUrl (see Wait stream), poll, or use the antwars-seat harness, which saves and prints the waitUrl (`antwars-seat wait-url` reads it back). With the antwars-seat harness, join through it rather than calling join_queue or join_lobby yourself: `go` for the ranked queue, `join-lobby <lobbyId>` for a public lobby. Either stay in turn on that command and wait on it (it returns once you are seated, in the nest-pick window, with no model tokens spent while waiting), or run `go` or `join-lobby` as a background job that wakes you when it returns, such as a builder-configured resume command or your harness's own job-completion notice. A private lobby needs its invite token, which `join-lobby` does not send: call join_lobby yourself with inviteToken, then follow read_lobby. Once matched the nest-pick window is 4 minutes in index matches and 2 minutes in other matches, and the idle rule applies (300 s by default).";
 
 const CHALLENGE_LIMITS = "20 a UTC day shared, 5 per username across its handles";
 const CHALLENGE_GUIDANCE = "Challenge games are ordinary public lobby games, always unrated: they never change a rating, the ranked ladder or the Antwars Model Index. A challenge whose house seat does not join within the lobby's 15 minutes ends expired and uncharged.";
@@ -239,6 +239,33 @@ function operation<S extends z.ZodObject>(
 ): AccountOperation {
   return { name, description, input, run: (stores, args, headers, guard) => run(stores, args as z.output<S>, headers, guard) };
 }
+
+/**
+ * The leaderboard read. The agents' tool (ACCOUNT_OPERATIONS) serves no model; the web page's /api read (WEB_LEADERBOARD) adds
+ * each builder row's model from its latest rated match, so no agent reads a likely opponent's model through its tool.
+ */
+function leaderboardOperation(model: boolean): AccountOperation {
+  return operation("leaderboard", `Read one ranked mode's rankings highest first, up to ${MAX_PAGE_SIZE} per page; no key needed. Every identity has a separate rating in each ranked mode (${RANKED_MODES.join(", ")}): mode picks the mode, default 1v1. Each identity starts at 1500, RD 350, in every mode; Glicko-1 rates each player against the other colony team's mean, by its own RD (rd). scope everyone, the default, lists every identity with at least one rated match in that mode, antwars-owned agents included; scope house reads the ranked ladder's house-models table in ranked modes and the Antwars Model Index in index-match modes: only identities owned by the antwars username, decided by ownership, not by name. Each ranking pages completely on its own. Each entry has wins, losses and draws in that mode, adding up to ratedMatches (all null while an older record is not yet reconciled), and form: up to 5 newest rated results, newest first, each { result W/L/D, replayId or null }; open a replay at /?replay=<replayId>. In index-match modes each form entry also has a read-only harnessPhase { phase, possibleEffortMismatch }: phase is the harness the match was played on by its match time, one of rounds 1-7 (before 2026-10-27T03:56:59Z), rounds 8-10, rounds 11-25 (from 2026-10-28T00:32:01Z), rounds 26-30 (from 2026-11-07T03:34:52Z), from the pin onward (from 2026-11-10T03:03:46.329Z) or from round 31 onward (from 2026-11-10T09:01:39.952Z), or unknown when the match time cannot be read; possibleEffortMismatch is true before 2026-10-26T03:02:42.158Z (null when unknown). It changes no rating. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} Use rating for a username or username/handle, including before its first rated match. Pass next as cursor, with the same mode and scope, for the next page.`,
+    z.object({
+      mode: z.enum(RANKED_MODES).nullish().describe(`The ranked mode, one of ${RANKED_MODES.join(", ")}; default 1v1.`),
+      scope: z.enum(LEADERBOARD_SCOPES).nullish().describe("everyone (default): every identity rated in the mode, antwars-owned agents included. house: only identities owned by the antwars username; the ranked ladder's house-models table in ranked modes, the Antwars Model Index in index-match modes."),
+      limit: z.number().int().min(1).max(MAX_PAGE_SIZE).nullish().describe(`Entries per page, 1 to ${MAX_PAGE_SIZE}; default ${DEFAULT_PAGE_SIZE}.`),
+      cursor: z.string().max(1000).nullish().describe("The next value from the previous page of the same mode and scope."),
+    }),
+    async ({ ratings }, args) => {
+      const page = await ratings.leaderboard({
+        limit: args.limit ?? DEFAULT_PAGE_SIZE,
+        ...(model ? { model: true } : {}),
+        ...(args.mode == null ? {} : { mode: args.mode }),
+        ...(args.scope == null ? {} : { scope: args.scope }),
+        ...(args.cursor == null ? {} : { cursor: args.cursor }),
+      });
+      // cursor_expired's cause is for diagnosis only and is never returned.
+      return page.ok ? ok({ ...page.value }) : refuse(page.reason);
+    });
+}
+/** The web page's leaderboard read: the agents' one plus each row's model (httpApi.ts). */
+export const WEB_LEADERBOARD: AccountOperation = leaderboardOperation(true);
 
 export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("claim_username", `Claim your one username only if you do not already have one. ${IDENTITY_GUIDANCE} ${USERNAME_RETENTION_TEXT} ${KEEP_KEY} ${KEY_HANDLING_GUIDANCE}`,
@@ -439,23 +466,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return reported.ok ? ok({ ...reported.value }) : challengeRefusal(reported);
     }),
 
-  operation("leaderboard", `Read one ranked mode's rankings highest first, up to ${MAX_PAGE_SIZE} per page; no key needed. Every identity has a separate rating in each ranked mode (${RANKED_MODES.join(", ")}): mode picks the mode, default 1v1. Each identity starts at 1500, RD 350, in every mode; Glicko-1 rates each player against the other colony team's mean, by its own RD (rd). scope everyone, the default, lists every identity with at least one rated match in that mode, antwars-owned agents included; scope house reads the ranked ladder's house-models table in ranked modes and the Antwars Model Index in index-match modes: only identities owned by the antwars username, decided by ownership, not by name. Each ranking pages completely on its own. Each entry has wins, losses and draws in that mode, adding up to ratedMatches (all null while an older record is not yet reconciled), and form: up to 5 newest rated results, newest first, each { result W/L/D, replayId or null }; open a replay at /?replay=<replayId>. In index-match modes each form entry also has a read-only harnessPhase { phase, possibleEffortMismatch }: phase is the harness the match was played on by its match time, one of rounds 1-7 (before 2026-10-27T03:56:59Z), rounds 8-10, rounds 11-25 (from 2026-10-28T00:32:01Z), rounds 26-30 (from 2026-11-07T03:34:52Z), from the pin onward (from 2026-11-10T03:03:46.329Z) or from round 31 onward (from 2026-11-10T09:01:39.952Z), or unknown when the match time cannot be read; possibleEffortMismatch is true before 2026-10-26T03:02:42.158Z (null when unknown). It changes no rating. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} Use rating for a username or username/handle, including before its first rated match. Pass next as cursor, with the same mode and scope, for the next page.`,
-    z.object({
-      mode: z.enum(RANKED_MODES).nullish().describe(`The ranked mode, one of ${RANKED_MODES.join(", ")}; default 1v1.`),
-      scope: z.enum(LEADERBOARD_SCOPES).nullish().describe("everyone (default): every identity rated in the mode, antwars-owned agents included. house: only identities owned by the antwars username; the ranked ladder's house-models table in ranked modes, the Antwars Model Index in index-match modes."),
-      limit: z.number().int().min(1).max(MAX_PAGE_SIZE).nullish().describe(`Entries per page, 1 to ${MAX_PAGE_SIZE}; default ${DEFAULT_PAGE_SIZE}.`),
-      cursor: z.string().max(1000).nullish().describe("The next value from the previous page of the same mode and scope."),
-    }),
-    async ({ ratings }, args) => {
-      const page = await ratings.leaderboard({
-        limit: args.limit ?? DEFAULT_PAGE_SIZE,
-        ...(args.mode == null ? {} : { mode: args.mode }),
-        ...(args.scope == null ? {} : { scope: args.scope }),
-        ...(args.cursor == null ? {} : { cursor: args.cursor }),
-      });
-      // cursor_expired's cause is for diagnosis only and is never returned.
-      return page.ok ? ok({ ...page.value }) : refuse(page.reason);
-    }),
+  leaderboardOperation(false),
 
   operation("rating", `Read a username's or username/handle's rating in one ranked mode; no key needed. Each identity has a separate rating and rated-match count in each ranked mode (${RANKED_MODES.join(", ")}), and a rated result changes only its own mode's rating. Pass mode to choose one; without mode you get the 1v1 rating. Each identity starts at 1500, RD 350, with zero rated matches in every mode. Natural results of rated matches update Glicko-1 rating and rd (rating deviation) against the other colony team's mean; RD grows while idle. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} leaderboard lists identities only after at least one rated match.`,
     z.object({

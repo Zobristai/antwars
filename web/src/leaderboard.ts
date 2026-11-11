@@ -10,6 +10,8 @@ export interface LeaderboardRow {
   readonly serviceTier?: string | null;
   /** Server-decided antwars ownership (never read from the name); false for historical pages. */
   readonly benchmark?: boolean;
+  /** A builder's self-reported model label from its latest rated match in this mode; absent for a house row, none recorded, or an older server. */
+  readonly model?: string | null;
   /** Rated results in this mode, adding up to ratedMatches; null when the server has no reconciled record, or for historical pages. */
   readonly tally?: LeaderboardTally | null;
   /** Up to five newest rated results, newest first; empty when there is no tally. */
@@ -28,6 +30,8 @@ export interface LeaderboardPage {
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 /** Null, or self-reported seat metadata of 1 to 32 characters. */
 const shortText = (value: unknown): value is string | null => value === null || (typeof value === "string" && [...value].length >= 1 && [...value].length <= 32);
+/** Null, or a self-reported model label of 1 to 256 characters (seats may report up to 64). */
+const modelText = (value: unknown): value is string | null => value === null || (typeof value === "string" && [...value].length >= 1 && [...value].length <= 256);
 const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 /** A server replay id (UTC start stamp and sequence, at most 41 characters); anything else is never linked. */
 const REPLAY_ID = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[1-9]\d*$/;
@@ -65,13 +69,14 @@ export function readLeaderboard(value: unknown): LeaderboardPage | null {
     const thinkingLevel = row.thinkingLevel ?? null;
     const serviceTier = row.serviceTier ?? null;
     const benchmark = row.benchmark ?? false;
+    const model = row.model ?? null;
     const rd = row.rd ?? null;
     if (rd !== null && (typeof rd !== "number" || !Number.isFinite(rd) || rd <= 0)) return null;
-    if (!shortText(thinkingLevel) || !shortText(serviceTier) || typeof benchmark !== "boolean") return null;
+    if (!shortText(thinkingLevel) || !shortText(serviceTier) || typeof benchmark !== "boolean" || !modelText(model)) return null;
     const tally = readTally(row, row.ratedMatches);
     const form = tally === undefined ? undefined : readForm(row.form, tally);
     if (tally === undefined || form === undefined) return null;
-    entries.push({ displayName: row.displayName, rating: row.rating, rd, ratedMatches: row.ratedMatches, thinkingLevel, serviceTier, benchmark, tally, form });
+    entries.push({ displayName: row.displayName, rating: row.rating, rd, ratedMatches: row.ratedMatches, thinkingLevel, serviceTier, benchmark, ...(model === null ? {} : { model }), tally, form });
   }
   return { entries, ...(value.next === undefined ? {} : { next: value.next as string }) };
 }
