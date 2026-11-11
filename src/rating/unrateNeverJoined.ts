@@ -73,7 +73,7 @@ const lobbyPath = (id: string) => `lobbies/${id}`;
 const markerPath = (id: string) => `ratedMatches/${id}`;
 const watchPath = (id: string) => `watchMatches/${id}`;
 const correctionPath = (id: string) => `ratingCorrections/${id}`;
-const CORRECTION_KIND = "unrate-never-joined";
+export const CORRECTION_KIND = "unrate-never-joined";
 
 interface StoredChange { identityId: string; after: number; rdAfter?: number }
 
