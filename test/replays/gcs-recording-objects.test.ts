@@ -211,10 +211,29 @@ describe("recording holds set and cleared only by this apply", () => {
     }
   });
 
-  it.each([412, 404])("reports a hold refused on its conditions (HTTP %i) as changed, without reading back", async status => {
+  it.each([412, 404])("reports a hold refused on its conditions (HTTP %i) as undetermined, without reading back", async status => {
     const { objects, jsonCalls } = holdBucket([unheld], () => new Response(null, { status }));
-    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(RecordingChangedError);
+    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
     expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH"]);
+  });
+
+  it("reports as undetermined a hold whose first attempt landed with its reply lost and whose retry got 412", async () => {
+    // A transport that retries below the call: the first PATCH lands (metageneration 3 to 4, held), its reply is lost,
+    // and the retry, still conditioned on metageneration 3, is refused with 412.
+    let metageneration = 3, held = false, attempts = 0;
+    const request = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.hostname === "metadata.google.internal") return Response.json({ access_token: "fake-token", expires_in: 3600 });
+      if ((init?.method ?? "GET") === "GET") return state("7", String(metageneration), held);
+      attempts++;
+      if (url.searchParams.get("ifMetagenerationMatch") !== String(metageneration)) return new Response(null, { status: 412 });
+      metageneration++; held = true;
+      // The reply is lost; the transport sends the same request again.
+      return request(input, init);
+    }) as typeof fetch;
+    const objects = gcsRecordingObjects("replay-bucket", request);
+    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
+    expect([attempts, held]).toEqual([2, true]);
   });
 
   const lost: [string, () => Response][] = [["an error status", () => new Response(null, { status: 503 })],

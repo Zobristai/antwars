@@ -156,10 +156,11 @@ export interface HeldObject { readonly name: string; readonly generation: string
 export interface RecordingHolds {
   /**
    * Sets a hold on an unheld object at `generation`, conditioned on the metadata found unheld, and returns it only on a
-   * reply confirming exactly that hold. Fails, having set nothing: RecordingChangedError when the object is not at
-   * `generation` (replaced or deleted) or the conditioned request is refused (HTTP 412 or 404); RecordingHeldError when
-   * it is already held; any other error before the request is sent. Once sent, an error, lost or unconfirmed reply
-   * throws HoldUnknownError: the request may yet land, and the hold is never inferred from a read-back.
+   * reply confirming exactly that hold. Fails before the request is sent, having set nothing: RecordingChangedError
+   * when the object is not at `generation` (replaced or deleted); RecordingHeldError when it is already held; any other
+   * error. Once the request is sent, every other reply throws HoldUnknownError: the request may yet land, and the hold is
+   * never inferred from a read-back. That includes a refusal on its conditions (HTTP 412 or 404), which a retry below
+   * this call would also give after an earlier attempt landed.
    */
   hold(name: string, generation: string): Promise<HeldObject>;
   /**
@@ -239,7 +240,8 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
       // From here the request may land: anything but a confirmed reply leaves the hold undetermined.
       let reply: HoldState | "precondition";
       try { reply = await patchHold(name, generation, found.metageneration, true, token); } catch { throw new HoldUnknownError(name); }
-      if (reply === "precondition") throw new RecordingChangedError(name);
+      // A refusal on its conditions does not prove this request set nothing: an earlier attempt of it may have landed.
+      if (reply === "precondition") throw new HoldUnknownError(name);
       if (reply.generation !== generation || !reply.held || reply.metageneration !== String(BigInt(found.metageneration) + 1n)) throw new HoldUnknownError(name);
       return { name, generation, metageneration: reply.metageneration };
     },

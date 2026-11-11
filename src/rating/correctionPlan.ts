@@ -251,7 +251,8 @@ export const NEVER_JOINED_CLAIM = `ratingCorrectionClaims/${NEVER_JOINED.lobbyId
  * A hold is set only on an unheld object at that generation, conditioned on its metadata, so an object replaced or
  * deleted since the plan, or already held, fails it, and nothing is written; a hold this apply did not set is never
  * cleared. Only a reply confirming a hold counts as set, and only one confirming it cleared as cleared: after an
- * error, lost or unconfirmed hold reply the hold is undetermined (the request may yet land), so the apply stops,
+ * error, lost or unconfirmed hold reply, a refusal on its conditions (412 or 404) included, the hold is undetermined
+ * (the request, or an earlier attempt of it, may have landed), so the apply stops,
  * writing nothing, releases only the holds confirmed set, and keeps its claim, which names both objects to release by
  * hand. While held, Cloud Storage refuses to replace or delete either object, so both
  * stay at those generations until the commit. Then one transaction re-reads every document the checks read and the
