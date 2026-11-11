@@ -318,14 +318,16 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-match-rows .d1p-kicker { margin-right: 3px; }
 .d1p-match-rows .d1p-colonies { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 4px 0 0; }
 .d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: 12px; line-height: 18px; }
-/* A list's harness phase (matches.ts phaseRows): a divider across the list before the first row of each phase, in both
-   forms, so every row's phase reads from the nearest divider above it and no row carries a tag. Its words take the
+/* A list's harness phase (matches.ts phaseRows): a divider across the list wherever its rows' phase changes, in both
+   forms, so every row reads its phase from the nearest divider above it and no row carries a tag. Its words take the
    match-type badge's type (11 px, semibold, as written) on a faint band between the rows' hairlines, from the inset the
    rows' first words stand on. They break only between tags; the longest, "Harness: rounds 1-7 · Possible effort
-   mismatch", is 304 px in a monospace fallback, so it holds one line in a 390 px phone's 324 px. */
+   mismatch", is 304 px in a monospace fallback, so it holds one line in a 390 px phone's 324 px. The divider over
+   matches outside the Model Index names no phase, so it steps back: no band, regular weight, the quiet ink. */
 .d1p-table .d1p-phase-divider > th, .d1p-rows > li.d1p-phase-divider {
   padding: 6px var(--d1p-inset); background: rgba(233, 239, 240, 0.04); font-size: 11px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2);
 }
+.d1p-table .d1p-phase-divider.is-outside > th, .d1p-rows > li.d1p-phase-divider.is-outside { background: none; font-weight: 400; color: var(--aw-ink-3); }
 .d1p-rows > li.d1p-phase-divider { display: block; }
 /* In a card under 28rem, a phone's, each colony's name stands over its seats, so a seat line has the item's whole width:
    beside the names' column a 390 px phone left 193 px, too little for a team seat with two badges ("GPT-6.1 Terra XHIGH

@@ -558,7 +558,7 @@ describe("tap height on a phone", () => {
   });
 });
 
-describe("Model Index matches show their harness phase in a divider where it changes", () => {
+describe("Model Index matches show their harness phase in a divider where the rows' phase changes", () => {
   const phased = (id: string, phase: NonNullable<Recording["harnessPhase"]>["phase"], possibleEffortMismatch = false): Recording =>
     ({ ...recording, id, startedAt: `${id.slice(0, 10)}T${id.slice(11, 19).replace(/-/g, ":")}.000Z`, matchType: { kind: "index", size: 1 },
       harnessPhase: { phase, possibleEffortMismatch } });
@@ -573,6 +573,9 @@ describe("Model Index matches show their harness phase in a divider where it cha
   };
   // A word joiner follows each hyphen and no-break spaces hold each tag, so a divider breaks only between its tags.
   const read = (node: ElementPort) => node.textContent.replace(/-⁠/g, "-").replace(/ /g, " ");
+  /** A divider's words as read, "(outside)" marking the quieter divider over matches outside the Index. */
+  const words = (divider: ElementPort) => `${read(divider)}${divider.classes().includes("is-outside") ? " (outside)" : ""}`;
+  const OUTSIDE = "Outside the Model Index (outside)";
   /** The table as read: each row group, its divider's words (null for none) then how many rows it holds. A divider row is
    * its group's first row, its one header cell spanning the six columns as the group's header. */
   const groups = (card: ElementPort) => card.byClass("d1p-wide")[0]!.querySelectorAll("tbody").map(group => {
@@ -582,12 +585,12 @@ describe("Model Index matches show their harness phase in a divider where it cha
       const [cell] = divider.children;
       expect([divider.children.length, cell!.tag, cell!.scope, cell!.colSpan]).toEqual([1, "th", "rowgroup", 6]);
     }
-    return [divider ? read(divider) : null, (divider ? rest : group.children).length];
+    return [divider ? words(divider) : null, (divider ? rest : group.children).length];
   });
   /** The stacked list as read: a divider's words, or "row". */
   const items = (card: ElementPort) => card.byClass("d1p-narrow")[0]!.querySelectorAll("li")
     .filter(item => item.parent?.classes().includes("d1p-narrow"))
-    .map(item => item.classes().includes("d1p-phase-divider") ? read(item) : "row");
+    .map(item => item.classes().includes("d1p-phase-divider") ? words(item) : "row");
 
   it("draws a divider before the first row of each phase, the older phases and the effort flag included, and no row carries a tag", () => {
     const { p, liveCard, recCard } = show([liveIndex("lobby-a", "from round 31 onward"), liveIndex("lobby-b", "from round 31 onward")], [
@@ -597,13 +600,15 @@ describe("Model Index matches show their harness phase in a divider where it cha
     ]);
     expect(groups(liveCard)).toEqual([["Harness from round 31 onward", 2]]);
     expect(items(liveCard)).toEqual(["Harness from round 31 onward", "row", "row"]);
-    // The ranked row, by its badge another kind of match, stands under the divider above it, which does not speak for it.
+    // The ranked row, outside the Model Index by its badge, has its own divider, so it takes no phase; the round-31
+    // divider stands again where Index rows resume. Every row group holds only rows its header names.
     expect(groups(recCard)).toEqual([
-      ["Harness from round 31 onward", 3], ["Harness: rounds 26-30", 1], ["Harness: rounds 1-7", 1], ["Harness: rounds 1-7 · Possible effort mismatch", 2],
+      ["Harness from round 31 onward", 1], [OUTSIDE, 1], ["Harness from round 31 onward", 1], ["Harness: rounds 26-30", 1],
+      ["Harness: rounds 1-7", 1], ["Harness: rounds 1-7 · Possible effort mismatch", 2],
     ]);
     expect(items(recCard)).toEqual([
-      "Harness from round 31 onward", "row", "row", "row", "Harness: rounds 26-30", "row", "Harness: rounds 1-7", "row",
-      "Harness: rounds 1-7 · Possible effort mismatch", "row", "row",
+      "Harness from round 31 onward", "row", OUTSIDE, "row", "Harness from round 31 onward", "row", "Harness: rounds 26-30", "row",
+      "Harness: rounds 1-7", "row", "Harness: rounds 1-7 · Possible effort mismatch", "row", "row",
     ]);
     // No row carries a phase tag, and no card a phase note; each divider holds every tag whole.
     expect(p.body.all().filter(node => node.classes().some(name => name === "d1p-phase" || name === "d1p-phase-note"))).toEqual([]);
@@ -618,10 +623,10 @@ describe("Model Index matches show their harness phase in a divider where it cha
     const view = (rows: Recording[], next: string | null): MatchesView => ({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows }, next });
     p.mounted.update(view(newest, "page-2"));
     const card = () => p.body.byClass("d1p-card")[2]!;
-    expect(groups(card())).toEqual([["Harness from round 31 onward", 2]]);
+    expect(groups(card())).toEqual([["Harness from round 31 onward", 1], [OUTSIDE, 1]]);
     p.mounted.update(view([...newest, phased("2026-11-09T06-06-49-048Z-1", "rounds 26-30"), phased("2026-11-09T05-41-00-000Z-1", "rounds 26-30")], null));
-    expect(groups(card())).toEqual([["Harness from round 31 onward", 2], ["Harness: rounds 26-30", 2]]);
-    expect(items(card())).toEqual(["Harness from round 31 onward", "row", "row", "Harness: rounds 26-30", "row", "row"]);
+    expect(groups(card())).toEqual([["Harness from round 31 onward", 1], [OUTSIDE, 1], ["Harness: rounds 26-30", 2]]);
+    expect(items(card())).toEqual(["Harness from round 31 onward", "row", OUTSIDE, "row", "Harness: rounds 26-30", "row", "row"]);
     p.mounted.destroy();
   });
 
@@ -629,8 +634,8 @@ describe("Model Index matches show their harness phase in a divider where it cha
     const unread: Recording = { ...phased("2026-11-10T14-00-00-000Z-1", "from round 31 onward"), harnessPhase: null };
     const unreadLive: LiveMatch = { ...live("lobby-u"), harnessPhase: null };
     const { p, liveCard, recCard } = show([liveIndex("lobby-i", "rounds 26-30"), live("lobby-r"), unreadLive], [phased("2026-11-10T15-34-00-357Z-1", "from round 31 onward"), unread]);
-    expect(groups(liveCard)).toEqual([["Harness: rounds 26-30", 1], ["Outside the Model Index", 1], ["Harness phase unknown", 1]]);
-    expect(items(liveCard)).toEqual(["Harness: rounds 26-30", "row", "Outside the Model Index", "row", "Harness phase unknown", "row"]);
+    expect(groups(liveCard)).toEqual([["Harness: rounds 26-30", 1], [OUTSIDE, 1], ["Harness phase unknown", 1]]);
+    expect(items(liveCard)).toEqual(["Harness: rounds 26-30", "row", OUTSIDE, "row", "Harness phase unknown", "row"]);
     expect(groups(recCard)).toEqual([["Harness from round 31 onward", 1], ["Harness phase unknown", 1]]);
     p.mounted.destroy();
   });

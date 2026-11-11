@@ -191,38 +191,42 @@ export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string
   return [named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
 }
 
-/** The divider that ends a phase's divider over a Live now match outside the Model Index, whose row has no badge to say
- * so; worded as the HUD's tooltip words it ("outside the Antwars Model Index"). */
+/** The divider over matches outside the Model Index, which have no harness phase; worded as the HUD's tooltip words it
+ * ("outside the Antwars Model Index"). */
 export const OUTSIDE_INDEX = "Outside the Model Index";
 /** The divider over a row whose phase the page cannot name, in the unknown phase's own words (harnessPhaseTags). */
 export const PHASE_UNKNOWN = harnessPhaseTags({ phase: "unknown", possibleEffortMismatch: null })[0]!;
 
 /**
- * One row as phaseDividers reads it: its harness phase tags; "unknown" for a row whose phase the page cannot name, an
- * Index match whose phase it cannot read or a recording whose kind of match is not known; "outside" for a Live now match
- * outside the Model Index, which carries no badge to say so; or null for a row its badge marks as another kind of match,
- * which carries no phase and stands under the divider above it, a phase being a Model Index match's alone.
+ * One row as phaseDividers reads it: its harness phase tags; "outside" for a match outside the Model Index, which has no
+ * phase (a Recordings row its badge marks as another kind of match, a Live now match sent with none); or "unknown" for a
+ * row whose phase the page cannot name (an Index match whose phase it cannot read, or a recording whose kind of match is
+ * not known).
  */
-export type PhaseOf = readonly string[] | "unknown" | "outside" | null;
+export type PhaseOf = readonly string[] | "unknown" | "outside";
+
+/** A divider as drawn: its words, each tag held whole (replay.ts unbrokenTag) so it breaks only between tags; outside, the
+ * divider over matches outside the Model Index, which names no phase. */
+export interface PhaseDivider { readonly text: string; readonly outside: boolean }
 
 /**
- * Where a list's Model Index harness phase changes, newest first: the divider to draw before each row (its words held
- * whole, replay.ts unbrokenTag, so it breaks only between tags), or null for none. A divider stands before the first row
- * of each phase, so every row's phase reads from the nearest divider above it and no row carries a tag; older rows
- * loaded later add dividers under the rows already shown and change none of them. A row whose phase the page cannot name
- * ends the phase's divider above it with PHASE_UNKNOWN, a Live now match outside the Index with OUTSIDE_INDEX, so no row
- * takes a phase it does not have, and the phase's divider stands again before its next row. With no phase above them,
- * such rows need nothing said.
+ * Where a list's rows change harness phase, newest first: the divider to draw before each row, or null for none. A
+ * divider stands before the first row of each run of rows that share a phase, so every row reads its phase from the
+ * nearest divider above it and no row carries a tag: a Model Index match its phase, a match outside the Index
+ * OUTSIDE_INDEX, a row whose phase the page cannot name PHASE_UNKNOWN. A phase's divider stands again where its rows
+ * resume after other matches. Older rows loaded later add dividers under the rows already shown and change none of them.
+ * Rows at the list's top with no phase need nothing said: no divider above them claims one.
  */
-export function phaseDividers(rows: readonly PhaseOf[]): (string | null)[] {
+export function phaseDividers(rows: readonly PhaseOf[]): (PhaseDivider | null)[] {
   let shown: string | null = null;
   return rows.map(row => {
-    if (row === null) return null;
-    const words = typeof row !== "string" ? row : shown === null ? null : [row === "outside" ? OUTSIDE_INDEX : PHASE_UNKNOWN];
-    const divider = words === null || words.length === 0 ? null : words.map(unbrokenTag).join(" · ");
-    if (divider === null || divider === shown) return null;
-    shown = divider;
-    return divider;
+    const phased = typeof row !== "string";
+    if (!phased && shown === null) return null;
+    const words = phased ? row : [row === "outside" ? OUTSIDE_INDEX : PHASE_UNKNOWN];
+    const text = words.map(unbrokenTag).join(" · ");
+    if (words.length === 0 || text === shown) return null;
+    shown = text;
+    return { text, outside: row === "outside" };
   });
 }
 

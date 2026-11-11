@@ -43,50 +43,54 @@ describe("harness phase tags", () => {
     expect(liveRow(live, "").phase).toEqual([]);
   });
 
-  describe("a list draws a divider where its phase changes", () => {
+  describe("a list draws a divider where its rows' phase changes", () => {
     const r31 = ["Harness from round 31 onward"], r26 = ["Harness: rounds 26-30"];
     const flagged = ["Harness: rounds 1-7", "Possible effort mismatch"], unflagged = ["Harness: rounds 1-7"];
-    // A divider's text as read: each tag is held whole with no-break spaces and a word joiner after each hyphen.
-    const read = (dividers: (string | null)[]) => dividers.map(text => text?.replace(/ /g, " ").replace(/-⁠/g, "-") ?? null);
+    // A divider as read: its words with each tag's no-break spaces and word joiners undone, "(outside)" marking the
+    // divider over matches outside the Index.
+    const read = (dividers: ReturnType<typeof phaseDividers>) =>
+      dividers.map(d => d === null ? null : `${d.text.replace(/ /g, " ").replace(/-⁠/g, "-")}${d.outside ? " (outside)" : ""}`);
+    const outside = `${OUTSIDE_INDEX} (outside)`;
 
     it("draws one before the first row of each phase, the older phases and the effort flag included, and none on a row", () => {
-      // Recordings, newest first: rows with no phase (another kind of match, by its badge) stand under the divider above.
-      expect(read(phaseDividers([null, r31, null, r31, r26, null, r26, unflagged, flagged, flagged]))).toEqual([
-        null, "Harness from round 31 onward", null, null, "Harness: rounds 26-30", null, null, "Harness: rounds 1-7",
-        "Harness: rounds 1-7 · Possible effort mismatch", null,
+      expect(read(phaseDividers([r31, r31, r26, r26, unflagged, flagged, flagged]))).toEqual([
+        "Harness from round 31 onward", null, "Harness: rounds 26-30", null, "Harness: rounds 1-7", "Harness: rounds 1-7 · Possible effort mismatch", null,
       ]);
     });
 
     it("holds each tag whole, so a divider breaks only between tags", () => {
-      expect(phaseDividers([flagged])).toEqual(["Harness: rounds 1-⁠7 · Possible effort mismatch"]);
+      expect(phaseDividers([flagged])).toEqual([{ text: "Harness: rounds 1-⁠7 · Possible effort mismatch", outside: false }]);
+    });
+
+    it("ends a phase's divider over matches outside the Index, so none takes a phase, and draws the phase's again where its rows resume", () => {
+      // As in the production listing: Index rows of rounds 26-30 interleaved with Challenge rows.
+      expect(read(phaseDividers([r31, "outside", "outside", r26, "outside", r26, r26]))).toEqual([
+        "Harness from round 31 onward", outside, null, "Harness: rounds 26-30", outside, "Harness: rounds 26-30", null,
+      ]);
+      // At the list's top no divider claims a phase, so matches outside the Index there need nothing said.
+      expect(read(phaseDividers(["outside", "outside", r31]))).toEqual([null, null, "Harness from round 31 onward"]);
+    });
+
+    it("ends a phase's divider over a row whose phase the page cannot name, and draws the phase's again after it", () => {
+      // A recording of unknown kind between two flagged Index rows, as in the production listing.
+      expect(read(phaseDividers([flagged, "unknown", flagged]))).toEqual(["Harness: rounds 1-7 · Possible effort mismatch", PHASE_UNKNOWN, "Harness: rounds 1-7 · Possible effort mismatch"]);
+      // Several in a row share one divider; one outside the Index after them has its own.
+      expect(read(phaseDividers([r26, "unknown", "unknown", "outside", r26]))).toEqual(["Harness: rounds 26-30", PHASE_UNKNOWN, null, outside, "Harness: rounds 26-30"]);
+      // The unknown phase's own words: the server's unknown phase and a row the page cannot read share one divider.
+      expect(PHASE_UNKNOWN).toBe("Harness phase unknown");
+      expect(read(phaseDividers([r31, ["Harness phase unknown"], "unknown"]))).toEqual(["Harness from round 31 onward", PHASE_UNKNOWN, null]);
+      expect(phaseDividers(["unknown", "outside"])).toEqual([null, null]);
     });
 
     it("adds dividers for older rows loaded later without moving any already drawn", () => {
-      const first = phaseDividers([r31, null, r31]);
-      expect(phaseDividers([r31, null, r31, null, r26, r26]).slice(0, 3)).toEqual(first);
-      expect(read(phaseDividers([r31, null, r31, null, r26, r26]).slice(3))).toEqual([null, "Harness: rounds 26-30", null]);
-    });
-
-    it("ends a phase's divider over a Live now match outside the Index, and says nothing where no phase is above it", () => {
-      expect(read(phaseDividers([r31, "outside", "outside", r31]))).toEqual(["Harness from round 31 onward", OUTSIDE_INDEX, null, "Harness from round 31 onward"]);
-      expect(phaseDividers(["outside", "outside", null])).toEqual([null, null, null]);
-      expect(read(phaseDividers(["outside", r31]))).toEqual([null, "Harness from round 31 onward"]);
-    });
-
-    it("ends a phase's divider over a row whose phase the page cannot name, so it takes no phase, and draws the phase's again after it", () => {
-      // A recording of unknown kind between two flagged Index rows, as in the production listing.
-      expect(read(phaseDividers([flagged, "unknown", flagged]))).toEqual(["Harness: rounds 1-7 · Possible effort mismatch", PHASE_UNKNOWN, "Harness: rounds 1-7 · Possible effort mismatch"]);
-      // Several in a row share one divider; a row its badge marks as another kind of match stays under it.
-      expect(read(phaseDividers([r26, "unknown", null, "unknown", r26]))).toEqual(["Harness: rounds 26-30", PHASE_UNKNOWN, null, null, "Harness: rounds 26-30"]);
-      // The unknown phase's own words, and one divider where the server's unknown phase meets a row the page cannot read.
-      expect(PHASE_UNKNOWN).toBe("Harness phase unknown");
-      expect(read(phaseDividers([r31, ["Harness phase unknown"], "unknown"]))).toEqual(["Harness from round 31 onward", PHASE_UNKNOWN, null]);
-      // With no phase above, nothing needs saying.
-      expect(phaseDividers(["unknown", null])).toEqual([null, null]);
+      const first = phaseDividers([r31, "outside", r31]);
+      const more = phaseDividers([r31, "outside", r31, "outside", r26, r26]);
+      expect(more.slice(0, 3)).toEqual(first);
+      expect(read(more.slice(3))).toEqual([outside, "Harness: rounds 26-30", null]);
     });
 
     it("draws none for a list with no phase", () => {
-      expect(phaseDividers([null, null])).toEqual([null, null]);
+      expect(phaseDividers(["outside", "outside"])).toEqual([null, null]);
       expect(phaseDividers([])).toEqual([]);
     });
   });

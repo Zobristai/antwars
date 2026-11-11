@@ -11,7 +11,7 @@
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
-import { liveRow, phaseDividers, recordingRows, utcStamp } from "../ui/format.ts";
+import { liveRow, phaseDividers, recordingRows, utcStamp, type PhaseDivider } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
@@ -91,9 +91,8 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
     const state = liveLine(view);
     const rows = view.live.rows, loading = view.live.status === "loading" && rows.length === 0;
     const shown = rows.map(match => liveRow(match, search));
-    // A divider before the first row of each harness phase (ui/format.ts phaseDividers). Live now's rows carry no Index
-    // badge, so a match outside the Index (no phase sent) ends the divider above it, as does an Index match whose phase
-    // the page cannot read.
+    // A divider wherever the rows' harness phase changes (ui/format.ts phaseDividers): a match sent with no phase is
+    // outside the Model Index; one whose phase the page cannot read, unknown.
     const dividers = phaseDividers(rows.map((match, at) =>
       shown[at]!.phase.length > 0 ? shown[at]!.phase : match.harnessPhase === undefined ? "outside" : "unknown"));
     const body: Node[] = [];
@@ -271,21 +270,22 @@ function rowParts(doc: Document) {
   /** The one six-column grid every Matches list stands on. */
   const matchGrid = (table: HTMLTableElement) => columns(table, MATCH_COLUMNS);
   /** A list's rows grouped by harness phase (ui/format.ts phaseDividers), in both forms: in the table, each divider opens
-   * a row group with a divider row, its one header naming the phase for every row in the group; in the stacked list, a
-   * divider item (archive.css .d1p-phase-divider). divide opens a group before the next row where a divider is due;
-   * body is the group rows go in. */
+   * a row group with a divider row, its one header naming the phase of every row in the group; in the stacked list, a
+   * divider item (archive.css .d1p-phase-divider, quieter over matches outside the Index). divide opens a group before
+   * the next row where a divider is due; body is the group rows go in. */
   const phaseRows = (list: HTMLElement) => {
     const groups: HTMLTableSectionElement[] = [];
     const open = () => { const group = h(doc, "tbody"); groups.push(group); return group; };
     return {
       body: () => groups.at(-1) ?? open(),
-      divide(divider: string | null) {
+      divide(divider: PhaseDivider | null) {
         if (divider === null) return;
-        const row = h(doc, "tr", "d1p-phase-divider"), head = h(doc, "th", undefined, divider);
+        const cls = divider.outside ? "d1p-phase-divider is-outside" : "d1p-phase-divider";
+        const row = h(doc, "tr", cls), head = h(doc, "th", undefined, divider.text);
         head.scope = "rowgroup"; head.colSpan = MATCH_COLUMNS.length;
         row.append(head);
         open().append(row);
-        list.append(h(doc, "li", "d1p-phase-divider", divider));
+        list.append(h(doc, "li", cls, divider.text));
       },
       bodies: () => groups.length > 0 ? groups : [open()],
     };
@@ -356,13 +356,13 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   const byId = new Map(view.recordings.rows.map(r => [r.id, r]));
   const state = recordingsLine(rows.length < all.length ? { ...view, next: view.next ?? "" } : view, rows.length);
   const loading = view.recordings.status === "loading" && rows.length === 0;
-  // A divider before the first row of each harness phase (ui/format.ts phaseDividers). A row its badge marks as another
-  // kind of match carries no phase and stands under the divider above it; an Index row whose phase the page cannot read,
-  // or a recording whose kind is not known (no badge), ends that divider instead of taking its phase.
+  // A divider wherever the rows' harness phase changes (ui/format.ts phaseDividers): a row its badge marks as another kind
+  // of match is outside the Model Index; an Index row whose phase the page cannot read, or a recording whose kind is not
+  // known (no badge), is unknown. No row takes the phase of a divider that does not speak for it.
   const dividers = phaseDividers(rows.map(row => {
     if (row.phase.length > 0) return row.phase;
     const kind = byId.get(row.id)!.matchType?.kind;
-    return kind === "index" || kind == null ? "unknown" : null;
+    return kind === "index" || kind == null ? "unknown" : "outside";
   }));
   // No note under the state (no editorial copy): the record stamp says each record's fidelity.
   const lines: Node[] = [stateLine(doc, state.glyph, state.text)];
