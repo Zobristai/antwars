@@ -29,6 +29,9 @@ export interface PublicWaitingLobby {
   readonly colonies: readonly [readonly string[], readonly string[]];
   /** Each seated name's rating, in the same order as colonies (src/live/seat-rating.ts); null where it shows none. */
   readonly ratings: readonly [readonly (PublicRating | null)[], readonly (PublicRating | null)[]];
+  /** How many of its colony's seats each seated name holds, in the same order as colonies: a queue pairing's one identity
+   * per colony holds them all. */
+  readonly seats: readonly [readonly number[], readonly number[]];
   readonly waitingSeconds: number;
   /** When the lobby was made, epoch milliseconds. */
   readonly since: number;
@@ -80,6 +83,7 @@ export function publicQueue(agents: readonly WaitingAgent[], at: number, lobbies
       seated: lobby.seated,
       colonies: [lobby.colonies[0].map(seat => publicWaitingName(seat.displayName)), lobby.colonies[1].map(seat => publicWaitingName(seat.displayName))],
       ratings: [colony(lobby, 0), colony(lobby, 1)],
+      seats: [lobby.colonies[0].map(seat => seat.seats), lobby.colonies[1].map(seat => seat.seats)],
       waitingSeconds: seconds(lobby.createdAt),
       since: lobby.createdAt,
       ...(lobby.challenge === "house" ? { challenge: "house" as const } : {}),
