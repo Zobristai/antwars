@@ -57,6 +57,10 @@ describe("a colony panel's player line", () => {
     const all = m.team(0).textContent + m.team(1).textContent;
     expect(all).not.toContain("Rating");
     expect(all).not.toContain("(high)");
+    // A label with nothing after its provider prefix keeps the whole label, with its level and Fast.
+    const bare = mounted();
+    bare.update(frameOf([agent(0, house, "openai/gpt-6-luna"), agent(1, kite, "local/", { thinkingLevel: "high", serviceTier: "fast" })]));
+    expect(bare.shown(bare.team(1).byClass("d1-who")[0]!)).toBe("kite local/ high Fast 1540");
     // One seat a colony: no heading line, from the first frame on.
     expect([0, 1].map(colony => m.team(colony as 0 | 1).byClass("d1-team-player")[0]!.hidden)).toEqual([true, true]);
   });

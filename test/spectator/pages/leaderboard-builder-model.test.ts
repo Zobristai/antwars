@@ -54,6 +54,11 @@ describe("a builder row's model on the Leaderboard", () => {
     expect(item(withModel)).toEqual(item(without));
   });
 
+  it("shows a model label with nothing after its provider prefix whole, never as no model", () => {
+    const { card: shown } = card([{ ...rows[1]!, model: "local/" }]);
+    expect(shown.named[0]).toBe("coffee-ant local/ [high] [Fast]");
+  });
+
   it("a house row never shows a model, even one a server sent", () => {
     const { card: shown } = card([{ ...rows[0]!, model: "lab/other" }]);
     expect(shown.named[0]).toBe(card([rows[0]!]).card.named[0]);

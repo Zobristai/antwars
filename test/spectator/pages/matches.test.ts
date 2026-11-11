@@ -386,3 +386,18 @@ describe("no match shows a harness phase", () => {
     p.mounted.destroy();
   });
 });
+
+describe("a model label with nothing after its provider prefix", () => {
+  it("shows the whole label on a Live now row and a Recordings row, never no model", () => {
+    const bare: LiveMatch = { ...live("lobby-bare"), colonies: [
+      [{ displayName: "kain", modelLabel: "local/", rating: null, rd: null, ratedMatches: null }],
+      [{ displayName: "kite", modelLabel: "zai/glm-5.3", rating: null, rd: null, ratedMatches: null }]] };
+    const rec = at("rec-bare", { seats: [seat(0, 0, "local/", "omp-dolphin", { thinkingLevel: "high" }), seat(0, 1, "zai/glm-5.3", "kite")] });
+    const { p, live: liveList, recordings } = show({ live: { status: "ready", rows: [bare] }, recordings: { status: "ready", rows: [rec] } });
+    expect(lineParts(liveList.table.byClass("d1p-model")[0]!)).toEqual([["name", ["d1p-user:kain", "d1p-mname:local/"]]]);
+    const line = recordings.table.byClass("d1p-model")[0]!;
+    expect(lineParts(line)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname:local/"]]);
+    expect(lineParts(line)[1]).toEqual(["badges", ["high"]]);
+    p.mounted.destroy();
+  });
+});
