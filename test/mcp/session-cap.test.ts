@@ -544,6 +544,7 @@ describe("key protection: entry waits only, never at a seat join's expense", () 
     },
     lobbies: {
       queueStatus: async (key: string) => ((await resolveKey(key)).ok ? { ok: true, value: { state: "waiting" } } : { ok: false, reason: "unknown_key" }),
+      ownWaitToken: async () => undefined,
     },
   } as unknown as AccountStores;
 
@@ -1224,6 +1225,7 @@ describe("no hold, no key: key-issuing calls against the real identity store", (
       identities,
       lobbies: {
         queueStatus: async (key: string) => ((await identities.resolveKey(key)).ok ? { ok: true, value: { state: "none" } } : { ok: false, reason: "unknown_key" }),
+        ownWaitToken: async () => undefined,
       },
     } as unknown as AccountStores;
     const handler = createMcpHandler(new Game({ mcpConfig }), {

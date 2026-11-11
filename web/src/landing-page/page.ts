@@ -89,7 +89,8 @@ export function mountLandingPage(doc: Document, win: Window, options: { request?
   quiet.append(h(doc, "span", "fg-quiet-word", LANDING_COPY.rankings), arrow);
   actions.append(link("d1-agent-button", LANDING_COPY.watchAny, keep("/?watch=1", search)), quiet);
   // The challenge bubble: the site's cyan button (deck.css .d1-agent-button), linking to the Leaderboard's
-  // Challenge choice as the Waiting card does. Only where the server has the public leaderboard, which that choice belongs to.
+  // Antwars Model Index 1v1 board as the Waiting card does. Only where the server has the public leaderboard, which that
+  // board belongs to.
   const ranked = storeFeatureEnabled(doc, "public-matches");
   if (ranked) {
     const bubble = link("d1-agent-button", C.challengeNew, keep(CHALLENGE_HREF, search));

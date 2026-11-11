@@ -6,7 +6,9 @@ import type { Lobby } from "./lobbies.js";
 
 /**
  * Waiting tokens: join_queue, join_lobby and request_challenge each return one, and the public
- * wait stream (src/accounts/waitStream.ts) reports that one wait's state for it. A token is not a
+ * wait stream (src/accounts/waitStream.ts) reports that one wait's state for it. queue_status, read_lobby and
+ * challenge_status return the caller's own live one again (Lobbies.ownWaitToken), found by exact path from the caller's
+ * queue entry (its waitToken field) or its seat key, never from another identity's. A token is not a
  * secret: it names one wait and grants nothing, never a seat, a lobby read or a key. It is random,
  * so it reveals nothing by itself, and the stream never sends a private lobby's id, a seat or an address.
  *
@@ -53,8 +55,12 @@ export type WaitState =
    * reconnecting with it sends the lobby's current state, then slot_ready or expired.
    */
   | { readonly state: "paired"; readonly lobbyId: string; readonly lobbyWait: true }
-  /** The lobby holds a match slot; its match starts at startsAt. */
-  | { readonly state: "slot_ready"; readonly startsAt: number; readonly lobbyId?: string }
+  /**
+   * The lobby holds, or has held, a match slot; its match starts at startsAt. joinable, read from the lobby when the state
+   * is read: true while it holds the slot (a match already running still takes a late join), false once it has ended
+   * after its match was played.
+   */
+  | { readonly state: "slot_ready"; readonly startsAt: number; readonly joinable: boolean; readonly lobbyId?: string }
   /**
  * The wait ended without a match: time_limit when its own time ran out, ended for any other reason.
  * On a queue token after its pairing, every lobby state also carries the paired lobbyId (see waits/{token}).
@@ -81,6 +87,13 @@ export const WAIT_SWEEP_PAGE = 25;
 /** A record's expiresAt as stored: zero-padded milliseconds, so the store orders it as a number. */
 export const expiryField = (at: number): string => String(Math.max(0, Math.floor(at))).padStart(16, "0");
 const isPast = (expiresAt: string | undefined, at: number): boolean => expiresAt !== undefined && Number(expiresAt) <= at;
+
+/**
+ * Whether a stored record is identityId's own wait that the stream still answers for: not left (ended), not past its
+ * expiresAt. The status reads return a caller's link only for such a record (Lobbies.ownWaitToken).
+ */
+export const isOwnLiveWait = (record: Fields | null | undefined, identityId: string, at: number): boolean =>
+  !!record && record.identityId === identityId && record.ended !== "true" && !isPast(record.expiresAt, at);
 
 export type WaitRecord =
   | { readonly kind: "queue"; readonly identityId: string; readonly joinedAt: string }
@@ -384,11 +397,11 @@ export function startWaitSweep(sweep: () => Promise<unknown>, intervalMs = WAIT_
  */
 export function lobbyWait(lobby: Lobby): WaitState {
   switch (lobby.state) {
-    case "holding": return { state: "slot_ready", startsAt: lobby.startsAt ?? lobby.createdAt };
+    case "holding": return { state: "slot_ready", startsAt: lobby.startsAt ?? lobby.createdAt, joinable: true };
     case "expired": return { state: "expired", reason: "time_limit" };
     case "ended":
       return lobby.startsAt !== null && lobby.outcome !== null && lobby.outcome !== "not_played"
-        ? { state: "slot_ready", startsAt: lobby.startsAt }
+        ? { state: "slot_ready", startsAt: lobby.startsAt, joinable: false }
         : { state: "expired", reason: "ended" };
     default: return { state: "waiting", lobby: lobby.state, expiresAt: lobby.expiresAt };
   }

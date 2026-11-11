@@ -9,7 +9,7 @@ import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
 import {
-  endedLobbyWaitWrites, endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
+  endedLobbyWaitWrites, endedWrite, isFinal, isOwnLiveWait, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
   replacedWaitWrites, repointWrites, seatKeyPath, sweepAllExpiredWaits, waitIndexes, waitPath, withPairedLobby, type WaitIndexes, type WaitState,
 } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
@@ -342,12 +342,23 @@ export interface Lobbies {
    * to a lobby wait on the paired lobby. Nothing else is read or returned.
    */
   waitStatus(token: string): Promise<WaitState | null>;
+  /**
+   * The token of identityId's own live wait (isOwnLiveWait): on "queue", the wait of its current queue entry, a queue
+   * wait of that join or the lobby wait it was re-pointed to; on a lobby, the wait its seat key on that lobby names.
+   * Undefined when it holds none. Read by exact path from identityId's own documents only, so another identity's token
+   * is never found.
+   */
+  ownWaitToken(identityId: string, on: "queue" | { readonly lobbyId: string }): Promise<string | undefined>;
 }
 
-/** A live waiting queue entry by its identity's current display name; nothing else about the identity. */
-export interface WaitingAgent { readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
+/** A live waiting queue entry by its identity's current display name, with its identity id for server-side reads only. */
+export interface WaitingAgent { readonly identityId: string; readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
 
-/** A public lobby not yet begun (listUnstarted): each colony's distinct seated identities by current name, in seating order. */
+/** A seated identity of a lobby not yet begun, with how many of its colony's seats it holds. */
+export interface UnstartedSeat extends Seat { readonly seats: number }
+
+/** A public lobby not yet begun (listUnstarted): each colony's distinct seated identities by current name, in seating
+ * order, each with how many seats it holds there. */
 export interface UnstartedLobby {
   /** The queue pairing's ranked mode; null for a player-created lobby. */
   readonly mode: RankedMode | null;
@@ -355,7 +366,7 @@ export interface UnstartedLobby {
   readonly createdAt: number;
   /** Seats taken, of 2 × size. A queue pairing's identity holds every seat of its colony, so it is always full. */
   readonly seated: number;
-  readonly colonies: readonly [readonly Seat[], readonly Seat[]];
+  readonly colonies: readonly [readonly UnstartedSeat[], readonly UnstartedSeat[]];
   /** Present only on a house challenge lobby, which the Waiting card labels. */
   readonly challenge?: "house";
 }
@@ -1177,6 +1188,22 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       return null;
     },
 
+    async ownWaitToken(identityId, on) {
+      const at = now();
+      if (on === "queue") {
+        const entry = await store.get(queueEntryPath(identityId));
+        const token = entry?.waitToken;
+        if (!entry || !token || !isWaitToken(token)) return undefined;
+        const wait = await store.get(waitPath(token));
+        const thisJoin = wait?.kind === "queue" ? wait.joinedAt === entry.joinedAt : wait?.kind === "lobby" && !!entry.lobbyId && wait.lobbyId === entry.lobbyId;
+        return thisJoin && isOwnLiveWait(wait, identityId, at) ? token : undefined;
+      }
+      const token = (await store.get(seatKeyPath(on.lobbyId, identityId)))?.token;
+      if (!token || !isWaitToken(token)) return undefined;
+      const wait = await store.get(waitPath(token));
+      return wait?.kind === "lobby" && wait.lobbyId === on.lobbyId && isOwnLiveWait(wait, identityId, at) ? token : undefined;
+    },
+
     async queueStatus(key) {
       const identity = await queueIdentity(key);
       if (!identity) return refuse("unknown_key");
@@ -1199,7 +1226,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const entries = await waitingEntries((path) => store.get(path), now());
       const named = await Promise.all(entries.map(async ({ identityId, mode, joinedAt }) => {
         const identity = await identities.findById(identityId);
-        return identity ? { displayName: identity.displayName, mode, joinedAt } : null;
+        return identity ? { identityId, displayName: identity.displayName, mode, joinedAt } : null;
       }));
       return named.filter((row): row is WaitingAgent => row !== null);
     },
@@ -1226,7 +1253,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const lobby = toLobby(id, fields, at);
         const seated = lobby.colonies[0].length + lobby.colonies[1].length;
         if (seated === 0) continue;
-        const distinct = (colony: readonly Seat[]) => colony.filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index);
+        const distinct = (colony: readonly Seat[]): UnstartedSeat[] => colony
+          .filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index)
+          .map((seat) => ({ ...seat, seats: colony.filter((other) => other.id === seat.id).length }));
         unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(lobby.colonies[0]), distinct(lobby.colonies[1])],
           ...(lobby.challenge ? { challenge: "house" as const } : {}) });
       }
@@ -1234,9 +1263,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       // queue entries, and a seat whose identity no longer resolves is left unnamed.
       const seatIds = [...new Set(unstarted.flatMap((lobby) => [...lobby.colonies[0], ...lobby.colonies[1]].map((seat) => seat.id)))];
       const current = new Map(await Promise.all(seatIds.map(async (seatId) => [seatId, (await identities.findById(seatId))?.displayName] as const)));
-      const named = (colony: readonly Seat[]) => colony.flatMap((seat) => {
+      const named = (colony: readonly UnstartedSeat[]) => colony.flatMap((seat) => {
         const displayName = current.get(seat.id);
-        return displayName === undefined ? [] : [{ id: seat.id, displayName }];
+        return displayName === undefined ? [] : [{ id: seat.id, displayName, seats: seat.seats }];
       });
       return unstarted.map((lobby) => ({ ...lobby, colonies: [named(lobby.colonies[0]), named(lobby.colonies[1])] as const }))
         .sort((a, b) => a.createdAt - b.createdAt);

@@ -7,7 +7,7 @@ import { validHistoryPageToken, type HistoryPage, type HistorySource, type Histo
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { RankedMode } from "../rating/ratings.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
-import { recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -98,11 +98,7 @@ export type TypedHistorySummary = HistorySummary & { readonly matchType: Recordi
  */
 export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" | "modelIndex">,
   lobby: RecordingLobby | null | undefined): RecordingMatchType | null {
-  if (lobby) {
-    const kind = lobby.mode !== null ? (lobby.mode.startsWith("house-") ? "index" : "ranked")
-      : lobby.challenge?.kind === "house" ? "challenge" : "unranked";
-    return { kind, size: lobby.size };
-  }
+  if (lobby) return lobbyMatchType(lobby);
   return recordedMatchType(row);
 }
 

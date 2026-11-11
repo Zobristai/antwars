@@ -15,6 +15,15 @@ export interface WatchMatch extends CatalogMatch {
    * absent where none was published (an older server or row, or no seat has joined yet).
    */
   readonly modelLabels?: Readonly<Record<string, string>>;
+  /** Each seat's self-reported thinking level and service tier, by the same names and published with its model label;
+   * absent where none was published. A seat that reported none is left out. */
+  readonly thinkingLevels?: Readonly<Record<string, string>>;
+  readonly serviceTiers?: Readonly<Record<string, string>>;
+}
+/** A seat's self-reported level and tier by its stream display name, as seatLabels publishes them beside its model label. */
+export interface SeatDetails {
+  readonly thinkingLevels: Readonly<Record<string, string>>;
+  readonly serviceTiers: Readonly<Record<string, string>>;
 }
 export interface WatchRegistry {
   register(match: Omit<WatchMatch, "playbackFinished" | "replayId">): Promise<void>;
@@ -42,10 +51,10 @@ export interface WatchRegistry {
    */
   playbackFinished(lobbyId: string, runId: string): Promise<boolean>;
   /**
-   * Each seated player's self-reported model label by its stream display name, on the match and its public listing; fenced
-   * as playbackFinished is. A seat that reported none is left out.
+   * Each seated player's self-reported model label, and its thinking level and service tier where details are given, by its
+   * stream display name, on the match and its public listing; fenced as playbackFinished is. A seat that reported none is left out.
    */
-  seatLabels(lobbyId: string, runId: string, labels: Readonly<Record<string, string>>): Promise<boolean>;
+  seatLabels(lobbyId: string, runId: string, labels: Readonly<Record<string, string>>, details?: SeatDetails): Promise<boolean>;
   /** Run runId saved the match's recording as replayId; fenced as playbackFinished is. */
   replaySaved(lobbyId: string, runId: string, replayId: string): Promise<boolean>;
   /** The lobby whose saved recording has this replay id; null when no registered match has it. */
@@ -79,18 +88,19 @@ function decode(lobbyId: string, row: Fields): WatchMatch {
   return { ...access, startedAt,
     playbackFinished: row.playbackFinished === "true", origin: origin(row.origin!), slot: row.slot!, runId: row.runId,
     ...(row.replayId === undefined ? {} : { replayId: row.replayId }),
-    ...modelLabels(row.modelLabels) };
+    ...seatMap("modelLabels", row.modelLabels), ...seatMap("thinkingLevels", row.thinkingLevels), ...seatMap("serviceTiers", row.serviceTiers) };
 }
 
-/** A stored modelLabels field read back: a JSON object of non-empty strings. Absent or malformed reads as none, so a
- * label never fails the catalog. */
-function modelLabels(value: string | undefined): { modelLabels: Readonly<Record<string, string>> } | undefined {
+/** A stored per-seat field (modelLabels, thinkingLevels, serviceTiers) read back: a JSON object of non-empty strings.
+ * Absent or malformed reads as none, so a label never fails the catalog. */
+function seatMap<K extends "modelLabels" | "thinkingLevels" | "serviceTiers">(key: K, value: string | undefined):
+  { [P in K]: Readonly<Record<string, string>> } | undefined {
   if (value === undefined) return undefined;
   let parsed: unknown;
   try { parsed = JSON.parse(value); } catch { return undefined; }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
   const labels = Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1] !== "");
-  return { modelLabels: Object.fromEntries(labels) };
+  return { [key]: Object.fromEntries(labels) } as { [P in K]: Readonly<Record<string, string>> };
 }
 
 /** A listing no run can finish or resume, which the catalog never shows again: see WatchRegistry.publicMatches. */
@@ -209,7 +219,8 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       throw new Error("Spectator catalog exceeds its read limit");
     },
     playbackFinished: (lobbyId, runId) => update(lobbyId, runId, { playbackFinished: "true" }, "remove"),
-    seatLabels: (lobbyId, runId, labels) => update(lobbyId, runId, { modelLabels: JSON.stringify(labels) }, "update"),
+    seatLabels: (lobbyId, runId, labels, details) => update(lobbyId, runId, { modelLabels: JSON.stringify(labels),
+      ...(details === undefined ? {} : { thinkingLevels: JSON.stringify(details.thinkingLevels), serviceTiers: JSON.stringify(details.serviceTiers) }) }, "update"),
     replaySaved(lobbyId, runId, replayId) {
       if (!isReplayId(replayId)) throw new Error("Invalid spectator replay id");
       return update(lobbyId, runId, { replayId });

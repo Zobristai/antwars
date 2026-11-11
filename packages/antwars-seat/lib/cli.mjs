@@ -7,7 +7,7 @@ import { claimGameCommand, isGameCommand, procStat, refusalMessage } from "./gua
 import { isMatchOver, matchClient, savedMatch, seatContext } from "./match.mjs";
 import { observerSettings, observerStatus, runObserver } from "./observer.mjs";
 import { err, out, redact } from "./redact.mjs";
-import { createLobby, go, joinLobby, leaveQueue } from "./seat.mjs";
+import { createLobby, go, joinLobby, leaveQueue, savedWaitLink } from "./seat.mjs";
 import { alive, ensureReadyAt, progress, readConfig, readJson, readKey, realClock, stateDir, statePath, writeConfig, writeJson } from "./state.mjs";
 
 const BIN = fileURLToPath(new URL("../bin/antwars-seat", import.meta.url));
@@ -21,6 +21,8 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
   go [--detach]                             queue once, wait for pairing, join; stops in the nest window
                                             (step joined with closesAt and box); then send your own pick_nest
   status                                    progress of go or join-lobby (status.json + log tail)
+  wait-url                                  the waitUrl go or join-lobby saved (printed when saved): GET it and wait
+                                            for the event done, whose data.state is slot_ready or expired
   leave                                     leave the queue only if this seat is waiting
   create-lobby                              create an unrated public lobby, 1 per colony; prints lobbyId
   join-lobby <lobbyId> [--detach]           take a seat in that lobby (no queue), join; stops in the nest window like go
@@ -253,6 +255,9 @@ export async function main(argv, { env = process.env, clock = realClock, readSta
       }
       case "status":
         return status(env);
+      case "wait-url":
+        print(savedWaitLink(env));
+        return 0;
       case "leave":
         print(await leaveQueue(seatContext({ config: readConfig(env), env, clock })));
         return 0;

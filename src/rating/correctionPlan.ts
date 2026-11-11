@@ -1,21 +1,25 @@
 /// <reference types="node" />
-import { createHash } from "node:crypto";
-import type { Fields, Store, Write } from "../store/firestore.js";
-import type { RecordingObjects } from "../replays/abandonRecording.js";
+import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { FirestoreError, type Fields, type Store, type Write } from "../store/firestore.js";
+import {
+  binaryName, HoldUnknownError, RecordingChangedError, RecordingHeldError, recordName, type HeldObject, type RecordingHolds, type RecordingObjects,
+} from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
 import { identityDisplay, nameState } from "../identity/retention.js";
 import { publicWaitingName } from "../live/queue-catalog.js";
 import { createWatchRegistry } from "../live/watch-registry.js";
-import { describe, firestoreWrites, verify } from "./unrateNeverJoined.js";
+import { CORRECTION_KIND, firestoreWrites, verify, type Verification } from "./unrateNeverJoined.js";
 import {
   EMPTY_RECORD, encodeRating, glickoFields, letterFor, lobbySeats, matchTime, MAX_PAGE_SIZE, NATURAL_OUTCOMES, rateMatch, ratingCollection,
   recordFields, storedRecord, storedState, withResult, type PlayerState, type RatingChange, type RatingRecord, type Winner,
 } from "./ratings.js";
 
 /**
- * One-off rating corrections, read-only pass. At start the entry-point server works out every write that two owed
- * corrections need, logs one line per write and a SHA-256 digest of the plan, and serves the plan's public facts at
- * PLAN_PATH. It writes nothing: it only reads Firestore and the two objects of one public recording.
+ * One-off rating corrections. planCorrections works out, reading only, every write that two owed corrections need.
+ * The never-joined correction ships first, on its own: at start the entry-point server plans only it (planNeverJoined),
+ * logs each write's operation and path and a SHA-256 digest of those writes alone, serves the plan's public facts at PLAN_PATH, and
+ * applies it only when that digest is NEVER_JOINED_APPLY_DIGEST (applyNeverJoined). The Sol move is not run at start.
  *
  * 1. Ranked lobby NEVER_JOINED, which one seat never joined, becomes abandoned and unrated with its rating effect
  *    removed: unrateNeverJoined.ts's verify and Firestore writes, without its recording rewrite.
@@ -28,7 +32,9 @@ import {
  * Names are published as the public Waiting view shows them (live/queue-catalog.ts): a released owner's placeholder,
  * which embeds its owner id, becomes a fixed name, so the plan holds no identity id.
  *
- * Any failed check refuses the whole plan: the reason is logged and PLAN_PATH says only "refused".
+ * Any failed check refuses the whole plan: PLAN_PATH says "refused" with only a fixed code naming the check
+ * (RefusalCode), never an id, a name or a stored figure, and the log says only that it refused, with that code (a
+ * stored value can be malformed, so no error text is logged).
  * CORRECTION_MARKER is created by the apply in the same transaction as these writes: { planDigest, appliedAt }.
  * While it exists nothing is planned.
  */
@@ -61,9 +67,35 @@ export interface PublicPlan {
   readonly ratings: readonly { readonly handle: string; readonly mode: string; readonly before: Standing | null; readonly after: Standing | null }[];
 }
 export interface Plan { readonly writes: readonly Write[]; readonly summary: PublicPlan }
-export type PlanState = { readonly state: "computing" | "applied" | "refused" } | ({ readonly state: "planned" } & PublicPlan);
+/** Every check that can refuse, as PLAN_PATH serves it; store-error and error are a failed read and any other throw. */
+export const REFUSAL_CODES = [
+  "never-joined-lobby", "never-joined-correction-marker", "never-joined-change-record", "never-joined-only-rated-match",
+  "never-joined-watch-entry", "never-joined-match-record", "never-joined-never-joined", "never-joined-recording-rewrite", "never-joined-stage",
+  "never-joined-rating-change",
+  "unknown-identity", "sol-lobby", "sol-handle", "no-commit-times", "unreadable-lobby", "history-unstable", "no-change-record",
+  "no-change-record-time", "moved-seats", "moved-not-rated", "shared-commit-time", "no-glicko-change", "not-reproduced-players",
+  "not-reproduced-change", "not-reproduced-rating", "not-reproduced-rd", "not-reproduced-rated-at", "not-reproduced-rated-matches",
+  "not-reproduced-record", "no-public-match-id", "no-row", "store-error", "error",
+] as const;
+export type RefusalCode = typeof REFUSAL_CODES[number];
+export type PlanState = { readonly state: "computing" | "applied" } | { readonly state: "refused"; readonly reason: RefusalCode }
+  | ({ readonly state: "planned" } & PublicPlan);
 
-const refuse = (reason: string): never => { throw new Error(reason); };
+class PlanRefused extends Error {
+  // An explicit field, not a parameter property, which Node's type stripping refuses (store/firestore.ts).
+  readonly code: RefusalCode;
+  constructor(code: RefusalCode, reason: string) { super(reason); this.code = code; }
+}
+const refuse = (code: RefusalCode, reason: string): never => { throw new PlanRefused(code, reason); };
+/** The served code of a refusal: its check's code, store-error for a failed store read, error for anything else. */
+export const refusalCode = (error: unknown): RefusalCode =>
+  error instanceof PlanRefused ? error.code : error instanceof FirestoreError ? "store-error" : "error";
+/** The served code of a verify check, by its name before any ":" (an "only rated match" check names its identity after it). */
+const NEVER_JOINED_CHECKS: Readonly<Record<string, RefusalCode>> = {
+  "lobby": "never-joined-lobby", "correction marker": "never-joined-correction-marker", "rating change record": "never-joined-change-record",
+  "only rated match": "never-joined-only-rated-match", "watch entry": "never-joined-watch-entry", "match record": "never-joined-match-record",
+  "never joined": "never-joined-never-joined", "recording rewrite": "never-joined-recording-rewrite",
+};
 /** A name as the plan publishes it: a released owner's placeholder, which embeds its owner id, becomes a fixed name. */
 const shown = publicWaitingName;
 const shownKeys = (labels: Readonly<Record<string, string>>) => Object.fromEntries(Object.entries(labels).map(([name, label]) => [shown(name), label]));
@@ -135,7 +167,7 @@ async function houseLobbies(store: Store): Promise<Lobby[]> {
       if (fields.state !== "ended" || fields.rated !== "true" || winner === undefined || fields.mode !== MODE) continue;
       const at = matchTime(fields);
       const seats = lobbySeats(fields.seats) as Lobby["seats"] | null;
-      if (at === null || seats === null) refuse(`unreadable rated ${MODE} lobby ${path}`);
+      if (at === null || seats === null) refuse("unreadable-lobby", `unreadable rated ${MODE} lobby ${path}`);
       lobbies.push({ id: path.slice("lobbies/".length), at: at!, winner, seats: seats!, listed: fields.kind === "public" });
     }
     const last = page.rows.at(-1);
@@ -160,42 +192,180 @@ async function houseHistory(store: Store, extra: readonly string[]) {
     }
     const created = await store.createTimes!(lobbies.map(lobby => `ratedMatches/${lobby.id}`));
     if (JSON.stringify(await houseLobbies(store)) === JSON.stringify(lobbies)) return { lobbies, docs, created };
-    if (attempt === HISTORY_ATTEMPTS) refuse(`${MODE} history changed during each of ${HISTORY_ATTEMPTS} reads`);
+    if (attempt === HISTORY_ATTEMPTS) refuse("history-unstable", `${MODE} history changed during each of ${HISTORY_ATTEMPTS} reads`);
   }
 }
 
-/** The plan, or "applied" while CORRECTION_MARKER exists. Throws (refuses) on any failed check. Reads only. */
+const refusedNeverJoined = (v: Verification) => {
+  const failed = v.checks.find(c => !c.ok);
+  return refuse(failed ? NEVER_JOINED_CHECKS[failed.name.split(":")[0]!] ?? "error" : "never-joined-stage",
+    `${NEVER_JOINED.lobbyId}: ${v.checks.filter(c => !c.ok).map(c => `${c.name}: ${c.detail}`).join("; ") || `stage ${v.stage}`}`);
+};
+
+/**
+ * The never-joined lobby, verified as still rated: exactly the existing correction's Firestore writes, without its
+ * recording rewrite, and their public facts. names gains each player's published name. Throws (refuses) on any failed check.
+ */
+async function neverJoinedPart(store: Store, v: Verification, names: Map<string, string>, at: number) {
+  if (!v.ok || v.stage !== "rated") refusedNeverJoined(v);
+  const writes: Write[] = firestoreWrites(v, new Date(at));
+  for (const id of v.identities) names.set(id, names.get(id) ?? await currentName(store, id, at) ?? refuse("unknown-identity", `unknown identity ${id}`));
+  const unrated = v.identities.map(id => shown(names.get(id)!));
+  // Served as built here, from checked values only: each change's player must be the lobby's and its ratings finite numbers.
+  const stored = JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!) as unknown[];
+  const ratingChanges = stored.map(change => {
+    const { identityId, before, after } = (change ?? {}) as Record<string, unknown>;
+    if (typeof identityId !== "string" || !v.identities.includes(identityId) || !Number.isFinite(before) || !Number.isFinite(after)) {
+      refuse("never-joined-rating-change", `${NEVER_JOINED.lobbyId}: unreadable rating change`);
+    }
+    return { handle: shown(names.get(identityId as string)!), before: before as number, after: after as number };
+  });
+  const matches: PublicPlan["matches"][number][] = [{ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
+    before: { status: "rated", seats: unrated, ratingChanges },
+    after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } }];
+  const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: shown(names.get(id)!), mode: v.mode!,
+    before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null }));
+  return { writes, matches, ratings };
+}
+
+/** The never-joined correction's plan, with what its checks verified: the documents read and the recording's objects. */
+export interface NeverJoinedPlan extends Plan { readonly verification: Verification }
+
+/**
+ * Whether the never-joined correction is applied, read from what its one transaction wrote and nothing a later match
+ * changes: its correction record names this lobby, its recording and the lobby's run, the lobby is abandoned and unrated,
+ * its watch entry unrated, and its change record gone. The players' rating rows are not read, so either player may have
+ * played since. Reads only.
+ */
+export async function neverJoinedApplied(store: Store): Promise<boolean> {
+  const id = NEVER_JOINED.lobbyId;
+  const paths = [`lobbies/${id}`, `watchMatches/${id}`, `ratedMatches/${id}`, `ratingCorrections/${id}`];
+  const docs = await store.transaction(async read => ({ result: await read(paths), writes: [] }));
+  const [lobby, watch, change, record] = paths.map(path => docs.get(path) ?? null);
+  return !!lobby && !!watch && !!record && change === null && lobby.rated === "false" && lobby.outcome === "abandoned"
+    && watch.rated === "false" && watch.replayId === NEVER_JOINED.replayId && record.kind === CORRECTION_KIND && record.lobbyId === id
+    && record.replayId === NEVER_JOINED.replayId && !!lobby.matchRunId && record.runId === lobby.matchRunId;
+}
+
+/**
+ * The never-joined correction alone, its digest over its writes alone; "applied" once neverJoinedApplied reads it
+ * committed. Throws (refuses) on any failed check. Reads only.
+ */
+export async function planNeverJoined(store: Store, recordings: RecordingObjects): Promise<NeverJoinedPlan | "applied"> {
+  if (await neverJoinedApplied(store)) return "applied";
+  const v = await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
+  const { writes, matches, ratings } = await neverJoinedPart(store, v, new Map(), Date.now());
+  return { writes, summary: { digest: planDigest(writes), matches, ratings }, verification: v };
+}
+
+/**
+ * The digest of the one never-joined plan the apply may write: set, in a reviewed commit, to the digest the plan
+ * published. Only a plan with exactly this digest is applied.
+ */
+export const NEVER_JOINED_APPLY_DIGEST = "8f93769fdb6663f3cbfb34f3ad2e0c2ba610efe22ca3826017a90805d9049928";
+export type ApplyOutcome = "applied" | "digest differs" | "changed since planned" | "already claimed" | "recording already held";
+
+/** The one apply's claim on the never-joined correction: created only where absent, so only one apply runs at a time. */
+export const NEVER_JOINED_CLAIM = `ratingCorrectionClaims/${NEVER_JOINED.lobbyId}`;
+
+/**
+ * Applies the never-joined plan only when its digest is `digest`, writing nothing if anything it depends on changed
+ * since the plan: the Firestore documents its checks read, or either recording object.
+ *
+ * Exclusive: the apply first creates NEVER_JOINED_CLAIM where it is absent, naming its own token, the digest and both
+ * recording objects it may hold. Another apply (a concurrent start) finds the claim and touches nothing. The claim is
+ * deleted only once every hold this apply set is confirmed cleared; otherwise it stays, naming the objects to check.
+ *
+ * The recording: the writes depend on it through what the checks read from it (which colony never joined), and only
+ * the recording holds that. So both objects are then held at the generations the checks read, before the transaction.
+ * A hold is set only on an unheld object at that generation, conditioned on its metadata, so an object replaced or
+ * deleted since the plan, or already held, fails it, and nothing is written; a hold this apply did not set is never
+ * cleared. Only a reply confirming a hold counts as set, and only one confirming it cleared as cleared: after an
+ * error, lost or unconfirmed hold reply, a refusal on its conditions (412 or 404) included, the hold is undetermined
+ * (the request, or an earlier attempt of it, may have landed), so the apply stops,
+ * writing nothing, releases only the holds confirmed set, and keeps its claim, which names both objects to release by
+ * hand. While held, Cloud Storage refuses to replace or delete either object, so both
+ * stay at those generations until the commit. Then one transaction re-reads every document the checks read and the
+ * claim, and commits the writes only while every one is unchanged and the claim is this apply's. Both holds are
+ * released once the transaction's outcome is known. If the transaction throws, its commit may still land, so the holds
+ * and the claim are kept and must be released by hand. The recording itself is never rewritten. The writes create the
+ * correction record (ratingCorrections/<lobbyId>): a later plan reads the correction as applied (neverJoinedApplied),
+ * even after either player has played again, so it is written once.
+ */
+export async function applyNeverJoined(store: Store, recordings: RecordingObjects & RecordingHolds, plan: NeverJoinedPlan,
+  digest = NEVER_JOINED_APPLY_DIGEST): Promise<ApplyOutcome> {
+  if (plan.summary.digest !== digest) return "digest differs";
+  const { snapshot, recording, replayId } = plan.verification;
+  const objects = [{ name: binaryName(replayId!), generation: recording!.binary.generation }, { name: recordName(replayId!), generation: recording!.record.generation }];
+  const token = randomUUID();
+  const claimed = await store.transaction(async read => (await read([NEVER_JOINED_CLAIM])).get(NEVER_JOINED_CLAIM)
+    ? { result: false, writes: [] }
+    : { result: true, writes: [{ op: "create" as const, path: NEVER_JOINED_CLAIM, fields: { token, digest, objects: JSON.stringify(objects), at: String(Date.now()) } }] });
+  if (!claimed) return "already claimed";
+
+  const held: HeldObject[] = [];
+  /** Clears this apply's holds; the claim is deleted only once every one is confirmed cleared. */
+  const finish = async () => {
+    let cleared = true;
+    for (const hold of held.splice(0)) if (!await recordings.release(hold)) cleared = false;
+    if (!cleared) { console.warn("antwar rating correction recording hold kept; its claim names the objects"); return; }
+    try {
+      await store.transaction(async read => ({ result: undefined,
+        writes: (await read([NEVER_JOINED_CLAIM])).get(NEVER_JOINED_CLAIM)?.token === token ? [{ op: "delete" as const, path: NEVER_JOINED_CLAIM }] : [] }));
+    } catch { console.warn("antwar rating correction claim not released"); }
+  };
+  try {
+    for (const object of objects) held.push(await recordings.hold(object.name, object.generation));
+  } catch (error) {
+    if (error instanceof HoldUnknownError) {
+      // This hold may yet be set, by this apply or not: it is never released here, and the claim stays, naming both objects.
+      for (const hold of held.splice(0)) await recordings.release(hold);
+      console.warn("antwar rating correction recording hold undetermined; its claim names the objects");
+      throw error;
+    }
+    await finish();
+    if (error instanceof RecordingChangedError) return "changed since planned";
+    if (error instanceof RecordingHeldError) return "recording already held";
+    throw error;
+  }
+  const paths = [...snapshot.keys()];
+  const outcome = await store.transaction(async read => {
+    const now = await read([...paths, NEVER_JOINED_CLAIM]);
+    if (now.get(NEVER_JOINED_CLAIM)?.token !== token) return { result: "already claimed" as const, writes: [] };
+    if (!paths.every(path => isDeepStrictEqual(now.get(path) ?? null, snapshot.get(path) ?? null))) return { result: "changed since planned" as const, writes: [] };
+    return { result: "applied" as const, writes: [...plan.writes] };
+  });
+  await finish();
+  return outcome;
+}
+
+/**
+ * Both corrections, or "applied" while CORRECTION_MARKER exists; an applied never-joined correction is skipped, so the
+ * plan is then the Sol move alone. Throws (refuses) on any failed check. Reads only. Not run at start.
+ */
 export async function planCorrections(store: Store, recordings: RecordingObjects): Promise<Plan | "applied"> {
   if (await store.get(CORRECTION_MARKER) !== null) return "applied";
   const names = new Map<string, string>();
   const at = Date.now();
-  const handle = async (id: string) => names.get(id) ?? await currentName(store, id, at) ?? refuse(`unknown identity ${id}`);
-  const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
-  // 1. The never-joined lobby: verified as still rated, then exactly the existing correction's Firestore writes.
-  const v = await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
-  if (!v.ok || v.stage !== "rated") refuse(`${NEVER_JOINED.lobbyId}: ${v.checks.filter(c => !c.ok).map(c => `${c.name}: ${c.detail}`).join("; ") || `stage ${v.stage}`}`);
-  const writes: Write[] = firestoreWrites(v, new Date());
-  for (const id of v.identities) names.set(id, await handle(id));
-  const unrated = v.identities.map(id => shown(names.get(id)!));
-  const matches: PublicPlan["matches"][number][] = [{ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
-    before: { status: "rated", seats: unrated, ratingChanges: named(JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!)) },
-    after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } }];
-  const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: shown(names.get(id)!), mode: v.mode!,
-    before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null }));
+  // 1. The never-joined lobby, unless its correction is already applied.
+  const { writes, matches, ratings } = await neverJoinedApplied(store)
+    ? { writes: [] as Write[], matches: [] as PublicPlan["matches"][number][], ratings: [] as PublicPlan["ratings"][number][] }
+    : await neverJoinedPart(store, await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId), names, at);
+  const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.
   const registry = createWatchRegistry(store);
   const moves = await Promise.all(SOL_MOVES.map(async move => {
     const lobbyId = await registry.findByReplay(move.replayId);
-    if (lobbyId === null || (move.lobbyId !== undefined && lobbyId !== move.lobbyId)) refuse(`recording ${move.replayId}: lobby ${lobbyId}`);
+    if (lobbyId === null || (move.lobbyId !== undefined && lobbyId !== move.lobbyId)) refuse("sol-lobby", `recording ${move.replayId}: lobby ${lobbyId}`);
     const [fromId, toId] = await Promise.all([houseHandleId(store, move.from), houseHandleId(store, move.to)]);
-    if (!fromId || !toId) refuse(`${move.from} or ${move.to} not found`);
+    if (!fromId || !toId) refuse("sol-handle", `${move.from} or ${move.to} not found`);
     names.set(fromId!, move.from).set(toId!, move.to);
     return { ...move, lobbyId: lobbyId!, fromId: fromId!, toId: toId! };
   }));
   const movers = moves.flatMap(move => [move.fromId, move.toId]);
-  if (!store.createTimes) refuse("the store cannot read commit times");
+  if (!store.createTimes) refuse("no-commit-times", "the store cannot read commit times");
   const { lobbies, docs, created } = await houseHistory(store, movers);
   for (const seat of lobbies.flatMap(lobby => lobby.seats)) names.set(seat.id, seat.displayName);
   const row = (id: string) => docs.get(`${ROWS}/${id}`) ?? null;
@@ -203,7 +373,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     let changes: unknown = null;
     try { changes = JSON.parse(docs.get(`ratedMatches/${lobby.id}`)?.changes ?? "null"); } catch { /* refused below */ }
     if (!Array.isArray(changes) || !teamsOf(lobby).flat().every(id => (changes as RatingChange[]).some(c => c.identityId === id))) {
-      refuse(`lobby ${lobby.id}: no change record`);
+      refuse("no-change-record", `lobby ${lobby.id}: no change record`);
     }
     return [lobby.id, changes as RatingChange[]] as const;
   }));
@@ -211,7 +381,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   /** A createTime with its fraction padded to nanoseconds, so that text order is time order. */
   const createdAt = (lobby: Lobby) => {
     const at = /^(.+?)(?:\.(\d{1,9}))?Z$/.exec(created.get(`ratedMatches/${lobby.id}`) ?? "");
-    return at ? `${at[1]}.${(at[2] ?? "").padEnd(9, "0")}Z` : refuse(`lobby ${lobby.id}: no change record time`);
+    return at ? `${at[1]}.${(at[2] ?? "").padEnd(9, "0")}Z` : refuse("no-change-record-time", `lobby ${lobby.id}: no change record time`);
   };
 
   // The order ratings were applied: each match's change record is created in the commit that rated it, so its
@@ -220,16 +390,16 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const moved = order.map(lobby => {
     const move = moves.find(each => each.lobbyId === lobby.id);
     if (!move) return lobby;
-    if (!plays(lobby, move.fromId) || plays(lobby, move.toId)) refuse(`lobby ${lobby.id} seats do not match its move`);
+    if (!plays(lobby, move.fromId) || plays(lobby, move.toId)) refuse("moved-seats", `lobby ${lobby.id} seats do not match its move`);
     return { ...lobby, seats: lobby.seats.map(seat => seat.id === move.fromId ? { ...seat, id: move.toId, displayName: move.to } : seat) };
   });
   const first = Math.min(...moves.map(move => order.findIndex(lobby => lobby.id === move.lobbyId)));
-  if (first < 0) refuse(`a moved lobby is not a rated ${MODE} match`);
+  if (first < 0) refuse("moved-not-rated", `a moved lobby is not a rated ${MODE} match`);
   const window = order.slice(first);
   // Sorted, so equal times are neighbours; the match just before the window counts too.
   for (let i = Math.max(first, 1); i < order.length; i++) {
     const [a, b] = [order[i - 1]!, order[i]!];
-    if (createdAt(a) === createdAt(b)) refuse(`order of lobbies ${a.id} and ${b.id} not established: their ratings share a commit time`);
+    if (createdAt(a) === createdAt(b)) refuse("shared-commit-time", `order of lobbies ${a.id} and ${b.id} not established: their ratings share a commit time`);
   }
   const players = [...new Set([...window, ...moved.slice(first)].flatMap(lobby => teamsOf(lobby).flat()))];
 
@@ -239,7 +409,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const state = storedState(id, row(id));
     if (mine.length === 0) return [id, state];
     const { before, rdBefore } = change(mine[0]!, id);
-    if (rdBefore === undefined) refuse(`lobby ${mine[0]!.id}: no Glicko change for ${names.get(id)}`);
+    if (rdBefore === undefined) refuse("no-glicko-change", `lobby ${mine[0]!.id}: no Glicko change for ${names.get(id)}`);
     const previous = order.slice(0, first).filter(lobby => plays(lobby, id)).at(-1);
     return [id, { rating: before, rd: rdBefore!, ratedAt: previous?.at ?? null, ratedMatches: state.ratedMatches - mine.length }];
   }));
@@ -262,20 +432,20 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   for (const lobby of window) {
     const [replayed, kept] = [check.changes.get(lobby.id)!, stored.get(lobby.id)!];
     const ids = (changes: readonly RatingChange[]) => JSON.stringify(changes.map(c => c.identityId).sort());
-    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) refuse(`stored history not reproduced: the players of lobby ${lobby.id}`);
+    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) refuse("not-reproduced-players", `stored history not reproduced: the players of lobby ${lobby.id}`);
     for (const c of replayed) {
       const k = change(lobby, c.identityId);
       if (!near(c.before, k.before) || !near(c.rdBefore!, k.rdBefore) || !near(c.after, k.after) || !near(c.rdAfter!, k.rdAfter)) {
-        refuse(`stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`);
+        refuse("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`);
       }
     }
   }
   for (const id of players) {
     const [now, replayed] = [storedState(id, row(id)), check.state.get(id)!];
-    if (!near(replayed.rating, now.rating) || !near(replayed.rd, now.rd) || replayed.ratedAt !== now.ratedAt || replayed.ratedMatches !== now.ratedMatches
-      || (movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)))) {
-      refuse(`stored history not reproduced: ${names.get(id)}`);
-    }
+    const differs = !near(replayed.rating, now.rating) ? "rating" : !near(replayed.rd, now.rd) ? "rd" : replayed.ratedAt !== now.ratedAt ? "rated-at"
+      : replayed.ratedMatches !== now.ratedMatches ? "rated-matches"
+      : movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)) ? "record" : null;
+    if (differs) refuse(`not-reproduced-${differs}`, `stored history not reproduced: ${names.get(id)}`);
   }
 
   // The move: lobbies' seats, watch-entry labels, changed change records and rating rows.
@@ -293,7 +463,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     if (rechanged) writes.push({ op: "update", path: `ratedMatches/${lobby.id}`, fields: { changes } });
     if (!move && !rechanged) continue;
     // A match is named by its recording, or by its public lobby id until a recording is published.
-    const match = docs.get(`watchMatches/${lobby.id}`)?.replayId || (lobby.listed ? lobby.id : refuse(`lobby ${lobby.id}: no public match id`));
+    const match = docs.get(`watchMatches/${lobby.id}`)?.replayId || (lobby.listed ? lobby.id : refuse("no-public-match-id", `lobby ${lobby.id}: no public match id`));
     matches.push({ match, startedAt: new Date(lobby.at).toISOString(),
       before: { status: "rated", seats: was.seats.map(seat => shown(seat.displayName)), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels: shownKeys(labels) } : {}) },
       after: { status: "rated", seats: lobby.seats.map(seat => shown(seat.displayName)), ratingChanges: named(result.changes.get(lobby.id)!),
@@ -302,7 +472,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   for (const id of players) {
     const [now, next, fields] = [storedState(id, row(id)), result.state.get(id)!, row(id)];
     if (next.rating === now.rating && next.rd === now.rd && next.ratedMatches === now.ratedMatches && !movers.includes(id)) continue;
-    if (!fields) refuse(`no ${MODE} row for ${names.get(id)}`);
+    if (!fields) refuse("no-row", `no ${MODE} row for ${names.get(id)}`);
     const rating = encodeRating(next.rating);
     const updated: Fields = { rating, ratedMatches: String(next.ratedMatches), ...glickoFields(next),
       ...(movers.includes(id) ? recordFields(records(moved, id)) : {}), ...(fields!.houseRating !== undefined ? { houseRating: rating } : {}) };
@@ -313,20 +483,34 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
 }
 
 /**
- * The read-only pass as the entry point runs it at start, in the background: logged, never thrown. serve answers
- * GET PLAN_PATH with the plan's public facts while it is pending.
+ * The never-joined correction as the entry point runs it at start, in the background: logged, never thrown. It plans,
+ * logs the plan, and applies it when its digest is applyDigest. serve answers GET PLAN_PATH with the plan's public facts
+ * while it is pending, "applied" once it is, or "refused" with its code.
  */
-export function startCorrectionPlan(store: Store, recordings: RecordingObjects): { readonly serve: MountHandler } {
+export function startCorrectionPlan(store: Store, recordings: RecordingObjects & RecordingHolds, applyDigest = NEVER_JOINED_APPLY_DIGEST): { readonly serve: MountHandler } {
   let current: PlanState = { state: "computing" };
-  void planCorrections(store, recordings).then(plan => {
+  void (async () => {
+    let plan: NeverJoinedPlan | "applied";
+    try { plan = await planNeverJoined(store, recordings); } catch (error) {
+      // The code alone, from REFUSAL_CODES: never the error text, which can quote a stored value.
+      const reason = refusalCode(error);
+      console.warn("antwar rating correction plan refused", { reason });
+      current = { state: "refused", reason };
+      return;
+    }
     if (plan === "applied") { current = { state: "applied" }; return; }
-    for (const write of plan.writes) console.info(`antwar rating correction planned: ${describe(write)}`);
+    // A safe projection of each write: its operation and path, every path a constant or a checked identity id.
+    for (const write of plan.writes) console.info(`antwar rating correction planned: ${write.op} ${write.path}`);
     console.info("antwar rating correction plan", { digest: plan.summary.digest, writes: plan.writes.length });
     current = { state: "planned", ...plan.summary };
-  }, (error: unknown) => {
-    console.warn(`antwar rating correction plan refused: ${error instanceof Error ? error.message : String(error)}`);
-    current = { state: "refused" };
-  });
+    try {
+      const outcome = await applyNeverJoined(store, recordings, plan, applyDigest);
+      if (outcome === "applied") current = { state: "applied" };
+      console.info(`antwar rating correction ${outcome === "applied" ? "applied" : `not applied: ${outcome}`}`, { digest: plan.summary.digest, writes: plan.writes.length });
+    } catch {
+      console.warn("antwar rating correction apply failed");
+    }
+  })();
   return {
     serve(req, res) {
       if (new URL(req.url ?? "/", "http://localhost").pathname !== PLAN_PATH) { res.writeHead(404).end(); return; }

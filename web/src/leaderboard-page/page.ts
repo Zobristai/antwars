@@ -1,8 +1,7 @@
-import { loadLeaderboard, type LeaderboardMode, type LeaderboardQuery, type LeaderboardRow } from "../leaderboard.ts";
+import { loadLeaderboard, type LeaderboardMode, type LeaderboardQuery } from "../leaderboard.ts";
 import { storeFeatureEnabled } from "../store-capabilities.ts";
 import { mountLeaderboard, type LeaderboardView } from "../pages/leaderboard.ts";
-import { CHALLENGE, CHALLENGE_RANKING, OPENING_MODE, challengeRows, type BoardChoice } from "../pages/model.ts";
-import { loadChallengeOpponents } from "./challenge.ts";
+import { OPENING_MODE } from "../pages/model.ts";
 import { C } from "./copy.ts";
 import { loadRanking, type RankingView } from "./view.ts";
 
@@ -26,15 +25,12 @@ export function mountLeaderboardPage(doc: Document, win: Window, options: { requ
   if (waiting) waiting.hidden = true;
   const previousTitle = doc.title; doc.title = "Leaderboard — Antwars";
   const enabled = storeFeatureEnabled(doc, "public-matches");
-  // The mode a link names (/?page=leaderboard&mode=house-1v1, or mode=challenge), when it is one of the choices; otherwise
-  // the opening mode.
+  // The mode a link names (/?page=leaderboard&mode=house-1v1), when it is one of the choices; otherwise the opening mode.
   const asked = new URLSearchParams(win.location.search).get("mode");
-  const known = (next: string | null): next is BoardChoice => next === CHALLENGE || CHOICES.some(entry => entry.mode === next);
-  const opening: BoardChoice = known(asked) ? asked : OPENING_MODE;
+  const known = (next: string | null): next is LeaderboardMode => CHOICES.some(entry => entry.mode === next);
+  const opening: LeaderboardMode = known(asked) ? asked : OPENING_MODE;
   let view: LeaderboardView = { mode: opening, enabled, tables: [] };
-  let mode: BoardChoice = opening, mounted: ReturnType<typeof loadRanking>[] = [], closed = false;
-  // The Challenge list's read in flight, aborted when the board changes, refreshes or closes.
-  let challenge: AbortController | null = null;
+  let mode: LeaderboardMode = opening, mounted: ReturnType<typeof loadRanking>[] = [], closed = false;
   const page = mountLeaderboard(doc, host, {
     chooseMode(next) { if (enabled && known(next)) show(next); },
     refresh() { if (enabled) show(mode); },
@@ -48,11 +44,9 @@ export function mountLeaderboardPage(doc: Document, win: Window, options: { requ
   const read = (query: LeaderboardQuery) =>
     (cursor: string | undefined, signal: AbortSignal) => loadLeaderboard(cursor, signal, request, query);
   /** Replaces every shown table; each old one aborts and ignores any response still arriving for it. */
-  function show(next: BoardChoice) {
+  function show(next: LeaderboardMode) {
     if (closed) return;
     for (const table of mounted) table.destroy();
-    challenge?.abort(); challenge = null; mounted = [];
-    if (next === CHALLENGE) { showChallenge(); return; }
     mode = next; view = { mode, enabled, tables: [] };
     const chosen = CHOICES.find(entry => entry.mode === next)!;
     mounted = chosen.house
@@ -63,33 +57,9 @@ export function mountLeaderboardPage(doc: Document, win: Window, options: { requ
       ];
     page.update(view);
   }
-  /** Every row of the Antwars Model Index 1v1, page after page, through the read its board uses. */
-  async function readChallengeRanking(signal: AbortSignal): Promise<LeaderboardRow[]> {
-    const rows: LeaderboardRow[] = [];
-    let cursor: string | undefined;
-    do {
-      const next = await loadLeaderboard(cursor, signal, request, { mode: CHALLENGE_RANKING });
-      rows.push(...next.entries); cursor = next.next;
-    } while (cursor !== undefined && !signal.aborted);
-    return rows;
-  }
-  /** Challenge reads the house handles and the Antwars Model Index 1v1 together, so its rows follow that ranking with its
-   * ratings. Either read failing keeps nothing and says so once; Refresh reads both again. */
-  function showChallenge() {
-    const controller = new AbortController();
-    challenge = controller;
-    mode = CHALLENGE; view = { mode, enabled, tables: [], challenge: { status: "loading", rows: [] } };
-    page.update(view);
-    Promise.all([loadChallengeOpponents(controller.signal, request), readChallengeRanking(controller.signal)]).then(
-      ([opponents, ranking]) => {
-        if (!controller.signal.aborted && !closed) { view = { ...view, challenge: { status: "ready", rows: challengeRows(opponents, ranking) } }; page.update(view); }
-      },
-      () => { if (!controller.signal.aborted && !closed) { view = { ...view, challenge: { status: "error", rows: [] } }; page.update(view); } },
-    );
-  }
   function destroy() {
     if (closed) return;
-    closed = true; for (const table of mounted) table.destroy(); mounted = []; challenge?.abort(); challenge = null;
+    closed = true; for (const table of mounted) table.destroy(); mounted = [];
     page.destroy(); host.remove();
     doc.title = previousTitle; if (waiting && waitingHidden !== undefined) waiting.hidden = waitingHidden;
     win.removeEventListener("pagehide", destroy);

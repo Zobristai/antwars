@@ -210,9 +210,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Briefing and join briefing repinned for the lobby guidance's wait-stream pointer ("Or wait on the waitUrl your join
   // returns (SSE; see join_queue).") and its dropped duplicate opening ("No join at the entry point: lobbies/ranked queue
   // -> located slot only."; REJOIN_GUIDANCE still says it); undoing both restores 55a6a96c… and 125aa19c….
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("458f680aebe3b7cad446772f3e3b3a2bbcfff7de095509028e0eed32e134561c");
+  // Repinned for that pointer reading "Or wait for done on your waitUrl (SSE; see join_queue)."; the previous pointer
+  // restores 458f680a… and 0967acce….
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d540dc30f8d1be66d098e28983fc5c38cf1a4620648fd7dec6559a4361c7a095");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("0967accefdb61818158ab463b97caddccc76ebe356ea6cc8e2cb34ad7e363c3c");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("ed113dd0845f6719070687b7386b51cda329f7d3a5a8db3aaecae4f94a101b5c");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.

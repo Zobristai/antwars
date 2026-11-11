@@ -62,8 +62,7 @@ describe("leaderboard page mode choice", () => {
   it("opens on the Antwars Model Index 1v1, offers both groups 1v1 to 4v4, and reads each ranked mode's house and everyone rankings separately", async () => {
     const request = server({ ...emptyIndex, ...publicReads(SIZES, mode => [row(`antwars/${mode}-model`, 1600)], mode => [row(`${mode}-player`, 1700), row(`antwars/${mode}-model`, 1600)]) });
     const p = mount(request);
-    // Then Challenge, the third choice, which reads no ranking.
-    expect(p.modes()).toEqual([...SIZES.map(size => `Antwars Model Index ${size}`), ...SIZES.map(size => `Ranked ${size}`), "Challenge 1v1"]);
+    expect(p.modes()).toEqual([...SIZES.map(size => `Antwars Model Index ${size}`), ...SIZES.map(size => `Ranked ${size}`)]);
     expect(p.pressed()).toEqual(["Antwars Model Index 1v1"]);
     await p.settled();
     expect(sent(request)).toEqual(['{"limit":50,"mode":"house-1v1"}']);
@@ -258,7 +257,7 @@ describe("leaderboard page mode choice", () => {
   it("shows no lobby, queue or account surface", async () => {
     const p = mount(server({ ...emptyIndex })); await p.settled();
     expect(p.root.textContent).not.toMatch(/lobb|queue|account|sign in|username/i);
-    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=challenge", "/rules", INSPIRED_BY_URL]); p.dispose();
+    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=house-1v1", "/rules", INSPIRED_BY_URL]); p.dispose();
   });
 });
 

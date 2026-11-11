@@ -4,6 +4,7 @@ import { isReplayId } from "./access.js";
 import { GzipFrames, joinGzip } from "./pack.js";
 import { ReplayCreateError, type ReplayStore } from "./store.js";
 import type { RecordHandoff } from "../records/handoff.js";
+import type { StartRating } from "./history.js";
 
 /** Public, restart-safe name; neither the simulation seed nor an agent id. */
 export function replayId(startedAt: number, seq: number): string {
@@ -336,7 +337,8 @@ export class ReplayRecording {
     this.logError(`antwar match ${this.seq} private checkpoint failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  ended(at: number, publication?: { publishAfter: number; rated: boolean }): void {
+  /** publication's startRatings, when given, are handed off with the inputs (src/records/inputs.ts). */
+  ended(at: number, publication?: { publishAfter: number; rated: boolean; startRatings?: Readonly<Record<string, StartRating>> }): void {
     this.endedAt = at;
     if (publication === undefined || this.handoff === undefined || this.logLines === undefined || this.captureFailed || this.checkpointed) return;
     this.checkpointed = true;
