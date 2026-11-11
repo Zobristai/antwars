@@ -48,6 +48,13 @@ html[data-d2-hud] #aw-match-status { top: var(--d2-notice-top, 124px); }
 /* From 1280 px the pane takes its widest, so every player's model and level fit on one line in its rows and card. */
 @media (min-width: 1280px) { .d2-hud { --d2-pane: 296px; } }
 .d2-hud[data-short] { --d2-foot: 28px; --d2-lane: 40px; --d2-tap: 32px; }
+/* With the pane at its widest, the line under the window takes two rows, as on a narrow screen: the stream's state on its
+   own line, the full width of the window, and Bring your agent under it, so neither is cut. */
+@media (min-width: 1280px) {
+  .d2-hud { --d2-foot: 60px; }
+  .d2-hud[data-short] { --d2-foot: 56px; }
+  .d2-hud:not([data-layout="narrow"]) .d2-foot { flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; }
+}
 body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibility: hidden; }
 .d2-score { grid-column: 2; grid-row: 2; position: relative; z-index: 3; display: flex; justify-content: center; min-width: 0; pointer-events: none; }
 .d2-stage { grid-column: 2; grid-row: 4; position: relative; min-height: 0; }
