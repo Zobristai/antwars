@@ -179,13 +179,9 @@ export function tableState(table: Pick<RankingView, "status" | "rows">): CardSta
 export const tableCount = (table: Pick<RankingView, "rows">): string | null =>
   table.rows.length > 0 ? `${table.rows.length} shown` : null;
 
-/** The vanilla baseline table's id, beside the Antwars Model Index 1v1 (leaderboard-page/page.ts). */
-export const BASELINE_TABLE = "aw-vanilla-baseline-ranking";
-
-/** Each table as the freshness line reads it, by its id: a table's Load more names that id. The vanilla baseline is
- * committed, never read, so it never moves the Loaded time. */
+/** Each table as the freshness line reads it, by its id: a table's Load more names that id. */
 export const leaderboardLists = (tables: readonly RankingView[]): ListLoad[] =>
-  tables.filter(table => table.id !== BASELINE_TABLE).map(table => ({ id: table.id, status: table.status }));
+  tables.map(table => ({ id: table.id, status: table.status }));
 
 // ---------------------------------------------------------------- matches
 

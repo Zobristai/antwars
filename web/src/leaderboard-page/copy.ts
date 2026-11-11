@@ -7,8 +7,6 @@ export const C = {
   serviceUnavailable: "The public leaderboard is not enabled on this server.",
   modes: "Choose a ranking",
   houseTitle: "Ranked", houseModels: "house models", everyoneTitle: "Ranked", houseModeTitle: "Antwars Model Index",
-  /** The table beside the Antwars Model Index 1v1, re-rated from rounds 26-30 only. */
-  baselineTitle: "Vanilla baseline: rounds 26-30",
   tableLoading: "Loading rankings…",
   tableEmpty: "No rated players in this table.",
   tableFailed: "This table is unavailable. Refresh the leaderboard to try again.",

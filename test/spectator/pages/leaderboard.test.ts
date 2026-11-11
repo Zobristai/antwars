@@ -4,8 +4,6 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountLeaderboardPage } from "../../../web/src/leaderboard-page/page.ts";
 import { PAGE_WORDS } from "../../../web/src/ui/pages.ts";
-import { baselineTable } from "../../../src/rating/vanillaBaseline.ts";
-import { houseDisplayName } from "../../../src/rating/houseLabels.ts";
 import { dom, type ElementPort } from "./dom.ts";
 import { leaderboardCards } from "./archive.ts";
 
@@ -158,12 +156,11 @@ describe("badges", () => {
       { displayName: "antwars/gpt-6-astra", rating: 1600, ratedMatches: 4, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
       { displayName: "antwars/claude-opus-5-5", rating: 1550, ratedMatches: 3, thinkingLevel: "high", benchmark: true },
     ] })));
-    const index = leaderboardCards(p.root)[0]!.section;
-    const groups = index.byClass("d1p-tags");
+    const groups = p.root.byClass("d1p-tags");
     // Two rows, each drawn in the table and the stacked list.
     expect(groups.map(group => group.children.map(tag => tag.textContent))).toEqual([["max", "Fast"], ["high"], ["max", "Fast"], ["high"]]);
     expect(groups.every(group => group.children.every(tag => tag.classes().includes("d1p-tag")))).toBe(true);
-    expect(index.byClass("d1p-tag").every(tag => tag.parent!.classes().includes("d1p-tags"))).toBe(true);
+    expect(p.root.byClass("d1p-tag").every(tag => tag.parent!.classes().includes("d1p-tags"))).toBe(true);
     p.dispose();
   });
 });
@@ -341,16 +338,14 @@ describe("rating ± RD", () => {
       { displayName: `${mode}-historical`, rating: 1300, ratedMatches: 12 },
     ] }));
     await p.answer("house-1v1", rows("house"));
-    // The Antwars Model Index card; the vanilla baseline beside it draws its own rows.
-    const index = leaderboardCards(p.root)[0]!.section;
-    const shown = () => index.byClass("c-elo").map(cell => cell.textContent).filter(text => /\d/.test(text));
+    const shown = () => p.root.byClass("c-elo").map(cell => cell.textContent).filter(text => /\d/.test(text));
     // The table cell, then the stacked row (which names the column for screen readers).
     expect(shown()).toEqual(expect.arrayContaining(["1663 ± 87", "1337 ± 290, provisional", "1300", "Rating 1663 ± 87"]));
     // The in-match cyan badge holds the figure and ± RD (RATING_LOOK "badge"), the ± RD in its tip.
-    expect(index.byClass("d1-elo").map(node => node.textContent)).toEqual(["1663 ± 87", "1337 ± 290", "1300", "1663 ± 87", "1337 ± 290", "1300"]);
-    expect(index.byClass("d1-elo").map(node => node.children[0]?.tag === "#text" ? node.children[0].textContent : node.textContent))
+    expect(p.root.byClass("d1-elo").map(node => node.textContent)).toEqual(["1663 ± 87", "1337 ± 290", "1300", "1663 ± 87", "1337 ± 290", "1300"]);
+    expect(p.root.byClass("d1-elo").map(node => node.children[0]?.tag === "#text" ? node.children[0].textContent : node.textContent))
       .toEqual(["1663", "1337", "1300", "1663", "1337", "1300"]);
-    expect(index.byClass("d1p-elo-rd").map(node => node.textContent)).toEqual([" ± 87", " ± 290", " ± 87", " ± 290"]);
+    expect(p.root.byClass("d1p-elo-rd").map(node => node.textContent)).toEqual([" ± 87", " ± 290", " ± 87", " ± 290"]);
     expect(p.root.byClass("d1p-rd")).toEqual([]);
     p.choose("Ranked 1v1");
     await p.answer("1v1", rows("public"), undefined, false); await p.answer("1v1", rows("public"));
@@ -521,39 +516,6 @@ describe("no house slug on the rankings", () => {
       for (const shown of [node.textContent, node.title, node.getAttribute("aria-label") ?? ""]) expect(shown).not.toMatch(/abliterated-large-v2|not-a-row|antwars\//);
     }
     expect(card!.section.textContent).toContain("Abliterated GLM-5.3");
-    p.dispose();
-  });
-});
-
-describe("the vanilla baseline: rounds 26-30", () => {
-  const titles = (root: ElementPort) => leaderboardCards(root).map(card => card.title);
-  it("stands beside the Antwars Model Index 1v1, which is unchanged, with the re-rated rows and no read of its own", async () => {
-    const p = page();
-    await p.answer("house-1v1", reply(["antwars/claude-opus-5-5"]));
-    expect(titles(p.root)).toEqual(["Antwars Model Index · 1v1", "Vanilla baseline: rounds 26-30"]);
-    const [index, baseline] = leaderboardCards(p.root);
-    // The index card holds exactly the server's rows, and none of the baseline's.
-    expect(index!.count).toBe("1 shown");
-    expect(index!.section.textContent).toContain("antwars/claude-opus-5-5");
-    expect(index!.section.textContent).not.toContain("Abliterated GLM-5.3");
-    const expected = baselineTable();
-    const rows = baseline!.section.querySelector("tbody")!.children;
-    expect(rows).toHaveLength(expected.length);
-    expected.forEach((row, at) => expect(rows[at]!.textContent).toContain(houseDisplayName(row.displayName)));
-    expect(baseline!.section.textContent).toContain(`${Math.round(expected[0]!.rating)} ± ${Math.round(expected[0]!.rd)}`);
-    expect(baseline!.more).toBeNull();
-    p.dispose();
-  });
-
-  it("is 1v1 only: the larger Model Index boards and the public rankings show no baseline", async () => {
-    const p = page();
-    await p.answer("house-1v1", reply(["a"]));
-    p.choose("Antwars Model Index 2v2");
-    await p.answer("house-2v2", reply(["b"]));
-    expect(titles(p.root)).toEqual(["Antwars Model Index · 2v2"]);
-    p.choose("Ranked 1v1");
-    await p.answer("1v1", reply(["c"]), undefined, false); await p.answer("1v1", reply(["d"]));
-    expect(titles(p.root)).not.toContain("Vanilla baseline: rounds 26-30");
     p.dispose();
   });
 });
