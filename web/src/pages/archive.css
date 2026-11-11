@@ -252,8 +252,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
    the Replay pill, 75 px, all in Liberation Sans), so none is cut or pressed to its column's edges; the two colonies share
    the rest equally: 363 px each in the 1200 px card the pages give them, never less than 291 px, since the table stands
    only in a card 66rem wide (the stacked rows, below). That keeps a builder's whole line on one line in the 1200 px card,
-   as the drawing draws it: "antwarsos-harness GPT-6.1 Terra MEDIUM FAST" and its rating, 341 px. Waiting has no button:
-   its column stays, empty, so every list's columns line up. */
+   as the drawing draws it: a 17-character username, then "GPT-6.1 Terra MEDIUM FAST" and its rating, 341 px. Waiting
+   has no button: its column stays, empty, so every list's columns line up. */
 .d1p-match col.c-start { width: calc(var(--d1p-inset) + 88px); }
 .d1p-match col.c-type { width: calc(var(--d1p-gutter) + 100px); }
 .d1p-match col.c-status { width: calc(var(--d1p-gutter) + 106px); }
