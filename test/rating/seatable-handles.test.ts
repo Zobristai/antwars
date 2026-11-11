@@ -22,7 +22,10 @@ const INDEX_DRAW: readonly string[] = [
  * Handles seated in rated matches outside the index draw, such as placement-series seats. Every handle seated in a rated
  * match outside the draw must be added here; a handle that is not added is not checked.
  */
-const RATED_OUTSIDE_DRAW: readonly string[] = ["claude-fable-5-2"];
+const RATED_OUTSIDE_DRAW: readonly string[] = [
+  "claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
+  "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
+];
 
 /** Every seatable handle: the launchable list, the index draw and the rated seats outside the draw, each once. */
 const SEATABLE: readonly string[] = [...new Set([...LAUNCHABLE_HANDLES, ...INDEX_DRAW, ...RATED_OUTSIDE_DRAW])];
@@ -47,10 +50,19 @@ describe("every seatable handle has a HOUSE_LABELS row", () => {
     expect(houseDisplayName("antwars/mistral-large-4")).toBe("Mistral Large 4");
   });
 
-  it("names claude-fable-5-2 Claude Fable 5.2 at max with no tier", () => {
-    expect(SEATABLE).toContain("claude-fable-5-2");
-    expect(houseDisplayName("antwars/claude-fable-5-2")).toBe("Claude Fable 5.2");
-    expect(houseLabel("antwars/claude-fable-5-2")).toEqual({ thinkingLevel: "max", serviceTier: null });
+  it.each([
+    ["claude-fable-5-2", "Claude Fable 5.2", "max"],
+    ["claude-fable-5-2-high", "Claude Fable 5.2", "high"],
+    ["claude-fable-5-2-xhigh", "Claude Fable 5.2", "xhigh"],
+    ["claude-fable-5-2-medium", "Claude Fable 5.2", "medium"],
+    ["claude-fable-5-2-low", "Claude Fable 5.2", "low"],
+    ["gemini-4-carbon-low", "Gemini 4 Carbon", "low"],
+    ["gemini-4-carbon-medium", "Gemini 4 Carbon", "medium"],
+    ["gemini-4-carbon-high", "Gemini 4 Carbon", "high"],
+  ])("names %s %s at %s with no tier", (handle, name, level) => {
+    expect(SEATABLE).toContain(handle);
+    expect(houseDisplayName(`antwars/${handle}`)).toBe(name);
+    expect(houseLabel(`antwars/${handle}`)).toEqual({ thinkingLevel: level, serviceTier: null });
   });
 
   it("fails for a seatable handle without a row, naming it", () => {
