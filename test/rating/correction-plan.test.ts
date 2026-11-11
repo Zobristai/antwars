@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
-import { decodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
+import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import { CORRECTION_MARKER, NEVER_JOINED, planCorrections, PLAN_PATH, REFUSAL_CODES, SOL_MOVES, startCorrectionPlan, type Plan, type PlanState } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
@@ -278,6 +278,27 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     const failing = (error: Error): Store => ({ ...w.store, get: async () => { throw error; } });
     expect(JSON.parse(await refusal(failing(new FirestoreError("get", 403, "PERMISSION_DENIED")), w.recordings))).toEqual({ state: "refused", reason: "store-error" });
     expect(JSON.parse(await refusal(failing(new Error(`lobby ${NEVER_JOINED.lobbyId}`)), w.recordings))).toEqual({ state: "refused", reason: "error" });
+    warn.mockRestore();
+  });
+
+  it("codes a stored row that is not reproduced by the field that differs", async () => {
+    const w = await world();
+    // A moved-to handle with matches in the window, so its row is replayed and its record compared.
+    const path = `${ratingCollection(MODE)}/${w.ids.get("antwars/gpt-6-1-sol-high-fast")}`;
+    const row = (await w.store.get(path))!;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const [fields, reason] of [
+      [{ rating: encodeRating(decodeRating(row.rating!) + 1) }, "not-reproduced-rating"],
+      [{ rd: encodeRating(decodeRating(row.rd!) + 1) }, "not-reproduced-rd"],
+      [{ ratedAt: String(Number(row.ratedAt) + 1) }, "not-reproduced-rated-at"],
+      [{ wins: String(Number(row.wins) + 1), losses: String(Number(row.losses) - 1) }, "not-reproduced-record"],
+    ] as const) {
+      await commit(w.store, [{ op: "update", path, fields }]);
+      const { serve } = startCorrectionPlan(w.store, w.recordings);
+      await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("refused"));
+      expect(JSON.parse(served(serve).body)).toEqual({ state: "refused", reason });
+      await commit(w.store, [{ op: "update", path, fields: row }]);
+    }
     warn.mockRestore();
   });
 
