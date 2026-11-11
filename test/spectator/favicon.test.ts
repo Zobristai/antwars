@@ -19,7 +19,7 @@ beforeAll(async () => {
   committed = await readFile(FAVICON_PATH);
   dataDir = await mkdtemp(join(tmpdir(), "antwar-favicon-"));
   // No match starts and no agent joins. Only static HTTP responses are exercised.
-  server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir, match: "held" });
+  server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir, match: "held", expectedPlayers: 2 });
 });
 
 afterAll(async () => {

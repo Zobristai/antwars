@@ -19,7 +19,7 @@ afterEach(async () => {
 function options() {
   const dataDir = mkdtempSync(join(tmpdir(), "antwar-replay-route-")); dirs.push(dataDir);
   const publicOptions = comparisonOptions({}, DEFAULT_MCP_CONFIG);
-  return { ...publicOptions, port: 0, host: "127.0.0.1", dataDir, breakMs: 20,
+  return { ...publicOptions, port: 0, host: "127.0.0.1", dataDir,
     simConfig: { ...publicOptions.simConfig!, matchTicks: 2, terrain: { ...publicOptions.simConfig!.terrain!, mapId: "open-field" } } };
 }
 const live = { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 };
@@ -33,7 +33,7 @@ it.each([
   vi.spyOn(console, "log").mockImplementation(() => {});
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  server = await startSpectatedServer({ ...options(), match: "held", replaySource: { open } }, live);
+  server = await startSpectatedServer({ ...options(), match: "held", expectedPlayers: 2, replaySource: { open } }, live);
   const response = await fetch(`http://127.0.0.1:${server.port}/replays/${replayId}`);
   expect(response.status).toBe(503);
   expect(response.headers.get("content-type")).toBe("application/json");

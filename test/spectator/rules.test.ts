@@ -13,6 +13,7 @@ import { readRulesAssets, startSpectatedServer, type SpectatedServer } from "../
 import { PAGE_COPY } from "../../web/src/story.ts";
 import { PRE_FRONTLINE_PUBLIC_CONFIG } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
+import { comparison, startComparisonMatch } from "../server/helpers.ts";
 import { LOG_EXPLAINER, MODEL_INDEX_MATCH_LINES, VISUAL_KEY, count, queensRoute, renderRules, ruleSections, sectionId } from "../../web/rules.ts";
 import { ruleGroups } from "../../web/src/pages/model.ts";
 import { createHash } from "node:crypto";
@@ -229,9 +230,9 @@ describe("shared rules", () => {
     }
   });
 
-  it("serves the public redesign rules before the first scheduled match", async () => {
+  it("serves the public redesign rules before any match", async () => {
     dataDir = mkdtempSync(join(tmpdir(), "antwar-rules-"));
-    server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir, ...comparisonOptions({}, DEFAULT_MCP_CONFIG), breakMs: 60_000 });
+    server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir, ...comparisonOptions({}, DEFAULT_MCP_CONFIG) });
     const url = `http://127.0.0.1:${server.port}/rules`;
     const response = await fetch(url);
     expect(response.status).toBe(200);
@@ -321,7 +322,7 @@ describe("shared rules", () => {
       overrunGraceTicks: 14400, overrunTicks: 160, overrunRadiusTiles: 3,
       territoryDecayTicks: 300, hatchCost: 9, hatchIntervalTicks: 40, colonyCap: 321 });
     dataDir = mkdtempSync(join(tmpdir(), "antwar-rules-"));
-    server = await startSpectatedServer({ port: 0, host: "127.0.0.1", match: "held", dataDir, simConfig: config });
+    server = await startSpectatedServer({ port: 0, host: "127.0.0.1", ...comparison(0), dataDir, simConfig: config });
     const url = `http://127.0.0.1:${server.port}/rules`;
     const get = await fetch(url);
     const html = await get.text();
@@ -339,7 +340,7 @@ describe("shared rules", () => {
     expect((await fetch(`${url}/`)).status).toBe(200);
     expect((await fetch(`${url}/missing`)).status).toBe(404);
     // Same route continues to use the actual match's configuration once it starts.
-    server.startMatch();
+    await startComparisonMatch(server, 0);
     expect(await (await fetch(url)).text()).toBe(renderRules(server.game.match!.state.config, { assets: readRulesAssets() }));
   });
 });

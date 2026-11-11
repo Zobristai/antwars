@@ -80,7 +80,7 @@ export interface SpectatedServerOptions extends ServerOptions {
 
 /** A game server with the spectator stream and page mounted; closing it closes the stream too. */
 export async function startSpectatedServer(options: SpectatedServerOptions, live: LiveConfig = DEFAULT_LIVE_CONFIG): Promise<SpectatedServer> {
-  // Held/immediate runs and the private comparison harness are never public recordings.
+  // The comparison run (match "held") is never a public recording.
   const entryPoint = isEntryPoint(options);
   const replayStore = !entryPoint && options.match === undefined && options.matchLogStdout !== true ? options.replayStore : undefined;
   if (options.slot && (!options.accounts || !options.watchRegistry)) throw new Error("Slot spectators require account stores and a watch registry");

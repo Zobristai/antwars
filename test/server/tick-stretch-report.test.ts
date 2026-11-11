@@ -10,7 +10,7 @@ import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { WIDE_PLAIN } from "../../src/sim/scale2Maps.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
 import { playable } from "../playable.ts";
-import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 
 // A full collection on demand for this file only. The flag is process-wide, so it is set only long enough for one new
 // context to carry gc(), then cleared: no other context in this process gains gc().
@@ -73,12 +73,13 @@ it("covers a full 60-minute Wide Plain at the deployed tick rate in 60-second st
   const lines: string[] = [], samples: TickTiming[] = [];
   const dir = tempDir(); dirs.push(dir);
   vi.spyOn(console, "log").mockImplementation(() => {});
-  server = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "immediate", seed: 7,
+  server = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, ...comparison(0), seed: 7,
     simConfig: playable(shortConfig(matchTicks, { ticksPerSecond: deployed.ticksPerSecond, startAnts: 2, colonyCap: 4 })),
     feed: { matchStarted: () => {}, ticked: () => { clock += planned[ticked++]!; } },
     onTickTiming: (sample) => samples.push(sample),
     tickReport: { log: (line) => lines.push(line) } });
   const s = server;
+  await startComparisonMatch(s, 0);
   vi.advanceTimersByTime((matchTicks + 1) * (1000 / deployed.ticksPerSecond));
   expect(s.game.match!.result).not.toBeNull();
   expect(ticked).toBe(matchTicks);
@@ -104,7 +105,7 @@ it("closes a final partial stretch with its exact p99, and counts GC forced in a
   // Start from a collected heap, so no marking begun before the match finishes inside it.
   fullGc();
   const forced: number[] = [];
-  server = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "immediate", seed: 7,
+  server = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, ...comparison(0), seed: 7,
     simConfig: playable(shortConfig(330, { ticksPerSecond: 200, startAnts: 2, colonyCap: 4 })),
     feed: { matchStarted: () => {}, ticked: () => {
       const tick = ++ticked;
@@ -121,6 +122,7 @@ it("closes a final partial stretch with its exact p99, and counts GC forced in a
     } },
     tickReport: { log: (line) => lines.push(line), stretchTicks: 150 } });
   const s = server;
+  await startComparisonMatch(s, 0);
   await waitFor(() => s.game.match?.result != null, 20_000);
   expect(forced).toEqual([LIVE_OBJECTS, LIVE_OBJECTS]);
   expect(ticked).toBe(330);
@@ -153,7 +155,7 @@ it("an operator stop's terminal tick closes the last stretch, so the stretches s
   const dir = tempDir(); dirs.push(dir);
   server = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, seed: 91, startPickWindowMs: 5,
     simConfig: playable(shortConfig(1000, { ticksPerSecond: 100, queenFounding: PUBLIC_CONFIG.queenFounding })), mcpConfig: TEST_MCP_CONFIG,
-    slot: { slot: "public-0", publicUrl: "http://slot.test", identities, lobbies, pollMs: 10 },
+    slot: { slot: "public-0", publicUrl: "http://slot.test", identities, lobbies, pollMs: 10 }, operatorToken: "stretch-report-test-only",
     feed: { matchStarted: () => {}, ticked: () => { ticked++; } },
     onTickTiming: () => { observed++; },
     tickReport: { log: (line) => lines.push(line), stretchTicks: 4 } });
@@ -176,7 +178,9 @@ it("an operator stop's terminal tick closes the last stretch, so the stretches s
     expect((await agent.call("join", { key })).isError).toBe(false);
   }
   await waitFor(() => (s.game.match?.state.tick ?? 0) >= 10);
-  s.stopMatch();
+  // The slot operator's stop ends the match synchronously before it answers.
+  const stopped = await fetch(`http://127.0.0.1:${s.port}/operator/stop`, { method: "POST", headers: { authorization: "Bearer stretch-report-test-only" } });
+  expect(stopped.status).toBe(200);
   expect(s.game.match!.result).not.toBeNull();
   const ticks = s.game.match!.state.tick;
   expect(ticked).toBe(ticks);

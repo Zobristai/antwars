@@ -3,7 +3,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startServer, type GameServer } from "../../src/server.js";
-import { matchLogs, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor } from "./helpers.js";
+import { PUBLIC_CONFIG } from "../../src/sim/config.js";
+import { matchLogs, memorySlot, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor } from "./helpers.js";
 import { playable } from "../playable.ts";
 
 let server: GameServer | null = null;
@@ -17,8 +18,11 @@ describe("a fixed cap on finished match logs", () => {
     const dataDir = tempDir();
     // A log left by an earlier run counts as the oldest finished log.
     writeFileSync(join(dataDir, "match-2000-01-01T00-00-00-000Z-7.jsonl"), "{}\n");
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, breakMs: 50, maxMatchLogs: 2, simConfig: playable(shortConfig(3)), mcpConfig: TEST_MCP_CONFIG });
+    // A slot server plays one lobby's match after another, each starting a new log.
+    const wiring = memorySlot();
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, slot: wiring.slot, startPickWindowMs: 5, maxMatchLogs: 2, simConfig: playable(shortConfig(3, { queenFounding: PUBLIC_CONFIG.queenFounding })), mcpConfig: TEST_MCP_CONFIG });
     const s = server;
+    for (let i = 0; i < 5; i += 1) await wiring.seatLobby();
 
     const seqs = (): number[] => [...matchLogs(dataDir).keys()].sort((a, b) => a - b);
     // Just after match n starts: its own log plus the newest finished ones, at most the cap.

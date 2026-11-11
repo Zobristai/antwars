@@ -188,19 +188,8 @@ export interface GameOptions {
    * source of replies. Never the match log: a reply line is not a simulation input.
    */
   readonly onReply?: (seq: number, line: string) => void;
-  /** Called with each reconnect token as it is issued (playtest redaction). */
-  readonly onTokenIssued?: (token: string) => void;
   /** Set only on a slot server: joins are by lobby key, never by token or colony. */
   readonly slot?: SlotAccess;
-}
-
-/** One agent of the current match and whether any answer it got has carried the match result. */
-export interface MatchAgent {
-  readonly agentId: string;
-  /** The lobby seat key it joined with; null for a join without a seat. */
-  readonly key: string | null;
-  readonly displayName: string | null;
-  readonly sawResult: boolean;
 }
 
 /**
@@ -261,8 +250,6 @@ interface AgentRecord {
   readonly colony: ColonyId | undefined;
   readonly seat: LineupSeat | null;
   callTimes: number[];
-  /** True once an answer to this agent carried its match's result. */
-  sawResult: boolean;
   /** Sessions keep only this receipt, not a retired record's events or match state. */
   readonly finalResult: { result: MatchResult | null; notPlayed?: true };
   /** Slot servers: the lobby and seat key this seat belongs to, its rejoin key. */
@@ -326,7 +313,7 @@ export class Game {
   private readonly heldStubs = new Map<string, { readonly seq: number; kept: number[]; omitted: number; last: StubCall | null; held: number }>();
   /**
    * Per seat, how many full entries it has recorded before its match began: at
-   * most preMatchFullEntries, the slot pre-match allowance, so a stuck start or a harness waiting on a manual start
+   * most preMatchFullEntries, the slot pre-match allowance, so a stuck start or a held start waiting on its players
    * cannot grow the record; calls beyond it are stubs.
    */
   private readonly heldFull = new Map<string, { readonly seq: number; count: number }>();
@@ -342,7 +329,6 @@ export class Game {
   private readonly recordedTimes = new Map<string, number[]>();
   /** Per match seq: the digests of the served texts already handed to its recording or held for it. */
   private textsSent = new Map<number, Set<string>>();
-  private readonly onTokenIssued: (token: string) => void;
   private current: Match | null = null;
   private previous: Match | null = null;
   /** The tick the live match stopped at for a handover save (stopForSave); it never advances on this server again. */
@@ -414,7 +400,6 @@ export class Game {
     this.onLogLine = options.onLogLine ?? (() => {});
     this.onInputQueued = options.onInputQueued ?? (() => {});
     this.onReply = options.onReply ?? (() => {});
-    this.onTokenIssued = options.onTokenIssued ?? (() => {});
     this.slot = options.slot;
   }
 
@@ -579,7 +564,6 @@ export class Game {
     });
     this.bySeat.set(seatKey, rec);
     const outcome: Outcome = live ? await this.submit(this.current!, this.seatJoinInput(rec)) : { kind: "queued", nextStart: this.next };
-    this.noteResult(rec.agentId, outcome);
     return { agentId: rec.agentId, token: null, config: this.configFor(rec), outcome };
   }
 
@@ -654,15 +638,6 @@ export class Game {
     this.next = next;
   }
 
-  /** Agents joined for the next match and waiting for it to start. */
-  /** The agents of the current match (running or ended), each with whether it has seen the result. */
-  matchAgents(): MatchAgent[] {
-    const seq = this.current?.seq;
-    return [...this.records.values()]
-      .filter((rec) => seq !== undefined && this.joinsAt(rec, seq))
-      .map((rec) => ({ agentId: rec.agentId, key: rec.seat?.key ?? null, displayName: rec.displayName, sawResult: rec.sawResult }));
-  }
-
   /** The colonies whose lobby seat never joined the current match, when that ended it abandoned; otherwise none. */
   matchAbsentColonies(): readonly ColonyId[] {
     return this.current?.state.result?.reason === "abandoned" ? this.current.absentColonies ?? [] : [];
@@ -702,6 +677,7 @@ export class Game {
     return labels;
   }
 
+  /** Agents joined for the next match and waiting for it to start. */
   get queuedAgents(): number {
     const seq = this.current?.seq ?? 0;
     let count = 0;
@@ -1047,7 +1023,6 @@ export class Game {
     }
     const rec = this.newRecord(seq, { displayName: req.displayName ?? null, modelLabel: req.modelLabel ?? null, thinkingLevel: req.thinkingLevel ?? null, serviceTier: null, colony: req.colony, seat: null, seatKey: null, identityId: null });
     const outcome: Outcome = live ? await this.submit(this.current!, joinInput(rec)) : { kind: "queued", nextStart: this.next };
-    this.noteResult(rec.agentId, outcome);
     return { agentId: rec.agentId, token: rec.token, config: this.configFor(rec), outcome };
   }
 
@@ -1062,7 +1037,6 @@ export class Game {
       houseMatch: fields.seatKey !== null && this.lobby?.mode?.startsWith("house-") === true,
       ...fields,
       callTimes: [this.now()],
-      sawResult: false,
       finalResult: { result: null },
       events: [],
       lastSquad: null,
@@ -1075,8 +1049,6 @@ export class Game {
     };
     this.records.set(rec.agentId, rec);
     this.byToken.set(rec.token, rec);
-    // Slot-server seats rejoin by key; their internal token is never issued.
-    if (rec.seatKey === null) this.onTokenIssued(rec.token);
     return rec;
   }
 
@@ -1106,9 +1078,7 @@ export class Game {
    * With an identity, the call's reply is remembered under its call id if the match applies it.
    */
   async call(agentId: string, input: SimInput, countsAsHouseActivity = true, identity?: CallIdentity): Promise<Outcome> {
-    const outcome = await this.answer(agentId, input, countsAsHouseActivity, identity);
-    this.noteResult(agentId, outcome);
-    return outcome;
+    return this.answer(agentId, input, countsAsHouseActivity, identity);
   }
 
   /** The reply of this seat's applied call with that call id, if it is still remembered. */
@@ -1367,11 +1337,6 @@ export class Game {
     }
   }
 
-  private noteResult(agentId: string, outcome: Outcome): void {
-    const rec = this.records.get(agentId);
-    if (rec !== undefined && carriesResult(outcome)) rec.sawResult = true;
-  }
-
   private async answer(agentId: string, input: SimInput, countsAsHouseActivity: boolean, identity: CallIdentity | undefined): Promise<Outcome> {
     const rec = this.records.get(agentId);
     if (rec === undefined) return { kind: "error", code: "unknown_agent", view: null };
@@ -1543,7 +1508,7 @@ function savedRecord(rec: AgentRecord): SavedAgentRecord {
   return {
     agentId: rec.agentId, token: rec.token, houseMatch: rec.houseMatch, displayName: rec.displayName, modelLabel: rec.modelLabel,
     thinkingLevel: rec.thinkingLevel, serviceTier: rec.serviceTier, ...(rec.colony === undefined ? {} : { colony: rec.colony }), seat: rec.seat,
-    callTimes: rec.callTimes, sawResult: rec.sawResult, finalResult: rec.finalResult, seatKey: rec.seatKey, identityId: rec.identityId,
+    callTimes: rec.callTimes, finalResult: rec.finalResult, seatKey: rec.seatKey, identityId: rec.identityId,
     events: rec.events, lastSquad: rec.lastSquad === null ? null : [...rec.lastSquad], broodVoteLost: rec.broodVoteLost,
     eventCursor: rec.eventCursor, currentEventCursor: rec.currentEventCursor, priorityEvents: rec.priorityEvents,
     cellSnapshot: rec.cellSnapshot === null ? null : { ...rec.cellSnapshot, offsets: [...rec.cellSnapshot.offsets] },
@@ -1561,18 +1526,6 @@ function joinInput(rec: AgentRecord): Extract<SimInput, { type: "join" }> {
     ...(rec.thinkingLevel === null ? {} : { thinkingLevel: rec.thinkingLevel }),
     ...(rec.serviceTier === null ? {} : { serviceTier: rec.serviceTier }),
   };
-}
-
-/**
- * Whether the public answer to this outcome shows the agent the winner. The MCP
- * adapter reports winner fields on a view with a result and on match_over or
- * call_rate errors. Other errors (an order rejected on the final tick) omit them
- * even when their view carries the result, so they do not count.
- */
-function carriesResult(outcome: Outcome): boolean {
-  if (outcome.kind === "view") return outcome.view.result !== null;
-  if (outcome.kind === "error") return (outcome.code === "match_over" || outcome.code === "call_rate") && (outcome.result ?? outcome.view?.result ?? null) !== null;
-  return false;
 }
 
 function toOutcome(result: InputResult): Outcome {

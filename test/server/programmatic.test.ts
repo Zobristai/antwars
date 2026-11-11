@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { afterEach, describe, expect, it } from "vitest";
 import { startServer, type GameServer } from "../../src/server.js";
-import { connect, loggedInputs, matchLogs, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, loggedInputs, matchLogs, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 import { playable } from "../playable.ts";
 
 let server: GameServer | null = null;
@@ -18,40 +18,36 @@ afterEach(async () => {
 });
 
 describe("the exported start function", () => {
-  it("with an immediate match starts it at once, on the given port and data directory, ignoring the environment", async () => {
+  it("with a held match starts only at its join barrier, on the given port and data directory, ignoring the environment; agents joined meanwhile are queued, then placed by the queued-join rule", async () => {
     process.env.PORT = "1";
     process.env.DATA_DIR = "/nonexistent/antwar";
     const dataDir = tempDir();
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "immediate", simConfig: playable(shortConfig(600)), mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(3), simConfig: playable(shortConfig(600)), mcpConfig: TEST_MCP_CONFIG });
     expect(server.port).not.toBe(1);
-    expect(server.game.match).not.toBeNull();
-    expect(server.game.match!.result).toBeNull();
-    expect(server.game.nextStart).toBeNull();
-    expect(matchLogs(dataDir).size).toBe(1);
-    await waitFor(() => server!.game.match!.state.tick >= 2);
-  });
-
-  it("with a held match starts only when the caller starts it; agents joined meanwhile are queued, then placed by the queued-join rule", async () => {
-    const dataDir = tempDir();
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "held", simConfig: playable(shortConfig(600)), mcpConfig: TEST_MCP_CONFIG });
     expect(server.game.match).toBeNull();
     expect(server.game.nextStart).toEqual({ kind: "held" });
 
     const ids: string[] = [];
-    for (let i = 0; i < 2; i += 1) {
-      const agent = await connect(server.port);
+    const join = async () => {
+      const agent = await connect(server!.port);
       agents.push(agent);
       const joined = await agent.call("join", {});
       expect(joined.isError, joined.text).toBe(false);
       expect(joined.data.matchStarts).toBe("when its caller starts it");
       ids.push(joined.data.agentId);
+    };
+    for (let i = 0; i < 2; i += 1) {
+      await join();
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(server.game.match).toBeNull();
     expect(matchLogs(dataDir).size).toBe(0);
 
-    server.startMatch();
-    expect(() => server!.startMatch()).toThrow();
+    // The third join completes the count and releases the held match.
+    await join();
+    await waitFor(() => server!.game.match !== null);
+    expect(server.game.match!.result).toBeNull();
+    expect(matchLogs(dataDir).size).toBe(1);
     await waitFor(() => (server!.game.match?.state.tick ?? 0) >= 1);
     // Queued joins are the first tick's inputs, in join order: the same path as any queued join.
     const log = matchLogs(dataDir).get(1)!;
