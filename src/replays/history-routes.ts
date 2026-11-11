@@ -9,6 +9,7 @@ import { NATURAL_OUTCOMES, type RankedMode } from "../rating/ratings.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -231,7 +232,9 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (list) {
         const listed = await source.list(token, abort.signal);
         const typed = await types(listed);
-        const page = handles === undefined ? typed : await handles(typed);
+        const filled = handles === undefined ? typed : await handles(typed);
+        // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
+        const page = source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
         if (res.destroyed) return;
         // Recordings show an unlisted house seat handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("recordings", page.matches.flatMap(row => row.seats.map(seat => seat.handle)));
@@ -252,7 +255,8 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
           if (res.destroyed) return;
           const start = Buffer.concat(head);
           const complete = start.subarray(0, prefix.length).equals(prefix);
-          res.writeHead(200, { "content-type": "application/json", "cache-control": complete ? IMMUTABLE : SHORT });
+          // A record a rating correction may change (correctedRecordings.ts) is never cached as immutable.
+          res.writeHead(200, { "content-type": "application/json", "cache-control": complete && !CORRECTED_REPLAY_IDS.has(id) ? IMMUTABLE : SHORT });
           if (req.method === "HEAD") { res.end(); return; }
           res.write(start);
           // Each chunk the response takes is progress; under backpressure a stalled client takes none.

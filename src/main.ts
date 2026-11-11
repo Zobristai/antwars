@@ -11,6 +11,7 @@ import { createLobbies, STALE_HOLD_GRACE_MS } from "./lobby/lobbies.js";
 import { createRatings, startRecordFill } from "./rating/ratings.js";
 import { PLAN_PATH, startCorrectionPlan } from "./rating/correctionPlan.js";
 import { gcsRecordingObjects } from "./replays/abandonRecording.js";
+import { correctedHistorySource, correctedReplaySource } from "./replays/correctedRecordings.js";
 import type { AccountStores } from "./accounts/service.js";
 import { usernameClaimLimitRuleFromEnv } from "./accounts/caller.js";
 import { configureClientSource } from "./server/clientSource.js";
@@ -97,8 +98,11 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     }
   }
   const replayStore = slotSettings !== undefined && comparison.match === undefined ? replayStoreFromEnv(process.env) : undefined;
-  const replaySource = comparison.match === undefined ? replaySourceFromEnv(process.env) : undefined;
-  const historySource = comparison.match === undefined ? historySourceFromEnv(process.env) : undefined;
+  // The matches the rating corrections changed are served corrected once each correction reads applied.
+  const storedReplays = comparison.match === undefined ? replaySourceFromEnv(process.env) : undefined;
+  const replaySource = storedReplays && store ? correctedReplaySource(storedReplays, store) : storedReplays;
+  const storedHistory = comparison.match === undefined ? historySourceFromEnv(process.env) : undefined;
+  const historySource = storedHistory && store ? correctedHistorySource(storedHistory, store) : storedHistory;
   const privateArchive = comparison.match === undefined ? privateArchiveFromEnv(process.env) : undefined;
   const watchRegistry = store === undefined ? undefined : createWatchRegistry(store);
   const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, privateArchive, recordHandoff, watchRegistry, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
