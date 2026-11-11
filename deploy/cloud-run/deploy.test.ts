@@ -971,6 +971,7 @@ describe("records", () => {
       ["storage", "buckets", "create", input, "--location", "australia-southeast1",
         "--uniform-bucket-level-access", "--public-access-prevention", "--soft-delete-duration", "0", ...ACCOUNT],
       ["storage", "buckets", "update", input, "--update-labels", "app=antwar", ...ACCOUNT],
+      ["iam", "service-accounts", "describe", RECORDS_SA, ...ACCOUNT],
       ["storage", "buckets", "add-iam-policy-binding", input, "--member", member("antwar-run@example-project.iam.gserviceaccount.com"), "--role", "roles/storage.objectCreator", ...ACCOUNT],
       // Read-back of handover saves only (test/slots/handover-save-read-grant.test.ts).
       ["storage", "buckets", "add-iam-policy-binding", input, "--member", member("antwar-run@example-project.iam.gserviceaccount.com"), "--role", "roles/storage.objectViewer",
