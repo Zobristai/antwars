@@ -21,7 +21,12 @@ A pull request into `main` must pass three checks:
   [Private identifier and secret check](#private-identifier-and-secret-check));
 - `history-isolation`, which refuses a history with any root but the
   repository's initial commit, or a commit whose author, committer or message
-  holds a private identifier;
+  holds a private identifier. The root is checked over the whole history; the
+  authors, committers and messages only of the commits not already on `main`,
+  since those already there are public and are never rewritten. GitHub's
+  no-reply addresses (`<id>+<login>@users.noreply.github.com`,
+  `<login>@users.noreply.github.com` and `noreply@github.com`) are public and
+  are not matched, nor are the encoded lines of a commit signature;
 - `checks`, the job of the `antwar ci` workflow.
 
 To run them locally: the pre-commit hook (below) scans each commit's staged

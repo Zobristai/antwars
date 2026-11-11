@@ -6,21 +6,37 @@
 # one literal identifier per line, matched case-insensitively as a fixed substring of each whole
 # field. Neither identifiers nor matching values are ever printed.
 #
+# What is matched. The root check always covers the whole history. The identity and message
+# checks cover only the commits that are not already on main (see --since and <base-sha> below):
+# a commit already on main is public and cannot be changed without rewriting history, so checking
+# it again would only turn every later push red when the list grows. An author or committer email
+# in one of GitHub's no-reply forms (<id>+<login>@users.noreply.github.com,
+# <login>@users.noreply.github.com, noreply@github.com) is not matched: GitHub builds it from the
+# account's public login and id, and it is on every pull request and merge. In the whole-header
+# view, the base64 and checksum lines of a gpgsig or gpgsig-sha256 signature are not matched
+# either, since they are encoded bytes, not text; any other line in a signature, and every other
+# header line, is.
+#
 # The initial commit is never in the repository either (a commit cannot carry its own id): it
 # comes from the ANTWARS_EXPECTED_ROOT environment variable, the full 40-character lower-case SHA.
 # In CI that is the repository Actions variable of the same name; a local run sets the
 # environment variable of the same name. Unset, empty or not exactly such a SHA fails.
 #
 # Usage:
-#   history-isolation.sh <commit>...
-#       checks the history reachable from each commit (push to main).
-#   history-isolation.sh --pull-request <number> <head-sha>
+#   history-isolation.sh [--since <sha>] <commit>...
+#       checks the history reachable from each commit (push to main). With --since (the full
+#       SHA of the previous main tip), the identity and message checks leave out the commits
+#       reachable from it; the root check still covers the whole history.
+#   history-isolation.sh --pull-request <number> <head-sha> [<base-sha>]
 #       lists refs/pull/<number>/head and refs/pull/<number>/merge on origin with
 #       ls-remote --exit-code, fetches the listed refs as git objects only (into refs/candidate/*),
 #       requires the head to be <head-sha> and each fetched ref to equal its listing, then checks
 #       both. The merge ref is treated as absent only when its ls-remote exits 2 (GitHub creates
 #       none for a conflicting pull request); then the head alone is checked. Any other ls-remote
 #       exit and any fetch error fails. Nothing from the pull request is checked out or run.
+#       With <base-sha> (the full SHA of the pull request's base, which must be in the clone),
+#       the identity and message checks leave out the commits reachable from the base and from
+#       the merge ref's first parent, which is main as GitHub merged it.
 #       FETCH_TOKEN, when set, authenticates the fetch; it is passed to git through the
 #       environment, never on a command line or in the repository configuration.
 set -euo pipefail
@@ -68,11 +84,27 @@ remote_git() {
   fi
 }
 
+# Commits already on main, whose identities and messages are not checked again (root check aside).
+exclude=()
+if [ "${1:-}" = --since ]; then
+  [ "$#" -ge 3 ] || { echo "usage: $0 [--since <sha>] <commit>..." >&2; exit 2; }
+  [[ "$2" =~ ^[0-9a-f]{40}$ ]] || die "--since is not a full commit SHA"
+  git rev-parse --verify --quiet "$2^{commit}" >/dev/null || die "--since commit $2 is not in this clone"
+  [ "$3" != --pull-request ] || die "--since cannot be combined with --pull-request"
+  exclude+=("$2")
+  shift 2
+fi
+
 if [ "${1:-}" = --pull-request ]; then
-  [ "$#" -eq 3 ] || { echo "usage: $0 --pull-request <number> <head-sha>" >&2; exit 2; }
-  number=$2 head=$3
+  [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || { echo "usage: $0 --pull-request <number> <head-sha> [<base-sha>]" >&2; exit 2; }
+  number=$2 head=$3 base=${4:-}
   [[ "$number" =~ ^[1-9][0-9]{0,9}$ ]] || die "pull request number is not a number"
   [[ "$head" =~ ^[0-9a-f]{40}$ ]] || die "pull request head is not a full commit SHA"
+  if [ "$#" -eq 4 ]; then
+    [[ "$base" =~ ^[0-9a-f]{40}$ ]] || die "pull request base is not a full commit SHA"
+    git rev-parse --verify --quiet "$base^{commit}" >/dev/null || die "pull request base $base is not in this clone"
+    exclude+=("$base")
+  fi
   pr=refs/pull/$number
   # Each ref is listed with ls-remote --exit-code: exit 0 means listed, exit 2 means no matching
   # ref on origin, and any other exit is a lookup error. Only the merge ref may be absent.
@@ -115,13 +147,18 @@ if [ "${1:-}" = --pull-request ]; then
     for p in "${merge_ids[@]:1}"; do [ "$p" != "$head" ] || merges_head=1; done
     [ "$merges_head" = 1 ] ||
       die "$pr/merge is stale: it does not merge the head $head; re-run once GitHub has updated it"
+    # The merge ref's first parent is main as GitHub merged it; with a base, it is left out too.
+    # Only a two-parent merge whose first parent is not the head counts; anything else is checked.
+    if [ -n "$base" ] && [ "${#merge_ids[@]}" -eq 3 ] && [ "${merge_ids[1]}" != "$head" ]; then
+      exclude+=("${merge_ids[1]}")
+    fi
     set -- "$@" refs/candidate/pr-merge
   else
     merge_absent="$pr/merge is absent on origin (ls-remote --exit-code exited 2); the head alone was checked"
   fi
 fi
 
-if [ "$#" -eq 0 ]; then echo "usage: $0 <commit>... | --pull-request <number> <head-sha>" >&2; exit 2; fi
+if [ "$#" -eq 0 ]; then echo "usage: $0 [--since <sha>] <commit>... | --pull-request <number> <head-sha> [<base-sha>]" >&2; exit 2; fi
 # Every git read below has its output captured and its exit status checked; a failed read fails.
 shallow=$(git rev-parse --is-shallow-repository) || die "could not tell whether the clone is shallow (git rev-parse failed)"
 [ "$shallow" = false ] || die "the clone is shallow; full history is required"
@@ -140,6 +177,14 @@ done
 # view. A header that is not plainly well formed fails closed. Every id is matched against the
 # author and committer names and emails, against the whole header as well, and against the full
 # message (everything after the header's blank line; NUL bytes are dropped first).
+# GitHub's no-reply addresses, matched whole and strictly: <id>+<login>@users.noreply.github.com,
+# <login>@users.noreply.github.com (a login is letters, digits and single inner hyphens, at most
+# 39 characters) and noreply@github.com. Anything else is an ordinary email and is matched.
+noreply() { # <email>
+  local e=${1,,}
+  [ "$e" = noreply@github.com ] ||
+    [[ "$e" =~ ^([0-9]{1,20}\+)?[a-z0-9]([a-z0-9]|-[a-z0-9]){0,38}@users\.noreply\.github\.com$ ]]
+}
 fields_hit=0
 match() { # <sha> <field> <value>
   local v=${3,,} id
@@ -147,11 +192,15 @@ match() { # <sha> <field> <value>
     if [[ "$v" == *"$id"* ]]; then fail "commit $1: $2 matches a private identifier"; fields_hit=1; return; fi
   done
 }
-expected=$(git rev-list --count "$@") || die "could not count the history (git rev-list --count failed)"
+# The commits to check: those reachable from the targets but not from any already-on-main commit.
+range=("$@")
+for e in "${exclude[@]}"; do range+=("^$e"); done
+expected=$(git rev-list --count "${range[@]}") || die "could not count the history (git rev-list --count failed)"
 [[ "$expected" =~ ^[0-9]+$ ]] || die "git rev-list --count returned no count"
-listing=$(git rev-list "$@") || die "could not list the history (git rev-list failed)"
+listing=$(git rev-list "${range[@]}") || die "could not list the history (git rev-list failed)"
 commits=()
 while read -r sha; do
+  [ -n "$sha" ] || [ "$expected" != 0 ] || continue   # nothing new to check: an empty listing
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "git rev-list returned a malformed line"
   commits+=("$sha")
 done <<< "$listing"
@@ -171,20 +220,33 @@ for sha in "${commits[@]}"; do
   header='' prev='' authors=0 committers=0 bad='' fields_hit=0
   for line in "${lines[@]}"; do
     [ -n "$line" ] || break
-    header+="${line,,}"$'\n'
     if [ "${line:0:1}" = ' ' ]; then
-      case "$prev" in gpgsig|gpgsig-sha256|mergetag) ;; *) bad="a continuation line in an unexpected place" ;; esac
+      case "$prev" in
+        gpgsig|gpgsig-sha256)
+          # A signature's base64 and checksum lines are encoded bytes: left out of the header
+          # view. Any other continuation line of a signature stays in it.
+          [[ "$line" =~ ^\ [A-Za-z0-9+/]*={0,2}$ || "$line" =~ ^\ =[A-Za-z0-9+/]{4}$ ]] ||
+            header+="${line,,}"$'\n' ;;
+        mergetag) header+="${line,,}"$'\n' ;;
+        *) header+="${line,,}"$'\n'; bad="a continuation line in an unexpected place" ;;
+      esac
       continue
     fi
+    view=$line
     key=${line%% *} rest=${line#* } prev=$key
     case "$key" in
       tree|parent) [[ "$rest" =~ ^[0-9a-f]{40}$ ]] || bad="a malformed $key line" ;;
       author|committer)
         if [ "$key" = author ]; then authors=$((authors + 1)); else committers=$((committers + 1)); fi
-        if [[ "$rest" =~ ^([^\<\>]*)\ \<([^\<\>]*)\>\ [0-9]+\ [+-][0-9]{4}$ ]]; then
-          name=${BASH_REMATCH[1]} email=${BASH_REMATCH[2]}
+        if [[ "$rest" =~ ^([^\<\>]*)\ \<([^\<\>]*)\>\ ([0-9]+\ [+-][0-9]{4})$ ]]; then
+          name=${BASH_REMATCH[1]} email=${BASH_REMATCH[2]} when=${BASH_REMATCH[3]}
           match "$sha" "$key-name" "$name"
-          match "$sha" "$key-email" "$email"
+          # A GitHub no-reply address is public: neither matched nor kept in the header view.
+          if noreply "$email"; then
+            view="$key $name <> $when"
+          else
+            match "$sha" "$key-email" "$email"
+          fi
         else
           bad="a malformed $key line"
         fi ;;
@@ -192,6 +254,7 @@ for sha in "${commits[@]}"; do
       gpgsig|gpgsig-sha256|mergetag) ;;
       *) bad="an unrecognised header line" ;;
     esac
+    header+="${view,,}"$'\n'
   done
   [ "$authors" = 1 ] && [ "$committers" = 1 ] || bad=${bad:-"not exactly one author and one committer line"}
   [ -z "$bad" ] || fail "commit $sha: its header has $bad"
@@ -210,6 +273,6 @@ n=$checked
 [ -z "$merge_absent" ] || echo "history-isolation: $merge_absent"
 
 if [ "$status" = 0 ]; then
-  echo "history-isolation: $n commits; only root $root; no author, committer or message matches a private identifier"
+  echo "history-isolation: only root $root; $n commits not already on main checked; no author, committer or message matches a private identifier"
 fi
 exit "$status"

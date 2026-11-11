@@ -169,6 +169,49 @@ run "29e control: expected root right, clean chain passes" pass $C
 why "30 PR mode, expected root unset" "$NOTSET" -u ANTWARS_EXPECTED_ROOT bash -c "cd $W/runner && bash $S --pull-request 1 $H_OK"
 why "30b PR mode, expected root empty" "$EMPTY" ANTWARS_EXPECTED_ROOT= bash -c "cd $W/runner && bash $S --pull-request 1 $H_OK"
 why "30c PR mode, expected root another commit, caught" "is not the initial commit $C1" ANTWARS_EXPECTED_ROOT=$C1 bash -c "cd $W/runner && bash $S --pull-request 1 $H_OK"
+# GitHub no-reply addresses are public: not matched, even when the list holds the login or id.
+NR='9876543210+synthid-alpha@users.noreply.github.com'
+run "31 no-reply author <id>+<login>, both listed" pass $(id "Octo <$NR> 1 +0000" "$Z")
+run "31b no-reply author <login> form, login listed" pass $(id 'Octo <synthid-alpha@users.noreply.github.com> 1 +0000' "$Z")
+run "31c no-reply committer, mixed case" pass $(id "$Z" 'Octo <9876543210+Synthid-Alpha@Users.NoReply.GitHub.com> 1 +0000')
+runenv "31d noreply@github.com committer, listed" pass ANTWARS_IDENTIFIERS='noreply@github.com' bash $S $(id "$Z" 'GitHub <noreply@github.com> 1 +0000')
+run "32 no-reply email, listed text in the name still caught" fail $(id "Synthid-Alpha <$NR> 1 +0000" "$Z")
+run "32b look-alike: listed text as a subdomain" fail $(id 'Dev <x@synthid-alpha.users.noreply.github.com> 1 +0000' "$Z")
+run "32c look-alike: no-reply form with a suffix" fail $(id 'Dev <1+x@users.noreply.github.com.synthcorp.example> 1 +0000' "$Z")
+run "32d look-alike: wrong top-level domain" fail $(id 'Dev <synthid-alpha@users.noreply.github.co> 1 +0000' "$Z")
+run "32e look-alike: login with a double hyphen" fail $(id 'Dev <synthid-alpha--x@users.noreply.github.com> 1 +0000' "$Z")
+run "32f look-alike: login with an underscore" fail $(id 'Dev <synthid_alpha_9876543210@users.noreply.github.com> 1 +0000' "$Z")
+# A signature's base64 and checksum lines are not matched; any other text in it, and mergetag, is.
+sig(){ raw "author $Z"$'\n'"committer $Z"$'\n'"$1 -----BEGIN PGP SIGNATURE-----"$'\n'" "$'\n'"$2"$'\n'" =ab12"$'\n'" -----END PGP SIGNATURE-----"; }
+K='ANTWARS_IDENTIFIERS=synthkey9'
+runenv "33 listed text inside a signature's base64 line" pass $K bash $S $(sig gpgsig ' AAAAsynthkey9BBBB+/==')
+runenv "33b listed text inside a gpgsig-sha256 base64 line" pass $K bash $S $(sig gpgsig-sha256 ' SynthKey9AAAA')
+runenv "33c listed text in a signature's armor header line" fail $K bash $S $(sig gpgsig ' Comment: synthkey9')
+runenv "33d listed text in a mergetag continuation" fail $K bash $S $(raw "author $Z"$'\n'"committer $Z"$'\n'"mergetag object $C"$'\n'" tagger synthkey9 <t@example.org> 1 +0000")
+# Commits already on main (--since, or a pull request's base) are not checked again; the root is.
+B1=$(id 'Dev <dev@synthcorp.example> 1 +0000' "$Z"); B2=$(chain $B1 'after the old commit')
+run "34 --since the old commit: its identity is not checked again" pass --since $B1 $B2
+run "34b --since before the old commit: it is checked" fail --since $C $B2
+run "34c no --since: the whole history is checked" fail $B2
+run "34d --since the commit itself: nothing new, passes" pass --since $B2 $B2
+run "34e --since: a listed text after it is caught" fail --since $C2 $(msg 'adds synthid-alpha')
+M2=$(chain $M 'after the two-root merge')
+run "34f --since past a wrong root: the root is still caught" fail --since $M $M2
+run "34g --since not a full SHA" fail --since HEAD $B2
+run "34h --since not in this clone" fail --since 0123456789abcdef0123456789abcdef01234567 $B2
+run "34i --since with --pull-request" fail --since $C --pull-request 1 $H_OK
+HB=$(chain $B1 'pull request change')
+MGB=$(printf 'tree %s\nparent %s\nparent %s\nauthor %s\ncommitter %s\n\nm\n' "$T" "$B1" "$HB" "$Z" "$Z" | git hash-object -t commit -w --literally --stdin)
+git push -q $W/origin.git $B1:refs/heads/main-old $HB:refs/pull/8/head $MGB:refs/pull/8/merge 2>&1 | grep -v '^$'
+git clone -q $W/origin.git $W/runner2 2>/dev/null; git -C $W/runner2 checkout -q --detach $B1
+pr2(){ name=$1 want=$2; shift 2; out=$(cd $W/runner2 && env "$@" 2>&1); show "$name" $want $? "$out"; }
+pr2 "35 PR with base: a commit already on the base not checked again" pass bash $S --pull-request 8 $HB $B1
+pr2 "35b PR without base: the whole history is checked" fail bash $S --pull-request 8 $HB
+pr2 "35c PR with an older base: the merge ref's first parent is left out" pass bash $S --pull-request 8 $HB $C
+pr2 "35d PR with base: a listed text in the head's message still caught" fail bash $S --pull-request 6 $H_MSG $B1
+pr2 "35e PR with base: a bad identity on the merge ref still caught" fail bash $S --pull-request 3 $H_OK $B1
+pr2 "35f PR base not a full SHA" fail bash $S --pull-request 8 $HB HEAD
+pr2 "35g PR base not in this clone" fail bash $S --pull-request 8 $HB 0123456789abcdef0123456789abcdef01234567
 echo "== runner: worktree changes $(git -C $W/runner status --porcelain | wc -l), HEAD $(git -C $W/runner rev-parse HEAD)"
 leaks=$(cat $W/out/*.txt | grep -ciE 'synth|9876543210|none-such')
 echo "== outputs containing a synthetic identifier or its text: $leaks"
