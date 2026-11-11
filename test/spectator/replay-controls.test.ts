@@ -258,17 +258,27 @@ describe("marks on the scrubber", () => {
     m.controls.close();
   });
 
-  it("does not draw a mark under the thumb, and keeps the rest of its group", () => {
+  it("does not draw the mark playback is at under the thumb, and keeps every other moment the thumb covers to choose", () => {
     const words = (marks: Element[]) => marks.map(b => b.attrs["aria-label"]);
     // Playback at 3:25: the food mark sits under the thumb; the others stay.
     expect(words(marked(DRAWN, 205_000).marks)).toEqual(["Fight, 2:13", "2 marks, 8:39 to 9:13", "4 marks, 12:00 to 13:04"]);
-    // Playback at 12:00: the thumb covers 12:00 and 12:07; 12:56 and 13:04 stay a group to choose from.
+    // Playback at 12:00: 12:00 is under the thumb; 12:07, under it too, stands beside it and joins 12:56 and 13:04.
     const m = marked(DRAWN, 720_400);
-    expect(words(m.marks)).toEqual(["Fight, 2:13", "Food lead, Very Large Colony, 3:25", "2 marks, 8:39 to 9:13", "2 marks, 12:56 to 13:04"]);
+    expect(words(m.marks)).toEqual(["Fight, 2:13", "Food lead, Very Large Colony, 3:25", "2 marks, 8:39 to 9:13", "3 marks, 12:07 to 13:04"]);
     m.marks[3]!.onclick!({ detail: 1 });
     m.list!.children[0]!.onclick!({ detail: 1 });
-    expect(m.seeks).toEqual([776_700]);
+    expect(m.seeks).toEqual([727_500]);
     m.controls.close();
+    // Playback at 12:03: the thumb covers 12:00 and 12:07, neither at its moment; each stands beside it, on its own side.
+    const between = marked(DRAWN, 723_000);
+    expect(words(between.marks)).toEqual([
+      "Fight, 2:13", "Food lead, Very Large Colony, 3:25", "2 marks, 8:39 to 9:13", "Nest lost, Lake Hodges Colony, 12:00", "3 marks, 12:07 to 13:04",
+    ]);
+    between.marks[3]!.onclick!({ detail: 1 });
+    expect(between.seeks).toEqual([720_400]);
+    between.controls.close();
+    // Playback at the end: 13:04 is under the thumb; 12:56, covered with no room after it, stands before it with 12:00 and 12:07.
+    expect(words(marked(DRAWN, DRAWN_MS).marks)).toEqual(["Fight, 2:13", "Food lead, Very Large Colony, 3:25", "2 marks, 8:39 to 9:13", "3 marks, 12:00 to 12:56"]);
   });
 });
 
@@ -300,3 +310,32 @@ it("tries the marks' read again after a failed request, so a passing fault does 
   await vi.waitFor(() => expect(r.events).not.toBeNull(), { timeout: SCAN_RETRY_MS[0]! + 2000 });
   expect(requests).toBe(3);
 }, 10_000);
+
+it("keeps trying the marks' read after the listed waits, and at once when the browser is back online", async () => {
+  const browser = new EventTarget();
+  vi.stubGlobal("addEventListener", browser.addEventListener.bind(browser));
+  vi.stubGlobal("removeEventListener", browser.removeEventListener.bind(browser));
+  try {
+    let requests = 0;
+    let online = false;
+    const r = openRecording("/replay", undefined, async () => ++requests === 1 || online ? new Response(new Uint8Array(bytes)) : new Response(null, { status: 503 }),
+      { controls: true, endTick: async () => decodeMessage(packets.at(-1)!).tick });
+    active.push(r);
+    await r.first;
+    // Every listed wait and one more past the last: each failure waits, and coming back online ends the wait.
+    for (let failed = 1; failed <= SCAN_RETRY_MS.length + 1; failed++) {
+      await vi.waitFor(() => expect(requests).toBe(1 + failed));
+      for (let i = 0; i < 5; i++) await new Promise(resolve => setTimeout(resolve, 5));
+      expect(requests).toBe(1 + failed);
+      browser.dispatchEvent(new Event("online"));
+    }
+    await vi.waitFor(() => expect(requests).toBe(SCAN_RETRY_MS.length + 3));
+    expect(r.events).toBeNull();
+    online = true;
+    browser.dispatchEvent(new Event("online"));
+    await vi.waitFor(() => expect(r.events).not.toBeNull());
+    expect(requests).toBe(SCAN_RETRY_MS.length + 4);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

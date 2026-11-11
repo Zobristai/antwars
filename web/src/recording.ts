@@ -99,8 +99,9 @@ export interface RecordingOptions {
   restate?: Promise<((m: StreamMessage) => StreamMessage) | null>;
 }
 
-/** The waits before the marks' read is tried again after a failure (a network error or a refused request). */
-export const SCAN_RETRY_MS: readonly number[] = [2000, 8000];
+/** The waits before the marks' read is tried again after a failure (a network error or a refused request); after the
+ * last it keeps being tried at the last wait, and at once when the browser reports it is back online. */
+export const SCAN_RETRY_MS: readonly number[] = [2000, 8000, 30000];
 
 /** At most two seconds decoded ahead; seeks replay every delta in bounded frame-sized batches. */
 export function openRecording(url: string, onError: (error: Error) => void = () => {}, request: typeof fetch = fetch, options: RecordingOptions = {}): Recording {
@@ -133,7 +134,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   // One read of the whole recording, beside playback, for the scrubber's marks; it also settles the end when the
   // stored record has none (missing/private/legacy history, or a record too large to read for it). It retains no
   // messages or boards, only the marks, and yields every 100 messages. A failed read is tried again after
-  // SCAN_RETRY_MS (each delay once); a corrupt recording is not, and leaves the marks absent.
+  // SCAN_RETRY_MS for as long as the replay is open; a corrupt recording is not, and leaves the marks absent.
   const scanWhole = async (attempt = 0): Promise<void> => {
     let retry = true;
     try {
@@ -165,11 +166,18 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     } catch (cause) {
       if (closed) return;
       if (endTick === null) durationError = cause instanceof Error ? cause.message : String(cause);
-      const delay = SCAN_RETRY_MS[attempt];
-      if (!retry || delay === undefined) return;
+      if (!retry) return;
+      const delay = SCAN_RETRY_MS[Math.min(attempt, SCAN_RETRY_MS.length - 1)]!;
       await new Promise<void>(resolve => {
-        const timer = setTimeout(resolve, delay);
-        lifetime.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+        const wake = () => {
+          clearTimeout(timer);
+          globalThis.removeEventListener?.("online", wake);
+          lifetime.signal.removeEventListener("abort", wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, delay);
+        globalThis.addEventListener?.("online", wake, { signal: lifetime.signal });
+        lifetime.signal.addEventListener("abort", wake, { once: true });
       });
       if (!closed) await scanWhole(attempt + 1);
     }
