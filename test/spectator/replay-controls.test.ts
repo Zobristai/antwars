@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
-import { openRecording, PLAYBACK_RATES, type Recording } from "../../web/src/recording.ts";
+import { openRecording, PLAYBACK_RATES, SCAN_RETRY_MS, type Recording } from "../../web/src/recording.ts";
 import { groupMarks, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
 import type { ReplayEvent } from "../../web/src/replay-events.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
@@ -247,10 +247,28 @@ describe("marks on the scrubber", () => {
     m.controls.close();
   });
 
-  it("hides a mark under the thumb, where it is not a target", () => {
+  it("keeps a group open when a mouse that opened it by pointing then clicks it", () => {
+    const m = marked();
+    m.marks[3]!.onpointerenter!({ pointerType: "mouse" });
+    expect(m.list!.hidden).toBe(false);
+    m.marks[3]!.onclick!({ detail: 1 }); // the click that follows the pointing
+    expect(m.list!.hidden).toBe(false);
+    m.list!.children[2]!.onclick!({ detail: 1 });
+    expect(m.seeks).toEqual([776_700]);
+    m.controls.close();
+  });
+
+  it("does not draw a mark under the thumb, and keeps the rest of its group", () => {
+    const words = (marks: Element[]) => marks.map(b => b.attrs["aria-label"]);
     // Playback at 3:25: the food mark sits under the thumb; the others stay.
-    const m = marked(DRAWN, 205_000);
-    expect(m.marks.map(b => b.classes.has("is-under"))).toEqual([false, true, false, false]);
+    expect(words(marked(DRAWN, 205_000).marks)).toEqual(["Fight, 2:13", "2 marks, 8:39 to 9:13", "4 marks, 12:00 to 13:04"]);
+    // Playback at 12:00: the thumb covers 12:00 and 12:07; 12:56 and 13:04 stay a group to choose from.
+    const m = marked(DRAWN, 720_400);
+    expect(words(m.marks)).toEqual(["Fight, 2:13", "Food lead, Very Large Colony, 3:25", "2 marks, 8:39 to 9:13", "2 marks, 12:56 to 13:04"]);
+    m.marks[3]!.onclick!({ detail: 1 });
+    m.list!.children[0]!.onclick!({ detail: 1 });
+    expect(m.seeks).toEqual([776_700]);
+    m.controls.close();
   });
 });
 
@@ -269,3 +287,16 @@ it("reads the marks only for explicit replays: a recording without controls make
   await vi.waitFor(() => expect(replay.events).not.toBeNull());
   expect(requests).toBe(3);
 });
+
+it("tries the marks' read again after a failed request, so a passing fault does not leave the replay without marks", async () => {
+  let requests = 0;
+  const r = openRecording("/replay", undefined, async () => ++requests === 2 ? new Response(null, { status: 503 }) : new Response(new Uint8Array(bytes)),
+    { controls: true, endTick: async () => decodeMessage(packets.at(-1)!).tick });
+  active.push(r);
+  await r.first;
+  await vi.waitFor(() => expect(requests).toBe(2));
+  expect(r.events).toBeNull();
+  expect(r.durationError).toBeNull(); // the stored record gave the end, so the slider works meanwhile
+  await vi.waitFor(() => expect(r.events).not.toBeNull(), { timeout: SCAN_RETRY_MS[0]! + 2000 });
+  expect(requests).toBe(3);
+}, 10_000);

@@ -16,7 +16,6 @@
   margin: 0; padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer;
   pointer-events: auto; transform: translate(-50%, -50%); -webkit-tap-highlight-color: transparent;
 }
-.aw-mark.is-under { visibility: hidden; pointer-events: none; }
 .aw-mark-glyph { display: block; width: var(--aw-mark-size); height: var(--aw-mark-size); overflow: visible; fill: currentColor; stroke: #121719; stroke-width: 1.6; stroke-linejoin: round; }
 .aw-mark-glyph * { vector-effect: non-scaling-stroke; }
 :is(.aw-mark, .aw-mark-icon).c0 { color: var(--aw-c0); }

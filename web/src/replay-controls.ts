@@ -28,10 +28,14 @@ export function markWords(e: ReplayEvent): string[] {
   return [KIND_NAMES[e.kind], ...(e.colony === null ? [] : [COLONY_NAMES[e.colony]]), replayTime(e.ms)];
 }
 
+/** Where a moment stands along a track of `width` px: the thumb's centre at that position. */
+export function markX(ms: number, duration: number, width: number): number {
+  return THUMB_INSET + Math.min(1, Math.max(0, ms / duration)) * Math.max(0, width - 2 * THUMB_INSET);
+}
+
 /** Marks closer than `gap` px along a track of `width` px join one group, chained left to right. */
 export function groupMarks(events: readonly ReplayEvent[], duration: number, width: number, gap: number): { x: number; events: ReplayEvent[] }[] {
-  const travel = Math.max(0, width - 2 * THUMB_INSET);
-  const at = (ms: number) => THUMB_INSET + Math.min(1, Math.max(0, ms / duration)) * travel;
+  const at = (ms: number) => markX(ms, duration, width);
   const groups: { xs: number[]; events: ReplayEvent[] }[] = [];
   for (const e of events) {
     const x = at(e.ms);
@@ -103,14 +107,19 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
   let laidOut: readonly ReplayEvent[] | null = null;
   let laidDuration = 0;
   let trackWidth = 0;
+  /** The marks the thumb covers, by index, as last laid out; and how near the thumb a mark is covered. */
+  let laidCovered = "";
+  let coverReach = THUMB_INSET;
   // Re-laid out only when the slider's box changes, never measured every frame.
   let dirty = true;
   const Observer = doc.defaultView?.ResizeObserver;
   const resized = Observer ? new Observer(() => { dirty = true; }) : null;
   resized?.observe(el);
   resized?.observe(seek);
-  let items: { x: number; events: ReplayEvent[]; button: HTMLButtonElement; half: number }[] = [];
+  let items: { x: number; events: ReplayEvent[]; button: HTMLButtonElement }[] = [];
   let openItem: (typeof items)[number] | null = null;
+  /** A list a mouse opened by pointing stays open when that mouse then clicks; only a list a click opened toggles. */
+  let openedByPointing = false;
   let chipTimer: ReturnType<typeof setTimeout> | null = null;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
@@ -175,6 +184,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     closeList();
     hideChip();
     openItem = item;
+    openedByPointing = false;
     item.button.setAttribute("aria-expanded", "true");
     for (const e of item.events) {
       const row = doc.createElement("button");
@@ -200,24 +210,41 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     if (openItem && target && !list.contains(target) && !openItem.button.contains(target)) closeList();
   };
   doc.addEventListener?.("pointerdown", outside);
+  /** The indices of the marks under the thumb: each is at the moment playback is already at, so it is not drawn. */
+  const covered = (all: readonly ReplayEvent[], duration: number) => {
+    const thumb = markX(Number(seek.value), duration, trackWidth);
+    const out: number[] = [];
+    all.forEach((e, i) => { if (Math.abs(markX(e.ms, duration, trackWidth) - thumb) < coverReach) out.push(i); });
+    return out.join(",");
+  };
   const layout = () => {
     const duration = recording.duration;
-    if (!events || !duration || (!dirty && laidOut === events && laidDuration === duration)) return;
+    if (!events || !duration) return;
+    const resize = dirty || laidOut !== events || laidDuration !== duration;
+    if (resize) {
+      trackWidth = seek.offsetWidth;
+      // The glyph fills 12 of its 16-unit box; the thumb covers a mark whose glyph it overlaps.
+      coverReach = THUMB_INSET + px("--aw-mark-size", 16) * 0.375;
+    }
+    const cover = covered(events, duration);
+    if (!resize && cover === laidCovered) return;
+    // The thumb moved onto or off a mark: regroup the rest, but not under an open list, a shown label or focus.
+    const active = doc.activeElement ?? null;
+    if (!resize && (openItem || (!chip.hidden && !chipTimer) || (active !== null && layer.contains(active)))) return;
     dirty = false;
     laidOut = events;
     laidDuration = duration;
-    const width = trackWidth = seek.offsetWidth;
-    closeList();
-    hideChip();
+    laidCovered = cover;
+    const width = trackWidth;
+    if (resize) { closeList(); hideChip(); }
     layer.style.left = `${seek.offsetLeft}px`;
     layer.style.top = `${seek.offsetTop}px`;
     layer.style.width = `${width}px`;
     layer.style.height = `${seek.offsetHeight}px`;
     layer.replaceChildren();
-    // The glyph fills 12 of its 16-unit box.
-    const glyphHalf = px("--aw-mark-size", 16) * 0.375;
-    const countHalf = px("--aw-mark-count-width", 19) / 2;
-    items = groupMarks(events, duration, width, px("--aw-mark-gap", 18)).map(group => {
+    const hidden = new Set(cover === "" ? [] : cover.split(",").map(Number));
+    const shown = events.filter((_, i) => !hidden.has(i));
+    items = groupMarks(shown, duration, width, px("--aw-mark-gap", 18)).map(group => {
       const button = doc.createElement("button");
       button.type = "button";
       button.style.left = `${group.x}px`;
@@ -236,7 +263,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
         count.textContent = String(group.events.length);
         button.append(count);
       }
-      const item = { ...group, button, half: group.events.length === 1 ? glyphHalf : countHalf };
+      const item = { ...group, button };
       if (group.events.length === 1) {
         button.onclick = () => jump(first, group.x);
         button.onpointerenter = (event: PointerEvent) => { if (mouse(event)) showChip(first, group.x, null); };
@@ -246,11 +273,17 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       } else {
         // A keyboard press (a click with no pointer detail) also moves focus into the list, to its first line.
         button.onclick = (event: MouseEvent) => {
-          if (openItem === item && event.detail !== 0) return closeList();
+          if (openItem === item && event.detail !== 0 && !openedByPointing) return closeList();
           openList(item);
+          openedByPointing = false;
           if (event.detail === 0) (list.children[0] as HTMLElement | undefined)?.focus();
         };
-        button.onpointerenter = (event: PointerEvent) => { if (mouse(event)) openList(item); };
+        button.onpointerenter = (event: PointerEvent) => {
+          if (!mouse(event)) return;
+          const opening = openItem !== item;
+          openList(item);
+          if (opening) openedByPointing = true;
+        };
         button.onpointerleave = (event: PointerEvent) => { if (mouse(event)) laterClose(); };
         button.onkeydown = (event: KeyboardEvent) => { if (event.key === "Escape") closeList(true); };
       }
@@ -259,14 +292,6 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     });
     el.append(layer, chip, list);
   };
-  /** The thumb sits over the marks: one under it is hidden there, and is not a target. */
-  const underThumb = () => {
-    const duration = recording.duration;
-    if (!duration || !items.length) return;
-    const thumb = THUMB_INSET + Math.min(1, Number(seek.value) / duration) * Math.max(0, trackWidth - 2 * THUMB_INSET);
-    for (const item of items) item.button.classList.toggle("is-under", Math.abs(item.x - thumb) < THUMB_INSET + item.half);
-  };
-
   const update = () => {
     const duration = recording.duration;
     speed.disabled = recording.error !== null;
@@ -280,7 +305,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     if (state.textContent !== text) state.textContent = text;
     el.setAttribute("aria-busy", String(recording.seeking));
     events = recording.events;
-    if (events && events.length && !recording.error) { layout(); underThumb(); }
+    if (events && events.length && !recording.error) layout();
   };
   update();
   return { el, update, close: () => {

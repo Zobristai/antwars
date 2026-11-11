@@ -99,6 +99,9 @@ export interface RecordingOptions {
   restate?: Promise<((m: StreamMessage) => StreamMessage) | null>;
 }
 
+/** The waits before the marks' read is tried again after a failure (a network error or a refused request). */
+export const SCAN_RETRY_MS: readonly number[] = [2000, 8000];
+
 /** At most two seconds decoded ahead; seeks replay every delta in bounded frame-sized batches. */
 export function openRecording(url: string, onError: (error: Error) => void = () => {}, request: typeof fetch = fetch, options: RecordingOptions = {}): Recording {
   let abort = new AbortController();
@@ -129,8 +132,10 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   const duration = () => firstTick === null || endTick === null ? null : (endTick - firstTick) * TICK_MS;
   // One read of the whole recording, beside playback, for the scrubber's marks; it also settles the end when the
   // stored record has none (missing/private/legacy history, or a record too large to read for it). It retains no
-  // messages or boards, only the marks, and yields every 100 messages. A failed read leaves the marks absent.
-  const scanWhole = async () => {
+  // messages or boards, only the marks, and yields every 100 messages. A failed read is tried again after
+  // SCAN_RETRY_MS (each delay once); a corrupt recording is not, and leaves the marks absent.
+  const scanWhole = async (attempt = 0): Promise<void> => {
+    let retry = true;
     try {
       // A short recording's EOF has already settled its end; only an unknown end asks the stored record.
       const known = endTick === null ? await options.endTick?.(lifetime.signal).catch(() => null) : null;
@@ -144,6 +149,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
       for await (const { message: m } of recordingMessages(response.body, lifetime.signal)) {
         if (closed) return;
         if (previous === null ? m.full === null || m.tick !== firstTick : m.full !== null || m.tick !== previous + 1) {
+          retry = false;
           throw new Error("Recording ticks are not continuous.");
         }
         previous = m.tick;
@@ -151,12 +157,21 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         // A cached response must also yield to input and rendering.
         if (++count % 100 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
       }
-      if (previous === null) throw new Error("Recording is empty.");
+      if (previous === null) { retry = false; throw new Error("Recording is empty."); }
       if (closed) return;
       endTick ??= previous;
+      durationError = null;
       events = scan.events();
     } catch (cause) {
-      if (!closed && endTick === null) durationError = cause instanceof Error ? cause.message : String(cause);
+      if (closed) return;
+      if (endTick === null) durationError = cause instanceof Error ? cause.message : String(cause);
+      const delay = SCAN_RETRY_MS[attempt];
+      if (!retry || delay === undefined) return;
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, delay);
+        lifetime.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+      });
+      if (!closed) await scanWhole(attempt + 1);
     }
   };
   const startScan = () => {
