@@ -131,17 +131,42 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   let seekTo: number | null = null;
   const notify = () => { changed?.(); changed = null; };
   const duration = () => firstTick === null || endTick === null ? null : (endTick - firstTick) * TICK_MS;
-  // One read of the whole recording, beside playback, for the scrubber's marks; it also settles the end when the
-  // stored record has none (missing/private/legacy history, or a record too large to read for it). It retains no
-  // messages or boards, only the marks, and yields every 100 messages. A failed read is tried again after
+  // Duration discovery retains no messages or boards. Missing/private/legacy history
+  // falls back to a cancellable streaming scan, independent of playback backpressure.
+  const discoverEnd = async () => {
+    try {
+      const known = await options.endTick?.(lifetime.signal).catch(() => null);
+      if (closed || endTick !== null) return;
+      if (known !== undefined && known !== null && Number.isSafeInteger(known) && known >= firstTick!) {
+        endTick ??= known;
+        return;
+      }
+      const response = await request(url, { signal: lifetime.signal });
+      if (!response.ok || !response.body) throw new Error("Replay duration unavailable; playback can continue.");
+      let previous: number | null = null;
+      let count = 0;
+      for await (const { message: m } of recordingMessages(response.body, lifetime.signal)) {
+        if (closed) return;
+        if (previous === null ? m.full === null || m.tick !== firstTick : m.full !== null || m.tick !== previous + 1) {
+          throw new Error("Recording ticks are not continuous.");
+        }
+        previous = m.tick;
+        // A cached response must also yield to input and rendering.
+        if (++count % 100 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
+      if (previous === null) throw new Error("Recording is empty.");
+      if (!closed) endTick = previous;
+    } catch (cause) {
+      if (!closed) durationError = cause instanceof Error ? cause.message : String(cause);
+    }
+  };
+  // One read of the whole recording, beside playback, for the scrubber's marks. It starts once the end is settled, so
+  // the slider is usable when it would be without marks; where the end could not be settled, it settles it. It retains
+  // no messages or boards, only the marks, and yields every 100 messages. A failed read is tried again after
   // SCAN_RETRY_MS for as long as the replay is open; a corrupt recording is not, and leaves the marks absent.
   const scanWhole = async (attempt = 0): Promise<void> => {
     let retry = true;
     try {
-      // A short recording's EOF has already settled its end; only an unknown end asks the stored record.
-      const known = endTick === null ? await options.endTick?.(lifetime.signal).catch(() => null) : null;
-      if (closed) return;
-      if (endTick === null && known !== undefined && known !== null && Number.isSafeInteger(known) && known >= firstTick!) endTick = known;
       const response = await request(url, { signal: lifetime.signal });
       if (!response.ok || !response.body) throw new Error("Replay duration unavailable; playback can continue.");
       const scan = new ReplayEventScan();
@@ -183,7 +208,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     }
   };
   const startScan = () => {
-    if (scanned || !options.controls) return;
+    if (scanned || closed || !options.controls) return;
     scanned = true;
     void scanWhole();
   };
@@ -228,8 +253,12 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
             resolveFirst(m);
             if (m.full?.result) endTick = m.full.result.tick + 1;
           }
-          // The marks' read starts once playback has its first two seconds in hand (or at a short recording's EOF).
-          if (stats.messages === RECORDING_AHEAD) startScan();
+          // Short recordings reach EOF without any second request. Discover an end independently only when the
+          // normal reader reaches backpressure; the marks' read follows the settled end (or a short recording's EOF).
+          if (stats.messages === RECORDING_AHEAD && options.controls) {
+            if (endTick === null) void discoverEnd().then(startScan);
+            else startScan();
+          }
         }
       } finally { await messages.return(undefined); }
       if (firstTick === null) throw new Error("Recording is empty.");

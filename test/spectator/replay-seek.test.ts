@@ -75,7 +75,7 @@ it("seeks forward, back from a result, to zero and to EOF with the same recorded
   // per target, not the seeks. The harness limit, not an assertion, is raised.
 }, 30_000);
 
-it("uses a known duration at once, and reads the whole recording once for the marks, which also settles an unknown end", async () => {
+it("uses a known duration without an end scan, and falls back to one only when metadata is unavailable; the marks' read follows", async () => {
   const request = vi.fn<typeof fetch>(async () => new Response(stream()));
   const known = open(async () => first.tick + 64, request);
   await known.first;
@@ -85,8 +85,9 @@ it("uses a known duration at once, and reads the whole recording once for the ma
   const unknown = open(async () => { throw new Error("History missing"); }, request);
   await unknown.first;
   await vi.waitFor(() => expect(unknown.duration).toBe(6400));
-  expect(request).toHaveBeenCalledTimes(4);
-  // setup.matchTicks is not the actual end, and the whole-recording read does not drain the playback queue.
+  await vi.waitFor(() => expect(unknown.events).not.toBeNull());
+  expect(request).toHaveBeenCalledTimes(5); // playback, the end scan, then the marks' read
+  // setup.matchTicks is not the actual end, and neither scan drains the playback queue.
   expect(unknown.duration).not.toBe(first.full!.setup.matchTicks * 100);
   expect(unknown.stats.bufferedMessages).toBe(RECORDING_AHEAD);
   expect(unknown.complete).toBe(false);
@@ -140,7 +141,8 @@ it("exposes scan failure without breaking playback, and reports corrupt seek dow
   await vi.waitFor(() => expect(r.durationError).toMatch(/unavailable/));
   expect(r.error).toBeNull();
   expect(r.take(0)).toHaveLength(1);
-  const bad = open(async () => first.tick + 64, async () => new Response(stream(++requests === 3 ? bytes : bytes.slice(0, 3))));
+  let reads = 0;
+  const bad = open(async () => first.tick + 64, async () => new Response(stream(++reads === 1 ? bytes : bytes.slice(0, 3))));
   await bad.first;
   await vi.waitFor(() => expect(bad.duration).toBe(6400));
   bad.seek(1000);

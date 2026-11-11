@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
-import { packMessages } from "../../src/live/snapshot.ts";
+import { packMessages, TICK_MS } from "../../src/live/snapshot.ts";
 import { openRecording, PLAYBACK_RATES, SCAN_RETRY_MS, type Recording } from "../../web/src/recording.ts";
 import { groupMarks, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
 import type { ReplayEvent } from "../../web/src/replay-events.ts";
@@ -295,6 +295,25 @@ it("reads the marks only for explicit replays: a recording without controls make
   active.push(replay);
   await replay.first;
   await vi.waitFor(() => expect(replay.events).not.toBeNull());
+  expect(requests).toBe(3);
+});
+
+it("settles an unknown end with the end-only read first, so the slider is usable before the marks' read finishes", async () => {
+  let requests = 0;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const r = openRecording("/replay", undefined, async () => {
+    if (++requests === 3) await held; // the marks' read
+    return new Response(new Uint8Array(bytes));
+  }, { controls: true, endTick: async () => null });
+  active.push(r);
+  await r.first;
+  await vi.waitFor(() => expect(requests).toBe(3));
+  expect(r.duration).toBe((decodeMessage(packets.at(-1)!).tick - decodeMessage(packets[0]!).tick) * TICK_MS);
+  expect(r.durationError).toBeNull();
+  expect(r.events).toBeNull();
+  release();
+  await vi.waitFor(() => expect(r.events).not.toBeNull());
   expect(requests).toBe(3);
 });
 
