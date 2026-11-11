@@ -250,8 +250,10 @@ export const NEVER_JOINED_CLAIM = `ratingCorrectionClaims/${NEVER_JOINED.lobbyId
  * the recording holds that. So both objects are then held at the generations the checks read, before the transaction.
  * A hold is set only on an unheld object at that generation, conditioned on its metadata, so an object replaced or
  * deleted since the plan, or already held, fails it, and nothing is written; a hold this apply did not set is never
- * cleared. A hold whose reply is lost is read back; if whether it was set cannot be established, the apply stops,
- * writing nothing, and keeps its claim. While held, Cloud Storage refuses to replace or delete either object, so both
+ * cleared. Only a reply confirming a hold counts as set, and only one confirming it cleared as cleared: after an
+ * error, lost or unconfirmed hold reply the hold is undetermined (the request may yet land), so the apply stops,
+ * writing nothing, releases only the holds confirmed set, and keeps its claim, which names both objects to release by
+ * hand. While held, Cloud Storage refuses to replace or delete either object, so both
  * stay at those generations until the commit. Then one transaction re-reads every document the checks read and the
  * claim, and commits the writes only while every one is unchanged and the claim is this apply's. Both holds are
  * released once the transaction's outcome is known. If the transaction throws, its commit may still land, so the holds
@@ -285,9 +287,9 @@ export async function applyNeverJoined(store: Store, recordings: RecordingObject
     for (const object of objects) held.push(await recordings.hold(object.name, object.generation));
   } catch (error) {
     if (error instanceof HoldUnknownError) {
-      // A hold may be set and is not tracked here: everything is kept, named by the claim.
+      // This hold may yet be set, by this apply or not: it is never released here, and the claim stays, naming both objects.
       for (const hold of held.splice(0)) await recordings.release(hold);
-      console.warn("antwar rating correction recording hold unknown; its claim names the objects");
+      console.warn("antwar rating correction recording hold undetermined; its claim names the objects");
       throw error;
     }
     await finish();

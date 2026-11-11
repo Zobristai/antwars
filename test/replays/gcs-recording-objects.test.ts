@@ -217,25 +217,22 @@ describe("recording holds set and cleared only by this apply", () => {
     expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH"]);
   });
 
-  const lost: [string, () => Response][] = [["an error status", () => new Response(null, { status: 503 })], ["an unconfirmed reply", () => Response.json({})],
-    ["a lost reply", () => { throw new Error("socket hang up"); }]];
-  it.each(lost)("reads back after %s: returns the hold when this request set it", async (_label, patch) => {
+  const lost: [string, () => Response][] = [["an error status", () => new Response(null, { status: 503 })],
+    ["a refusal other than its conditions", () => new Response(null, { status: 403 })], ["an unconfirmed reply", () => Response.json({})],
+    ["a hold at another metageneration", () => state("7", "6", true)], ["a lost reply", () => { throw new Error("socket hang up"); }]];
+  it.each(lost)("reports a hold sent with %s as undetermined, never reading it back", async (_label, patch) => {
+    // A read-back would show the hold set, but it is never made: the hold cannot be proved this request's.
     const { objects, jsonCalls } = holdBucket([unheld, () => state("7", "4", true)], patch);
-    expect(await objects.hold(OBJECT, "7")).toEqual({ name: OBJECT, generation: "7", metageneration: "4" });
-    expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH", "GET"]);
+    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
+    expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH"]);
   });
 
-  it.each(lost)("reads back after %s: rethrows when no hold was set", async (_label, patch) => {
-    const { objects } = holdBucket([unheld, unheld], patch);
+  it("fails before any request, setting nothing, when the object cannot be read", async () => {
+    const { objects, jsonCalls } = holdBucket([() => new Response(null, { status: 503 })], () => state("7", "4", true));
     const failure = await objects.hold(OBJECT, "7").catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(HoldUnknownError);
-  });
-
-  it.each([["held after other changes", () => state("7", "6", true)], ["unreadable", () => new Response(null, { status: 503 })],
-    ["changed", () => state("8", "1", false)]])("reports a hold whose read-back is %s as unknown", async (_label, readBack) => {
-    const { objects } = holdBucket([unheld, readBack], () => new Response(null, { status: 503 }));
-    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
+    expect(jsonCalls.map(call => call.method)).toEqual(["GET"]);
   });
 
   const mine = { name: OBJECT, generation: "7", metageneration: "4" };
@@ -247,16 +244,12 @@ describe("recording holds set and cleared only by this apply", () => {
     expect(JSON.parse(Buffer.from(jsonCalls[0]!.body!).toString())).toEqual({ temporaryHold: false });
   });
 
-  it("does not clear a hold whose object changed since it was set, and never throws", async () => {
-    for (const patch of [() => new Response(null, { status: 412 }), () => new Response(null, { status: 404 })]) {
-      const { objects, jsonCalls } = holdBucket([], patch);
+  it("reports a hold not cleared unless the reply confirms it, never reading it back, and never throws", async () => {
+    for (const patch of [() => new Response(null, { status: 412 }), () => new Response(null, { status: 404 }), () => new Response(null, { status: 503 }),
+      () => Response.json({}), () => state("7", "5", true), () => state("7", "6", false), () => { throw new Error("socket hang up"); }]) {
+      const { objects, jsonCalls } = holdBucket([() => state("7", "5", false)], patch);
       expect(await objects.release(mine)).toBe(false);
       expect(jsonCalls.map(call => call.method)).toEqual(["PATCH"]);
-    }
-    for (const [readBack, released] of [[() => state("7", "5", false), true], [() => state("7", "4", true), false],
-      [() => new Response(null, { status: 503 }), false]] as const) {
-      const { objects } = holdBucket([readBack], () => { throw new Error("socket hang up"); });
-      expect(await objects.release(mine)).toBe(released);
     }
   });
 

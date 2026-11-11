@@ -454,15 +454,15 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ binaryGeneration: "1", recordGeneration: "1" });
   });
 
-  it("writes nothing and releases its holds when a hold cannot be set; keeps them and the claim when the commit's outcome is unknown", async () => {
+  it("writes nothing and releases its holds when a hold fails before its request is sent; keeps them and the claim when the commit's outcome is unknown", async () => {
     {
       const w = await world();
       const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
       const before = await w.snapshot();
       const record = `${NEVER_JOINED.replayId}.json`;
       const refusing: Recordings = { ...w.recordings, hold: (name, generation) =>
-        name === record ? Promise.reject(new Error("object hold failed: HTTP 403")) : w.recordings.hold(name, generation) };
-      await expect(applyNeverJoined(w.store, refusing, plan, plan.summary.digest)).rejects.toThrow("HTTP 403");
+        name === record ? Promise.reject(new Error("object metadata read failed: HTTP 503")) : w.recordings.hold(name, generation) };
+      await expect(applyNeverJoined(w.store, refusing, plan, plan.summary.digest)).rejects.toThrow("HTTP 503");
       // Nothing written, no hold left, and the claim released.
       expect(await w.snapshot()).toEqual(before);
       expect(w.recordings.held.size).toBe(0);
@@ -528,25 +528,34 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     }
   });
 
-  it("keeps the claim, writing nothing, when whether a hold was set is unknown or a hold is not confirmed released", async () => {
+  it("keeps the claim, writing nothing, when a hold is undetermined or a hold is not confirmed released", async () => {
     const record = `${NEVER_JOINED.replayId}.json`;
-    {
-      // The hold is set but its reply is lost and cannot be read back.
+    const names = [`${NEVER_JOINED.replayId}.bin`, record];
+    for (const lands of ["late, from this request", "at once, from another party"]) {
+      // The JSON hold's reply is lost. The hold then lands later from this request, or another party had set it: either
+      // way it cannot be proved this apply's, so it is left, the claim kept naming both objects.
       const w = await world();
       const [info, warn] = quiet();
       const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
       const before = await w.snapshot();
-      const lost: Recordings = { ...w.recordings, hold: async (name, generation) => {
-        const set = await w.recordings.hold(name, generation);
-        if (name === record) throw new HoldUnknownError(name);
-        return set;
-      } };
+      const releases: string[] = [];
+      const lost: Recordings = { ...w.recordings,
+        hold: async (name, generation) => {
+          if (name !== record) return w.recordings.hold(name, generation);
+          if (lands.startsWith("at once")) w.recordings.holdElsewhere(name);
+          throw new HoldUnknownError(name);
+        },
+        release: hold => { releases.push(hold.name); return w.recordings.release(hold); } };
       await expect(applyNeverJoined(w.store, lost, plan, plan.summary.digest)).rejects.toBeInstanceOf(HoldUnknownError);
+      if (lands.startsWith("late")) w.recordings.holdElsewhere(record);
       expect({ ...await w.snapshot(), [NEVER_JOINED_CLAIM]: null }).toEqual(before);
-      expect(await w.store.get(NEVER_JOINED_CLAIM)).not.toBeNull();
-      // The hold it set and knows of is released; the unknown one is left, named by the claim.
+      expect(JSON.parse((await w.store.get(NEVER_JOINED_CLAIM))!.objects!).map((each: { name: string }) => each.name)).toEqual(names);
+      // Only the hold confirmed set is released; the undetermined one never is.
+      expect(releases).toEqual([names[0]]);
       expect([...w.recordings.held]).toEqual([record]);
-      expect(warn).toHaveBeenCalledWith("antwar rating correction recording hold unknown; its claim names the objects");
+      expect(warn).toHaveBeenCalledWith("antwar rating correction recording hold undetermined; its claim names the objects");
+      // The kept claim blocks every later apply.
+      expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("already claimed");
       info.mockRestore(); warn.mockRestore();
     }
     {

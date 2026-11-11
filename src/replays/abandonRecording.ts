@@ -155,16 +155,16 @@ export interface HeldObject { readonly name: string; readonly generation: string
  */
 export interface RecordingHolds {
   /**
-   * Sets a hold on an unheld object at `generation`, conditioned on the metadata found unheld. Fails, having set
-   * nothing: RecordingChangedError when the object is not at `generation` (replaced or deleted) or its metadata changed
-   * meanwhile; RecordingHeldError when it is already held. On an error or unconfirmed reply the object is re-read: a
-   * hold found set by this request is returned; one found not set throws the error; anything else throws
-   * HoldUnknownError, the hold perhaps set.
+   * Sets a hold on an unheld object at `generation`, conditioned on the metadata found unheld, and returns it only on a
+   * reply confirming exactly that hold. Fails, having set nothing: RecordingChangedError when the object is not at
+   * `generation` (replaced or deleted) or the conditioned request is refused (HTTP 412 or 404); RecordingHeldError when
+   * it is already held; any other error before the request is sent. Once sent, an error, lost or unconfirmed reply
+   * throws HoldUnknownError: the request may yet land, and the hold is never inferred from a read-back.
    */
   hold(name: string, generation: string): Promise<HeldObject>;
   /**
-   * Clears `hold` only while the object is at its generation and metageneration; true once confirmed cleared (re-read
-   * on an error or unconfirmed reply). False when it was not cleared, or whether it was cannot be established; never throws.
+   * Clears `hold` only while the object is at its generation and metageneration; true only on a reply confirming it
+   * cleared. Anything else is false: the hold may remain. Never throws.
    */
   release(hold: HeldObject): Promise<boolean>;
 }
@@ -175,7 +175,7 @@ export class RecordingHeldError extends Error {
   constructor(name: string) { super(`object ${name} is already held; no hold set`); this.name = "RecordingHeldError"; }
 }
 export class HoldUnknownError extends Error {
-  constructor(name: string) { super(`object ${name}: whether a hold was set is unknown`); this.name = "HoldUnknownError"; }
+  constructor(name: string) { super(`object ${name}: whether a hold is set is undetermined`); this.name = "HoldUnknownError"; }
 }
 
 const GENERATION = /^[1-9]\d*$/;
@@ -236,36 +236,19 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
       const found = await holdState(name, token);
       if (found === null || found.generation !== generation) throw new RecordingChangedError(name);
       if (found.held) throw new RecordingHeldError(name);
-      const set = (value: HoldState) => value.generation === generation && value.held && value.metageneration === String(BigInt(found.metageneration) + 1n);
-      let failure: unknown;
-      try {
-        const reply = await patchHold(name, generation, found.metageneration, true, token);
-        if (reply === "precondition") throw new RecordingChangedError(name);
-        if (set(reply)) return { name, generation, metageneration: reply.metageneration };
-        failure = new Error(`object ${name} hold not confirmed`);
-      } catch (error) {
-        if (error instanceof RecordingChangedError) throw error;
-        failure = error;
-      }
-      // The reply is lost or unconfirmed: whether the hold is set is read back.
-      const now = await holdState(name, token).catch(() => undefined);
-      if (now && set(now)) return { name, generation, metageneration: now.metageneration };
-      if (now && now.generation === generation && !now.held && now.metageneration === found.metageneration) throw failure;
-      throw new HoldUnknownError(name);
+      // From here the request may land: anything but a confirmed reply leaves the hold undetermined.
+      let reply: HoldState | "precondition";
+      try { reply = await patchHold(name, generation, found.metageneration, true, token); } catch { throw new HoldUnknownError(name); }
+      if (reply === "precondition") throw new RecordingChangedError(name);
+      if (reply.generation !== generation || !reply.held || reply.metageneration !== String(BigInt(found.metageneration) + 1n)) throw new HoldUnknownError(name);
+      return { name, generation, metageneration: reply.metageneration };
     },
     async release(hold) {
       try {
         if (!GENERATION.test(hold.generation) || !GENERATION.test(hold.metageneration)) return false;
-        const token = await metadataAccessToken(request);
-        const cleared = (value: HoldState) => value.generation === hold.generation && !value.held
-          && value.metageneration === String(BigInt(hold.metageneration) + 1n);
-        try {
-          const reply = await patchHold(hold.name, hold.generation, hold.metageneration, false, token);
-          if (reply === "precondition") return false;
-          if (cleared(reply)) return true;
-        } catch { /* read back below */ }
-        const now = await holdState(hold.name, token).catch(() => null);
-        return now !== null && cleared(now);
+        const reply = await patchHold(hold.name, hold.generation, hold.metageneration, false, await metadataAccessToken(request));
+        return reply !== "precondition" && reply.generation === hold.generation && !reply.held
+          && reply.metageneration === String(BigInt(hold.metageneration) + 1n);
       } catch {
         return false;
       }
