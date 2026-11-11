@@ -10,7 +10,7 @@ let dir: string;
 afterEach(async () => { await server?.close(); server = undefined; if (dir) rmSync(dir, { recursive: true, force: true }); });
 async function start(extra: Partial<SpectatedServerOptions> = {}) {
   dir = tempDir();
-  server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "held", ...extra });
+  server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "held", expectedPlayers: 2, ...extra });
   return `http://127.0.0.1:${server.port}`;
 }
 

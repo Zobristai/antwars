@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { afterEach, describe, expect, it } from "vitest";
 import { startServer, type GameServer, type LiveGame } from "../../src/server.js";
-import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 import { playable } from "../playable.ts";
 
 let server: GameServer | null = null;
@@ -26,7 +26,7 @@ function snapshot(live: LiveGame) {
 
 describe("the mount point", () => {
   it("serves a mounted route on the server's own port alongside /mcp, reading the live match, its status and the next start", async () => {
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), breakMs: 500, simConfig: playable(shortConfig(20)), mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(1), simConfig: playable(shortConfig(20)), mcpConfig: TEST_MCP_CONFIG });
     const s = server;
     s.mount("/live", (_req, res, live) => {
       res.writeHead(200, { "content-type": "application/json" });
@@ -35,12 +35,12 @@ describe("the mount point", () => {
     const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
     const read = async () => (await (await get("/live")).json()) as ReturnType<typeof snapshot> & { nextStart: { kind: string; at?: string } | null };
 
-    // Before the first match: no match, and the scheduled start time.
+    // Before the match: no match, and the held start.
     const before = await read();
     expect(before.status).toBe("none");
-    expect(before.nextStart).toEqual({ kind: "scheduled", at: (s.game.nextStart as { at: Date }).at.toISOString() });
+    expect(before.nextStart).toEqual({ kind: "held" });
 
-    // /mcp on the same port still serves agents.
+    // /mcp on the same port still serves agents; this join releases the held match.
     const agent = await connect(s.port);
     agents.push(agent);
     expect((await agent.call("join", {})).isError).toBe(false);
@@ -57,13 +57,12 @@ describe("the mount point", () => {
     expect(later.status).toBe("running");
     expect(later.tick).toBeGreaterThan(running.tick!);
 
-    // After the end: ended, with the result and its winner, and the next scheduled start.
+    // After the end: ended, with the result and its winner, and no next start.
     await waitFor(() => s.game.match!.result !== null);
     const ended = await read();
     expect(ended.status).toBe("ended");
     expect(ended.result).toEqual(s.game.match!.result);
     expect(ended.result).toHaveProperty("winner");
-    expect(ended.nextStart?.kind).toBe("scheduled");
-    expect(Date.parse(ended.nextStart!.at!)).toBeGreaterThan(Date.now());
+    expect(ended.nextStart).toBeNull();
   }, 20_000);
 });
