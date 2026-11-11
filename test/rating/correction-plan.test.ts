@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, NEVER_JOINED_CLAIM, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, SOL_MOVES, startCorrectionPlan,
+  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, NEVER_JOINED_CLAIM, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
@@ -681,7 +681,8 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(body()).toEqual({ state: "applied" });
     // Their new ratings are kept.
     expect(await w.snapshot()).toEqual(played);
-    expect(warn).not.toHaveBeenCalled();
+    // The house-1v1 rating written here has no lobby, so only the house-1v1 plan may refuse; the never-joined part warns of nothing.
+    expect(warn.mock.calls.filter(([line]) => !String(line).startsWith("antwar house-1v1 "))).toEqual([]);
     info.mockRestore(); warn.mockRestore();
   });
 
@@ -745,6 +746,80 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(await w.snapshot()).toEqual(applied);
     expect(info.mock.calls.filter(([line]) => line === "antwar rating correction applied")).toHaveLength(1);
     expect(warn).not.toHaveBeenCalled();
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  /** The served house-1v1 plan, once it has settled. */
+  const solServed = async (serve: ReturnType<typeof startCorrectionPlan>["serve"]) => {
+    await vi.waitFor(() => expect(["planned", "applied", "refused"]).toContain(JSON.parse(served(serve, SOL_PLAN_PATH).body).state), { timeout: 30_000 });
+    return JSON.parse(served(serve, SOL_PLAN_PATH).body) as PlanState;
+  };
+  const appliedWorld = async () => {
+    const w = await world();
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    return w;
+  };
+
+  it("plans the house-1v1 move at start, read-only, once the never-joined correction is applied, and serves it with its digest", async () => {
+    const w = await appliedWorld();
+    const expected = await planCorrections(w.store, w.recordings) as Plan;
+    const before = await w.snapshot();
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    const sol = await solServed(serve);
+    expect(sol).toEqual({ state: "planned", ...expected.summary });
+    expect(expected.summary.digest).toBe(planDigest(expected.writes));
+    // Nothing is written, and the never-joined path still reads applied.
+    expect(await w.snapshot()).toEqual(before);
+    expect(JSON.parse(served(serve).body)).toEqual({ state: "applied" });
+    // Every planned write is logged as its operation and path, then the digest and count.
+    expect(info.mock.calls.map(([line]) => String(line)).filter(line => line.startsWith("antwar house-1v1 rating correction planned: ")))
+      .toEqual(expected.writes.map(write => `antwar house-1v1 rating correction planned: ${write.op} ${write.path}`));
+    expect(info).toHaveBeenCalledWith("antwar house-1v1 rating correction plan", { digest: expected.summary.digest, writes: expected.writes.length });
+    // The two moved matches are credited to the -fast handles; no identity id is served.
+    expect(sol.state === "planned" && sol.matches.filter(m => SOL_MOVES.some(move => move.replayId === m.match)).map(m => m.after.seats)).toEqual([
+      ["antwars/gpt-6-1-sol-high-fast", "antwars/glm-5-3"], ["antwars/gpt-6-1-sol-xhigh-fast", "antwars/grok-4-7"]]);
+    for (const id of w.ids.values()) expect(served(serve, SOL_PLAN_PATH).body).not.toContain(id);
+    expect(served(serve, SOL_PLAN_PATH, "POST").status).toBe(405);
+    expect(warn).not.toHaveBeenCalled();
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("refuses the house-1v1 plan when the history is not reproduced: serves the first check's code alone and logs the largest deviation", async () => {
+    const w = await appliedWorld();
+    // Two stored changes not reproduced: by 1 in an earlier match, by 5 in a later one.
+    const edits: [number, number][] = [[7, 1], [8, 5]];
+    for (const [i, by] of edits) {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as { rdAfter: number }[];
+      changes[0]!.rdAfter += by;
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    }
+    const largest = JSON.parse((await w.store.get(`ratedMatches/${w.lobbies[8]}`))!.changes!)[0].identityId as string;
+    const handle = [...w.ids].find(([, id]) => id === largest)![0];
+    const before = await w.snapshot();
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change" });
+    expect(warn.mock.calls).toEqual([["antwar house-1v1 rating correction plan refused", { reason: "not-reproduced-change",
+      deviation: { deviation: expect.closeTo(5, 6), handle, source: `ratedMatches/${w.lobbies[8]}`, count: 2 } }]]);
+    // The public answer is the code alone: no handle, match, figure or plan.
+    const body = served(serve, SOL_PLAN_PATH).body;
+    for (const text of [handle, w.lobbies[7]!, w.lobbies[8]!, "digest", "matches"]) expect(body).not.toContain(text);
+    expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 rating correction plan"))).toBe(false);
+    expect(await w.snapshot()).toEqual(before);
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("does not plan the house-1v1 move while the never-joined correction is not applied", async () => {
+    const w = await world();
+    const [info, warn] = quiet();
+    // The default apply digest is not this fixture's plan's, so the never-joined correction stays planned, not applied.
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "never-joined-not-applied" });
+    expect(JSON.parse(served(serve).body).state).toBe("planned");
+    expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 "))).toBe(false);
     info.mockRestore(); warn.mockRestore();
   });
 });
