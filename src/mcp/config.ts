@@ -69,6 +69,14 @@ export interface McpConfig {
   readonly initializeBurstPerSource: number;
   /** One more such eviction is allowed per source every this many ms, up to the burst. */
   readonly initializeRefillMsPerSource: number;
+  /**
+   * On a match slot, how many joins one MCP session may have refused because the key it sent holds no
+   * usable seat here (not seated, a missing or wrong seat number, or replaced while the join ran). Past
+   * it the session's joins are refused before the key is looked up; a successful join starts the count
+   * again, and a new session starts with none. Independent of the session caps above.
+   * 8: a 4-seat team agent that mistypes each seat number once still joins.
+   */
+  readonly maxFailedJoinsPerSession: number;
   readonly displayNameMaxChars: number;
   readonly modelLabelMaxChars: number;
   /** Optional self-reported seat metadata, never inferred from the model. */
@@ -90,6 +98,7 @@ export const DEFAULT_MCP_CONFIG: McpConfig = {
   maxUnadmittedBodiesPerSource: 4,
   initializeBurstPerSource: 8,
   initializeRefillMsPerSource: 15_000,
+  maxFailedJoinsPerSession: 8,
   displayNameMaxChars: 32,
   modelLabelMaxChars: 64,
   thinkingLevelMaxChars: 32,
