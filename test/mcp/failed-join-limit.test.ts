@@ -141,11 +141,20 @@ describe("a slot session's failed joins are bounded", () => {
     keyReads.held = true;
     const pending = Array.from({ length: LIMIT }, () => session("join", { key: "no-such-key" }));
     while (keyReads.waiting.length < LIMIT) await new Promise(resolve => setImmediate(resolve));
-    expect((await session("join", { key: "bob-key" })).data.error.code).toBe("too_many_failed_joins");
+    // Reached only by joins still pending: the refusal says to wait for them, not that they failed.
+    const waiting = await session("join", { key: "bob-key" });
+    expect(waiting.data.error.code).toBe("too_many_failed_joins");
+    expect(waiting.data.error.message).toContain("pending");
+    expect(waiting.data.error.howToFix).toContain("Wait for your pending joins");
+    expect(waiting.data.error.howToFix).not.toContain("new MCP session");
     expect(store.lookups).toBe(LIMIT);
     keyReads.release();
     for (const reply of await Promise.all(pending)) expect(reply.data.error.code).toBe("not_seated");
-    expect((await session("join", { key: "bob-key" })).data.error.code).toBe("too_many_failed_joins");
+    // Once they have all failed, the limit is exhausted and the refusal says so.
+    const exhausted = await session("join", { key: "bob-key" });
+    expect(exhausted.data.error.code).toBe("too_many_failed_joins");
+    expect(exhausted.data.error.howToFix).toContain("new MCP session");
+    expect(exhausted.data.error.howToFix).not.toContain("pending");
     expect(store.lookups).toBe(LIMIT);
   });
 

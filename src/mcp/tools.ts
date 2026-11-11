@@ -583,7 +583,7 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
         return adapterRefusal(game, session, "join", "bad_service_tier", "Invalid service tier.", `Use 1 to ${game.mcpConfig.serviceTierMaxChars} printable characters, or leave serviceTier out.`);
       }
       // Past the limit the key is never looked up: a session cannot keep trying keys against the store.
-      if (joinLimitReached(game, session)) return tooManyFailedJoins(game);
+      if (joinLimitReached(game, session)) return tooManyFailedJoins(game, session);
       let failed = false;
       const joinSeat = async (): Promise<CallToolResult> => {
         // The key's check time, not the join's end: a join can wait (on its tick and the join record) past a rotation.
@@ -740,7 +740,7 @@ function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, sess
   }
   handlers.set("tools/call", async (request, extra) => {
     // A join past the failed-join limit is refused without reading the store, so it skips the key re-check too.
-    if (request.params?.name === "join" && joinLimitReached(game, session)) return tooManyFailedJoins(game);
+    if (request.params?.name === "join" && joinLimitReached(game, session)) return tooManyFailedJoins(game, session);
     const admission = session.admission;
     if (admission === undefined || await keyStillHeld(game, slot, admission) || session.admission !== admission) return answer(request, extra);
     unbindSession(session);
@@ -758,12 +758,20 @@ function joinLimitReached(game: Game, session: SessionState): boolean {
 }
 
 /**
- * The refusal for a join past that limit. Terminal: it is answered without the session's seat (no observe, so no
- * rate limit), since another join from this session can only be refused the same way.
+ * The refusal for a join past that limit. Terminal once the failures alone reach it: it is answered without the
+ * session's seat (no observe, so no rate limit), since another join from this session can only be refused the same
+ * way. When joins still in flight make up the rest, it says to wait for them: one that succeeds starts the count again.
  */
-function tooManyFailedJoins(game: Game): CallToolResult {
+function tooManyFailedJoins(game: Game, session: SessionState): CallToolResult {
+  const limit = game.mcpConfig.maxFailedJoinsPerSession;
+  const failed = session.failedJoins ?? 0;
+  if (failed < limit) {
+    return errorResult("too_many_failed_joins",
+      `This session already has ${limit} joins pending or refused (${failed} refused because their key holds no seat here), so it takes no more joins until the pending ones answer.`,
+      "Wait for your pending joins to answer, then call join again only if none of them joined your seat.", null);
+  }
   return errorResult("too_many_failed_joins",
-    `This session has had ${game.mcpConfig.maxFailedJoinsPerSession} joins refused because their key holds no seat here, so it takes no more joins.`,
+    `This session has had ${limit} joins refused because their key holds no seat here, so it takes no more joins.`,
     "Check your key and seat (locate_match gives your lobby's mcpUrl), then start a new MCP session and call join from it.", null);
 }
 
