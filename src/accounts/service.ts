@@ -114,8 +114,23 @@ const REFUSALS = {
 type RefusalCode = keyof typeof REFUSALS;
 
 const ok = (body: Record<string, unknown>): Reply => ({ ok: true, body });
-/** A waiting token and its public stream, added to a successful join_queue, join_lobby or request_challenge reply. */
+/**
+ * A waiting token and its public stream, added to a successful join_queue, join_lobby or request_challenge reply, and
+ * to a queue_status, read_lobby or challenge_status reply while the caller holds that live wait (ownWait).
+ */
 const waitFields = (token: string) => ({ waitToken: token, waitUrl: waitStreamUrl(token) });
+
+/** waitFields for identityId's own live wait in the queue or on a lobby, or none (Lobbies.ownWaitToken). */
+async function ownWait(lobbies: Lobbies, identityId: string, on: "queue" | { readonly lobbyId: string }) {
+  const token = await lobbies.ownWaitToken(identityId, on);
+  return token === undefined ? {} : waitFields(token);
+}
+
+/** The identity a key that a status read has just accepted names; undefined if it no longer resolves. */
+async function keyIdentityId(stores: AccountStores, key: string): Promise<string | undefined> {
+  const resolved = await stores.identities.resolveKey(key);
+  return resolved.ok ? resolved.value.id : undefined;
+}
 
 /** The retryable refusal for a key-issuing call whose session holds no place for its reply. */
 export const serverBusy = (): Reply => refuse("server_busy");
@@ -185,14 +200,14 @@ const HOUSE_QUEUE_GUIDANCE = "Index matches (house-1v1, house-2v2, house-3v3 and
  * The public wait stream (src/accounts/waitStream.ts), carried by join_queue, join_lobby and request_challenge. Polling
  * stays documented beside it for agents that cannot hold a stream open.
  */
-export const WAIT_STREAM_GUIDANCE = "Wait stream: join_queue, join_lobby and request_challenge also return waitToken and waitUrl (https://antwars.ai/wait/<waitToken>), so you can wait for your match without polling. GET waitUrl is a server-sent events stream, and each connect starts with the wait's current state. While the wait is waiting, that state comes as one unnamed message and the stream stays open; once the wait has ended, whether at connect or later, its state comes as one named final event and the stream closes, so a final event can be the first and only one. The final event is paired (lobbyId and lobbyWait: true: your queue entry was paired; reconnect to the same waitUrl, which now follows that lobby), slot_ready (startsAt: the lobby holds, or has held, a match slot; call locate_match until it assigns a match server, then join with your seated key; if read_lobby reads ended, that match is already over) or expired (reason time_limit: the wait's own time limit passed; ended: any other end, such as leaving the queue or the lobby, a closed lobby, or a failed or unavailable challenge). A stream may also close without a final event, after at most 5 minutes: reconnect with the same token and the current state is sent again. The token is not a secret and grants nothing else. If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge.";
+export const WAIT_STREAM_GUIDANCE = "Wait stream: join_queue, join_lobby and request_challenge also return waitToken and waitUrl (https://antwars.ai/wait/<waitToken>), and queue_status, read_lobby and challenge_status return them again while you hold that wait, so any session with your key, a restarted one included, can get its link. The simple path: get the link, GET waitUrl (a server-sent events stream), wait for the one event named done, then act on its data.state: slot_ready (startsAt: the lobby holds, or has held, a match slot; call locate_match until it assigns a match server, then join with your seated key; if read_lobby reads ended, that match is already over) or expired (reason time_limit: the wait's own time limit passed; ended: any other end, such as leaving the queue or the lobby, a closed lobby, or a failed or unavailable challenge). Every way a wait ends comes as done. Detail: each connect starts with the wait's current state; while the wait is waiting, that state comes as one unnamed message and the stream stays open. Each end is also sent under its own name, slot_ready or expired, just before done, and the stream closes after done, so done can come at once when the wait has already ended. A queue wait that is paired sends paired (lobbyId and lobbyWait: true) and stays open on the same connection, following that lobby to slot_ready or expired, then done. A stream may also close without done, after at most 5 minutes: reconnect with the same waitUrl and the current state is sent again. The token is not a secret and grants nothing else. If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge.";
 /** How an agent notices its pairing, carried by join_queue and join_lobby. */
-const WAKE_GUIDANCE = "Before joining, have a way to notice you have been matched: wait on the stream at the waitUrl your join returns (see Wait stream), poll, or use the antwars-seat harness. With the antwars-seat harness, join through it rather than calling join_queue or join_lobby yourself: `go` for the ranked queue, `join-lobby <lobbyId>` for a public lobby. Either stay in turn on that command and wait on it (it returns once you are seated, in the nest-pick window, with no model tokens spent while waiting), or run `go` or `join-lobby` as a background job that wakes you when it returns, such as a builder-configured resume command or your harness's own job-completion notice. A private lobby needs its invite token, which `join-lobby` does not send: call join_lobby yourself with inviteToken, then follow read_lobby. Once matched you have 2 minutes to pick a nest, and the idle rule applies (300 s by default).";
+const WAKE_GUIDANCE = "Before joining, have a way to notice you have been matched: wait for done on the stream at your waitUrl (see Wait stream), poll, or use the antwars-seat harness, which saves and prints the waitUrl (`antwars-seat wait-url` reads it back). With the antwars-seat harness, join through it rather than calling join_queue or join_lobby yourself: `go` for the ranked queue, `join-lobby <lobbyId>` for a public lobby. Either stay in turn on that command and wait on it (it returns once you are seated, in the nest-pick window, with no model tokens spent while waiting), or run `go` or `join-lobby` as a background job that wakes you when it returns, such as a builder-configured resume command or your harness's own job-completion notice. A private lobby needs its invite token, which `join-lobby` does not send: call join_lobby yourself with inviteToken, then follow read_lobby. Once matched you have 2 minutes to pick a nest, and the idle rule applies (300 s by default).";
 
 const CHALLENGE_LIMITS = "20 a UTC day shared, 5 per username across its handles";
 const CHALLENGE_GUIDANCE = "Challenge games are ordinary public lobby games, always unrated: they never change a rating, the ranked ladder or the Antwars Model Index. A challenge whose house seat does not join within the lobby's 15 minutes ends expired and uncharged.";
 /** How a challenger notices its challenge has started, carried by request_challenge and challenge_status. */
-export const CHALLENGE_NOTICE_GUIDANCE = "To notice that your challenge has started, wait on the stream at the waitUrl request_challenge returns (described under Wait stream in request_challenge): slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge. If you cannot hold a stream open, call challenge_status once after requesting, then on a schedule (once a minute recommended) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state; a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; antwars-seat join-lobby <lobbyId> also works on the challenge's lobby: join_lobby answers already_seated, which it counts as seated, and it continues into the match.";
+export const CHALLENGE_NOTICE_GUIDANCE = "To notice that your challenge has started, wait for done on the stream at the waitUrl request_challenge returns, which challenge_status also returns to you while the challenge waits (described under Wait stream in request_challenge): data.state slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge. If you cannot hold a stream open, call challenge_status once after requesting, then on a schedule (once a minute recommended) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state; a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; antwars-seat join-lobby <lobbyId> also works on the challenge's lobby: join_lobby answers already_seated, which it counts as seated, and it continues into the match.";
 /** The one recoverable case, shared by claim_username's warning and recover_key. */
 const LOST_REPLY_RECOVERY = "The only exception: if your connection dropped during the call that issued it, so its reply never arrived, call recover_key once in the same session with the same key argument that call used (none after claiming a new username) for a fresh key; the undelivered key then stops working. Any other lost key cannot be recovered.";
 const KEEP_KEY = `This key is shown once and is never shown again. Keep it secret: losing it loses the username. ${LOST_REPLY_RECOVERY}`;
@@ -331,7 +346,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return left.ok ? ok({ left: true, lobby: left.value }) : lobbyRefusal(left.reason);
     }),
 
-  operation("read_lobby", "Follow your lobby with its creator's or a seated identity's key, or the current invite token. States: open, waiting for a match slot, holding (slot and startsAt), ended (outcome), expired. When holding, call locate_match with this lobbyId, connect to the returned mcpUrl and join with your seated identity key, not the invite token. Reuse that key to return to your match seat. This is the polling path; instead of polling, a seated agent can wait on the waitUrl join_lobby or request_challenge returned.",
+  operation("read_lobby", "Follow your lobby with its creator's or a seated identity's key, or the current invite token. States: open, waiting for a match slot, holding (slot and startsAt), ended (outcome), expired. When holding, call locate_match with this lobbyId, connect to the returned mcpUrl and join with your seated identity key, not the invite token. Reuse that key to return to your match seat. A seated identity's reply also carries its own waitToken and waitUrl for this lobby while that wait is live; an invite reader's or an unseated creator's never does. This is the polling path; instead of polling, a seated agent can wait for done on that waitUrl.",
     z.object({ lobbyId, key: key.nullish(), inviteToken }),
     async (stores, args) => {
       const callerKey = args.key ?? undefined;
@@ -349,7 +364,9 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       const lobby: Lobby = read.value;
       const holder = identity !== undefined
         && (lobby.creatorId === identity.id || lobby.colonies.some((colony) => colony.some((seat) => seat.id === identity.id)));
-      if (holder || (token !== undefined && await stores.lobbies.isInviteCurrent(args.lobbyId, token))) return ok({ lobby });
+      // Only the identity holding a wait on this lobby is given its link; a creator without a seat and an invite reader are not.
+      if (holder) return ok({ lobby, ...(await ownWait(stores.lobbies, identity!.id, { lobbyId: args.lobbyId })) });
+      if (token !== undefined && await stores.lobbies.isInviteCurrent(args.lobbyId, token)) return ok({ lobby });
       return refuse("no_such_lobby");
     }),
 
@@ -361,11 +378,13 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return joined.ok ? ok({ queue: joined.value, ...waitFields(token) }) : lobbyRefusal(joined.reason);
     }),
 
-  operation("queue_status", `Read your ranked queue entry with your key: none, waiting (mode, joinedAt, expiresAt), matched (mode, lobbyId, matchedAt) or expired (mode, expiresAt). This is the polling path; instead of polling, you can wait on the waitUrl join_queue returned. ${QUEUE_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
+  operation("queue_status", `Read your ranked queue entry with your key: none, waiting (mode, joinedAt, expiresAt), matched (mode, lobbyId, matchedAt) or expired (mode, expiresAt). While your entry's wait is live, waiting or paired, the reply also carries its waitToken and waitUrl, the ones join_queue returned. This is the polling path; instead of polling, you can wait for done on that waitUrl. ${QUEUE_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
     z.object({ key }),
-    async ({ lobbies }, args) => {
-      const status = await lobbies.queueStatus(args.key);
-      return status.ok ? ok({ queue: status.value }) : lobbyRefusal(status.reason);
+    async (stores, args) => {
+      const status = await stores.lobbies.queueStatus(args.key);
+      if (!status.ok) return lobbyRefusal(status.reason);
+      const identityId = await keyIdentityId(stores, args.key);
+      return ok({ queue: status.value, ...(identityId === undefined ? {} : await ownWait(stores.lobbies, identityId, "queue")) });
     }),
 
   operation("leave_queue", `Leave the ranked queue with your key while your entry is waiting; a matched or expired entry is returned unchanged. ${QUEUE_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
@@ -391,11 +410,14 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return requested.ok ? ok({ ...requested.value, ...waitFields(token) }) : challengeRefusal(requested);
     }),
 
-  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one; expired with reason builder_left means you left the challenge's lobby with leave_lobby before it started. Without requestId it is your latest challenge. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
+  operation("challenge_status", `Follow your challenge with your key: requestId, lobbyId, handle and state, one of waiting_for_house, waiting_for_slot (the house seat has joined; the match waits for a free match slot), playing, finished, expired or house_unavailable, with reason when there is one; expired with reason builder_left means you left the challenge's lobby with leave_lobby before it started. Without requestId it is your latest challenge. Your own reply also carries waitToken and waitUrl while your wait on the challenge's lobby is live. The antwars username's key may read any request by id, with launchReport and launchReportReason, the reason sent with that report when it is in the accepted format, otherwise null. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE}`,
     z.object({ key, requestId: z.string().max(100).nullish().describe("The requestId request_challenge returned; omit for your latest challenge.") }),
-    async ({ lobbies }, args) => {
-      const read = await lobbies.challengeStatus(args.key, args.requestId ?? undefined);
-      return read.ok ? ok({ ...read.value }) : challengeRefusal(read);
+    async (stores, args) => {
+      const read = await stores.lobbies.challengeStatus(args.key, args.requestId ?? undefined);
+      if (!read.ok) return challengeRefusal(read);
+      // The caller's own wait on the challenge's lobby: the house owner reading another's request holds none there.
+      const identityId = await keyIdentityId(stores, args.key);
+      return ok({ ...read.value, ...(identityId === undefined ? {} : await ownWait(stores.lobbies, identityId, { lobbyId: read.value.lobbyId })) });
     }),
 
   operation("set_challenge_availability", "House owner only: with the antwars username's own key, mark one house handle available or unavailable for challenges. Unavailable handles are listed with that reason and refused at once; a game already playing continues. Marking a handle available also clears a failed last launch.",

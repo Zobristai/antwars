@@ -360,8 +360,10 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect(await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId: failing.requestId, outcome: "failed", reason: "player launch refused" }))
         .toEqual({ requestId: failing.requestId, launchReport: "failed", state: "house_unavailable" });
       expect((await okBody(w.call, "read_lobby", { key: other.key, lobbyId: failing.lobbyId })).lobby).toMatchObject({ state: "ended", outcome: "not_played" });
+      // The challenger's own wait link stays until its record ends; connecting to it gives expired at once.
       expect(await okBody(w.call, "challenge_status", { key: other.key })).toEqual({
-        requestId: failing.requestId, lobbyId: failing.lobbyId, handle: "antwars/grok-4-7", state: "house_unavailable", reason: "player launch refused" });
+        requestId: failing.requestId, lobbyId: failing.lobbyId, handle: "antwars/grok-4-7", state: "house_unavailable", reason: "player launch refused",
+        waitToken: failing.waitToken, waitUrl: failing.waitUrl });
       expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId: failing.requestId })).toMatchObject({ launchReport: "failed", launchReportReason: null });
       const row = (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/grok-4-7");
       expect([row.available, row.reason]).toEqual([false, "player launch refused"]);
@@ -392,7 +394,8 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         .toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
       expect((await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: told.lobbyId })).lobby).toMatchObject({ state: "ended", outcome: "not_played" });
       expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual({
-        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-3", state: "house_unavailable", reason: "challenges are unavailable right now: maintenance" });
+        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-3", state: "house_unavailable", reason: "challenges are unavailable right now: maintenance",
+        waitToken: told.waitToken, waitUrl: told.waitUrl });
       expect((await okBody(w.call, "challenge_status", { key: w.house.key, requestId: told.requestId })).launchReport).toBe("unavailable");
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "failed", reason: "late" })).toMatch(/^already_reported( 409)?$/);
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "unavailable", reason: REASON })).toMatch(/^already_reported( 409)?$/);
@@ -438,26 +441,28 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const blocker = await occupySlot(w, "blk");
       const builder = await w.claim("builder");
       const sibling = await w.handle(builder, "sibling");
-      const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const { requestId, lobbyId, waitToken, waitUrl } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
       const own = (state: string) => ({ requestId, lobbyId, handle: "antwars/glm-5-3", state });
+      // The builder's own reads carry its wait link; the house owner's read of the same request never does.
+      const mine = (state: string) => ({ ...own(state), waitToken, waitUrl });
       const MATCHED = `pinned harness matched @ ${"89abcdef".repeat(5)}`;
-      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("waiting_for_house"));
+      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(mine("waiting_for_house"));
       expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId })).toEqual({ ...own("waiting_for_house"), launchReport: null, launchReportReason: null });
       for (const other of [sibling, w.glm, w.rival, ...w.lookalikes]) {
         expect(await refusal(w.call, "challenge_status", { key: other.key, requestId }), other.displayName).toMatch(/^no_such_challenge( 404)?$/);
         expect(await refusal(w.call, "challenge_status", { key: other.key }), other.displayName).toMatch(/^no_such_challenge( 404)?$/);
       }
       await okBody(w.call, "join_lobby", { key: w.glm.key, lobbyId });
-      expect(await okBody(w.call, "challenge_status", { key: builder.key, requestId })).toEqual(own("waiting_for_slot"));
+      expect(await okBody(w.call, "challenge_status", { key: builder.key, requestId })).toEqual(mine("waiting_for_slot"));
       value(await w.lobbies.releaseSlot(blocker.lobbyId));
       expect(value(await w.lobbies.readLobby(lobbyId)).state).toBe("holding");
-      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("waiting_for_slot"));
+      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(mine("waiting_for_slot"));
       await w.lobbies.registerInstance("public-0", { runId: "run-1", mcpUrl: "http://m", spectatorUrl: "http://s" });
       value(await w.lobbies.beginMatch(lobbyId, "public-0", "run-1"));
-      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("playing"));
+      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(mine("playing"));
       await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId, outcome: "launched", reason: MATCHED });
       value(await w.lobbies.endMatch(lobbyId, "run-1", "colony_1_won"));
-      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(own("finished"));
+      expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual(mine("finished"));
       expect(await okBody(w.call, "challenge_status", { key: w.house.key, requestId })).toEqual({ ...own("finished"), launchReport: "launched", launchReportReason: MATCHED });
     });
 
@@ -619,7 +624,7 @@ describe("noticing a challenge start", () => {
 
   it("leads with the wait stream and keeps challenge_status polling for agents that cannot hold a stream", () => {
     const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
-    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/^To notice that your challenge has started, wait on the stream at the waitUrl request_challenge returns \(described under Wait stream in request_challenge\): slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge\. If you cannot hold a stream open, call challenge_status once after requesting/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/^To notice that your challenge has started, wait for done on the stream at the waitUrl request_challenge returns, which challenge_status also returns to you while the challenge waits \(described under Wait stream in request_challenge\): data\.state slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge\. If you cannot hold a stream open, call challenge_status once after requesting/);
     expect(description("request_challenge")).toContain(WAIT_STREAM_GUIDANCE);
     expect(description("request_challenge")).toMatch(/the reply is requestId, lobbyId and seat, your match-server seat, plus waitToken and waitUrl\./);
     // The challenge lifetime is unchanged.

@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
 import { rpcReply } from "../lib/mcp.mjs";
-import { DEFAULT_MAX_WAIT_MS } from "../lib/seat.mjs";
+import { DEFAULT_MAX_WAIT_MS, WAIT_URL_NEXT } from "../lib/seat.mjs";
 import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
@@ -113,7 +113,8 @@ describe("go: queue, pair, join, stop in the nest window", () => {
     const s = await seat({ pairAfterMs: 0 });
     s.printed.length = 0;
     expect(await s.cli("go")).toBe(0);
-    const result = JSON.parse(s.printed.join("").trim());
+    // The wait link is printed when it is saved, then the final result last.
+    const result = JSON.parse(s.printed.join("").trim().split("\n").at(-1));
     expect(result).toMatchObject({ step: "joined", box: { x: 2, y: 0, width: 3, height: 3 } });
     expect(typeof result.closesAt).toBe("string");
     expectStoppedInNestWindow(s);
@@ -631,4 +632,83 @@ describe("protocol and secrecy", () => {
     expect(output).not.toContain(KEY);
     expect(stateText(join(dir, ".antwars-seat"))).not.toContain(KEY);
   }, 30_000);
+});
+
+describe("wait link: go and join-lobby save and print the waitUrl, wait-url reads it back", () => {
+  const printedLines = (s) => s.printed.join("").trim().split("\n").filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+  async function waitUrlCommand(s) {
+    s.printed.length = 0;
+    const code = await s.cli("wait-url");
+    return { code, printed: s.printed.join("") };
+  }
+
+  it("go saves join_queue's waitUrl in seat.json, prints it at once and in its result, and wait-url prints it", async () => {
+    const s = await seat({ pairAfterMs: 130_000 });
+    s.printed.length = 0;
+    expect(await s.cli("go")).toBe(0);
+    const waitUrl = `${s.fake.url.replace(/\/mcp$/, "")}/wait/queue-wait-1`;
+    const lines = printedLines(s);
+    expect(lines[0]).toEqual({ step: "wait_link", waitUrl, waitFrom: "join_queue", next: WAIT_URL_NEXT });
+    expect(lines.at(-1)).toMatchObject({ step: "joined", waitUrl });
+    expect(s.state("seat.json")).toMatchObject({ waitUrl, waitToken: "queue-wait-1", waitFrom: "join_queue" });
+    expect(typeof s.state("seat.json").waitSavedAt).toBe("string");
+    // Printed once: the later queue_status polls carry the same link.
+    expect(lines.filter((line) => line.step === "wait_link")).toHaveLength(1);
+    const read = await waitUrlCommand(s);
+    expect(read.code).toBe(0);
+    expect(JSON.parse(read.printed)).toEqual({ waitUrl, waitToken: "queue-wait-1", waitFrom: "join_queue", waitSavedAt: s.state("seat.json").waitSavedAt, next: WAIT_URL_NEXT });
+  });
+
+  it("go adopting this seat's own waiting entry takes the link from queue_status", async () => {
+    const s = await seat({ pairAfterMs: 60_000, baseline: (clock) => ({ state: "waiting", mode: "house-1v1", joinedAt: clock.now() - 1000, expiresAt: clock.now() + 899_000, waitToken: "queue-wait-adopted" }) });
+    const seatFile = join(s.dir, "state", "seat.json");
+    writeFileSync(seatFile, JSON.stringify({ ...s.state("seat.json"), ownJoinedAt: s.clock.now() - 1000 }));
+    expect(await s.cli("go")).toBe(0);
+    expect(s.fake.toolCalls("join_queue")).toHaveLength(0);
+    expect(s.state("seat.json")).toMatchObject({ waitToken: "queue-wait-adopted", waitFrom: "queue_status" });
+    expect(JSON.parse((await waitUrlCommand(s)).printed).waitUrl).toMatch(/\/wait\/queue-wait-adopted$/);
+  });
+
+  it("a non-queuing seat, which never joins, takes its handle's link from queue_status", async () => {
+    const s = await seat({ baseline: (clock) => ({ state: "matched", mode: "house-2v2", lobbyId: "live", matchedAt: clock.now(), waitToken: "queue-wait-partner" }), lobbies: { live: "holding" } },
+      { setup: ["--seat", "2"] });
+    expect(await s.cli("go")).toBe(0);
+    expect(s.fake.toolCalls("join_queue")).toHaveLength(0);
+    expect(s.state("seat.json")).toMatchObject({ waitToken: "queue-wait-partner", waitFrom: "queue_status" });
+  });
+
+  it("join-lobby saves join_lobby's link; answered already_seated, it takes the seat's link from read_lobby", async () => {
+    const s = await seat();
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(s.state("seat.json")).toMatchObject({ waitToken: "lobby-wait-lobby-1", waitFrom: "join_lobby" });
+    expect(printedLines(s).find((line) => line.step === "wait_link")).toMatchObject({ waitFrom: "join_lobby" });
+
+    const seated = await seat({ refuseJoinLobby: "already_seated" });
+    await seated.cli("create-lobby");
+    expect(await seated.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(seated.fake.toolCalls("read_lobby").map((c) => c.args)[0]).toEqual({ lobbyId: "lobby-1", key: KEY });
+    expect(seated.state("seat.json")).toMatchObject({ waitToken: "lobby-wait-lobby-1", waitFrom: "read_lobby" });
+    expect(JSON.parse((await waitUrlCommand(seated)).printed)).toMatchObject({ waitToken: "lobby-wait-lobby-1", waitFrom: "read_lobby" });
+  });
+
+  it("wait-url with no saved link exits non-zero and says how to get one; a new run replaces an earlier run's link", async () => {
+    const s = await seat({ pairAfterMs: 0 });
+    const none = await waitUrlCommand(s);
+    expect(none.code).toBe(1);
+    expect(none.printed).toContain("No wait link saved: run go or join-lobby first");
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(s.state("seat.json").waitFrom).toBe("join_lobby");
+    expect(await s.cli("go")).toBe(0);
+    expect(s.state("seat.json")).toMatchObject({ waitToken: "queue-wait-1", waitFrom: "join_queue" });
+    expect(s.state("seat.json").readyAt).toEqual(expect.any(Number));
+  });
+
+  it("help names wait-url", async () => {
+    const s = await seat();
+    s.printed.length = 0;
+    expect(await s.cli("help")).toBe(0);
+    expect(s.printed.join("")).toMatch(/wait-url +the waitUrl go or join-lobby saved/);
+  });
 });

@@ -12,12 +12,14 @@ import { clientSource } from "../server/clientSource.js";
  * server re-reads the wait itself: once on every connect, then every pollMs.
  *
  * Wire: each connect first sends the wait's current state. While it is waiting that is one unnamed message (data: the
- * waiting state as JSON); then, once the wait ends, or at once when it already has, one final event named paired,
- * slot_ready or expired with its state as JSON data, and the stream closes. No other event names are sent. paired
- * carries lobbyWait: true: the same token is now a wait on the paired lobby, so the next connect sends that lobby's
- * current state, then slot_ready or expired, each carrying lobbyId, so a paired event lost to a cut is recovered. A comment
- * keeps an idle stream alive. Every connect re-reads, so a reconnect after a cut or a missed event still learns the
- * outcome, across a wait of any length.
+ * waiting state as JSON). Every end of the wait, once it happens, or at once when it already has, is one event named
+ * slot_ready or expired with its state as JSON data, followed by the common end event done with the same data, and the
+ * stream closes: an agent listening only for done learns every end, from data.state. A queue wait paired with a lobby
+ * sends paired (lobbyWait: true) and stays open on the same connection: the same token is now a wait on the paired
+ * lobby, so the stream sends that lobby's current state, then slot_ready or expired and done, each carrying lobbyId. A
+ * reconnect after paired does the same, so a paired event lost to a cut is recovered. No other event names are sent.
+ * A comment keeps an idle stream alive. Every connect re-reads, so a reconnect after a cut or a missed event still
+ * learns the outcome, across a wait of any length.
  *
  * Bounds: behind an HTTP/1 frontend a departed client may never be seen leaving (see RELAY_MAX_MS,
  * src/live/watch-routes.ts), so each stream ends maxMs after its admission without a final event, telling the client to
@@ -64,9 +66,17 @@ function notFound(res: ServerResponse): void {
   res.end(JSON.stringify({ error: "no_such_wait", message: "No wait has that token." }));
 }
 
-/** One SSE message for a state: a final state as its named event, a waiting state unnamed. */
+/** The common end event every end of a wait is also sent as, after its own named event. */
+export const WAIT_END_EVENT = "done";
+
+/** An end of the wait, after which the stream closes: paired is final for its queue wait but the stream follows the lobby. */
+const ends = (wait: WaitState): boolean => isFinal(wait) && wait.state !== "paired";
+
+/** The SSE messages for a state: a waiting state unnamed, paired as its named event, an end as its named event then done. */
 function frame(wait: WaitState): string {
-  return `${isFinal(wait) ? `event: ${wait.state}\n` : ""}data: ${JSON.stringify(wait)}\n\n`;
+  const data = `data: ${JSON.stringify(wait)}\n\n`;
+  if (!isFinal(wait)) return data;
+  return `event: ${wait.state}\n${data}${ends(wait) ? `event: ${WAIT_END_EVENT}\n${data}` : ""}`;
 }
 
 export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: WaitStreamOptions = {}): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
@@ -132,7 +142,9 @@ export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: 
     let lastWrite = Date.now();
     const write = (text: string) => { res.write(text); lastWrite = Date.now(); };
     write(`retry: ${RETRY_MS}\n${frame(first)}`);
-    if (isFinal(first)) { stop(); res.end(); return; }
+    if (ends(first)) { stop(); res.end(); return; }
+    // After paired, the lobby's first state is sent too, as a reconnect would send it.
+    let announce = first.state === "paired";
 
     const tick = async () => {
       let wait: WaitState | null;
@@ -148,13 +160,16 @@ export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: 
       if (done) return;
       // A record removed after this stream's first read (left, replaced or past its expiry): the wait has ended.
       const current: WaitState = wait ?? { state: "expired", reason: "ended" };
-      if (isFinal(current)) {
+      if (ends(current)) {
         stop();
         write(frame(current));
         res.end();
         return;
       }
-      if (Date.now() - lastWrite >= heartbeatMs) write(HEARTBEAT);
+      if (current.state === "paired" || announce) {
+        write(frame(current));
+        announce = current.state === "paired";
+      } else if (Date.now() - lastWrite >= heartbeatMs) write(HEARTBEAT);
       poll = setTimeout(() => void tick(), pollMs);
     };
     poll = setTimeout(() => void tick(), pollMs);

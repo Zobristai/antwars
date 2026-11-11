@@ -9,6 +9,7 @@
 // fixed exit while waiting; a second join_queue is never sent.
 import { errorCode } from "./mcp.mjs";
 import { entryClient, joinSeat, matchClient } from "./match.mjs";
+import { out } from "./redact.mjs";
 import { envNumber, progress, readSeat, statePath, updateSeat, writeJson } from "./state.mjs";
 
 const ENDED = new Set(["ended", "expired"]);
@@ -27,6 +28,33 @@ async function tool(client, name, args) {
     throw error;
   }
   return reply.data;
+}
+
+/** The wait link fields kept in state/seat.json; WAIT_URL_NEXT is how the agent waits on it. */
+const WAIT_FIELDS = ["waitUrl", "waitToken", "waitFrom", "waitSavedAt"];
+export const WAIT_URL_NEXT = "GET waitUrl (server-sent events) and wait for the event named done; its data.state is slot_ready or expired. Read it back with: antwars-seat wait-url";
+
+/** A new go or join-lobby run starts with no link: an earlier run's may be stale. */
+function clearWaitLink(env) {
+  if (readSeat(env).waitUrl !== undefined) updateSeat(Object.fromEntries(WAIT_FIELDS.map((name) => [name, undefined])), env);
+}
+
+/**
+ * Keeps the wait link a reply carries (join_queue, join_lobby, queue_status, read_lobby) in state/seat.json, and prints
+ * it and logs it as step wait_link when it is new for this seat.
+ */
+function keepWaitLink(ctx, data, from) {
+  const waitUrl = data?.waitUrl;
+  if (typeof waitUrl !== "string" || waitUrl === "" || readSeat(ctx.env).waitUrl === waitUrl) return;
+  const link = { waitUrl, waitToken: typeof data.waitToken === "string" ? data.waitToken : null, waitFrom: from, waitSavedAt: new Date(ctx.clock.now()).toISOString() };
+  updateSeat(link, ctx.env);
+  progress("wait_link", { waitUrl, waitFrom: from }, ctx.env);
+  out(JSON.stringify({ step: "wait_link", waitUrl, waitFrom: from, next: WAIT_URL_NEXT }));
+}
+
+/** The final result with the seat's saved wait link, null when none was returned. */
+function withWaitUrl(result, env) {
+  return { ...result, waitUrl: readSeat(env).waitUrl ?? null };
 }
 
 /** The lobby state read_lobby returns, or null when it is unknown: a refusal or transport error is transient, never "gone". */
@@ -90,7 +118,9 @@ export async function awaitPairing({ entry, ctx, pollMs, maxWaitMs }) {
     return { lobbyId: status.lobbyId, matchedAt, lobbyState: state };
   };
 
-  const baseline = (await tool(entry, "queue_status", { key })).queue;
+  const baselineReply = await tool(entry, "queue_status", { key });
+  keepWaitLink(ctx, baselineReply, "queue_status");
+  const baseline = baselineReply.queue;
   progress("baseline", { queue: baseline }, env);
   let pairing = null;
   if (!queuing) {
@@ -129,6 +159,7 @@ export async function awaitPairing({ entry, ctx, pollMs, maxWaitMs }) {
       throw new Error(`join_queue refused: ${errorCode(joined.data)}${joined.data?.message ? ` (${joined.data.message})` : ""}`);
     }
     const queue = joined.ok ? joined.data.queue : null;
+    if (joined.ok) keepWaitLink(ctx, joined.data, "join_queue");
     progress("joined_queue", { queue: queue ?? { refused: "already_queued" } }, env);
     if (queue?.state === "waiting") ownJoinAt = Number(queue.joinedAt);
     if (queue?.state === "matched") ownJoinAt = Number(queue.matchedAt);
@@ -143,7 +174,10 @@ export async function awaitPairing({ entry, ctx, pollMs, maxWaitMs }) {
   for (;;) {
     if (clock.now() - started > maxWaitMs) throw new Error(`No pairing after ${Math.round(maxWaitMs / 1000)} s`);
     await clock.sleep(pollMs);
-    const status = (await tool(entry, "queue_status", { key })).queue;
+    const statusReply = await tool(entry, "queue_status", { key });
+    // An already_queued join, or a non-queuing seat, gets its handle's link here.
+    keepWaitLink(ctx, statusReply, "queue_status");
+    const status = statusReply.queue;
     pairing = await accept(status);
     if (pairing) return pairing;
     if (queuing && !joinedQueue && status?.state === "matched" && ignored.has(status.lobbyId)) {
@@ -185,9 +219,17 @@ function waits(env) {
 export async function go(ctx) {
   const { pollMs, maxWaitMs } = waits(ctx.env);
   const entry = entryClient(ctx);
+  clearWaitLink(ctx.env);
   const pairing = await awaitPairing({ entry, ctx, pollMs, maxWaitMs });
   progress("paired", pairing, ctx.env);
-  return enterMatch({ entry, ctx, pairing, pollMs, maxWaitMs });
+  return withWaitUrl(await enterMatch({ entry, ctx, pairing, pollMs, maxWaitMs }), ctx.env);
+}
+
+/** `wait-url`: the wait link this seat's latest go or join-lobby saved, read from state/seat.json without a call. */
+export function savedWaitLink(env) {
+  const seat = readSeat(env);
+  if (typeof seat.waitUrl !== "string") throw new Error("No wait link saved: run go or join-lobby first; it saves the waitUrl its join or status read returns.");
+  return { waitUrl: seat.waitUrl, waitToken: seat.waitToken ?? null, waitFrom: seat.waitFrom ?? null, waitSavedAt: seat.waitSavedAt ?? null, next: WAIT_URL_NEXT };
 }
 
 /** `create-lobby`: one create_lobby, public, one agent per colony. Creating does not seat this seat. No queue call. */
@@ -208,14 +250,22 @@ export async function joinLobby(ctx, lobbyId) {
   const entry = entryClient(ctx);
   let lobby = null;
   let alreadySeated = false;
+  clearWaitLink(ctx.env);
   try {
-    ({ lobby } = await tool(entry, "join_lobby", { key: ctx.key, lobbyId }));
+    const joined = await tool(entry, "join_lobby", { key: ctx.key, lobbyId });
+    lobby = joined.lobby;
+    keepWaitLink(ctx, joined, "join_lobby");
   } catch (error) {
     if (error?.code !== "already_seated") throw error;
     alreadySeated = true;
   }
   progress("joined_lobby", { lobbyId, state: lobby?.state ?? null, ...(alreadySeated ? { alreadySeated } : {}) }, ctx.env);
-  return enterMatch({ entry, ctx, pairing: { lobbyId, matchedAt: null }, pollMs, maxWaitMs });
+  // Already seated: join_lobby returned no link, so read_lobby, which returns the seat's own, supplies it.
+  if (alreadySeated) {
+    const read = await entry.callTool("read_lobby", { lobbyId, key: ctx.key }).catch(() => null);
+    if (read?.ok) keepWaitLink(ctx, read.data, "read_lobby");
+  }
+  return withWaitUrl(await enterMatch({ entry, ctx, pairing: { lobbyId, matchedAt: null }, pollMs, maxWaitMs }), ctx.env);
 }
 
 /**
