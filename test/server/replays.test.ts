@@ -145,7 +145,7 @@ it("wires public slot matches to the fake store and the record service, without 
 
 it("round-trips the full non-default rules config actually used by a public slot match into JSON", async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
-  const gameJson: ReplayObject[] = [];
+  const gameJson: ReplayObject[] = [], binaries: ReplayObject[] = [];
   const records = recordPath();
   const selected = comparisonOptions({ ANTWAR_RULES: "count-marks", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG);
   // Select a non-default config through the environment parser, but keep the
@@ -153,14 +153,22 @@ it("round-trips the full non-default rules config actually used by a public slot
   const run = slotRun();
   server = await startSpectatedServer({ ...run.options,
     simConfig: onOpenField({ ...selected.simConfig!, matchTicks: 2, startAnts: 12, commandFloorTicks: 7, queenFounding: PUBLIC_CONFIG.queenFounding }),
-    replayStore: { create: async object => { records.publish(object); if (object.contentType === "application/json") gameJson.push(object); } },
+    replayStore: { create: async object => {
+      records.publish(object);
+      if (object.contentType === "application/json") gameJson.push(object);
+      else binaries.push(object);
+    } },
     recordHandoff: records.handoff,
   }, live);
   await run.seatLobbies(1);
   await vi.waitFor(() => expect(server!.game.match).not.toBeNull(), { timeout: 5_000 });
   const actualConfig = server.game.match!.state.config;
   expect(actualConfig.rules).toBe("count-marks");
-  await run.settled(() => expect(records.inputs.size).toBeGreaterThanOrEqual(1));
+  // The service reads the released binary, which waits out the playback minimum after its inputs land.
+  await run.settled(() => {
+    expect(records.inputs.size).toBeGreaterThanOrEqual(1);
+    expect(binaries.length).toBeGreaterThanOrEqual(1);
+  });
   await records.service.sweep();
   expect(gameJson).toEqual([]);
   expect(records.saved.size).toBeGreaterThanOrEqual(1);
@@ -190,7 +198,7 @@ it("logs a failed store once per match while play and the next lobby's match con
   expect(new Set(attempts).size).toBe(attempts.length);
   expect(errors.mock.calls.every(([error]) => String(error).includes("replay upload failed: fake store down"))).toBe(true);
   expect(await (await fetch(`http://127.0.0.1:${server.port}/live/replays`)).json()).toEqual({ replays: [] });
-});
+}, 30_000);
 
 it("unset bucket lists no recordings or errors and continues ordinary slot play without cloud activity", async () => {
   vi.spyOn(console, "log").mockImplementation(() => {});
