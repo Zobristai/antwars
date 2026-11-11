@@ -225,17 +225,23 @@ export function seatModelName(label: string, handle: string | null): string {
 
 const isHouseHandle = (handle: string): boolean => handle.toLowerCase().startsWith(`${HOUSE_USERNAME}/`);
 
+/** A builder's seat as Recordings and Live now name it beside its model: "<username> · <model>". A seat with no username,
+ * or whose model is already named by that username (seatModelName), shows the model name alone. */
+export function withHandle(handle: string | null, model: string): string {
+  return handle === null || model === handle ? model : `${handle} · ${model}`;
+}
+
 /** A recorded seat as Recordings shows it, and the HUD's model line: a house handle's own HOUSE_LABELS
  * name (houseDisplayName), else its model's name as the Leaderboard names it (modelName), else, where the seat reported no
  * model, its handle ("model unknown" only for a seat that recorded neither); badges (benchmarkLabel) from the seat's own record and its recorded handle: the level it recorded, else a
  * listed house handle's fixed level; a listed house handle's fixed tier, else the tier it recorded; Fast only where that
  * tier is fast. A seat shown as UNLISTED_MODEL has no badges. No rating:
  * a recording carries none. Recordings (listed) names a label that starts with the seat's own handle by that handle
- * (seatModelName); the HUD keeps modelName. */
+ * (seatModelName), and any other builder's model after its username (withHandle); the HUD keeps modelName. */
 export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">,
   options: { readonly listed?: boolean } = {}): NameParts {
   const house = seat.handle !== null && isHouseHandle(seat.handle);
-  const label = (text: string) => options.listed ? seatModelName(text, seat.handle) : modelName(text);
+  const label = (text: string) => options.listed ? withHandle(seat.handle, seatModelName(text, seat.handle)) : modelName(text);
   const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? label(seat.modelLabel) : seat.handle ?? "model unknown";
   if (name === UNLISTED_MODEL) return { name, badges: [], quiet: null };
   const fixed = seat.handle === null ? { thinkingLevel: null, serviceTier: null } : houseLabel(seat.handle);

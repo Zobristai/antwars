@@ -218,10 +218,12 @@ describe("Matches", () => {
     // A reported model wins over the handle; a house handle keeps its own row's name.
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "kestrel-harness")).name).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant")).name).toBe("local");
-    // Recordings names a label whose provider part is the seat's own handle by that handle; the HUD keeps the model's words.
+    // Recordings names a label whose provider part is the seat's own handle by that handle, and any other builder's model
+    // after its handle; the HUD keeps the model's words.
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant"), { listed: true }).name).toBe("coffee-ant");
+    expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "kestrel-harness"), { listed: true }).name).toBe("kestrel-harness · GPT-6.1 Terra");
     expect(colonySeats([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])!.map(c => c?.map(e => e.parts.name) ?? null))
-      .toEqual([["coffee-ant", "local"], null]);
+      .toEqual([["coffee-ant", "kite · local"], null]);
     // Only an exact provider part before the first "/" counts; every other label keeps modelName's words.
     expect(seatModelName("coffee-ant/local", "coffee-ant")).toBe("coffee-ant");
     expect(seatModelName("coffee-ant/local", "Coffee-Ant")).toBe("local");
@@ -237,13 +239,15 @@ describe("Matches", () => {
     // Seats with one label group only where they show alike: a seat shown by its own handle keeps its line, in either order,
     // while seats that show the label's model words still group as before.
     const named = (list: Recording["seats"]) => seatGroups(colonySeats(list)![0]!).map(group => [group.parts.name, group.seats]);
-    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["local", 1], ["coffee-ant", 1]]);
-    expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])).toEqual([["coffee-ant", 1], ["local", 1]]);
-    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "wren")])).toEqual([["local", 2]]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["kite · local", 1], ["coffee-ant", 1]]);
+    expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])).toEqual([["coffee-ant", 1], ["kite · local", 1]]);
+    // Two builders on one model each keep their own line, named by their handles; one builder's alike seats still group.
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "wren")])).toEqual([["kite · local", 1], ["wren · local", 1]]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "kite")])).toEqual([["kite · local", 2]]);
     expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["coffee-ant", 2]]);
     // No reported label, however spelled, joins a seat shown by its handle, in either order.
     for (const label of ["coffee-ant/local|shown:coffee-ant", '["model:coffee-ant/local","coffee-ant"]']) {
-      const shownAs = modelName(label);
+      const shownAs = `kite · ${modelName(label)}`;
       expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, label, "kite")])).toEqual([["coffee-ant", 1], [shownAs, 1]]);
       expect(named([seat(0, label, "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([[shownAs, 1], ["coffee-ant", 1]]);
     }

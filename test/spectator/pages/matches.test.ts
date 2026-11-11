@@ -206,7 +206,7 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     p.mounted.destroy();
   });
 
-  it("names a builder seat by the model it self-reported, as Recordings names it, else by its name; a house seat by its own row", () => {
+  it("names a builder seat by its name and the model it self-reported, as Recordings names it, else by its name; a house seat by its own row", () => {
     const challenge: LiveMatch = { ...unrated, lobbyId: "lobby-m", colonies: [
       [{ displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: null, rd: null, ratedMatches: null },
         { displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
@@ -217,8 +217,10 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
     const { p, table, list } = show(challenge, unrated);
     const [first, second] = table.byClass("c-model").filter(node => node.tag === "td");
     expect(first!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["GPT-6 LunamaxFast", "omp-dolphin"]);
-    expect(second!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["GPT-6.1 Terra", "local×2, 2 seats"]);
-    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["GPT-6 LunamaxFast", "omp-dolphin"]], ["Lake Hodges Colony", ["GPT-6.1 Terra", "local×2, 2 seats"]]]);
+    expect(second!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["kestrel-harness · GPT-6.1 Terra", "kite · local×2, 2 seats"]);
+    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["GPT-6 LunamaxFast", "omp-dolphin"]], ["Lake Hodges Colony", ["kestrel-harness · GPT-6.1 Terra", "kite · local×2, 2 seats"]]]);
+    // The name stands beside the model with no badge added.
+    expect(second!.byClass("d1p-tag")).toHaveLength(0);
     // One identity's seats that report different models, or a model on only one seat, each keep their own line.
     const mixed: LiveMatch = { ...unrated, lobbyId: "lobby-x", colonies: [[
       { displayName: "kite #1", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null },
@@ -226,13 +228,13 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
       { displayName: "kite #3", modelLabel: null, rating: null, rd: null, ratedMatches: null }], []] };
     const differing = show(mixed);
     expect(differing.table.byClass("c-model").filter(node => node.tag === "td")[0]!.byClass("d1p-model").map(seat => seat.textContent))
-      .toEqual(["GPT-6.1 Terra #1", "Claude Opus 5.5 #2", "kite #3"]);
+      .toEqual(["kite #1 · GPT-6.1 Terra", "kite #2 · Claude Opus 5.5", "kite #3"]);
     differing.p.mounted.destroy();
     // A builder's reported model is drawn as given, with no house name or badges, though it reads like a house handle.
     const lookalike = show({ ...unrated, lobbyId: "lobby-l", colonies: [[
       { displayName: "kain", modelLabel: "openai/antwars/gpt-6-luna", rating: null, rd: null, ratedMatches: null }], []] });
     expect(lookalike.table.byClass("c-model").filter(node => node.tag === "td")[0]!.byClass("d1p-model").map(seat => seat.textContent))
-      .toEqual(["antwars/gpt-6-luna"]);
+      .toEqual(["kain · antwars/gpt-6-luna"]);
     lookalike.p.mounted.destroy();
     // A label whose provider part is the seat's own name shows that name; a label naming another provider keeps its model.
     const own = show({ ...unrated, lobbyId: "lobby-o", colonies: [[
@@ -252,7 +254,7 @@ describe("Live now names both colonies' players in Recordings' row style, In pro
       { displayName: "kite #4", modelLabel: "z/local", rating: null, rd: null, ratedMatches: null }]] });
     const [splitFirst, splitSecond] = split.table.byClass("c-model").filter(node => node.tag === "td");
     expect(splitFirst!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["coffee-ant #1", "coffee-ant #2"]);
-    expect(splitSecond!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["local×2, 2 seats"]);
+    expect(splitSecond!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["kite · local×2, 2 seats"]);
     split.p.mounted.destroy();
     // A catalog with no labels (an older server) names the players as before.
     expect(bodyRows(table)[1]!.byClass("d1p-model").map(seat => seat.textContent)).toEqual(["alice", "bob"]);
@@ -412,8 +414,8 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     const handles = at("rec-handles", "06", { winner: 1, seats: [builder(0, 0, "omp-dolphin"), builder(1, 0, "coffeebot-ant"), builder(2, 0, "omp-dolphin"),
       { seat: 3, colony: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "max", serviceTier: "fast", handle: "kestrel-harness" }] });
     const { p, table, list } = show(handles);
-    expect(seats(bodyRows(table)[0]!)).toEqual([["omp-dolphin×2, 2 seats", "coffeebot-ant"], ["GPT-6.1 TerramaxFastWinner"]]);
-    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["omp-dolphin×2, 2 seats", "coffeebot-ant"]], ["Lake Hodges Colony", ["GPT-6.1 TerramaxFastWinner"]]]);
+    expect(seats(bodyRows(table)[0]!)).toEqual([["omp-dolphin×2, 2 seats", "coffeebot-ant"], ["kestrel-harness · GPT-6.1 TerramaxFastWinner"]]);
+    expect(colonies(list.querySelectorAll("li")[0]!)).toEqual([["Very Large Colony", ["omp-dolphin×2, 2 seats", "coffeebot-ant"]], ["Lake Hodges Colony", ["kestrel-harness · GPT-6.1 TerramaxFastWinner"]]]);
     expect(table.textContent + list.textContent).not.toMatch(/model unknown|not recorded/);
     p.mounted.destroy();
   });
@@ -437,7 +439,8 @@ describe("Recordings: one head row, the winner a badge in its colony's column, e
     // The three matches a colony never joined (14:53, 13:26, 09:07) are not listed.
     const shown = [
       [["GPT-6 AstramaxFast"], ["omp-dolphinWinner"]],
-      [["GPT-6.1 SolmaxFastWinner"], ["GPT-6.1 TerramaxFast"]],
+      // A builder's seat shows its handle, then its model with the badges it recorded.
+      [["GPT-6.1 SolmaxFastWinner"], ["kestrel-harness · GPT-6.1 TerramaxFast"]],
       // A self-reported label whose provider part is the seat's own handle shows that handle.
       [["Claude Opus 5.5lowWinner"], ["coffee-ant"]],
     ];

@@ -70,8 +70,8 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
    * and no thinking level for another player: the catalog carries none. An identity holding several seats is "<name> #<seat>" on
    * each (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds, as
    * alike recorded seats are; a seat it holds alone in its colony keeps
-   * its "#<seat>", as before. A seat that self-reported a model shows that model, named as Recordings names it (modelName), in
-   * its name's place (its own name where the model's provider part is that name, seatModelName); a seat that reported none
+   * its "#<seat>", as before. A seat that self-reported a model shows its name, then that model, named as Recordings names it
+   * ("<name> · <model>", withHandle); its name alone where the model's provider part is that name (seatModelName); a seat that reported none
    * shows its name; a house handle always shows its own row's name. */
   const players = (seats: readonly LiveSeat[]): HTMLElement[] => seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
@@ -79,7 +79,7 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
     const model = reported !== null ? seatModelName(reported, who) : null;
     // A reported model is drawn as given, never read as a house handle; a seat with none keeps its own row's name.
     const shown = (name: string): NameParts => {
-      if (model !== null) return { name: `${model}${name.slice(who.length)}`, badges: [], quiet: null };
+      if (model !== null) return { name: model === who ? name : `${name} · ${model}`, badges: [], quiet: null };
       const row = rowName(name, undefined); return { name: row.name, badges: row.badges, quiet: null };
     };
     // Seats group by identity, the model each reported and the name it shows, so an identity's seats that differ in either

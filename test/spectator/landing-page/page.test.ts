@@ -205,6 +205,20 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
+  it("names a builder's seat on the Recordings card by its username beside its model and badges, as the Matches page does", async () => {
+    const recorded: Recording = { ...saved(4), seats: [
+      { seat: 0, colony: 0, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "max", serviceTier: "fast", handle: "antwars/gpt-6-1-terra-max-fast" },
+      { seat: 1, colony: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", handle: "kain" },
+    ] };
+    const p = landing({ matches: () => new Response(JSON.stringify({ matches: [recorded], nextPageToken: null })) });
+    await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));
+    const lines = p.card("Recordings")!.byClass("d1p-model").map(line => line.children.map(node => node.textContent));
+    // Each seat in the table and the stacked list: the house seat as before, the builder's seat with its username.
+    expect(lines.filter(line => line[0] === "kain · GPT-6.1 Terra").map(line => line.slice(0, 2))).toEqual([["kain · GPT-6.1 Terra", "highFast"], ["kain · GPT-6.1 Terra", "highFast"]]);
+    expect(lines.filter(line => line[0] === "GPT-6.1 Terra").map(line => line[1])).toEqual(["maxFast", "maxFast"]);
+    p.dispose();
+  });
+
   it("gives each recording's Replay the site's cyan primary button, as the Matches page does", async () => {
     const p = landing({ matches: () => new Response(JSON.stringify({ matches: [saved(3), saved(2)], nextPageToken: null })) });
     await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));
