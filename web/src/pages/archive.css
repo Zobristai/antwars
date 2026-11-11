@@ -260,6 +260,9 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 :is(.d1p-wait, .d1p-live, .d1p-rec) col.c-record { width: calc(var(--d1p-gutter) + 100px); }
 :is(.d1p-wait, .d1p-live, .d1p-rec) col.c-go { width: calc(var(--d1p-gutter) + 80px + var(--d1p-inset)); }
 :is(.d1p-live, .d1p-rec) .c-go { text-align: right; }
+/* A Live now or Recordings row centres every cell on the row's middle, so a start that runs to two lines (its date over its
+   time) leaves no cell at the top: the outcome, the colonies, the record and Watch or Replay stand level with it. */
+:is(.d1p-live, .d1p-rec) tbody :is(th, td) { vertical-align: middle; }
 
 /* One head row in both tables, every head on the bottom line right over its data, the colony heads in their colony's ink. */
 .d1p-table thead th.d1p-c0 { color: var(--aw-c0); }
@@ -316,7 +319,9 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
    under them the colonies take the item's whole width, each colony's name in a label column with its seats one per line
    beside it, as the table's colony columns hold them. Two classes on the colonies, so the landing page's list reset
    (.fg :where(dl)) cannot take the 4 px that parts them from the outcome. */
-.d1p-match-rows > li > .d1p-row-pill { grid-row: 1 / span 2; }
+/* There Watch or Replay and the start and outcome lines beside it share one centre, whichever is taller. */
+.d1p-match-rows > li { align-items: center; }
+.d1p-match-rows > li > .d1p-row-pill { grid-row: 1 / span 2; align-self: center; margin-top: 0; }
 .d1p-match-rows .d1p-kicker { margin-right: 3px; }
 .d1p-match-rows .d1p-colonies { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 4px 0 0; }
 .d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: 12px; line-height: 18px; }
