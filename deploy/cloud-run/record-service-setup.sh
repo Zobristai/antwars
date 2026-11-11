@@ -51,6 +51,19 @@ gc storage buckets create "$INPUT_BUCKET" --location "$REGION" \
   --uniform-bucket-level-access --public-access-prevention --soft-delete-duration 0
 gc storage buckets update "$INPUT_BUCKET" --update-labels app=antwar
 
+# A new service account takes a short while to resolve after it is created, and a
+# grant to it before then fails as "does not exist", stopping the setup with the
+# remaining grants unmade. Wait for it, bounded, before any grant.
+RECORDS_SA_WAIT=120
+deadline=$((SECONDS + RECORDS_SA_WAIT))
+until gc iam service-accounts describe "$RECORDS_SA" >/dev/null; do
+  if ((SECONDS >= deadline)); then
+    echo "record service account $RECORDS_SA did not resolve within ${RECORDS_SA_WAIT}s; stopping before any grant" >&2
+    exit 1
+  fi
+  sleep 5
+done
+
 # The game server only creates inputs: no read, overwrite or delete.
 gc storage buckets add-iam-policy-binding "$INPUT_BUCKET" --member "serviceAccount:$RUN_SA" --role roles/storage.objectCreator
 # The slot server reads back handover saves, and nothing else:
