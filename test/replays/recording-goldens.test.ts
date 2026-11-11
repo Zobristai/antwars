@@ -2,7 +2,8 @@
 // ticks, one join at tick 0) still decompress, record and hand off exactly as the captured goldens.
 // Goldens: run one of the capture at commit 8327b0816a43e559876262682c6320ec7f0f5527 (rules 27), whose exporter
 // this test follows step for step. The hashes below are run one's, except the readable record: it is run one's plus the two null seat fields
-// (serviceTier, handle), which every SeatRecord now carries.
+// (serviceTier, handle), which every SeatRecord now carries; and the final state hash, both frame digests and the private envelope, which were
+// re-pinned when each reference cell's opening food moved to the fine row its start ants stand in (same lengths, other food bytes).
 //
 // The one documented run-to-run difference is the random MatchStream identity: it is /0/full/match in
 // both frame arrays and the suffix of the replay, envelope and readable-record id. Here it is pinned to
@@ -47,10 +48,10 @@ const GOLDEN_ID = `2026-01-01T00-00-00-000Z-${GOLDEN_IDENTITY}`;
 
 /** The captured golden's run one: byte length and SHA-256 of each payload. */
 const GOLDEN = {
-  checkpointFramed: { byteLength: 16503, sha256: "7e7a3818e2fc2093e274f6d9dd5c35b28b871f91e061233ad1df68e5db996489" },
-  releasedFramed: { byteLength: 16511, sha256: "62ffcb12be0cd33f5525feb90d89563dd6ee77d6057d4f637a203025d154ca9b" },
-  checkpointDecoded: { byteLength: 157641, sha256: "abfe2f1d9202dd1a241053618aabb2966c2f69e073bfb3323bcb1c043b21c4d4" },
-  releasedDecoded: { byteLength: 157650, sha256: "30a99a4da136cbaba1a8371cdcc4ce0a13570e94a7cbeeae801653772555daf8" },
+  checkpointFramed: { byteLength: 16503, sha256: "891244c659cbfabe6913fddcc2cef0dfc98c50b3e30d4697e363756bb7a12d55" },
+  releasedFramed: { byteLength: 16511, sha256: "d0bdf143e3fb9022308b06fe88d25c5727b00593e81574604d45ffd9cf796a9f" },
+  checkpointDecoded: { byteLength: 157641, sha256: "8a3d0393fbffa46a31819fa9b2e0ddb83c30774045915c392682a54995f16985" },
+  releasedDecoded: { byteLength: 157650, sha256: "e01f384d3e7c2f6b6a5db450c49a322adf96c88162fcfb838993c7065ae67594" },
   // Run one's readable record (5700 bytes, f5db6739…) plus the two null seat fields on its one seat,
   // `"serviceTier":null,"handle":null,` (33 bytes) after thinkingLevel (5733 bytes, a3224f49…); then, as the record
   // service publishes it, its one unavailable reason as REPLIES_NOT_RETAINED (+25 bytes),
@@ -59,7 +60,7 @@ const GOLDEN = {
   // (+78) after its events, run one's log seed and its server controls (none: this capture logs no control); every other
   // byte is run one's.
   readableRecord: { byteLength: 5908, sha256: "f0ba6894e471fe70af00119fc6e30d08421cdf7df2cf62d237d8edd84b667e92" },
-  privateEnvelope: { byteLength: 7085, sha256: "4a4be23d92c2c149bd87a41f847633ebd25e049e5b454166abef87d102ce4d4f" },
+  privateEnvelope: { byteLength: 7087, sha256: "2dd70568cdbc0fb0cb72a33f8cb20cfc72673ac6bfcf02f86bb66eb0ef094b43" },
   logJsonl: { byteLength: 4449, sha256: "bee2ef46b57482e748c5042aa0d1b9fe76dc4b6db0daad8eb997ab05e5809762" },
 } as const;
 
@@ -110,7 +111,7 @@ it("the stored replay, checkpoint, readable record and private input envelope ma
     hub.pushTick(1, out);
     state = out.state;
   }
-  expect(stateHash(state)).toBe("3563edbd4f1af44c");
+  expect(stateHash(state)).toBe("18347152c163d969"); // re-pinned with the opening food's fine-row move
 
   // The private checkpoint is handed off at match end; nothing is public yet.
   await until(() => pending.size === 1, "the private input envelope");

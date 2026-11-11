@@ -19,7 +19,7 @@ vi.setConfig({ testTimeout: 60_000 });
 
 describe("the stills' moments", () => {
   it("are read from a redesign recording: marks laid, the busiest bites, the lowest bite on a living queen, the first fall and the end", () => {
-    const messages = playRedesign({ seed: 6013, agents: 9, ticks: 4000 });
+    const messages = playRedesign({ seed: 6014, agents: 9, ticks: 4000 });
     const m = sceneMoments(messages);
     const markTicks = messages.flatMap((x) => x.events.filter((e) => e.kind === "mark").map(() => x.tick));
     expect(m.mark).toBe(markTicks[5]! + 15);
@@ -122,8 +122,8 @@ describe("the stills' moments", () => {
   // Regression caught in the db23bd5 stills: the fall recording, captured mid-match, was stepped from tick 0, so its
   // attack, fall and result scenes all landed on its last message, byte-identical, with no queen under attack.
   it("step a recording captured mid-match to its own ticks: the clock counts from its first message's tick, as the client plays it", () => {
-    // The scripted match ends at tick 941 (seed 6013 under main's seeded food patches, seed 6006 had both queens bitten at once and the match over by 640): captured from tick 600 on, as the capture host's fall recording was captured mid-match.
-    const messages = playRedesign({ seed: 6013, agents: 9, ticks: 4000, startAt: 600 });
+    // The scripted match ends at tick 975 (seed 6014 since opening food moved to the start ants' fine row, where seed 6013 no longer reaches a fall; seed 6006 had both queens bitten at once and the match over by 640): captured from tick 600 on, as the capture host's fall recording was captured mid-match.
+    const messages = playRedesign({ seed: 6014, agents: 9, ticks: 4000, startAt: 600 });
     expect(messages[0]!.tick).toBe(600);
     expect(messages[0]!.full).not.toBeNull();
     expect(messages.at(-1)!.tick).toBeGreaterThan(900);
@@ -168,7 +168,7 @@ describe("the stills' moments", () => {
   // The early end: the capture host's early-cdf2877-s7003 is a version-9 recording (main 069957e), which the
   // client and the stills decode through the shared format; its scene reads the stream's reason in the page's words.
   it("read an early end from a version-9 recording: the stream's reason, no fall, and main's words for it on the result card", () => {
-    const played = playRedesign({ seed: 6013, agents: 9, ticks: 4000 });
+    const played = playRedesign({ seed: 6014, agents: 9, ticks: 4000 });
     const before = played.slice(0, played.findIndex((x) => x.events.some((e) => e.kind === "queenLost")));
     const last = before.at(-1)!;
     const result = { winner: 1 as const, reason: "sustained_territory" as const, decidedBy: "territory" as const, tick: last.tick, nextStartMs: null };
