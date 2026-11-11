@@ -411,23 +411,22 @@ describe("the Challenge choice", () => {
     // Ranked order (antwars/not-listed is not a listed handle, so it has no row), then antwars/glm-5-3-highspeed, which the
     // ranking does not rate. Badges are the list's level and tier through the Model Index rows' own badges, then
     // "unavailable"; antwars/mistral-large-latest's level record holds no level, so it shows none.
-    // "on Antwars" is held together by a no-break space (copy.ts), and so is "challenge" with its handle.
+    // "on Antwars" is held together by a no-break space (copy.ts).
     expect(p.rows()).toEqual([
-      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
-      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
+      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
+      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
       { lines: ["Claude Opus 5.5lowunavailable"], badges: ["low", "unavailable"], rating: ["1533"] },
-      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
+      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
       { lines: ["GLM-5.3 Highspeedunavailable"], badges: ["unavailable"], rating: [] },
     ]);
     // The ask is each available row's own line under its name (archive.css lays it across the row).
     expect(p.card()!.byClass("d1p-ask").map(node => node.textContent)).toEqual([
-      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
-      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
-    // "challenge", the handle and the words after it are one unit, and "challenge" is joined to the handle by a no-break space,
-    // so where the ask wraps "challenge" opens its line with the handle, never ending a line with the handle on the next.
-    expect(p.card()!.byClass("d1p-ask").map(ask => ask.byClass("d1p-ask-handle").map(unit => [unit.firstElementChild!.tag, unit.textContent])))
-      .toEqual([[["code", "challenge antwars/gpt-6-astra on Antwars"]], [["code", "challenge antwars/mistral-large-latest on Antwars"]],
-        [["code", "challenge antwars/claude-opus-5-5 on Antwars"]]]);
+      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
+      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
+    // The handle and the words after it are one unit, so where the ask wraps the handle opens its line.
+    expect(p.card()!.byClass("d1p-ask").map(ask => ask.byClass("d1p-ask-handle").map(unit => [unit.children[0]!.tag, unit.textContent])))
+      .toEqual([[["code", "antwars/gpt-6-astra on Antwars"]], [["code", "antwars/mistral-large-latest on Antwars"]],
+        [["code", "antwars/claude-opus-5-5 on Antwars"]]]);
     // A provisional rating keeps its word, as on the ranking rows.
     expect(p.items()[1]!.byClass("d1p-prov").map(node => node.textContent)).toEqual(["provisional"]);
     // No handle slug after a name, no meta line, no placeholder; the handle appears only as code in the ask.

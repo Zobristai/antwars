@@ -212,14 +212,10 @@ function challengeCard(doc: Document, list: ChallengeView): HTMLElement {
         const ask = h(doc, "p", "d1p-line d1p-ask");
         // The handle is the command the agent types, never the row's name:
         // only here, in the agent URL's command style (aw-byoa-url); the row's name is its display name, above.
-        // The handle and the words after it are one unit (archive.css), so where the ask wraps that unit opens its line.
-        // The unit starts at the ask's last word, "challenge", joined to the handle by a no-break space, so the verb never
-        // ends one line with its handle on the next; where the unit itself must wrap, it breaks before "on Antwars".
-        const words = C.challengeAsk[0].trimEnd();
-        const verbAt = words.lastIndexOf(" ") + 1;
+        // The handle and the words after it are one unit (archive.css), so where the ask wraps the handle opens its line.
         const handle = h(doc, "span", "d1p-ask-handle");
-        handle.append(`${words.slice(verbAt)}\u00a0`, h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
-        ask.append(words.slice(0, verbAt), handle);
+        handle.append(h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
+        ask.append(C.challengeAsk[0], handle);
         item.append(ask);
       }
       rows.append(item);
