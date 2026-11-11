@@ -298,11 +298,11 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-c1 { color: var(--aw-c1); }
 .d1p-colony { font-weight: 600; }
 
-/* Record stamps: the record's own word, in the HUD's label role; complete solid, partial dashed, unavailable muted. */
+/* Status stamps, as the signed-off rows drawing draws them: a record's word (COMPLETE, PARTIAL, UNAVAILABLE) solid and
+   light; a waiting row's (WAITING, STARTING, n OF m SEATS) dashed grey; LIVE red. */
 .d1p-stamp { display: inline-block; padding: 0 5px; border: 1px solid var(--aw-ink-2); border-radius: 3px; font-size: 11px; font-weight: 600; line-height: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink); white-space: nowrap; }
-.d1p-stamp.is-partial { border-style: dashed; }
-.d1p-stamp.is-unavailable { border-color: var(--aw-ink-3); color: var(--aw-ink-3); }
-/* A Matches row's status stamp (WAITING, STARTING, n OF m SEATS, LIVE): the stamp's solid look. */
+.d1p-stamp.is-waiting { border-style: dashed; color: var(--aw-ink-2); }
+.d1p-stamp.is-live { border-color: #e5484d; background: #3a1518; color: #ff8589; }
 
 /* The self-reported asterisk's 24 px control and its tooltip (matches.ts mountTip). Neither Matches card draws the asterisk
    now. */

@@ -21,7 +21,7 @@ import { rowName } from "../ui/deck/model.ts";
 import { MATCH_TYPE_WORDS, keep, utcStamp, type SectionState } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 import { STAMPS, seatsStamp, type ColonyCell, type MatchRow, type RowParts } from "./matches.ts";
-import { CHALLENGE_HREF, sectionLine, sizeOf, type PlayerParts, type SeatGroup } from "./model.ts";
+import { CHALLENGE_HREF, seatGroups, sectionLine, sizeOf, type PlayerParts, type SeatEntry, type SeatGroup } from "./model.ts";
 
 export const WAITING_TITLE = "Waiting";
 /** The empty card's offer, linking to the Leaderboard's Challenge choice. */
@@ -48,12 +48,17 @@ export function waitingType(row: WaitingRow): string {
   return `${MATCH_TYPE_WORDS[lobbyKind(row)]} · ${row.size}v${row.size}`;
 }
 
-/** A waiting player's line: a house handle by its own row's model name, level and Fast (rowName); any other identity by
- * its username alone; each with its rating where the server sends one. */
-export function waitingPlayer(name: string, rating: ShownRating | null): SeatGroup {
+/** A waiting seat: a house handle by its own row's model name, level and Fast (rowName); any other identity by its username
+ * alone; each with its rating where the server sends one. Its name is who holds it: the queue sends no other identity. */
+export function waitingSeat(name: string, rating: ShownRating | null): SeatEntry {
   const row = rowName(name, undefined);
   const parts: PlayerParts = row.benchmark ? { user: null, model: row.name, badges: row.badges } : { user: name, model: null, badges: [] };
-  return { parts, seats: 1, ...(rating ? { rating } : {}) };
+  return { who: name, parts, rating };
+}
+
+/** A colony's waiting seats as player lines (seatGroups): one identity holding several seats once, with ×N. */
+export function waitingPlayers(names: readonly string[], ratings: readonly (ShownRating | null | undefined)[] | undefined): SeatGroup[] {
+  return seatGroups(names.map((name, at) => waitingSeat(name, ratings?.[at] ?? null)));
 }
 
 /** A waiting row as the one row builder draws it. Its id is its place in the list: rows carry no public id. */
@@ -61,19 +66,19 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
   const when = utcStamp(row.since) ?? "Start unknown";
   const base = { id: String(index), when, type: waitingType(row), action: null };
   if (!isLobby(row)) {
-    return { ...base, stamp: { text: STAMPS.waiting, look: "plain" },
-      colonies: [{ lines: [waitingPlayer(row.displayName, row.rating ?? null)], result: null, note: null }, { lines: [], result: null, note: NO_OPPONENT }] };
+    return { ...base, stamp: { text: STAMPS.waiting, look: "waiting" },
+      colonies: [{ lines: waitingPlayers([row.displayName], [row.rating ?? null]), result: null, note: null }, { lines: [], result: null, note: NO_OPPONENT }] };
   }
   const full = row.seated >= 2 * row.size;
   const colony = (index: 0 | 1): ColonyCell => {
     const names = row.colonies[index];
-    const lines = names.map((name, at) => waitingPlayer(name, row.ratings?.[index][at] ?? null));
+    const lines = waitingPlayers(names, row.ratings?.[index]);
     const open = names.length < row.size && !full;
     const note = !open ? null : row.challenge === "house" && index === HELD_COLONY ? NOT_JOINED_YET : SEAT_OPEN;
     return { lines, result: null, note };
   };
   const stamp = row.mode !== null || full ? STAMPS.starting : seatsStamp(row.seated, 2 * row.size);
-  return { ...base, stamp: { text: stamp, look: "plain" }, colonies: [colony(0), colony(1)] };
+  return { ...base, stamp: { text: stamp, look: "waiting" }, colonies: [colony(0), colony(1)] };
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;

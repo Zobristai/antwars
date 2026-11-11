@@ -60,8 +60,9 @@ export interface MatchRow {
   readonly type: string | null;
   readonly typeNote?: string;
   readonly colonies: readonly [ColonyCell, ColonyCell];
-  /** The status stamp: its words and its look (a record's complete, partial or unavailable; else plain). */
-  readonly stamp: { readonly text: string; readonly look: "complete" | "partial" | "unavailable" | "plain" };
+  /** The status stamp: its words and its look, as the drawing draws it: a record's (complete, partial, unavailable) solid, a
+   * waiting row's (WAITING, STARTING, n OF m SEATS) dashed, a live match's red. */
+  readonly stamp: { readonly text: string; readonly look: "complete" | "partial" | "unavailable" | "waiting" | "live" };
   readonly action: { readonly text: string; readonly href: string; readonly label: string } | null;
 }
 /** One Matches list's card. */
@@ -174,7 +175,7 @@ export function liveMatchRow(match: LiveMatch, search: string): MatchRow {
   return {
     id: row.id, when, type, colonies: [colony(0), colony(1)],
     ...(type === null && !seated ? { typeNote: "not recorded" } : {}),
-    stamp: { text: STAMPS.live, look: "plain" },
+    stamp: { text: STAMPS.live, look: "live" },
     action: { text: "Watch", href: row.href, label: `Watch, ${liveKind(match)} started ${when}` },
   };
 }

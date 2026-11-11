@@ -246,8 +246,9 @@ describe("Live now rows", () => {
     const watch = row!.byClass("d1p-row-pill")[0]!;
     expect(watch.href).toBe("/?lobby=00000000-0000-4000-8000-0000000000aa&watch=1");
     expect(watch.getAttribute("aria-label")).toBe("Watch, Unrated match started 11 Nov 2026 · 03:50 UTC");
-    // No result while live.
+    // No result while live; the LIVE stamp is drawn red (archive.css .is-live).
     expect(liveList.card.byClass("d1p-result-tag")).toEqual([]);
+    expect(row!.byClass("d1p-stamp").map(node => node.className)).toEqual(["d1p-stamp is-live"]);
     p.mounted.destroy();
   });
 
