@@ -177,10 +177,24 @@ async function readAll(body: Readable): Promise<Uint8Array> {
 
 const served = (bytes: Uint8Array): ReplayRead => ({ body: Readable.from([Buffer.from(bytes)]), contentLength: String(bytes.length) });
 
-/** /replays/<id> and /watch/replays: each corrected recording's binary, corrected once its correction reads applied. */
+/**
+ * /replays/<id> and /watch/replays: each corrected recording's binary, corrected once its correction reads applied; and
+ * /watch/ratings/<id>: a moved match's stored rating rows under the names its corrected replay shows, the -fast handle
+ * for the moved one, so the page matches each row to its seat. Names only: the recorded figures are served as recorded.
+ */
 export function correctedReplaySource(source: ReplaySource, store: Pick<Store, "get">): ReplaySource {
   const applied = appliedReader(store);
   return {
+    async ratingNames(id, rows) {
+      const correction = CORRECTIONS.get(id);
+      if (correction?.kind !== "sol" || !await applied(correction)) return rows;
+      const named = rows.map(row => {
+        const moved = moveIdentity({ displayName: row.displayName } as StreamIdentity, correction.from, correction.to)!;
+        return moved.displayName === row.displayName ? row : { ...row, displayName: moved.displayName };
+      });
+      if (holdsHandle(named, correction.from)) throw new CorrectedRecordingUnavailable("rating names not correctable");
+      return named;
+    },
     async open(id, signal) {
       const correction = CORRECTIONS.get(id);
       if (correction === undefined || !await applied(correction)) return source.open(id, signal);
