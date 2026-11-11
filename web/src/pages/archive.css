@@ -223,8 +223,10 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > .d1p-tags > .d1p-tag:first-child { margin-left: 0; }
 /* A recording's match type: the seat badge, on its own line, in its words as written ("1v1"). */
 .d1p-tag.d1p-type { display: block; width: fit-content; margin: 4px 0 0; text-transform: none; letter-spacing: normal; }
-/* In Recordings' Game type column it is the cell's first line, so it rides the row's first baseline. */
-.d1p-rec td.c-result > .d1p-type { margin-top: 0; }
+/* In a Matches table's Game type column it is the cell's one line, centred in the column under its centred head; in a
+   stacked row it leads the line, before the status stamp. */
+.d1p-match td.c-type > .d1p-type { margin: 0 auto; }
+.d1p-match-rows .is-lead > .d1p-type { display: inline-block; margin: 0 8px 0 0; vertical-align: 1px; }
 /* Last 5, newest first: a result stamp each, a win filled, a loss or a draw outlined; a stored replay makes it a link,
    underlined. The element is the target and the stamp is drawn inside it: 24 px here, 28 px in a 40 × 44 px target on phones. */
 .d1p-form-mark { position: relative; isolation: isolate; display: inline-grid; place-items: center; width: 28px; height: 24px; font-size: 12px; font-weight: 700; line-height: 1; color: var(--aw-ink-2); text-decoration: none; vertical-align: middle; }
@@ -246,26 +248,27 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p[data-page="leaderboard"] a.d1p-form-mark:hover { color: var(--aw-ink-bright); }
 .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 2px 4px; }
 
-/* Live now and Recordings: one six-column grid, so each list's columns stand under the other's: the start; the outcome
-   (Live now's Winner; Recordings' Game type, its winner a badge in its colony's column); a column per colony's models; the record; the action. Every column but the
-   colonies is sized to what it holds (a date, "Lake Hodges Colony", "In progress" or a match type, an UNAVAILABLE stamp, the
-   Replay or Watch pill); the two colonies share the rest equally: 343 px each in the 1200 px card both pages give them, never less
-   than 255 px, since the table stands only in a card 64rem wide (the stacked rows, below). Live now has no record, so its
-   second colony spans the record column, and its Watch stands in the action column, as Recordings' Replay does. Waiting
-   stands on the same grid: its time waited and kind, then its colonies, the second spanning to the card's end. */
-:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-start { width: calc(var(--d1p-inset) + 88px); }
-:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-result { width: calc(var(--d1p-gutter) + 152px); }
-:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-record { width: calc(var(--d1p-gutter) + 100px); }
-:is(.d1p-wait, .d1p-live, .d1p-rec) col.c-go { width: calc(var(--d1p-gutter) + 80px + var(--d1p-inset)); }
-:is(.d1p-live, .d1p-rec) .c-go { text-align: right; }
-/* A Live now or Recordings row centres every cell on the row's middle, so a start that runs to two lines (its date over its
-   time) leaves no cell at the top: the outcome, the colonies, the record and Watch or Replay stand level with it. */
-:is(.d1p-live, .d1p-rec) tbody :is(th, td) { vertical-align: middle; }
+/* Waiting, Live now and Recordings (and the landing page's list): one six-column grid in every table (the signed-off rows
+   drawing): Time, Game type, a column per colony's players, Status and the button. Every column but the colonies is sized
+   to what it holds, with room to spare around its widest (a date; "Challenge · 1v1"; an UNAVAILABLE or "3 OF 4 SEATS"
+   stamp; the Replay pill), so none is cut or pressed to its column's edges; the two colonies share the rest equally:
+   331 px each in the 1200 px card the pages give them, never less than 259 px, since the table stands only in a card 66rem
+   wide (the stacked rows, below). Waiting has no button: its column stays, empty, so every list's columns line up. */
+.d1p-match col.c-start { width: calc(var(--d1p-inset) + 88px); }
+.d1p-match col.c-type { width: calc(var(--d1p-gutter) + 128px); }
+.d1p-match col.c-status { width: calc(var(--d1p-gutter) + 112px); }
+.d1p-match col.c-go { width: calc(var(--d1p-gutter) + 88px + var(--d1p-inset)); }
+/* Words hold their column's left edge; badges, stamps and buttons stand on their column's centre, each head with its
+   column: Game type and Status, heads and badges, centred; Watch and Replay centred in the button column. */
+.d1p-match :is(th, td):is(.c-type, .c-status, .c-go) { text-align: center; }
+/* Every cell of a row centres on the row's middle, so a start that runs to two lines (its date over its time) leaves no
+   cell at the top. */
+.d1p-match tbody :is(th, td) { vertical-align: middle; }
 
 /* One head row in both tables, every head on the bottom line right over its data, the colony heads in their colony's ink. */
 .d1p-table thead th.d1p-c0 { color: var(--aw-c0); }
 .d1p-table thead th.d1p-c1 { color: var(--aw-c1); }
-:is(.d1p-wait, .d1p-live, .d1p-rec) tbody th { font-weight: 400; }
+.d1p-match tbody th { font-weight: 400; }
 /* A start is one date over one time, never broken. */
 .d1p-date { display: block; color: var(--aw-ink); white-space: nowrap; }
 .d1p-time { display: block; font-size: 12px; line-height: 17px; color: var(--aw-ink-3); white-space: nowrap; }
@@ -276,6 +279,11 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
    lines put a cell's second seat on the baseline of the start's time. */
 .d1p-model { display: flex; align-items: baseline; font-size: 12px; line-height: 18px; color: var(--aw-ink); }
 .d1p-model > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A player line's name: the builder's username, bold, then its model; one unit, so the ellipsis cuts the model first. */
+.d1p-user { font-weight: 600; color: var(--aw-ink-bright); }
+.d1p-mname { color: var(--aw-ink); }
+/* The line's rating badge (identity.ts rowRatingNode) after its name and badges, spaced as a badge is. */
+.d1p-model > .d1p-elo-badge { margin-left: 6px; }
 .d1p-model > :not(:first-child) { flex: none; }
 /* A self-reported level may run to 32 characters (src/mcp/config.ts), wider than a seat's whole line: the badges stop at
    12em, so the name always keeps room on the line. Every real set (MINIMAL FAST, the widest, is under 10em) shows whole; a
@@ -283,8 +291,9 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
 .d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
 .d1p-unknown { color: var(--aw-ink-3); }
-/* Colony colour only as ink: on a colony's name, which always names it too, and on the words of Recordings' WINNER and DRAW
-   badges (matches.ts markedSeats), which stand in that colony's column or under its name; the badge keeps its grey fill. */
+/* Colony colour only as ink: on a colony's name, which always names it too, and on the words of its WINNER, DRAW or
+   ABANDONED badge (matches.ts playerLine), which stands in that colony's column or under its name; the badge keeps its
+   grey fill. */
 .d1p-c0 { color: var(--aw-c0); }
 .d1p-c1 { color: var(--aw-c1); }
 .d1p-colony { font-weight: 600; }
@@ -293,6 +302,7 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-stamp { display: inline-block; padding: 0 5px; border: 1px solid var(--aw-ink-2); border-radius: 3px; font-size: 11px; font-weight: 600; line-height: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink); white-space: nowrap; }
 .d1p-stamp.is-partial { border-style: dashed; }
 .d1p-stamp.is-unavailable { border-color: var(--aw-ink-3); color: var(--aw-ink-3); }
+/* A Matches row's status stamp (WAITING, STARTING, n OF m SEATS, LIVE): the stamp's solid look. */
 
 /* The self-reported asterisk's 24 px control and its tooltip (matches.ts mountTip). Neither Matches card draws the asterisk
    now. */
@@ -300,14 +310,14 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-ast:hover, .d1p-ast[data-open] { background: var(--aw-raise); color: var(--aw-ink-bright); }
 .d1p-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: 12px; font-weight: 400; line-height: 1.35; letter-spacing: normal; text-transform: none; color: var(--aw-ink); }
 
-/* The stacked rows that replace each table under 46rem, and Matches' tables wherever their card is under 64rem: there a
+/* The stacked rows that replace each table under 46rem, and Matches' tables wherever their card is under 66rem: there a
    colony's column no longer holds the widest team seat the house names make, name, two badges and count on one line
    ("Grok Composer 2.5 Fast MEDIUM ×4", 217 px in Arial's widths, 240 px in a fallback monospace). Both Matches cards
    are one width, so both lists change form together. */
 .d1p-narrow { display: none; }
-@container d1p-card (width < 64rem) {
-  :is(.d1p-wait, .d1p-live, .d1p-rec).d1p-wide { display: none; }
-  :is(.d1p-wait, .d1p-live, .d1p-rec) + .d1p-narrow { display: block; }
+@container d1p-card (width < 66rem) {
+  .d1p-match.d1p-wide { display: none; }
+  .d1p-match + .d1p-narrow { display: block; }
 }
 .d1p-rows > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: start; padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); }
 /* A row's 28 px pill centres on the row's 19 px first line, as it rides the first baseline in a table row; the phone's
@@ -332,10 +342,14 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 }
 .d1p-rows-head { display: flex; align-items: center; min-height: 36px; padding: 0 var(--d1p-inset); border-top: 1px solid var(--aw-line); }
 .d1p-line { grid-column: 1; font-size: 13px; line-height: 19px; color: var(--aw-ink-2); }
+/* A stacked start's date and its time each stay whole (matches.ts startLine): a row too narrow for both breaks only
+   between them, never inside "04:19 UTC". */
+.d1p-keep { white-space: nowrap; }
 .d1p-line.is-lead { font-size: 14px; font-weight: 600; color: var(--aw-ink-bright); }
 .d1p-line.is-meta { font-size: 12px; color: var(--aw-ink-3); }
 .d1p-line.is-model { font-size: 12px; color: var(--aw-ink); }
 .d1p-line > .d1p-stamp { margin-top: 4px; }
+.d1p-match-rows .is-lead > .d1p-stamp { margin-top: 0; vertical-align: 1px; }
 /* The Leaderboard's stacked rows: rank, name and rating on the first line, under a head that names them once; rated matches,
    Record and Last 5 labelled under the name, wrapping as the width needs. */
 .d1p-rows-head.d1p-lb-head, .d1p-rows.d1p-lb-rows > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 8px; }

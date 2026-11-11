@@ -150,7 +150,7 @@ describe("matches rows", () => {
   it("words each recording's match type as its badge, never a mode slug, and gives no badge without a type", () => {
     expect(recordingType({ kind: "index", size: 2 })).toBe("Index · 2v2");
     expect(recordingType({ kind: "ranked", size: 4 })).toBe("Ranked · 4v4");
-    expect(recordingType({ kind: "unranked", size: 3 })).toBe("Lobby · 3v3");
+    expect(recordingType({ kind: "unranked", size: 3 })).toBe("Unranked · 3v3");
     expect(recordingType({ kind: "challenge", size: 1 })).toBe("Challenge · 1v1");
     expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unrated · 1v1");
     expect(recordingType({ kind: "unrated", size: null })).toBe("Unrated");
