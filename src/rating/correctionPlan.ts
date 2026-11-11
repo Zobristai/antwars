@@ -57,14 +57,19 @@ interface MatchState {
 }
 /**
  * Every planned change in public terms: one entry per changed public match (by recording id, else public lobby id), one
- * per changed rating row. A changed match that is not public is planned, digested and applied like any other, but only
- * counted here: its id, seats and rating changes are not served.
+ * per changed rating row. A changed match that is not public is planned, digested and applied like any other, but the
+ * plan serves nothing that traces back to it, only counts. Its traces are its players and, in rating order, every
+ * player who later meets a traced one, since each of their later ratings carries its effect: no rating row of a traced
+ * player is served, nor any later match a traced player plays.
  */
 export interface PublicPlan {
   readonly digest: string;
   readonly matches: readonly { readonly match: string; readonly startedAt: string; readonly before: MatchState; readonly after: MatchState }[];
-  readonly unlistedMatches: number;
+  /** Changed matches not served: matches not shown publicly, and matches a traced player plays after one. */
+  readonly withheldMatches: number;
   readonly ratings: readonly { readonly handle: string; readonly mode: string; readonly before: Standing | null; readonly after: Standing | null }[];
+  /** Changed rating rows not served, each a traced player's. */
+  readonly withheldRatings: number;
 }
 export interface Plan { readonly writes: readonly Write[]; readonly summary: PublicPlan }
 /** Every check that can refuse, as PLAN_PATH serves it; store-error and error are a failed read and any other throw. */
@@ -216,15 +221,18 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const writes: Write[] = firestoreWrites(v, new Date());
   for (const id of v.identities) names.set(id, await handle(id));
   const unrated = v.identities.map(id => shown(names.get(id)!));
-  // The plan is served publicly, so it shows only public matches (shownPublicly) and counts the others.
-  let unlistedMatches = 0;
+  // The plan is served publicly, so it serves no trace of a match not shown publicly (shownPublicly; PublicPlan).
+  const traced = new Set<string>();
+  let withheldMatches = 0;
   const matches: PublicPlan["matches"][number][] = [];
-  if (!shownPublicly(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)?.kind === "public", v.snapshot.get(`watchMatches/${NEVER_JOINED.lobbyId}`))) unlistedMatches++;
-  else matches.push({ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
+  if (!shownPublicly(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)?.kind === "public", v.snapshot.get(`watchMatches/${NEVER_JOINED.lobbyId}`))) {
+    withheldMatches++;
+    for (const id of v.identities) traced.add(id);
+  } else matches.push({ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
     before: { status: "rated", seats: unrated, ratingChanges: named(JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!)) },
     after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } });
-  const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: shown(names.get(id)!), mode: v.mode!,
-    before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null }));
+  const ratings: { readonly id: string; readonly row: PublicPlan["ratings"][number] }[] = v.identities.map(id => ({ id, row: { handle: shown(names.get(id)!),
+    mode: v.mode!, before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null } }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.
   const registry = createWatchRegistry(store);
@@ -333,10 +341,15 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     if (move) writes.push({ op: "update", path: `lobbies/${lobby.id}`, fields: { seats: JSON.stringify(lobby.seats) } });
     if (relabelled) writes.push({ op: "update", path: `watchMatches/${lobby.id}`, fields: { modelLabels: JSON.stringify(relabelled) } });
     if (rechanged) writes.push({ op: "update", path: `ratedMatches/${lobby.id}`, fields: { changes } });
-    if (!move && !rechanged) continue;
-    // A public match is named by its recording, or by its public lobby id until a recording is published.
+    // Every match in the window, changed or not, carries a traced player's effect to the players it meets.
     const watch = docs.get(`watchMatches/${lobby.id}`);
-    if (!shownPublicly(lobby.listed, watch)) { unlistedMatches++; continue; }
+    const seated = [...was.seats, ...lobby.seats].map(seat => seat.id);
+    const hidden = (move !== undefined || rechanged) && !shownPublicly(lobby.listed, watch);
+    const withheld = hidden || seated.some(id => traced.has(id));
+    if (withheld) for (const id of seated) traced.add(id);
+    if (!move && !rechanged) continue;
+    if (withheld) { withheldMatches++; continue; }
+    // A public match is named by its recording, or by its public lobby id until a recording is published.
     const match = watch?.replayId || lobby.id;
     matches.push({ match, startedAt: new Date(lobby.at).toISOString(),
       before: { status: "rated", seats: was.seats.map(seat => shown(seat.displayName)), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels: shownKeys(labels) } : {}) },
@@ -351,9 +364,10 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const updated: Fields = { rating, ratedMatches: String(next.ratedMatches), ...glickoFields(next),
       ...(movers.includes(id) ? recordFields(records(moved, id)) : {}), ...(fields!.houseRating !== undefined ? { houseRating: rating } : {}) };
     writes.push({ op: "update", path: `${ROWS}/${id}`, fields: updated });
-    ratings.push({ handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
+    ratings.push({ id, row: { handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) } });
   }
-  return { writes, summary: { digest: planDigest(writes), matches, unlistedMatches, ratings } };
+  const served = ratings.filter(each => !traced.has(each.id)).map(each => each.row);
+  return { writes, summary: { digest: planDigest(writes), matches, withheldMatches, ratings: served, withheldRatings: ratings.length - served.length } };
 }
 
 /**

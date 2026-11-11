@@ -302,8 +302,15 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     warn.mockRestore();
   });
 
-  it("plans a match that is not shown publicly like any other, and serves only its count", async () => {
+  it("plans a match that is not shown publicly like any other, and serves no trace of it, only counts", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    // Every string (keys too) and every number a served body carries.
+    const leaves = (value: unknown, strings = new Set<string>(), numbers = new Set<number>()) => {
+      if (typeof value === "string") strings.add(value);
+      else if (typeof value === "number") numbers.add(value);
+      else if (value && typeof value === "object") for (const [key, each] of Object.entries(value)) { strings.add(key); leaves(each, strings, numbers); }
+      return { strings, numbers };
+    };
     // The moved match and the never-joined match, each with its recording, hidden by a private watch entry; a private
     // lobby kind alone does not hide a match whose watch entry, and so its recording, is public.
     for (const [path, fields, hidden] of [
@@ -313,13 +320,12 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     ] as const) {
       const w = await world();
       const shown = await planCorrections(w.store, w.recordings) as Plan;
-      expect(shown.summary.unlistedMatches).toBe(0);
+      expect([shown.summary.withheldMatches, shown.summary.withheldRatings]).toEqual([0, 0]);
       await commit(w.store, [{ op: "update", path, fields }]);
       const plan = await planCorrections(w.store, w.recordings) as Plan;
       // The same writes, so the same digest and the same apply.
       expect(plan.summary.digest).toBe(shown.summary.digest);
       expect(plan.writes.map(write => write.path)).toEqual(shown.writes.map(write => write.path));
-      expect(plan.summary.ratings).toEqual(shown.summary.ratings);
       const { serve } = startCorrectionPlan(w.store, w.recordings);
       await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("planned"));
       const body = served(serve).body;
@@ -327,9 +333,42 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
         expect(plan.summary).toEqual(shown.summary);
         continue;
       }
-      expect(plan.summary.unlistedMatches).toBe(1);
-      expect(plan.summary.matches).toEqual(shown.summary.matches.filter(m => m.match !== hidden));
-      for (const id of [hidden, SECOND_LOBBY, NEVER_JOINED.lobbyId]) expect(body).not.toContain(id);
+      // What the public plan served about the hidden match: its handles, and every figure of its rating changes and of
+      // its players' rating rows. None of it is served now.
+      const entry = shown.summary.matches.find(m => m.match === hidden)!;
+      const handles = new Set([...entry.before.seats, ...entry.after.seats]);
+      const figures = [...entry.before.ratingChanges, ...entry.after.ratingChanges].flatMap(c => [c.before, c.after]);
+      const rows = shown.summary.ratings.filter(r => handles.has(r.handle));
+      expect(rows.length).toBeGreaterThan(0);
+      figures.push(...rows.flatMap(r => [r.before, r.after]).flatMap(s => s ? [s.rating, s.rd] : []));
+      // A figure the public plan also serves for a player of no hidden match (two first-match players share a start
+      // and a result) says nothing about it.
+      const elsewhere = leaves([...shown.summary.matches.filter(m => m !== entry).flatMap(m => [m.before, m.after]).flatMap(s => s.ratingChanges),
+        ...shown.summary.ratings].filter(each => !handles.has(each.handle))).numbers;
+      const { strings, numbers } = leaves(JSON.parse(body));
+      for (const each of [hidden, SECOND_LOBBY, NEVER_JOINED.lobbyId, ...handles]) {
+        expect(body).not.toContain(each);
+        expect(strings.has(each)).toBe(false);
+      }
+      expect(figures.filter(figure => !elsewhere.has(figure)).length).toBeGreaterThan(0);
+      for (const figure of figures) if (!elsewhere.has(figure)) expect(numbers.has(figure)).toBe(false);
+      // Only whole entries of the public plan are served, the rest counted.
+      for (const m of plan.summary.matches) expect(shown.summary.matches).toContainEqual(m);
+      for (const r of plan.summary.ratings) expect(shown.summary.ratings).toContainEqual(r);
+      expect(plan.summary.matches.length + plan.summary.withheldMatches).toBe(shown.summary.matches.length);
+      expect(plan.summary.ratings.length + plan.summary.withheldRatings).toBe(shown.summary.ratings.length);
+      expect(plan.summary.withheldRatings).toBeGreaterThanOrEqual(rows.length);
+      // Its effect travels on, in rating order, to every player a traced one meets: no later match seating a traced
+      // player, and no traced player's row, is served. The public plan lists its changed matches in that order.
+      const traced = new Set(handles);
+      const later = shown.summary.matches.slice(shown.summary.matches.indexOf(entry) + 1);
+      for (const m of later) {
+        const seats = [...m.before.seats, ...m.after.seats];
+        if (seats.some(seat => traced.has(seat))) for (const seat of seats) traced.add(seat);
+      }
+      if (hidden === SOL_MOVES[1]!.replayId) expect(traced.size).toBeGreaterThan(handles.size);
+      for (const r of plan.summary.ratings) expect(traced.has(r.handle)).toBe(false);
+      for (const m of plan.summary.matches) if (later.includes(m)) expect([...m.before.seats, ...m.after.seats].some(seat => traced.has(seat))).toBe(false);
     }
     info.mockRestore();
   });
