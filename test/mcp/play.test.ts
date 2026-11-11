@@ -64,7 +64,7 @@ describe("observe", () => {
     // territoryTiles counts original-size tile area: one fine tile is 1/physicalTileArea of it.
     expect(view.territoryTiles).toBe((unpackTerritory(view.territory).join("").split("#").length - 1) / physicalTileArea(h.game.match!.state.config));
     expect(typeof view.territorySharePermille).toBe("number");
-    expect(view.myMarks).toEqual([{ markId: expect.any(Number), steering: expect.any(Number) }]);
+    expect(view.myMarks).toEqual([{ markId: expect.any(Number), steering: expect.any(Number), tileX: view.marks[0].tileX, tileY: view.marks[0].tileY }]);
     expect(view.myMarks[0].steering).toBe(view.squad.length);
     expect(view.marks.map((m: { words: string[] }) => m.words)).toEqual([["GATHER"]]);
     // All living colony ants grant sight; never the far enemy.

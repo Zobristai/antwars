@@ -47,6 +47,8 @@ export const CELL_PAGING_TEXT = "First: all squad-visible cells, then colony cel
 
 export const ENEMY_QUEENS_TEXT = "view.enemyQueens [{tileX,tileY,hp}]: enemy queens in this reply's cells only, same tick; hp=queenHp milli-HP, absent if cells omit it. Fogged queens never appear.";
 
+export const MY_MARKS_TEXT = "myMarks: every live mark you laid, in or out of smell range, with its tile tileX/tileY; a LINE mark adds its second end toTileX/toTileY.";
+
 export const COMPACT_VIEW_TEXT = "Decode via observe tool. map:true territory: base64-bitset-lsb0; marks/myMarks: columnar-v1.";
 
 /** Rules 27: no colony brood vote, so squad_replaced is the one seat-private notice. */

@@ -306,7 +306,9 @@ reply decoded, with nothing cut:
 
 - one JSON line of the other view fields (tick, colony, order, events, …);
 - `squad`, `queens`, `marks` and `myMarks`, one JSON object per line (packed
-  mark tables are unpacked);
+  mark tables are unpacked). `myMarks` lists every live mark the seat laid,
+  in or out of smell range, each with its tile `tileX`/`tileY`; a LINE mark
+  also carries its second end `toTileX`/`toTileY`;
 - `cells`: every tile the reply carries, per row `y<row>:` then tiles by x.
   `x-x2` is a run of equal food-only tiles, `f<n>` food, `Q<own|enemy><hp>` a
   queen, `:` then the tile's ants, comma-separated as id + caste + hp (`w`

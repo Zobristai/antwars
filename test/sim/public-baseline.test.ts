@@ -65,7 +65,9 @@ const PUBLIC_BASELINE = {
   // wording restores d5a05cecfbb6bc552b6b5f0740c303697b3556c7f6d89cda4785250921e09ecd, so nothing else changed.
   // That clause and the pick_nest sentence now cover a seat not joined in every lobby match; the ranked wording
   // restores f6d789862efa66cf24a070a24999212cba9f4b50715fa61a4f3c918284ad9ac9, so nothing else changed.
-  tools: "592ede74f818dff12b1238528b36f8aefdb39b7e1648386cab8c67498987ae0b",
+  // The observe description names myMarks tileX/tileY and a LINE mark's toTileX/toTileY; without that sentence the
+  // list restores 592ede74f818dff12b1238528b36f8aefdb39b7e1648386cab8c67498987ae0b, so nothing else changed.
+  tools: "ed53b3a477a0a581293f3d0e4ffdf54c799cdaf20bce4edd3754585d1aead6ce",
 };
 
 const sha = (text: string | Uint8Array): string => createHash("sha256").update(text).digest("hex");
