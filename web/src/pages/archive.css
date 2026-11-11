@@ -250,14 +250,16 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 
 /* Waiting, Live now and Recordings (and the landing page's list): one six-column grid in every table (the signed-off rows
    drawing): Time, Game type, a column per colony's players, Status and the button. Every column but the colonies is sized
-   to what it holds, with room to spare around its widest (a date; "Challenge · 1v1"; an UNAVAILABLE or "3 OF 4 SEATS"
-   stamp; the Replay pill), so none is cut or pressed to its column's edges; the two colonies share the rest equally:
-   331 px each in the 1200 px card the pages give them, never less than 259 px, since the table stands only in a card 66rem
-   wide (the stacked rows, below). Waiting has no button: its column stays, empty, so every list's columns line up. */
+   to what it holds, with room to spare around its widest (a date; "Challenge · 1v1", 91 px; an UNAVAILABLE stamp, 99 px;
+   the Replay pill, 75 px, all in Liberation Sans), so none is cut or pressed to its column's edges; the two colonies share
+   the rest equally: 363 px each in the 1200 px card the pages give them, never less than 291 px, since the table stands
+   only in a card 66rem wide (the stacked rows, below). That keeps a builder's whole line on one line in the 1200 px card,
+   as the drawing draws it: "antwarsos-harness GPT-6.1 Terra MEDIUM FAST" and its rating, 341 px. Waiting has no button:
+   its column stays, empty, so every list's columns line up. */
 .d1p-match col.c-start { width: calc(var(--d1p-inset) + 88px); }
-.d1p-match col.c-type { width: calc(var(--d1p-gutter) + 128px); }
-.d1p-match col.c-status { width: calc(var(--d1p-gutter) + 112px); }
-.d1p-match col.c-go { width: calc(var(--d1p-gutter) + 88px + var(--d1p-inset)); }
+.d1p-match col.c-type { width: calc(var(--d1p-gutter) + 100px); }
+.d1p-match col.c-status { width: calc(var(--d1p-gutter) + 106px); }
+.d1p-match col.c-go { width: calc(var(--d1p-gutter) + 82px + var(--d1p-inset)); }
 /* Words hold their column's left edge; badges, stamps and buttons stand on their column's centre, each head with its
    column: Game type and Status, heads and badges, centred; Watch and Replay centred in the button column. */
 .d1p-match :is(th, td):is(.c-type, .c-status, .c-go) { text-align: center; }
