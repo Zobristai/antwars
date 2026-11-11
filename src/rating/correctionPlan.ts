@@ -7,7 +7,7 @@ import type { MountHandler } from "../server.js";
 import { identityDisplay, nameState } from "../identity/retention.js";
 import { publicWaitingName } from "../live/queue-catalog.js";
 import { createWatchRegistry } from "../live/watch-registry.js";
-import { describe, firestoreWrites, verify, type Verification } from "./unrateNeverJoined.js";
+import { CORRECTION_KIND, describe, firestoreWrites, verify, type Verification } from "./unrateNeverJoined.js";
 import {
   EMPTY_RECORD, encodeRating, glickoFields, letterFor, lobbySeats, matchTime, MAX_PAGE_SIZE, NATURAL_OUTCOMES, rateMatch, ratingCollection,
   recordFields, storedRecord, storedState, withResult, type PlayerState, type RatingChange, type RatingRecord, type Winner,
@@ -200,12 +200,28 @@ async function neverJoinedPart(store: Store, v: Verification, names: Map<string,
 export interface NeverJoinedPlan extends Plan { readonly verification: Verification }
 
 /**
- * The never-joined correction alone, its digest over its writes alone; "applied" once its correction record shows it
- * committed (verify's corrected stage, every check passed). Throws (refuses) on any failed check. Reads only.
+ * Whether the never-joined correction is applied, read from what its one transaction wrote and nothing a later match
+ * changes: its correction record names this lobby, its recording and the lobby's run, the lobby is abandoned and unrated,
+ * its watch entry unrated, and its change record gone. The players' rating rows are not read, so either player may have
+ * played since. Reads only.
+ */
+export async function neverJoinedApplied(store: Store): Promise<boolean> {
+  const id = NEVER_JOINED.lobbyId;
+  const paths = [`lobbies/${id}`, `watchMatches/${id}`, `ratedMatches/${id}`, `ratingCorrections/${id}`];
+  const docs = await store.transaction(async read => ({ result: await read(paths), writes: [] }));
+  const [lobby, watch, change, record] = paths.map(path => docs.get(path) ?? null);
+  return !!lobby && !!watch && !!record && change === null && lobby.rated === "false" && lobby.outcome === "abandoned"
+    && watch.rated === "false" && watch.replayId === NEVER_JOINED.replayId && record.kind === CORRECTION_KIND && record.lobbyId === id
+    && record.replayId === NEVER_JOINED.replayId && !!lobby.matchRunId && record.runId === lobby.matchRunId;
+}
+
+/**
+ * The never-joined correction alone, its digest over its writes alone; "applied" once neverJoinedApplied reads it
+ * committed. Throws (refuses) on any failed check. Reads only.
  */
 export async function planNeverJoined(store: Store, recordings: RecordingObjects): Promise<NeverJoinedPlan | "applied"> {
+  if (await neverJoinedApplied(store)) return "applied";
   const v = await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
-  if (v.ok && v.stage === "corrected") return "applied";
   const { writes, matches, ratings } = await neverJoinedPart(store, v, new Map(), Date.now());
   return { writes, summary: { digest: planDigest(writes), matches, ratings }, verification: v };
 }
@@ -226,8 +242,8 @@ export type ApplyOutcome = "applied" | "digest differs" | "changed since planned
  * Before committing, the transaction also checks that both objects are still at those generations, and writes nothing
  * if not. Cloud Storage is not part of the transaction, so an object replaced after that check and before the commit is
  * not detected: the correction is then still the one its record names. The recording itself is never rewritten.
- * The writes create the correction record (ratingCorrections/<lobbyId>), so a later plan reads the correction as
- * applied and writes it once.
+ * The writes create the correction record (ratingCorrections/<lobbyId>): a later plan reads the correction as applied
+ * (neverJoinedApplied), even after either player has played again, so it is written once.
  */
 export async function applyNeverJoined(store: Store, recordings: RecordingObjects, plan: NeverJoinedPlan, digest = NEVER_JOINED_APPLY_DIGEST): Promise<ApplyOutcome> {
   if (plan.summary.digest !== digest) return "digest differs";
@@ -242,15 +258,19 @@ export async function applyNeverJoined(store: Store, recordings: RecordingObject
   });
 }
 
-/** Both corrections, or "applied" while CORRECTION_MARKER exists. Throws (refuses) on any failed check. Reads only. Not run at start. */
+/**
+ * Both corrections, or "applied" while CORRECTION_MARKER exists; an applied never-joined correction is skipped, so the
+ * plan is then the Sol move alone. Throws (refuses) on any failed check. Reads only. Not run at start.
+ */
 export async function planCorrections(store: Store, recordings: RecordingObjects): Promise<Plan | "applied"> {
   if (await store.get(CORRECTION_MARKER) !== null) return "applied";
   const names = new Map<string, string>();
   const at = Date.now();
 
-  // 1. The never-joined lobby.
-  const v = await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
-  const { writes, matches, ratings } = await neverJoinedPart(store, v, names, at);
+  // 1. The never-joined lobby, unless its correction is already applied.
+  const { writes, matches, ratings } = await neverJoinedApplied(store)
+    ? { writes: [] as Write[], matches: [] as PublicPlan["matches"][number][], ratings: [] as PublicPlan["ratings"][number][] }
+    : await neverJoinedPart(store, await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId), names, at);
   const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.

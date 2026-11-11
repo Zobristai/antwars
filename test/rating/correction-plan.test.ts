@@ -454,6 +454,44 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     }
   });
 
+  it("still serves applied, writing nothing, after either player has played another ranked match", async () => {
+    const w = await world();
+    const [info, warn] = quiet();
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    // Each player rated again, in the mode the correction cleared and in another.
+    const opponent = w.ids.get("antwars/kimi-k3")!;
+    await w.store.transaction(read => ratingWrites(read, { matchId: randomUUID(), teams: [[w.users[0]!], [opponent]], winner: "a", mode: "1v1", at: Date.now() }));
+    await w.store.transaction(read => ratingWrites(read, { matchId: randomUUID(), teams: [[w.users[1]!], [opponent]], winner: "b", mode: MODE, at: Date.now() }));
+    const played = await w.snapshot();
+    expect(played[`${ratingCollection("1v1")}/${w.users[0]}`]).not.toBeNull();
+    expect(played[`${ratingCollection(MODE)}/${w.users[1]}`]).not.toBeNull();
+    // The checks alone no longer read the lobby as corrected; the applied correction still is.
+    expect((await verify({ store: w.store, recordings: w.recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId)).ok).toBe(false);
+    expect(await planNeverJoined(w.store, w.recordings)).toBe("applied");
+    const { body } = await started(w.store, w.recordings, plan.summary.digest);
+    expect(body()).toEqual({ state: "applied" });
+    // Their new ratings are kept.
+    expect(await w.snapshot()).toEqual(played);
+    expect(warn).not.toHaveBeenCalled();
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("plans the Sol move alone, touching nothing of the never-joined correction, once that is applied", async () => {
+    const w = await world();
+    const both = await planCorrections(w.store, w.recordings) as Plan;
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    const sol = await planCorrections(w.store, w.recordings) as Plan;
+    const neverJoined = new Set(plan.writes.map(write => write.path));
+    expect(sol.writes.length).toBeGreaterThan(0);
+    expect(sol.writes.filter(write => neverJoined.has(write.path))).toEqual([]);
+    expect(sol.writes).toEqual(both.writes.filter(write => !neverJoined.has(write.path)));
+    expect(sol.summary.matches.map(match => match.match)).not.toContain(NEVER_JOINED.replayId);
+    expect(sol.summary.matches).toEqual(both.summary.matches.filter(match => match.match !== NEVER_JOINED.replayId));
+    expect(sol.summary.digest).toBe(planDigest(sol.writes));
+  });
+
   it("applies once under the matching digest; a second start serves applied and writes nothing", async () => {
     const w = await world();
     const [info, warn] = quiet();
