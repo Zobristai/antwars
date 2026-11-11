@@ -55,10 +55,15 @@ interface MatchState {
   /** Each seat's self-reported model label, where the plan changes them. */
   readonly labels?: Readonly<Record<string, string>>;
 }
-/** Every planned change in public terms: one entry per changed match (by recording id, else public lobby id), one per changed rating row. */
+/**
+ * Every planned change in public terms: one entry per changed public match (by recording id, else public lobby id), one
+ * per changed rating row. A changed match that is not public is planned, digested and applied like any other, but only
+ * counted here: its id, seats and rating changes are not served.
+ */
 export interface PublicPlan {
   readonly digest: string;
   readonly matches: readonly { readonly match: string; readonly startedAt: string; readonly before: MatchState; readonly after: MatchState }[];
+  readonly unlistedMatches: number;
   readonly ratings: readonly { readonly handle: string; readonly mode: string; readonly before: Standing | null; readonly after: Standing | null }[];
 }
 export interface Plan { readonly writes: readonly Write[]; readonly summary: PublicPlan }
@@ -69,7 +74,7 @@ export const REFUSAL_CODES = [
   "unknown-identity", "sol-lobby", "sol-handle", "no-commit-times", "unreadable-lobby", "history-unstable", "no-change-record",
   "no-change-record-time", "moved-seats", "moved-not-rated", "shared-commit-time", "no-glicko-change", "not-reproduced-players",
   "not-reproduced-change", "not-reproduced-rating", "not-reproduced-rd", "not-reproduced-rated-at", "not-reproduced-rated-matches",
-  "not-reproduced-record", "nonpublic-match", "no-row", "store-error", "error",
+  "not-reproduced-record", "no-row", "store-error", "error",
 ] as const;
 export type RefusalCode = typeof REFUSAL_CODES[number];
 export type PlanState = { readonly state: "computing" | "applied" } | { readonly state: "refused"; readonly reason: RefusalCode }
@@ -135,6 +140,12 @@ export function planDigest(writes: readonly Write[]): string {
   });
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
+
+/**
+ * Whether a match is already shown publicly: by its watch entry's visibility, which decides whether its recording goes to
+ * the public listing (live/hub.ts) and is the lobby's kind (live/watch-controller.ts); without one, by the lobby's kind.
+ */
+const shownPublicly = (publicLobby: boolean, watch: Fields | null | undefined) => watch ? watch.visibility === "public" : publicLobby;
 
 interface Lobby {
   readonly id: string; readonly at: number; readonly winner: Winner; readonly seats: readonly { id: string; displayName: string; colony: 0 | 1 }[];
@@ -202,16 +213,16 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     refuse(failed ? NEVER_JOINED_CHECKS[failed.name.split(":")[0]!] ?? "error" : "never-joined-stage",
       `${NEVER_JOINED.lobbyId}: ${v.checks.filter(c => !c.ok).map(c => `${c.name}: ${c.detail}`).join("; ") || `stage ${v.stage}`}`);
   }
-  // The plan is served publicly, so it carries only public matches: one that is not refuses the whole plan.
-  if (v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)?.kind !== "public" || v.snapshot.get(`watchMatches/${NEVER_JOINED.lobbyId}`)?.visibility !== "public") {
-    refuse("nonpublic-match", `lobby ${NEVER_JOINED.lobbyId} is not public`);
-  }
   const writes: Write[] = firestoreWrites(v, new Date());
   for (const id of v.identities) names.set(id, await handle(id));
   const unrated = v.identities.map(id => shown(names.get(id)!));
-  const matches: PublicPlan["matches"][number][] = [{ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
+  // The plan is served publicly, so it shows only public matches (shownPublicly) and counts the others.
+  let unlistedMatches = 0;
+  const matches: PublicPlan["matches"][number][] = [];
+  if (!shownPublicly(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)?.kind === "public", v.snapshot.get(`watchMatches/${NEVER_JOINED.lobbyId}`))) unlistedMatches++;
+  else matches.push({ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
     before: { status: "rated", seats: unrated, ratingChanges: named(JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!)) },
-    after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } }];
+    after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } });
   const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: shown(names.get(id)!), mode: v.mode!,
     before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null }));
 
@@ -323,10 +334,9 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     if (relabelled) writes.push({ op: "update", path: `watchMatches/${lobby.id}`, fields: { modelLabels: JSON.stringify(relabelled) } });
     if (rechanged) writes.push({ op: "update", path: `ratedMatches/${lobby.id}`, fields: { changes } });
     if (!move && !rechanged) continue;
-    // Only a public match is served: a public lobby whose watch entry, if any, is public. It is named by its recording,
-    // or by its lobby id until a recording is published.
+    // A public match is named by its recording, or by its public lobby id until a recording is published.
     const watch = docs.get(`watchMatches/${lobby.id}`);
-    if (!lobby.listed || (watch && watch.visibility !== "public")) refuse("nonpublic-match", `lobby ${lobby.id} is not public`);
+    if (!shownPublicly(lobby.listed, watch)) { unlistedMatches++; continue; }
     const match = watch?.replayId || lobby.id;
     matches.push({ match, startedAt: new Date(lobby.at).toISOString(),
       before: { status: "rated", seats: was.seats.map(seat => shown(seat.displayName)), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels: shownKeys(labels) } : {}) },
@@ -343,7 +353,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     writes.push({ op: "update", path: `${ROWS}/${id}`, fields: updated });
     ratings.push({ handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
   }
-  return { writes, summary: { digest: planDigest(writes), matches, ratings } };
+  return { writes, summary: { digest: planDigest(writes), matches, unlistedMatches, ratings } };
 }
 
 /**

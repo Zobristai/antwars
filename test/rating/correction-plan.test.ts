@@ -302,25 +302,36 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     warn.mockRestore();
   });
 
-  it("refuses rather than serve a match that is not public, even one with a recording id", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    // A moved match and the never-joined match, each with its recording: hidden by its watch entry or by its lobby.
+  it("plans a match that is not shown publicly like any other, and serves only its count", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    // The moved match and the never-joined match, each with its recording, hidden by a private watch entry; a private
+    // lobby kind alone does not hide a match whose watch entry, and so its recording, is public.
     for (const [path, fields, hidden] of [
       [`watchMatches/${SECOND_LOBBY}`, { visibility: "private" }, SOL_MOVES[1]!.replayId],
-      [`lobbies/${SECOND_LOBBY}`, { kind: "private" }, SOL_MOVES[1]!.replayId],
       [`watchMatches/${NEVER_JOINED.lobbyId}`, { visibility: "private" }, NEVER_JOINED.replayId],
-      [`lobbies/${NEVER_JOINED.lobbyId}`, { kind: "private" }, NEVER_JOINED.replayId],
+      [`lobbies/${SECOND_LOBBY}`, { kind: "private" }, null],
     ] as const) {
       const w = await world();
+      const shown = await planCorrections(w.store, w.recordings) as Plan;
+      expect(shown.summary.unlistedMatches).toBe(0);
       await commit(w.store, [{ op: "update", path, fields }]);
-      await expect(planCorrections(w.store, w.recordings)).rejects.toThrow("is not public");
+      const plan = await planCorrections(w.store, w.recordings) as Plan;
+      // The same writes, so the same digest and the same apply.
+      expect(plan.summary.digest).toBe(shown.summary.digest);
+      expect(plan.writes.map(write => write.path)).toEqual(shown.writes.map(write => write.path));
+      expect(plan.summary.ratings).toEqual(shown.summary.ratings);
       const { serve } = startCorrectionPlan(w.store, w.recordings);
-      await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("refused"));
+      await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("planned"));
       const body = served(serve).body;
-      expect(JSON.parse(body)).toEqual({ state: "refused", reason: "nonpublic-match" });
+      if (hidden === null) {
+        expect(plan.summary).toEqual(shown.summary);
+        continue;
+      }
+      expect(plan.summary.unlistedMatches).toBe(1);
+      expect(plan.summary.matches).toEqual(shown.summary.matches.filter(m => m.match !== hidden));
       for (const id of [hidden, SECOND_LOBBY, NEVER_JOINED.lobbyId]) expect(body).not.toContain(id);
     }
-    warn.mockRestore();
+    info.mockRestore();
   });
 
   it("orders by each change record's creation: a later rewrite of a record moves nothing; a shared commit time refuses", async () => {
