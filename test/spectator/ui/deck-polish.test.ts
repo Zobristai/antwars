@@ -37,7 +37,8 @@ describe("deck polish", () => {
     expect(rule(".d1-elo")).toMatch(/flex: none/);
     expect(rule(".d1-elo")).toMatch(/white-space: nowrap/);
     expect(rule(".d1-elo")).not.toMatch(/overflow|text-overflow/);
-    expect(rule(".d1-team-player-elo")).toMatch(/flex: none/);
+    // In the one player's line only the name and model give way; the badges, rating, count and result never do.
+    expect(rule(".d1-team-player > :not(.d1-team-player-name)")).toMatch(/flex: none/);
     expect(rule(".d1-team-player")).not.toMatch(/overflow: hidden/);
   });
 
@@ -58,7 +59,9 @@ describe("deck polish", () => {
   it("keeps a Benchmark name's badges whole beside it, as the Leaderboard's tags", () => {
     expect(rule(".d1-tags")).toMatch(/flex: none/);
     expect(rule(".d1-tag")).toMatch(/white-space: nowrap/);
-    expect(rule(".d1-quiet")).toMatch(/flex: none/);
+    expect(rule(".d1-outcome")).toMatch(/flex: none/);
+    // No quiet thinking level: a level is always a badge.
+    expect(CSS).not.toContain(".d1-quiet");
     // An agent row never cuts a name: it wraps, as the Leaderboard's does, on every width.
     expect(rule(".d1-who")).toMatch(/flex-wrap: wrap/);
     expect(rule(".d1-title")).not.toMatch(/text-overflow|white-space: nowrap/);

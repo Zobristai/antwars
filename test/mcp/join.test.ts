@@ -209,7 +209,7 @@ describe("agent-chosen colony capacity", () => {
       expect(reply.data.agentId).toBeUndefined();
       expect(reply.data.reconnectToken).toBeUndefined();
       expect((await refused.call("observe")).data.error.code).toBe("not_joined");
-      expect(start ? h.game.matchAgents().length : h.game.queuedAgents).toBe(3);
+      expect(start ? h.game.match!.state.agents.length : h.game.queuedAgents).toBe(3);
       expect(h.log).toEqual(beforeLog);
       expect(h.game.match?.state.tick).toBe(beforeTick);
       expect(h.game.pendingInputs).toBe(beforePending);
@@ -225,8 +225,7 @@ describe("agent-chosen colony capacity", () => {
 
   for (const start of [true, false]) {
     it(`counts earlier unnamed and named joins before admitting the next named join (${start ? "same tick" : "pre-match queue"})`, async () => {
-      const tokens: string[] = [];
-      const game = new Game({ simConfig: playable(TEST_CONFIG), mcpConfig: { ...TEST_MCP_CONFIG, maxAgentsPerMatch: 6 }, onTokenIssued: token => tokens.push(token) });
+      const game = new Game({ simConfig: playable(TEST_CONFIG), mcpConfig: { ...TEST_MCP_CONFIG, maxAgentsPerMatch: 6 } });
       if (start) game.startMatch(1);
       // No tick runs until all these requests have been admitted or refused.
       const first = game.join({}); // colony 0 on tie
@@ -234,7 +233,6 @@ describe("agent-chosen colony capacity", () => {
       const third = game.join({ colony: 0 });
       const refusal = await game.join({ colony: 0 });
       expect(refusal).toMatchObject({ agentId: null, token: null, outcome: { kind: "error", code: "colony_full" } });
-      expect(tokens).toHaveLength(3);
       const balanced = game.join({});
       if (!start) {
         expect(game.queuedLineup().map((p) => p.colony)).toEqual([0, 0, 0, 1]);
@@ -243,6 +241,9 @@ describe("agent-chosen colony capacity", () => {
       game.tick();
       const accepted = await Promise.all([first, second, third, balanced]);
       expect(accepted.every((r) => r.agentId !== null)).toBe(true);
+      // Each admitted join was issued its own token; the refusal took none.
+      expect(new Set(accepted.map((r) => r.token)).size).toBe(4);
+      expect(accepted.every((r) => r.token !== null)).toBe(true);
       expect(game.match?.state.agents.map((a) => a.colony)).toEqual([0, 0, 0, 1]);
       expect(game.pendingInputs).toBe(0);
       expect(game.queuedAgents).toBe(0);
@@ -340,7 +341,7 @@ describe("reconnect argument contract", () => {
         expect(back.data.agentId).toBe(target.data.agentId);
         expect(back.data.reconnectToken).toBe(target.data.reconnectToken);
       }
-      expect(start ? h.game.matchAgents().length : h.game.queuedAgents).toBe(2);
+      expect(start ? h.game.match!.state.agents.length : h.game.queuedAgents).toBe(2);
       if (start) expect((await other.agent.call("observe")).data.view.agentId).toBe(target.data.agentId);
     });
   }
@@ -363,7 +364,7 @@ describe("reconnect argument contract", () => {
       expect(reply.isError, reply.text).toBe(true);
       expect(reply.data.error.code).toBe("bad_arguments");
     }
-    expect(h.game.matchAgents()).toHaveLength(1);
+    expect(h.game.match!.state.agents).toHaveLength(1);
     expect((await caller.call("observe")).data.view.agentId).toBe(target.data.agentId);
   });
 
@@ -375,7 +376,7 @@ describe("reconnect argument contract", () => {
     const unknown = Object.fromEntries(names.map(name => [name, { arbitrary: null }]));
     for (const caller of [stranger, target.agent]) {
       for (const args of [unknown, { ...unknown, reconnectToken: target.data.reconnectToken }]) {
-        const before = start ? h.game.matchAgents().length : h.game.queuedAgents;
+        const before = start ? h.game.match!.state.agents.length : h.game.queuedAgents;
         const reply = await caller.call("join", args);
         expect(reply.isError, reply.text).toBe(true);
         expect(reply.data.error.code).toBe("bad_arguments");
@@ -383,7 +384,7 @@ describe("reconnect argument contract", () => {
           for (const name of names) expect(field).toContain(JSON.stringify(name));
           expect(field).not.toContain("names omitted");
         }
-        expect(start ? h.game.matchAgents().length : h.game.queuedAgents).toBe(before);
+        expect(start ? h.game.match!.state.agents.length : h.game.queuedAgents).toBe(before);
       }
     }
     expect((await stranger.call("observe")).data.error.code).toBe("not_joined");
@@ -400,7 +401,7 @@ describe("reconnect argument contract", () => {
     expect(admitted.data.error.code).toBe("bad_arguments");
     expect(admitted.data.error.howToFix).toContain('"misspelled"');
     expect(h.inputsOf(target.data.agentId).at(-1)?.type).toBe("observe");
-    expect(h.game.matchAgents()).toHaveLength(1);
+    expect(h.game.match!.state.agents).toHaveLength(1);
   });
 });
 
@@ -537,7 +538,7 @@ describe("slot server joins", () => {
     expect(rejoined.isError, rejoined.text).toBe(false);
     expect(rejoined.data.agentId).toBe(queued.data.agentId);
     expect(rejoined.data.colony).toBe(LHC);
-    expect(rig.game.matchAgents()).toHaveLength(2);
+    expect(rig.game.match!.state.agents).toHaveLength(2);
   });
 
   it("refuses a keyless join, an unseated or unknown key, and token, reconnectToken or colony by name", async () => {
@@ -553,7 +554,7 @@ describe("slot server joins", () => {
       expect(refused.data.error.code).toBe("bad_arguments");
       expect(refused.data.error.message).toContain(field);
     }
-    expect(rig.game.matchAgents()).toHaveLength(0);
+    expect(rig.game.match!.state.agents).toHaveLength(0);
     const listed = (await agent.client.listTools()).tools;
     const join = listed.find((tool) => tool.name === "join")!;
     expect(Object.keys(join.inputSchema.properties ?? {}).sort()).toEqual(["key", "modelLabel", "seat", "serviceTier", "thinkingLevel"]);
@@ -659,7 +660,7 @@ describe("slot server joins", () => {
       expect(observed.data.winner).not.toBeUndefined();
     }
     expect(rig.game.match!.state.tick).toBe(tick);
-    expect(rig.game.matchAgents()).toHaveLength(1);
+    expect(rig.game.match!.state.agents).toHaveLength(1);
   });
 
   const catSeat = [{ identityId: "cat", displayName: "Cat", colony: 0 as const }];
@@ -696,7 +697,6 @@ describe("slot server joins", () => {
     rig.game.startMatch(2);
     rig.advance(1);
     expect(rig.game.match!.state.agents.map((a) => a.id)).toEqual([cat.data.agentId]);
-    expect(rig.game.matchAgents().map((a) => a.agentId)).toEqual([cat.data.agentId]);
     expect((await bob.call("join", { key: "key-bob" })).data.error.code).toBe("not_seated");
   });
 
@@ -713,8 +713,7 @@ describe("slot server joins", () => {
       rig.game.startMatch(1);
       rig.advance(1);
       expect(rig.game.match!.state.agents.map((a) => a.id)).toEqual([cat.data.agentId]);
-      expect(rig.game.matchAgents().map((a) => a.agentId)).toEqual([cat.data.agentId]);
-      expect(rig.game.queuedLineup()).toEqual([]);
+        expect(rig.game.queuedLineup()).toEqual([]);
       for (const reply of [await ann.call("observe"), await ann.call("order", { kind: "hold" })]) expect(reply.data.error.code).toBe("match_not_played");
     });
   }
@@ -744,8 +743,8 @@ describe("slot server joins", () => {
     rig.game.seatLobby("lobby-1", seats);
     rig.game.startMatch(1);
     const ann = await rig.connect();
-    await ann.call("join", { key: "key-ann" });
-    const waiting = rig.game.call(rig.game.matchAgents()[0]!.agentId, { type: "observe", agentId: rig.game.matchAgents()[0]!.agentId });
+    const joined = await ann.call("join", { key: "key-ann" });
+    const waiting = rig.game.call(joined.data.agentId, { type: "observe", agentId: joined.data.agentId });
     rig.game.endNotPlayed();
     expect(await waiting).toMatchObject({ kind: "error", code: "match_not_played" });
   });

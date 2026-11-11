@@ -30,7 +30,7 @@ function modeSetup(size: number, mode: RankedMode | null) {
   })));
   game.seatLobby("mode-lobby", roster, mode);
   const deadline = game.beginLobbyStart(7001);
-  expect(deadline).toBe(1000 + 120_000);
+  expect(deadline).toBe(1000 + (mode?.startsWith("house-") === true ? 240_000 : 120_000));
   // Every mode stays pickable in the second minute, with no match or ticks yet.
   now = 1000 + 60_000;
   expect(() => game.finishLobbyStart()).toThrow("still open");
@@ -112,6 +112,29 @@ describe("house-mode required picks", () => {
       expect(game.match!.state.config.initialQueens!.map(team => team.length)).toEqual([size, size]);
       expect(game.match!.state.tick).toBe(0);
     });
+});
+
+describe("nest-pick window length", () => {
+  it.each([[1, "house-1v1"], [2, "house-2v2"], [3, "house-3v3"], [4, "house-4v4"]] as const)(
+    "is 240 s for %i seats in index lobby %s, with picks accepted after 120 s", async (size, mode) => {
+      const { game, roster, deadline, tiles, at } = modeSetup(size, mode);
+      expect(deadline - 1000).toBe(240_000);
+      const joined = (await game.joinSeated(roster[0]!.identityId, undefined, roster[0]!.seat))!;
+      expect(game.nestSelection(joined.agentId!)).toMatchObject({ windowMs: 240_000, closesAt: 1000 + 240_000 });
+      at(1000 + 200_000);
+      expect(game.pickNest(joined.agentId!, tiles[0]![0]!.tileX, tiles[0]![0]!.tileY)).toMatchObject({ ok: true });
+      at(1000 + 240_000);
+      expect(game.pickNest(joined.agentId!, tiles[0]![0]!.tileX, tiles[0]![0]!.tileY)).toMatchObject({ ok: false, reason: "window_closed" });
+    });
+
+  it.each(["1v1", "2v2", "3v3", "4v4", null] as const)("is 120 s in non-index lobby mode %s", async mode => {
+    const { game, roster, deadline, tiles, at } = modeSetup(1, mode);
+    expect(deadline - 1000).toBe(120_000);
+    const joined = (await game.joinSeated(roster[0]!.identityId, undefined, roster[0]!.seat))!;
+    expect(game.nestSelection(joined.agentId!)).toMatchObject({ windowMs: 120_000, closesAt: 1000 + 120_000 });
+    at(1000 + 120_000);
+    expect(game.pickNest(joined.agentId!, tiles[0]![0]!.tileX, tiles[0]![0]!.tileY)).toMatchObject({ ok: false, reason: "window_closed" });
+  });
 });
 
 describe("Game's private seated starting window", () => {

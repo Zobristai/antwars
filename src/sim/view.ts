@@ -76,8 +76,9 @@ export interface AgentView {
   readonly cells: readonly ViewCell[];
   /** The colony's marks within smell range of any living ant of the colony. */
   readonly marks: readonly ViewMark[];
-  /** Each of the agent's own live marks with the squad ants following it under follow_trail now. */
-  readonly myMarks: readonly (CountMarkFields & { readonly markId: number; readonly steering: number })[];
+  /** Each of the agent's own live marks, wherever it lies, with the squad ants following it under follow_trail now.
+   * tileX/tileY is the mark's tile; a LINE mark adds its second end as toTileX/toTileY. */
+  readonly myMarks: readonly (CountMarkFields & { readonly markId: number; readonly steering: number; readonly tileX: number; readonly tileY: number; readonly toTileX?: number; readonly toTileY?: number })[];
   /** The colony's own territory: one string per map row, '#' own tile, '.' otherwise. */
   readonly territoryRows: readonly string[];
   /** Original-tile physical area; fine terrain may leave a fractional boundary cell. */
@@ -387,7 +388,8 @@ export function takeView(state: SimState, grid: Grid, agent: Agent, visibility =
     nextCommandTick: agent.lastCommandTick === null ? state.tick : Math.max(state.tick, agent.lastCommandTick + config.commandFloorTicks),
     cells,
     marks,
-    myMarks: state.marks.filter((m) => m.agentId === agent.id).map((m) => ({ markId: m.id, steering: m.steering, ...countOf(state, m, patrol) })),
+    myMarks: state.marks.filter((m) => m.agentId === agent.id).map((m) => ({ markId: m.id, steering: m.steering, tileX: m.tileX, tileY: m.tileY,
+      ...(m.toTileX === undefined || m.toTileY === undefined ? {} : { toTileX: m.toTileX, toTileY: m.toTileY }), ...countOf(state, m, patrol) })),
     territoryRows: rows,
     territoryTiles: own / physicalTileArea(config),
     territorySharePermille: Math.trunc((own * 1000) / (config.mapWidth * config.mapHeight)),

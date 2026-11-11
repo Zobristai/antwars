@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { startServer } from "../../src/server.ts";
-import { logLines, matchLogs, tempDir } from "../server/helpers.ts";
+import { comparison, logLines, matchLogs, startComparisonMatch, tempDir } from "../server/helpers.ts";
 import { describe, expect, it } from "vitest";
 import { headerLine, replay, stateHash } from "../../src/sim/log.ts";
 import { HISTORICAL_CONFIG } from "../sim/fixtures.ts";
@@ -20,13 +20,13 @@ describe("recording writer compatibility", () => {
   it("keeps queen-founding rules output byte-for-byte identical to the pinned writer output", () => {
     // This pin belongs to the pre-terrain queen-founding rules, not today's public map pool.
     // Every match plays at grid scale 2, so the pin is this
-    // writer's grid-scale-2 output. The reference-grid pin from main 7690c1563aa462b8bf4438b09ff008a49f11e94a's writer
+    // writer's grid-scale-2 output, re-pinned when opening food within the start ants' sight moved to their fine row. The reference-grid pin from main 7690c1563aa462b8bf4438b09ff008a49f11e94a's writer
     // was 106825 bytes, fc9053014935e5d33aa889d04fffc307db7261189b83de668ce15ae650718c30.
     const config = playable({ ...PUBLIC_CONFIG, terrain: undefined, matchTicks: 200 });
     const { lines } = playScripted({ seed: 17, config, agents: 2, ticks: 200 });
     const bytes = packMessages(recordLog(lines));
-    expect(bytes.length).toBe(120524);
-    expect(sha256(bytes)).toBe("3fb804b864ec578c0c914124bf3e86be674e87313ca43008931fa05c1b299631");
+    expect(bytes.length).toBe(120303);
+    expect(sha256(bytes)).toBe("55f8923277c56bb9ab41da2e47d5186866bb9602bfe12e710741fb2169dcad2b");
   });
 
   it("every new header and ordinary live/scripted recording names ant115", () => {
@@ -37,10 +37,10 @@ describe("recording writer compatibility", () => {
 
   it("the actual server writes ant115 on every newly started ordinary live log", async () => {
     const dataDir = tempDir();
-    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "held",
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(0),
       simConfig: playable({ ...HISTORICAL_CONFIG, matchTicks: 2 }), seed: 141 });
     try {
-      server.startMatch();
+      await startComparisonMatch(server, 0);
       const paths = [...matchLogs(dataDir).values()];
       expect(paths).toHaveLength(1);
       expect(JSON.parse(logLines(paths[0]!)[0]!).holdBehaviour).toBe("ant115");

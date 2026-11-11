@@ -212,11 +212,13 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // -> located slot only."; REJOIN_GUIDANCE still says it); undoing both restores 55a6a96c… and 125aa19c….
   // Repinned for that pointer reading "Or wait for done on your waitUrl (SSE; see join_queue)."; the previous pointer
   // restores 458f680a… and 0967acce….
+  // Repinned for the lobby line "Matched: nest-pick window 4 min in index matches, 2 min in other matches;";
+  // "Matched: 2 min to pick a nest;" restores d540dc30… and ed113dd0…, so nothing else changed.
   // Join briefing repinned for its same-tick ending reading "(queens killed)" under queen HP, where overrun never
-  // happens; "(double overrun/queens killed)" restores ed113dd0…. The briefing pin is unchanged.
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d540dc30f8d1be66d098e28983fc5c38cf1a4620648fd7dec6559a4361c7a095");
+  // happens; "(double overrun/queens killed)" restores 90f117d0…. The briefing pin is unchanged.
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("125a603619c2a9a679daa482f4ee14d0aa4711e185a3a225d16c4cb86171e7c4");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("71a716207584753203e28736f16d9f21d6eed4a08853a848076064e89efa6f53");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("3cc5518fa86bd614b81d8899cac1347710961e8463a1ad51a16e34b9aa840eec");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -239,5 +241,7 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // 9178696b…, so nothing else changed.
   // Repinned for the ranked never-joined sentence in the pick_nest description; without it the list hashes to 04514aa7….
   // Repinned again for that sentence and the idle rule covering every lobby match; the ranked wording restores 136b9e88….
-  expect(sha(JSON.stringify(tools))).toBe("1c3d5dff3cc9d01c112f84175f119e792d026d1b0dde0aa602523cd733952b55");
+  // Repinned for the myMarks tile and LINE second-end sentence in the observe description; without it the list
+  // hashes to 1c3d5dff….
+  expect(sha(JSON.stringify(tools))).toBe("19395f13ae77952ab3ba6cb99a67f84a7e19522052fff6b729e2635e842f591d");
 });

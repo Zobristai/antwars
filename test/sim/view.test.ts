@@ -102,6 +102,43 @@ describe("the agent's view", () => {
     expect(enemy!.marks.map(mark => mark.markId)).toEqual([5]);
   });
 
+  it("gives each agent the tile of every mark it laid, in or out of smell range, both ends of a line, and no enemy mark", () => {
+    const s = send(emptyMatch(0, { ...DEFAULT_CONFIG, sightTiles: 2, smellTiles: 3 }), [
+      { type: "join", agentId: "a", placement: 0 },
+      { type: "join", agentId: "mate", placement: 0 },
+      { type: "join", agentId: "enemy", placement: 1 },
+    ]).state;
+    s.food.fill(0);
+    addAnt(s, 0, 20, 20, { squad: "a" });
+    addAnt(s, 1, 80, 60, { squad: "enemy" });
+    const near = { id: 1, agentId: "a", colony: 0 as const, tileX: 21, tileY: 20, words: ["FOOD" as const], laidTick: 0, steering: 0 };
+    const far = { id: 2, agentId: "a", colony: 0 as const, tileX: 60, tileY: 10, words: ["HELP" as const], laidTick: 0, steering: 0 };
+    const line = { id: 3, agentId: "a", colony: 0 as const, tileX: 40, tileY: 40, toTileX: 40, toTileY: 50, words: [], verb: "LINE" as const, count: 2, laidTick: 0, steering: 0 };
+    const mates = { id: 4, agentId: "mate", colony: 0 as const, tileX: 22, tileY: 20, words: ["HOLD" as const], laidTick: 0, steering: 0 };
+    const enemyNear = { id: 5, agentId: "enemy", colony: 1 as const, tileX: 20, tileY: 21, toTileX: 20, toTileY: 23, words: [], verb: "LINE" as const, count: 1, laidTick: 0, steering: 0 };
+    const enemyFar = { id: 6, agentId: "enemy", colony: 1 as const, tileX: 81, tileY: 60, words: ["ATTACK" as const], laidTick: 0, steering: 0 };
+    s.marks = [near, far, line, mates, enemyNear, enemyFar];
+    const [a, , enemy] = s.agents.map(agent => takeView(s, buildGrid(s), agent));
+
+    // Smell range is unchanged: only the near colony marks are in marks, the far own mark is not.
+    expect(a!.marks.map(mark => mark.markId)).toEqual([1, 4]);
+    expect(a!.myMarks.map(({ markId, tileX, tileY, toTileX, toTileY }) => ({ markId, tileX, tileY, toTileX, toTileY }))).toEqual([
+      { markId: 1, tileX: 21, tileY: 20, toTileX: undefined, toTileY: undefined },
+      { markId: 2, tileX: 60, tileY: 10, toTileX: undefined, toTileY: undefined },
+      { markId: 3, tileX: 40, tileY: 40, toTileX: 40, toTileY: 50 },
+    ]);
+    expect(a!.myMarks[0]).not.toHaveProperty("toTileX");
+    expect(a!.myMarks[2]).toMatchObject({ verb: "LINE", count: 2 });
+    // The enemy's marks, near or far, reach no field of the view; the enemy sees only its own.
+    const text = JSON.stringify({ marks: a!.marks, myMarks: a!.myMarks, events: a!.events });
+    for (const id of [5, 6]) expect(text).not.toContain(`"markId":${id}`);
+    expect(enemy!.marks.map(mark => mark.markId)).toEqual([6]);
+    expect(enemy!.myMarks.map(({ markId, tileX, tileY, toTileX, toTileY }) => ({ markId, tileX, tileY, toTileX, toTileY }))).toEqual([
+      { markId: 5, tileX: 20, tileY: 21, toTileX: 20, toTileY: 23 },
+      { markId: 6, tileX: 81, tileY: 60, toTileX: undefined, toTileY: undefined },
+    ]);
+  });
+
   it("does not retain ground or marks after the last living colony ant leaves, but keeps already sighted events", () => {
     const s = send(emptyMatch(), [{ type: "join", agentId: "a", colony: 0 }]).state;
     s.food.fill(0);

@@ -15,7 +15,7 @@ import type { Identities } from "./identity/identities.js";
 import type { SpectatorSave } from "./live/handover.js";
 import { COUNTDOWN_MS, SLOT, type Lobbies } from "./lobby/lobbies.js";
 import type { McpConfig } from "./mcp/config.js";
-import { failureSummary, Game, type LobbySeat, type MatchAgent, type QueuedPlacement } from "./mcp/game.js";
+import { failureSummary, Game, type LobbySeat } from "./mcp/game.js";
 import { createMcpHandler } from "./mcp/http.js";
 import { registerMatchLocator } from "./mcp/tools.js";
 import { createOperatorHandler } from "./operator.js";
@@ -25,12 +25,12 @@ import { newMatchConfig } from "./sim/gridScale.js";
 import { FoodLayoutError } from "./sim/foodLayout.js";
 import type { SimState, StepOutput } from "./sim/types.js";
 import { median, percentile, TickStretches, type TickStretch } from "./tickStats.js";
-import { checkModeOptions, selectMode, type MatchCore } from "./server/modes.js";
+import { selectMode, type MatchCore } from "./server/modes.js";
 import { routeTable } from "./server/routes.js";
 import { slotAccess } from "./server/slotMode.js";
 import { SLOT_POLL_MS } from "./slots/slotServer.js";
 
-export { isEntryPoint, MATCH_BREAK_MS } from "./server/modes.js";
+export { isEntryPoint } from "./server/modes.js";
 export { SLOT_READY_PATH } from "./server/slotMode.js";
 
 /** Finished match logs kept in the data directory; the oldest go when a new match starts. */
@@ -87,23 +87,19 @@ export interface ServerOptions {
   /** Interface to listen on; all interfaces when omitted. */
   readonly host?: string;
   /**
-   * Omitted: a non-playing entry point, unless this is a slot or explicit scheduled harness.
-   * Private harnesses: "immediate" starts once, "held" starts once on request.
+   * Omitted: a non-playing entry point, unless this is a slot. "held": the comparison run,
+   * whose one match is held at the expectedPlayers join barrier.
    */
-  readonly match?: "immediate" | "held";
-  /** Existing private scheduling harness only. Not read from the public deployment environment. */
-  readonly breakMs?: number;
+  readonly match?: "held";
   /** Slot operator bearer credential; unset/blank disables HTTP controls. */
   readonly operatorToken?: string;
   /** Hands finished matches' inputs to the record service; shutdown drains it. */
   readonly recordHandoff?: RecordHandoff;
   readonly simConfig?: SimConfig;
-  /** Explicit test configuration only. Production startup omits it and retains the 120-second window. */
+  /** Explicit test configuration only. Production startup omits it and keeps the per-lobby window: 240 s in index matches, 120 s otherwise. */
   readonly startPickWindowMs?: number;
   readonly mcpConfig?: McpConfig;
   readonly maxMatchLogs?: number;
-  /** Called with each reconnect token the game issues (playtest redaction). */
-  readonly onTokenIssued?: (token: string) => void;
   readonly feed?: MatchFeed;
   /** Opt-in test/diagnostic observer. Omitted: no timing calls, samples, logging or extra timers. */
   readonly onTickTiming?: (sample: TickTiming) => void;
@@ -174,14 +170,6 @@ export const MATCH_LOG_PREFIX = "ANTWAR_MATCH_LOG";
 export interface GameServer {
   readonly port: number;
   readonly game: LiveGame;
-  /** Release a private held match; the entry point cannot start matches. */
-  startMatch(): void;
-  /** End a slot match synchronously, including pending calls and its normal final feed. */
-  stopMatch(): void;
-  /** Where each agent queued for the next match will be placed, with its seat key. */
-  queuedLineup(): QueuedPlacement[];
-  /** The current match's agents, each with whether an answer to it has carried the result. */
-  matchAgents(): MatchAgent[];
   /** Serve requests under prefix ("/" or "/name", no trailing slash) on this port; /mcp always goes to MCP and the longest matching prefix wins. */
   mount(prefix: string, handler: MountHandler): void;
   close(): Promise<void>;
@@ -221,10 +209,9 @@ function cause(err: unknown): string {
  * one HTTP port serving /mcp and mounted routes, matches ticked in real time,
  * and one append-only JSONL log per match in the data directory. The common
  * tick and route core lives here; each deployment mode's wiring (entry,
- * harness, comparison, slot) is one mode object composed with it.
+ * comparison, slot) is one mode object composed with it.
  */
 export async function startServer(options: ServerOptions): Promise<GameServer> {
-  checkModeOptions(options);
   const { dataDir } = options;
   const maxLogs = options.maxMatchLogs ?? MAX_MATCH_LOGS;
   mkdirSync(dataDir, { recursive: true });
@@ -277,10 +264,9 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
     ...(options.mcpConfig === undefined ? {} : { mcpConfig: options.mcpConfig }),
     onLogLine: writeLogLine,
     onReply: recordReplyLine,
-    ...(options.onTokenIssued === undefined ? {} : { onTokenIssued: options.onTokenIssued }),
     ...(options.slot === undefined ? {} : { slot: slotAccess(options.slot) }),
   });
-  /** The current match's pending tick, break or start-window timer. */
+  /** The current match's pending tick or start-window timer. */
   let timer: NodeJS.Timeout | null = null;
   /** True once close() has begun: a self-probe failing then is this server shutting down, not unreachable. */
   let closing = false;
@@ -400,17 +386,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
     report.log(`antwar match ${match.seq} tick report: ${JSON.stringify(figures)}`);
   }
 
-  const running = () => game.match !== null && game.match.result === null;
-  const operator = createOperatorHandler(mode.operator.token, {
-    running,
-    start: () => {
-      mode.startMatch();
-      // dispatch contains this error and answers 500, not a false "Match started".
-      if (!running()) throw new Error("Food layout prevented match start");
-    },
-    stop: () => mode.stopMatch(),
-    ...(mode.operator.startRefusal === undefined ? {} : { startRefusal: mode.operator.startRefusal }),
-  });
+  const operator = createOperatorHandler(mode.operator);
 
   /** Starts match seq's log file, after pruning the oldest finished logs; returns its name. */
   function openLog(seq: number): string {
@@ -597,10 +573,6 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
   return {
     port: (server.address() as AddressInfo).port,
     game,
-    startMatch: () => mode.startMatch(),
-    stopMatch: () => mode.stopMatch(),
-    queuedLineup: () => game.queuedLineup(),
-    matchAgents: () => game.matchAgents(),
     mount(prefix, mountHandler) {
       mounts.push({ prefix, handler: mountHandler });
       mounts.sort((a, b) => b.prefix.length - a.prefix.length);

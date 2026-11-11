@@ -2,7 +2,9 @@
 // the Leaderboard, Matches' Live now and its Recordings all draw a name, its level/Fast
 // badges and, where shown, its rating through here, each place keeping its own other fields. No page keeps its own copy.
 import { h } from "../ui/dom.ts";
-import { PROVISIONAL_WORD, eloText, provisional, rdText, type NameParts } from "./model.ts";
+import type { LeaderboardRow } from "../leaderboard.ts";
+import { benchmarkLabel } from "../leaderboard-page/view.ts";
+import { PROVISIONAL_WORD, eloText, provisional, rdText, seatModelName, type NameParts } from "./model.ts";
 
 /** How a rating looks wherever one is shown: "number" is the Leaderboard's bold figure then "± RD"; "badge" is the in-match
  * cyan badge (deck.css `.d1-tag.d1-elo`) showing the figure alone, its "± RD" on hover, tap or focus.
@@ -27,6 +29,22 @@ export function nameNodes(doc: Document, parts: ShownName): Node[] {
   }
   if (parts.quiet) nodes.push(h(doc, "span", "d1p-think", parts.quiet));
   return nodes;
+}
+
+/** A Leaderboard builder row's name as a Matches player line reads a builder (matches.ts livePlayers): the username, then
+ * the model from its latest rated match (seatModelName; none where the label only repeats the username) and that match's
+ * level and Fast badges, only with a model; a builder that named no model shows its username alone. The username and model
+ * are one span, so the badges stay one unit after them as on every other row. */
+export function builderNameNodes(doc: Document, row: Pick<LeaderboardRow, "displayName" | "model" | "thinkingLevel" | "serviceTier">): Node[] {
+  const name = h(doc, "span", undefined, row.displayName);
+  const named = row.model ? seatModelName(row.model, row.displayName) : null;
+  if (named === null || named === row.displayName) return [name];
+  name.append(" ", h(doc, "span", "d1p-mname", named));
+  const badges = benchmarkLabel({ displayName: "", thinkingLevel: row.thinkingLevel ?? null, serviceTier: row.serviceTier ?? null }).badges;
+  if (badges.length === 0) return [name];
+  const tags = h(doc, "span", "d1p-tags");
+  tags.append(...badges.map(badge => h(doc, "span", "d1p-tag", badge)));
+  return [name, tags];
 }
 
 /** The rating in whole points, then ± its RD, then below 10 rated matches the plain word "provisional". */

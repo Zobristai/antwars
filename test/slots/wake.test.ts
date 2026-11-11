@@ -270,7 +270,7 @@ describe("GET /wake", () => {
   });
 
   it("is answered 204 with no body by every server; another method is refused", async () => {
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", mcpConfig: TEST_MCP_CONFIG });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", expectedPlayers: 2, mcpConfig: TEST_MCP_CONFIG });
     server.mount("/", (_req, res) => void res.end("page"));
     const woken = await fetch(`http://127.0.0.1:${server.port}/wake`);
     expect(woken.status).toBe(204);

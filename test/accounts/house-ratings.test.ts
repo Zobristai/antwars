@@ -73,7 +73,7 @@ describe.skipIf(!host)("house ratings by size through the rating and leaderboard
       lobbies: createLobbies(store, identities, { publicSlots: 1, privateSlots: 1, countdownMs: 60_000 }),
     };
     const server = await startServer({
-      port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores,
+      port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores,
     });
     servers.push(server);
     const transports: readonly Call[] = [await mcp(server.port), http(server.port)];

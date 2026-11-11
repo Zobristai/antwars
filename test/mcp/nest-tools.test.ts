@@ -9,7 +9,7 @@ import { PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { isRockTile, isWaterTile } from "../../src/sim/terrain.js";
-import { startBoxes } from "../../src/sim/startPlacement.js";
+import { MissingStartPicksError, startBoxes } from "../../src/sim/startPlacement.js";
 import { TEST_MCP_CONFIG } from "./harness.js";
 import { playable } from "../playable.ts";
 
@@ -57,8 +57,8 @@ describe("authenticated lobby nest MCP tools", () => {
     game.beginLobbyStart(7001);
     const oldSeat = await connect(game), outsider = await connect(game);
     await oldSeat.call("join", { key: "left-0-secret" });
-    clock.now = 120_000;
-    expect(() => game.finishLobbyStart()).toThrow();
+    clock.now = 240_000;
+    expect(() => game.finishLobbyStart()).toThrow(MissingStartPicksError);
     game.endNotPlayed();
     expect((await oldSeat.call("pick_nest", { tileX: 8, tileY: 24 })).data.error.code).toBe("match_not_played");
     game.seatLobby("next-lobby", seats);
@@ -109,24 +109,28 @@ describe("authenticated lobby nest MCP tools", () => {
   });
 
   it("tells house seats that every pick is mandatory in join, observe, rules and tool guidance", async () => {
-    const { game } = setup();
+    const { game, clock } = setup();
     game.seatLobby("house-lobby", seats, "house-4v4");
     game.beginLobbyStart(7001);
     const left = await connect(game);
     const tools = await left.client.listTools();
-    expect(tools.tools.find(tool => tool.name === "pick_nest")!.description).toContain("120-second window");
+    expect(tools.tools.find(tool => tool.name === "pick_nest")!.description).toContain("fixed window: 240 seconds in index matches (house-1v1 to house-4v4), 120 seconds in other matches.");
     expect(tools.tools.find(tool => tool.name === "pick_nest")!.description).toMatch(/In index matches every seat must pick or the match is not played, with no rating change/i);
     for (const [name, args] of [["join", { key: "left-0-secret" }], ["observe", {}], ["rules", {}]] as const) {
       const reply = await left.call(name, args);
       expect(reply.data.nestSelection.required).toBe(true);
       if (name === "join") expect(reply.data.briefing).toContain("If your nest window is open, call pick_nest first, then read rules.");
-      expect(reply.data.nestSelection.rules).toContain("120-second window");
+      expect(reply.data.nestSelection.rules).toContain("No ticks run in this 240-second window.");
       expect(reply.data.nestSelection.rules).toContain("outsiders see finalized nests on the feed or through normal ant sight after play starts");
       expect(reply.data.nestSelection.rules).not.toContain("delayed feed");
       expect(reply.data.nestSelection.rules).toMatch(/In index matches every seat must pick before closesAt/i);
       expect(reply.data.nestSelection.rules).toMatch(/any missing pick ends the match as not played, with no rating change and no default nests/i);
       expect(reply.data.nestSelection.rules).not.toContain("Unpicked seats get distinct legal defaults");
     }
+    clock.now = 240_000;
+    const closed = await left.call("pick_nest", { tileX: 8, tileY: 24 });
+    expect(closed.data.error.code).toBe("nest_window_closed");
+    expect(closed.data.error.howToFix).toContain("Picks are accepted only during your lobby's 240-second window");
   });
   it.each(["4v4", null] as const)("keeps delayed-feed wording for non-house mode %s", async mode => {
     const { game } = setup();
@@ -137,6 +141,7 @@ describe("authenticated lobby nest MCP tools", () => {
       const reply = await agent.call(name, args);
       expect(reply.data.nestSelection.required).toBe(false);
       expect(reply.data.nestSelection.rules).toContain("outsiders see finalized nests on the delayed feed or through normal ant sight after play starts");
+      expect(reply.data.nestSelection.rules).toContain("No ticks run in this 120-second window.");
     }
     expect((await agent.client.listTools()).tools.find(tool => tool.name === "pick_nest")!.description)
       .toContain("In every match a seat that has not joined the match by the idle limit, counted from match start, or by an earlier end, ends it abandoned, with no rating change.");

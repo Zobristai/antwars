@@ -14,7 +14,7 @@ import { GAME_SAVE_FORMAT, type GameSave, type SavedAgentRecord, type StartGameS
 import { finishedStart, LobbyStart, type FinishedStart } from "./lobbyStart.js";
 import type { RankedMode } from "../rating/ratings.js";
 import { captureCells, cellOffset, type CellSnapshot } from "./cellPages.js";
-import { START_PICK_WINDOW_MS, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
+import { startPickWindowMsFor, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
 import { agentsPerColony, DEFAULT_MCP_CONFIG, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { keepsStub, replyLine, stubLine, STUBS_PER_WINDOW, textLine, type ReplyEntry, type StubCall } from "../replays/recording.js";
 import type { ServedText } from "./replies.js";
@@ -115,6 +115,8 @@ export type Outcome = (
 export interface NestSelection {
   /** Every seat must pick in house modes; no missing seat receives a default. */
   readonly required: boolean;
+  /** This lobby's window length in ms: 240 s in index matches, 120 s otherwise. */
+  readonly windowMs: number;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly closesAt: number;
   readonly terrain?: StartTerrain;
@@ -168,7 +170,7 @@ export interface QueuedPlacement {
 export interface GameOptions {
   /** Config for matches started without one, and for briefings before a match starts. */
   readonly simConfig?: SimConfig;
-  /** Explicit test-only duration; omission keeps the production 120-second pick window. */
+  /** Explicit test-only duration; omission keeps the production pick window: 240 s in index matches, 120 s otherwise. */
   readonly startPickWindowMs?: number;
   /**
    * How long a seated seat waits before its nest pick opens on a slot server: the lobby countdown plus one slot poll
@@ -188,19 +190,8 @@ export interface GameOptions {
    * source of replies. Never the match log: a reply line is not a simulation input.
    */
   readonly onReply?: (seq: number, line: string) => void;
-  /** Called with each reconnect token as it is issued (playtest redaction). */
-  readonly onTokenIssued?: (token: string) => void;
   /** Set only on a slot server: joins are by lobby key, never by token or colony. */
   readonly slot?: SlotAccess;
-}
-
-/** One agent of the current match and whether any answer it got has carried the match result. */
-export interface MatchAgent {
-  readonly agentId: string;
-  /** The lobby seat key it joined with; null for a join without a seat. */
-  readonly key: string | null;
-  readonly displayName: string | null;
-  readonly sawResult: boolean;
 }
 
 /**
@@ -261,8 +252,6 @@ interface AgentRecord {
   readonly colony: ColonyId | undefined;
   readonly seat: LineupSeat | null;
   callTimes: number[];
-  /** True once an answer to this agent carried its match's result. */
-  sawResult: boolean;
   /** Sessions keep only this receipt, not a retired record's events or match state. */
   readonly finalResult: { result: MatchResult | null; notPlayed?: true };
   /** Slot servers: the lobby and seat key this seat belongs to, its rejoin key. */
@@ -326,23 +315,17 @@ export class Game {
   private readonly heldStubs = new Map<string, { readonly seq: number; kept: number[]; omitted: number; last: StubCall | null; held: number }>();
   /**
    * Per seat, how many full entries it has recorded before its match began: at
-   * most preMatchFullEntries, the slot pre-match allowance, so a stuck start or a harness waiting on a manual start
+   * most preMatchFullEntries, the slot pre-match allowance, so a stuck start or a held start waiting on its players
    * cannot grow the record; calls beyond it are stubs.
    */
   private readonly heldFull = new Map<string, { readonly seq: number; count: number }>();
-  /** The pre-match allowance of full entries: the recording budget's rate over the countdown, a poll and the nest pick. */
-  private readonly preMatchFullEntries: number;
-  /**
-   * The pre-match bound on held stubs: the stub rule's rate (STUBS_PER_WINDOW a second) over the same period, so a stuck
-   * or held start holds a fixed number of stubs and the calls past it only raise the closing stub's omitted count.
-   */
-  private readonly preMatchStubs: number;
+  /** The countdown plus one slot poll before a seat's nest pick opens; with the lobby's window, its pre-match period. */
+  private readonly preStartMs: number;
   private replyFailureReported = false;
   /** Per seat, the answer times of its calls recorded in full in the last second: its recording budget (recordsInFull). */
   private readonly recordedTimes = new Map<string, number[]>();
   /** Per match seq: the digests of the served texts already handed to its recording or held for it. */
   private textsSent = new Map<number, Set<string>>();
-  private readonly onTokenIssued: (token: string) => void;
   private current: Match | null = null;
   private previous: Match | null = null;
   /** The tick the live match stopped at for a handover save (stopForSave); it never advances on this server again. */
@@ -408,13 +391,10 @@ export class Game {
     this.houseIdleSeconds = houseIdleSecondsOf(this.mcpConfig);
     this.now = options.now ?? Date.now;
     this.startPickWindowMs = options.startPickWindowMs;
-    const preMatchMs = (options.preStartMs ?? 0) + (options.startPickWindowMs ?? START_PICK_WINDOW_MS);
-    this.preMatchFullEntries = Math.floor(this.mcpConfig.callsPerSecond * preMatchMs / 1000);
-    this.preMatchStubs = Math.floor(STUBS_PER_WINDOW * preMatchMs / 1000);
+    this.preStartMs = options.preStartMs ?? 0;
     this.onLogLine = options.onLogLine ?? (() => {});
     this.onInputQueued = options.onInputQueued ?? (() => {});
     this.onReply = options.onReply ?? (() => {});
-    this.onTokenIssued = options.onTokenIssued ?? (() => {});
     this.slot = options.slot;
   }
 
@@ -450,10 +430,15 @@ export class Game {
     if (this.starting !== null) throw new Error("Lobby pick window already open");
     // Picks are per seat: the starting roster is keyed by seat key, never by identity.
     const roster = [...this.lobby.seats].map(([key, seat]) => ({ identityId: key, colony: seat.colony }));
-    const window = new LobbyStart(seed, this.undrawnConfig, roster, this.now(), this.startPickWindowMs, this.lobby.mode?.startsWith("house-") === true);
+    const window = new LobbyStart(seed, this.undrawnConfig, roster, this.now(), this.nestWindowMs(), this.lobby.mode?.startsWith("house-") === true);
     this.starting = { seed, window };
     this.setNextStart({ kind: "scheduled", at: new Date(window.closesAt) });
     return window.closesAt;
+  }
+
+  /** The seated lobby's nest-pick window length: the test override, else 240 s in index matches and 120 s otherwise. */
+  nestWindowMs(): number {
+    return this.startPickWindowMs ?? startPickWindowMsFor(this.lobby?.mode?.startsWith("house-") === true);
   }
 
   /** Finalization is atomic; a premature call leaves every pick intact. */
@@ -472,7 +457,7 @@ export class Game {
     if (rec === undefined || rec.finalResult.notPlayed || rec.seat === null || this.lobby === null
       || rec.seatKey !== `${this.lobby.id}/${rec.seat.key}` || this.starting === null) return null;
     const view = this.starting.window.teamView(rec.seat.key, includeTerrain && this.now() < this.starting.window.closesAt);
-    return view === null ? null : { required: this.lobby.mode?.startsWith("house-") === true, box: view.box, closesAt: view.closesAt,
+    return view === null ? null : { required: this.lobby.mode?.startsWith("house-") === true, windowMs: this.nestWindowMs(), box: view.box, closesAt: view.closesAt,
       ...(view.terrain === undefined ? {} : { terrain: view.terrain }), picks: view.picks.map(pick => ({
       displayName: this.seatName(this.lobby!.seats.get(pick.identityId)!), mine: pick.identityId === rec.seat!.key,
       tileX: pick.tileX, tileY: pick.tileY,
@@ -579,7 +564,6 @@ export class Game {
     });
     this.bySeat.set(seatKey, rec);
     const outcome: Outcome = live ? await this.submit(this.current!, this.seatJoinInput(rec)) : { kind: "queued", nextStart: this.next };
-    this.noteResult(rec.agentId, outcome);
     return { agentId: rec.agentId, token: null, config: this.configFor(rec), outcome };
   }
 
@@ -654,15 +638,6 @@ export class Game {
     this.next = next;
   }
 
-  /** Agents joined for the next match and waiting for it to start. */
-  /** The agents of the current match (running or ended), each with whether it has seen the result. */
-  matchAgents(): MatchAgent[] {
-    const seq = this.current?.seq;
-    return [...this.records.values()]
-      .filter((rec) => seq !== undefined && this.joinsAt(rec, seq))
-      .map((rec) => ({ agentId: rec.agentId, key: rec.seat?.key ?? null, displayName: rec.displayName, sawResult: rec.sawResult }));
-  }
-
   /** The colonies whose lobby seat never joined the current match, when that ended it abandoned; otherwise none. */
   matchAbsentColonies(): readonly ColonyId[] {
     return this.current?.state.result?.reason === "abandoned" ? this.current.absentColonies ?? [] : [];
@@ -702,6 +677,7 @@ export class Game {
     return labels;
   }
 
+  /** Agents joined for the next match and waiting for it to start. */
   get queuedAgents(): number {
     const seq = this.current?.seq ?? 0;
     let count = 0;
@@ -1047,7 +1023,6 @@ export class Game {
     }
     const rec = this.newRecord(seq, { displayName: req.displayName ?? null, modelLabel: req.modelLabel ?? null, thinkingLevel: req.thinkingLevel ?? null, serviceTier: null, colony: req.colony, seat: null, seatKey: null, identityId: null });
     const outcome: Outcome = live ? await this.submit(this.current!, joinInput(rec)) : { kind: "queued", nextStart: this.next };
-    this.noteResult(rec.agentId, outcome);
     return { agentId: rec.agentId, token: rec.token, config: this.configFor(rec), outcome };
   }
 
@@ -1062,7 +1037,6 @@ export class Game {
       houseMatch: fields.seatKey !== null && this.lobby?.mode?.startsWith("house-") === true,
       ...fields,
       callTimes: [this.now()],
-      sawResult: false,
       finalResult: { result: null },
       events: [],
       lastSquad: null,
@@ -1075,8 +1049,6 @@ export class Game {
     };
     this.records.set(rec.agentId, rec);
     this.byToken.set(rec.token, rec);
-    // Slot-server seats rejoin by key; their internal token is never issued.
-    if (rec.seatKey === null) this.onTokenIssued(rec.token);
     return rec;
   }
 
@@ -1106,9 +1078,7 @@ export class Game {
    * With an identity, the call's reply is remembered under its call id if the match applies it.
    */
   async call(agentId: string, input: SimInput, countsAsHouseActivity = true, identity?: CallIdentity): Promise<Outcome> {
-    const outcome = await this.answer(agentId, input, countsAsHouseActivity, identity);
-    this.noteResult(agentId, outcome);
-    return outcome;
+    return this.answer(agentId, input, countsAsHouseActivity, identity);
   }
 
   /** The reply of this seat's applied call with that call id, if it is still remembered. */
@@ -1201,11 +1171,24 @@ export class Game {
     return this.now();
   }
 
+  /** The pre-match allowance of full entries: the recording budget's rate over the countdown, a poll and the seated lobby's nest pick. */
+  private preMatchFullEntries(): number {
+    return Math.floor(this.mcpConfig.callsPerSecond * (this.preStartMs + this.nestWindowMs()) / 1000);
+  }
+
+  /**
+   * The pre-match bound on held stubs: the stub rule's rate (STUBS_PER_WINDOW a second) over the same period, so a stuck
+   * or held start holds a fixed number of stubs and the calls past it only raise the closing stub's omitted count.
+   */
+  private preMatchStubs(): number {
+    return Math.floor(STUBS_PER_WINDOW * (this.preStartMs + this.nestWindowMs()) / 1000);
+  }
+
   /** Whether the seat may still record a full entry before match seq begins: fewer than preMatchFullEntries so far. */
   private preMatchAllows(seq: number, agentId: string): boolean {
     let held = this.heldFull.get(agentId);
     if (held === undefined || held.seq !== seq) this.heldFull.set(agentId, held = { seq, count: 0 });
-    return held.count < this.preMatchFullEntries;
+    return held.count < this.preMatchFullEntries();
   }
 
   /**
@@ -1216,7 +1199,7 @@ export class Game {
   private holdStub(seq: number, agentId: string, call: StubCall): void {
     let seat = this.heldStubs.get(agentId);
     if (seat === undefined || seat.seq !== seq) this.heldStubs.set(agentId, seat = { seq, kept: [], omitted: 0, last: null, held: 0 });
-    if (seat.held >= this.preMatchStubs - 1 || !keepsStub(seat, call.answeredAt)) {
+    if (seat.held >= this.preMatchStubs() - 1 || !keepsStub(seat, call.answeredAt)) {
       seat.omitted += 1;
       seat.last = { tool: call.tool, receivedAt: call.receivedAt, answeredAt: call.answeredAt, code: call.code };
       return;
@@ -1365,11 +1348,6 @@ export class Game {
         rec.lastSquad = new Set(view.squad.map(ant => ant.antId));
       }
     }
-  }
-
-  private noteResult(agentId: string, outcome: Outcome): void {
-    const rec = this.records.get(agentId);
-    if (rec !== undefined && carriesResult(outcome)) rec.sawResult = true;
   }
 
   private async answer(agentId: string, input: SimInput, countsAsHouseActivity: boolean, identity: CallIdentity | undefined): Promise<Outcome> {
@@ -1543,7 +1521,7 @@ function savedRecord(rec: AgentRecord): SavedAgentRecord {
   return {
     agentId: rec.agentId, token: rec.token, houseMatch: rec.houseMatch, displayName: rec.displayName, modelLabel: rec.modelLabel,
     thinkingLevel: rec.thinkingLevel, serviceTier: rec.serviceTier, ...(rec.colony === undefined ? {} : { colony: rec.colony }), seat: rec.seat,
-    callTimes: rec.callTimes, sawResult: rec.sawResult, finalResult: rec.finalResult, seatKey: rec.seatKey, identityId: rec.identityId,
+    callTimes: rec.callTimes, finalResult: rec.finalResult, seatKey: rec.seatKey, identityId: rec.identityId,
     events: rec.events, lastSquad: rec.lastSquad === null ? null : [...rec.lastSquad], broodVoteLost: rec.broodVoteLost,
     eventCursor: rec.eventCursor, currentEventCursor: rec.currentEventCursor, priorityEvents: rec.priorityEvents,
     cellSnapshot: rec.cellSnapshot === null ? null : { ...rec.cellSnapshot, offsets: [...rec.cellSnapshot.offsets] },
@@ -1561,18 +1539,6 @@ function joinInput(rec: AgentRecord): Extract<SimInput, { type: "join" }> {
     ...(rec.thinkingLevel === null ? {} : { thinkingLevel: rec.thinkingLevel }),
     ...(rec.serviceTier === null ? {} : { serviceTier: rec.serviceTier }),
   };
-}
-
-/**
- * Whether the public answer to this outcome shows the agent the winner. The MCP
- * adapter reports winner fields on a view with a result and on match_over or
- * call_rate errors. Other errors (an order rejected on the final tick) omit them
- * even when their view carries the result, so they do not count.
- */
-function carriesResult(outcome: Outcome): boolean {
-  if (outcome.kind === "view") return outcome.view.result !== null;
-  if (outcome.kind === "error") return (outcome.code === "match_over" || outcome.code === "call_rate") && (outcome.result ?? outcome.view?.result ?? null) !== null;
-  return false;
 }
 
 function toOutcome(result: InputResult): Outcome {

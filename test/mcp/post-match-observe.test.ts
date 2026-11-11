@@ -118,7 +118,6 @@ describe("ended-seat observe reports a result instead of a running clock", () =>
     const result = finishEarly(0);
     expect(receipt).toEqual({ result });
     expect(Object.keys(receipt)).toEqual(["result"]);
-    expect(h.game.matchAgents()[0]!.sawResult).toBe(false);
     h.game.startMatch(22);
     // A different winner in the newer match must never replace this seat's result.
     finishEarly(1);

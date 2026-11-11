@@ -82,7 +82,7 @@ describe("private nest-window terrain", () => {
         const { agent, reply } = await join(h, seat.identityId);
         const window = windowOf(reply.data);
         expectBoard(window, config, colony);
-        expect(window.closesAt).toBe("1970-01-01T00:02:00.000Z");
+        expect(window.closesAt).toBe(mode?.startsWith("house-") === true ? "1970-01-01T00:04:00.000Z" : "1970-01-01T00:02:00.000Z");
         expect(window.required).toBe(mode?.startsWith("house-") === true);
         expect(reply.data.briefing).toContain("join/observe nestSelection.terrain");
         expect(window.rules).toContain("join/observe nestSelection.terrain");

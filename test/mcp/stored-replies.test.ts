@@ -14,7 +14,7 @@ import { registerAccountTools } from "../../src/accounts/mcpTools.ts";
 import { redactedMarker, STORED_ENTRY_BYTES, STORED_NAMES_BYTES, storedCall } from "../../src/mcp/replies.ts";
 import type { MatchInputs } from "../../src/records/handoff.ts";
 import { ReplayRecording } from "../../src/replays/recording.ts";
-import { START_PICK_WINDOW_MS } from "../../src/sim/startPlacement.ts";
+import { HOUSE_START_PICK_WINDOW_MS, START_PICK_WINDOW_MS } from "../../src/sim/startPlacement.ts";
 import { expandCells } from "../../src/sim/view.ts";
 import { startHarness, TEST_MCP_CONFIG, type Harness } from "./harness.ts";
 
@@ -268,6 +268,29 @@ describe("a seat's calls in its match recording", () => {
     expect(stubsPerSecond(stored)).toBeLessThanOrEqual(2);
     expect(recorded.length + stubCalls(stored)).toBe(1 + seconds * 2);
     expect(stored.find(line => line.type === "stub")).toMatchObject({ tool: "observe", tick: null, code: null });
+  });
+
+  it("sizes the pre-match allowance of full entries from an index lobby's 240-second pick window", async () => {
+    h = await startHarness({ start: false, mcpConfig: { ...TEST_MCP_CONFIG, callsPerSecond: 2 } });
+    const a = await h.connect();
+    const joined = await a.call("join", {});
+    h.game.seatLobby("index-lobby", [], "house-1v1");
+    // The allowance: the budget's 2 a second over the index lobby's 240-second window.
+    const allowance = Math.floor(2 * HOUSE_START_PICK_WINDOW_MS / 1000);
+    expect(allowance).toBe(480);
+    const seconds = 300;
+    for (let second = 1; second <= seconds; second += 1) {
+      for (let i = 0; i < 2; i += 1) {
+        const at = second * 1_000 + i;
+        h.game.recordReply(joined.data.agentId, { tool: "observe", receivedAt: at, answeredAt: at, code: null, alwaysStub: false },
+          () => ({ entry: { tool: "observe", receivedAt: at, answeredAt: at, reply: { queued: true } }, texts: [] }));
+      }
+    }
+    h.game.startMatch(1);
+    h.advance(1);
+    const stored = await storedLines(h.replies.map(({ line }) => line));
+    expect(stored.filter(line => line.type === "reply")).toHaveLength(allowance);
+    expect(stored.filter(line => line.type === "reply").length + stubCalls(stored)).toBe(1 + seconds * 2);
   });
 
   it("holds a fixed number of pre-match stubs through a start held far longer than the countdown, the rest counted in the closing stub", async () => {

@@ -138,10 +138,19 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-team-members { flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; align-self: center; gap: 4px; min-width: 0; }
 .d1-member { display: inline-grid; place-items: center; padding: 2px; margin: -2px; border-radius: 5px; line-height: 0; cursor: help; }
 .d1-member:hover { background: var(--aw-raise); }
-/* The player's name gives way; its Elo never does. */
-.d1-team-player { flex: 0 1 auto; display: inline-flex; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The one player's line, in the Matches order: its name and model give way, ending in an ellipsis; its badges, rating,
+   seat count and result never do. */
+.d1-team-player { flex: 0 1 auto; display: inline-flex; align-items: baseline; gap: 0 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-team-player[hidden] { display: none; }
+/* With one player the colony name takes its own line and the player's line follows under it, its seat icons leading it,
+   so neither the name nor the line gives way to the other. */
+.d1-team-head:has(> .d1-team-player:not([hidden])) { flex-wrap: wrap; row-gap: 4px; }
+.d1-team-head:has(> .d1-team-player:not([hidden])) > .d1-name { flex-basis: 100%; }
+.d1-team-head:has(> .d1-team-player:not([hidden])) > .d1-team-members { flex: none; }
+.d1-team-head > .d1-team-player { flex: 1 1 0; }
 .d1-team-player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.d1-team-player-elo { flex: none; }
+.d1-team-player > :not(.d1-team-player-name) { flex: none; }
+.d1-seats { font-weight: 400; color: var(--aw-ink-3); }
 /* The economy: a cell per measure, its label over its figure. */
 .d1-econ { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--d1-hair); }
 .d1-cell { display: grid; grid-template-rows: 14px 20px; row-gap: 1px; min-width: 0; }
@@ -236,19 +245,25 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* The name is never cut: as on the Leaderboard it wraps, its badges moving whole onto the next line. */
 .d1-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; padding-block: 2px; }
 .d1-title-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
-.d1-model-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
+.d1-model-box { flex: 0 1 auto; display: inline-flex; align-items: baseline; column-gap: 6px; min-width: 0; }
 .d1-title { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); }
 .d1-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
 /* A Benchmark handle's level and Fast badges, as the Leaderboard's d1p-tags: one unit, never split or shrunk. */
 .d1-tags { flex: none; display: inline-flex; gap: 3px; align-self: center; }
 .d1-tag { padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 3px; font-size: 10px; font-weight: 600; line-height: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
-/* Any other row's thinking level, quiet after its name and model, as the Leaderboard's d1p-think. */
-.d1-quiet { flex: none; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
 /* The self-reported asterisk, right after the model it marks; a pointer over it or a tap shows its explanation. */
 .d1-ast-mark { flex: none; padding: 0 2px 0 1px; color: var(--aw-ink-2); font-weight: 700; cursor: help; }
 .d1-who > .d1-ast-mark { margin-left: -6px; }
 /* The rating, always in full: a .d1-tag badge right after the level and Fast badges, in the site's cyan, as the Matches page's Refresh button. */
 .d1-elo { flex: none; align-self: center; border-color: color-mix(in srgb, var(--aw-c1) 45%, transparent); color: var(--aw-c1); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The figure alone; a pointer over it, a tap, or focus shows its "± RD" in the tip (pane.ts rdTip). */
+.d1-elo[data-rd] { cursor: help; }
+/* A player line's model, after the name in the Matches line's regular weight and ink (archive.css .d1p-mname). */
+.d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: 12px; font-weight: 400; color: var(--aw-ink); }
+/* The colony's result once the match has ended, WINNER, DRAW or ABANDONED in the colony's ink (archive.css .d1p-result-tag). */
+.d1-outcome { flex: none; align-self: center; }
+.d1-outcome.c0 { color: var(--aw-c0); }
+.d1-outcome.c1 { color: var(--aw-c1); }
 .d1-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.35; color: var(--aw-ink); pointer-events: auto; }
 .d1-tip-line { display: block; overflow-wrap: anywhere; }
 .d1-said-icon { flex: none; display: inline-flex; width: 14px; height: 14px; }
@@ -461,6 +476,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-agent { min-height: 44px; padding: 4px 4px 4px 10px; column-gap: 8px; border-radius: 0; border-bottom: 1px solid var(--d1-hair); font-size: 12px; }
   .d1-title { font-size: 13px; }
   .d1-model { font-size: 11.5px; }
+  /* A player line's model keeps its name's size. */
+  .d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: 13px; }
   .d1-tl-entry { min-height: 28px; line-height: 28px; }
   .d1-tl-entry.is-arrival { line-height: 18px; padding-block: 5px; }
   .d1-said { font-size: 12px; }

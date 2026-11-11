@@ -4,24 +4,28 @@ import type { Game, NestPickOutcome } from "./game.js";
 import { payload } from "./replies.js";
 
 /** foundingBriefed: the same reply's briefing already states that starting queens do not count toward founding prices. */
-function windowRules(required: boolean, foundingBriefed: boolean): string {
+function windowRules(required: boolean, windowMs: number, foundingBriefed: boolean): string {
   return "pick_nest {tileX,tileY} before closesAt. Whole tiles in your team's half-open box: a mirrored full-height strip in each colony's back quarter (smaller historical boxes). Refused: water, rock, food, teammates' picks. No nest-spacing rule. A legal repick replaces yours; refusal keeps it. "
     + (required
       ? "In index matches every seat must pick before closesAt: any missing pick ends the match as not played, with no rating change and no default nests. "
       : "Unpicked seats get distinct legal defaults, nearest the default nest first, ties by row then column from your colony's back edge. ")
-    + `No ticks run in this 120-second window. Only teammates see picks; outsiders see finalized nests on the ${required ? "feed" : "delayed feed"} or through normal ant sight after play starts.${foundingBriefed ? "" : " Starting queens never raise founding prices."}`;
+    + `No ticks run in this ${windowMs / 1000}-second window. Only teammates see picks; outsiders see finalized nests on the ${required ? "feed" : "delayed feed"} or through normal ant sight after play starts.${foundingBriefed ? "" : " Starting queens never raise founding prices."}`;
 }
 
 /** Only the bound seated agent's team. No identity keys, opponent picks or defaults. */
 export function nestFields(game: Game, agentId: string | null, includeTerrain = false, foundingBriefed = false): Record<string, unknown> {
   const selection = agentId === null ? null : game.nestSelection(agentId, includeTerrain);
   return selection === null ? {} : { nestSelection: { ...selection, closesAt: new Date(selection.closesAt).toISOString(),
-    rules: windowRules(selection.required, foundingBriefed) + (selection.terrain === undefined ? "" : " Terrain: join/observe nestSelection.terrain; also check teammates' picks.") } };
+    rules: windowRules(selection.required, selection.windowMs, foundingBriefed) + (selection.terrain === undefined ? "" : " Terrain: join/observe nestSelection.terrain; also check teammates' picks.") } };
 }
 
-const REFUSALS: Record<Extract<NestPickOutcome, { ok: false }>["reason"], [string, string]> = {
+/** window_closed's howToFix, with the seated lobby's own window length. */
+function windowClosedFix(windowMs: number): string {
+  return `Picks are accepted only during your lobby's ${windowMs / 1000}-second window; call observe for match timing.`;
+}
+
+const REFUSALS: Record<Exclude<Extract<NestPickOutcome, { ok: false }>["reason"], "window_closed">, [string, string]> = {
   not_seated: ["This session has no seat in this lobby.", "Join this slot with your seated identity key first."],
-  window_closed: ["The nest-pick window is not open.", "Picks are accepted only during your lobby's 120-second window; call observe for match timing."],
   invalid_tile: ["A nest needs whole-number tileX and tileY coordinates.", "Send pick_nest with two whole-number tile coordinates inside your team's reported start area (a full-height back-quarter strip in new matches)."],
   outside_box: ["That tile is outside your team's start area (a full-height back-quarter strip in new matches).", "Choose x from box.x through box.x+box.width-1, and y from box.y through box.y+box.height-1."],
   water: ["That tile is water.", "Choose a land tile inside your team's reported start area."],
@@ -44,7 +48,7 @@ function receivedCoordinate(value: unknown): string {
 export function registerNestTool(server: McpServer, game: Game, session: { agentId: string | null }): void {
   if (game.slot === undefined) return;
   server.registerTool("pick_nest", {
-    description: "Pick or replace your own queen's starting nest during your lobby's fixed 120-second window. New matches allow the full-height back-quarter strip on your colony's side; use your reported half-open box bounds. Join with your identity key first. In index matches every seat must pick or the match is not played, with no rating change; other modes keep default nests for unpicked seats. In every match a seat that has not joined the match by the idle limit, counted from match start, or by an earlier end, ends it abandoned, with no rating change. Only teammates see current picks. Refusals keep your earlier pick. Shares your seat's call-rate limit; spends no food or in-match command allowance.",
+    description: "Pick or replace your own queen's starting nest during your lobby's fixed window: 240 seconds in index matches (house-1v1 to house-4v4), 120 seconds in other matches. New matches allow the full-height back-quarter strip on your colony's side; use your reported half-open box bounds. Join with your identity key first. In index matches every seat must pick or the match is not played, with no rating change; other modes keep default nests for unpicked seats. In every match a seat that has not joined the match by the idle limit, counted from match start, or by an earlier end, ends it abandoned, with no rating change. Only teammates see current picks. Refusals keep your earlier pick. Shares your seat's call-rate limit; spends no food or in-match command allowance.",
     inputSchema: {
       tileX: z.unknown().optional().describe("Whole-number tile column in your colony's back quarter for new matches; use the reported box.x and box.width bounds."),
       tileY: z.unknown().optional().describe("Whole-number tile row across the full map height for new matches; use the reported box.y and box.height bounds."),
@@ -53,7 +57,8 @@ export function registerNestTool(server: McpServer, game: Game, session: { agent
     const result = game.pickNest(session.agentId ?? "", typeof tileX === "number" ? tileX : Number.NaN, typeof tileY === "number" ? tileY : Number.NaN);
     const selection = nestFields(game, session.agentId);
     if (result.ok) return payload({ accepted: true, ...selection });
-    const [message, howToFix] = REFUSALS[result.reason];
+    const [message, howToFix] = result.reason === "window_closed"
+      ? ["The nest-pick window is not open.", windowClosedFix(game.nestWindowMs())] : REFUSALS[result.reason];
     return payload({ error: { code: result.reason === "call_rate" || result.reason === "match_not_played" ? result.reason : `nest_${result.reason}`, message: result.reason === "invalid_tile"
         ? `${message} Received tileX=${receivedCoordinate(tileX)}, tileY=${receivedCoordinate(tileY)}.` : message, howToFix },
       ...(result.retryAfterMs === undefined ? {} : { retryAfterMs: result.retryAfterMs }), ...selection }, true);

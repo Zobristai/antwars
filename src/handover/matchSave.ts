@@ -68,7 +68,6 @@ export interface SavedAgentRecord {
   readonly colony?: ColonyId;
   readonly seat: LineupSeat | null;
   readonly callTimes: readonly number[];
-  readonly sawResult: boolean;
   readonly finalResult: { readonly result: MatchResult | null; readonly notPlayed?: true };
   readonly seatKey: string | null;
   readonly identityId: string | null;

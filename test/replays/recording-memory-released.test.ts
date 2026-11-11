@@ -69,7 +69,7 @@ it("holds the captured scenario's released copy compressed, below its golden raw
       hub.pushTick(1, out);
       state = out.state;
     }
-    expect(stateHash(state)).toBe("3563edbd4f1af44c"); // the captured golden's final state
+    expect(stateHash(state)).toBe("3eb15f773ded978a"); // the golden's final state, re-pinned with the opening food's fine-row move
     await vi.waitFor(() => expect(pending.size).toBe(1));
     hub.setNextStart(1, new Date(startedAt + 120_000));
     // Delayed release: check the live recording after every frame it appends, until the final release uploads it.
