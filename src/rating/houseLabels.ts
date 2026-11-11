@@ -13,6 +13,14 @@ export interface HouseLabel {
 const label = (displayName: string, thinkingLevel: string | null = null, serviceTier: string | null = null): HouseLabel =>
   ({ displayName, thinkingLevel, serviceTier });
 
+/** The model name without its provider, by handle, for each row whose display name states the provider it plays on
+ * ("<name> on <provider>"): a recorded label from any other provider is named without one (houseModelEntry). */
+const NAMED_PROVIDER = new Map<string, { readonly provider: string; readonly name: string }>();
+const onProvider = (handle: string, name: string, provider: string, thinkingLevel: string | null = null, serviceTier: string | null = null): HouseLabel => {
+  NAMED_PROVIDER.set(handle, { provider, name });
+  return label(`${name} on ${provider}`, thinkingLevel, serviceTier);
+};
+
 /**
  * Each antwars handle's display name and fixed level and tier, keyed by the handle without the antwars/ owner prefix.
  * A Benchmark row shows these values whatever its seats report; an unlisted handle shows UNLISTED_MODEL, with no level or tier
@@ -34,9 +42,9 @@ export const HOUSE_LABELS: Readonly<Record<string, HouseLabel>> = Object.freeze(
   "claude-sonnet-5-5": label("Claude Sonnet 5.5", "max"),
   "glm-5-3": label("GLM-5.3", "max"),
   "k3-1-pro": label("K3.1 Pro", "max"),
-  "muse-spark-1-3": label("Muse Spark 1.3 on muse", "max"),
-  "muse-wonder-1-0": label("Muse Wonder 1.0 on muse", "max"),
-  "muse-wonder-full-1-0": label("Muse Wonder Full 1.0 on muse", "max"),
+  "muse-spark-1-3": onProvider("muse-spark-1-3", "Muse Spark 1.3", "muse", "max"),
+  "muse-wonder-1-0": onProvider("muse-wonder-1-0", "Muse Wonder 1.0", "muse", "max"),
+  "muse-wonder-full-1-0": onProvider("muse-wonder-full-1-0", "Muse Wonder Full 1.0", "muse", "max"),
   "claude-haiku-5-5": label("Claude Haiku 5.5", "max"),
   "deepseek-flash": label("DeepSeek V4.1 Flash", "max"),
   "gpt-6-luna": label("GPT-6 Luna", "max", "fast"),
@@ -104,8 +112,11 @@ export function houseDisplayName(displayName: string): string {
 }
 
 /** The row for a recorded "<provider>/<model id>" label: the provider dropped and "." written as "-" gives the
- * handle key, compared case-insensitively; undefined when the table does not list it. */
+ * handle key, compared case-insensitively; undefined when the table does not list it. A row whose name states its
+ * provider keeps that name only for a label from that provider; from any other, its name is given without a provider. */
 export function houseModelEntry(label: string): HouseLabel | undefined {
-  const key = label.slice(label.indexOf("/") + 1).toLowerCase().replace(/\./g, "-");
-  return Object.hasOwn(HOUSE_LABELS, key) ? HOUSE_LABELS[key]! : undefined;
+  const slash = label.indexOf("/"), key = label.slice(slash + 1).toLowerCase().replace(/\./g, "-");
+  if (!Object.hasOwn(HOUSE_LABELS, key)) return undefined;
+  const entry = HOUSE_LABELS[key]!, named = NAMED_PROVIDER.get(key);
+  return named === undefined || label.slice(0, Math.max(slash, 0)).toLowerCase() === named.provider ? entry : { ...entry, displayName: named.name };
 }
