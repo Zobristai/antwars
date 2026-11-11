@@ -4,14 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, NEVER_JOINED_CLAIM, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, SOL_MOVES, startCorrectionPlan,
+  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
 import { createFirestore, CREATE_TIME_BATCH, FirestoreError, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
-import { HoldUnknownError, RecordingChangedError, RecordingHeldError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
+import { RecordingChangedError, RecordingHeldError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { ratedRecording } from "../replays/never-joined-fixture.ts";
 
@@ -157,7 +157,7 @@ async function world() {
     lobbies.push(id);
   }
   const paths = [...users.flatMap(id => RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`)), ...[...ids.values()].map(id => `${ratingCollection(MODE)}/${id}`),
-    ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, NEVER_JOINED_CLAIM, CORRECTION_MARKER,
+    ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, `ratingCorrectionClaims/${lobby}`, CORRECTION_MARKER,
     ...[...users, house.value.identity.id, ...ids.values()].map(id => `identities/${id}`), "usernames/absent-player", "usernames/joined-player", "usernames/antwars"];
   const snapshot = async () => Object.fromEntries(await Promise.all(paths.map(async path => [path, await store.get(path)] as const)));
   return { store, recordings: bucket(objects), users, ids, lobbies, snapshot };
@@ -169,8 +169,6 @@ function served(serve: ReturnType<typeof startCorrectionPlan>["serve"], url = PL
   void serve({ url, method } as IncomingMessage, res as unknown as ServerResponse, {} as LiveGame);
   return out;
 }
-
-type ApplyOutcomes = Awaited<ReturnType<typeof applyNeverJoined>>[];
 
 describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, () => {
   it("plans both corrections exactly, writes nothing, and the planned writes give the independently replayed ratings", async () => {
@@ -305,6 +303,37 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     expect(await planCorrections(w.store, w.recordings).then(() => null, refusalCode)).toBe("not-reproduced-change");
   });
 
+  it("counts every differing value, not every entry: after and rdAfter both changed count two", async () => {
+    const w = await world();
+    const path = `ratedMatches/${w.lobbies[8]}`;
+    const changes = JSON.parse((await w.store.get(path))!.changes!) as { identityId: string; after: number; rdAfter: number }[];
+    changes[0]!.after += 3;
+    changes[0]!.rdAfter += 2;
+    await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(3, 6), handle: [...w.ids].find(([, id]) => id === changes[0]!.identityId)![0], source: path, count: 2 });
+  });
+
+  it("a missing value counts as a difference but never hides a finite deviation in another field", async () => {
+    const w = await world();
+    type Stored = { identityId: string; after: number; rdAfter?: number };
+    const edit = async (i: number, change: (c: Stored) => void) => {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as Stored[];
+      change(changes[0]!);
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+      return changes[0]!.identityId;
+    };
+    // An earlier match: rdAfter missing and after off by 5. A later one: rdAfter off by 1.
+    const largest = await edit(7, c => { c.after += 5; delete c.rdAfter; });
+    await edit(8, c => { c.rdAfter! += 1; });
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(5, 6), handle: [...w.ids].find(([, id]) => id === largest)![0],
+      source: `ratedMatches/${w.lobbies[7]}`, count: 3 });
+  });
+
   it("serves a refusal as a fixed code naming the check, never an id, a name or the logged detail", async () => {
     expect(REFUSAL_CODES.every(code => /^[a-z]+(-[a-z]+)*$/.test(code))).toBe(true);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -377,10 +406,10 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
 
 describe.skipIf(!host)("the never-joined correction on its own, at start", { timeout: 60_000 }, () => {
   const quiet = () => [vi.spyOn(console, "info").mockImplementation(() => {}), vi.spyOn(console, "warn").mockImplementation(() => {})];
-  const started = async (store: Store, recordings: Recordings, digest?: string) => {
-    const { serve } = startCorrectionPlan(store, recordings, digest);
+  const started = async (store: Store, recordings: Recordings) => {
+    const { serve } = startCorrectionPlan(store, recordings);
     await vi.waitFor(() => expect(["planned", "applied", "refused"]).toContain(JSON.parse(served(serve).body).state));
-    // The apply, when there is one, settles after the plan is served.
+    // Anything the start does after serving its state has settled.
     await new Promise(resolve => setTimeout(resolve, 500));
     return { serve, body: () => JSON.parse(served(serve).body) as PlanState };
   };
@@ -432,186 +461,31 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
-  it("writes nothing under a digest that is not its plan's", async () => {
+  it("writes nothing at start while the never-joined plan is pending: no claim, correction, marker or rating, and no hold", async () => {
     const w = await world();
     const [info, warn] = quiet();
-    expect(NEVER_JOINED_APPLY_DIGEST).toBe("8f93769fdb6663f3cbfb34f3ad2e0c2ba610efe22ca3826017a90805d9049928");
+    // The state in which the removed apply used to write: the correction planned, its record and the marker absent.
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toBeNull();
+    expect(await w.store.get(CORRECTION_MARKER)).toBeNull();
+    // Every write any transaction the start runs would commit.
+    const writes: Write[] = [];
+    const watched: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
+      const out = await step(read);
+      writes.push(...out.writes);
+      return out;
+    }) };
     const before = await w.snapshot();
-    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    expect(await applyNeverJoined(w.store, w.recordings, plan)).toBe("digest differs");
-    const other = plan.summary.digest.replace(/^./, c => c === "0" ? "1" : "0");
-    expect(await applyNeverJoined(w.store, w.recordings, plan, other)).toBe("digest differs");
-    for (const digest of [undefined, other]) {
-      const { body } = await started(w.store, w.recordings, digest);
-      expect(body().state).toBe("planned");
+    for (let start = 0; start < 2; start++) {
+      const { body } = await started(watched, w.recordings);
+      expect(body()).toEqual({ state: "planned", ...plan.summary });
     }
-    expect(info).toHaveBeenCalledWith("antwar rating correction not applied: digest differs", { digest: plan.summary.digest, writes: plan.writes.length });
+    expect(writes).toEqual([]);
+    expect(w.recordings.holdCalls).toEqual([]);
     expect(await w.snapshot()).toEqual(before);
+    expect(info.mock.calls.some(([line]) => /applied|not applied/.test(String(line)))).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
     info.mockRestore(); warn.mockRestore();
-  });
-
-  it("writes nothing when a document its checks read, or either recording object, changes between plan and apply", async () => {
-    const changes: readonly ((w: Awaited<ReturnType<typeof world>>) => Promise<unknown>)[] = [
-      w => commit(w.store, [{ op: "update", path: `lobbies/${NEVER_JOINED.lobbyId}`, fields: { kind: "private" } }]),
-      w => commit(w.store, [{ op: "update", path: `watchMatches/${NEVER_JOINED.lobbyId}`, fields: { slot: "public-2" } }]),
-      w => commit(w.store, [{ op: "update", path: `ratedMatches/${NEVER_JOINED.lobbyId}`, fields: { note: "x" } }]),
-      w => commit(w.store, [{ op: "update", path: `${ratingCollection("1v1")}/${w.users[1]}`, fields: { note: "x" } }]),
-      // A document the checks found absent.
-      w => commit(w.store, [{ op: "create", path: `${ratingCollection(MODE)}/${w.users[0]}`, fields: { rating: "x" } }]),
-      w => w.recordings.overwrite(`${NEVER_JOINED.replayId}.bin`),
-      w => w.recordings.overwrite(`${NEVER_JOINED.replayId}.json`),
-    ];
-    for (const change of changes) {
-      const w = await world();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      await change(w);
-      const changed = await w.snapshot();
-      expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("changed since planned");
-      expect(await w.snapshot()).toEqual(changed);
-      // No hold is left behind.
-      expect(w.recordings.held.size).toBe(0);
-    }
-  });
-
-  it("holds both recording objects from before the transaction until its outcome is known, so neither can change before the commit", async () => {
-    const w = await world();
-    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    const names = [`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`];
-    const during: { held: string[]; refused: boolean[] }[] = [];
-    // Inside the apply's transaction (the one after both holds are set), before its commit: another writer tries to
-    // replace each object. The claim's transaction, before any hold, and the claim's release, after both, are not it.
-    const watched: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
-      if (w.recordings.holdCalls.length === 2) during.push({ held: [...w.recordings.held].sort(),
-        refused: await Promise.all(names.map(name => w.recordings.overwrite(name).then(() => false, () => true))) });
-      return step(read);
-    }) };
-    expect(await applyNeverJoined(watched, w.recordings, plan, plan.summary.digest)).toBe("applied");
-    expect(during.length).toBeGreaterThan(0);
-    for (const each of during) expect(each).toEqual({ held: [...names].sort(), refused: [true, true] });
-    // Both still at the generations the checks read, and both released after the commit.
-    for (const name of names) expect(await w.recordings.generation(name)).toBe("1");
-    expect(w.recordings.held.size).toBe(0);
-    expect(w.recordings.holdCalls).toEqual([[names[0], true], [names[1], true], [names[0], false], [names[1], false]]);
-    expect(await w.store.get(NEVER_JOINED_CLAIM)).toBeNull();
-    expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ binaryGeneration: "1", recordGeneration: "1" });
-  });
-
-  it("writes nothing and releases its holds when a hold fails before its request is sent; keeps them and the claim when the commit's outcome is unknown", async () => {
-    {
-      const w = await world();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      const before = await w.snapshot();
-      const record = `${NEVER_JOINED.replayId}.json`;
-      const refusing: Recordings = { ...w.recordings, hold: (name, generation) =>
-        name === record ? Promise.reject(new Error("object metadata read failed: HTTP 503")) : w.recordings.hold(name, generation) };
-      await expect(applyNeverJoined(w.store, refusing, plan, plan.summary.digest)).rejects.toThrow("HTTP 503");
-      // Nothing written, no hold left, and the claim released.
-      expect(await w.snapshot()).toEqual(before);
-      expect(w.recordings.held.size).toBe(0);
-    }
-    {
-      const w = await world();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      const before = await w.snapshot();
-      // The claim's transaction runs; the apply's throws.
-      let calls = 0;
-      const failing: Store = { ...w.store, transaction: step => ++calls === 1 ? w.store.transaction(step) : Promise.reject(new Error("commit outcome unknown")) };
-      await expect(applyNeverJoined(failing, w.recordings, plan, plan.summary.digest)).rejects.toThrow("commit outcome unknown");
-      expect({ ...await w.snapshot(), [NEVER_JOINED_CLAIM]: null }).toEqual(before);
-      expect([...w.recordings.held].sort()).toEqual([`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`]);
-      expect(JSON.parse((await w.store.get(NEVER_JOINED_CLAIM))!.objects!)).toEqual([
-        { name: `${NEVER_JOINED.replayId}.bin`, generation: "1" }, { name: `${NEVER_JOINED.replayId}.json`, generation: "1" }]);
-    }
-  });
-
-  it("runs one apply at a time: a second apply while the first holds its claim touches nothing, and a left claim blocks every later one", async () => {
-    const w = await world();
-    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    const second: ApplyOutcomes = [];
-    let calls: [string, boolean][] = [];
-    // Inside the first apply's transaction, with both its holds set: a second start applies the same plan.
-    let nested = false;
-    const watched: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
-      if (!nested && w.recordings.held.size === 2) {
-        nested = true;
-        const mark = w.recordings.holdCalls.length;
-        second.push(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest));
-        calls = w.recordings.holdCalls.slice(mark);
-        // The first apply's holds are untouched.
-        expect(w.recordings.held.size).toBe(2);
-      }
-      return step(read);
-    }) };
-    expect(await applyNeverJoined(watched, w.recordings, plan, plan.summary.digest)).toBe("applied");
-    expect(second).toEqual(["already claimed"]);
-    expect(calls).toEqual([]);
-    expect(w.recordings.held.size).toBe(0);
-    expect(await w.store.get(NEVER_JOINED_CLAIM)).toBeNull();
-
-    // A claim left behind (a kept hold): a later apply sets no hold and writes nothing.
-    const v = await world();
-    const later = await planNeverJoined(v.store, v.recordings) as NeverJoinedPlan;
-    await commit(v.store, [{ op: "create", path: NEVER_JOINED_CLAIM, fields: { token: "earlier" } }]);
-    const before = await v.snapshot();
-    expect(await applyNeverJoined(v.store, v.recordings, later, later.summary.digest)).toBe("already claimed");
-    expect(v.recordings.holdCalls).toEqual([]);
-    expect(await v.snapshot()).toEqual(before);
-  });
-
-  it("never clears a hold it did not set: an object already held refuses the apply and keeps that hold", async () => {
-    for (const name of [`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`]) {
-      const w = await world();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      w.recordings.holdElsewhere(name);
-      const before = await w.snapshot();
-      expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("recording already held");
-      expect(await w.snapshot()).toEqual(before);
-      expect([...w.recordings.held]).toEqual([name]);
-    }
-  });
-
-  it("keeps the claim, writing nothing, when a hold is undetermined or a hold is not confirmed released", async () => {
-    const record = `${NEVER_JOINED.replayId}.json`;
-    const names = [`${NEVER_JOINED.replayId}.bin`, record];
-    for (const lands of ["late, from this request", "at once, from another party"]) {
-      // The JSON hold's reply is lost. The hold then lands later from this request, or another party had set it: either
-      // way it cannot be proved this apply's, so it is left, the claim kept naming both objects.
-      const w = await world();
-      const [info, warn] = quiet();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      const before = await w.snapshot();
-      const releases: string[] = [];
-      const lost: Recordings = { ...w.recordings,
-        hold: async (name, generation) => {
-          if (name !== record) return w.recordings.hold(name, generation);
-          if (lands.startsWith("at once")) w.recordings.holdElsewhere(name);
-          throw new HoldUnknownError(name);
-        },
-        release: hold => { releases.push(hold.name); return w.recordings.release(hold); } };
-      await expect(applyNeverJoined(w.store, lost, plan, plan.summary.digest)).rejects.toBeInstanceOf(HoldUnknownError);
-      if (lands.startsWith("late")) w.recordings.holdElsewhere(record);
-      expect({ ...await w.snapshot(), [NEVER_JOINED_CLAIM]: null }).toEqual(before);
-      expect(JSON.parse((await w.store.get(NEVER_JOINED_CLAIM))!.objects!).map((each: { name: string }) => each.name)).toEqual(names);
-      // Only the hold confirmed set is released; the undetermined one never is.
-      expect(releases).toEqual([names[0]]);
-      expect([...w.recordings.held]).toEqual([record]);
-      expect(warn).toHaveBeenCalledWith("antwar rating correction recording hold undetermined; its claim names the objects");
-      // The kept claim blocks every later apply.
-      expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("already claimed");
-      info.mockRestore(); warn.mockRestore();
-    }
-    {
-      // A release that is not confirmed: the apply's outcome stands and the claim is kept.
-      const w = await world();
-      const [info, warn] = quiet();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      const stuck: Recordings = { ...w.recordings, release: async hold => hold.name === record ? false : w.recordings.release(hold) };
-      expect(await applyNeverJoined(w.store, stuck, plan, plan.summary.digest)).toBe("applied");
-      expect(await w.store.get(NEVER_JOINED_CLAIM)).not.toBeNull();
-      expect([...w.recordings.held]).toEqual([record]);
-      expect(warn).toHaveBeenCalledWith("antwar rating correction recording hold kept; its claim names the objects");
-      info.mockRestore(); warn.mockRestore();
-    }
   });
 
   it("serves a rating change only as a checked handle and two finite ratings; anything else refuses and writes nothing", async () => {
@@ -631,7 +505,7 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     }
   });
 
-  it("logs a fixed message, never the error, when the plan refuses or the apply fails", async () => {
+  it("logs a fixed message, never the error, when the plan refuses", async () => {
     const malformed = "zz-malformed-rating-value";
     const logged = (spies: ReturnType<typeof quiet>) => JSON.stringify(spies.flatMap(spy => spy.mock.calls));
     {
@@ -646,27 +520,14 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
       expect(logged(spies)).not.toContain(malformed);
       spies.forEach(spy => spy.mockRestore());
     }
-    {
-      // The apply's transaction throws an error that quotes a stored value.
-      const w = await world();
-      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      const spies = quiet();
-      // Once the plan is logged, every transaction (the apply's) throws.
-      const applying = () => spies[0]!.mock.calls.some(([line]) => line === "antwar rating correction plan");
-      const failing: Store = { ...w.store, transaction: step => applying() ? Promise.reject(new Error(`commit failed: ${malformed}`)) : w.store.transaction(step) };
-      const { body } = await started(failing, w.recordings, plan.summary.digest);
-      expect(body().state).toBe("planned");
-      expect(spies[1]!.mock.calls).toEqual([["antwar rating correction apply failed"]]);
-      expect(logged(spies)).not.toContain(malformed);
-      spies.forEach(spy => spy.mockRestore());
-    }
   });
 
   it("still serves applied, writing nothing, after either player has played another ranked match", async () => {
     const w = await world();
     const [info, warn] = quiet();
     const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    // Applied as the earlier release applied it: the plan's writes, committed.
+    await commit(w.store, plan.writes);
     // Each player rated again, in the mode the correction cleared and in another.
     const opponent = w.ids.get("antwars/kimi-k3")!;
     await w.store.transaction(read => ratingWrites(read, { matchId: randomUUID(), teams: [[w.users[0]!], [opponent]], winner: "a", mode: "1v1", at: Date.now() }));
@@ -677,11 +538,12 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     // The checks alone no longer read the lobby as corrected; the applied correction still is.
     expect((await verify({ store: w.store, recordings: w.recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId)).ok).toBe(false);
     expect(await planNeverJoined(w.store, w.recordings)).toBe("applied");
-    const { body } = await started(w.store, w.recordings, plan.summary.digest);
+    const { body } = await started(w.store, w.recordings);
     expect(body()).toEqual({ state: "applied" });
     // Their new ratings are kept.
     expect(await w.snapshot()).toEqual(played);
-    expect(warn).not.toHaveBeenCalled();
+    // The house-1v1 rating written here has no lobby, so only the house-1v1 plan may refuse; the never-joined part warns of nothing.
+    expect(warn.mock.calls.filter(([line]) => !String(line).startsWith("antwar house-1v1 "))).toEqual([]);
     info.mockRestore(); warn.mockRestore();
   });
 
@@ -689,7 +551,8 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     const w = await world();
     const both = await planCorrections(w.store, w.recordings) as Plan;
     const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    // Applied as the earlier release applied it: the plan's writes, committed.
+    await commit(w.store, plan.writes);
     const sol = await planCorrections(w.store, w.recordings) as Plan;
     const neverJoined = new Set(plan.writes.map(write => write.path));
     expect(sol.writes.length).toBeGreaterThan(0);
@@ -723,28 +586,78 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     }
   });
 
-  it("applies once under the matching digest; a second start serves applied and writes nothing", async () => {
+  /** The served house-1v1 plan, once it has settled. */
+  const solServed = async (serve: ReturnType<typeof startCorrectionPlan>["serve"]) => {
+    await vi.waitFor(() => expect(["planned", "applied", "refused"]).toContain(JSON.parse(served(serve, SOL_PLAN_PATH).body).state), { timeout: 30_000 });
+    return JSON.parse(served(serve, SOL_PLAN_PATH).body) as PlanState;
+  };
+  const appliedWorld = async () => {
+    const w = await world();
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    // Applied as the earlier release applied it: the plan's writes, committed.
+    await commit(w.store, plan.writes);
+    return w;
+  };
+
+  it("plans the house-1v1 move at start, read-only, once the never-joined correction is applied, and serves it with its digest", async () => {
+    const w = await appliedWorld();
+    const expected = await planCorrections(w.store, w.recordings) as Plan;
+    const before = await w.snapshot();
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    const sol = await solServed(serve);
+    expect(sol).toEqual({ state: "planned", ...expected.summary });
+    expect(expected.summary.digest).toBe(planDigest(expected.writes));
+    // Nothing is written, and the never-joined path still reads applied.
+    expect(await w.snapshot()).toEqual(before);
+    expect(JSON.parse(served(serve).body)).toEqual({ state: "applied" });
+    // Every planned write is logged as its operation and path, then the digest and count.
+    expect(info.mock.calls.map(([line]) => String(line)).filter(line => line.startsWith("antwar house-1v1 rating correction planned: ")))
+      .toEqual(expected.writes.map(write => `antwar house-1v1 rating correction planned: ${write.op} ${write.path}`));
+    expect(info).toHaveBeenCalledWith("antwar house-1v1 rating correction plan", { digest: expected.summary.digest, writes: expected.writes.length });
+    // The two moved matches are credited to the -fast handles; no identity id is served.
+    expect(sol.state === "planned" && sol.matches.filter(m => SOL_MOVES.some(move => move.replayId === m.match)).map(m => m.after.seats)).toEqual([
+      ["antwars/gpt-6-1-sol-high-fast", "antwars/glm-5-3"], ["antwars/gpt-6-1-sol-xhigh-fast", "antwars/grok-4-7"]]);
+    for (const id of w.ids.values()) expect(served(serve, SOL_PLAN_PATH).body).not.toContain(id);
+    expect(served(serve, SOL_PLAN_PATH, "POST").status).toBe(405);
+    expect(warn).not.toHaveBeenCalled();
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("refuses the house-1v1 plan when the history is not reproduced: serves the first check's code alone and logs the largest deviation", async () => {
+    const w = await appliedWorld();
+    // Two stored changes not reproduced: by 1 in an earlier match, by 5 in a later one.
+    const edits: [number, number][] = [[7, 1], [8, 5]];
+    for (const [i, by] of edits) {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as { rdAfter: number }[];
+      changes[0]!.rdAfter += by;
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    }
+    const largest = JSON.parse((await w.store.get(`ratedMatches/${w.lobbies[8]}`))!.changes!)[0].identityId as string;
+    const handle = [...w.ids].find(([, id]) => id === largest)![0];
+    const before = await w.snapshot();
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change" });
+    expect(warn.mock.calls).toEqual([["antwar house-1v1 rating correction plan refused", { reason: "not-reproduced-change",
+      deviation: { deviation: expect.closeTo(5, 6), handle, source: `ratedMatches/${w.lobbies[8]}`, count: 2 } }]]);
+    // The public answer is the code alone: no handle, match, figure or plan.
+    const body = served(serve, SOL_PLAN_PATH).body;
+    for (const text of [handle, w.lobbies[7]!, w.lobbies[8]!, "digest", "matches"]) expect(body).not.toContain(text);
+    expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 rating correction plan"))).toBe(false);
+    expect(await w.snapshot()).toEqual(before);
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("does not plan the house-1v1 move while the never-joined correction is not applied", async () => {
     const w = await world();
     const [info, warn] = quiet();
-    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    const before = await w.snapshot();
-    const first = await started(w.store, w.recordings, plan.summary.digest);
-    expect(first.body()).toEqual({ state: "applied" });
-    expect(await w.store.get(`lobbies/${NEVER_JOINED.lobbyId}`)).toMatchObject({ outcome: "abandoned", rated: "false" });
-    expect(await w.store.get(`watchMatches/${NEVER_JOINED.lobbyId}`)).toMatchObject({ rated: "false" });
-    expect(await w.store.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)).toBeNull();
-    for (const id of w.users) for (const mode of RANKED_MODES) expect(await w.store.get(`${ratingCollection(mode)}/${id}`)).toBeNull();
-    expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ kind: "unrate-never-joined", replayId: NEVER_JOINED.replayId });
-    // Exactly the planned writes: every other document as it was. The read-only recording objects refuse any rewrite.
-    const applied = await w.snapshot();
-    const written = new Set(plan.writes.map(write => write.path));
-    for (const [path, fields] of Object.entries(before)) if (!written.has(path)) expect(applied[path]).toEqual(fields);
-    expect(await planNeverJoined(w.store, w.recordings)).toBe("applied");
-    const second = await started(w.store, w.recordings, plan.summary.digest);
-    expect(second.body()).toEqual({ state: "applied" });
-    expect(await w.snapshot()).toEqual(applied);
-    expect(info.mock.calls.filter(([line]) => line === "antwar rating correction applied")).toHaveLength(1);
-    expect(warn).not.toHaveBeenCalled();
+    // Nothing applies the never-joined correction, so it stays planned, not applied.
+    const { serve } = startCorrectionPlan(w.store, w.recordings);
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "never-joined-not-applied" });
+    expect(JSON.parse(served(serve).body).state).toBe("planned");
+    expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 "))).toBe(false);
     info.mockRestore(); warn.mockRestore();
   });
 });

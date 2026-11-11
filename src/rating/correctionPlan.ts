@@ -1,10 +1,7 @@
 /// <reference types="node" />
-import { createHash, randomUUID } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
+import { createHash } from "node:crypto";
 import { FirestoreError, type Fields, type Store, type Write } from "../store/firestore.js";
-import {
-  binaryName, HoldUnknownError, RecordingChangedError, RecordingHeldError, recordName, type HeldObject, type RecordingHolds, type RecordingObjects,
-} from "../replays/abandonRecording.js";
+import type { RecordingObjects } from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
 import { identityDisplay, nameState } from "../identity/retention.js";
 import { publicWaitingName } from "../live/queue-catalog.js";
@@ -18,8 +15,10 @@ import {
 /**
  * One-off rating corrections. planCorrections works out, reading only, every write that two owed corrections need.
  * The never-joined correction ships first, on its own: at start the entry-point server plans only it (planNeverJoined),
- * logs each write's operation and path and a SHA-256 digest of those writes alone, serves the plan's public facts at PLAN_PATH, and
- * applies it only when that digest is NEVER_JOINED_APPLY_DIGEST (applyNeverJoined). The Sol move is not run at start.
+ * logs each write's operation and path and a SHA-256 digest of those writes alone, and serves the plan's public facts at PLAN_PATH.
+ * That correction was applied by an earlier release and reads applied from what it wrote (neverJoinedApplied); its apply
+ * is removed, so the server writes nothing for either correction. Once it reads applied, the Sol move is planned at
+ * start read-only and served at SOL_PLAN_PATH; nothing applies it.
  *
  * 1. Ranked lobby NEVER_JOINED, which one seat never joined, becomes abandoned and unrated with its rating effect
  *    removed: unrateNeverJoined.ts's verify and Firestore writes, without its recording rewrite.
@@ -35,8 +34,8 @@ import {
  * Any failed check refuses the whole plan: PLAN_PATH says "refused" with only a fixed code naming the check
  * (RefusalCode), never an id, a name or a stored figure, and the log says only that it refused, with that code (a
  * stored value can be malformed, so no error text is logged).
- * CORRECTION_MARKER is created by the apply in the same transaction as these writes: { planDigest, appliedAt }.
- * While it exists nothing is planned.
+ * CORRECTION_MARKER is to be created by a later Sol apply in the same transaction as its writes: { planDigest, appliedAt }.
+ * Nothing writes it today. While it exists nothing is planned.
  */
 export const NEVER_JOINED = { lobbyId: "f14ece51-223b-4c40-9817-b365d9f7415d", replayId: "2026-11-09T13-26-59-840Z-160375822867893" };
 export const SOL_MOVES: readonly { readonly replayId: string; readonly lobbyId?: string; readonly from: string; readonly to: string }[] = [
@@ -75,18 +74,29 @@ export const REFUSAL_CODES = [
   "unknown-identity", "sol-lobby", "sol-handle", "no-commit-times", "unreadable-lobby", "history-unstable", "no-change-record",
   "no-change-record-time", "moved-seats", "moved-not-rated", "shared-commit-time", "no-glicko-change", "not-reproduced-players",
   "not-reproduced-change", "not-reproduced-rating", "not-reproduced-rd", "not-reproduced-rated-at", "not-reproduced-rated-matches",
-  "not-reproduced-record", "no-public-match-id", "no-row", "store-error", "error",
+  "not-reproduced-record", "no-public-match-id", "no-row", "never-joined-not-applied", "store-error", "error",
 ] as const;
 export type RefusalCode = typeof REFUSAL_CODES[number];
 export type PlanState = { readonly state: "computing" | "applied" } | { readonly state: "refused"; readonly reason: RefusalCode }
   | ({ readonly state: "planned" } & PublicPlan);
 
+/**
+ * Where a not-reproduced history deviates most, for the server log only: the largest finite difference between a replayed
+ * and a stored rating or RD, each value compared on its own (null when no differing value has one: a missing value, a
+ * count, a time or a record), the handle it is on and the change record or rating row it came from, and how many values,
+ * not entries, were not reproduced. A missing value counts as one and never hides another value's deviation.
+ */
+export interface Deviation { readonly deviation: number | null; readonly handle: string; readonly source: string; readonly count: number }
+
 class PlanRefused extends Error {
-  // An explicit field, not a parameter property, which Node's type stripping refuses (store/firestore.ts).
+  // Explicit fields, not parameter properties, which Node's type stripping refuses (store/firestore.ts).
   readonly code: RefusalCode;
-  constructor(code: RefusalCode, reason: string) { super(reason); this.code = code; }
+  readonly deviation?: Deviation;
+  constructor(code: RefusalCode, reason: string, deviation?: Deviation) { super(reason); this.code = code; if (deviation) this.deviation = deviation; }
 }
 const refuse = (code: RefusalCode, reason: string): never => { throw new PlanRefused(code, reason); };
+/** A not-reproduced refusal's largest deviation; undefined for any other refusal. */
+export const refusalDeviation = (error: unknown): Deviation | undefined => error instanceof PlanRefused ? error.deviation : undefined;
 /** The served code of a refusal: its check's code, store-error for a failed store read, error for anything else. */
 export const refusalCode = (error: unknown): RefusalCode =>
   error instanceof PlanRefused ? error.code : error instanceof FirestoreError ? "store-error" : "error";
@@ -259,89 +269,9 @@ export async function planNeverJoined(store: Store, recordings: RecordingObjects
 }
 
 /**
- * The digest of the one never-joined plan the apply may write: set, in a reviewed commit, to the digest the plan
- * published. Only a plan with exactly this digest is applied.
- */
-export const NEVER_JOINED_APPLY_DIGEST = "8f93769fdb6663f3cbfb34f3ad2e0c2ba610efe22ca3826017a90805d9049928";
-export type ApplyOutcome = "applied" | "digest differs" | "changed since planned" | "already claimed" | "recording already held";
-
-/** The one apply's claim on the never-joined correction: created only where absent, so only one apply runs at a time. */
-export const NEVER_JOINED_CLAIM = `ratingCorrectionClaims/${NEVER_JOINED.lobbyId}`;
-
-/**
- * Applies the never-joined plan only when its digest is `digest`, writing nothing if anything it depends on changed
- * since the plan: the Firestore documents its checks read, or either recording object.
- *
- * Exclusive: the apply first creates NEVER_JOINED_CLAIM where it is absent, naming its own token, the digest and both
- * recording objects it may hold. Another apply (a concurrent start) finds the claim and touches nothing. The claim is
- * deleted only once every hold this apply set is confirmed cleared; otherwise it stays, naming the objects to check.
- *
- * The recording: the writes depend on it through what the checks read from it (which colony never joined), and only
- * the recording holds that. So both objects are then held at the generations the checks read, before the transaction.
- * A hold is set only on an unheld object at that generation, conditioned on its metadata, so an object replaced or
- * deleted since the plan, or already held, fails it, and nothing is written; a hold this apply did not set is never
- * cleared. Only a reply confirming a hold counts as set, and only one confirming it cleared as cleared: after an
- * error, lost or unconfirmed hold reply, a refusal on its conditions (412 or 404) included, the hold is undetermined
- * (the request, or an earlier attempt of it, may have landed), so the apply stops,
- * writing nothing, releases only the holds confirmed set, and keeps its claim, which names both objects to release by
- * hand. While held, Cloud Storage refuses to replace or delete either object, so both
- * stay at those generations until the commit. Then one transaction re-reads every document the checks read and the
- * claim, and commits the writes only while every one is unchanged and the claim is this apply's. Both holds are
- * released once the transaction's outcome is known. If the transaction throws, its commit may still land, so the holds
- * and the claim are kept and must be released by hand. The recording itself is never rewritten. The writes create the
- * correction record (ratingCorrections/<lobbyId>): a later plan reads the correction as applied (neverJoinedApplied),
- * even after either player has played again, so it is written once.
- */
-export async function applyNeverJoined(store: Store, recordings: RecordingObjects & RecordingHolds, plan: NeverJoinedPlan,
-  digest = NEVER_JOINED_APPLY_DIGEST): Promise<ApplyOutcome> {
-  if (plan.summary.digest !== digest) return "digest differs";
-  const { snapshot, recording, replayId } = plan.verification;
-  const objects = [{ name: binaryName(replayId!), generation: recording!.binary.generation }, { name: recordName(replayId!), generation: recording!.record.generation }];
-  const token = randomUUID();
-  const claimed = await store.transaction(async read => (await read([NEVER_JOINED_CLAIM])).get(NEVER_JOINED_CLAIM)
-    ? { result: false, writes: [] }
-    : { result: true, writes: [{ op: "create" as const, path: NEVER_JOINED_CLAIM, fields: { token, digest, objects: JSON.stringify(objects), at: String(Date.now()) } }] });
-  if (!claimed) return "already claimed";
-
-  const held: HeldObject[] = [];
-  /** Clears this apply's holds; the claim is deleted only once every one is confirmed cleared. */
-  const finish = async () => {
-    let cleared = true;
-    for (const hold of held.splice(0)) if (!await recordings.release(hold)) cleared = false;
-    if (!cleared) { console.warn("antwar rating correction recording hold kept; its claim names the objects"); return; }
-    try {
-      await store.transaction(async read => ({ result: undefined,
-        writes: (await read([NEVER_JOINED_CLAIM])).get(NEVER_JOINED_CLAIM)?.token === token ? [{ op: "delete" as const, path: NEVER_JOINED_CLAIM }] : [] }));
-    } catch { console.warn("antwar rating correction claim not released"); }
-  };
-  try {
-    for (const object of objects) held.push(await recordings.hold(object.name, object.generation));
-  } catch (error) {
-    if (error instanceof HoldUnknownError) {
-      // This hold may yet be set, by this apply or not: it is never released here, and the claim stays, naming both objects.
-      for (const hold of held.splice(0)) await recordings.release(hold);
-      console.warn("antwar rating correction recording hold undetermined; its claim names the objects");
-      throw error;
-    }
-    await finish();
-    if (error instanceof RecordingChangedError) return "changed since planned";
-    if (error instanceof RecordingHeldError) return "recording already held";
-    throw error;
-  }
-  const paths = [...snapshot.keys()];
-  const outcome = await store.transaction(async read => {
-    const now = await read([...paths, NEVER_JOINED_CLAIM]);
-    if (now.get(NEVER_JOINED_CLAIM)?.token !== token) return { result: "already claimed" as const, writes: [] };
-    if (!paths.every(path => isDeepStrictEqual(now.get(path) ?? null, snapshot.get(path) ?? null))) return { result: "changed since planned" as const, writes: [] };
-    return { result: "applied" as const, writes: [...plan.writes] };
-  });
-  await finish();
-  return outcome;
-}
-
-/**
  * Both corrections, or "applied" while CORRECTION_MARKER exists; an applied never-joined correction is skipped, so the
- * plan is then the Sol move alone. Throws (refuses) on any failed check. Reads only. Not run at start.
+ * plan is then the Sol move alone. Throws (refuses) on any failed check. Reads only. Run at start only once the
+ * never-joined correction is applied, so there it is the Sol move alone.
  */
 export async function planCorrections(store: Store, recordings: RecordingObjects): Promise<Plan | "applied"> {
   if (await store.get(CORRECTION_MARKER) !== null) return "applied";
@@ -427,25 +357,49 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     .reduce((record, lobby) => withResult(record, letterFor(lobby.winner, teamsOf(lobby)[0].includes(id) ? 0 : 1), lobby.id), EMPTY_RECORD);
 
   // The replay without the move must reproduce what is stored, or the recompute is not the history it corrects.
-  const near = (a: number, b: number | undefined) => b !== undefined && Math.abs(a - b) <= SAME;
+  // Every value not reproduced is collected, one entry per value; the refusal names the first, in check order, and
+  // carries the count of values and the largest finite deviation among them.
+  const near = (a: number | undefined, b: number | undefined) => a !== undefined && b !== undefined && Math.abs(a - b) <= SAME;
+  /** |replayed - stored| for one value; null when either is missing or not a finite number (still a difference). */
+  const gap = (a: number | undefined, b: number | undefined) => {
+    const value = a === undefined || b === undefined ? NaN : Math.abs(a - b);
+    return Number.isFinite(value) ? value : null;
+  };
+  const failures: { code: RefusalCode; reason: string; deviation: number | null; handle: string; source: string }[] = [];
+  /** One entry for each of the pairs that is not reproduced, each with its own deviation. */
+  const compare = (code: RefusalCode, reason: string, handle: string, source: string, pairs: readonly (readonly [number | undefined, number | undefined])[]) => {
+    for (const [a, b] of pairs) if (!near(a, b)) failures.push({ code, reason, deviation: gap(a, b), handle, source });
+  };
   const check = replay(order);
   for (const lobby of window) {
     const [replayed, kept] = [check.changes.get(lobby.id)!, stored.get(lobby.id)!];
+    const source = `ratedMatches/${lobby.id}`;
     const ids = (changes: readonly RatingChange[]) => JSON.stringify(changes.map(c => c.identityId).sort());
-    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) refuse("not-reproduced-players", `stored history not reproduced: the players of lobby ${lobby.id}`);
+    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) {
+      failures.push({ code: "not-reproduced-players", reason: `stored history not reproduced: the players of lobby ${lobby.id}`, deviation: null, handle: "", source });
+      continue;
+    }
     for (const c of replayed) {
       const k = change(lobby, c.identityId);
-      if (!near(c.before, k.before) || !near(c.rdBefore!, k.rdBefore) || !near(c.after, k.after) || !near(c.rdAfter!, k.rdAfter)) {
-        refuse("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`);
-      }
+      compare("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`,
+        shown(names.get(c.identityId) ?? ""), source, [[c.before, k.before], [c.rdBefore, k.rdBefore], [c.after, k.after], [c.rdAfter, k.rdAfter]]);
     }
   }
   for (const id of players) {
     const [now, replayed] = [storedState(id, row(id)), check.state.get(id)!];
-    const differs = !near(replayed.rating, now.rating) ? "rating" : !near(replayed.rd, now.rd) ? "rd" : replayed.ratedAt !== now.ratedAt ? "rated-at"
-      : replayed.ratedMatches !== now.ratedMatches ? "rated-matches"
-      : movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)) ? "record" : null;
-    if (differs) refuse(`not-reproduced-${differs}`, `stored history not reproduced: ${names.get(id)}`);
+    const [reason, handle, source] = [`stored history not reproduced: ${names.get(id)}`, shown(names.get(id) ?? ""), `${ROWS}/${id}`];
+    compare("not-reproduced-rating", reason, handle, source, [[replayed.rating, now.rating]]);
+    compare("not-reproduced-rd", reason, handle, source, [[replayed.rd, now.rd]]);
+    const other = (code: RefusalCode, differs: boolean) => { if (differs) failures.push({ code, reason, deviation: null, handle, source }); };
+    other("not-reproduced-rated-at", replayed.ratedAt !== now.ratedAt);
+    other("not-reproduced-rated-matches", replayed.ratedMatches !== now.ratedMatches);
+    other("not-reproduced-record", movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)));
+  }
+  if (failures.length > 0) {
+    // The largest finite deviation over every value; a missing value counts but never masks one; the first wins a tie.
+    const most = failures.reduce((a, b) => (b.deviation ?? -1) > (a.deviation ?? -1) ? b : a);
+    const first = failures[0]!;
+    throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length });
   }
 
   // The move: lobbies' seats, watch-entry labels, changed change records and rating rows.
@@ -482,13 +436,39 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   return { writes, summary: { digest: planDigest(writes), matches, ratings } };
 }
 
+/** Where the house-1v1 move's read-only plan is served, under PLAN_PATH's mount. */
+export const SOL_PLAN_PATH = `${PLAN_PATH}/house-1v1`;
+
 /**
- * The never-joined correction as the entry point runs it at start, in the background: logged, never thrown. It plans,
- * logs the plan, and applies it when its digest is applyDigest. serve answers GET PLAN_PATH with the plan's public facts
- * while it is pending, "applied" once it is, or "refused" with its code.
+ * The house-1v1 move, read-only: planned, logged and served once the never-joined correction is applied, never applied
+ * here. A refusal logs its code and, where the stored history is not reproduced, its largest deviation (refusalDeviation);
+ * only the code is served.
  */
-export function startCorrectionPlan(store: Store, recordings: RecordingObjects & RecordingHolds, applyDigest = NEVER_JOINED_APPLY_DIGEST): { readonly serve: MountHandler } {
+async function planSol(store: Store, recordings: RecordingObjects): Promise<PlanState> {
+  let plan: Plan | "applied";
+  try { plan = await planCorrections(store, recordings); } catch (error) {
+    const reason = refusalCode(error);
+    const deviation = refusalDeviation(error);
+    console.warn("antwar house-1v1 rating correction plan refused", { reason, ...(deviation ? { deviation } : {}) });
+    return { state: "refused", reason };
+  }
+  if (plan === "applied") return { state: "applied" };
+  for (const write of plan.writes) console.info(`antwar house-1v1 rating correction planned: ${write.op} ${write.path}`);
+  console.info("antwar house-1v1 rating correction plan", { digest: plan.summary.digest, writes: plan.writes.length });
+  return { state: "planned", ...plan.summary };
+}
+
+/**
+ * The corrections as the entry point runs them at start, in the background, reading only: logged, never thrown. It plans
+ * the never-joined correction and logs the plan; it never applies it. Once that correction reads applied, it plans the
+ * house-1v1 move read-only (planSol); while it does not, that plan is refused as never-joined-not-applied. serve answers
+ * GET PLAN_PATH with the never-joined plan's public facts while it is pending, "applied" once it reads applied, or
+ * "refused" with its code, and GET SOL_PLAN_PATH likewise with the house-1v1 plan.
+ */
+export function startCorrectionPlan(store: Store, recordings: RecordingObjects): { readonly serve: MountHandler } {
   let current: PlanState = { state: "computing" };
+  let sol: PlanState = { state: "computing" };
+  const notApplied: PlanState = { state: "refused", reason: "never-joined-not-applied" };
   void (async () => {
     let plan: NeverJoinedPlan | "applied";
     try { plan = await planNeverJoined(store, recordings); } catch (error) {
@@ -496,26 +476,22 @@ export function startCorrectionPlan(store: Store, recordings: RecordingObjects &
       const reason = refusalCode(error);
       console.warn("antwar rating correction plan refused", { reason });
       current = { state: "refused", reason };
+      sol = notApplied;
       return;
     }
-    if (plan === "applied") { current = { state: "applied" }; return; }
+    if (plan === "applied") { current = { state: "applied" }; sol = await planSol(store, recordings); return; }
     // A safe projection of each write: its operation and path, every path a constant or a checked identity id.
     for (const write of plan.writes) console.info(`antwar rating correction planned: ${write.op} ${write.path}`);
     console.info("antwar rating correction plan", { digest: plan.summary.digest, writes: plan.writes.length });
     current = { state: "planned", ...plan.summary };
-    try {
-      const outcome = await applyNeverJoined(store, recordings, plan, applyDigest);
-      if (outcome === "applied") current = { state: "applied" };
-      console.info(`antwar rating correction ${outcome === "applied" ? "applied" : `not applied: ${outcome}`}`, { digest: plan.summary.digest, writes: plan.writes.length });
-    } catch {
-      console.warn("antwar rating correction apply failed");
-    }
+    sol = notApplied;
   })();
   return {
     serve(req, res) {
-      if (new URL(req.url ?? "/", "http://localhost").pathname !== PLAN_PATH) { res.writeHead(404).end(); return; }
+      const path = new URL(req.url ?? "/", "http://localhost").pathname;
+      if (path !== PLAN_PATH && path !== SOL_PLAN_PATH) { res.writeHead(404).end(); return; }
       if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { allow: "GET, HEAD" }).end(); return; }
-      const body = Buffer.from(JSON.stringify(current));
+      const body = Buffer.from(JSON.stringify(path === PLAN_PATH ? current : sol));
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
       res.end(req.method === "HEAD" ? undefined : body);
     },
