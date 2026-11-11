@@ -723,15 +723,20 @@ export interface Roster {
 // The Leaderboard-style name lives in compose.ts, so every agent name shown anywhere uses it.
 export { isBenchmark, rowName, type RowName };
 
-/** The one player holding every seat of a colony (a ranked team mode), or null: needs two seats or more, one name and one Elo. */
-export function teamPlayer(agents: readonly Pick<StreamAgent, "identity">[]): { readonly name: string; readonly elo: string } | null {
+/**
+ * The one player holding every seat of a colony (a ranked team mode), or null: needs two seats or more, one name, one Elo,
+ * and the same model, level and Fast on every seat. Each seat joins with its own report, so seats that differ keep their
+ * own rows rather than all showing the first seat's.
+ */
+export function teamPlayer(agents: readonly Pick<StreamAgent, "identity" | "modelLabel" | "thinkingLevel" | "serviceTier">[]): { readonly name: string; readonly elo: string } | null {
   if (agents.length < 2) return null;
-  let name: string | null = null, elo: number | null = null;
+  const report = (a: Pick<StreamAgent, "modelLabel" | "thinkingLevel" | "serviceTier">) => [a.modelLabel ?? "", a.thinkingLevel ?? "", a.serviceTier ?? ""].join("\n");
+  let name: string | null = null, elo: number | null = null, reported: string | null = null;
   for (const a of agents) {
     const seat = a.identity ? SEAT.exec(a.identity.displayName) : null;
     if (!seat || !a.identity) return null;
-    if (name === null) { name = seat[1]!; elo = a.identity.elo ?? null; }
-    else if (seat[1] !== name || (a.identity.elo ?? null) !== elo) return null;
+    if (name === null) { name = seat[1]!; elo = a.identity.elo ?? null; reported = report(a); }
+    else if (seat[1] !== name || (a.identity.elo ?? null) !== elo || report(a) !== reported) return null;
   }
   return name === null || elo === null ? null : { name, elo: eloText(elo) };
 }

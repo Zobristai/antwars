@@ -448,12 +448,41 @@ describe("the team section's agents", () => {
     expect(split.groups[0]!.rows.map(row => row.title)).toEqual(["Claude Opus 5.5 #1", "GPT-6 Luna #1"]);
   });
   it("finds one player only across two seats or more, one name and one Elo", () => {
-    const seat = (name: string, elo = 1500) => ({ identity: { displayName: name, elo } });
+    const seat = (name: string, elo = 1500) => ({ identity: { displayName: name, elo }, modelLabel: "" });
     expect(teamPlayer([seat("a #1"), seat("a #2")])).toEqual({ name: "a", elo: "1500" });
     expect(teamPlayer([seat("a #1")])).toBeNull();
     expect(teamPlayer([seat("a #1"), seat("b #2")])).toBeNull();
     expect(teamPlayer([seat("a #1"), seat("a #2", 1501)])).toBeNull();
     expect(teamPlayer([seat("a"), seat("a")])).toBeNull();
+    // Each seat joins with its own report: one player only where model, level and Fast match on every seat.
+    const reported = (name: string, modelLabel: string, thinkingLevel?: string, serviceTier?: string) => ({ ...seat(name), modelLabel, thinkingLevel, serviceTier });
+    expect(teamPlayer([reported("a #1", "openai/gpt-6.1-terra", "high", "fast"), reported("a #2", "openai/gpt-6.1-terra", "high", "fast")])).toEqual({ name: "a", elo: "1500" });
+    expect(teamPlayer([reported("a #1", "openai/gpt-6.1-terra", "high"), reported("a #2", "anthropic/claude-sonnet-5-5", "high")])).toBeNull();
+    expect(teamPlayer([reported("a #1", "openai/gpt-6.1-terra", "high"), reported("a #2", "openai/gpt-6.1-terra", "low")])).toBeNull();
+    expect(teamPlayer([reported("a #1", "openai/gpt-6.1-terra", "high", "fast"), reported("a #2", "openai/gpt-6.1-terra", "high")])).toBeNull();
+  });
+  it("keeps one row per seat when one player's seats report different models, levels or Fast, in either join order", () => {
+    const seats = (reports: [string, string | undefined, string | undefined][]) => roster(frameOf(b => {
+      b.agents = reports.map(([model, thinkingLevel, serviceTier], i): StreamAgent => ({ ...agent(0, `alice #${i + 1}`, 1540, model), thinkingLevel, serviceTier }))
+        .concat(agent(1, "x", 1, "y"));
+    }));
+    const gpt: [string, string, string] = ["openai/gpt-6.1-terra", "high", "fast"], claude: [string, string, undefined] = ["anthropic/claude-sonnet-5-5", "low", undefined];
+    const line = (r: ReturnType<typeof roster>) => r.groups[0]!.rows.map(row => [row.title, row.model, row.modelBadges]);
+    // GPT/high/Fast and Claude/low under one identity: no "×2" heading naming the first seat's model for both.
+    const mixed = seats([gpt, claude]);
+    expect(mixed.groups[0]!.player).toBeNull();
+    expect(line(mixed)).toEqual([["alice #1", "GPT-6.1 Terra", ["high", "Fast"]], ["alice #2", "Claude Sonnet 5.5", ["low"]]]);
+    // The reversed join order: still each seat's own report, never the first joined seat's.
+    const reversed = seats([claude, gpt]);
+    expect(reversed.groups[0]!.player).toBeNull();
+    expect(line(reversed)).toEqual([["alice #1", "Claude Sonnet 5.5", ["low"]], ["alice #2", "GPT-6.1 Terra", ["high", "Fast"]]]);
+    // A level or Fast alone differing keeps the rows too.
+    expect(seats([gpt, [gpt[0], "low", "fast"]]).groups[0]!.player).toBeNull();
+    expect(seats([gpt, [gpt[0], "high", undefined]]).groups[0]!.player).toBeNull();
+    // Matching reports on every seat: the one line with ×N, the shared model and badges.
+    const same = seats([gpt, gpt, gpt]);
+    expect(same.groups[0]!.player).toMatchObject({ name: "alice", model: "GPT-6.1 Terra", badges: ["high", "Fast"], elo: "1540", seats: 3 });
+    expect(same.groups[0]!.rows).toEqual([]);
   });
 });
 
