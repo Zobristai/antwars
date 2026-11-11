@@ -556,6 +556,16 @@ describe("tap height on a phone", () => {
     const deck = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     expect(deck).toMatch(/\.d1-agent-button \{[^}]*min-height: var\(--d1-tap, 36px\);/);
   });
+
+  // Catches: Live now's start ("Started 10 Nov 2026 · 15:34 UTC") wrapping beside Watch on a 390 px phone.
+  it("gives Live now's start the row's whole width in a card under 28rem, Watch standing beside In progress", () => {
+    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+    const phone = /@container d1p-card \(width < 28rem\) \{\n((?: {2}.*\n)*?)\}/.exec(css);
+    expect(phone).not.toBeNull();
+    expect(phone![1]).toContain(".d1p-live + .d1p-narrow > li > .d1p-line:first-child { grid-column: 1 / -1; }");
+    expect(phone![1]).toContain(".d1p-live + .d1p-narrow > li > .d1p-line.is-lead { align-self: center; }");
+    expect(phone![1]).toContain(".d1p-live + .d1p-narrow > li > .d1p-row-pill { grid-row: 2; }");
+  });
 });
 
 describe("Model Index matches show their harness phase in a divider where the rows' phase changes", () => {

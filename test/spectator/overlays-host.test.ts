@@ -1,6 +1,7 @@
 // What the board hands the visible HUDs at mount (ui/types.ts HudHost) and what the 2D HUD paints from the shared view,
 // now that neither HUD reads or borrows from the board's hidden overlay root. Mounted on the test port; not visual
 // evidence (the served build's captures are that).
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StreamAgent, StreamMessage } from "../../src/live/format.ts";
 import { TICK_MS } from "../../src/live/snapshot.ts";
@@ -103,6 +104,28 @@ describe("the 2D HUD's status line from the shared view", () => {
     hud.update(view(modeCopy("replay", 2, false, "/", "2026-10-26T01-38-33-692Z-1", true)));
     expect([part("d2-mode-detail").textContent, part("d2-mode-phase").textContent]).toEqual(["26 Oct 2026", ""]);
     expect(part("d2-status").classList.contains("has-phase")).toBe(false);
+  });
+});
+
+describe("the 3D board's legend from the shared view", () => {
+  // Catches: a phone's wrapped legend breaking inside a word ("2" at one line's end, "agents" at the next's start), or
+  // starting a line with a separator.
+  it("keeps each word whole, so a wrapped legend breaks only after a separator, and says every word as before", () => {
+    const playback = new Playback(), frame = new Frame();
+    playback.push(match(1000), 1000 * TICK_MS);
+    expect(playback.sample(1000 * TICK_MS + RENDER_DELAY_MS, frame)).toBe(true);
+    const { hud, host } = mount(true);
+    const phased = modeCopy("replay", 2, false, "/", "2026-10-26T01-38-33-692Z-1", true, undefined, ["Harness: rounds 1-7", "Possible effort mismatch"]);
+    hud.update({ ...view(phased, frame), board: "3d" });
+    const rest = host.byClass("d1-legend-rest")[0]!;
+    const [rounds, flag] = phased.phase!.split(" · ");
+    // Word for word as before: the board's three agents, the date and both phase tags, in order.
+    expect(rest.textContent).toBe(` · not live · rated match · 3 agents · 26 Oct 2026 · ${phased.phase}`);
+    // Each word held whole with the separator after it; only an ordinary space between them, where a line may break.
+    expect(rest.byClass("d1-legend-word").map(node => node.textContent))
+      .toEqual(["not live ·", "rated match ·", "3 agents ·", "26 Oct 2026 ·", `${rounds} ·`, flag]);
+    expect(rest.children.filter(node => node.tag === "#text").map(node => node.textContent)).toEqual([" · ", " ", " ", " ", " ", " "]);
+    expect(readFileSync(new URL("../../web/src/ui/deck/deck.css", import.meta.url), "utf8")).toContain(".d1-legend-word { white-space: nowrap; }");
   });
 });
 

@@ -335,6 +335,12 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 @container d1p-card (width < 28rem) {
   .d1p-match-rows .d1p-colonies { grid-template-columns: minmax(0, 1fr); }
   .d1p-match-rows .d1p-colonies > dd + dt { margin-top: 4px; }
+  /* There Live now's start ("Started 10 Nov 2026 · 15:34 UTC", 242 px in a monospace fallback) takes the item's whole
+     width, where beside Watch a 390 px phone left it 234 px and it wrapped; Watch stands beside the row's state,
+     "In progress", instead. */
+  .d1p-live + .d1p-narrow > li > .d1p-line:first-child { grid-column: 1 / -1; }
+  .d1p-live + .d1p-narrow > li > .d1p-line.is-lead { align-self: center; }
+  .d1p-live + .d1p-narrow > li > .d1p-row-pill { grid-row: 2; }
 }
 .d1p-rows-head { display: flex; align-items: center; min-height: 36px; padding: 0 var(--d1p-inset); border-top: 1px solid var(--aw-line); }
 .d1p-line { grid-column: 1; font-size: 13px; line-height: 19px; color: var(--aw-ink-2); }
