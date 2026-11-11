@@ -272,7 +272,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-said.is-mark:not(.is-words) { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
 .d2-said.is-faded { font-weight: 400; color: var(--aw-ink-2); }
 .d2-said-when { grid-column: 3; font-size: 11px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.d2-agent-detail { padding: 2px 10px 8px 36px; background: var(--aw-raise); }
+.d2-agent-detail { padding: 2px 10px 8px 10px; background: var(--aw-raise); }
 .d2-agent-lines { margin: 0 0 4px; font-size: 11px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; color: var(--aw-ink-2); }
 .d2-history { margin: 0; padding: 0; list-style: none; }
 .d2-history-button { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; column-gap: 5px; width: 100%; min-height: 24px; margin: 0; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; }
