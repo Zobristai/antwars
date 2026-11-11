@@ -351,10 +351,14 @@ export interface Lobbies {
   ownWaitToken(identityId: string, on: "queue" | { readonly lobbyId: string }): Promise<string | undefined>;
 }
 
-/** A live waiting queue entry by its identity's current display name; nothing else about the identity. */
-export interface WaitingAgent { readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
+/** A live waiting queue entry by its identity's current display name, with its identity id for server-side reads only. */
+export interface WaitingAgent { readonly identityId: string; readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
 
-/** A public lobby not yet begun (listUnstarted): each colony's distinct seated identities by current name, in seating order. */
+/** A seated identity of a lobby not yet begun, with how many of its colony's seats it holds. */
+export interface UnstartedSeat extends Seat { readonly seats: number }
+
+/** A public lobby not yet begun (listUnstarted): each colony's distinct seated identities by current name, in seating
+ * order, each with how many seats it holds there. */
 export interface UnstartedLobby {
   /** The queue pairing's ranked mode; null for a player-created lobby. */
   readonly mode: RankedMode | null;
@@ -362,7 +366,7 @@ export interface UnstartedLobby {
   readonly createdAt: number;
   /** Seats taken, of 2 × size. A queue pairing's identity holds every seat of its colony, so it is always full. */
   readonly seated: number;
-  readonly colonies: readonly [readonly Seat[], readonly Seat[]];
+  readonly colonies: readonly [readonly UnstartedSeat[], readonly UnstartedSeat[]];
   /** Present only on a house challenge lobby, which the Waiting card labels. */
   readonly challenge?: "house";
 }
@@ -1222,7 +1226,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const entries = await waitingEntries((path) => store.get(path), now());
       const named = await Promise.all(entries.map(async ({ identityId, mode, joinedAt }) => {
         const identity = await identities.findById(identityId);
-        return identity ? { displayName: identity.displayName, mode, joinedAt } : null;
+        return identity ? { identityId, displayName: identity.displayName, mode, joinedAt } : null;
       }));
       return named.filter((row): row is WaitingAgent => row !== null);
     },
@@ -1249,7 +1253,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const lobby = toLobby(id, fields, at);
         const seated = lobby.colonies[0].length + lobby.colonies[1].length;
         if (seated === 0) continue;
-        const distinct = (colony: readonly Seat[]) => colony.filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index);
+        const distinct = (colony: readonly Seat[]): UnstartedSeat[] => colony
+          .filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index)
+          .map((seat) => ({ ...seat, seats: colony.filter((other) => other.id === seat.id).length }));
         unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(lobby.colonies[0]), distinct(lobby.colonies[1])],
           ...(lobby.challenge ? { challenge: "house" as const } : {}) });
       }
@@ -1257,9 +1263,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       // queue entries, and a seat whose identity no longer resolves is left unnamed.
       const seatIds = [...new Set(unstarted.flatMap((lobby) => [...lobby.colonies[0], ...lobby.colonies[1]].map((seat) => seat.id)))];
       const current = new Map(await Promise.all(seatIds.map(async (seatId) => [seatId, (await identities.findById(seatId))?.displayName] as const)));
-      const named = (colony: readonly Seat[]) => colony.flatMap((seat) => {
+      const named = (colony: readonly UnstartedSeat[]) => colony.flatMap((seat) => {
         const displayName = current.get(seat.id);
-        return displayName === undefined ? [] : [{ id: seat.id, displayName }];
+        return displayName === undefined ? [] : [{ id: seat.id, displayName, seats: seat.seats }];
       });
       return unstarted.map((lobby) => ({ ...lobby, colonies: [named(lobby.colonies[0]), named(lobby.colonies[1])] as const }))
         .sort((a, b) => a.createdAt - b.createdAt);

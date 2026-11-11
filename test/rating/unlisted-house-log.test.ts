@@ -73,7 +73,7 @@ describe("the serve points log an unlisted house handle", () => {
     const accounts = { lobbies: {
       listWaiting: async () => [{ displayName: `${UNLISTED} #1`, mode: "house-1v1", joinedAt: Date.now() }],
       listUnstarted: async () => [], listPublic: async () => [lobby],
-    } } as unknown as AccountStores;
+    }, ratings: { readRating: async () => ({ rating: 1500, rd: 350, ratedMatches: 0 }) } } as unknown as AccountStores;
     const hub = new LiveHub(); close.push(() => hub.close());
     const registry = { publicMatches: async () => [] } as unknown as WatchRegistry;
     const routes = watchRoutes({ accounts, registry, hub });

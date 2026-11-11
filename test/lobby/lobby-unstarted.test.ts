@@ -70,6 +70,8 @@ describe("Lobbies.listUnstarted", () => {
     expect(listed.map(row => [row.mode, row.size, row.seated])).toEqual([[null, 2, 3], ["1v1", 1, 2], ["2v2", 2, 4]]);
     // Each identity once per colony, though a queue pairing's identity holds every seat of its colony.
     expect(names(listed)).toEqual([[["ann", "cat"], ["bob"]], [["dan"], ["eve"]], [["fay"], ["gus"]]]);
+    // With how many of its colony's seats each holds: one each in a player-made lobby, every seat in a queue pairing.
+    expect(listed.map(row => row.colonies.map(colony => colony.map(seat => seat.seats)))).toEqual([[[1, 1], [1]], [[1], [1]], [[2], [2]]]);
     expect(JSON.stringify(listed)).not.toContain("hal");
 
     // Once the slot's instance begins the 1v1 match, it leaves the list; the waiting 2v2 pairing stays.
@@ -138,6 +140,9 @@ describe("Lobbies.listUnstarted over stored documents", () => {
 
   it("names each seat by its identity's current display name, once per colony, and leaves an unresolved seat unnamed", async () => {
     const lobbies = createLobbies(store, identities, { publicSlots: 1, now: () => START + 1_000 });
-    expect(names(await lobbies.listUnstarted())).toEqual([[["kite/first"], ["bea"]]]);
+    const listed = await lobbies.listUnstarted();
+    expect(names(listed)).toEqual([[["kite/first"], ["bea"]]]);
+    // bea holds both seats of its colony; the unresolved seat is left out with its count.
+    expect(listed.map(row => row.colonies.map(colony => colony.map(seat => seat.seats)))).toEqual([[[1], [2]]]);
   });
 });

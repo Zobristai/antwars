@@ -1,6 +1,6 @@
 import { gunzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LiveHub } from "../../src/live/hub.ts";
+import { LiveHub, type LiveHubOptions } from "../../src/live/hub.ts";
 import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.ts";
 import { decodeMessage, type StreamRatingChange } from "../../src/live/format.ts";
 import { unpackMessages } from "../../src/live/snapshot.ts";
@@ -22,7 +22,8 @@ import { createOnlyRecords } from "../records/create-only-records.js";
 const close: (() => void)[] = [];
 afterEach(() => { close.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
 
-function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly StreamRatingChange[] | null>; pace?: number; private?: boolean } = {}) {
+function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly StreamRatingChange[] | null>; pace?: number; private?: boolean;
+  startRatings?: LiveHubOptions["startRatings"] } = {}) {
   const clock = new ManualClock(), pending = new Map<string, Uint8Array>(), published = new Map<string, Uint8Array>();
   const privateObjects = new Map<string, Uint8Array>();
   let binFailures = 0, binaryAttempts = 0;
@@ -44,7 +45,7 @@ function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly S
     createMarker: async () => true, markerReason: async () => null, delete: async name => { pending.delete(name); } };
   const archive = { forLobby: () => privateStore, open: async () => { throw new Error("not used by these public tests"); } };
   const hub = new LiveHub({ clock, replayStore: publicStore, privateReplayStore: () => privateStore, captureMatchLogs: true, recordHandoff: handoff,
-    resultRatings: options.ratings, config: { ...DEFAULT_LIVE_CONFIG, ...(options.pace === undefined ? {} : { paceBytesPerSecond: options.pace }) } });
+    resultRatings: options.ratings, startRatings: options.startRatings, config: { ...DEFAULT_LIVE_CONFIG, ...(options.pace === undefined ? {} : { paceBytesPerSecond: options.pace }) } });
   close.push(() => hub.close());
   const replays = createRecordReplayStore({ publicStore, readPublic: async id => published.get(`${id}.bin`) ?? null });
   const deps: RecordServiceDeps = { inputs, records: createOnlyRecords(publicStore, archive), replays, codeVersion: "a".repeat(40), now: () => clock.now(), log: line => logs.push(line) };
@@ -72,6 +73,16 @@ async function ended(p: ReturnType<typeof pipeline>): Promise<RecordInput> {
 }
 
 describe("durable match-end recording recovery", () => {
+  it("hands off the seats' start ratings the hub reads at match end, and none when it knows none", async () => {
+    const starts = { "kite": { rating: 1520, rd: 70, ratedMatches: 12 } };
+    const asked: unknown[] = [];
+    const input = await ended(pipeline({ startRatings: access => { asked.push(access); return starts; } }));
+    expect(input.startRatings).toEqual(starts);
+    expect(asked).toEqual([expect.objectContaining({ lobbyId: "test-lobby" })]);
+    expect(await ended(pipeline({ startRatings: () => undefined }))).not.toHaveProperty("startRatings");
+    expect(await ended(pipeline())).not.toHaveProperty("startRatings");
+  });
+
   it("saves privately before final release; a closed server is recovered after delay plus grace by a fresh service", async () => {
     const p = pipeline(), input = await ended(p);
     expect(input).toMatchObject({ endedAt: 400, publishAfter: 60_400, rated: false, lobbyId: null });

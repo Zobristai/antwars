@@ -181,6 +181,29 @@ it("copies each seat's recorded handle, without a seat suffix, into binary, veri
   expect(matchRecord(fixture()).seats.every(seat => seat.handle === null)).toBe(true);
 });
 
+it("carries each seat's start rating, found by its stream display name, into binary, verified log and record-service output", async () => {
+  const identities = ["alice/bot #1", "alice/bot #2", undefined, "constructor", "bob/seat"];
+  const startRatings = { "alice/bot #1": { rating: 1612, rd: 48.5, ratedMatches: 31 }, "bob/seat": { rating: 1500, rd: 350, ratedMatches: 0 },
+    "nobody": { rating: 1400, rd: 80, ratedMatches: 9 } };
+  const input = fixture(8, "redesign", undefined, undefined, [], [], identities);
+  const expected = [startRatings["alice/bot #1"], undefined, undefined, undefined, startRatings["bob/seat"], undefined, undefined, undefined];
+  expect(binaryRecord({ ...input, startRatings }).seats.map(seat => seat.startRating)).toEqual(expected);
+  const verified = matchRecord({ ...input, startRatings });
+  expect(verified.status).toBe("complete");
+  expect(verified.seats.map(seat => seat.startRating)).toEqual(expected);
+  // A seat with none has no field at all, so a record without start ratings is unchanged.
+  expect(verified.seats.filter((_, index) => expected[index] === undefined).every(seat => !Object.hasOwn(seat, "startRating"))).toBe(true);
+  expect(JSON.stringify(matchRecord(input))).not.toContain("startRating");
+  const path = recordPath();
+  path.handoff.submit({ ...input, lobbyId: null, startRatings });
+  await vi.waitFor(() => expect(path.inputs.has(`${id}.input`)).toBe(true));
+  expect(decodeInput(path.inputs.get(`${id}.input`)!).startRatings).toEqual(startRatings);
+  await path.service.sweep();
+  const record = JSON.parse(new TextDecoder().decode(path.saved.get(`${id}.json`)!.body)) as MatchRecord;
+  expect(record.status).toBe("complete");
+  expect(record.seats.map(seat => seat.startRating)).toEqual(expected);
+});
+
 it("refuses service-tier disagreements between a log and its binary", () => {
   const input = fixture(8, "redesign", undefined, undefined, [], ["fast"]);
   const logLines = input.logLines.map(line => line.replace('"serviceTier":"fast"', '"serviceTier":"slow"'));
