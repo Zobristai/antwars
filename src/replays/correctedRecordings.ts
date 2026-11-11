@@ -20,8 +20,9 @@ import { seatHandle } from "./recorded-match-type.js";
  *   the -fast handle wherever they named the moved one.
  *
  * Until then the stored bytes are served unchanged. Once a correction reads applied, a recording that cannot be
- * corrected (undecodable, a message that does not re-encode to its stored bytes, too large) and a failed correction
- * read answer CorrectedRecordingUnavailable, served as a 503: never the stored bytes, never the old handle or result.
+ * corrected (undecodable, a message that does not re-encode to its stored bytes, too large, or a moved match whose
+ * corrected replay, record or listing row still holds the moved handle in any string) and a failed correction read
+ * answer CorrectedRecordingUnavailable, served as a 503: never the stored bytes, never the old handle or result.
  * The recorded rating figures are kept as recorded. Every other recording passes straight through, with no store read.
  */
 
@@ -87,10 +88,31 @@ function moveMessage(message: StreamMessage, from: string, to: string): StreamMe
 /** The moved handle wherever it stands whole: not where it merely begins a longer handle (the -fast one does). */
 const handlePattern = (from: string) => new RegExp(`${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g");
 
+/**
+ * Whether any string in a corrected value, object keys included, still holds the moved handle whole. The correction
+ * renames only seats and join identities, so a corrected match is checked before it is served: a handle left in any
+ * other field makes it CorrectedRecordingUnavailable rather than served.
+ */
+function holdsHandle(value: unknown, from: string): boolean {
+  const pattern = new RegExp(handlePattern(from).source);
+  const holds = (item: unknown): boolean => {
+    if (typeof item === "string") return pattern.test(item);
+    if (item === null || typeof item !== "object" || ArrayBuffer.isView(item)) return false;
+    if (item instanceof Map) return [...item].some(([key, entry]) => holds(key) || holds(entry));
+    if (item instanceof Set) return [...item].some(holds);
+    return Object.entries(item).some(([key, entry]) => pattern.test(key) || holds(entry));
+  };
+  return holds(value);
+}
+
 function correctBinary(correction: Correction, binary: Uint8Array): Uint8Array {
   try {
     const out = correction.kind === "never-joined" ? abandonBinary(binary)
-      : rewriteMessages(binary, message => moveMessage(message, correction.from, correction.to));
+      : rewriteMessages(binary, message => {
+        const moved = moveMessage(message, correction.from, correction.to);
+        if (holdsHandle(moved ?? message, correction.from)) throw new Error("moved handle still present");
+        return moved;
+      });
     return out.body ?? binary;
   } catch { throw new CorrectedRecordingUnavailable("replay not correctable"); }
 }
@@ -109,7 +131,9 @@ function correctRecord(id: string, correction: Correction, body: Uint8Array): Ui
 
 function correctSummary(correction: Correction, row: HistorySummary): HistorySummary {
   if (correction.kind === "never-joined") return { ...row, winner: null, reason: "abandoned", decidedBy: "draw", rated: false };
-  return { ...row, seats: row.seats.map(seat => seat.handle === correction.from ? { ...seat, handle: correction.to } : seat) };
+  const moved = { ...row, seats: row.seats.map(seat => seat.handle === correction.from ? { ...seat, handle: correction.to } : seat) };
+  if (holdsHandle(moved, correction.from)) throw new CorrectedRecordingUnavailable("listing row not correctable");
+  return moved;
 }
 
 async function readAll(body: Readable): Promise<Uint8Array> {

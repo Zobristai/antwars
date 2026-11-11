@@ -5,7 +5,7 @@ import { gunzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CORRECTION_MARKER, NEVER_JOINED, SOL_MOVES } from "../../src/rating/correctionPlan.ts";
 import { CORRECTION_KIND } from "../../src/rating/unrateNeverJoined.ts";
-import { isAbandonedRecord, isAbandonedResult } from "../../src/replays/abandonRecording.ts";
+import { isAbandonedRecord, isAbandonedResult, rewriteMessages } from "../../src/replays/abandonRecording.ts";
 import type { ReplaySource } from "../../src/replays/access.ts";
 import { CORRECTED_REPLAY_IDS, correctedHistorySource, correctedReplaySource } from "../../src/replays/correctedRecordings.ts";
 import { binaryRecord, type MatchRecord } from "../../src/replays/history.ts";
@@ -177,6 +177,36 @@ describe("the matches the rating corrections changed, as served", () => {
       expect(response.body.toString()).not.toMatch(OLD_HANDLE);
       expect(response.body.includes(Buffer.from(garbage))).toBe(false);
     }
+  });
+
+  it("never serves the old handle from a field the move does not rename: the record replaces it, the replay and row answer 503", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const original = bucket().objects.get(SOL.replayId)!;
+    const mapName = `Field of ${SOL.from}`;
+    // The old handle stored outside every seat and join identity: in the replay's map name, the record's, and a row's model label.
+    const binary = rewriteMessages(original.binary, message => message.full === null ? null
+      : { ...message, full: { ...message.full, setup: { ...message.full.setup, terrain: { ...message.full.setup.terrain!, mapName } } } }).body!;
+    expect(Buffer.from(unzip(Buffer.from(binary))).toString("latin1")).toMatch(OLD_HANDLE);
+    const record = new TextEncoder().encode(Buffer.from(original.record).toString().replaceAll('"Open Field"', JSON.stringify(mapName)));
+    expect(Buffer.from(record).toString()).toMatch(OLD_HANDLE);
+    const row = { ...original.row, seats: original.row.seats.map(seat => seat.seat === 1 ? { ...seat, modelLabel: SOL.from } : seat) };
+    const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: { binary, record, row } });
+
+    const replay = await w.get(`/replays/${SOL.replayId}`);
+    expect([replay.status, replay.cache]).toEqual([503, "no-store"]);
+    expect(Buffer.from(unzip(replay.body)).toString("latin1")).not.toMatch(OLD_HANDLE);
+    const matches = await w.get("/matches");
+    expect([matches.status, matches.cache]).toEqual([503, "no-store"]);
+    expect(matches.body.toString()).not.toMatch(OLD_HANDLE);
+    const text = (await w.get(`/matches/${SOL.replayId}`)).body.toString();
+    expect(text).not.toMatch(OLD_HANDLE);
+    expect(handles(JSON.parse(text) as MatchRecord)).toEqual([SOL.to, "antwars/glm-5-3"]);
+    expect(text).toContain(`Field of ${SOL.to}`);
+
+    // Before the move is applied, the same stored bytes are served as stored.
+    const before = await serve({}, { [SOL.replayId]: { binary, record, row } });
+    expect(new Uint8Array((await before.get(`/replays/${SOL.replayId}`)).body)).toEqual(binary);
+    expect((await before.get("/matches")).status).toBe(200);
   });
 
   it("answers 503 for the three when the correction state cannot be read, and never reads it for any other recording", async () => {
