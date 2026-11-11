@@ -20,9 +20,9 @@ export const LEADERBOARD_MODES: readonly LeaderboardMode[] = ["1v1", "2v2", "3v3
 /** The page's three kinds of read: a public mode's house scope, a public mode's everyone ranking, a house-mode size. */
 export type FakeRead = "house" | "everyone" | "house-mode";
 export const FIXTURE_CURSOR = "capture-only-next-snapshot";
-/** The board choices in page order: the Antwars Model Index sizes (the opening board), the Ranked sizes, then Challenge. */
+/** The board choices in page order: the Antwars Model Index sizes (the opening board), then the Ranked sizes. */
 export const MODE_LABELS = [...LEADERBOARD_MODES.filter(mode => mode.startsWith("house-")).map(mode => `Antwars Model Index ${mode.slice(6)}`),
-  ...LEADERBOARD_MODES.filter(mode => !mode.startsWith("house-")).map(mode => `Ranked ${mode}`), "Challenge 1v1"];
+  ...LEADERBOARD_MODES.filter(mode => !mode.startsWith("house-")).map(mode => `Ranked ${mode}`)];
 const ORIGIN = "http://localhost:4718";
 const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp" };
 

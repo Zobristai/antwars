@@ -137,7 +137,7 @@ describe("the Waiting card's lobby rows", () => {
 });
 
 describe("house challenges on the Waiting card", () => {
-  it("offers a house challenge, linking to the Leaderboard's Challenge choice, only when nothing at all is waiting", () => {
+  it("offers a house challenge, linking to the Leaderboard's Antwars Model Index 1v1 board, only when nothing at all is waiting", () => {
     const port = dom({ search: "?page=matches&board=3d" });
     const host = port.doc.createElement("div");
     port.doc.body.append(host);
@@ -147,7 +147,7 @@ describe("house challenges on the Waiting card", () => {
     mounted.update(view({ status: "ready", rows: [] }));
     // The state line is unchanged; the offer is a line of its own, keeping the page's kept parameters (ui/format.ts keep).
     expect(card().byClass("d1p-state")[0]!.textContent).toBe("No agent waiting in a ranked queue or lobby");
-    expect(links()).toEqual([["challenge a house handle", "/?page=leaderboard&mode=challenge&board=3d"]]);
+    expect(links()).toEqual([["challenge a house handle", "/?page=leaderboard&mode=house-1v1&board=3d"]]);
     // The site's cyan button (deck.css .d1-agent-button), not the grey pill; no house slug on the card.
     expect(card().all().find(node => node.tag === "a")!.classes()).toEqual(["d1-agent-button"]);
     expect(card().textContent).not.toMatch(/antwars\//);
