@@ -217,6 +217,14 @@ runenv "33i signature with no END line" fail $K bash $S $(hs $'gpgsig -----BEGIN
 runenv "33j listed text inside an SSH signature's base64 line" pass $K bash $S $(hs $'gpgsig -----BEGIN SSH SIGNATURE-----\n U1NIU0lHsynthkey9AAAA\n -----END SSH SIGNATURE-----')
 runenv "33k SSH signature closed by a PGP END line" fail $K bash $S $(hs $'gpgsig -----BEGIN SSH SIGNATURE-----\n U1NIU0lHsynthkey9AAAA\n -----END PGP SIGNATURE-----')
 runenv "33l other armor type: base64 line matched" fail $K bash $S $(hs $'gpgsig -----BEGIN SIGNED MESSAGE-----\n MIIsynthkey9AAAA\n -----END SIGNED MESSAGE-----')
+# An END line closes the armor whatever state it is in; nothing after it is dropped again.
+EB=$' -----END PGP SIGNATURE-----\n \n SynthKey9AAAA\n -----END PGP SIGNATURE-----'
+runenv "33m PGP END before the armor's blank line, then a base64-like line" fail $K bash $S $(hs "gpgsig -----BEGIN PGP SIGNATURE-----"$'\n'"$EB")
+runenv "33n the same under gpgsig-sha256" fail $K bash $S $(hs "gpgsig-sha256 -----BEGIN PGP SIGNATURE-----"$'\n'"$EB")
+ES=$' -----END SSH SIGNATURE-----\n \n U1NIsynthkey9AAAA\n -----END SSH SIGNATURE-----'
+runenv "33o SSH END straight after BEGIN, then a base64-like line" fail $K bash $S $(hs "gpgsig -----BEGIN SSH SIGNATURE-----"$'\n'"$ES")
+runenv "33p the same under gpgsig-sha256" fail $K bash $S $(hs "gpgsig-sha256 -----BEGIN SSH SIGNATURE-----"$'\n'"$ES")
+runenv "33q PGP: a base64-like line after END in the body, before another END" fail $K bash $S $(hs $'gpgsig -----BEGIN PGP SIGNATURE-----\n \n AAAA\n -----END PGP SIGNATURE-----\n SynthKey9AAAA\n -----END PGP SIGNATURE-----')
 # Commits already on main (--since, or a pull request's base) are not checked again; the root is.
 B1=$(id 'Dev <dev@synthcorp.example> 1 +0000' "$Z"); B2=$(chain $B1 'after the old commit')
 run "34 --since the old commit: its identity is not checked again" pass --since $B1 $B2

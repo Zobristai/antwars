@@ -253,6 +253,7 @@ for sha in "${commits[@]}"; do
   # Signature state: sig is none, armor (PGP armor headers, before its blank line), body
   # (between the armor and the END line) or done; sigend is the END line awaited; held keeps
   # the body's base64 and checksum lines, which are dropped only once that END line is seen.
+  # The END line closes the armor in every state; nothing is dropped after it without a new BEGIN.
   sig=none sigend='' held=''
   for line in "${lines[@]}"; do
     [ -n "$line" ] || break
@@ -260,7 +261,11 @@ for sha in "${commits[@]}"; do
       case "$prev" in
         gpgsig|gpgsig-sha256)
           case "$sig" in
-            armor) [ "$line" != ' ' ] || sig=body; header+="${line,,}"$'\n' ;;
+            armor)
+              if [ "$line" = "$sigend" ]; then sig=done
+              elif [ "$line" = ' ' ]; then sig=body
+              fi
+              header+="${line,,}"$'\n' ;;
             body)
               if [ "$line" = "$sigend" ]; then
                 sig=done held=''; header+="${line,,}"$'\n'
