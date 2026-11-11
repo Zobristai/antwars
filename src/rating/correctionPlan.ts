@@ -81,9 +81,10 @@ export type PlanState = { readonly state: "computing" | "applied" } | { readonly
   | ({ readonly state: "planned" } & PublicPlan);
 
 /**
- * Where a not-reproduced history deviates most, for the server log only: the largest difference between a replayed and a
- * stored rating or RD (null when no stored value differs by a number: a missing value, a count, a time or a record), the
- * handle it is on and the change record or rating row it came from, with how many values were not reproduced.
+ * Where a not-reproduced history deviates most, for the server log only: the largest finite difference between a replayed
+ * and a stored rating or RD, each value compared on its own (null when no differing value has one: a missing value, a
+ * count, a time or a record), the handle it is on and the change record or rating row it came from, and how many values,
+ * not entries, were not reproduced. A missing value counts as one and never hides another value's deviation.
  */
 export interface Deviation { readonly deviation: number | null; readonly handle: string; readonly source: string; readonly count: number }
 
@@ -356,14 +357,19 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     .reduce((record, lobby) => withResult(record, letterFor(lobby.winner, teamsOf(lobby)[0].includes(id) ? 0 : 1), lobby.id), EMPTY_RECORD);
 
   // The replay without the move must reproduce what is stored, or the recompute is not the history it corrects.
-  // Every value not reproduced is collected; the refusal names the first, in check order, and carries the largest.
-  const near = (a: number, b: number | undefined) => b !== undefined && Math.abs(a - b) <= SAME;
-  /** The largest |replayed - stored| over pairs; null when a stored value is missing or not a finite number. */
-  const largest = (pairs: readonly (readonly [number | undefined, number | undefined])[]) => {
-    const gaps = pairs.map(([a, b]) => a === undefined || b === undefined ? NaN : Math.abs(a - b));
-    return gaps.some(gap => !Number.isFinite(gap)) ? null : Math.max(...gaps);
+  // Every value not reproduced is collected, one entry per value; the refusal names the first, in check order, and
+  // carries the count of values and the largest finite deviation among them.
+  const near = (a: number | undefined, b: number | undefined) => a !== undefined && b !== undefined && Math.abs(a - b) <= SAME;
+  /** |replayed - stored| for one value; null when either is missing or not a finite number (still a difference). */
+  const gap = (a: number | undefined, b: number | undefined) => {
+    const value = a === undefined || b === undefined ? NaN : Math.abs(a - b);
+    return Number.isFinite(value) ? value : null;
   };
   const failures: { code: RefusalCode; reason: string; deviation: number | null; handle: string; source: string }[] = [];
+  /** One entry for each of the pairs that is not reproduced, each with its own deviation. */
+  const compare = (code: RefusalCode, reason: string, handle: string, source: string, pairs: readonly (readonly [number | undefined, number | undefined])[]) => {
+    for (const [a, b] of pairs) if (!near(a, b)) failures.push({ code, reason, deviation: gap(a, b), handle, source });
+  };
   const check = replay(order);
   for (const lobby of window) {
     const [replayed, kept] = [check.changes.get(lobby.id)!, stored.get(lobby.id)!];
@@ -375,26 +381,22 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     }
     for (const c of replayed) {
       const k = change(lobby, c.identityId);
-      if (!near(c.before, k.before) || !near(c.rdBefore!, k.rdBefore) || !near(c.after, k.after) || !near(c.rdAfter!, k.rdAfter)) {
-        failures.push({ code: "not-reproduced-change", reason: `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`,
-          deviation: largest([[c.before, k.before], [c.rdBefore, k.rdBefore], [c.after, k.after], [c.rdAfter, k.rdAfter]]),
-          handle: shown(names.get(c.identityId) ?? ""), source });
-      }
+      compare("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`,
+        shown(names.get(c.identityId) ?? ""), source, [[c.before, k.before], [c.rdBefore, k.rdBefore], [c.after, k.after], [c.rdAfter, k.rdAfter]]);
     }
   }
   for (const id of players) {
     const [now, replayed] = [storedState(id, row(id)), check.state.get(id)!];
-    const differs = !near(replayed.rating, now.rating) ? "rating" : !near(replayed.rd, now.rd) ? "rd" : replayed.ratedAt !== now.ratedAt ? "rated-at"
-      : replayed.ratedMatches !== now.ratedMatches ? "rated-matches"
-      : movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)) ? "record" : null;
-    if (differs) {
-      const numeric = differs === "rating" || differs === "rd";
-      failures.push({ code: `not-reproduced-${differs}`, reason: `stored history not reproduced: ${names.get(id)}`,
-        deviation: numeric ? largest([[replayed.rating, now.rating], [replayed.rd, now.rd]]) : null, handle: shown(names.get(id) ?? ""), source: `${ROWS}/${id}` });
-    }
+    const [reason, handle, source] = [`stored history not reproduced: ${names.get(id)}`, shown(names.get(id) ?? ""), `${ROWS}/${id}`];
+    compare("not-reproduced-rating", reason, handle, source, [[replayed.rating, now.rating]]);
+    compare("not-reproduced-rd", reason, handle, source, [[replayed.rd, now.rd]]);
+    const other = (code: RefusalCode, differs: boolean) => { if (differs) failures.push({ code, reason, deviation: null, handle, source }); };
+    other("not-reproduced-rated-at", replayed.ratedAt !== now.ratedAt);
+    other("not-reproduced-rated-matches", replayed.ratedMatches !== now.ratedMatches);
+    other("not-reproduced-record", movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)));
   }
   if (failures.length > 0) {
-    // A numeric deviation outranks one that is not a number; among numbers, the largest; the first wins a tie.
+    // The largest finite deviation over every value; a missing value counts but never masks one; the first wins a tie.
     const most = failures.reduce((a, b) => (b.deviation ?? -1) > (a.deviation ?? -1) ? b : a);
     const first = failures[0]!;
     throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length });

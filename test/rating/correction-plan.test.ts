@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
+  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
@@ -301,6 +301,37 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     await expect(planCorrections(w.store, w.recordings)).rejects.toThrow(`stored history not reproduced: antwars/gpt-6-1-sol-high in lobby ${w.lobbies[8]}`);
     // The plan at start is the never-joined part alone, so the Sol refusal's code is read from planCorrections.
     expect(await planCorrections(w.store, w.recordings).then(() => null, refusalCode)).toBe("not-reproduced-change");
+  });
+
+  it("counts every differing value, not every entry: after and rdAfter both changed count two", async () => {
+    const w = await world();
+    const path = `ratedMatches/${w.lobbies[8]}`;
+    const changes = JSON.parse((await w.store.get(path))!.changes!) as { identityId: string; after: number; rdAfter: number }[];
+    changes[0]!.after += 3;
+    changes[0]!.rdAfter += 2;
+    await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(3, 6), handle: [...w.ids].find(([, id]) => id === changes[0]!.identityId)![0], source: path, count: 2 });
+  });
+
+  it("a missing value counts as a difference but never hides a finite deviation in another field", async () => {
+    const w = await world();
+    type Stored = { identityId: string; after: number; rdAfter?: number };
+    const edit = async (i: number, change: (c: Stored) => void) => {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as Stored[];
+      change(changes[0]!);
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+      return changes[0]!.identityId;
+    };
+    // An earlier match: rdAfter missing and after off by 5. A later one: rdAfter off by 1.
+    const largest = await edit(7, c => { c.after += 5; delete c.rdAfter; });
+    await edit(8, c => { c.rdAfter! += 1; });
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(5, 6), handle: [...w.ids].find(([, id]) => id === largest)![0],
+      source: `ratedMatches/${w.lobbies[7]}`, count: 3 });
   });
 
   it("serves a refusal as a fixed code naming the check, never an id, a name or the logged detail", async () => {
