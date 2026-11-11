@@ -1,4 +1,5 @@
 import { isReplayId } from "../replays/access.js";
+import type { StartRating } from "../replays/history.js";
 
 /**
  * One finished match's private inputs, stored by the game server as `<id>.input` in the private
@@ -25,6 +26,11 @@ export interface RecordInput {
   publishAfter?: number;
   /** Required with publishAfter; distinguishes missing rated outcomes from unrated matches. */
   rated?: boolean;
+  /**
+   * Each seat's rating, RD and rated-match count as read before the match started, by the seat's stream display name;
+   * a seat with none is left out. Absent in inputs that predate it.
+   */
+  startRatings?: Readonly<Record<string, StartRating>>;
 }
 
 const FORMAT = "antwar.input";
@@ -32,7 +38,9 @@ const VERSION = 1;
 const PUBLICATION_KEYS = ["publishAfter", "rated"] as const;
 const HEADER_KEYS = ["format", "version", "id", "codeVersion", "endedAt", "lobbyId", "logLines"] as const;
 /** Optional in either version. */
-const OPTIONAL_KEYS = ["replyLines"] as const;
+const OPTIONAL_KEYS = ["replyLines", "startRatings"] as const;
+/** More than any match seats. */
+const MAX_START_RATINGS = 64;
 const PREFIX_BYTES = 4;
 
 export function inputName(id: string): string {
@@ -48,7 +56,8 @@ export function inputName(id: string): string {
 export function encodeInput(input: RecordInput): Uint8Array {
   const header = checkedHeader({ format: FORMAT, version: input.publishAfter === undefined ? VERSION : 2, id: input.id, codeVersion: input.codeVersion,
     endedAt: input.endedAt, lobbyId: input.lobbyId, logLines: [...input.logLines],
-    ...(input.publishAfter === undefined && input.rated === undefined ? {} : { publishAfter: input.publishAfter, rated: input.rated }) });
+    ...(input.publishAfter === undefined && input.rated === undefined ? {} : { publishAfter: input.publishAfter, rated: input.rated }),
+    ...(input.startRatings === undefined ? {} : { startRatings: input.startRatings }) });
   const json = new TextEncoder().encode(withJsonArray(JSON.stringify(header), "replyLines", input.replyLines));
   const out = new Uint8Array(PREFIX_BYTES + json.byteLength + input.binary.byteLength);
   new DataView(out.buffer).setUint32(0, json.byteLength);
@@ -71,12 +80,14 @@ export function decodeInput(bytes: Uint8Array): RecordInput {
   return { id: header.id, codeVersion: header.codeVersion, endedAt: header.endedAt, lobbyId: header.lobbyId,
     logLines: header.logLines, ...(header.replyLines === undefined ? {} : { replyLines: header.replyLines.map(line => JSON.stringify(line)) }),
     binary: bytes.slice(PREFIX_BYTES + length),
-    ...(header.version === 1 ? {} : { publishAfter: header.publishAfter!, rated: header.rated! }) };
+    ...(header.version === 1 ? {} : { publishAfter: header.publishAfter!, rated: header.rated! }),
+    ...(header.startRatings === undefined ? {} : { startRatings: header.startRatings }) };
 }
 
 interface Header {
   format: typeof FORMAT; version: 1 | 2; id: string; codeVersion: string;
   endedAt: number; lobbyId: string | null; logLines: string[]; replyLines?: Record<string, unknown>[]; publishAfter?: number; rated?: boolean;
+  startRatings?: Record<string, StartRating>;
 }
 
 function checkedHeader(value: unknown): Header {
@@ -98,11 +109,25 @@ function checkedHeader(value: unknown): Header {
       !header.replyLines.every(line => typeof line === "object" && line !== null && !Array.isArray(line)))) {
     throw new Error("record input replyLines must be JSON objects");
   }
+  if (header.startRatings !== undefined && !validStartRatings(header.startRatings)) throw new Error("record input startRatings invalid");
   if (header.version === 2) {
     if (typeof header.publishAfter !== "number" || !Number.isSafeInteger(header.publishAfter) || header.publishAfter < header.endedAt) throw new Error("record input publishAfter invalid");
     if (typeof header.rated !== "boolean") throw new Error("record input rated invalid");
   }
   return header as unknown as Header;
+}
+
+/** By non-empty display name, each exactly a finite rating, a finite non-negative RD and a whole rated-match count. */
+function validStartRatings(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= MAX_START_RATINGS && entries.every(([name, value]) => {
+    if (name === "" || typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    const start = value as Record<string, unknown>;
+    return Object.keys(start).sort().join() === "ratedMatches,rating,rd" && typeof start.rating === "number" && Number.isFinite(start.rating) &&
+      typeof start.rd === "number" && Number.isFinite(start.rd) && start.rd >= 0 &&
+      typeof start.ratedMatches === "number" && Number.isSafeInteger(start.ratedMatches) && start.ratedMatches >= 0;
+  });
 }
 
 /**
