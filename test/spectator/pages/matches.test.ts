@@ -199,11 +199,11 @@ describe("the one player line", () => {
 
   it("leads a house model's line with its model, level and Fast, with no username", () => {
     const house = at("rec-house", { winner: 1, decidedBy: "queens", matchType: { kind: "challenge", size: 1 }, seats: [
-      seat(0, 0, "anthropic/claude-haiku-5-5", "antwarsos-harness", { thinkingLevel: "max" }),
+      seat(0, 0, "anthropic/claude-haiku-5-5", "sample-builder", { thinkingLevel: "max" }),
       seat(0, 1, "openai/gpt-6.1-terra", "antwars/gpt-6-1-terra-max-fast", { startRating: rated(1979, 60, 40) })] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [house] } });
     const [builder, model] = recordings.table.byClass("d1p-model");
-    expect(lineParts(builder!)).toEqual([["name", ["d1p-user:antwarsos-harness", "d1p-mname:Claude Haiku 5.5"]], ["badges", ["max"]]]);
+    expect(lineParts(builder!)).toEqual([["name", ["d1p-user:sample-builder", "d1p-mname:Claude Haiku 5.5"]], ["badges", ["max"]]]);
     // The house seat: its model name leads with no username, then its rating, then its colony's result.
     expect(model!.byClass("d1p-user")).toEqual([]);
     expect(lineParts(model!).map(part => part[0]).filter(kind => kind !== "badges")).toEqual(["name", "rating", "result"]);
