@@ -9,6 +9,7 @@ import { C } from "../leaderboard-page/copy.ts";
 import { LEADERBOARD_HREF } from "../leaderboard-page/route.ts";
 import { benchmarkLabel, recordText, type RankingView } from "../leaderboard-page/view.ts";
 import { RECORD_LABEL, RETRY, keep, liveState, recordingsState, type SectionState } from "../ui/format.ts";
+import type { ShownRating } from "./identity.ts";
 
 // ---------------------------------------------------------------- shared
 
@@ -198,18 +199,39 @@ export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLa
 const seatWho = (seat: Pick<Recording["seats"][number], "modelLabel" | "handle">): string | null =>
   seat.modelLabel !== null ? `model:${seat.modelLabel}` : seat.handle !== null ? `handle:${seat.handle}` : null;
 
-/** Each colony's recorded seats, seat order, each with who holds it (seatWho, so two unlabelled players never group as one)
- * and how it shows (recordedIdentity); a
- * colony with no recorded seat null; null when no seat was recorded. */
+/** One player line's words and badges, in the order every Matches list draws them: the builder's username (none for a
+ * house model, whose model name leads), the model it reported (none for a builder that named none), then its level and
+ * Fast badges (only with a model). The rating, the seat count and the colony's result follow on the line (matches.ts). */
+export interface PlayerParts { readonly user: string | null; readonly model: string | null; readonly badges: readonly string[] }
+
+/** "model unknown": a recorded seat with neither a model nor a handle. */
+export const MODEL_UNKNOWN = "model unknown";
+
+/** A recorded seat's player line: a house handle by its own HOUSE_LABELS row and badges (recordedIdentity); a builder by its
+ * recorded handle, then the model it reported (seatModelName) with that model's level and Fast badges, the model left out
+ * where the label only repeats the handle ("coffee-ant/local" on coffee-ant), so a builder that named no model shows its
+ * username alone. */
+export function recordedPlayer(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">): PlayerParts {
+  if (seat.handle !== null && isHouseHandle(seat.handle)) {
+    const house = recordedIdentity(seat);
+    return { user: null, model: house.name, badges: house.badges };
+  }
+  const named = seat.modelLabel === null ? null : seatModelName(seat.modelLabel, seat.handle);
+  const model = named !== null && named !== seat.handle ? named : null;
+  if (seat.handle === null && model === null) return { user: null, model: MODEL_UNKNOWN, badges: [] };
+  return { user: seat.handle, model, badges: model === null ? [] : recordedIdentity(seat).badges };
+}
+
+/** Each colony's recorded seats, seat order, each with who holds it (its handle and its model label, so neither two
+ * builders on one model nor two unlabelled players group as one), its player line (recordedPlayer) and its rating at the
+ * match's start where its record stores one; a colony with no recorded seat null; null when no seat was recorded. */
 export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatEntry[] | null, readonly SeatEntry[] | null] | null {
   if (seats.length === 0) return null;
   const entries = (colony: 0 | 1) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
       .map((seat): SeatEntry => {
-        // Shown by its own handle (seatModelName), a seat groups only with seats shown alike: its label alone no longer says how it
-        // shows. That key is a JSON pair, which no "model:"/"handle:" key (seatWho) can spell.
-        const parts = recordedIdentity(seat, { listed: true }), who = seatWho(seat);
-        return { who: parts.name === recordedIdentity(seat).name ? who : JSON.stringify([who, parts.name]), parts };
+        const parts = recordedPlayer(seat);
+        return { who: JSON.stringify([seatWho(seat), parts.user, parts.model]), parts, rating: seat.startRating ?? null };
       });
     return list.length ? list : null;
   };
@@ -218,28 +240,40 @@ export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatE
 
 /** Each colony's recorded models, seat order; a colony with no recorded seat null; null when no seat was recorded. */
 export function colonyModels(seats: Recording["seats"]): readonly [readonly NameParts[] | null, readonly NameParts[] | null] | null {
-  const colonies = colonySeats(seats);
-  return colonies && [colonies[0]?.map(seat => seat.parts) ?? null, colonies[1]?.map(seat => seat.parts) ?? null];
+  if (seats.length === 0) return null;
+  const models = (colony: 0 | 1) => {
+    const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat).map(seat => recordedIdentity(seat, { listed: true }));
+    return list.length ? list : null;
+  };
+  return [models(0), models(1)];
 }
 
-/** One seat as both Matches lists group it: who holds it (seatWho for a recorded seat, or a live
- * player's identity without its seat number), how it shows alone, and, where that differs, how its group shows. */
-export interface SeatEntry { readonly who: string | null; readonly parts: NameParts; readonly alike?: NameParts }
-/** Seats shown alike, and how many they are. */
-export interface SeatGroup { readonly parts: NameParts; readonly seats: number }
-/** A colony's seats as both Matches lists show them: the seats of one identity with the same badges once, with how
- * many they are, in the order each first sits. Seats that differ in identity or badges each keep their own entry, even where
- * two identities show one name (two providers' labels for one model), so no group joins seats their records tell apart. A
- * seat alone shows as itself. */
-export function seatGroups(seats: readonly SeatEntry[]): SeatGroup[] {
-  const groups = new Map<string, { first: SeatEntry; seats: number }>();
+/** What a grouped seat's parts must carry: its badges, and a quiet thinking level where its place shows one. */
+export interface SeatParts { readonly badges: readonly string[]; readonly quiet?: string | null }
+/** One seat as the Matches lists group it: who holds it (a recorded seat's handle and label, or a live player's identity
+ * without its seat number), how it shows alone, where that differs how its group shows, and its rating where the list has
+ * one for it. */
+export interface SeatEntry<P extends SeatParts = PlayerParts> {
+  readonly who: string | null; readonly parts: P; readonly alike?: P; readonly rating?: ShownRating | null;
+}
+/** Seats shown alike, how many they are, and their rating where they have one. */
+export interface SeatGroup<P extends SeatParts = PlayerParts> { readonly parts: P; readonly seats: number; readonly rating?: ShownRating | null }
+/** A colony's seats as the Matches lists show them: the seats of one identity with the same badges and rating once, with how
+ * many they are, in the order each first sits. Seats that differ in identity, badges or rating each keep their own entry,
+ * even where two identities show one name (two providers' labels for one model), so no group joins seats their records tell
+ * apart. A seat alone shows as itself. */
+export function seatGroups<P extends SeatParts>(seats: readonly SeatEntry<P>[]): SeatGroup<P>[] {
+  const groups = new Map<string, { first: SeatEntry<P>; seats: number }>();
   for (const seat of seats) {
-    const key = JSON.stringify([seat.who, seat.parts.badges, seat.parts.quiet]);
+    const rating = seat.rating ?? null;
+    const key = JSON.stringify([seat.who, seat.parts.badges, seat.parts.quiet ?? null, rating && [rating.rating, rating.rd ?? null, rating.ratedMatches]]);
     const group = groups.get(key);
     if (group) group.seats++;
     else groups.set(key, { first: seat, seats: 1 });
   }
-  return [...groups.values()].map(({ first, seats }) => ({ parts: seats > 1 ? first.alike ?? first.parts : first.parts, seats }));
+  return [...groups.values()].map(({ first, seats }) => ({
+    parts: seats > 1 ? first.alike ?? first.parts : first.parts, seats, ...(first.rating ? { rating: first.rating } : {}),
+  }));
 }
 
 /** The record stamp's word, the record's own (ui/format.ts RECORD_LABEL without "Record"). */

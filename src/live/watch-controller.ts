@@ -7,10 +7,17 @@ import { slotActivity } from "../slots/activity.js";
 import type { StreamAgent, StreamIdentity } from "./format.js";
 import type { LiveHub, LiveHubOptions } from "./hub.js";
 import { captureMatchAccess, type MatchAccess } from "./match-access.js";
-import type { WatchRegistry } from "./watch-registry.js";
+import type { SeatDetails, WatchRegistry } from "./watch-registry.js";
+import type { StartRating } from "../replays/history.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
+import { seatRating } from "./seat-rating.js";
 
-type SeatIdentity = StreamIdentity & { readonly identityId: string };
+/**
+ * rd and ratedMatches come from the same pre-start read as elo and are present exactly when it is. They stay on this
+ * server and its handover save, reaching only the match's private record input (startRatings); the stream's identity
+ * projection (src/live/model.ts playerIdentity) carries the display name and elo alone.
+ */
+type SeatIdentity = StreamIdentity & { readonly identityId: string; readonly rd?: number; readonly ratedMatches?: number };
 interface Prepared {
   readonly access: MatchAccess;
   /** By seat key: an identity holding several seats has one entry per seat. */
@@ -63,18 +70,21 @@ export function createWatchController(options: {
    * Each lobby's seat model labels by stream display name, as its delayed playback shows them (hub onReleased): a seat's
    * label reaches the catalog no earlier than spectators see that seat join. A seat that reported none is left out.
    */
-  const shown = new Map<string, Readonly<Record<string, string>>>();
+  const shown = new Map<string, ShownSeats>();
   /** The labels last written for each lobby, so an unchanged set is not written again. */
   const published = new Map<string, string>();
   /** Write the lobby's shown labels once its match is this server's run's (started here, or a resumed match once adopted), so
    * a resumed match's labels are published under the run that holds it, whatever the server it came from published. */
   const publishLabels = (lobbyId: string) => {
-    const labels = shown.get(lobbyId);
-    if (!runs.has(lobbyId) || labels === undefined) return;
-    const text = JSON.stringify(labels);
+    const seen = shown.get(lobbyId);
+    if (!runs.has(lobbyId) || seen === undefined) return;
+    const text = JSON.stringify(seen);
     if (published.get(lobbyId) === text) return;
     published.set(lobbyId, text);
-    if (Object.keys(labels).length > 0) publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, labels), "seat labels");
+    const { modelLabels, ...details } = seen;
+    if ([modelLabels, details.thinkingLevels, details.serviceTiers].some(map => Object.keys(map).length > 0)) {
+      publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, modelLabels, details), "seat labels");
+    }
   };
   /** Publish a fenced write under the lobby's run; a run that no longer holds the match leaves the entry its owner's. */
   const publishOwned = (lobbyId: string, write: (runId: string) => Promise<boolean>, what: string) => {
@@ -119,6 +129,17 @@ export function createWatchController(options: {
         published.delete(access.lobbyId);
         shown.delete(access.lobbyId);
       },
+      startRatings(access) {
+        const metadata = prepared.get(access.lobbyId);
+        if (metadata === undefined) return undefined;
+        const starts: Record<string, StartRating> = {};
+        for (const seat of metadata.bySeat.values()) {
+          if (seat.elo !== undefined && seat.rd !== undefined && seat.ratedMatches !== undefined) {
+            starts[seat.displayName] = { rating: seat.elo, rd: seat.rd, ratedMatches: seat.ratedMatches };
+          }
+        }
+        return Object.keys(starts).length === 0 ? undefined : starts;
+      },
       async resultRatings(access, agents) {
         const lobby = await accounts.lobbies.readLobby(access.lobbyId);
         if (!lobby.ok || lobby.value.state !== "ended") return null;
@@ -143,11 +164,9 @@ export function createWatchController(options: {
       if (!lobby.ok || lobby.value.state !== "holding" || lobby.value.slot !== options.slot || lobby.value.rated === null || !instance) throw new Error("Spectator lobby not ready");
       const { challenge, mode } = lobby.value;
       const members = await Promise.all(seats.map(async seat => {
-        // A house challenge's held seat shows its handle's Model Index 1v1 rating, and none before the Index has rated
-        // it; every other seat shows its rating in the lobby's mode (a challenge's builder, its public 1v1 rating).
-        const house = challenge !== undefined && seat.colony === challenge.heldColony;
-        const read = await accounts.ratings.readRating(seat.identityId, house ? "house-1v1" : mode ?? "1v1");
-        return { ...seat, ...(house && read.ratedMatches === 0 ? {} : { elo: read.rating }) };
+        const read = await seatRating((id, ranked) => accounts.ratings.readRating(id, ranked), seat.identityId, mode ?? null,
+          challenge !== undefined && seat.colony === challenge.heldColony);
+        return { ...seat, ...(read === null ? {} : { elo: read.rating, rd: read.rd, ratedMatches: read.ratedMatches }) };
       }));
       if (closed) throw new Error("Spectator server closed");
       current = { access: { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated, mode: lobby.value.mode }, runId: instance.runId,
@@ -194,14 +213,26 @@ export function createWatchController(options: {
   };
 }
 
-/** Each seat's self-reported model label by its stream display name, from the agents delayed playback shows. */
-function releasedLabels(agents: readonly StreamAgent[]): Record<string, string> {
-  const labels: Record<string, string> = {};
+/** What delayed playback has shown of each seat that joined, by its stream display name: model label, level and tier. */
+interface ShownSeats extends SeatDetails { readonly modelLabels: Readonly<Record<string, string>> }
+
+/**
+ * Each seat's self-reported model label, thinking level and service tier by its stream display name, from the agents
+ * delayed playback shows: for each, the first agent of that name that reported one; a seat that reported none is left out.
+ */
+function releasedLabels(agents: readonly StreamAgent[]): ShownSeats {
+  const modelLabels: Record<string, string> = {}, thinkingLevels: Record<string, string> = {}, serviceTiers: Record<string, string> = {};
+  const keep = (map: Record<string, string>, name: string, value: string | undefined) => {
+    if (value !== undefined && value !== "" && !Object.hasOwn(map, name)) map[name] = value;
+  };
   for (const agent of agents) {
     const name = agent.identity?.displayName;
-    if (name !== undefined && agent.modelLabel !== "" && !Object.hasOwn(labels, name)) labels[name] = agent.modelLabel;
+    if (name === undefined) continue;
+    keep(modelLabels, name, agent.modelLabel);
+    keep(thinkingLevels, name, agent.thinkingLevel);
+    keep(serviceTiers, name, agent.serviceTier);
   }
-  return labels;
+  return { modelLabels, thinkingLevels, serviceTiers };
 }
 
 /** Each stream agent's spectator identity, found by the seat it plays. */
@@ -218,7 +249,9 @@ function watchSave(meta: unknown): WatchSave {
   const seats = value?.seats;
   if (typeof value !== "object" || value === null || !Number.isSafeInteger(value.startedAt) || value.startedAt! < 0 || !Array.isArray(seats) ||
     !seats.every(entry => Array.isArray(entry) && typeof entry[0] === "string" && typeof entry[1]?.identityId === "string" &&
-      typeof entry[1].displayName === "string" && (entry[1].elo === undefined || typeof entry[1].elo === "number"))) throw new Error("Invalid spectator watch save");
+      typeof entry[1].displayName === "string" && (entry[1].elo === undefined || typeof entry[1].elo === "number") &&
+      (entry[1].rd === undefined || typeof entry[1].rd === "number") &&
+      (entry[1].ratedMatches === undefined || typeof entry[1].ratedMatches === "number"))) throw new Error("Invalid spectator watch save");
   return { access: captureMatchAccess(value.access!), startedAt: value.startedAt!, seats };
 }
 
@@ -226,10 +259,11 @@ function watchSave(meta: unknown): WatchSave {
  * Each seat's spectator identity by its seat key. An identity holding several seats is
  * shown as "<name> #<seat>" on each, so no seat's entry replaces another's.
  */
-function seatIdentities(members: readonly (LobbySeat & { readonly elo?: number })[]): ReadonlyMap<string, SeatIdentity> {
+function seatIdentities(members: readonly (LobbySeat & { readonly elo?: number; readonly rd?: number; readonly ratedMatches?: number })[]): ReadonlyMap<string, SeatIdentity> {
   const names = seatDisplayNames(members);
   return new Map(members.map((member, index) => [seatKeyOf(member), {
-    identityId: member.identityId, displayName: names[index]!, ...(member.elo === undefined ? {} : { elo: member.elo }) }]));
+    identityId: member.identityId, displayName: names[index]!, ...(member.elo === undefined ? {} : { elo: member.elo }),
+    ...(member.rd === undefined || member.ratedMatches === undefined ? {} : { rd: member.rd, ratedMatches: member.ratedMatches }) }]));
 }
 
 /** Each seat's display name in the stream, in seat order: "<name> #<seat>" for an identity holding several seats. */

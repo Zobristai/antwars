@@ -1,20 +1,15 @@
-// The Matches page's Waiting card: read-only, directly above Live now, one row per waiting agent with its name,
-// mode and time waited, and an empty state when none is waiting. Its rows stand on Live now's grid and column
-// order: Waited, Match, then each colony, as a table in a wide card and stacked rows in a narrow one.
+// The Matches page's Waiting card: read-only, directly above Live now, in the one Matches row layout: when the wait
+// began, the game type, the two colonies, the status stamp and no button, as a table in a wide card and stacked rows in a
+// narrow one. A waiting builder shows its username and rating; a house model its model, level and Fast.
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
-import { lobbyKind, lobbyText, waitedText, waitingMode } from "../../../web/src/pages/waiting.ts";
+import { lobbyKind, waitingPlayers, waitingType } from "../../../web/src/pages/waiting.ts";
 import type { MatchesView, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
-/** The table's body rows as read: the time waited, the match's kind, then each colony cell's seats with its span. */
+/** The table's body rows as read: each cell's words, a colony cell's lines. */
 const tableRows = (card: ElementPort) => card.byClass("d1p-wide")[0]!.querySelectorAll("tr").filter(row => row.parent?.tag === "tbody")
-  .map(row => row.children.map(cell => cell.className === "c-model"
-    ? [cell.colSpan, cell.byClass("d1p-model").map(seat => seat.textContent)]
-    : [cell.className, cell.textContent]));
-/** The stacked rows' lines as read. */
-const stackedLines = (card: ElementPort) => card.byClass("d1p-narrow")[0]!.querySelectorAll("li")
-  .map(item => item.byClass("d1p-line").map(line => line.textContent));
+  .map(row => row.children.map(cell => cell.className === "c-model" ? cell.byClass("d1p-model").map(seat => seat.textContent) : cell.textContent));
 
 const view = (waiting: MatchesView["waiting"]): MatchesView =>
   ({ waiting, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows: [] }, next: null });
@@ -29,157 +24,119 @@ function page() {
   return { mounted, titles, card };
 }
 
+const T = Date.parse("2026-11-11T05:01:00Z");
+const rating = (value: number) => ({ rating: value, rd: 80, ratedMatches: 12 });
+
 describe("the Waiting card", () => {
-  it("stands directly above Live now and lists each agent's name, mode and time waited, with no link", () => {
+  const agents: WaitingAgent[] = [
+    { displayName: "coffee-ant", mode: "1v1", waitingSeconds: 90, since: T, rating: rating(1540) },
+    { displayName: "antwars/gpt-6-luna", mode: "house-2v2", waitingSeconds: 5, since: T + 60_000, rating: null },
+  ];
+
+  it("stands directly above Live now and draws each queued agent in the first colony, no opponent yet in the second, WAITING and no button", () => {
     const p = page();
-    const rows: WaitingAgent[] = [
-      { displayName: "sam/first", mode: "1v1", waitingSeconds: 125 },
-      { displayName: "bea", mode: "4v4", waitingSeconds: 12 },
-      { displayName: "antwars/glm-5-3", mode: "house-2v2", waitingSeconds: 899 },
-    ];
-    p.mounted.update(view({ status: "ready", rows }));
+    p.mounted.update(view({ status: "ready", rows: agents }));
     expect(p.titles()).toEqual(["Waiting", "Live now", "Recordings"]);
-    const card = p.card();
-    expect(card.byClass("d1p-state")[0]!.textContent).toBe("3 agents waiting in a ranked queue");
-    // Live now's grid: one head row, Waited and Match, then each colony, the second over the record and action columns.
-    const table = card.byClass("d1p-wide")[0]!;
-    expect(table.classes()).toEqual(["d1p-table", "d1p-wait", "d1p-wide"]);
-    expect(table.querySelector("colgroup")!.children.map(col => col.className)).toEqual(["c-start", "c-result", "c-model", "c-model", "c-record", "c-go"]);
-    expect(table.querySelector("thead")!.children[0]!.children.map(head => [head.tag, head.className, head.textContent, head.colSpan])).toEqual([
-      ["th", "c-start", "Waited", 1], ["th", "c-result", "Match", 1], ["th", "c-model d1p-c0", "Very Large Colony", 1], ["th", "c-model d1p-c1", "Lake Hodges Colony", 3],
+    expect(tableRows(p.card())).toEqual([
+      ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 LunamaxFast"], ["no opponent yet"], "Status Waiting", ""],
     ]);
-    // A queued agent has no colony yet: its name spans both colonies' columns. The wait is as of the load.
-    expect(tableRows(card)).toEqual([
-      [["c-start", "2 minwhen loaded"], ["c-result", "Ranked · 1v1"], [4, ["sam/first"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Ranked · 4v4"], [4, ["bea"]]],
-      // A house handle in the shared row style (rowName), as Live now names it.
-      [["c-start", "14 minwhen loaded"], ["c-result", "Index · 2v2"], [4, ["GLM-5.3max"]]],
-    ]);
-    expect(stackedLines(card)).toEqual([
-      ["2 min waiting when loaded", "Ranked · 1v1", "sam/first"],
-      ["under 1 min waiting when loaded", "Ranked · 4v4", "bea"],
-      ["14 min waiting when loaded", "Index · 2v2", "GLM-5.3max"],
-    ]);
-    expect(card.all().filter(node => node.tag === "a" || node.tag === "button")).toEqual([]);
+    expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("2 agents waiting in a ranked queue");
+    // A builder's line is its username alone (with its rating); a house model leads with its model and has no username.
+    const [builder, house] = p.card().byClass("d1p-wide")[0]!.byClass("d1p-model");
+    expect(builder!.byClass("d1p-user").map(node => node.textContent)).toEqual(["coffee-ant"]);
+    expect(builder!.byClass("d1p-mname")).toEqual([]);
+    expect(house!.byClass("d1p-user")).toEqual([]);
+    expect(p.card().textContent).not.toMatch(/antwars\/|Waited|when loaded|min\b/);
     p.mounted.destroy();
   });
 
   it("says when no agent is waiting, and when the list could not be read", () => {
     const p = page();
     p.mounted.update(view({ status: "ready", rows: [] }));
-    expect(p.titles()[0]).toBe("Waiting");
     expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("No agent waiting in a ranked queue or lobby");
-    expect(p.card().all().filter(node => node.tag === "li")).toEqual([]);
+    expect(p.card().byClass("d1p-wide")).toEqual([]);
     p.mounted.update(view({ status: "error", rows: [] }));
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toContain("Queue list unavailable");
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toMatch(/^Queue list unavailable/);
     p.mounted.destroy();
-  });
-
-  it("names every mode in the Recordings badge's words and the wait in whole minutes", () => {
-    expect(["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4"].map(mode => waitingMode(mode as WaitingAgent["mode"]))).toEqual([
-      "Ranked · 1v1", "Ranked · 2v2", "Ranked · 3v3", "Ranked · 4v4",
-      "Index · 1v1", "Index · 2v2", "Index · 3v3", "Index · 4v4",
-    ]);
-    expect([0, 59, 60, 119, 900].map(waitedText)).toEqual(["under 1 min", "under 1 min", "1 min", "1 min", "15 min"]);
   });
 });
 
 describe("the Waiting card's lobby rows", () => {
   const lobbies: WaitingLobby[] = [
-    { mode: null, size: 2, seated: 3, colonies: [["ann", "cat"], ["bob"]], waitingSeconds: 250 },
-    { mode: null, size: 1, seated: 1, colonies: [["dan"], []], waitingSeconds: 30 },
-    { mode: "2v2", size: 2, seated: 4, colonies: [["fay"], ["gus"]], waitingSeconds: 3 },
-    { mode: "house-1v1", size: 1, seated: 2, colonies: [["antwars/claude-opus-5-5"], ["antwars/gpt-6-luna"]], waitingSeconds: 0 },
+    { mode: null, size: 2, seated: 3, colonies: [["omp-dolphin", "omp-dolphin/spar"], ["coffee-ant"]], ratings: [[null, null], [rating(1540)]],
+      waitingSeconds: 30, since: T - 180_000 },
+    { mode: "house-1v1", size: 1, seated: 2, colonies: [["antwars/gpt-6-luna"], ["antwars/gpt-6-luna"]], ratings: [[rating(1500)], [rating(1337)]],
+      waitingSeconds: 2, since: T + 60_000 },
+    { mode: null, size: 1, seated: 1, colonies: [[], ["kain"]], ratings: [[], [null]], waitingSeconds: 400, since: T - 4_620_000, challenge: "house" },
+    // An older server sends no ratings: the names stand alone.
+    { mode: null, size: 1, seated: 2, colonies: [["ann"], ["bob"]], waitingSeconds: 1, since: T },
   ];
-  it("lists each lobby under its seated names after the unchanged queue rows, still above Live now", () => {
+
+  it("draws each lobby's seated players in their colonies with their ratings, an open seat, a held seat not joined, and its stamp", () => {
     const p = page();
-    p.mounted.update(view({ status: "ready", rows: [{ displayName: "sam/first", mode: "1v1", waitingSeconds: 125 }, ...lobbies] }));
-    expect(p.titles()).toEqual(["Waiting", "Live now", "Recordings"]);
-    const card = p.card();
-    expect(card.byClass("d1p-state")[0]!.textContent).toBe("1 agent waiting in a ranked queue · 4 matches waiting to start");
-    // Each colony's seats in its own column; the Match text in the Recordings badge's words; a paired lobby shows its wait too.
-    expect(tableRows(card)).toEqual([
-      [["c-start", "2 minwhen loaded"], ["c-result", "Ranked · 1v1"], [4, ["sam/first"]]],
-      [["c-start", "4 minwhen loaded"], ["c-result", "Lobby · 2v2 · 3 of 4 seats"], [1, ["ann", "cat"]], [3, ["bob"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Lobby · 1v1 · 1 of 2 seats"], [1, ["dan"]], [3, []]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Ranked · 2v2 · paired, starting soon"], [1, ["fay"]], [3, ["gus"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Index · 1v1 · paired, starting soon"], [1, ["Claude Opus 5.5high"]], [3, ["GPT-6 LunamaxFast"]]],
+    p.mounted.update(view({ status: "ready", rows: lobbies }));
+    expect(tableRows(p.card()).map(row => row.slice(1, 5))).toEqual([
+      ["Unranked · 2v2", ["omp-dolphin", "omp-dolphin/spar"], ["coffee-ant1540 ± 80", "seat open"], "Status 3 of 4 seats"],
+      ["Index · 1v1", ["GPT-6 LunamaxFast1500 ± 80"], ["GPT-6 LunamaxFast1337 ± 80"], "Status Starting"],
+      ["Challenge · 1v1", ["not joined yet"], ["kain"], "Status 1 of 2 seats"],
+      ["Unranked · 1v1", ["ann"], ["bob"], "Status Starting"],
     ]);
-    expect(stackedLines(card)).toEqual([
-      ["2 min waiting when loaded", "Ranked · 1v1", "sam/first"],
-      ["4 min waiting when loaded", "Lobby · 2v2 · 3 of 4 seats"],
-      ["under 1 min waiting when loaded", "Lobby · 1v1 · 1 of 2 seats"],
-      ["under 1 min waiting when loaded", "Ranked · 2v2 · paired, starting soon"],
-      ["under 1 min waiting when loaded", "Index · 1v1 · paired, starting soon"],
-    ]);
-    // The stacked lobby rows list each colony under its name, as Live now's do; a colony with no seat yet stays blank.
-    const colonies = card.byClass("d1p-narrow")[0]!.querySelectorAll("li").slice(1, 3).map(item => item.byClass("d1p-colonies")[0]!.children
-      .map(node => node.tag === "dt" ? node.textContent : node.byClass("d1p-model").map(seat => seat.textContent)));
-    expect(colonies).toEqual([["Very Large Colony", ["ann", "cat"], "Lake Hodges Colony", ["bob"]], ["Very Large Colony", ["dan"], "Lake Hodges Colony", []]]);
-    expect(card.byClass("d1p-unknown")).toEqual([]);
-    expect(card.all().filter(node => node.tag === "a" || node.tag === "button")).toEqual([]);
+    expect(tableRows(p.card()).map(row => row[0])).toEqual(["11 Nov 202604:58 UTC", "11 Nov 202605:02 UTC", "11 Nov 202603:44 UTC", "11 Nov 202605:01 UTC"]);
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("4 matches waiting to start");
+    // The stacked rows carry the same lines.
+    const item = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li")[0]!;
+    expect(item.byClass("d1p-model").map(line => line.textContent)).toEqual(["omp-dolphin", "omp-dolphin/spar", "coffee-ant1540 ± 80", "seat open"]);
     p.mounted.destroy();
   });
 
-  it("counts lobbies alone, and says when nothing at all is waiting", () => {
-    const p = page();
-    p.mounted.update(view({ status: "ready", rows: lobbies.slice(2, 3) }));
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("1 match waiting to start");
-    p.mounted.update(view({ status: "ready", rows: [] }));
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("No agent waiting in a ranked queue or lobby");
-    p.mounted.destroy();
-  });
-
-  it("words a lobby by its copy, its kind in the Recordings badge's word, its wait in the Waited column", () => {
-    expect(lobbyText({ mode: null, size: 4, seated: 5, colonies: [["a"], ["b"]], waitingSeconds: 600 })).toBe("Lobby · 4v4 · 5 of 8 seats");
-    expect(lobbyText({ mode: "3v3", size: 3, seated: 6, colonies: [["a"], ["b"]], waitingSeconds: 600 })).toBe("Ranked · 3v3 · paired, starting soon");
-    expect(lobbyText({ mode: "house-2v2", size: 2, seated: 4, colonies: [["a"], ["b"]], waitingSeconds: 0 })).toBe("Index · 2v2 · paired, starting soon");
-    expect(lobbyText({ mode: null, size: 1, seated: 1, colonies: [[], ["a"]], waitingSeconds: 0, challenge: "house" })).toBe("Challenge · 1v1 · 1 of 2 seats");
-  });
-
-  it("tells every lobby's kind by the server's rule for a recording's lobby, in the standing mode names", () => {
-    // src/replays/history-routes.ts recordingMatchType: a house-* mode is the Index, another mode Ranked, a modeless lobby a
-    // house challenge or else a public or invite-only lobby ("Lobby · NvN").
-    const modes = [null, "1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const;
-    expect(modes.map(mode => lobbyKind({ mode }))).toEqual(["lobby", "ranked", "ranked", "ranked", "ranked", "index", "index", "index", "index"]);
+  it("tells every lobby's kind by the server's rule for a recording's lobby, Unranked for a public or invite-only lobby", () => {
+    expect(lobbyKind({ mode: "house-3v3" })).toBe("index");
+    expect(lobbyKind({ mode: "2v2" })).toBe("ranked");
     expect(lobbyKind({ mode: null, challenge: "house" })).toBe("challenge");
-    for (const mode of modes) for (const challenge of [undefined, "house"] as const) {
-      expect(lobbyText({ mode, size: 2, seated: 1, colonies: [["a"], []], waitingSeconds: 0, ...(challenge ? { challenge } : {}) })).not.toMatch(/Unranked/i);
-    }
+    expect(lobbyKind({ mode: null })).toBe("unranked");
+    expect(waitingType({ mode: null, size: 3, seated: 1, colonies: [["a"], []], waitingSeconds: 0, since: 0 })).toBe("Unranked · 3v3");
+    expect(waitingType({ displayName: "a", mode: "house-4v4", waitingSeconds: 0, since: 0 })).toBe("Index · 4v4");
   });
 
-  it("shows \"Unranked\" nowhere on the Waiting card", () => {
+  it("lists an identity holding several seats of a queued team pairing once in its colony, with how many", () => {
     const p = page();
-    const agents: WaitingAgent[] = [
-      { displayName: "sam/first", mode: "1v1", waitingSeconds: 125 },
-      { displayName: "antwars/glm-5-3", mode: "house-1v1", waitingSeconds: 5 },
-    ];
-    const challenge: WaitingLobby = { mode: null, size: 1, seated: 1, colonies: [[], ["probe"]], waitingSeconds: 9, challenge: "house" };
-    p.mounted.update(view({ status: "ready", rows: [...agents, ...lobbies, challenge] }));
-    const card = p.card();
-    expect(card.textContent).not.toMatch(/unranked/i);
-    for (const node of card.all()) for (const value of [...Object.values(node.attrs), ...Object.values(node.dataset), node.title]) expect(value).not.toMatch(/unranked/i);
-    expect(card.byClass("c-result").map(cell => cell.textContent.split(" · ")[0])).toEqual(
-      expect.arrayContaining(["Ranked", "Index", "Lobby", "Challenge"]));
+    // As the server sends them: each identity once per colony, with how many of its seats it holds.
+    const pairing: WaitingLobby = { mode: "4v4", size: 4, seated: 8, colonies: [["kite"], ["bob", "ann"]],
+      ratings: [[rating(1540)], [rating(1490), null]], seats: [[4], [2, 2]], waitingSeconds: 3, since: T };
+    const house: WaitingLobby = { mode: "house-4v4", size: 4, seated: 8, colonies: [["antwars/gpt-6-luna"], ["antwars/glm-5-3"]],
+      ratings: [[rating(1979)], [null]], seats: [[4], [4]], waitingSeconds: 3, since: T };
+    p.mounted.update(view({ status: "ready", rows: [pairing, house] }));
+    const counts = (row: number, colony: 0 | 1) => p.card().byClass("d1p-wide")[0]!.querySelectorAll("tr").filter(tr => tr.parent?.tag === "tbody")[row]!
+      .byClass("c-model")[colony]!.byClass("d1p-model").map(line => [line.byClass("d1p-user")[0]?.textContent ?? line.byClass("d1p-mname")[0]?.textContent, line.byClass("d1p-count")[0]?.textContent ?? null]);
+    expect(counts(0, 0)).toEqual([["kite", "×4, 4 seats"]]);
+    expect(counts(0, 1)).toEqual([["bob", "×2, 2 seats"], ["ann", "×2, 2 seats"]]);
+    expect(counts(1, 0)).toEqual([["GPT-6 Luna", "×4, 4 seats"]]);
+    expect(counts(1, 1)).toEqual([["GLM-5.3", "×4, 4 seats"]]);
+    // A server that sends no counts shows each name once, one seat each.
+    expect(waitingPlayers(["kite"], undefined).map(line => line.seats)).toEqual([1]);
+    // Each group keeps its rating badge once.
+    expect(p.card().byClass("d1p-wide")[0]!.byClass("d1p-elo-badge").map(badge => badge.textContent)).toEqual(["1540 ± 80", "1490 ± 80", "1979 ± 80"]);
+    p.mounted.destroy();
+  });
+
+  it("draws every waiting stamp dashed, as the drawing does", () => {
+    const p = page();
+    p.mounted.update(view({ status: "ready", rows: lobbies }));
+    expect(p.card().byClass("d1p-wide")[0]!.byClass("d1p-stamp").map(node => node.className)).toEqual(Array(4).fill("d1p-stamp is-waiting"));
+    p.mounted.destroy();
+  });
+
+  it("shows \"Lobby\" nowhere on the Waiting card", () => {
+    const p = page();
+    p.mounted.update(view({ status: "ready", rows: lobbies }));
+    expect(p.card().textContent).not.toMatch(/Lobby/);
     p.mounted.destroy();
   });
 });
 
 describe("house challenges on the Waiting card", () => {
-  it("labels a house challenge's lobby as a challenge, and no other lobby", () => {
-    const p = page();
-    p.mounted.update(view({ status: "ready", rows: [
-      { mode: null, size: 1, seated: 1, colonies: [[], ["player-7"]], waitingSeconds: 269, challenge: "house" },
-      { mode: null, size: 1, seated: 1, colonies: [["dan"], []], waitingSeconds: 30 },
-    ] }));
-    expect(tableRows(p.card())).toEqual([
-      [["c-start", "4 minwhen loaded"], ["c-result", "Challenge · 1v1 · 1 of 2 seats"], [1, []], [3, ["player-7"]]],
-      [["c-start", "under 1 minwhen loaded"], ["c-result", "Lobby · 1v1 · 1 of 2 seats"], [1, ["dan"]], [3, []]],
-    ]);
-    expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
-    p.mounted.destroy();
-  });
-
   it("offers a house challenge, linking to the Leaderboard's Antwars Model Index 1v1 board, only when nothing at all is waiting", () => {
     const port = dom({ search: "?page=matches&board=3d" });
     const host = port.doc.createElement("div");
@@ -198,7 +155,7 @@ describe("house challenges on the Waiting card", () => {
     expect(links()).toEqual([]);
     mounted.update(view({ status: "error", rows: [] }));
     expect(links()).toEqual([]);
-    mounted.update(view({ status: "ready", rows: [{ displayName: "bea", mode: "1v1", waitingSeconds: 12 }] }));
+    mounted.update(view({ status: "ready", rows: [{ displayName: "bea", mode: "1v1", waitingSeconds: 12, since: 0 }] }));
     expect(links()).toEqual([]);
     mounted.destroy();
   });

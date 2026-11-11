@@ -12,7 +12,7 @@ import type { RankingView } from "../../../web/src/leaderboard-page/view.ts";
 import {
   BOARD_GROUPS, OPENING_MODE, RECORDINGS_LIST, colonyModels, colonySeats, seatModelName, eloText, formMarks, rdText, leaderboardLists, liveKind,
   liveLine, loadedText, loadsSettled, matchesLists, modelName, nameParts, provisional, ranks, recordOf, recordedIdentity, recordingsLine,
-  ruleAnchor, ruleGroups, seatGroups, stampWord, tableCount, tableState, tableTitle, thinkingText, whenParts, winnerOf, type ListLoad, type LoadsSeen,
+  ruleAnchor, ruleGroups, recordedPlayer, seatGroups, stampWord, tableCount, tableState, tableTitle, thinkingText, whenParts, winnerOf, type ListLoad, type LoadsSeen, type PlayerParts,
 } from "../../../web/src/pages/model.ts";
 
 const row = (rating: number, ratedMatches = 1) => ({ displayName: `Player ${rating}`, rating, ratedMatches, thinkingLevel: null });
@@ -220,8 +220,18 @@ describe("Matches", () => {
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant")).name).toBe("local");
     // Recordings names a label whose provider part is the seat's own handle by that handle; the HUD keeps the model's words.
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant"), { listed: true }).name).toBe("coffee-ant");
-    expect(colonySeats([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])!.map(c => c?.map(e => e.parts.name) ?? null))
-      .toEqual([["coffee-ant", "local"], null]);
+    // The Matches lists draw a builder's username, then the model it named; the model is left out where the label only
+    // repeats the username, and a house handle has no username.
+    const shown = (parts: PlayerParts) => [parts.user, parts.model].filter(word => word !== null).join(" ");
+    expect(colonySeats([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])!.map(c => c?.map(e => shown(e.parts)) ?? null))
+      .toEqual([["coffee-ant", "kite local"], null]);
+    expect(recordedPlayer(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol"))).toMatchObject({ user: null, model: "GPT-6.1 Sol" });
+    expect(recordedPlayer(seat(0, null, "omp-dolphin"))).toEqual({ user: "omp-dolphin", model: null, badges: [] });
+    expect(recordedPlayer({ ...seat(0, "openai/gpt-6.1-terra", "kain"), thinkingLevel: "high", serviceTier: "fast" }))
+      .toEqual({ user: "kain", model: "GPT-6.1 Terra", badges: ["high", "Fast"] });
+    // A builder that named no model shows no level or Fast, whatever it recorded.
+    expect(recordedPlayer({ ...seat(0, null, "kain"), thinkingLevel: "high" }).badges).toEqual([]);
+    expect(recordedPlayer(seat(0, null, null))).toEqual({ user: null, model: "model unknown", badges: [] });
     // Only an exact provider part before the first "/" counts; every other label keeps modelName's words.
     expect(seatModelName("coffee-ant/local", "coffee-ant")).toBe("coffee-ant");
     expect(seatModelName("coffee-ant/local", "Coffee-Ant")).toBe("local");
@@ -233,25 +243,23 @@ describe("Matches", () => {
     expect(seatModelName("openai/gpt-6.1-terra", "kestrel-harness")).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
-    expect(seatGroups(groups)).toEqual([{ parts: { name: "omp-dolphin", badges: [], quiet: null }, seats: 2 }, { parts: { name: "coffeebot-ant", badges: [], quiet: null }, seats: 1 }]);
-    // Seats with one label group only where they show alike: a seat shown by its own handle keeps its line, in either order,
-    // while seats that show the label's model words still group as before.
-    const named = (list: Recording["seats"]) => seatGroups(colonySeats(list)![0]!).map(group => [group.parts.name, group.seats]);
-    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["local", 1], ["coffee-ant", 1]]);
-    expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])).toEqual([["coffee-ant", 1], ["local", 1]]);
-    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "wren")])).toEqual([["local", 2]]);
+    expect(seatGroups(groups)).toEqual([{ parts: { user: "omp-dolphin", model: null, badges: [] }, seats: 2 }, { parts: { user: "coffeebot-ant", model: null, badges: [] }, seats: 1 }]);
+    // Seats group only where they show alike and are one player: one username and one label.
+    const named = (list: Recording["seats"]) => seatGroups(colonySeats(list)![0]!).map(group => [shown(group.parts), group.seats]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["kite local", 1], ["coffee-ant", 1]]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "wren")])).toEqual([["kite local", 1], ["wren local", 1]]);
+    expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "kite")])).toEqual([["kite local", 2]]);
     expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["coffee-ant", 2]]);
-    // No reported label, however spelled, joins a seat shown by its handle, in either order.
-    for (const label of ["coffee-ant/local|shown:coffee-ant", '["model:coffee-ant/local","coffee-ant"]']) {
-      const shownAs = modelName(label);
-      expect(named([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, label, "kite")])).toEqual([["coffee-ant", 1], [shownAs, 1]]);
-      expect(named([seat(0, label, "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([[shownAs, 1], ["coffee-ant", 1]]);
-    }
     // A handle never joins a model label that reads the same, however the label is spelled.
     expect(seatGroups(colonySeats([seat(0, null, "local"), seat(1, "local", "kite")])![0]!)).toHaveLength(2);
     for (const label of ["@omp-dolphin", "handle:omp-dolphin", "model:omp-dolphin"]) {
       expect(seatGroups(colonySeats([seat(0, null, "omp-dolphin"), seat(1, label, "kite")])![0]!).map(group => group.seats)).toEqual([1, 1]);
     }
+    // A recording carries each seat's start rating where its record stores one; seats that differ in it keep their own lines.
+    const start = { rating: 1540, rd: 80, ratedMatches: 12 };
+    const rated = seatGroups(colonySeats([{ ...seat(0, null, "kite"), startRating: start }, { ...seat(1, null, "kite"), startRating: start },
+      { ...seat(2, null, "kite"), startRating: { ...start, rating: 1541 } }, seat(3, null, "kite")])![0]!);
+    expect(rated.map(group => [group.seats, group.rating?.rating ?? null])).toEqual([[2, 1540], [1, 1541], [1, null]]);
   });
   it("lists a colony's alike seats once with how many they are, in first-seat order, and keeps every seat that differs", () => {
     const opus = { name: "Claude Opus 5.5", badges: ["high"], quiet: null }, sol = { name: "GPT-6.1 Sol", badges: ["max", "Fast"], quiet: null };

@@ -16,7 +16,10 @@ export interface HistorySummary {
   winner: 0 | 1 | null;
   reason: string | null;
   decidedBy: string | null;
-  seats: { seat: number; colony: 0 | 1; modelLabel: string | null; thinkingLevel: string | null; serviceTier: string | null; handle: string | null }[];
+  /** startRating: the seat's rating, RD and rated-match count at match start where its record stored them, else null. parseSummary
+   * always sets it; a summary built elsewhere without it has none. */
+  seats: { seat: number; colony: 0 | 1; modelLabel: string | null; thinkingLevel: string | null; serviceTier: string | null; handle: string | null;
+    startRating?: { rating: number; rd: number; ratedMatches: number } | null }[];
   status: "complete" | "partial" | "unavailable";
   unavailable: string[];
   /**

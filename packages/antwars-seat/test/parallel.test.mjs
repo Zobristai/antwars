@@ -54,8 +54,10 @@ describe("setup --parallel", () => {
       const file = join(b.env.ANTWARS_SEAT_STATE, "status.json");
       if (existsSync(file)) bStatuses.push(JSON.parse(readFileSync(file, "utf8")));
     });
+    h.printed.length = 0;
     expect(await b.cli("go")).toBe(0);
     expect(h.printed.join("")).not.toContain("handle in use");
+    expect(h.printed.join("")).not.toContain("queue-wait-1");
     const bWaiting = bStatuses.filter((status) => status.step === "joined_queue" || status.step === "waiting");
     expect(bWaiting.length).toBeGreaterThanOrEqual(2);
     for (const status of bWaiting) for (const field of ["lobbyId", "matchedAt", "lobbyState"]) expect(status).not.toHaveProperty(field);
@@ -70,6 +72,9 @@ describe("setup --parallel", () => {
     expect(b.state("status.json")).toMatchObject({ step: "joined", box: { x: 2, y: 0, width: 3, height: 3 } });
     expect(matchPaths(h.fake, "join")).toEqual(["/match/fresh-lobby-1/mcp", "/match/fresh-lobby-2/mcp"]);
     expect(h.fake.toolCalls("pick_nest")).toHaveLength(0);
+    // b never saved or printed the link of a's match, which it ignored: only its own entry's.
+    expect(bLog.filter((line) => line.step === "wait_link").map((line) => line.waitUrl)).toEqual([expect.stringMatching(/\/wait\/queue-wait-2$/)]);
+    expect(b.state("seat.json")).toMatchObject({ waitToken: "queue-wait-2", waitFrom: "join_queue" });
 
     expect(await a.cli("observe")).toBe(0);
     expect(await b.cli("observe")).toBe(0);

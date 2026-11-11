@@ -19,6 +19,13 @@ const list = (value: Json, max: number): Json[] => Array.isArray(value) && value
 const oneOf = <T extends Json>(value: Json, allowed: readonly T[]): T => allowed.includes(value as T) ? value as T : invalid();
 const optionalFlag = (value: Json): boolean | undefined => value === undefined || typeof value === "boolean" ? value : invalid();
 const clip = (value: string | null, max: number): string | null => value === null ? null : Array.from(value).slice(0, max).join("");
+/** A seat's stored start rating (src/replays/history.ts StartRating); absent, or anything not exactly one, reads as null. */
+const startRating = (value: Json): { rating: number; rd: number; ratedMatches: number } | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const { rating, rd, ratedMatches } = value as Record<string, Json>;
+  return typeof rating === "number" && Number.isFinite(rating) && typeof rd === "number" && Number.isFinite(rd) && rd >= 0 &&
+    typeof ratedMatches === "number" && Number.isSafeInteger(ratedMatches) && ratedMatches >= 0 ? { rating, rd, ratedMatches } : null;
+};
 
 export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   const record = object(JSON.parse(new TextDecoder().decode(bytes)));
@@ -32,7 +39,8 @@ export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
     const seat = object(value);
     const index = typeof seat.seat === "number" && Number.isSafeInteger(seat.seat) && seat.seat >= 0 ? seat.seat : invalid();
     return { seat: index, colony: oneOf(seat.colony, [0, 1] as const), modelLabel: nullableText(seat.modelLabel),
-      thinkingLevel: optionalText(seat.thinkingLevel), serviceTier: optionalText(seat.serviceTier), handle: optionalText(seat.handle) };
+      thinkingLevel: optionalText(seat.thinkingLevel), serviceTier: optionalText(seat.serviceTier), handle: optionalText(seat.handle),
+      startRating: startRating(seat.startRating) };
   });
   const status = oneOf(record.status, ["complete", "partial", "unavailable"] as const);
   const unavailable = list(record.unavailable, 32).map(reason => text(reason));

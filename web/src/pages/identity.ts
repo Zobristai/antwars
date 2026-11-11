@@ -39,6 +39,17 @@ export function ratingNodes(doc: Document, row: ShownRating, look: RatingLook = 
   return nodes;
 }
 
+/** A Matches row's rating: the cyan badge, figure only, its "± RD" on hover, tap or focus, with no provisional word. A
+ * badge with an RD is a button keyed by `key` (its data-key), so a redraw of the list keeps keyboard focus on it
+ * (chrome.ts rebuild). */
+export function rowRatingNode(doc: Document, row: ShownRating, key: string): HTMLElement {
+  const rd = rdText(row);
+  if (rd === "") return h(doc, "span", "d1-tag d1-elo d1p-elo-badge", eloText(row.rating));
+  const badge = rdBadge(doc, eloText(row.rating), rd);
+  badge.dataset.key = key;
+  return badge;
+}
+
 /** The badge showing the figure alone, its "± RD" a tip above it, shown on hover. The tip's text stays inside the badge, so its accessible name is "1522 ± 87"; archive.css shows the tip on
  * keyboard focus, while open, and while a mouse or pen is over it. Hover is read from the pointer, not CSS :hover, because
  * a touch leaves WebKit's :hover stuck on a tapped badge while a mouse on a touch-first device still hovers. A tap opens or
