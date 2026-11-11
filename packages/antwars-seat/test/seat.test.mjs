@@ -677,6 +677,34 @@ describe("wait link: go and join-lobby save and print the waitUrl, wait-url read
     expect(s.state("seat.json")).toMatchObject({ waitToken: "queue-wait-partner", waitFrom: "queue_status" });
   });
 
+  it("go never saves or prints a stale baseline's link: only the link of the entry it queued and was paired on", async () => {
+    const s = await seat({ pairAfterMs: 20_000, lobbies: { old: "ended" },
+      baseline: (clock) => ({ state: "matched", mode: "house-1v1", lobbyId: "old", matchedAt: clock.now() - 3_600_000, waitToken: "queue-wait-stale" }) });
+    s.printed.length = 0;
+    expect(await s.cli("go")).toBe(0);
+    expect(s.state("match.json").lobbyId).toBe("fresh-lobby");
+    expect(s.printed.join("")).not.toContain("queue-wait-stale");
+    const saved = readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((line) => line.step === "wait_link");
+    expect(saved.map((line) => line.waitUrl)).toEqual([expect.stringMatching(/\/wait\/queue-wait-1$/)]);
+    expect(s.state("seat.json")).toMatchObject({ waitToken: "queue-wait-1", waitFrom: "join_queue" });
+  });
+
+  it.each([
+    ["refused", { refuseReadLobby: 1 }],
+    ["failed over HTTP", { failReadLobbyHttp: 1 }],
+  ])("already_seated, a first read_lobby that %s is retried until one returns the link, which wait-url then reads", async (_, readFailure) => {
+    const s = await seat({ refuseJoinLobby: "already_seated", ...readFailure });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(s.fake.toolCalls("read_lobby").length).toBeGreaterThanOrEqual(2);
+    expect(readFileSync(join(s.dir, "state", "progress.log"), "utf8")).toContain("wait_link_read_failed");
+    expect(s.state("seat.json")).toMatchObject({ waitToken: "lobby-wait-lobby-1", waitFrom: "read_lobby" });
+    expect(s.state("status.json")).toMatchObject({ step: "joined" });
+    const read = await waitUrlCommand(s);
+    expect(read.code).toBe(0);
+    expect(JSON.parse(read.printed).waitUrl).toMatch(/\/wait\/lobby-wait-lobby-1$/);
+  });
+
   it("join-lobby saves join_lobby's link; answered already_seated, it takes the seat's link from read_lobby", async () => {
     const s = await seat();
     await s.cli("create-lobby");

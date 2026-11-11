@@ -216,10 +216,14 @@ line per step), shown by `status`. Only one `go` runs per seat at a time. Each
 ```
 
 **Wait link.** Each `go` or `join-lobby` run starts with no saved link, then
-keeps the first `waitUrl` a reply carries: `join_queue`'s, or `queue_status`'s
-when this seat adopts its own waiting entry, its `join_queue` is answered
-`already_queued`, or it is a non-queuing seat; for `join-lobby`, `join_lobby`'s,
-or `read_lobby`'s when `join_lobby` answers `already_seated`. It is written to
+keeps the `waitUrl` of this seat's own current wait only: `join_queue`'s, or
+`queue_status`'s when this seat adopts its own waiting entry, its `join_queue`
+is answered `already_queued`, or it is a non-queuing seat, each once the entry
+is waiting for this seat or paired on a match this seat takes. A stale pairing,
+or another run's match ignored under `--parallel`, never sets the link. For
+`join-lobby` it keeps `join_lobby`'s, or `read_lobby`'s when `join_lobby`
+answers `already_seated`; a failed `read_lobby` is retried every poll until one
+succeeds. It is written to
 `state/seat.json` (`waitUrl`, `waitToken`, `waitFrom`, `waitSavedAt`), logged
 as step `wait_link` and printed at once as one line:
 

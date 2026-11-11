@@ -118,23 +118,40 @@ export async function awaitPairing({ entry, ctx, pollMs, maxWaitMs }) {
     return { lobbyId: status.lobbyId, matchedAt, lobbyState: state };
   };
 
+  /**
+   * A queue entry that is this seat's own current wait: waiting and created by this seat (adopted or its own join), or,
+   * for a non-queuing seat, its handle's waiting entry; an already_queued join is the handle's own entry unless --parallel.
+   */
+  const ownWaiting = (status) => status?.state === "waiting" && (!queuing
+    || (ownJoinAt !== null && Number(status.joinedAt) === ownJoinAt)
+    || (joinedQueue && ownJoinAt === null && !parallel));
+  /**
+   * Keeps a queue reply's link only once its entry is this seat's own current wait: a pairing accept() took, or an own
+   * waiting entry. A stale baseline or another run's ignored match never sets the link.
+   */
+  const keepOwnLink = (reply, from, taken) => {
+    if (taken !== null || ownWaiting(reply?.queue)) keepWaitLink(ctx, reply, from);
+  };
+
   const baselineReply = await tool(entry, "queue_status", { key });
-  keepWaitLink(ctx, baselineReply, "queue_status");
   const baseline = baselineReply.queue;
   progress("baseline", { queue: baseline }, env);
   let pairing = null;
   if (!queuing) {
     pairing = await accept(baseline);
+    keepOwnLink(baselineReply, "queue_status", pairing);
     if (pairing) return pairing;
   } else if (baseline?.state === "waiting") {
     // Only an entry this seat created itself (its own earlier join_queue) is adopted.
     if (ownJoinedAt === null || Number(baseline.joinedAt) !== ownJoinedAt) throw handleInUse(`queue entry waiting since ${baseline.joinedAt} was not created by this seat`);
     ownJoinAt = ownJoinedAt;
+    keepOwnLink(baselineReply, "queue_status", null);
   } else if (baseline?.state === "matched") {
     if (ownJoinedAt !== null && Number(baseline.matchedAt) >= ownJoinedAt) {
       // This seat's own pairing: joined as before; an unreadable lobby is checked again.
       ownJoinAt = ownJoinedAt;
       pairing = await accept(baseline);
+      keepOwnLink(baselineReply, "queue_status", pairing);
       if (pairing) return pairing;
     } else {
       const state = await lobbyState(entry, key, baseline.lobbyId, env);
@@ -159,13 +176,14 @@ export async function awaitPairing({ entry, ctx, pollMs, maxWaitMs }) {
       throw new Error(`join_queue refused: ${errorCode(joined.data)}${joined.data?.message ? ` (${joined.data.message})` : ""}`);
     }
     const queue = joined.ok ? joined.data.queue : null;
-    if (joined.ok) keepWaitLink(ctx, joined.data, "join_queue");
-    progress("joined_queue", { queue: queue ?? { refused: "already_queued" } }, env);
     if (queue?.state === "waiting") ownJoinAt = Number(queue.joinedAt);
     if (queue?.state === "matched") ownJoinAt = Number(queue.matchedAt);
     if (Number.isFinite(ownJoinAt)) updateSeat({ ownJoinedAt: ownJoinAt }, env);
+    if (queue?.state === "waiting") keepOwnLink(joined.data, "join_queue", null);
+    progress("joined_queue", { queue: queue ?? { refused: "already_queued" } }, env);
     if (queue?.state === "matched") {
       pairing = await accept(queue);
+      keepOwnLink(joined.data, "join_queue", pairing);
       if (pairing) return pairing;
     }
   }
@@ -175,10 +193,10 @@ export async function awaitPairing({ entry, ctx, pollMs, maxWaitMs }) {
     if (clock.now() - started > maxWaitMs) throw new Error(`No pairing after ${Math.round(maxWaitMs / 1000)} s`);
     await clock.sleep(pollMs);
     const statusReply = await tool(entry, "queue_status", { key });
-    // An already_queued join, or a non-queuing seat, gets its handle's link here.
-    keepWaitLink(ctx, statusReply, "queue_status");
     const status = statusReply.queue;
     pairing = await accept(status);
+    // An already_queued join, or a non-queuing seat, gets its own link here, once the entry is its own current wait.
+    keepOwnLink(statusReply, "queue_status", pairing);
     if (pairing) return pairing;
     if (queuing && !joinedQueue && status?.state === "matched" && ignored.has(status.lobbyId)) {
       throw new Error(`Lobby ${status.lobbyId} is over and this seat has not queued; run go again to queue`);
@@ -260,12 +278,28 @@ export async function joinLobby(ctx, lobbyId) {
     alreadySeated = true;
   }
   progress("joined_lobby", { lobbyId, state: lobby?.state ?? null, ...(alreadySeated ? { alreadySeated } : {}) }, ctx.env);
-  // Already seated: join_lobby returned no link, so read_lobby, which returns the seat's own, supplies it.
-  if (alreadySeated) {
-    const read = await entry.callTool("read_lobby", { lobbyId, key: ctx.key }).catch(() => null);
-    if (read?.ok) keepWaitLink(ctx, read.data, "read_lobby");
-  }
+  if (alreadySeated) await recoverLobbyLink({ entry, ctx, lobbyId, pollMs, maxWaitMs });
   return withWaitUrl(await enterMatch({ entry, ctx, pairing: { lobbyId, matchedAt: null }, pollMs, maxWaitMs }), ctx.env);
+}
+
+/**
+ * Already seated: join_lobby returned no link, so read_lobby, which returns the seat's own, supplies it. A failed read
+ * is retried every poll until one succeeds; a successful read without a link means the seat holds no live wait there.
+ */
+async function recoverLobbyLink({ entry, ctx, lobbyId, pollMs, maxWaitMs }) {
+  const { env, clock } = ctx;
+  const started = clock.now();
+  for (;;) {
+    const read = await entry.callTool("read_lobby", { lobbyId, key: ctx.key }).catch((error) => ({ ok: false, error }));
+    if (read.ok) {
+      keepWaitLink(ctx, read.data, "read_lobby");
+      return;
+    }
+    const error = read.error instanceof Error ? read.error.message : errorCode(read.data);
+    progress("wait_link_read_failed", { lobbyReadFailed: { lobbyId, error } }, env);
+    if (clock.now() - started > maxWaitMs) return;
+    await clock.sleep(pollMs);
+  }
 }
 
 /**
