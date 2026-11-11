@@ -432,10 +432,10 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
-  it("writes nothing under the placeholder digest or a mismatched one", async () => {
+  it("writes nothing under a digest that is not its plan's", async () => {
     const w = await world();
     const [info, warn] = quiet();
-    expect(NEVER_JOINED_APPLY_DIGEST).not.toMatch(/^[0-9a-f]{64}$/);
+    expect(NEVER_JOINED_APPLY_DIGEST).toBe("8f93769fdb6663f3cbfb34f3ad2e0c2ba610efe22ca3826017a90805d9049928");
     const before = await w.snapshot();
     const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
     expect(await applyNeverJoined(w.store, w.recordings, plan)).toBe("digest differs");
