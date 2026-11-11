@@ -316,7 +316,7 @@ describe("shared spectator HTTP routes", () => {
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === third).colonies).toEqual([[], []]);
   });
 
-  it("shows an identity seated in several unfinished matches of one mode with the earliest one's start figures, or none where it stored none", async () => {
+  it("shows an identity seated in several unfinished matches of one mode with its start figures only in the earliest of them, and none in the others", async () => {
     const f = await fixture("public");
     const third = "00000000-0000-4000-8000-000000000003", fourth = "00000000-0000-4000-8000-000000000004";
     const seat = (identityId: string, displayName: string) => ({ id: identityId, displayName });
@@ -330,8 +330,12 @@ describe("shared spectator HTTP routes", () => {
     await register(third, 6);
     await register(fourth, 9, { a: { rating: 1640, rd: 78, ratedMatches: 13 }, b: { rating: 1520, rd: 79, ratedMatches: 13 } });
     const colonies = async (lobbyId: string) => (await (await request(f.gatewayOrigin, "/watch/catalog")).json()).matches.find((match: { lobbyId: string }) => match.lobbyId === lobbyId).colonies;
+    expect(await colonies(second)).toEqual([
+      [{ displayName: "alice", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "carol", modelLabel: null, ...startRatings.c }],
+    ]);
+    // The later match never shows another match's figures: none for a seat whose identity an earlier match still seats.
     expect(await colonies(fourth)).toEqual([
-      [{ displayName: "alice", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
+      [{ displayName: "alice", modelLabel: null, rating: null, rd: null, ratedMatches: null }], [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
     ]);
     // Once the earlier matches' playback has finished, the later match shows its own start figures.
     await f.registry.playbackFinished(second, "run");

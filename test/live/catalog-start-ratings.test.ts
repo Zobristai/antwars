@@ -73,7 +73,7 @@ describe("Live now ratings", () => {
     await vi.waitFor(async () => expect((await catalog()).matches).toEqual([]));
   });
 
-  it("show a player seated in two listed matches of one mode with the earlier match's start figures in both", async () => {
+  it("show a player seated in two listed matches of one mode with no rating in the later one until the earlier leaves", async () => {
     const { docs, store } = memoryWatchStore();
     for (const [key, name] of [["a", "alice"], ["b", "bob"], ["c", "carol"]]) docs.set(`identities/${key}`, { displayName: name });
     holdMatch(docs, id, "run"); holdMatch(docs, next, "run");
@@ -100,8 +100,8 @@ describe("Live now ratings", () => {
     cleanup.push(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
     const catalog = async () => (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/watch/catalog`)).json();
     const colonies = async (lobbyId: string) => (await catalog()).matches.find((match: { lobbyId: string }) => match.lobbyId === lobbyId)?.colonies;
-    const seat = (displayName: string, rating: { rating: number; rd: number; ratedMatches: number }) => ({ displayName, modelLabel: null, ...rating });
-    const fresh = { rating: 1500, rd: 350, ratedMatches: 0 };
+    const seat = (displayName: string, rating: { rating: number | null; rd: number | null; ratedMatches: number | null }) => ({ displayName, modelLabel: null, ...rating });
+    const fresh = { rating: 1500, rd: 350, ratedMatches: 0 }, none = { rating: null, rd: null, ratedMatches: null };
     const play = (s: { controller: typeof first.controller; clock: ManualClock; hub: LiveHub }, lobbyId: string, other: string) => {
       const state = step(createMatch(34, playable({ ...rulesConfig("redesign"), matchTicks: 3 })), [{ type: "join", agentId: "sim-a", placement: 0 }, { type: "join", agentId: `sim-${other}`, placement: 1 }]).state;
       const live = { agentInfo: (agentId: string) => (agentId === "sim-a" ? { displayName: "alice", modelLabel: null, seatKey: "a" } : { displayName: lobbies.get(lobbyId)!.colonies[1][0]!.displayName, modelLabel: null, seatKey: other }) } as LiveGame;
@@ -118,17 +118,19 @@ describe("Live now ratings", () => {
     const after = await ratings.readRating("a", "1v1");
     expect(after.rating).toBeGreaterThan(1500);
 
-    // Her next 1v1 match starts on another slot while the first is listed; its own start figures are newer.
-    first.clock.advance(1000);
+    // Her next 1v1 match starts later, on another slot, while the first is listed; its own start figures are newer.
+    first.clock.advance(1000); second.clock.advance(first.clock.now());
     await second.controller.prepare(next, [{ identityId: "a", displayName: "alice", colony: 0 }, { identityId: "c", displayName: "carol", colony: 1 }]);
     play(second, next, "c");
     await vi.waitFor(async () => expect(await colonies(next)).toBeDefined());
     expect((await registry.read(next))?.seatRatings?.a).toEqual(after);
+    expect((await registry.read(next))!.startedAt).toBeGreaterThan((await registry.read(id))!.startedAt);
     for (const wait of [0, 149_000, 149_000]) {
       first.clock.advance(wait);
       await new Promise(resolve => setImmediate(resolve));
       expect(first.hub.watchStatus(id)?.playbackFinished).toBe(false);
-      expect(await colonies(next)).toEqual([[seat("alice", fresh)], [seat("carol", fresh)]]);
+      expect(await colonies(id)).toEqual([[seat("alice", fresh)], [seat("bob", fresh)]]);
+      expect(await colonies(next)).toEqual([[seat("alice", none)], [seat("carol", fresh)]]);
     }
 
     // Once the first match leaves Live now, the next match shows its own start figures.
@@ -137,7 +139,7 @@ describe("Live now ratings", () => {
     expect(await colonies(next)).toEqual([[seat("alice", after)], [seat("carol", fresh)]]);
   });
 
-  it("keep the earlier match's start figures in the next match when the earlier slot restarts inside its delay", async () => {
+  it("show no rating in the next match while the earlier match's slot restarts inside its delay", async () => {
     const { docs, store } = memoryWatchStore();
     for (const [key, name] of [["a", "alice"], ["b", "bob"], ["c", "carol"]]) docs.set(`identities/${key}`, { displayName: name });
     holdMatch(docs, id, "run"); holdMatch(docs, next, "run");
@@ -158,8 +160,8 @@ describe("Live now ratings", () => {
     cleanup.push(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
     const catalog = async () => (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/watch/catalog`)).json();
     const colonies = async (lobbyId: string) => (await catalog()).matches.find((match: { lobbyId: string }) => match.lobbyId === lobbyId)?.colonies;
-    const seat = (displayName: string, rating: { rating: number; rd: number; ratedMatches: number }) => ({ displayName, modelLabel: null, ...rating });
-    const fresh = { rating: 1500, rd: 350, ratedMatches: 0 };
+    const seat = (displayName: string, rating: { rating: number | null; rd: number | null; ratedMatches: number | null }) => ({ displayName, modelLabel: null, ...rating });
+    const fresh = { rating: 1500, rd: 350, ratedMatches: 0 }, none = { rating: null, rd: null, ratedMatches: null };
     const register = (lobbyId: string, startedAt: number, seatRatings: Record<string, { rating: number; rd: number; ratedMatches: number }>) =>
       registry.register({ lobbyId, visibility: "public", rated: true, mode: "1v1", startedAt, origin: "http://127.0.0.1:9001", slot: lobbies.get(lobbyId)!.slot, runId: "run", seatRatings });
 
@@ -174,7 +176,7 @@ describe("Live now ratings", () => {
     expect(await colonies(id)).toBeUndefined();
     for (const wait of [0, 150_000, 149_999]) {
       now += wait;
-      expect(await colonies(next)).toEqual([[seat("alice", fresh)], [seat("carol", fresh)]]);
+      expect(await colonies(next)).toEqual([[seat("alice", none)], [seat("carol", fresh)]]);
     }
 
     // Once the first match's delay has passed since its slot restarted, the next match shows its own start figures.
