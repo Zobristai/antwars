@@ -19,7 +19,7 @@ describe("public spectator catalog projection", () => {
       { id: "private", kind: "private", state: "open", size: 1, colonies: [[], []] },
     ]);
     expect(result).toEqual({
-      matches: [{ lobbyId: "first", startedAt: 1000, rated: true, delaySeconds: 300, colonies: [[], []] }],
+      matches: [{ lobbyId: "first", startedAt: 1000, rated: true, delaySeconds: 300, colonies: [[], []], matchType: null }],
       lobbies: [{ id: "public", size: 1, state: "open", colonies: [["owner/agent"], []] }],
     });
   });
@@ -28,7 +28,7 @@ describe("public spectator catalog projection", () => {
     const next: CatalogMatch = { ...publicMatch, lobbyId: "next", rated: false, startedAt: 2000 };
     expect(publicMatchCatalog([next, publicMatch], []).matches.map(match => match.lobbyId)).toEqual(["first", "next"]);
     expect(publicMatchCatalog([next, { ...publicMatch, playbackFinished: true }], []).matches).toEqual([
-      { lobbyId: "next", startedAt: 2000, rated: false, delaySeconds: 60, colonies: [[], []] },
+      { lobbyId: "next", startedAt: 2000, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null },
     ]);
   });
 
@@ -57,7 +57,7 @@ describe("public spectator catalog projection", () => {
       [{ displayName: "alice", modelLabel: "openai/gpt-6.1-terra", rating: 1612.4, rd: 80, ratedMatches: 4 }],
       // A seat with no label (absent from its caller) carries null.
       [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
-    ] }]);
+    ], matchType: null }]);
     rated.displayName = "changed";
     expect(result.matches[0]!.colonies[0][0]!.displayName).toBe("alice");
     expect(JSON.stringify(result)).not.toMatch(/never-public|secret/);
@@ -77,12 +77,19 @@ describe("public spectator catalog projection", () => {
       { ...publicMatch, lobbyId: "lobby", mode: null, rated: false, startedAt: beforePin + 2 },
     ], []);
     expect(result.matches).toEqual([
-      { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 0, colonies: [[], []],
+      { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 0, colonies: [[], []], matchType: null,
         harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
-      { lobbyId: "ranked", startedAt: beforePin + 1, rated: true, delaySeconds: 300, colonies: [[], []] },
-      { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []] },
+      { lobbyId: "ranked", startedAt: beforePin + 1, rated: true, delaySeconds: 300, colonies: [[], []], matchType: null },
+      { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null },
     ]);
     expect(result.matches.map(match => "harnessPhase" in match)).toEqual([true, false, false]);
+  });
+
+  it("carries each listed match's type as given, copied, and none where it is unknown", () => {
+    const type = { kind: "challenge", size: 1, extra: "never-public" } as const;
+    const result = publicMatchCatalog([publicMatch, { ...publicMatch, lobbyId: "b" }], [], new Map(), new Map([["first", type]]) as never);
+    expect(Object.fromEntries(result.matches.map(match => [match.lobbyId, match.matchType]))).toEqual({ first: { kind: "challenge", size: 1 }, b: null });
+    expect(JSON.stringify(result)).not.toContain("never-public");
   });
 
   it("lists only public matches still in playback, oldest first, as the matches whose players are read", () => {

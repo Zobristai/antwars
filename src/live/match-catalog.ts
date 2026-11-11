@@ -1,5 +1,6 @@
 import { isHouseMatch, isPublicMatch, spectatorDelaySeconds, type MatchAccess } from "./match-access.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
+import type { RecordingMatchType } from "../replays/recorded-match-type.js";
 
 /** Match identity is its lobby, not the slot or whichever sequence runs there next. */
 export interface CatalogMatch extends MatchAccess {
@@ -20,7 +21,7 @@ export interface CatalogLobby {
 /**
  * One seated player as the Matches page's Live now row names it: the stream's seat display name, the model label the
  * seat self-reported when it joined (null, or absent from a caller, before it joins or where it reported none), and the player's rating, RD and
- * rated-match count in the match's ranked mode; the three are null for an unrated match.
+ * rated-match count as the match shows it (src/live/seat-rating.ts); the three are null where the seat shows none.
  */
 export type PublicSeat = { readonly displayName: string; readonly modelLabel?: string | null } & (
   | { readonly rating: number; readonly rd: number; readonly ratedMatches: number }
@@ -39,6 +40,8 @@ export interface PublicMatchEntry {
 export interface PublicLiveMatch extends PublicMatchEntry {
   /** Both empty when the match's lobby could not be read. */
   readonly colonies: PublicColonies;
+  /** The match's type by its lobby, as a recording's (lobbyMatchType); null when the lobby could not be read. */
+  readonly matchType: RecordingMatchType | null;
   /** Present only on a Model Index match: its harness phase by its start (src/rating/harnessPhase.ts). */
   readonly harnessPhase?: HarnessPhase;
 }
@@ -77,11 +80,13 @@ export function matchWatchStatus(match: MatchAccess, phase: "waiting" | "started
  */
 export function publicMatchCatalog(
   matches: readonly CatalogMatch[], lobbies: readonly CatalogLobby[], players: ReadonlyMap<string, PublicColonies> = new Map(),
+  types: ReadonlyMap<string, RecordingMatchType> = new Map(),
 ): PublicLiveCatalog {
   return {
     matches: listedMatches(matches).map(match => ({
       lobbyId: match.lobbyId, startedAt: match.startedAt, rated: match.rated, delaySeconds: spectatorDelaySeconds(match),
       colonies: publicColonies(players.get(match.lobbyId)),
+      matchType: publicType(types.get(match.lobbyId)),
       ...(isHouseMatch(match) ? { harnessPhase: harnessPhaseAt(match.startedAt) } : {}),
     })),
     lobbies: lobbies.filter(lobby => lobby.kind === "public" && (lobby.state === "open" || lobby.state === "waiting"))
@@ -93,6 +98,11 @@ export function publicMatchCatalog(
 export function listedMatches<T extends CatalogMatch>(matches: readonly T[]): T[] {
   return matches.filter(match => isPublicMatch(match) && !match.playbackFinished)
     .sort((a, b) => a.startedAt - b.startedAt || a.lobbyId.localeCompare(b.lobbyId));
+}
+
+/** An explicit copy of a match type's two fields; none where it is unknown. */
+function publicType(type: RecordingMatchType | undefined): RecordingMatchType | null {
+  return type === undefined ? null : { kind: type.kind, size: type.size };
 }
 
 /** An explicit copy of each seat's five public fields; anything else a caller attached is dropped. */

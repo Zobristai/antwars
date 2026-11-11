@@ -15,8 +15,13 @@ afterEach(async () => { for (const fn of close.splice(0).reverse()) await fn(); 
 
 const IDENTIFYING = ["ownerId", "key", "token", "identityId", "entryId", "lobbyId", "id"];
 
-async function serve(rows: unknown[], unstarted: unknown[] = []) {
-  const accounts = { lobbies: { listWaiting: async () => rows, listUnstarted: async () => unstarted } } as unknown as AccountStores;
+/** Every identity's rating in every mode, as the stub rating store answers it; the reads it was asked for. */
+const RATING = { rating: 1612.4, rd: 61.5, ratedMatches: 12 };
+let reads: [string, string][] = [];
+async function serve(rows: unknown[], unstarted: unknown[] = [], readRating = async (_id: string, _mode: string) => RATING) {
+  reads = [];
+  const ratings = { readRating: async (id: string, mode: string) => { reads.push([id, mode]); return readRating(id, mode); } };
+  const accounts = { lobbies: { listWaiting: async () => rows, listUnstarted: async () => unstarted }, ratings } as unknown as AccountStores;
   const hub = new LiveHub(); close.push(() => hub.close());
   const routes = watchRoutes({ accounts, registry: {} as WatchRegistry, hub });
   const server = createServer((req, res) => { void routes(req, res); });
@@ -38,8 +43,11 @@ describe("GET /watch/queue", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     const body = await response.json() as { waiting: Record<string, unknown>[] };
     expect(Object.keys(body)).toEqual(["waiting", "lobbies"]);
-    expect(body.waiting.map(row => Object.keys(row))).toEqual([["displayName", "mode", "waitingSeconds"], ["displayName", "mode", "waitingSeconds"]]);
-    expect(body.waiting.map(row => [row.displayName, row.mode])).toEqual([["sam/first", "1v1"], ["antwars/agent0", "house-2v2"]]);
+    const keys = ["displayName", "mode", "waitingSeconds", "since", "rating"];
+    expect(body.waiting.map(row => Object.keys(row))).toEqual([keys, keys]);
+    expect(body.waiting.map(row => [row.displayName, row.mode, row.since, row.rating])).toEqual([["sam/first", "1v1", now - 90_000, RATING], ["antwars/agent0", "house-2v2", now - 5_000, RATING]]);
+    // Each agent's rating is read in its own queue's mode.
+    expect(reads).toEqual([["00000000-0000-4000-8000-00000000000a", "1v1"], ["00000000-0000-4000-8000-00000000000b", "house-2v2"]]);
     expect(body.waiting[0]!.waitingSeconds).toBeGreaterThanOrEqual(90);
     expect(body.waiting[0]!.waitingSeconds).toBeLessThan(120);
     const text = JSON.stringify(body);
@@ -54,8 +62,9 @@ describe("GET /watch/queue", () => {
   });
 
   it("counts whole seconds waited and never a negative wait", () => {
-    expect(publicQueue([{ displayName: "a", mode: "4v4", joinedAt: 10_000 }], 71_999)).toEqual({ waiting: [{ displayName: "a", mode: "4v4", waitingSeconds: 61 }], lobbies: [] });
-    expect(publicQueue([{ displayName: "a", mode: "4v4", joinedAt: 10_000 }], 9_000).waiting[0]!.waitingSeconds).toBe(0);
+    const agent = { identityId: "a-id", displayName: "a", mode: "4v4", joinedAt: 10_000 } as const;
+    expect(publicQueue([agent], 71_999)).toEqual({ waiting: [{ displayName: "a", mode: "4v4", waitingSeconds: 61, since: 10_000, rating: null }], lobbies: [] });
+    expect(publicQueue([agent], 9_000).waiting[0]!.waitingSeconds).toBe(0);
   });
 });
 
@@ -93,13 +102,14 @@ describe("GET /watch/queue lobbies", () => {
         colonies: [[seat("h0-id", "antwars/agent0")], [seat("h1-id", "antwars/agent1")]] },
     ]);
     const body = await (await fetch(`${origin}/watch/queue`)).json() as { lobbies: Record<string, unknown>[] };
-    expect(body.lobbies.map(row => Object.keys(row))).toEqual([
-      ["mode", "size", "seated", "colonies", "waitingSeconds"], ["mode", "size", "seated", "colonies", "waitingSeconds"],
+    const keys = ["mode", "size", "seated", "colonies", "ratings", "waitingSeconds", "since"];
+    expect(body.lobbies.map(row => Object.keys(row))).toEqual([keys, keys]);
+    expect(body.lobbies.map(row => [row.mode, row.size, row.seated, row.colonies, row.ratings, row.since])).toEqual([
+      [null, 2, 3, [["ann", "cat"], ["bob"]], [[RATING, RATING], [RATING]], now - 250_000],
+      ["house-2v2", 2, 4, [["antwars/agent0"], ["antwars/agent1"]], [[RATING], [RATING]], now],
     ]);
-    expect(body.lobbies.map(row => [row.mode, row.size, row.seated, row.colonies])).toEqual([
-      [null, 2, 3, [["ann", "cat"], ["bob"]]],
-      ["house-2v2", 2, 4, [["antwars/agent0"], ["antwars/agent1"]]],
-    ]);
+    // A player-made lobby's seats are read in public 1v1, a queue pairing's in its mode.
+    expect(reads).toEqual([["ann-id", "1v1"], ["cat-id", "1v1"], ["bob-id", "1v1"], ["h0-id", "house-2v2"], ["h1-id", "house-2v2"]]);
     expect(body.lobbies[0]!.waitingSeconds).toBeGreaterThanOrEqual(250);
     expect(body.lobbies[0]!.waitingSeconds).toBeLessThan(280);
     const text = JSON.stringify(body);
@@ -107,12 +117,24 @@ describe("GET /watch/queue lobbies", () => {
     for (const field of IDENTIFYING) expect(text).not.toContain(`"${field}"`);
   });
 
+  it("shows a house challenge's held seat its Index 1v1 rating, none before the Index rated it, and the builder its public 1v1 rating", async () => {
+    const now = Date.now();
+    const challenge = (held: string) => ({ id: LOBBY, kind: "public", mode: null, size: 1, seated: 2, createdAt: now, challenge: "house",
+      colonies: [[seat(held, "antwars/red")], [seat("kite-id", "kite")]] });
+    const unrated = { rating: 1500, rd: 350, ratedMatches: 0 };
+    const origin = await serve([], [challenge("red-id"), { ...challenge("blue-id"), id: "lobby-z" }],
+      async (id, mode) => id === "blue-id" && mode === "house-1v1" ? unrated : RATING);
+    const body = await (await fetch(`${origin}/watch/queue`)).json() as { lobbies: { ratings: unknown }[] };
+    expect(body.lobbies.map(row => row.ratings)).toEqual([[[RATING], [RATING]], [[null], [RATING]]]);
+    expect(reads).toEqual([["red-id", "house-1v1"], ["kite-id", "1v1"], ["blue-id", "house-1v1"]]);
+  });
+
   it("shows a released owner's seated name as the released placeholder, never its owner id", () => {
     const ownerId = "00000000-0000-4000-8000-0000000000aa";
     const owner = { kind: "username", displayName: "sam", nameState: "released" };
     const handleName = identityDisplay("00000000-0000-4000-8000-0000000000bb", { kind: "handle", displayName: "sam/first", ownerId }, ownerId, owner);
     const queue = publicQueue([], 61_000, [{ mode: "1v1", size: 1, seated: 2, createdAt: 0, colonies: [[{ id: "a", displayName: handleName }], [{ id: "b", displayName: "bea" }]] }]);
-    expect(queue.lobbies).toEqual([{ mode: "1v1", size: 1, seated: 2, colonies: [["released account/first"], ["bea"]], waitingSeconds: 61 }]);
+    expect(queue.lobbies).toEqual([{ mode: "1v1", size: 1, seated: 2, colonies: [["released account/first"], ["bea"]], ratings: [[null], [null]], waitingSeconds: 61, since: 0 }]);
     expect(JSON.stringify(queue)).not.toContain(ownerId);
   });
 });

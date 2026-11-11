@@ -10,6 +10,7 @@ import { captureMatchAccess, type MatchAccess } from "./match-access.js";
 import type { WatchRegistry } from "./watch-registry.js";
 import type { StartRating } from "../replays/history.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
+import { seatRating } from "./seat-rating.js";
 
 /**
  * rd and ratedMatches come from the same pre-start read as elo and are present exactly when it is. They stay on this
@@ -160,11 +161,9 @@ export function createWatchController(options: {
       if (!lobby.ok || lobby.value.state !== "holding" || lobby.value.slot !== options.slot || lobby.value.rated === null || !instance) throw new Error("Spectator lobby not ready");
       const { challenge, mode } = lobby.value;
       const members = await Promise.all(seats.map(async seat => {
-        // A house challenge's held seat shows its handle's Model Index 1v1 rating, and none before the Index has rated
-        // it; every other seat shows its rating in the lobby's mode (a challenge's builder, its public 1v1 rating).
-        const house = challenge !== undefined && seat.colony === challenge.heldColony;
-        const read = await accounts.ratings.readRating(seat.identityId, house ? "house-1v1" : mode ?? "1v1");
-        return { ...seat, ...(house && read.ratedMatches === 0 ? {} : { elo: read.rating, rd: read.rd, ratedMatches: read.ratedMatches }) };
+        const read = await seatRating((id, ranked) => accounts.ratings.readRating(id, ranked), seat.identityId, mode ?? null,
+          challenge !== undefined && seat.colony === challenge.heldColony);
+        return { ...seat, ...(read === null ? {} : { elo: read.rating, rd: read.rd, ratedMatches: read.ratedMatches }) };
       }));
       if (closed) throw new Error("Spectator server closed");
       current = { access: { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated, mode: lobby.value.mode }, runId: instance.runId,

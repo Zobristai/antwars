@@ -344,8 +344,8 @@ export interface Lobbies {
   waitStatus(token: string): Promise<WaitState | null>;
 }
 
-/** A live waiting queue entry by its identity's current display name; nothing else about the identity. */
-export interface WaitingAgent { readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
+/** A live waiting queue entry by its identity's current display name, with its identity id for server-side reads only. */
+export interface WaitingAgent { readonly identityId: string; readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
 
 /** A public lobby not yet begun (listUnstarted): each colony's distinct seated identities by current name, in seating order. */
 export interface UnstartedLobby {
@@ -1199,7 +1199,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const entries = await waitingEntries((path) => store.get(path), now());
       const named = await Promise.all(entries.map(async ({ identityId, mode, joinedAt }) => {
         const identity = await identities.findById(identityId);
-        return identity ? { displayName: identity.displayName, mode, joinedAt } : null;
+        return identity ? { identityId, displayName: identity.displayName, mode, joinedAt } : null;
       }));
       return named.filter((row): row is WaitingAgent => row !== null);
     },
