@@ -52,9 +52,6 @@ export function setFallback(reason: Fallback | null): void {
   fallback = reason;
 }
 
-/** A tag that never breaks across lines: no-break spaces, and a word joiner after each hyphen ("rounds 11-25" stays whole). */
-const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace(/-/g, "-\u2060");
-
 /**
  * What the line says. livePath is the page without its query; its live view is liveHref(livePath). While the recording
  * plays, its agent count, from the data, is part of its label, so a narrow screen never cuts it
@@ -65,24 +62,19 @@ const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").replace
  * delay disclosed, after "No active agents — colonies on autopilot" while no agent is in the match.
  * Standing in for the live page (source.ts), the recording's line
  * says why in place of "not live": "RECORDING · no live match · rated match · 4 agents".
- * A stored Model Index recording's harness phase tags follow its detail: "15 Oct 2026 · Harness: rounds 26-30".
  */
-export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: string, storedId: string | null = null, rated?: boolean, delaySeconds?: number,
-  harnessPhase: readonly string[] = []): ModeCopy {
+export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: string, storedId: string | null = null, rated?: boolean, delaySeconds?: number): ModeCopy {
   const rating = rated === undefined ? "" : rated ? " · rated match" : " · unrated match";
   const delay = delaySeconds === undefined
     ? rated === undefined ? DELAY_DETAIL : `${rated ? 300 : 60} s behind the match`
     : `${delaySeconds} s behind the match`;
   if (mode === "replay") {
     // The live page's stand-in: one label line, a recording and why, with no Back to live (the page goes live by itself).
-    // A Model Index recording's harness phase tags follow the detail, each kept whole on the line.
-    const phase = harnessPhase.map(unbrokenTag).join(" · ");
-    const after = (text: string) => phase === "" ? text : text === "" ? phase : `${text} · ${phase}`;
-    const detail = after(storedId === null ? "" : recordedDateLabel(storedId));
+    const detail = storedId === null ? "" : recordedDateLabel(storedId);
     if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, link: null };
     const link = { text: BACK_TEXT, href: liveHref(livePath) };
     const label = RECORDING_LABEL + rating;
-    return ended ? { label, detail: after("· recording ended"), link } : { label: `${label} · ${agents} agents`, detail, link };
+    return ended ? { label, detail: "· recording ended", link } : { label: `${label} · ${agents} agents`, detail, link };
   }
   if (agents === 0) return { label: LIVE_LABEL + rating, detail: `${AUTOPILOT_DETAIL} · ${delay}`, link: { text: OFFER_TEXT, href: "?replay" } };
   return { label: LIVE_LABEL + rating, detail: delay, link: null };
