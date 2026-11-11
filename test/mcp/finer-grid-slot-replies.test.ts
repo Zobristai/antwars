@@ -16,11 +16,15 @@ const seats = Array.from({ length: 8 }, (_, i) => ({
 async function bounded(agent: TestAgent, name: string, args: Record<string, unknown>, withView = false) {
   const reply = await agent.client.callTool({ name, arguments: args }) as CallToolResult;
   const text = reply.content.filter(block => block.type === "text").map(block => block.text).join("");
-  // Pin independently of production exports: never bless raising a limit.
+  // Pin independently of production exports: never bless raising a limit. The rules pin
+  // follows the documented rules budget (49,000 characters / 102,380 bytes, as in
+  // response-size.test.ts); every other reply without a view keeps the command budget.
   const bytes = Buffer.byteLength(JSON.stringify(reply));
   const measured = `${name}: ${text.length} characters / ${bytes} bytes`;
-  expect(text.length, measured).toBeLessThanOrEqual(withView ? MAX_OBSERVE_TEXT_CHARS : 20_000);
-  expect(bytes, measured).toBeLessThanOrEqual(withView ? MAX_OBSERVE_REPLY_BYTES : 40_960);
+  const [textCap, byteCap] = withView ? [MAX_OBSERVE_TEXT_CHARS, MAX_OBSERVE_REPLY_BYTES]
+    : name === "rules" ? [49_000, 102_380] : [20_000, 40_960];
+  expect(text.length, measured).toBeLessThanOrEqual(textCap);
+  expect(bytes, measured).toBeLessThanOrEqual(byteCap);
   expect(JSON.parse(text)).toEqual(reply.structuredContent);
   return reply;
 }
