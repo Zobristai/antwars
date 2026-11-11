@@ -152,8 +152,8 @@ describe("matches rows", () => {
     expect(recordingType({ kind: "ranked", size: 4 })).toBe("Ranked · 4v4");
     expect(recordingType({ kind: "unranked", size: 3 })).toBe("Unranked · 3v3");
     expect(recordingType({ kind: "challenge", size: 1 })).toBe("Challenge · 1v1");
-    expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unrated · 1v1");
-    expect(recordingType({ kind: "unrated", size: null })).toBe("Unrated");
+    expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unranked · 1v1");
+    expect(recordingType({ kind: "unrated", size: null })).toBe("Unranked");
     expect(recordingType(null)).toBeNull();
     expect(recordingType(undefined)).toBeNull();
     expect(recordingRow(recording({ matchType: { kind: "index", size: 1 } }), "").type).toBe("Index · 1v1");

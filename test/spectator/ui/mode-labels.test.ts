@@ -1,5 +1,5 @@
 // The game-mode names: the site's match labels are "Index · NvN",
-// "Challenge · 1v1", "Ranked · NvN" and "Unranked · NvN" (a public or invite-only lobby, against Ranked); the ranked ladder
+// "Challenge · 1v1", "Ranked · NvN" and "Unranked · NvN" (a public or invite-only lobby, or an unrated match, against Ranked); the ranked ladder
 // is "Ranked" everywhere; and no shown or agent-facing text says "house challenge", "rated challenge", "Antwars
 // Benchmark", "Benchmark mode" or "Open Rankings", nor any other than the match labels "Unranked". Stored values (recording kind "unranked", challenge.kind "house", house-* mode ids) stay as they are.
 import { readFileSync } from "node:fs";
@@ -23,7 +23,7 @@ describe("site match labels", () => {
     expect(recordingType({ kind: "challenge", size: 1 })).toBe("Challenge · 1v1");
     expect(recordingType({ kind: "ranked", size: 3 })).toBe("Ranked · 3v3");
     expect(recordingType({ kind: "unranked", size: 4 })).toBe("Unranked · 4v4");
-    expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unrated · 1v1");
+    expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unranked · 1v1");
     for (const word of Object.values(MATCH_TYPE_WORDS)) for (const retired of LABEL_RETIRED) expect(word).not.toMatch(retired);
   });
 

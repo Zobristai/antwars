@@ -273,7 +273,7 @@ describe("Live now rows", () => {
 });
 
 describe("Recordings rows", () => {
-  it("stamps each record's state and puts each result on its colony: Winner, Draw on both, Abandoned on both", () => {
+  it("stamps each record's state, words an unrated match and a lobby Unranked, and puts each result on its colony: Winner, Draw on both, Abandoned on both", () => {
     const hour = (h: number) => `2026-10-27T0${h}:00:00.000Z`;
     const won = at("rec-won", { startedAt: hour(5), winner: 1, decidedBy: "queens", matchType: { kind: "index", size: 1 } });
     const draw = at("rec-draw", { startedAt: hour(4), winner: null, reason: "time_up", decidedBy: "draw", matchType: { kind: "unrated", size: 1 } });
@@ -284,14 +284,14 @@ describe("Recordings rows", () => {
     const read = bodyRows(recordings.table).map(row => cells(row).slice(1, 5));
     expect(read).toEqual([
       [["c-type", "Index · 1v1"], ["c-model", ["alice"]], ["c-model", ["bobWinner"]], ["c-status", "Status complete"]],
-      [["c-type", "Unrated · 1v1"], ["c-model", ["aliceDraw"]], ["c-model", ["bobDraw"]], ["c-status", "Status complete"]],
+      [["c-type", "Unranked · 1v1"], ["c-model", ["aliceDraw"]], ["c-model", ["bobDraw"]], ["c-status", "Status complete"]],
       [["c-type", "Unranked · 1v1"], ["c-model", ["aliceAbandoned"]], ["c-model", ["bobAbandoned"]], ["c-status", "Status complete"]],
       [["c-type", ""], ["c-model", ["GPT-6.1 SolmaxFastWinner"]], ["c-model", ["did not join"]], ["c-status", "Status partial"]],
       [["c-type", "not recorded"], ["c-model", ["not recorded"]], ["c-model", ["not recorded"]], ["c-status", "Status unavailable"]],
     ]);
     expect(recordings.table.byClass("d1p-stamp").map(stamp => stamp.className)).toEqual(
       ["d1p-stamp is-complete", "d1p-stamp is-complete", "d1p-stamp is-complete", "d1p-stamp is-partial", "d1p-stamp is-unavailable"]);
-    expect(recordings.card.textContent).not.toMatch(/Lobby/);
+    expect(recordings.card.textContent).not.toMatch(/Lobby|Unrated/);
     p.mounted.destroy();
   });
 
