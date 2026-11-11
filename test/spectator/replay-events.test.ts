@@ -71,23 +71,48 @@ describe("nests lost", () => {
   });
 });
 
+/** Ants as one message carries them, ids ascending. */
+function antsOf(list: { id: number; colony: 0 | 1; carrying: boolean }[], flags = true): StreamMessage["ants"] {
+  const sorted = [...list].sort((x, y) => x.id - y.id);
+  return {
+    count: sorted.length, id: Uint32Array.from(sorted.map(a => a.id)), colony: Uint8Array.from(sorted.map(a => a.colony)),
+    x: new Uint16Array(sorted.length), y: new Uint16Array(sorted.length), heading: new Uint8Array(sorted.length),
+    agent: new Int16Array(sorted.length).fill(-1),
+    ...(flags ? { carrying: Uint8Array.from(sorted.map(a => a.carrying ? 1 : 0)) } : {}),
+  };
+}
+/** Food delivered home: at each listed tick, `n` ants of a colony carrying food the tick before put it down.
+ * `extra` adds events at a tick (a hatch's store drop, ground income); `dying` carriers vanish instead. */
+function foodScan(deliveries: [tick: number, colony: 0 | 1, n: number][], last: number,
+  { extra = new Map<number, StreamEvent[]>(), dying = [] as [number, 0 | 1, number][], flags = true } = {}) {
+  let next = 100;
+  const plan = [...deliveries.map(([t, c, n]) => ({ t, c, n, dies: false })), ...dying.map(([t, c, n]) => ({ t, c, n, dies: true }))]
+    .map(d => ({ ...d, ids: Array.from({ length: d.n }, () => next++) }));
+  const antsAt = (tick: number) => antsOf(plan.flatMap((d): { id: number; colony: 0 | 1; carrying: boolean }[] =>
+    d.t === tick + 1 ? d.ids.map(id => ({ id, colony: d.c, carrying: true }))
+      : d.t === tick && !d.dies ? d.ids.map(id => ({ id, colony: d.c, carrying: false })) : []), flags);
+  const s = new ReplayEventScan();
+  s.push({ ...opening(), ants: antsAt(START) });
+  for (let t = START + 1; t <= last; t++) s.push({ ...delta(t, extra.get(t) ?? []), ants: antsAt(t) });
+  return s.events();
+}
+
 describe("food lead", () => {
-  it("counts food gathered, so spending on a hatch never moves the lead, and skips the first lead", () => {
-    const by = new Map<number, StreamEvent[]>();
-    add(by, 1010, store(0, 200)); // colony 0 leads: the first lead, not a mark
-    add(by, 1020, store(0, 0)); // a hatch spends it; gathered stays 200
-    add(by, 1030, store(1, 200)); // level
-    add(by, 1040, store(1, 260 + FOOD_LEAD_FLOOR)); // colony 1 has gathered 310 to 200: more than the floor ahead, a change
-    const out = scan(by, 1100);
+  it("counts food delivered home and skips the first lead", () => {
+    // Colony 0 leads first (no mark); colony 1 then gathers 310 to 200: more than the floor ahead, a change.
+    const out = foodScan([[1010, 0, 200], [1030, 1, 200], [1040, 1, 60 + FOOD_LEAD_FLOOR]], 1100);
+    expect(out).toEqual([{ kind: "food", tick: 1040, ms: 4000, colony: 1 }]);
+  });
+  it("counts a delivery in the tick a hatch spends the store, and not ground income or a carrier that died", () => {
+    const extra = new Map<number, StreamEvent[]>([
+      [1040, [store(1, 0), { kind: "birth", antId: 9 }]], // colony 1 delivers 110 and hatches in one tick: its store falls
+      [1050, [store(0, 5000)]], // ground income: the store rises with no delivery
+    ]);
+    const out = foodScan([[1010, 0, 200], [1030, 1, 200], [1040, 1, 110]], 1100, { extra, dying: [[1060, 0, 500]] });
     expect(out).toEqual([{ kind: "food", tick: 1040, ms: 4000, colony: 1 }]);
   });
   it("needs more than the larger of 2% of all gathered food and the floor", () => {
-    const run = (a: number, b: number) => {
-      const by = new Map<number, StreamEvent[]>();
-      add(by, 1010, store(0, a));
-      add(by, 1020, store(1, b));
-      return scan(by, 1030);
-    };
+    const run = (a: number, b: number) => foodScan([[1010, 0, a], [1020, 1, b]], 1030);
     // The first lead (colony 0) then colony 1 ahead by exactly the floor: no change; one more food: a change.
     expect(run(100, 100 + FOOD_LEAD_FLOOR)).toEqual([]);
     expect(run(100, 101 + FOOD_LEAD_FLOOR)).toHaveLength(1);
@@ -95,10 +120,7 @@ describe("food lead", () => {
     expect(run(10_000, 10_408)).toEqual([]);
     expect(run(10_000, 10_409)).toHaveLength(1);
   });
-  it("gives no food marks for a recording without stores", () => {
-    const by = new Map<number, StreamEvent[]>();
-    add(by, 1010, store(0, 500));
-    add(by, 1020, store(1, 2000));
-    expect(scan(by, 1030, opening({ stores: undefined }))).toEqual([]);
+  it("gives no food marks for a recording without carrying flags", () => {
+    expect(foodScan([[1010, 0, 200], [1020, 1, 2000]], 1030, { flags: false })).toEqual([]);
   });
 });

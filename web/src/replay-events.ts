@@ -28,13 +28,15 @@ export const FOOD_LEAD_FLOOR = 50;
  * - Fight: a run of ticks with bites, ending after FIGHT_QUIET_TICKS with none, marked at its first bite when
  *   at least FIGHT_MIN_DEATHS ants died from that bite until the run ended.
  * - Nest lost: each queen lost, at the message that reports it. Recordings without a queen list: the overrun end.
- * - Food lead: the colony that has gathered more food so far (store increases; hatching never lowers it) changes,
- *   by more than the margin. The match's first lead is not a change. Recordings without stores have none. */
+ * - Food lead: the colony that has gathered more food so far changes, by more than the margin. Food gathered is
+ *   food delivered home: an ant whose carrying flag clears while it lives (the only way a carrier puts food down).
+ *   Read from the ants, not the store, so a hatch spending food in the same tick hides no delivery and ground
+ *   income is not counted. The match's first lead is not a change. Recordings without carrying flags have none. */
 export class ReplayEventScan {
   private first: number | null = null;
   private readonly out: ReplayEvent[] = [];
   private run: { start: number; last: number; deaths: number } | null = null;
-  private store: [number, number] | null = null;
+  private carried: { id: Uint32Array; carrying: Uint8Array; count: number } | null = null;
   private readonly gathered: [number, number] = [0, 0];
   private leader: Colony | null = null;
   private queenList = false;
@@ -44,9 +46,8 @@ export class ReplayEventScan {
     if (this.first === null) {
       this.first = m.tick;
       this.queenList = m.full?.queens !== undefined;
-      const stores = m.full?.stores;
-      if (stores) this.store = [stores[0].food, stores[1].food];
     }
+    this.deliveries(m);
     for (const q of m.full?.queens ?? []) if (q.lostTick !== null) this.nest(q.colony, q.id, m.tick);
     if (this.run && m.tick - this.run.last > FIGHT_QUIET_TICKS) this.closeRun();
     let bites = 0;
@@ -55,11 +56,7 @@ export class ReplayEventScan {
       if (e.kind === "fight") bites++;
       else if (e.kind === "death") deaths++;
       else if (e.kind === "queenLost") this.nest(e.queen.colony, e.queen.id, m.tick);
-      else if (e.kind === "store" && this.store) {
-        const before = this.store[e.colony];
-        if (e.food > before) this.gathered[e.colony] += e.food - before;
-        this.store[e.colony] = e.food;
-      } else if (e.kind === "end" && !this.queenList) {
+      else if (e.kind === "end" && !this.queenList) {
         const { reason, winner } = e.result;
         if (reason === "double_overrun") for (const c of [0, 1] as const) this.nest(c, 0, m.tick);
         else if (reason === "overrun" && winner !== null) this.nest(winner === 0 ? 1 : 0, 0, m.tick);
@@ -77,6 +74,23 @@ export class ReplayEventScan {
       if (this.leader !== null) this.add("food", m.tick, lead);
       this.leader = lead;
     }
+  }
+
+  /** Counts, by colony, the ants carrying food last tick that are alive and not carrying now (ids ascend in both). */
+  private deliveries(m: StreamMessage): void {
+    const { id, colony, carrying, count } = m.ants;
+    if (!carrying) { this.carried = null; return; }
+    const prev = this.carried;
+    if (prev) {
+      let j = 0;
+      for (let i = 0; i < count; i++) {
+        if (carrying[i]) continue;
+        const ant = id[i]!;
+        while (j < prev.count && prev.id[j]! < ant) j++;
+        if (j < prev.count && prev.id[j] === ant && prev.carrying[j]) this.gathered[colony[i] as Colony] += 1;
+      }
+    }
+    this.carried = { id, carrying, count };
   }
 
   /** The marks so far, closing a fight still running at the recording's end. */
