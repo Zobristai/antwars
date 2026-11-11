@@ -65,7 +65,15 @@ export interface Store {
   transaction<T>(step: (read: TransactionRead) => Promise<TransactionStep<T>>): Promise<T>;
   /** One page of an ordered query; nothing is retried. */
   query(collectionId: string, options: QueryOptions): Promise<QueryResult>;
+  /**
+   * Read-only, outside any transaction: each document's Firestore createTime, verbatim, or null where it is missing.
+   * A later write to the document leaves its createTime unchanged. Any number of paths, read in batches.
+   */
+  createTimes?(paths: readonly DocPath[]): Promise<ReadonlyMap<DocPath, string | null>>;
 }
+
+/** Documents per batchGet in createTimes. */
+export const CREATE_TIME_BATCH = 100;
 
 export interface StoreConfig {
   readonly projectId: string;
@@ -194,6 +202,25 @@ export function createFirestore(config: StoreConfig): Store {
           await sleep(Math.random() * 100 * 2 ** Math.min(attempts, 4));
         }
       }
+    },
+
+    async createTimes(paths) {
+      const bearer = await token();
+      const out = new Map<DocPath, string | null>();
+      for (let i = 0; i < paths.length; i += CREATE_TIME_BATCH) {
+        const batch = paths.slice(i, i + CREATE_TIME_BATCH);
+        const results = await rpc("batchGet", { documents: batch.map((path) => prefix + path), mask: { fieldPaths: [] } }, bearer);
+        for (const result of Array.isArray(results) ? results : []) {
+          const found = (result as { found?: { name?: unknown; createTime?: unknown } }).found;
+          const missing = (result as { missing?: unknown }).missing;
+          if (found && typeof found.name === "string" && found.name.startsWith(prefix)) {
+            if (typeof found.createTime !== "string") throw new Error(`firestore batchGet returned no createTime for ${found.name.slice(prefix.length)}`);
+            out.set(found.name.slice(prefix.length), found.createTime);
+          } else if (typeof missing === "string" && missing.startsWith(prefix)) out.set(missing.slice(prefix.length), null);
+        }
+        for (const path of batch) if (!out.has(path)) throw new Error(`firestore batchGet returned no result for ${path}`);
+      }
+      return out;
     },
 
     async query(collectionId, options) {
