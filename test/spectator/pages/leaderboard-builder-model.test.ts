@@ -57,6 +57,9 @@ describe("a builder row's model on the Leaderboard", () => {
   it("shows a model label with nothing after its provider prefix whole, never as no model", () => {
     const { card: shown } = card([{ ...rows[1]!, model: "local/" }]);
     expect(shown.named[0]).toBe("coffee-ant local/ [high] [Fast]");
+    // Only whitespace after the prefix is nothing too.
+    const spaced = card([{ ...rows[1]!, model: "local/ " }]).section.byClass("d1p-mname")[0]!;
+    expect(spaced.textContent).toBe("local/ ");
   });
 
   it("a house row never shows a model, even one a server sent", () => {
