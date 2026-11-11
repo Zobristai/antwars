@@ -226,7 +226,7 @@ export async function verify(deps: CorrectionDeps, lobbyId: string, expectedRepl
     recording: { binary: binary!, record: stored!, parsed: parsed!, newBinary, newRecord } };
 }
 
-function firestoreWrites(v: Verification, at: Date): Write[] {
+export function firestoreWrites(v: Verification, at: Date): Write[] {
   const lobby = v.snapshot.get(lobbyPath(v.lobbyId))!;
   return [
     { op: "create", path: correctionPath(v.lobbyId), fields: { kind: CORRECTION_KIND, lobbyId: v.lobbyId, replayId: v.replayId!,
@@ -239,7 +239,7 @@ function firestoreWrites(v: Verification, at: Date): Write[] {
   ];
 }
 
-const describe = (write: Write) => write.op === "delete" ? `delete ${write.path}` : `${write.op} ${write.path} ${JSON.stringify(write.fields)}`;
+export const describe = (write: Write) => write.op === "delete" ? `delete ${write.path}` : `${write.op} ${write.path} ${JSON.stringify(write.fields)}`;
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
