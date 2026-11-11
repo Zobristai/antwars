@@ -269,10 +269,14 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(36);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(39);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
       for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
         "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+      }
+      // The three Muse handles are listed available with no records.
+      for (const handle of ["muse-spark-1-3", "muse-wonder-1-0", "muse-wonder-full-1-0"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
       }
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
