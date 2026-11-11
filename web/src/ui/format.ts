@@ -194,27 +194,32 @@ export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string
 /** The divider that ends a phase's divider over a Live now match outside the Model Index, whose row has no badge to say
  * so; worded as the HUD's tooltip words it ("outside the Antwars Model Index"). */
 export const OUTSIDE_INDEX = "Outside the Model Index";
+/** The divider over a row whose phase the page cannot name, in the unknown phase's own words (harnessPhaseTags). */
+export const PHASE_UNKNOWN = harnessPhaseTags({ phase: "unknown", possibleEffortMismatch: null })[0]!;
 
 /**
- * One row as phaseDividers reads it: its harness phase tags; [] for a Live now match outside the Model Index, which
- * carries no badge to say so; or null for a row no divider speaks for: a row with no phase, which in Recordings its badge
- * marks as another kind of match, or an Index row whose phase the page cannot read, which stands in the time its
- * divider names (a phase is decided by a match's time alone).
+ * One row as phaseDividers reads it: its harness phase tags; "unknown" for a row whose phase the page cannot name, an
+ * Index match whose phase it cannot read or a recording whose kind of match is not known; "outside" for a Live now match
+ * outside the Model Index, which carries no badge to say so; or null for a row its badge marks as another kind of match,
+ * which carries no phase and stands under the divider above it, a phase being a Model Index match's alone.
  */
-export type PhaseOf = readonly string[] | null;
+export type PhaseOf = readonly string[] | "unknown" | "outside" | null;
 
 /**
- * Where a list's Model Index harness phase changes, newest first: the divider to draw before each row (its tags joined,
- * each held whole, replay.ts unbrokenTag), or null for none. A divider stands before the first row of each phase, so
- * every row's phase reads from the nearest divider above it and no row carries a tag; older rows loaded later add
- * dividers under the rows already shown and change none of them. A Live now match outside the Index ends the divider
- * above it with OUTSIDE_INDEX; with no phase above it, nothing needs saying.
+ * Where a list's Model Index harness phase changes, newest first: the divider to draw before each row (its words held
+ * whole, replay.ts unbrokenTag, so it breaks only between tags), or null for none. A divider stands before the first row
+ * of each phase, so every row's phase reads from the nearest divider above it and no row carries a tag; older rows
+ * loaded later add dividers under the rows already shown and change none of them. A row whose phase the page cannot name
+ * ends the phase's divider above it with PHASE_UNKNOWN, a Live now match outside the Index with OUTSIDE_INDEX, so no row
+ * takes a phase it does not have, and the phase's divider stands again before its next row. With no phase above them,
+ * such rows need nothing said.
  */
 export function phaseDividers(rows: readonly PhaseOf[]): (string | null)[] {
   let shown: string | null = null;
-  return rows.map(tags => {
-    if (tags === null) return null;
-    const divider = tags.length > 0 ? tags.map(unbrokenTag).join(" · ") : shown === null ? null : OUTSIDE_INDEX;
+  return rows.map(row => {
+    if (row === null) return null;
+    const words = typeof row !== "string" ? row : shown === null ? null : [row === "outside" ? OUTSIDE_INDEX : PHASE_UNKNOWN];
+    const divider = words === null || words.length === 0 ? null : words.map(unbrokenTag).join(" · ");
     if (divider === null || divider === shown) return null;
     shown = divider;
     return divider;

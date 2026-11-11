@@ -92,9 +92,10 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
     const rows = view.live.rows, loading = view.live.status === "loading" && rows.length === 0;
     const shown = rows.map(match => liveRow(match, search));
     // A divider before the first row of each harness phase (ui/format.ts phaseDividers). Live now's rows carry no Index
-    // badge, so a match outside the Index ends the divider above it; an Index match whose phase the page cannot read
-    // stands under the divider of its time.
-    const dividers = phaseDividers(rows.map((match, at) => match.harnessPhase === undefined ? [] : shown[at]!.phase.length > 0 ? shown[at]!.phase : null));
+    // badge, so a match outside the Index (no phase sent) ends the divider above it, as does an Index match whose phase
+    // the page cannot read.
+    const dividers = phaseDividers(rows.map((match, at) =>
+      shown[at]!.phase.length > 0 ? shown[at]!.phase : match.harnessPhase === undefined ? "outside" : "unknown"));
     const body: Node[] = [];
     if (rows.length > 0 || loading) {
       const table = h(doc, "table", "d1p-table d1p-live d1p-wide");
@@ -355,9 +356,14 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   const byId = new Map(view.recordings.rows.map(r => [r.id, r]));
   const state = recordingsLine(rows.length < all.length ? { ...view, next: view.next ?? "" } : view, rows.length);
   const loading = view.recordings.status === "loading" && rows.length === 0;
-  // A divider before the first row of each harness phase (ui/format.ts phaseDividers); a row with no phase, which its
-  // badge marks as another kind of match, stands under the divider above it, which does not speak for it.
-  const dividers = phaseDividers(rows.map(row => row.phase.length > 0 ? row.phase : null));
+  // A divider before the first row of each harness phase (ui/format.ts phaseDividers). A row its badge marks as another
+  // kind of match carries no phase and stands under the divider above it; an Index row whose phase the page cannot read,
+  // or a recording whose kind is not known (no badge), ends that divider instead of taking its phase.
+  const dividers = phaseDividers(rows.map(row => {
+    if (row.phase.length > 0) return row.phase;
+    const kind = byId.get(row.id)!.matchType?.kind;
+    return kind === "index" || kind == null ? "unknown" : null;
+  }));
   // No note under the state (no editorial copy): the record stamp says each record's fidelity.
   const lines: Node[] = [stateLine(doc, state.glyph, state.text)];
   const body: Node[] = [];

@@ -625,13 +625,26 @@ describe("Model Index matches show their harness phase in a divider where it cha
     p.mounted.destroy();
   });
 
-  it("ends a phase's divider over a Live now match outside the Index, which no badge marks, and keeps an unread Index row under its time's divider", () => {
+  it("ends a phase's divider over a Live now match outside the Index, which no badge marks, and over a row whose phase the page cannot read", () => {
     const unread: Recording = { ...phased("2026-11-10T14-00-00-000Z-1", "from round 31 onward"), harnessPhase: null };
     const unreadLive: LiveMatch = { ...live("lobby-u"), harnessPhase: null };
     const { p, liveCard, recCard } = show([liveIndex("lobby-i", "rounds 26-30"), live("lobby-r"), unreadLive], [phased("2026-11-10T15-34-00-357Z-1", "from round 31 onward"), unread]);
-    expect(groups(liveCard)).toEqual([["Harness: rounds 26-30", 1], ["Outside the Model Index", 2]]);
-    expect(items(liveCard)).toEqual(["Harness: rounds 26-30", "row", "Outside the Model Index", "row", "row"]);
-    expect(groups(recCard)).toEqual([["Harness from round 31 onward", 2]]);
+    expect(groups(liveCard)).toEqual([["Harness: rounds 26-30", 1], ["Outside the Model Index", 1], ["Harness phase unknown", 1]]);
+    expect(items(liveCard)).toEqual(["Harness: rounds 26-30", "row", "Outside the Model Index", "row", "Harness phase unknown", "row"]);
+    expect(groups(recCard)).toEqual([["Harness from round 31 onward", 1], ["Harness phase unknown", 1]]);
+    p.mounted.destroy();
+  });
+
+  it("never gives a recording of unknown kind the phase above it: it stands under its own divider, and the phase's divider stands again after it", () => {
+    // As in the production listing: a recording with no type and no phase between two flagged Index recordings.
+    const unknown: Recording = { ...recording, id: "2026-10-25T09-35-24-763Z-1", startedAt: "2026-10-25T09:35:24.763Z" };
+    const { p, recCard } = show([], [
+      phased("2026-10-25T10-00-00-000Z-1", "rounds 1-7", true), unknown, phased("2026-10-25T09-00-00-000Z-1", "rounds 1-7", true),
+    ]);
+    expect(groups(recCard)).toEqual([
+      ["Harness: rounds 1-7 · Possible effort mismatch", 1], ["Harness phase unknown", 1], ["Harness: rounds 1-7 · Possible effort mismatch", 1],
+    ]);
+    expect(items(recCard)).toEqual(["Harness: rounds 1-7 · Possible effort mismatch", "row", "Harness phase unknown", "row", "Harness: rounds 1-7 · Possible effort mismatch", "row"]);
     p.mounted.destroy();
   });
 
