@@ -39,7 +39,7 @@ jobs:
       - name: Playwright WebKit browser
         # Bounded attempts with retry, so a stalled download fails or recovers instead of
         # running until the job's limit (.github/scripts/install-webkit.sh).
-        timeout-minutes: 30
+        timeout-minutes: 35
         run: bash .github/scripts/install-webkit.sh
       - name: Typecheck
         run: npx tsc --noEmit
@@ -73,7 +73,7 @@ jobs:
       - name: Playwright WebKit browser
         # Bounded attempts with retry, so a stalled download fails or recovers instead of
         # running until the job's limit (.github/scripts/install-webkit.sh).
-        timeout-minutes: 30
+        timeout-minutes: 35
         run: bash .github/scripts/install-webkit.sh
       - name: Full suite
         env:
