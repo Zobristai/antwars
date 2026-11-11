@@ -130,3 +130,31 @@ describe("headless-browser smoke of the landing and dock pages", () => {
     }, 60_000);
   }
 });
+
+// The line under the board: a recording's state (RECORDING) and Back to live keep their own room beside Bring your agent,
+// each drawn in full inside every box that clips it and on the screen, never squeezed to nothing by Copy.
+describe("the dock's state line under the board", () => {
+  for (const { width, height } of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    it(`shows the recording's state and Back to live at ${width}px`, async () => {
+      const { page } = await open("dock", width, height);
+      try {
+        const shown = await page.evaluate(() => [".d2-mode-label", ".d2-back"].map(selector => {
+          const node = document.querySelector<HTMLElement>(`.d2-foot ${selector}`);
+          if (!node) return `${selector}: missing`;
+          const box = node.getBoundingClientRect();
+          if (box.width < 1 || box.height < 1 || getComputedStyle(node).visibility !== "visible") return `${selector}: not drawn`;
+          if (box.left < -0.5 || box.top < -0.5 || box.right > innerWidth + 0.5 || box.bottom > innerHeight + 0.5) return `${selector}: off screen`;
+          for (let up = node.parentElement; up; up = up.parentElement) {
+            const style = getComputedStyle(up);
+            if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+            const clip = up.getBoundingClientRect();
+            if (box.left < clip.left - 0.5 || box.top < clip.top - 0.5 || box.right > clip.right + 0.5 || box.bottom > clip.bottom + 0.5) return `${selector}: cut by .${[...up.classList].join(".")}`;
+          }
+          return `${selector}: ${node.textContent?.trim()}`;
+        }));
+        expect(shown[0]).toMatch(/^\.d2-mode-label: RECORDING/);
+        expect(shown[1]).toBe(".d2-back: Back to live");
+      } finally { await page.context().close(); }
+    }, 60_000);
+  }
+});

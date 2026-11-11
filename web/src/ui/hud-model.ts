@@ -128,7 +128,9 @@ export function agentDetail(frame: Frame, agent: number, recent = 6): { lines: s
   }
   // The card's title is the row; its latest mark is the history's, and so is its thought while the history holds one.
   const dated = history.some(l => l.kind === "thought");
-  const lines = card.slice(1).filter(line => !(dated && line.startsWith(`${THOUGHT_LABEL}:`)) && !line.startsWith("Latest active mark") && line !== "No active marks");
+  const lines = card.slice(1).filter(line => !(dated && line.startsWith(`${THOUGHT_LABEL}:`)) && !line.startsWith("Latest active mark") && line !== "No active marks")
+    // The model takes its own line under its label, so a long model and its level stay on one line.
+    .map(line => line.startsWith(`${MODEL_LABEL}: `) ? `${MODEL_LABEL}:\n${line.slice(MODEL_LABEL.length + 2)}` : line);
   return { lines, history };
 }
 
