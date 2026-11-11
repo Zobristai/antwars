@@ -92,7 +92,7 @@ describe.skipIf(!host)("house mode through the queue tools", { timeout: 120_000 
         const waiting = { state: "waiting", mode, joinedAt, expiresAt: joinedAt + HOUSE_QUEUE_TTL_MS };
         const joined = await call("join_queue", { key: handle.key, mode });
         expect(joined, JSON.stringify(joined.body)).toMatchObject({ ok: true, body: { queue: waiting } });
-        expect((await call("queue_status", { key: handle.key })).body).toEqual({ queue: waiting });
+        expect((await call("queue_status", { key: handle.key })).body).toEqual({ queue: waiting, waitToken: joined.body.waitToken, waitUrl: joined.body.waitUrl });
         expect((await call("leave_queue", { key: handle.key })).body).toEqual({ queue: { state: "none" } });
 
         for (const identity of refused) {

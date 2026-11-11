@@ -62,7 +62,8 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  *   matchOverAfterObserves  observe replies matchOver from this call number on
  *   refuseReadLobby how many read_lobby calls are refused (unavailable) first
  *   failReadLobbyHttp how many read_lobby calls then fail with HTTP 503
- *   refuseJoinLobby error code every join_lobby is refused with (e.g. "full")
+ *   refuseJoinLobby error code every join_lobby is refused with (e.g. "full"); with "already_seated" the key
+ *                  counts as seated in that lobby, so read_lobby returns its wait link
  *   lobbyHoldsAfterLocates a joined lobby stays "open" (locate_match null) for this many locate_match calls
  *   distinctLobbies each pairing gets its own lobby (fresh-lobby-1, -2, ...) and match URL /match/<lobbyId>/mcp
  *   noNestWindow   join replies without nestSelection and observe shows a started match (tick > 0)
@@ -86,6 +87,10 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  * another; fake.outageHits lists every request an outage took.
  *
  * Every initialize call and session records its clientInfo; every answered tool call records its result.
+ *
+ * Wait links, as the entry server returns them: join_queue's reply carries waitToken queue-wait-<n> and its waitUrl
+ * (<url>/wait/<token>), and queue_status carries the same while that join's entry is waiting or matched (a baseline
+ * entry has one only when given waitToken); join_lobby's carries lobby-wait-<lobbyId>, and read_lobby carries it to a key seated there.
  */
 export async function startFake(options = {}) {
   const clock = options.clock ?? { now: () => Date.now() };
@@ -99,6 +104,8 @@ export async function startFake(options = {}) {
   let observes = 0;
   let createdLobbies = 0;
   let pairings = 0;
+  let queueJoins = 0;
+  const seatedLobbies = new Set();
   let openLocates = options.lobbyHoldsAfterLocates ?? 0;
   let picked = null;
   const notApplied = { times: 0, ...options.notApplied };
@@ -150,31 +157,45 @@ export async function startFake(options = {}) {
       pairings += 1;
       const lobbyId = options.distinctLobbies ? `fresh-lobby-${pairings}` : "fresh-lobby";
       lobbies.set(lobbyId, "holding");
-      entry = { state: "matched", mode: entry.mode, lobbyId, matchedAt: entry.joinedAt + options.pairAfterMs };
+      entry = { state: "matched", mode: entry.mode, lobbyId, matchedAt: entry.joinedAt + options.pairAfterMs, ...(entry.waitToken ? { waitToken: entry.waitToken } : {}) };
     }
     return entry;
   }
 
+  const waitLink = (waitToken) => ({ waitToken, waitUrl: `${base}/wait/${waitToken}` });
+  /** The entry as the server shows it: without the fake's own waitToken bookkeeping. */
+  const queueView = () => {
+    const { waitToken: _token, ...shown } = queueNow();
+    return shown;
+  };
+
   function entryTool(name, args) {
     if (args.key !== undefined && args.key !== options.key) return text({ error: "invalid_key", message: "Unknown key." }, true);
     switch (name) {
-      case "queue_status": return text({ queue: queueNow() });
+      case "queue_status": {
+        const now = queueNow();
+        return text({ queue: queueView(), ...(entry.waitToken && (now.state === "waiting" || now.state === "matched") ? waitLink(entry.waitToken) : {}) });
+      }
       case "join_queue": {
         if (queueNow().state === "waiting") return text({ error: "already_queued", message: "Already queued." }, true);
+        queueJoins += 1;
+        const waitToken = `queue-wait-${queueJoins}`;
         entry = { state: "waiting", mode: args.mode, joinedAt: clock.now(), expiresAt: clock.now() + (String(args.mode).startsWith("house-") ? 900_000 : 43_200_000) };
         if (options.pairAfterMs === 0) queueNow();
-        return text({ queue: entry });
+        entry.waitToken = waitToken;
+        return text({ queue: queueView(), ...waitLink(waitToken) });
       }
       case "leave_queue":
         if (queueNow().state === "waiting") entry = { state: "none" };
-        return text({ queue: entry });
+        return text({ queue: queueView() });
       case "read_lobby": {
         if (refuseReadLobby > 0) {
           refuseReadLobby -= 1;
           return text({ error: "unavailable", message: "Try again." }, true);
         }
         const state = lobbies.get(args.lobbyId);
-        return state === undefined ? text({ error: "no_such_lobby", message: "No lobby." }, true) : text({ lobby: { id: args.lobbyId, state } });
+        if (state === undefined) return text({ error: "no_such_lobby", message: "No lobby." }, true);
+        return text({ lobby: { id: args.lobbyId, state }, ...(seatedLobbies.has(args.lobbyId) ? waitLink(`lobby-wait-${args.lobbyId}`) : {}) });
       }
       case "create_lobby": {
         createdLobbies += 1;
@@ -183,10 +204,12 @@ export async function startFake(options = {}) {
         return text({ lobby: { id, size: args.size, kind: args.kind, state: "open", seats: [] } });
       }
       case "join_lobby": {
+        if (options.refuseJoinLobby === "already_seated") seatedLobbies.add(args.lobbyId);
         if (options.refuseJoinLobby) return text({ error: options.refuseJoinLobby, message: "Refused." }, true);
         if (!lobbies.has(args.lobbyId)) return text({ error: "no_such_lobby", message: "No lobby." }, true);
         if (openLocates === 0) lobbies.set(args.lobbyId, "holding");
-        return text({ lobby: { id: args.lobbyId, state: lobbies.get(args.lobbyId) } });
+        seatedLobbies.add(args.lobbyId);
+        return text({ lobby: { id: args.lobbyId, state: lobbies.get(args.lobbyId) }, ...waitLink(`lobby-wait-${args.lobbyId}`) });
       }
       case "locate_match":
         if (lobbies.get(args.lobbyId) === "open") {

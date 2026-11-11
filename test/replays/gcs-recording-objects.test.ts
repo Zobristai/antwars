@@ -3,7 +3,7 @@ import type { ClientRequest, IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { gcsRecordingObjects } from "../../src/replays/abandonRecording.ts";
+import { gcsRecordingObjects, HoldUnknownError, RecordingChangedError, RecordingHeldError } from "../../src/replays/abandonRecording.ts";
 import { ReplayCreateError, type ReplayGet } from "../../src/store/gcs.ts";
 
 // The bucket client the correction uses for its recording reads and generation-conditioned uploads, against a fake
@@ -177,5 +177,105 @@ describe("generation-conditioned recording replacement", () => {
   ])("reports an accepted upload whose reply carries %s as replaced with an unknown generation", async (_label, value) => {
     const { objects } = fakeBucket(() => Response.json(value));
     await expect(objects.replace(OBJECT, replacement, "7")).rejects.toThrow(`object ${OBJECT} replaced but its new generation is unknown`);
+  });
+});
+
+describe("recording holds set and cleared only by this apply", () => {
+  const PATH = `/storage/v1/b/replay-bucket/o/${encodeURIComponent(OBJECT)}`;
+  const state = (generation: string, metageneration: string, temporaryHold: boolean) => Response.json({ generation, metageneration, temporaryHold });
+  /** Replies to the metadata read (GET) from `reads` in turn, and to the hold change (PATCH) with `patch`. */
+  const holdBucket = (reads: (() => Response)[], patch: () => Response) => {
+    let read = 0;
+    return fakeBucket(call => call.method === "PATCH" ? patch() : reads[Math.min(read++, reads.length - 1)]!());
+  };
+  const unheld = () => state("7", "3", false);
+
+  it("sets a hold on an unheld object only at its generation and the metadata found, and returns the hold it set", async () => {
+    const { objects, jsonCalls, mediaCalls } = holdBucket([unheld], () => state("7", "4", true));
+    expect(await objects.hold(OBJECT, "7")).toEqual({ name: OBJECT, generation: "7", metageneration: "4" });
+    expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH"]);
+    const patch = jsonCalls[1]!;
+    expect(patch.url.pathname).toBe(PATH);
+    expect(Object.fromEntries(patch.url.searchParams)).toEqual({ ifGenerationMatch: "7", ifMetagenerationMatch: "3", fields: "generation,metageneration,temporaryHold" });
+    expect(patch.headers.authorization).toBe("Bearer fake-token");
+    expect(JSON.parse(Buffer.from(patch.body!).toString())).toEqual({ temporaryHold: true });
+    expect(mediaCalls).toHaveLength(0);
+  });
+
+  it("refuses, setting nothing, an object already held, at another generation, or gone", async () => {
+    for (const [read, error] of [[() => state("7", "3", true), RecordingHeldError], [() => state("8", "1", false), RecordingChangedError],
+      [() => new Response(null, { status: 404 }), RecordingChangedError]] as const) {
+      const { objects, jsonCalls } = holdBucket([read], () => state("7", "4", true));
+      await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(error);
+      expect(jsonCalls.map(call => call.method)).toEqual(["GET"]);
+    }
+  });
+
+  it.each([412, 404])("reports a hold refused on its conditions (HTTP %i) as undetermined, without reading back", async status => {
+    const { objects, jsonCalls } = holdBucket([unheld], () => new Response(null, { status }));
+    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
+    expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH"]);
+  });
+
+  it("reports as undetermined a hold whose first attempt landed with its reply lost and whose retry got 412", async () => {
+    // A transport that retries below the call: the first PATCH lands (metageneration 3 to 4, held), its reply is lost,
+    // and the retry, still conditioned on metageneration 3, is refused with 412.
+    let metageneration = 3, held = false, attempts = 0;
+    const request = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.hostname === "metadata.google.internal") return Response.json({ access_token: "fake-token", expires_in: 3600 });
+      if ((init?.method ?? "GET") === "GET") return state("7", String(metageneration), held);
+      attempts++;
+      if (url.searchParams.get("ifMetagenerationMatch") !== String(metageneration)) return new Response(null, { status: 412 });
+      metageneration++; held = true;
+      // The reply is lost; the transport sends the same request again.
+      return request(input, init);
+    }) as typeof fetch;
+    const objects = gcsRecordingObjects("replay-bucket", request);
+    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
+    expect([attempts, held]).toEqual([2, true]);
+  });
+
+  const lost: [string, () => Response][] = [["an error status", () => new Response(null, { status: 503 })],
+    ["a refusal other than its conditions", () => new Response(null, { status: 403 })], ["an unconfirmed reply", () => Response.json({})],
+    ["a hold at another metageneration", () => state("7", "6", true)], ["a lost reply", () => { throw new Error("socket hang up"); }]];
+  it.each(lost)("reports a hold sent with %s as undetermined, never reading it back", async (_label, patch) => {
+    // A read-back would show the hold set, but it is never made: the hold cannot be proved this request's.
+    const { objects, jsonCalls } = holdBucket([unheld, () => state("7", "4", true)], patch);
+    await expect(objects.hold(OBJECT, "7")).rejects.toBeInstanceOf(HoldUnknownError);
+    expect(jsonCalls.map(call => call.method)).toEqual(["GET", "PATCH"]);
+  });
+
+  it("fails before any request, setting nothing, when the object cannot be read", async () => {
+    const { objects, jsonCalls } = holdBucket([() => new Response(null, { status: 503 })], () => state("7", "4", true));
+    const failure = await objects.hold(OBJECT, "7").catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(HoldUnknownError);
+    expect(jsonCalls.map(call => call.method)).toEqual(["GET"]);
+  });
+
+  const mine = { name: OBJECT, generation: "7", metageneration: "4" };
+  it("clears only the hold it set, at that generation and metageneration, and confirms it", async () => {
+    const { objects, jsonCalls } = holdBucket([], () => state("7", "5", false));
+    expect(await objects.release(mine)).toBe(true);
+    expect(jsonCalls.map(call => call.method)).toEqual(["PATCH"]);
+    expect(Object.fromEntries(jsonCalls[0]!.url.searchParams)).toEqual({ ifGenerationMatch: "7", ifMetagenerationMatch: "4", fields: "generation,metageneration,temporaryHold" });
+    expect(JSON.parse(Buffer.from(jsonCalls[0]!.body!).toString())).toEqual({ temporaryHold: false });
+  });
+
+  it("reports a hold not cleared unless the reply confirms it, never reading it back, and never throws", async () => {
+    for (const patch of [() => new Response(null, { status: 412 }), () => new Response(null, { status: 404 }), () => new Response(null, { status: 503 }),
+      () => Response.json({}), () => state("7", "5", true), () => state("7", "6", false), () => { throw new Error("socket hang up"); }]) {
+      const { objects, jsonCalls } = holdBucket([() => state("7", "5", false)], patch);
+      expect(await objects.release(mine)).toBe(false);
+      expect(jsonCalls.map(call => call.method)).toEqual(["PATCH"]);
+    }
+  });
+
+  it.each(["0", "", "7a"])("refuses generation %j before any request", async generation => {
+    const { objects, jsonCalls } = holdBucket([unheld], () => state("7", "4", true));
+    await expect(objects.hold(OBJECT, generation)).rejects.toThrow("invalid generation");
+    expect(await objects.release({ ...mine, generation })).toBe(false);
+    expect(jsonCalls).toHaveLength(0);
   });
 });
