@@ -78,7 +78,7 @@ export const REFUSAL_CODES = [
 ] as const;
 export type RefusalCode = typeof REFUSAL_CODES[number];
 export type PlanState = { readonly state: "computing" | "applied" } | { readonly state: "refused"; readonly reason: RefusalCode }
-  | ({ readonly state: "planned" } & PublicPlan);
+  | ({ readonly state: "refused"; readonly reason: RefusalCode } & RefusalFigures) | ({ readonly state: "planned" } & PublicPlan);
 
 /**
  * Where a not-reproduced history deviates most, for the server log only: the largest finite difference between a replayed
@@ -88,15 +88,46 @@ export type PlanState = { readonly state: "computing" | "applied" } | { readonly
  */
 export interface Deviation { readonly deviation: number | null; readonly handle: string; readonly source: string; readonly count: number }
 
+/** The kind of a compared value: a change record's before, after, rdBefore or rdAfter, or a rating row's rating or rd. */
+export type ValueKind = "before" | "after" | "rdBefore" | "rdAfter" | "rating" | "rd";
+
+/**
+ * A not-reproduced refusal's public figures, numbers and kinds only: the largest deviation and how many values fail (as
+ * in Deviation), the kind of the value the largest deviation is in (null whenever that deviation is null: a missing value,
+ * the players, a count, a time or a record), and the UTC day (YYYY-MM-DD) of the earliest commit among the failing change records, null
+ * when only rating rows fail. Never a handle, identity, row, lobby, match or record name.
+ */
+export interface RefusalFigures {
+  readonly deviation: number | null; readonly count: number; readonly kind: ValueKind | null; readonly earliestChangeDay: string | null;
+}
+
 class PlanRefused extends Error {
   // Explicit fields, not parameter properties, which Node's type stripping refuses (store/firestore.ts).
   readonly code: RefusalCode;
   readonly deviation?: Deviation;
-  constructor(code: RefusalCode, reason: string, deviation?: Deviation) { super(reason); this.code = code; if (deviation) this.deviation = deviation; }
+  readonly figures?: RefusalFigures;
+  constructor(code: RefusalCode, reason: string, deviation?: Deviation, figures?: RefusalFigures) {
+    super(reason); this.code = code; if (deviation) this.deviation = deviation; if (figures) this.figures = figures;
+  }
 }
 const refuse = (code: RefusalCode, reason: string): never => { throw new PlanRefused(code, reason); };
 /** A not-reproduced refusal's largest deviation; undefined for any other refusal. */
 export const refusalDeviation = (error: unknown): Deviation | undefined => error instanceof PlanRefused ? error.deviation : undefined;
+/**
+ * The UTC day (YYYY-MM-DD) of a strict RFC 3339 UTC timestamp (YYYY-MM-DDTHH:MM:SS, optional fractional seconds, then
+ * Z) that is a real instant, taken from the parsed instant; null for anything else, so no other text can be served.
+ */
+const utcDay = (time: string): string | null => {
+  const at = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/.exec(time);
+  if (!at) return null;
+  const [y, mo, d, h, mi, s] = at.slice(1).map(Number) as [number, number, number, number, number, number];
+  const instant = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+  if (instant.getUTCFullYear() !== y || instant.getUTCMonth() !== mo - 1 || instant.getUTCDate() !== d || instant.getUTCHours() !== h
+    || instant.getUTCMinutes() !== mi || instant.getUTCSeconds() !== s) return null;
+  return instant.toISOString().slice(0, 10);
+};
+/** A not-reproduced refusal's public figures; undefined for any other refusal. */
+export const refusalFigures = (error: unknown): RefusalFigures | undefined => error instanceof PlanRefused ? error.figures : undefined;
 /** The served code of a refusal: its check's code, store-error for a failed store read, error for anything else. */
 export const refusalCode = (error: unknown): RefusalCode =>
   error instanceof PlanRefused ? error.code : error instanceof FirestoreError ? "store-error" : "error";
@@ -365,10 +396,13 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const value = a === undefined || b === undefined ? NaN : Math.abs(a - b);
     return Number.isFinite(value) ? value : null;
   };
-  const failures: { code: RefusalCode; reason: string; deviation: number | null; handle: string; source: string }[] = [];
-  /** One entry for each of the pairs that is not reproduced, each with its own deviation. */
-  const compare = (code: RefusalCode, reason: string, handle: string, source: string, pairs: readonly (readonly [number | undefined, number | undefined])[]) => {
-    for (const [a, b] of pairs) if (!near(a, b)) failures.push({ code, reason, deviation: gap(a, b), handle, source });
+  /** committedAt: the change record's commit time (createTime) for a failure in one, else null. */
+  const failures: { code: RefusalCode; reason: string; deviation: number | null; handle: string; source: string;
+    kind: ValueKind | null; committedAt: string | null }[] = [];
+  /** One entry for each of the pairs that is not reproduced, each with its own deviation and kind. */
+  const compare = (code: RefusalCode, reason: string, handle: string, source: string, committedAt: string | null,
+    pairs: readonly (readonly [ValueKind, number | undefined, number | undefined])[]) => {
+    for (const [kind, a, b] of pairs) if (!near(a, b)) failures.push({ code, reason, deviation: gap(a, b), handle, source, kind, committedAt });
   };
   const check = replay(order);
   for (const lobby of window) {
@@ -376,21 +410,25 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const source = `ratedMatches/${lobby.id}`;
     const ids = (changes: readonly RatingChange[]) => JSON.stringify(changes.map(c => c.identityId).sort());
     if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) {
-      failures.push({ code: "not-reproduced-players", reason: `stored history not reproduced: the players of lobby ${lobby.id}`, deviation: null, handle: "", source });
+      failures.push({ code: "not-reproduced-players", reason: `stored history not reproduced: the players of lobby ${lobby.id}`, deviation: null, handle: "", source,
+        kind: null, committedAt: createdAt(lobby) });
       continue;
     }
     for (const c of replayed) {
       const k = change(lobby, c.identityId);
       compare("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`,
-        shown(names.get(c.identityId) ?? ""), source, [[c.before, k.before], [c.rdBefore, k.rdBefore], [c.after, k.after], [c.rdAfter, k.rdAfter]]);
+        shown(names.get(c.identityId) ?? ""), source, createdAt(lobby),
+        [["before", c.before, k.before], ["rdBefore", c.rdBefore, k.rdBefore], ["after", c.after, k.after], ["rdAfter", c.rdAfter, k.rdAfter]]);
     }
   }
   for (const id of players) {
     const [now, replayed] = [storedState(id, row(id)), check.state.get(id)!];
     const [reason, handle, source] = [`stored history not reproduced: ${names.get(id)}`, shown(names.get(id) ?? ""), `${ROWS}/${id}`];
-    compare("not-reproduced-rating", reason, handle, source, [[replayed.rating, now.rating]]);
-    compare("not-reproduced-rd", reason, handle, source, [[replayed.rd, now.rd]]);
-    const other = (code: RefusalCode, differs: boolean) => { if (differs) failures.push({ code, reason, deviation: null, handle, source }); };
+    compare("not-reproduced-rating", reason, handle, source, null, [["rating", replayed.rating, now.rating]]);
+    compare("not-reproduced-rd", reason, handle, source, null, [["rd", replayed.rd, now.rd]]);
+    const other = (code: RefusalCode, differs: boolean) => {
+      if (differs) failures.push({ code, reason, deviation: null, handle, source, kind: null, committedAt: null });
+    };
     other("not-reproduced-rated-at", replayed.ratedAt !== now.ratedAt);
     other("not-reproduced-rated-matches", replayed.ratedMatches !== now.ratedMatches);
     other("not-reproduced-record", movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)));
@@ -399,7 +437,11 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     // The largest finite deviation over every value; a missing value counts but never masks one; the first wins a tie.
     const most = failures.reduce((a, b) => (b.deviation ?? -1) > (a.deviation ?? -1) ? b : a);
     const first = failures[0]!;
-    throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length });
+    // kind names where the largest numeric deviation is, so it is null whenever there is none (a missing value only).
+    // Only strict UTC timestamps that are real instants count; padded alike, so text order is time order among them.
+    const earliest = failures.flatMap(f => f.committedAt !== null && utcDay(f.committedAt) !== null ? [f.committedAt] : []).sort()[0];
+    throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length },
+      { deviation: most.deviation, count: failures.length, kind: most.deviation === null ? null : most.kind, earliestChangeDay: earliest === undefined ? null : utcDay(earliest) });
   }
 
   // The move: lobbies' seats, watch-entry labels, changed change records and rating rows.
@@ -442,7 +484,7 @@ export const SOL_PLAN_PATH = `${PLAN_PATH}/house-1v1`;
 /**
  * The house-1v1 move, read-only: planned, logged and served once the never-joined correction is applied, never applied
  * here. A refusal logs its code and, where the stored history is not reproduced, its largest deviation (refusalDeviation);
- * only the code is served.
+ * it serves the code, and for a not-reproduced history also its public figures (refusalFigures), never a name or id.
  */
 async function planSol(store: Store, recordings: RecordingObjects): Promise<PlanState> {
   let plan: Plan | "applied";
@@ -450,7 +492,8 @@ async function planSol(store: Store, recordings: RecordingObjects): Promise<Plan
     const reason = refusalCode(error);
     const deviation = refusalDeviation(error);
     console.warn("antwar house-1v1 rating correction plan refused", { reason, ...(deviation ? { deviation } : {}) });
-    return { state: "refused", reason };
+    const figures = refusalFigures(error);
+    return figures ? { state: "refused", reason, ...figures } : { state: "refused", reason };
   }
   if (plan === "applied") return { state: "applied" };
   for (const write of plan.writes) console.info(`antwar house-1v1 rating correction planned: ${write.op} ${write.path}`);
