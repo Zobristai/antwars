@@ -233,14 +233,16 @@ describe("Live now rows", () => {
   const match: LiveMatch = { lobbyId: "00000000-0000-4000-8000-0000000000aa", startedAt: Date.parse("2026-11-11T03:50:00Z"), rated: false, delaySeconds: 60,
     matchType: { kind: "challenge", size: 1 }, colonies: [
       [{ displayName: "antwars/gpt-6-luna", rating: 1979, rd: 60, ratedMatches: 40 }],
-      [{ displayName: "kain", modelLabel: "openai/gpt-6.1-terra", rating: 1612, rd: 80, ratedMatches: 12 }]] };
+      [{ displayName: "kain", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: 1612, rd: 80, ratedMatches: 12 }]] };
 
   it("types the match, rates every seat (an unrated match too), says LIVE and offers Watch", () => {
     const { p, live: liveList } = show({ live: { status: "ready", rows: [match] } });
     const [row] = bodyRows(liveList.table);
     expect(cells(row!)).toEqual([
       ["c-start", "11 Nov 202603:50 UTC"], ["c-type", "Challenge · 1v1"], ["c-model", ["GPT-6 LunamaxFast1979 ± 60"]],
-      ["c-model", ["kain GPT-6.1 Terra1612 ± 80"]], ["c-status", "Status Live"], ["c-go", "Watch"]]);
+      ["c-model", ["kain GPT-6.1 TerrahighFast1612 ± 80"]], ["c-status", "Status Live"], ["c-go", "Watch"]]);
+    // The builder's line in the drawing's order: username, model, then the level and Fast it reported on joining.
+    expect(lineParts(row!.byClass("d1p-model")[1]!).filter(part => part[0] !== "rating")).toEqual([["name", ["d1p-user:kain", "d1p-mname:GPT-6.1 Terra"]], ["badges", ["high", "Fast"]]]);
     const watch = row!.byClass("d1p-row-pill")[0]!;
     expect(watch.href).toBe("/?lobby=00000000-0000-4000-8000-0000000000aa&watch=1");
     expect(watch.getAttribute("aria-label")).toBe("Watch, Unrated match started 11 Nov 2026 · 03:50 UTC");

@@ -29,7 +29,7 @@ describe("matches page data", () => {
       { lobbyId: "unrated", startedAt: 2, rated: false, delaySeconds: 60, colonies: [[{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], []] },
       { lobbyId: "rated", startedAt: 3, rated: true, delaySeconds: 300, colonies: [[], []] },
       // Each seat's self-reported model label, null where it reported none.
-      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null }],
+      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: null, rd: null, ratedMatches: null }],
         [{ displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }]] },
     ];
     const request = async (path: RequestInfo | URL) => new Response(JSON.stringify(
@@ -40,6 +40,8 @@ describe("matches page data", () => {
     expect(data.view.live.rows.map(row => row.lobbyId)).toEqual(["house", "unrated", "rated", "labelled"]);
     expect(data.view.live.rows[1]!.colonies).toEqual([[{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], []]);
     expect(data.view.live.rows[3]!.colonies.map(colony => colony.map(seat => seat.modelLabel))).toEqual([["openai/gpt-6.1-terra"], [null]]);
+    // And its level and tier as it reported them; absent from a seat (or server) that sends none.
+    expect(data.view.live.rows[3]!.colonies.map(colony => colony.map(seat => [seat.thinkingLevel, seat.serviceTier]))).toEqual([[["high", "fast"]], [[undefined, undefined]]]);
     data.destroy();
   });
   it("refuses a live row without its players, or a seat with a partial rating", async () => {

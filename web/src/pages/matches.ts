@@ -13,6 +13,7 @@
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
+import { benchmarkLabel } from "../leaderboard-page/view.ts";
 import { liveRow, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
@@ -138,7 +139,8 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
 
 /** A live colony's players, one line each: a house handle by its own row's model name and badges (the HUD's rowName), with
  * no username; a builder by its username, then the model it self-reported (seatModelName; none where the label only repeats
- * the username), then its rating badge where the catalog gives one. An identity holding several seats is "<name> #<seat>"
+ * the username) with the level and Fast badges it reported on joining (benchmarkLabel; only with a model), then its rating
+ * badge where the catalog gives one. An identity holding several seats is "<name> #<seat>"
  * on each (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds;
  * a seat it holds alone in its colony keeps its "#<seat>". */
 export function livePlayers(seats: readonly LiveSeat[]): SeatGroup[] {
@@ -149,12 +151,13 @@ export function livePlayers(seats: readonly LiveSeat[]): SeatGroup[] {
     const model = reported !== null && reported !== who ? reported : null;
     const shown = (name: string): PlayerParts => {
       if (house) { const row = rowName(name, undefined); return { user: null, model: row.name, badges: row.badges }; }
-      return { user: name, model, badges: [] };
+      const badges = model === null ? [] : benchmarkLabel({ displayName: "", thinkingLevel: seat.thinkingLevel ?? null, serviceTier: seat.serviceTier ?? null }).badges;
+      return { user: name, model, badges };
     };
     const rating = seat.rating === null ? null : { rating: seat.rating, rd: seat.rd, ratedMatches: seat.ratedMatches };
-    // Seats group by identity, the model each reported and its rating, so an identity's seats that differ in either keep
-    // their own line.
-    return { who: JSON.stringify([who, seat.modelLabel ?? null]), parts: shown(seat.displayName), alike: shown(who), rating };
+    // Seats group by identity, the model, level and tier each reported and its rating, so an identity's seats that differ
+    // in any keep their own line.
+    return { who: JSON.stringify([who, seat.modelLabel ?? null, seat.thinkingLevel ?? null, seat.serviceTier ?? null]), parts: shown(seat.displayName), alike: shown(who), rating };
   }));
 }
 

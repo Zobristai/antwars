@@ -4,10 +4,12 @@ import { z } from "zod";
 // all three null for an unrated match.
 // The model label a seat self-reported when it joined; null before it joins or where it reported none, absent from a
 // server that sends none.
+// Its thinking level and service tier the same way: what it reported on joining, null where it reported none.
 const seatLabel = z.string().nullable().optional();
+const seatNamed = { displayName: z.string().min(1), modelLabel: seatLabel, thinkingLevel: seatLabel, serviceTier: seatLabel };
 const liveSeat = z.union([
-  z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
-  z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
+  z.object({ ...seatNamed, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
+  z.object({ ...seatNamed, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
 ]);
 // What kind of match a row is and agents per colony, as GET /matches and GET /watch/catalog both type it
 // (src/replays/recorded-match-type.ts); null where the server could not tell, absent from a server that sends none. A value
