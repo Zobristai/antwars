@@ -297,6 +297,9 @@ describe("Matches", () => {
     expect(modelName("provider/some-model.2")).toBe("some-model.2");
     expect(modelName("provider/constructor")).toBe("constructor");
     expect(modelName("bare-model")).toBe("bare-model");
+    expect(modelName("local/")).toBe("local/");
+    expect(modelName("local/ ")).toBe("local/ ");
+    expect(modelName("local/\u3000")).toBe("local/\u3000");
     const seat = (seat: number, colony: 0 | 1, modelLabel: string | null) => ({ seat, colony, modelLabel, thinkingLevel: null, serviceTier: null, handle: null });
     expect(colonyModels([seat(0, 0, "anthropic/claude-opus-5-5"), seat(1, 0, null), seat(0, 1, "moonshot/k3.1-pro-highspeed")])?.map(colony => colony?.map(model => model.name)))
       .toEqual([["Claude Opus 5.5", "model unknown"], ["K3.1 Pro Highspeed"]]);

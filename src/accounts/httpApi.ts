@@ -4,9 +4,10 @@ import { DEFAULT_MCP_CONFIG } from "../mcp/config.js";
 import { BodyTimeoutError, readBody } from "../mcp/http.js";
 import { createAdmissionCap } from "../net/admission.js";
 import { clientSource } from "../server/clientSource.js";
-import { ACCOUNT_OPERATIONS, type AccountStores } from "./service.js";
+import { ACCOUNT_OPERATIONS, WEB_LEADERBOARD, type AccountStores } from "./service.js";
 
-const OPERATIONS = new Map(ACCOUNT_OPERATIONS.map((op) => [op.name, op]));
+/** The agents' operations, except that leaderboard is the web page's read, which adds each row's model. */
+const OPERATIONS = new Map([...ACCOUNT_OPERATIONS, WEB_LEADERBOARD].map((op) => [op.name, op]));
 
 /**
  * Largest /api request body, in bytes actually read. The largest body any schema-valid
@@ -48,7 +49,7 @@ function reply(res: ServerResponse, status: number, body: unknown, headers: Reco
 
 /**
  * POST /api/<operation> with a JSON object body: the same operations, inputs and
- * replies as the MCP tools of that name. Keys travel only in bodies, never URLs.
+ * replies as the MCP tools of that name, except that the leaderboard's entries also carry each row's model (WEB_LEADERBOARD). Keys travel only in bodies, never URLs.
  * A malformed or oversized body is answered without logging the parser's message,
  * which can quote the body. A store failure propagates to the server's 500
  * handler, which logs the route class and cause, never the request.

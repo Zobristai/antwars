@@ -13,9 +13,9 @@ import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { seatRating } from "./seat-rating.js";
 
 /**
- * rd and ratedMatches come from the same pre-start read as elo and are present exactly when it is. They stay on this
- * server and its handover save, reaching only the match's private record input (startRatings); the stream's identity
- * projection (src/live/model.ts playerIdentity) carries the display name and elo alone.
+ * rd and ratedMatches come from the same pre-start read as elo and are present exactly when it is. The stream's identity
+ * projection (src/live/model.ts playerIdentity) carries the display name, elo and rd, as the live catalog shows them;
+ * ratedMatches stays on this server and its handover save, reaching only the match's private record input (startRatings).
  */
 type SeatIdentity = StreamIdentity & { readonly identityId: string; readonly rd?: number; readonly ratedMatches?: number };
 interface Prepared {

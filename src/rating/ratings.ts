@@ -78,7 +78,7 @@ export type ThinkingLevels = Readonly<Record<string, string | null>>;
 /** Self-reported service tier of an identity's canonical seat (seat 1); absent entries mean not recorded. */
 export type ServiceTiers = Readonly<Record<string, string | null>>;
 /** Self-reported model label of an identity's canonical seat (seat 1); absent entries mean not recorded. Stored on the
- * rating row only, replaced by each rated match; the leaderboard does not serve it. */
+ * rating row, replaced by each rated match; only the web page's leaderboard read serves it (leaderboard's model option). */
 export type ModelLabels = Readonly<Record<string, string | null>>;
 
 export interface MatchResult {
@@ -128,6 +128,11 @@ export interface LeaderboardEntry extends Rating {
   readonly serviceTier: string | null;
   /** Owned by the antwars username, from the row's house marker (stored owner), never from the name. */
   readonly benchmark: boolean;
+  /**
+   * Only with the model option (the web page's read): a builder row's self-reported model label in its latest rated match
+   * in this mode; absent where that match reported none, and always on a Benchmark row, whose name is its model.
+   */
+  readonly model?: string;
   /** Rated results in this mode; wins + losses + draws = ratedMatches. All three null while the row's record is not yet reconciled. */
   readonly wins: number | null;
   readonly losses: number | null;
@@ -186,6 +191,8 @@ export interface Ratings {
   /** One ranked mode's rankings, highest first; mode defaults to 1v1 and scope to everyone. */
   leaderboard(options?: {
     readonly mode?: RankedMode; readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string;
+    /** Also serve each row's model (LeaderboardEntry.model): the web page's read only, never the agents' tool. */
+    readonly model?: boolean;
   }): Promise<LeaderboardOutcome>;
 }
 
@@ -738,6 +745,7 @@ export function createRatings(
         // A Benchmark row's level and tier belong to its handle; the seat-reported values stored on the row are not shown.
         const label = benchmark ? houseLabel(displayName) : { thinkingLevel: fields.thinkingLevel || null, serviceTier: fields.serviceTier || null };
         return { identityId, displayName, ...storedRating(identityId, fields), ...label, benchmark,
+          ...(options.model === true && !benchmark && fields.modelLabel ? { model: fields.modelLabel } : {}),
           wins: record?.wins ?? null, losses: record?.losses ?? null, draws: record?.draws ?? null,
           form: record?.form.map(({ result, matchId }) => ({ result, replayId: replayIds.get(matchId) ?? null,
             ...(indexMode ? { harnessPhase: harnessPhaseAt(times.get(matchId) ?? null) } : {}) })) ?? [] };
