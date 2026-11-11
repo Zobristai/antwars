@@ -241,9 +241,11 @@ export function withHandle(handle: string | null, model: string): string {
 export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">,
   options: { readonly listed?: boolean } = {}): NameParts {
   const house = seat.handle !== null && isHouseHandle(seat.handle);
-  const label = (text: string) => options.listed ? withHandle(seat.handle, seatModelName(text, seat.handle)) : modelName(text);
-  const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? label(seat.modelLabel) : seat.handle ?? "model unknown";
-  if (name === UNLISTED_MODEL) return { name, badges: [], quiet: null };
+  const label = (text: string) => options.listed ? seatModelName(text, seat.handle) : modelName(text);
+  const model = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? label(seat.modelLabel) : seat.handle ?? "model unknown";
+  // Badges follow the model's own name; Recordings only adds the builder's username before it for display.
+  const name = options.listed && !house && seat.modelLabel !== null ? withHandle(seat.handle, model) : model;
+  if (model === UNLISTED_MODEL) return { name, badges: [], quiet: null };
   const fixed = seat.handle === null ? { thinkingLevel: null, serviceTier: null } : houseLabel(seat.handle);
   const badges = benchmarkLabel({ displayName: "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier }).badges;
   return { name, badges, quiet: null };

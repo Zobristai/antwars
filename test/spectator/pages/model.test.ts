@@ -222,6 +222,11 @@ describe("Matches", () => {
     // after its handle; the HUD keeps the model's words.
     expect(recordedIdentity(seat(0, "coffee-ant/local", "coffee-ant"), { listed: true }).name).toBe("coffee-ant");
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-terra", "kestrel-harness"), { listed: true }).name).toBe("kestrel-harness · GPT-6.1 Terra");
+    // The username is added for display only: a builder model named like the house sentinel keeps no badges, as before.
+    const sentinel = { seat: 0, colony: 0 as const, modelLabel: "other/Unlisted model", thinkingLevel: "high", serviceTier: "fast", handle: "kain" };
+    expect(recordedIdentity(sentinel)).toEqual({ name: "Unlisted model", badges: [], quiet: null });
+    expect(recordedIdentity(sentinel, { listed: true })).toEqual({ name: "kain · Unlisted model", badges: [], quiet: null });
+    expect(recordedIdentity({ ...sentinel, modelLabel: "openai/gpt-6.1-terra" }, { listed: true })).toEqual({ name: "kain · GPT-6.1 Terra", badges: ["high", "Fast"], quiet: null });
     expect(colonySeats([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])!.map(c => c?.map(e => e.parts.name) ?? null))
       .toEqual([["coffee-ant", "kite · local"], null]);
     // Only an exact provider part before the first "/" counts; every other label keeps modelName's words.
