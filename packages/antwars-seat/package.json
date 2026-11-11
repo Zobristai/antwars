@@ -1,6 +1,6 @@
 {
   "name": "antwars-seat",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Dependency-free Antwars seat harness: queue or lobby, pair, join and stop in the nest window (the agent picks its own nest), observe and act. Its observer keeps the seat inside the idle limit every match shares (any accepted call resets it; 300 s default).",
   "private": true,
   "type": "module",
