@@ -293,7 +293,10 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-sel-head > .d1-badge { width: 18px; height: 18px; margin-top: 1px; }
 .d1-sel-ant .d1-sel-head { grid-template-columns: minmax(0, 1fr) auto; }
 .d1-sel-names { display: grid; gap: 2px; min-width: 0; }
-.d1-sel-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
+/* The opened card's model and its level badges are one unit that never splits: a model beside the name takes its own
+   line under it with its badges after it, and where the name is the model its badges stay beside the name. */
+.d1-sel-title { display: grid; grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr); align-items: baseline; gap: 0 8px; min-width: 0; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
+.d1-sel-title:has(> .d1-model:not([hidden])) > .d1-sel-name { grid-column: 1 / -1; }
 .d1-sel-title .d1-model { font-weight: 400; }
 .d1-sel-title .d1-ast-mark { margin-left: -8px; font-size: 11px; }
 .d1-sel-sub { font-size: 12px; font-weight: 600; color: var(--aw-ink-2); }
@@ -419,10 +422,6 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* The phone: the frame edge to edge, every target 44 px, two-line rows, the dialog a bottom sheet. */
 @media (max-width: 559px) {
   .d1 { --d1-lane: 52px; --d1-tap: 44px; }
-  /* The opened card's model and its level badges are one unit that never splits: a model beside the name takes its own
-     line under it with its badges after it, and where the name is the model its badges stay beside the name. */
-  .d1-sel-title { display: grid; grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr); }
-  .d1-sel-title:has(> .d1-model:not([hidden])) > .d1-sel-name { grid-column: 1 / -1; }
   .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 4px auto minmax(0, 1fr); }
   .d1-top { padding: 0 2px 0 12px; gap: 8px; }
   .d1-top-credit { display: none; }
