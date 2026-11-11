@@ -113,6 +113,19 @@ class PlanRefused extends Error {
 const refuse = (code: RefusalCode, reason: string): never => { throw new PlanRefused(code, reason); };
 /** A not-reproduced refusal's largest deviation; undefined for any other refusal. */
 export const refusalDeviation = (error: unknown): Deviation | undefined => error instanceof PlanRefused ? error.deviation : undefined;
+/**
+ * The UTC day (YYYY-MM-DD) of a strict RFC 3339 UTC timestamp (YYYY-MM-DDTHH:MM:SS, optional fractional seconds, then
+ * Z) that is a real instant, taken from the parsed instant; null for anything else, so no other text can be served.
+ */
+const utcDay = (time: string): string | null => {
+  const at = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/.exec(time);
+  if (!at) return null;
+  const [y, mo, d, h, mi, s] = at.slice(1).map(Number) as [number, number, number, number, number, number];
+  const instant = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+  if (instant.getUTCFullYear() !== y || instant.getUTCMonth() !== mo - 1 || instant.getUTCDate() !== d || instant.getUTCHours() !== h
+    || instant.getUTCMinutes() !== mi || instant.getUTCSeconds() !== s) return null;
+  return instant.toISOString().slice(0, 10);
+};
 /** A not-reproduced refusal's public figures; undefined for any other refusal. */
 export const refusalFigures = (error: unknown): RefusalFigures | undefined => error instanceof PlanRefused ? error.figures : undefined;
 /** The served code of a refusal: its check's code, store-error for a failed store read, error for anything else. */
@@ -424,10 +437,10 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     // The largest finite deviation over every value; a missing value counts but never masks one; the first wins a tie.
     const most = failures.reduce((a, b) => (b.deviation ?? -1) > (a.deviation ?? -1) ? b : a);
     const first = failures[0]!;
-    // Padded createTimes, so text order is time order; the day is the UTC date the time starts with.
-    const earliest = failures.flatMap(f => f.committedAt === null ? [] : [f.committedAt]).sort()[0];
+    // Only strict UTC timestamps that are real instants count; padded alike, so text order is time order among them.
+    const earliest = failures.flatMap(f => f.committedAt !== null && utcDay(f.committedAt) !== null ? [f.committedAt] : []).sort()[0];
     throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length },
-      { deviation: most.deviation, count: failures.length, kind: most.kind, earliestChangeDay: earliest === undefined ? null : earliest.slice(0, 10) });
+      { deviation: most.deviation, count: failures.length, kind: most.kind, earliestChangeDay: earliest === undefined ? null : utcDay(earliest) });
   }
 
   // The move: lobbies' seats, watch-entry labels, changed change records and rating rows.

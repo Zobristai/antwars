@@ -663,6 +663,37 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
+  it("serves earliestChangeDay only from a strict UTC commit time that is a real instant, never from other text", async () => {
+    const w = await appliedWorld();
+    for (const i of [7, 8]) {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as { rdAfter: number }[];
+      changes[0]!.rdAfter += 1;
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    }
+    /** The store with each history match's commit time given by time(i), in rating order. */
+    const timed = (time: (i: number) => string): Store => ({ ...w.store, createTimes: async paths => {
+      const times = new Map(await w.store.createTimes!(paths));
+      w.lobbies.forEach((id, i) => { if (times.has(`ratedMatches/${id}`)) times.set(`ratedMatches/${id}`, time(i)); });
+      return times;
+    } });
+    const refused = async (store: Store) => {
+      const [info, warn] = quiet();
+      const { serve } = startCorrectionPlan(store, w.recordings);
+      const sol = await solServed(serve);
+      info.mockRestore(); warn.mockRestore();
+      return { sol, body: served(serve, SOL_PLAN_PATH).body };
+    };
+    // Every commit time a name-like string ending in Z, in rating order: no day, and none of it served.
+    const named = await refused(timed(i => `antwars/gpt-6-1-sol-high-${10 + i}Z`));
+    expect(named.sol).toMatchObject({ state: "refused", reason: "not-reproduced-change", count: 2, earliestChangeDay: null });
+    for (const text of ["antwars", "gpt-6-1", "sol-high", ...privateNames(w)]) expect(named.body).not.toContain(text);
+    // The earlier failing change's time is shaped like a timestamp but is no real instant (hour 25): the later one's day is served.
+    const late = await refused(timed(i => i === 7 ? "2026-10-17T25:00:00Z" : `2026-10-${10 + i}T12:00:00.5Z`));
+    expect(late.sol).toMatchObject({ state: "refused", reason: "not-reproduced-change", count: 2, earliestChangeDay: "2026-10-18" });
+    expect(late.body).not.toContain("T25");
+  });
+
   it("serves a house-1v1 refusal whose largest deviation is in a rating row with that row value's kind and no change day", async () => {
     for (const [field, kind, reason] of [["rating", "rating", "not-reproduced-rating"], ["rd", "rd", "not-reproduced-rd"]] as const) {
       const w = await appliedWorld();
