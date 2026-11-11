@@ -109,8 +109,8 @@ describe("the 2D HUD's status line from the shared view", () => {
 
 describe("the 3D board's legend from the shared view", () => {
   // Catches: a phone's wrapped legend breaking inside a word ("2" at one line's end, "agents" at the next's start), or
-  // starting a line with a separator.
-  it("keeps each word whole, so a wrapped legend breaks only after a separator, and says every word as before", () => {
+  // taking an extra line because each separator is held to the word before it, as it did in Liberation Sans at 390px.
+  it("keeps each word whole, so a wrapped legend breaks only beside a separator, and says every word as before", () => {
     const playback = new Playback(), frame = new Frame();
     playback.push(match(1000), 1000 * TICK_MS);
     expect(playback.sample(1000 * TICK_MS + RENDER_DELAY_MS, frame)).toBe(true);
@@ -121,10 +121,10 @@ describe("the 3D board's legend from the shared view", () => {
     const [rounds, flag] = phased.phase!.split(" · ");
     // Word for word as before: the board's three agents, the date and both phase tags, in order.
     expect(rest.textContent).toBe(` · not live · rated match · 3 agents · 26 Oct 2026 · ${phased.phase}`);
-    // Each word held whole with the separator after it; only an ordinary space between them, where a line may break.
+    // Each word held whole; an ordinary space on each side of the separator between two words, where a line may break.
     expect(rest.byClass("d1-legend-word").map(node => node.textContent))
-      .toEqual(["not live ·", "rated match ·", "3 agents ·", "26 Oct 2026 ·", `${rounds} ·`, flag]);
-    expect(rest.children.filter(node => node.tag === "#text").map(node => node.textContent)).toEqual([" · ", " ", " ", " ", " ", " "]);
+      .toEqual(["not live", "rated match", "3 agents", "26 Oct 2026", rounds, flag]);
+    expect(rest.children.filter(node => node.tag === "#text").map(node => node.textContent)).toEqual([" · ", " · ", " · ", " · ", " · ", " · "]);
     expect(readFileSync(new URL("../../web/src/ui/deck/deck.css", import.meta.url), "utf8")).toContain(".d1-legend-word { white-space: nowrap; }");
   });
 

@@ -177,12 +177,13 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");
     // A no-break space opens the rest: its own leading space would be trimmed beside the mode word. Each word after it is
-    // held whole with the separator that follows it, so a phone's wrapped legend breaks only after a "·": never inside a
-    // word ("2 agents", "26 Oct 2026"), and no line starts with a separator. The legend reads as before, word for word.
+    // held whole, with an ordinary space on each side of the "·" between two words, so a phone's wrapped legend breaks
+    // only beside a separator, never inside a word ("2 agents", "26 Oct 2026"). A separator may end one line or start the
+    // next, so holding the words costs no line. The legend reads as before, word for word.
     const words = l.words.slice(1);
     rest.replaceChildren(...(words.length === 0 ? [] : ["\u00a0· ", ...words.flatMap((word, at) => {
-      const held = h(doc, "span", "d1-legend-word", at < words.length - 1 ? `${word} ·` : word);
-      return at === 0 ? [held] : [" ", held];
+      const held = h(doc, "span", "d1-legend-word", word);
+      return at === 0 ? [held] : [" · ", held];
     })]));
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }

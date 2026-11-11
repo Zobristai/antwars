@@ -78,7 +78,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-dot[data-kind="recording"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
 .d1-mode { flex: none; font-weight: 800; color: var(--aw-ink-bright); }
 .d1-legend-rest { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* A word of the legend with the separator after it (hud.ts paintLegend): a wrapped legend never breaks inside one. */
+/* A word of the legend (hud.ts paintLegend): a wrapped legend never breaks inside one, only beside a separator. */
 .d1-legend-word { white-space: nowrap; }
 
 /* The lane under the window: the one event at its left, the board controls at its right. Nothing covers the board. */
