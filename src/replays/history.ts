@@ -1,6 +1,6 @@
 import { Worker } from "node:worker_threads";
 import { gunzipSync } from "node:zlib";
-import { decodeMessage, type StreamMessage, type StreamEvent, type StreamResult, type StreamSetup } from "../live/format.js";
+import { decodeMessage, type StreamIdentity, type StreamMessage, type StreamEvent, type StreamResult, type StreamSetup } from "../live/format.js";
 import { isReplayId } from "./access.js";
 import { seatHandle } from "./recorded-match-type.js";
 import { parseLog, terminalAt, type ParsedLog } from "../sim/log.js";
@@ -31,6 +31,17 @@ export interface SeatRecord {
   handle: string | null;
   joinedTick: number;
   commands: CommandRecord[];
+  /**
+   * The seated identity's rating, RD and rated-match count as the game server read them before the match started (the
+   * rating the stream showed for it). Absent when not known, including every record built before this was carried.
+   */
+  startRating?: StartRating;
+}
+/** A seat's rating as read before its match started. */
+export interface StartRating {
+  rating: number;
+  rd: number;
+  ratedMatches: number;
 }
 export interface MatchRecord {
   format: "antwar.match";
@@ -112,6 +123,8 @@ export interface HistoryInput {
   endedAt?: number;
   /** Add rerun to a record verified against logLines: public records only (src/records/service.ts). */
   rerun?: boolean;
+  /** Each seat's start rating by its stream display name (src/records/inputs.ts startRatings); absent in older inputs. */
+  startRatings?: Readonly<Record<string, StartRating>>;
 }
 
 export function recordStart(id: string): string {
@@ -146,6 +159,12 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
   record.unavailable = ["Full rules config and hold behaviour are absent from spectator binaries.",
     "Refused command requests and refusal reasons are absent; accepted requests may omit fields.",
     REPLIES_NOT_RETAINED];
+  /** The seat's start rating, found by its stream identity's display name; nothing when unknown. */
+  const startOf = (identity: StreamIdentity | undefined): { startRating?: StartRating } => {
+    const start = identity !== undefined && input.startRatings !== undefined && Object.hasOwn(input.startRatings, identity.displayName)
+      ? input.startRatings[identity.displayName]! : undefined;
+    return start === undefined ? {} : { startRating: { rating: start.rating, rd: start.rd, ratedMatches: start.ratedMatches } };
+  };
   let previous = -1;
   for (const message of messagesOf(input.binary)) {
     if (message.tick <= previous) throw new Error("replay ticks are not increasing");
@@ -157,7 +176,7 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
       record.result = message.full.result;
       record.seats = message.full.agents.map((agent, seat) => ({ seat, colony: agent.colony, modelLabel: agent.modelLabel || null, thinkingLevel: agent.thinkingLevel ?? null,
         serviceTier: agent.serviceTier ?? null, handle: seatHandle(agent.identity),
-        joinedTick: agent.joinTick, commands: [] }));
+        joinedTick: agent.joinTick, commands: [], ...startOf(agent.identity) }));
     }
     previous = message.tick;
     const tick = Math.max(0, message.tick - 1);
@@ -165,7 +184,7 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
       if (event.kind === "join") {
         if (event.agent !== record.seats.length) throw new Error("replay seat sequence is invalid");
         record.seats.push({ seat: event.agent, colony: event.colony, modelLabel: event.modelLabel || null, thinkingLevel: event.thinkingLevel ?? null,
-          serviceTier: event.serviceTier ?? null, handle: seatHandle(event.identity), joinedTick: tick, commands: [] });
+          serviceTier: event.serviceTier ?? null, handle: seatHandle(event.identity), joinedTick: tick, commands: [], ...startOf(event.identity) });
       }
       if (event.kind === "call") {
         const seat = record.seats[event.agent];
@@ -290,8 +309,11 @@ export function matchRecord(input: HistoryInput): MatchRecord {
   record.source = "match-log";
   record.status = "complete";
   record.rules = { version: header.rulesVersion, holdBehaviour: HOLD_BEHAVIOUR, config: JSON.parse(JSON.stringify(config)) as unknown };
-  // A match log carries no identities; each seat keeps the handle its binary seat recorded.
-  record.seats = seats.map((seat, index) => ({ ...seat, handle: record.seats[index]?.handle ?? null }));
+  // A match log carries no identities; each seat keeps the handle and start rating its binary seat recorded.
+  record.seats = seats.map((seat, index) => {
+    const start = record.seats[index]?.startRating;
+    return { ...seat, handle: record.seats[index]?.handle ?? null, ...(start === undefined ? {} : { startRating: start }) };
+  });
   if (input.rerun === true) record.rerun = rerunInputs(log);
   // The record service removes this once it adds the match's replies (src/records/service.ts withReplies).
   record.unavailable = [REPLIES_NOT_RETAINED];

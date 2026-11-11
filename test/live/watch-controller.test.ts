@@ -4,7 +4,7 @@ import type { AccountStores } from "../../src/accounts/service.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createLobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
-import { createRatings, RANKED_MODES } from "../../src/rating/ratings.ts";
+import { createRatings, RANKED_MODES, type Rating } from "../../src/rating/ratings.ts";
 import { createFirestore, type Write } from "../../src/store/firestore.ts";
 import { createWatchController, lobbySeats } from "../../src/live/watch-controller.ts";
 import { decodeMessage, encodePublicMessage, type StreamAgent } from "../../src/live/format.ts";
@@ -201,7 +201,7 @@ describe("house challenge seat ratings", () => {
     // What a spectator decodes from the stream's opening snapshot.
     const recorder = new SpectatorRecorder(state, { rated: access?.rated, identity });
     const shown = decodeMessage(encodePublicMessage({ ...recorder.initial(), full: recorder.initialFull() }));
-    return { controller, shown: shown.full!.agents.map(agent => agent.identity) };
+    return { controller, access: access!, shown: shown.full!.agents.map(agent => agent.identity) };
   }
   const seats: LobbySeat[] = [{ ...house, colony: 0 }, { ...builder, colony: 1 }];
   // Two house-1v1 wins for the house handle and one public 1v1 loss; one public 1v1 result for the builder.
@@ -231,6 +231,44 @@ describe("house challenge seat ratings", () => {
     const save = JSON.parse(JSON.stringify(controller.save(lobbyId)));
     const resumed = await controller.resume(save, { agentInfo: () => ({ seatKey: house.identityId }) } as unknown as LiveGame);
     expect(resumed.identity("sim-0")).toEqual({ identityId: house.identityId, displayName: "antwars/red" });
+  });
+
+  it("keeps each rated seat's start rating, RD and rated-match count for the record input only, through a handover save", async () => {
+    let index: Rating | undefined, publicBuilder: Rating | undefined;
+    const { controller, access, shown } = await prepared(seats, async ratings => {
+      await rated(ratings);
+      index = await ratings.readRating(house.identityId, "house-1v1");
+      publicBuilder = await ratings.readRating(builder.identityId, "1v1");
+    });
+    const expected = { "antwars/red": { rating: index!.rating, rd: index!.rd, ratedMatches: 2 },
+      "kite": { rating: publicBuilder!.rating, rd: publicBuilder!.rd, ratedMatches: 1 } };
+    expect(index!.rd).not.toBe(350);
+    expect(controller.hubOptions.startRatings!(access)).toEqual(expected);
+    // The stream still shows each seat its name and rating alone.
+    expect(shown).toEqual([{ displayName: "antwars/red", elo: index!.rating }, { displayName: "kite", elo: publicBuilder!.rating }]);
+    const save = JSON.parse(JSON.stringify(controller.save(lobbyId)));
+    controller.close();
+    const other = createWatchController({ accounts: {} as AccountStores, registry: createWatchRegistry(memoryWatchStore().store), slot: "public-0",
+      origin: "http://127.0.0.1:9001" });
+    cleanup.push(() => other.close());
+    await other.resume(save, { agentInfo: () => undefined } as unknown as LiveGame);
+    expect(other.hubOptions.startRatings!(access)).toEqual(expected);
+  });
+
+  it("knows no start rating for a house seat the Index has not rated, and none for a lobby not prepared here", async () => {
+    const { controller, access } = await prepared(seats, ratings => ratings.applyResult({ matchId: "public-1", teams: [[house.identityId], [builder.identityId]], winner: "b" }).then(() => {}));
+    expect(Object.keys(controller.hubOptions.startRatings!(access)!)).toEqual(["kite"]);
+    expect(controller.hubOptions.startRatings!({ ...access, lobbyId: "00000000-0000-4000-8000-000000000839" })).toBeUndefined();
+  });
+
+  it("refuses a handover save whose start RD or rated-match count is not a number", async () => {
+    const { controller } = await prepared(seats, rated);
+    const save = JSON.parse(JSON.stringify(controller.save(lobbyId))) as { seats: [string, Record<string, unknown>][] };
+    for (const key of ["rd", "ratedMatches"]) {
+      const bad = structuredClone(save);
+      bad.seats[1]![1][key] = "1";
+      await expect(controller.resume(bad, { agentInfo: () => undefined } as unknown as LiveGame)).rejects.toThrow("Invalid spectator watch save");
+    }
   });
 
   it("in a mirror game keys the Index rating on the held colony: the handle's builder seat keeps its public 1v1 rating", async () => {
