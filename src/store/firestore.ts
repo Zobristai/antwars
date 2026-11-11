@@ -75,6 +75,15 @@ export interface Store {
 /** Documents per batchGet in createTimes. */
 export const CREATE_TIME_BATCH = 100;
 
+/** Firestore's maximum API request size, which bounds one commit (firebase.google.com/docs/firestore/quotas). */
+export const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+
+/** The size of the commit request for these writes, with every document name at its longest (30-character project, 63-character namespace). */
+export function commitBytes(writes: readonly Write[]): number {
+  const prefix = `projects/${"p".repeat(30)}/databases/(default)/documents/namespaces/${"n".repeat(63)}/`;
+  return Buffer.byteLength(JSON.stringify({ transaction: "t".repeat(200), writes: writes.map((write) => encodeWrite(write, prefix)) }));
+}
+
 export interface StoreConfig {
   readonly projectId: string;
   readonly namespace: string;

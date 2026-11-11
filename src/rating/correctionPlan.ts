@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { createHash } from "node:crypto";
-import type { Fields, Store, Write } from "../store/firestore.js";
+import { commitBytes, MAX_REQUEST_BYTES, type DocPath, type Fields, type Store, type Write } from "../store/firestore.js";
 import type { RecordingObjects } from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
 import { identityDisplay, nameState } from "../identity/retention.js";
@@ -313,20 +313,79 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
 }
 
 /**
- * The read-only pass as the entry point runs it at start, in the background: logged, never thrown. serve answers
- * GET PLAN_PATH with the plan's public facts while it is pending.
+ * The digest of the one plan the apply may write: set, in a reviewed commit, to the digest the read-only pass published.
+ * PLACEHOLDER until then: it is not a SHA-256, so it matches no plan and nothing is applied.
  */
-export function startCorrectionPlan(store: Store, recordings: RecordingObjects): { readonly serve: MountHandler } {
+export const APPLY_PLAN_DIGEST = "placeholder: not yet set, matches no plan";
+
+/** A plan with every document it read by path, and every row its queries returned, as it saw them. */
+export interface WatchedPlan { readonly plan: Plan; readonly read: ReadonlyMap<DocPath, Fields | null>; readonly queried: ReadonlyMap<DocPath, Fields> }
+export type ApplyOutcome = "applied" | "digest differs" | "too large" | "changed since planned";
+
+/** planCorrections, remembering what it read. */
+export async function planWatched(store: Store, recordings: RecordingObjects): Promise<WatchedPlan | "applied"> {
+  const read = new Map<DocPath, Fields | null>(), queried = new Map<DocPath, Fields>();
+  const remember = (docs: ReadonlyMap<DocPath, Fields | null>) => { for (const [path, fields] of docs) read.set(path, fields); return docs; };
+  const watched: Store = { namespace: store.namespace, createTimes: store.createTimes?.bind(store),
+    get: async path => remember(new Map([[path, await store.get(path)]])).get(path)!,
+    transaction: step => store.transaction(transactionRead => step(async paths => remember(await transactionRead(paths)))),
+    query: async (collection, options) => { const page = await store.query(collection, options); for (const row of page.rows) queried.set(row.path, row.fields); return page; } };
+  const plan = await planCorrections(watched, recordings);
+  return plan === "applied" ? plan : { plan, read, queried };
+}
+
+const same = (a: Fields | null | undefined, b: Fields | null | undefined) =>
+  JSON.stringify(a && Object.entries(a).sort()) === JSON.stringify(b && Object.entries(b).sort());
+
+/**
+ * Applies the plan when its digest is `digest`: one transaction re-reads every document the plan read by path, every
+ * queried row it writes and CORRECTION_MARKER, and commits the plan's writes with the marker only if all are as the plan
+ * saw them and the marker is absent. Otherwise, and for a commit over Firestore's request size, it writes nothing.
+ */
+export async function applyPlan(store: Store, { plan, read, queried }: WatchedPlan, digest = APPLY_PLAN_DIGEST, maxBytes = MAX_REQUEST_BYTES): Promise<ApplyOutcome> {
+  if (plan.summary.digest !== digest) return "digest differs";
+  const writes: Write[] = [...plan.writes, { op: "create", path: CORRECTION_MARKER, fields: { planDigest: digest, appliedAt: new Date().toISOString() } }];
+  if (commitBytes(writes) > maxBytes) return "too large";
+  const expected = new Map(read);
+  for (const { path } of plan.writes) if (!expected.has(path) && queried.has(path)) expected.set(path, queried.get(path)!);
+  expected.set(CORRECTION_MARKER, null);
+  const paths = [...expected.keys()];
+  return store.transaction(async transactionRead => {
+    for (let i = 0; i < paths.length; i += 100) {
+      for (const [path, now] of await transactionRead(paths.slice(i, i + 100))) {
+        if (!same(now, expected.get(path))) return { result: "changed since planned" as const, writes: [] };
+      }
+    }
+    return { result: "applied" as const, writes };
+  });
+}
+
+/**
+ * The pass as the entry point runs it at start, in the background: logged, never thrown. It plans, logs the plan and
+ * applies it when its digest is applyDigest. serve answers GET PLAN_PATH with the plan's public facts while it is pending.
+ */
+export function startCorrectionPlan(store: Store, recordings: RecordingObjects, applyDigest = APPLY_PLAN_DIGEST): { readonly serve: MountHandler } {
   let current: PlanState = { state: "computing" };
-  void planCorrections(store, recordings).then(plan => {
-    if (plan === "applied") { current = { state: "applied" }; return; }
+  void (async () => {
+    let watched: WatchedPlan | "applied";
+    try { watched = await planWatched(store, recordings); } catch (error) {
+      console.warn(`antwar rating correction plan refused: ${error instanceof Error ? error.message : String(error)}`);
+      current = { state: "refused" };
+      return;
+    }
+    if (watched === "applied") { current = { state: "applied" }; return; }
+    const { plan } = watched;
     for (const write of plan.writes) console.info(`antwar rating correction planned: ${describe(write)}`);
     console.info("antwar rating correction plan", { digest: plan.summary.digest, writes: plan.writes.length });
     current = { state: "planned", ...plan.summary };
-  }, (error: unknown) => {
-    console.warn(`antwar rating correction plan refused: ${error instanceof Error ? error.message : String(error)}`);
-    current = { state: "refused" };
-  });
+    try {
+      const outcome = await applyPlan(store, watched, applyDigest);
+      if (outcome === "applied") current = { state: "applied" };
+      console.info(`antwar rating correction ${outcome === "applied" ? "applied" : `not applied: ${outcome}`}`, { digest: plan.summary.digest, writes: plan.writes.length });
+    } catch (error) {
+      console.warn(`antwar rating correction apply failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  })();
   return {
     serve(req, res) {
       if (new URL(req.url ?? "/", "http://localhost").pathname !== PLAN_PATH) { res.writeHead(404).end(); return; }

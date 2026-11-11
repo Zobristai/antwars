@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
-import { CORRECTION_MARKER, NEVER_JOINED, planCorrections, PLAN_PATH, SOL_MOVES, startCorrectionPlan, type Plan, type PlanState } from "../../src/rating/correctionPlan.ts";
+import { applyPlan, CORRECTION_MARKER, NEVER_JOINED, planCorrections, planWatched, PLAN_PATH, SOL_MOVES, startCorrectionPlan, type Plan, type PlanState, type WatchedPlan } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
@@ -304,5 +304,52 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     expect(await planCorrections(w.store, w.recordings)).toBe("applied");
     const after = startCorrectionPlan(w.store, w.recordings);
     await vi.waitFor(() => expect(JSON.parse(served(after.serve).body)).toEqual({ state: "applied" }));
+  });
+
+  it("applies only the plan whose digest is set, once, with its marker; a second instance and a later start write nothing", async () => {
+    const w = await world();
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const before = await w.snapshot();
+    startCorrectionPlan(w.store, w.recordings);
+    await vi.waitFor(() => expect(info.mock.calls.map(([line]) => line)).toContain("antwar rating correction not applied: digest differs"));
+    expect(await w.snapshot()).toEqual(before);
+
+    const [one, two] = await Promise.all([planWatched(w.store, w.recordings), planWatched(w.store, w.recordings)]) as WatchedPlan[];
+    const { writes, summary: { digest } } = one!.plan;
+    expect(two!.plan.summary.digest).toBe(digest);
+    expect((await Promise.all([applyPlan(w.store, one!, digest), applyPlan(w.store, two!, digest)])).sort()).toEqual(["applied", "changed since planned"]);
+    const applied = await w.snapshot();
+    expect(applied[CORRECTION_MARKER]).toEqual({ planDigest: digest, appliedAt: expect.any(String) });
+    for (const write of writes) {
+      if (write.op === "delete") expect(applied[write.path]).toBeNull();
+      else expect(applied[write.path]).toMatchObject(write.op === "create" ? { ...write.fields, at: expect.any(String) } : write.fields);
+    }
+    const written = new Set([CORRECTION_MARKER, ...writes.map(write => write.path)]);
+    for (const [path, fields] of Object.entries(before)) if (!written.has(path)) expect(applied[path]).toEqual(fields);
+    expect(applied[`lobbies/${NEVER_JOINED.lobbyId}`]).toMatchObject({ outcome: "abandoned", rated: "false" });
+
+    const later = startCorrectionPlan(w.store, w.recordings, digest);
+    await vi.waitFor(() => expect(JSON.parse(served(later.serve).body)).toEqual({ state: "applied" }));
+    expect(await w.snapshot()).toEqual(applied);
+    info.mockRestore();
+  });
+
+  it("writes nothing when the commit would exceed Firestore's request size, or a match is rated between plan and apply", async () => {
+    const w = await world();
+    const watched = await planWatched(w.store, w.recordings) as WatchedPlan;
+    const { digest } = watched.plan.summary;
+    const before = await w.snapshot();
+    expect(await applyPlan(w.store, watched, digest, 1000)).toBe("too large");
+    expect(await w.snapshot()).toEqual(before);
+
+    // grok-4-7 vs glm-5-3 ends and is rated after the plan was made.
+    const [a, b] = [w.ids.get("antwars/grok-4-7")!, w.ids.get("antwars/glm-5-3")!], id = randomUUID(), at = T0 + 3000 * MIN;
+    await commit(w.store, [{ op: "create", path: `lobbies/${id}`, fields: { kind: "public", state: "ended", rated: "true", mode: MODE, outcome: "colony_0_won",
+      createdAt: String(at - MIN), startsAt: String(at), seats: JSON.stringify([{ id: a, displayName: "antwars/grok-4-7", colony: 0 }, { id: b, displayName: "antwars/glm-5-3", colony: 1 }]) } }]);
+    await w.store.transaction(read => ratingWrites(read, { matchId: id, teams: [[a], [b]], winner: "a", mode: MODE, at }));
+    const rated = await w.snapshot();
+    expect(await applyPlan(w.store, watched, digest)).toBe("changed since planned");
+    expect(await w.snapshot()).toEqual(rated);
+    expect(rated[CORRECTION_MARKER]).toBeNull();
   });
 });
