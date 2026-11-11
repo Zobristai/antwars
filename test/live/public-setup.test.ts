@@ -16,6 +16,7 @@ import { step } from "../../src/sim/step.ts";
 import { takeView } from "../../src/sim/view.ts";
 import { startSpectatedServer } from "../../src/spectator.ts";
 import { delivered, ManualClock, RecordedServer, served, SseClient } from "./helpers.ts";
+import { comparison, startComparisonMatch } from "../server/helpers.ts";
 
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -77,9 +78,9 @@ it.each([undefined, "v4", "count-marks", "redesign"])("passes the environment-de
   const dir = mkdtempSync(join(tmpdir(), "antwar-public-setup-"));
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
   const server = await startSpectatedServer({ ...options, port: 0, host: "127.0.0.1", dataDir: dir,
-    match: "held", simConfig: { ...options.simConfig!, matchTicks: 20 } }, { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
+    ...comparison(0), simConfig: { ...options.simConfig!, matchTicks: 20 } }, { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
   cleanup.push(() => server.close());
-  server.startMatch();
+  await startComparisonMatch(server, 0);
   const client = await SseClient.connect(`http://127.0.0.1:${server.port}/live/1`);
   cleanup.push(() => client.close());
   await vi.waitFor(() => expect(client.messages.length).toBeGreaterThan(0));

@@ -259,7 +259,7 @@ describe("over MCP: count_mark, the briefing and observe", () => {
   }, 30_000);
 });
 
-describe("public redesign without the comparison harness", () => {
+describe("public redesign without the comparison settings", () => {
   let server: GameServer | null = null;
   const agents: Agent[] = [];
   afterEach(async () => {
@@ -269,25 +269,10 @@ describe("public redesign without the comparison harness", () => {
     randomSeed.mockReset().mockReturnValue(12345);
   });
 
-  it("starts without any joins and schedules another redesign match with a fresh random seed", async () => {
-    // Seed 18 draws Open Field, which has no own match length, so matchTicks: 2 ends it (seed 17 now draws 45-minute Four Lanes).
-    randomSeed.mockClear().mockReturnValueOnce(18).mockReturnValueOnce(29);
-    const options = comparisonOptions({}, DEFAULT_MCP_CONFIG);
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...options,
-      breakMs: 20, simConfig: { ...options.simConfig!, matchTicks: 2 } });
-    expect(server.game.nextStart?.kind).toBe("scheduled");
-    await waitFor(() => server!.game.match?.seq === 1);
-    expect(server.game.match!.seed).toBe(18);
-    expect(server.game.match!.state.config).toMatchObject({ rules: "redesign", countMarks: expect.any(Object), localAnts: expect.any(Object), queenHp: expect.any(Object) });
-    await waitFor(() => server!.game.match?.seq === 2);
-    expect(server.game.match!.seed).toBe(29);
-    expect(server.game.match!.state.agents).toHaveLength(0);
-    expect(randomSeed.mock.calls.slice(0, 2)).toEqual([[2 ** 31], [2 ** 31]]);
-  });
-
   it("keeps all eight public seats and returns the redesign briefing", async () => {
+    // Held until all eight have joined, so the ninth meets the full match.
     server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(),
-      ...comparisonOptions({}, DEFAULT_MCP_CONFIG), match: "immediate" });
+      ...comparisonOptions({}, DEFAULT_MCP_CONFIG), match: "held", expectedPlayers: 8 });
     for (let i = 0; i < 8; i++) {
       const agent = await connect(server.port);
       agents.push(agent);
@@ -305,6 +290,7 @@ describe("public redesign without the comparison harness", () => {
     const extra = await connect(server.port);
     agents.push(extra);
     expect((await extra.call("join", {})).text).toContain("agent_cap");
+    await waitFor(() => (server!.game.match?.state.tick ?? 0) >= 1);
     expect(server.game.match!.state.agents).toHaveLength(8);
   }, 20_000);
 });

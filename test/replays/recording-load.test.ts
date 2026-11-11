@@ -16,6 +16,7 @@ import { createMatch } from "../../src/sim/map.ts";
 import { createRng } from "../../src/sim/rng.ts";
 import { startSpectatedServer } from "../../src/spectator.ts";
 import { playable } from "../playable.ts";
+import { comparison, startComparisonMatch } from "../server/helpers.ts";
 
 const percentile = (values: number[], fraction: number): number => {
   const ordered = values.slice().sort((a, b) => a - b);
@@ -88,7 +89,7 @@ it("measures full-size final recording packing/upload blocking, then starts the 
   let measuring = false, heartbeat: ReturnType<typeof setTimeout> | undefined;
   let firstTicksReady!: () => void;
   const firstTicks = new Promise<void>((resolve) => { firstTicksReady = resolve; });
-  const server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "held",
+  const server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, ...comparison(0),
     simConfig: playable({ ...rulesConfig("redesign"), startAnts: 256, colonyCap: 512, matchTicks: 100 }),
     onTickTiming: (sample) => {
       timings.push(sample);
@@ -122,7 +123,7 @@ it("measures full-size final recording packing/upload blocking, then starts the 
     measuring = false;
     clearTimeout(heartbeat);
     // The next match starts after the measured window; its first ticks are logged, not budgeted.
-    server.startMatch();
+    await startComparisonMatch(server, 0);
     await firstTicks;
     expect(saved).toBe(true);
     expect(uploadCalls).toBe(1);

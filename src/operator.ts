@@ -2,41 +2,40 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-interface Controls {
+/** A slot server's operator controls: start is always refused, since its matches start only from lobbies; stop stays. */
+export interface OperatorControls {
+  /** The bearer credential; unset or blank disables the controls. */
+  readonly token?: string;
+  /** The answer to every start. */
+  readonly startRefusal: string;
   running(): boolean;
-  start(): void;
   stop(): void;
-  /** Set on a slot server: start is always refused with this message; stop stays. */
-  readonly startRefusal?: string;
 }
 
-/** Header-only, fail-closed operator controls. Never mounted in MCP or shipped to the viewer. */
-export function createOperatorHandler(token: string | undefined, controls: Controls) {
+/** Header-only, fail-closed operator controls; none, or none with a token, are disabled. Never mounted in MCP or shipped to the viewer. */
+export function createOperatorHandler(controls: OperatorControls | undefined) {
   const digest = (value: string) => createHash("sha256").update(value).digest();
-  const expected = token === undefined || token.trim() === "" ? null : digest(`Bearer ${token}`);
+  const enabled = controls?.token === undefined || controls.token.trim() === "" ? null
+    : { controls, expected: digest(`Bearer ${controls.token}`) };
   return (req: IncomingMessage, res: ServerResponse, path: string): void => {
     const reply = (status: number, message: string) => {
       res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify({ message }));
     };
     if (path !== "/operator/start" && path !== "/operator/stop") return reply(404, "Not found");
-    if (expected === null) return reply(503, "Operator controls disabled");
+    if (enabled === null) return reply(503, "Operator controls disabled");
     const supplied = req.headers.authorization;
-    if (typeof supplied !== "string" || !timingSafeEqual(digest(supplied), expected)) return reply(401, "Operator credentials required");
+    if (typeof supplied !== "string" || !timingSafeEqual(digest(supplied), enabled.expected)) return reply(401, "Operator credentials required");
     if (req.method !== "POST") {
       res.setHeader("allow", "POST");
       return reply(405, "Use POST");
     }
     // No cookie auth, query credentials, browser control surface or cross-origin access.
     if (req.headers.origin !== undefined) return reply(403, "Browser requests refused");
-    if (path === "/operator/start") {
-      if (controls.startRefusal !== undefined) return reply(409, controls.startRefusal);
-      if (controls.running()) return reply(409, "A match is already running");
-      controls.start();
-      return reply(200, "Match started");
-    }
-    if (!controls.running()) return reply(409, "No match running");
-    controls.stop();
+    const { controls: slot } = enabled;
+    if (path === "/operator/start") return reply(409, slot.startRefusal);
+    if (!slot.running()) return reply(409, "No match running");
+    slot.stop();
     reply(200, "Match stopped");
   };
 }

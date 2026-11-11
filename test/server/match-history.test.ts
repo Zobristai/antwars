@@ -26,7 +26,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 async function server(source?: HistorySource) {
   const dir = await mkdtemp(join(tmpdir(), "match-history-"));
   cleanup.push(() => rm(dir, { recursive: true, force: true }));
-  const app = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "held", historySource: source });
+  const app = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, match: "held", expectedPlayers: 2, historySource: source });
   cleanup.push(() => app.close());
   return { app, url: `http://127.0.0.1:${app.port}` };
 }
