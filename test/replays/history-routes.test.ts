@@ -9,7 +9,7 @@ import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
 import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
-import { cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, type RecordingLobby,
+import { cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
@@ -268,6 +268,50 @@ describe("Model Index Recordings carry their harness phase", () => {
       const listed = (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`)).json()) as { matches: TypedHistorySummary[] };
       expect(listed.matches.map(match => [match.matchType, match.harnessPhase])).toEqual([[{ kind: "index", size: 1 },
         { phase: "rounds 26-30", possibleEffortMismatch: false }]]);
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+});
+
+describe("Recordings list a match unrated where its lobby's outcome is one the rating table does not rate", () => {
+  const indexLobby = (outcome: RecordingLobby["outcome"]): RecordingLobby =>
+    ({ kind: "public", size: 1, mode: "house-1v1", colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]], outcome });
+  const rated = (id: string, flag: boolean | null = true) =>
+    ({ ...row(id, [{ colony: 0, handle: HOUSE }, { colony: 1, handle: HOUSE_FAST }]), rated: flag, modelIndex: true });
+  const id = "2026-10-25T09-35-33-504Z-1";
+
+  it("lists a stopped match's recording unrated, as an abandoned one, and keeps every natural result rated", () => {
+    expect(recordingRated(rated(id), indexLobby("stopped"))).toBe(false);
+    expect(recordingRated(rated(id), indexLobby("abandoned"))).toBe(false);
+    expect(recordingRated(rated(id), indexLobby("not_played"))).toBe(false);
+    for (const natural of ["colony_0_won", "colony_1_won", "draw"] as const) expect(recordingRated(rated(id), indexLobby(natural))).toBe(true);
+  });
+
+  it("keeps the record's flag with no lobby read, a lobby with no outcome yet, or a record that is not rated", () => {
+    for (const none of [null, undefined]) expect(recordingRated(rated(id), none)).toBe(true);
+    expect(recordingRated(rated(id), indexLobby(null))).toBe(true);
+    expect(recordingRated(rated(id), indexLobby(undefined))).toBe(true);
+    // It only ever clears the flag: an unrated record, or one with no setup, is left as it was.
+    expect(recordingRated(rated(id, false), indexLobby("colony_1_won"))).toBe(false);
+    expect(recordingRated(rated(id, null), indexLobby("stopped"))).toBeNull();
+  });
+
+  it("serves a stopped Model Index match unrated on GET /matches, with its Index type and harness phase unchanged", async () => {
+    const won = "2026-10-25T08-42-00-000Z-1", stopped = id, pending = "2026-10-25T10-11-00-000Z-1";
+    const source: HistorySource = { async list() { return page(rated(won), rated(stopped), rated(pending)); }, async open() { return null; } };
+    const { lookup } = lobbies({ [won]: indexLobby("colony_0_won"), [stopped]: indexLobby("stopped"), [pending]: "pending" });
+    const handler = historyRoutes(source, lookup);
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const listed = (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`)).json()) as { matches: TypedHistorySummary[] };
+      expect(listed.matches.map(match => [match.id, match.rated])).toEqual([[won, true], [stopped, false], [pending, true]]);
+      // The same row typed beside a natural result: only its rated flag differs.
+      const reference = (await recordingMatchTypes(async () => indexLobby("colony_0_won"))(page(rated(stopped)))).matches[0]!;
+      const served = listed.matches[1]!;
+      expect(served.matchType).toEqual({ kind: "index", size: 1 });
+      expect(served.harnessPhase).toEqual(reference.harnessPhase);
+      expect({ ...served, rated: true }).toEqual(reference);
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 });

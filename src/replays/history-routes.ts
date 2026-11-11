@@ -5,14 +5,15 @@ import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
 import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
-import type { RankedMode } from "../rating/ratings.js";
+import { NATURAL_OUTCOMES, type RankedMode } from "../rating/ratings.js";
+import type { MatchOutcome } from "../lobby/lobbies.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
  * The lobby a recording was played in (src/lobby/lobbies.ts Lobby): its kind, agents per colony, ranked mode (null for a
- * player-created lobby), house challenge label where it has one, and seated identities by colony.
+ * player-created lobby), house challenge label where it has one, seated identities by colony, and how its match ended.
  */
 export interface RecordingLobby {
   readonly kind: "public" | "private";
@@ -23,6 +24,8 @@ export interface RecordingLobby {
   /** The lobby's match time in milliseconds: startsAt, else createdAt. */
   readonly startsAt?: number | null;
   readonly createdAt?: number;
+  /** How its match ended once its slot was released; null or absent before then. */
+  readonly outcome?: MatchOutcome | null;
 }
 /**
  * Replay id -> the lobby that recording came from; null when it has none (a scheduled match); "pending" when its lobby
@@ -107,8 +110,8 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
 }
 
 /**
- * Each listed row with its match type (recordingMatchType), and a Model Index row with its harness phase by match time
- * (recordingMatchTime). A pending or failed lookup types the row from its record for
+ * Each listed row with its match type (recordingMatchType), its rated flag as its lobby's outcome decides (recordingRated),
+ * and a Model Index row with its harness phase by match time (recordingMatchTime). A pending or failed lookup types the row from its record for
  * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again.
  */
 export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
@@ -119,8 +122,21 @@ export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (
   return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row => {
     const lobby = await lobbyOf(row.id);
     const matchType = recordingMatchType(row, lobby);
-    return matchType?.kind === "index" ? { ...row, matchType, harnessPhase: harnessPhaseAt(recordingMatchTime(row, lobby)) } : { ...row, matchType };
+    const rated = recordingRated(row, lobby);
+    const listed = rated === row.rated ? row : { ...row, rated };
+    return matchType?.kind === "index" ? { ...listed, matchType, harnessPhase: harnessPhaseAt(recordingMatchTime(row, lobby)) } : { ...listed, matchType };
   })) });
+}
+
+/**
+ * Whether a recording lists as rated: its record's flag, except that a lobby whose match ended with an outcome the rating
+ * table does not rate (src/rating/ratings.ts NATURAL_OUTCOMES: a stopped, abandoned or unplayed match) lists unrated, so the
+ * Recordings list counts the same rated matches as the leaderboard. Only ever clears the flag; a row with no lobby read, or
+ * a lobby with no recorded outcome, keeps its record's flag. Display only: nothing stored is rewritten.
+ */
+export function recordingRated(row: Pick<HistorySummary, "rated">, lobby: RecordingLobby | null | undefined): HistorySummary["rated"] {
+  const outcome = lobby?.outcome;
+  return row.rated === true && outcome != null && !Object.hasOwn(NATURAL_OUTCOMES, outcome) ? false : row.rated;
 }
 
 /** A recording's match time: its lobby's startsAt, else createdAt, where the lobby was read; else the recorded start. */
