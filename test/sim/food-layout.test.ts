@@ -182,8 +182,7 @@ describe("seeded mirrored food layout on recorded older recipes", () => {
     }
   });
 
-  // Known failure: opening food sits 13 fine tiles from starting ants with sight 12; a separate fix is planned.
-  it.fails("keeps bootstrap flank food within opening sight on both sides, including the failed sweep seeds", () => {
+  it("keeps bootstrap flank food within opening sight on both sides, including the failed sweep seeds", () => {
     const config = recordedRedesignLayout;
     for (const seed of [...Array.from({ length: 64 }, (_, i) => i), 7001, 7002, 7003, 7004]) {
       const state = createMatch(seed, playable(config)), width = state.config.mapWidth;
