@@ -3,7 +3,7 @@ import type { ClientRequest, IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { gcsRecordingObjects } from "../../src/replays/abandonRecording.ts";
+import { gcsRecordingObjects, RecordingChangedError } from "../../src/replays/abandonRecording.ts";
 import { ReplayCreateError, type ReplayGet } from "../../src/store/gcs.ts";
 
 // The bucket client the correction uses for its recording reads and generation-conditioned uploads, against a fake
@@ -177,5 +177,50 @@ describe("generation-conditioned recording replacement", () => {
   ])("reports an accepted upload whose reply carries %s as replaced with an unknown generation", async (_label, value) => {
     const { objects } = fakeBucket(() => Response.json(value));
     await expect(objects.replace(OBJECT, replacement, "7")).rejects.toThrow(`object ${OBJECT} replaced but its new generation is unknown`);
+  });
+});
+
+describe("generation-conditioned recording holds", () => {
+  it("sets or clears the temporary hold only at the verified generation, and confirms it", async () => {
+    for (const held of [true, false]) {
+      const { objects, jsonCalls, mediaCalls } = fakeBucket(() => Response.json({ generation: "7", temporaryHold: held }));
+      await objects.hold(OBJECT, "7", held);
+      expect(jsonCalls).toHaveLength(1);
+      const call = jsonCalls[0]!;
+      expect(call.method).toBe("PATCH");
+      expect(call.url.pathname).toBe(`/storage/v1/b/replay-bucket/o/${encodeURIComponent(OBJECT)}`);
+      expect(Object.fromEntries(call.url.searchParams)).toEqual({ ifGenerationMatch: "7", fields: "generation,temporaryHold" });
+      expect(call.headers["content-type"]).toBe("application/json");
+      expect(call.headers.authorization).toBe("Bearer fake-token");
+      expect(JSON.parse(Buffer.from(call.body!).toString())).toEqual({ temporaryHold: held });
+      expect(mediaCalls).toHaveLength(0);
+    }
+  });
+
+  it.each([412, 404])("reports an object replaced or deleted since it was verified (HTTP %i) as changed", async status => {
+    const { objects } = fakeBucket(() => new Response(null, { status }));
+    await expect(objects.hold(OBJECT, "7", true)).rejects.toBeInstanceOf(RecordingChangedError);
+  });
+
+  it("reports any other refusal with its status", async () => {
+    const { objects } = fakeBucket(() => new Response(null, { status: 403 }));
+    const failure = await objects.hold(OBJECT, "7", true).catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(RecordingChangedError);
+    expect((failure as Error).message).toBe("object hold failed: HTTP 403");
+  });
+
+  it.each([
+    ["another generation", { generation: "8", temporaryHold: true }],
+    ["no hold", { generation: "7", temporaryHold: false }],
+    ["nothing", {}],
+  ])("refuses a reply carrying %s as unconfirmed", async (_label, value) => {
+    const { objects } = fakeBucket(() => Response.json(value));
+    await expect(objects.hold(OBJECT, "7", true)).rejects.toThrow(`object ${OBJECT} hold not confirmed`);
+  });
+
+  it.each(["0", "", "7a"])("refuses generation %j before any request", async generation => {
+    const { objects, jsonCalls } = fakeBucket(() => Response.json({ generation: "7", temporaryHold: true }));
+    await expect(objects.hold(OBJECT, generation, true)).rejects.toThrow("invalid generation");
+    expect(jsonCalls).toHaveLength(0);
   });
 });

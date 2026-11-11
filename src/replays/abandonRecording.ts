@@ -144,10 +144,22 @@ export interface RecordingObjects {
   replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<string>;
 }
 
+/**
+ * An object's temporary hold, set or cleared only at one generation. While an object is held, Cloud Storage refuses to
+ * replace or delete it; the hold changes no content and keeps the generation.
+ */
+export interface RecordingHolds {
+  /** Fails with RecordingChangedError, setting nothing, when the object is not at `generation` (replaced or deleted). */
+  hold(name: string, generation: string, held: boolean): Promise<void>;
+}
+export class RecordingChangedError extends Error {
+  constructor(name: string) { super(`object ${name} changed since it was verified; no hold set`); this.name = "RecordingChangedError"; }
+}
+
 const GENERATION = /^[1-9]\d*$/;
 
 /** A bucket through the Cloud Run service identity (as every other bucket client here); never a key file. */
-export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetch, get?: ReplayGet): RecordingObjects {
+export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetch, get?: ReplayGet): RecordingObjects & RecordingHolds {
   const objects = gcsBucket(bucket, request, get);
   async function metadata(name: string, token: string): Promise<{ generation: string; contentType: string; contentEncoding?: "gzip" } | null> {
     const response = await objects.call(objects.url(name, { fields: "generation,contentType,contentEncoding" }), { token });
@@ -173,6 +185,16 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
     },
     async generation(name) {
       return (await metadata(name, await metadataAccessToken(request)))?.generation ?? null;
+    },
+    async hold(name, generation, held) {
+      if (!GENERATION.test(generation)) throw new Error("invalid generation");
+      const target = objects.url(name, { ifGenerationMatch: generation, fields: "generation,temporaryHold" });
+      const response = await objects.call(target, { method: "PATCH", token: await metadataAccessToken(request),
+        headers: { "content-type": "application/json" }, body: Buffer.from(JSON.stringify({ temporaryHold: held })) });
+      if (response.status === 412 || response.status === 404) { await response.body?.cancel(); throw new RecordingChangedError(name); }
+      if (!response.ok) { await response.body?.cancel(); throw new Error(`object hold failed: HTTP ${response.status}`); }
+      const value = await response.json() as { generation?: unknown; temporaryHold?: unknown };
+      if (value.generation !== generation || value.temporaryHold !== held) throw new Error(`object ${name} hold not confirmed`);
     },
     async replace(name, object, generation) {
       if (!GENERATION.test(generation)) throw new Error("invalid generation");

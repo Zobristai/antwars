@@ -11,7 +11,7 @@ import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
 import { createFirestore, CREATE_TIME_BATCH, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
-import type { RecordingObjects } from "../../src/replays/abandonRecording.ts";
+import { RecordingChangedError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { ratedRecording } from "../replays/never-joined-fixture.ts";
 
@@ -67,11 +67,39 @@ function independentReplay(moved: boolean): Map<string, { r: number; rd: number 
   return new Map([...state].map(([name, { r, rd }]) => [`antwars/${name}`, { r, rd }]));
 }
 
-const readOnly = (objects: Map<string, Uint8Array>): RecordingObjects => ({
-  async read(name) { const body = objects.get(name); return body ? { body, generation: "1", contentType: "application/json", ...(name.endsWith(".bin") ? { contentEncoding: "gzip" as const } : {}) } : null; },
-  async generation(name) { return objects.has(name) ? "1" : null; },
-  async replace() { throw new Error("the read-only pass must never replace a recording"); },
-});
+/**
+ * The recording bucket in memory, as Cloud Storage keeps it: each object at a generation, a hold set or cleared only at
+ * its generation, and a held object never replaced. The correction itself never replaces one; `overwrite` stands for
+ * any other writer.
+ */
+type Recordings = RecordingObjects & RecordingHolds & {
+  overwrite(name: string): Promise<void>;
+  readonly held: ReadonlySet<string>;
+  readonly holdCalls: [string, boolean][];
+};
+function bucket(bodies: Map<string, Uint8Array>): Recordings {
+  const generations = new Map([...bodies.keys()].map(name => [name, 1]));
+  const held = new Set<string>();
+  const holdCalls: [string, boolean][] = [];
+  return {
+    held, holdCalls,
+    async read(name) {
+      const body = bodies.get(name);
+      return body ? { body, generation: String(generations.get(name)), contentType: "application/json", ...(name.endsWith(".bin") ? { contentEncoding: "gzip" as const } : {}) } : null;
+    },
+    async generation(name) { return bodies.has(name) ? String(generations.get(name)) : null; },
+    async replace() { throw new Error("the correction must never replace a recording"); },
+    async hold(name, generation, on) {
+      holdCalls.push([name, on]);
+      if (!bodies.has(name) || String(generations.get(name)) !== generation) throw new RecordingChangedError(name);
+      if (on) held.add(name); else held.delete(name);
+    },
+    async overwrite(name) {
+      if (held.has(name)) throw new Error(`object ${name} is under a hold`);
+      generations.set(name, generations.get(name)! + 1);
+    },
+  };
+}
 
 async function world() {
   const store = createFirestore({ projectId, namespace: `c${process.pid}-${Date.now().toString(36)}-${counter++}`, emulatorHost: host });
@@ -119,7 +147,7 @@ async function world() {
     ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, CORRECTION_MARKER,
     ...[...users, house.value.identity.id, ...ids.values()].map(id => `identities/${id}`), "usernames/absent-player", "usernames/joined-player", "usernames/antwars"];
   const snapshot = async () => Object.fromEntries(await Promise.all(paths.map(async path => [path, await store.get(path)] as const)));
-  return { store, recordings: readOnly(objects), users, ids, lobbies, snapshot };
+  return { store, recordings: bucket(objects), users, ids, lobbies, snapshot };
 }
 
 function served(serve: ReturnType<typeof startCorrectionPlan>["serve"], url = PLAN_PATH, method = "GET") {
@@ -292,7 +320,7 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
 
 describe.skipIf(!host)("the never-joined correction on its own, at start", { timeout: 60_000 }, () => {
   const quiet = () => [vi.spyOn(console, "info").mockImplementation(() => {}), vi.spyOn(console, "warn").mockImplementation(() => {})];
-  const started = async (store: Store, recordings: RecordingObjects, digest?: string) => {
+  const started = async (store: Store, recordings: Recordings, digest?: string) => {
     const { serve } = startCorrectionPlan(store, recordings, digest);
     await vi.waitFor(() => expect(["planned", "applied", "refused"]).toContain(JSON.parse(served(serve).body).state));
     // The apply, when there is one, settles after the plan is served.
@@ -365,47 +393,71 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
-  it("writes nothing when a document its checks read, or the recording, changes between plan and apply", async () => {
-    const generation = (recordings: RecordingObjects, name: string): RecordingObjects => ({ ...recordings,
-      generation: async each => each === name ? "2" : recordings.generation(each) });
-    const changes: readonly ((w: Awaited<ReturnType<typeof world>>) => Promise<RecordingObjects | void>)[] = [
+  it("writes nothing when a document its checks read, or either recording object, changes between plan and apply", async () => {
+    const changes: readonly ((w: Awaited<ReturnType<typeof world>>) => Promise<unknown>)[] = [
       w => commit(w.store, [{ op: "update", path: `lobbies/${NEVER_JOINED.lobbyId}`, fields: { kind: "private" } }]),
       w => commit(w.store, [{ op: "update", path: `watchMatches/${NEVER_JOINED.lobbyId}`, fields: { slot: "public-2" } }]),
       w => commit(w.store, [{ op: "update", path: `ratedMatches/${NEVER_JOINED.lobbyId}`, fields: { note: "x" } }]),
       w => commit(w.store, [{ op: "update", path: `${ratingCollection("1v1")}/${w.users[1]}`, fields: { note: "x" } }]),
       // A document the checks found absent.
       w => commit(w.store, [{ op: "create", path: `${ratingCollection(MODE)}/${w.users[0]}`, fields: { rating: "x" } }]),
-      async w => generation(w.recordings, `${NEVER_JOINED.replayId}.bin`),
-      async w => generation(w.recordings, `${NEVER_JOINED.replayId}.json`),
+      w => w.recordings.overwrite(`${NEVER_JOINED.replayId}.bin`),
+      w => w.recordings.overwrite(`${NEVER_JOINED.replayId}.json`),
     ];
     for (const change of changes) {
       const w = await world();
       const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-      const recordings = await change(w) ?? w.recordings;
+      await change(w);
       const changed = await w.snapshot();
-      expect(await applyNeverJoined(w.store, recordings, plan, plan.summary.digest)).toBe("changed since planned");
+      expect(await applyNeverJoined(w.store, w.recordings, plan, plan.summary.digest)).toBe("changed since planned");
       expect(await w.snapshot()).toEqual(changed);
+      // No hold is left behind.
+      expect(w.recordings.held.size).toBe(0);
     }
   });
 
-  it("commits from the recording generations its checks read, and names them, when an object is replaced after the check", async () => {
+  it("holds both recording objects from before the transaction until its outcome is known, so neither can change before the commit", async () => {
     const w = await world();
     const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
-    const record = `${NEVER_JOINED.replayId}.json`;
-    // The record object is replaced just after the transaction checks its generation, before the commit.
-    let replaced = false;
-    const replacing: RecordingObjects = { ...w.recordings, async generation(name) {
-      if (replaced && name === record) return "2";
-      const generation = await w.recordings.generation(name);
-      if (name === record) replaced = true;
-      return generation;
-    } };
-    expect(await applyNeverJoined(w.store, replacing, plan, plan.summary.digest)).toBe("applied");
-    expect(await replacing.generation(record)).toBe("2");
-    // The correction is the one its record names: the generations whose content the checks read.
-    const { binary, record: checked } = plan.verification.recording!;
-    expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ binaryGeneration: binary.generation, recordGeneration: checked.generation });
-    expect(checked.generation).toBe("1");
+    const names = [`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`];
+    const during: { held: string[]; refused: boolean[] }[] = [];
+    // Inside the transaction, before its commit: another writer tries to replace each object.
+    const watched: Store = { ...w.store, transaction: step => w.store.transaction(async read => {
+      during.push({ held: [...w.recordings.held].sort(),
+        refused: await Promise.all(names.map(name => w.recordings.overwrite(name).then(() => false, () => true))) });
+      return step(read);
+    }) };
+    expect(await applyNeverJoined(watched, w.recordings, plan, plan.summary.digest)).toBe("applied");
+    expect(during.length).toBeGreaterThan(0);
+    for (const each of during) expect(each).toEqual({ held: [...names].sort(), refused: [true, true] });
+    // Both still at the generations the checks read, and both released after the commit.
+    for (const name of names) expect(await w.recordings.generation(name)).toBe("1");
+    expect(w.recordings.held.size).toBe(0);
+    expect(w.recordings.holdCalls).toEqual([[names[0], true], [names[1], true], [names[0], false], [names[1], false]]);
+    expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ binaryGeneration: "1", recordGeneration: "1" });
+  });
+
+  it("writes nothing and releases its holds when a hold cannot be set; keeps them when the commit's outcome is unknown", async () => {
+    {
+      const w = await world();
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      const before = await w.snapshot();
+      const record = `${NEVER_JOINED.replayId}.json`;
+      const refusing: Recordings = { ...w.recordings, hold: (name, generation, on) =>
+        on && name === record ? Promise.reject(new Error("object hold failed: HTTP 403")) : w.recordings.hold(name, generation, on) };
+      await expect(applyNeverJoined(w.store, refusing, plan, plan.summary.digest)).rejects.toThrow("HTTP 403");
+      expect(await w.snapshot()).toEqual(before);
+      expect(w.recordings.held.size).toBe(0);
+    }
+    {
+      const w = await world();
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      const before = await w.snapshot();
+      const failing: Store = { ...w.store, transaction: () => Promise.reject(new Error("commit outcome unknown")) };
+      await expect(applyNeverJoined(failing, w.recordings, plan, plan.summary.digest)).rejects.toThrow("commit outcome unknown");
+      expect(await w.snapshot()).toEqual(before);
+      expect([...w.recordings.held].sort()).toEqual([`${NEVER_JOINED.replayId}.bin`, `${NEVER_JOINED.replayId}.json`]);
+    }
   });
 
   it("serves a rating change only as a checked handle and two finite ratings; anything else refuses and writes nothing", async () => {
@@ -494,28 +546,26 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(sol.summary.digest).toBe(planDigest(sol.writes));
   });
 
-  it("refuses a run id not made as a run makes one, and never logs it", async () => {
+  it("logs each planned write only as its operation and path, so a malformed run id never reaches the log", async () => {
     const malformed = "zz-malformed-run-id";
-    // Both run-id fields set to it (the checks require them equal), the lobby's alone, and the watch entry's alone.
-    for (const fields of [
-      [["lobbies", "matchRunId"], ["watchMatches", "runId"]],
-      [["lobbies", "matchRunId"]],
-      [["watchMatches", "runId"]],
-    ] as const) {
-      for (const value of [malformed, `${RUN}\n${malformed}`, RUN.toUpperCase()]) {
-        const w = await world();
-        await commit(w.store, fields.map(([collection, field]) => ({ op: "update" as const, path: `${collection}/${NEVER_JOINED.lobbyId}`, fields: { [field]: value } })));
-        const before = await w.snapshot();
-        const spies = quiet();
-        const { body } = await started(w.store, w.recordings);
-        expect(body()).toEqual({ state: "refused" });
-        expect(spies[1]!.mock.calls).toEqual([["antwar rating correction plan refused"]]);
-        const logged = JSON.stringify(spies.flatMap(spy => spy.mock.calls));
-        expect(logged).not.toContain(malformed);
-        expect(logged.toLowerCase()).not.toContain(RUN);
-        expect(await w.snapshot()).toEqual(before);
-        spies.forEach(spy => spy.mockRestore());
-      }
+    for (const value of [malformed, `${RUN}\n${malformed}`]) {
+      const w = await world();
+      // Both run-id fields (the checks require them equal): the plan carries it into the correction record.
+      await commit(w.store, [
+        { op: "update", path: `lobbies/${NEVER_JOINED.lobbyId}`, fields: { matchRunId: value } },
+        { op: "update", path: `watchMatches/${NEVER_JOINED.lobbyId}`, fields: { runId: value } },
+      ]);
+      const before = await w.snapshot();
+      const spies = quiet();
+      const { body } = await started(w.store, w.recordings);
+      expect(body().state).toBe("planned");
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      expect(plan.writes.find(write => write.path.startsWith("ratingCorrections/"))).toMatchObject({ fields: { runId: value } });
+      const planned = spies[0]!.mock.calls.map(([line]) => line).filter(line => String(line).startsWith("antwar rating correction planned: "));
+      expect(planned).toEqual(plan.writes.map(write => `antwar rating correction planned: ${write.op} ${write.path}`));
+      expect(JSON.stringify(spies.flatMap(spy => spy.mock.calls))).not.toContain(malformed);
+      expect(await w.snapshot()).toEqual(before);
+      spies.forEach(spy => spy.mockRestore());
     }
   });
 
