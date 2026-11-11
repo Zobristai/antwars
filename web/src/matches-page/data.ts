@@ -9,17 +9,9 @@ const liveSeat = z.union([
   z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
   z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
 ]);
-// A Model Index match's harness phase (src/rating/harnessPhase.ts); absent where none is sent (any other match), null where
-// it does not read as one: the tag is display only, so a value this page does not know never fails the page.
-export const harnessPhase = z.object({
-  phase: z.enum(["rounds 1-7", "rounds 8-10", "rounds 11-25", "rounds 26-30", "from the pin onward", "from round 31 onward", "unknown"]),
-  possibleEffortMismatch: z.boolean().nullable(),
-}).nullable().optional().catch(null);
-export type HarnessPhase = NonNullable<z.infer<typeof harnessPhase>>;
 const liveRow = z.object({
   lobbyId: z.string().min(1), startedAt: z.number().finite(), rated: z.boolean(), delaySeconds: z.union([z.literal(0), z.literal(60), z.literal(300)]),
   colonies: z.tuple([z.array(liveSeat), z.array(liveSeat)]),
-  harnessPhase,
 });
 export type LiveSeat = z.infer<typeof liveSeat>;
 const recordingRow = z.object({
@@ -39,7 +31,6 @@ const recordingRow = z.object({
     kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated"]),
     size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
   }).nullable().optional().catch(null),
-  harnessPhase,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
 // An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode and whole seconds waited

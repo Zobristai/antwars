@@ -344,3 +344,22 @@ export async function startFake(options = {}) {
     }),
   };
 }
+
+/** One /proc/<pid>/stat line: pid, session id and start time (field 22); the other fields are filler. */
+export function statLine({ pid, sid, start }) {
+  const fields = ["S", "1", String(sid), String(sid), "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "20", "0", "1", "0", String(start), "0", "0"];
+  return `${pid} (node) ${fields.join(" ")}\n`;
+}
+
+let shells = 1_000_000;
+/**
+ * A readStat for main() that puts the command in a shell command of its own: a fresh
+ * live session whose leader is itself. The in-process tests pass one per cli() call.
+ */
+export function freshShell() {
+  const sid = (shells += 1);
+  return (pid) => {
+    if (pid === "self" || pid === sid) return statLine({ pid: sid, sid, start: 1 });
+    throw new Error("no such process");
+  };
+}
