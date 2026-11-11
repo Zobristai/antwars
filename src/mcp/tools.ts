@@ -850,7 +850,7 @@ function recordCalls(server: McpServer, game: Game, session: SessionState): void
   });
 }
 
-/** Rules stay readable at the entry point; gameplay belongs to slots and explicit harnesses.
+/** Rules stay readable at the entry point; gameplay belongs to slots and the comparison run.
  * localBriefing: this server serves no accounts (the local route), so its briefings omit account and lobby text. */
 export function registerTools(server: McpServer, game: Game, session: SessionState, options: { gameplay?: boolean; localBriefing?: boolean } = {}): void {
   const local = options.localBriefing === true ? { local: true } : {};

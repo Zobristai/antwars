@@ -9,7 +9,7 @@ import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
 import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
-import { cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, type RecordingLobby,
+import { UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
@@ -268,6 +268,96 @@ describe("Model Index Recordings carry their harness phase", () => {
       const listed = (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`)).json()) as { matches: TypedHistorySummary[] };
       expect(listed.matches.map(match => [match.matchType, match.harnessPhase])).toEqual([[{ kind: "index", size: 1 },
         { phase: "rounds 26-30", possibleEffortMismatch: false }]]);
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+});
+
+describe("Recordings list a match unrated where its lobby's outcome is one the rating table does not rate", () => {
+  const indexLobby = (outcome: RecordingLobby["outcome"]): RecordingLobby =>
+    ({ kind: "public", size: 1, mode: "house-1v1", colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]], outcome });
+  const rated = (id: string, flag: boolean | null = true) =>
+    ({ ...row(id, [{ colony: 0, handle: HOUSE }, { colony: 1, handle: HOUSE_FAST }]), rated: flag, modelIndex: true });
+  const id = "2026-10-25T09-35-33-504Z-1";
+
+  it("lists a stopped match's recording unrated, as an abandoned one, and keeps every natural result rated", () => {
+    expect(recordingRated(rated(id), indexLobby("stopped"))).toBe(false);
+    expect(recordingRated(rated(id), indexLobby("abandoned"))).toBe(false);
+    expect(recordingRated(rated(id), indexLobby("not_played"))).toBe(false);
+    for (const natural of ["colony_0_won", "colony_1_won", "draw"] as const) expect(recordingRated(rated(id), indexLobby(natural))).toBe(true);
+  });
+
+  it("keeps the record's flag with no lobby read, a lobby with no outcome yet, or a record that is not rated", () => {
+    for (const none of [null, undefined]) expect(recordingRated(rated(id), none)).toBe(true);
+    expect(recordingRated(rated(id), indexLobby(null))).toBe(true);
+    expect(recordingRated(rated(id), indexLobby(undefined))).toBe(true);
+    // It only ever clears the flag: an unrated record, or one with no setup, is left as it was.
+    expect(recordingRated(rated(id, false), indexLobby("colony_1_won"))).toBe(false);
+    expect(recordingRated(rated(id, null), indexLobby("stopped"))).toBeNull();
+  });
+
+  it("keeps a final lobby, but looks no lobby and a lobby with no outcome up again once they have been kept a while", async () => {
+    const late = "2026-10-25T09-35-33-504Z-2", ending = "2026-10-25T09-35-33-504Z-3", ended = "2026-10-25T09-35-33-504Z-4";
+    const byReplay: Record<string, RecordingLobby | null | "pending" | Error> = { [late]: null, [ending]: indexLobby(null), [ended]: indexLobby("colony_0_won") };
+    const { lookup, reads } = lobbies(byReplay);
+    let clock = 1_000_000;
+    const cached = cachedLobbyLookup(lookup, { now: () => clock });
+    const readAll = async () => { for (const id of [late, ending, ended]) await cached(id); };
+    await readAll(); await readAll();
+    expect(reads).toEqual([late, ending, ended]);
+    // The late registration and the outcome land; within the window the kept answers still serve.
+    byReplay[late] = indexLobby("stopped"); byReplay[ending] = indexLobby("stopped");
+    clock += UNSETTLED_LOBBY_MS - 1;
+    reads.length = 0; await readAll();
+    expect(reads).toEqual([]);
+    clock += 1;
+    reads.length = 0; await readAll();
+    expect(reads).toEqual([late, ending]);
+    expect(await cached(late)).toEqual(indexLobby("stopped"));
+    // Both now have an outcome: final, kept for good.
+    clock += 10 * UNSETTLED_LOBBY_MS;
+    reads.length = 0; await readAll();
+    expect(reads).toEqual([]);
+  });
+
+  it("lists a stopped recording unrated once its late lobby registration and outcome publish, on a later GET /matches", async () => {
+    const id = "2026-10-25T09-35-33-504Z-5";
+    const source: HistorySource = { async list() { return page(rated(id)); }, async open() { return null; } };
+    const byReplay: Record<string, RecordingLobby | null | "pending" | Error> = { [id]: null };
+    const { lookup } = lobbies(byReplay);
+    const handler = historyRoutes(source, lookup, { unsettledLobbyMs: 0 });
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`;
+      const listedRated = async () => ((await (await fetch(url)).json()) as { matches: TypedHistorySummary[] }).matches[0]!.rated;
+      // Registration not yet published: no lobby, so the record's flag.
+      expect(await listedRated()).toBe(true);
+      // Registered, outcome not yet recorded: still the record's flag.
+      byReplay[id] = indexLobby(null);
+      expect(await listedRated()).toBe(true);
+      byReplay[id] = indexLobby("stopped");
+      expect(await listedRated()).toBe(false);
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+
+  it("serves a stopped Model Index match unrated on GET /matches, with its Index type and harness phase unchanged", async () => {
+    const won = "2026-10-25T08-42-00-000Z-1", stopped = id, pending = "2026-10-25T10-11-00-000Z-1";
+    const source: HistorySource = { async list() { return page(rated(won), rated(stopped), rated(pending)); }, async open() { return null; } };
+    const { lookup } = lobbies({ [won]: indexLobby("colony_0_won"), [stopped]: indexLobby("stopped"), [pending]: "pending" });
+    const handler = historyRoutes(source, lookup);
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const listed = (await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`)).json()) as { matches: TypedHistorySummary[] };
+      expect(listed.matches.map(match => [match.id, match.rated])).toEqual([[won, true], [stopped, false], [pending, true]]);
+      // The same row typed beside a natural result: only its rated flag differs.
+      const reference = (await recordingMatchTypes(async () => indexLobby("colony_0_won"))(page(rated(stopped)))).matches[0]!;
+      const served = listed.matches[1]!;
+      expect(served.matchType).toEqual({ kind: "index", size: 1 });
+      expect(served.harnessPhase).toEqual(reference.harnessPhase);
+      expect({ ...served, rated: true }).toEqual(reference);
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 });
