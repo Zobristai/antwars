@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
-import { decodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
+import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, NEVER_JOINED_CLAIM, planCorrections, planDigest, planNeverJoined, PLAN_PATH, SOL_MOVES, startCorrectionPlan,
+  applyNeverJoined, CORRECTION_MARKER, NEVER_JOINED, NEVER_JOINED_APPLY_DIGEST, NEVER_JOINED_CLAIM, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, SOL_MOVES, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
 import { firestoreWrites, verify } from "../../src/rating/unrateNeverJoined.ts";
-import { createFirestore, CREATE_TIME_BATCH, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
+import { createFirestore, CREATE_TIME_BATCH, FirestoreError, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
 import { HoldUnknownError, RecordingChangedError, RecordingHeldError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { ratedRecording } from "../replays/never-joined-fixture.ts";
@@ -279,7 +279,7 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     expect(plan.summary.matches.length).toBeGreaterThan(3);
   });
 
-  it("refuses, naming the handle and match, when the stored history is not reproduced; serves no detail", async () => {
+  it("refuses, naming the handle and match, when the stored history is not reproduced; serves only the check's code", async () => {
     const w = await world();
     // gpt-6-1-sol-high's last match, so its rating chain still holds.
     const path = `ratedMatches/${w.lobbies[8]}`;
@@ -301,6 +301,48 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     }
     await tamper(c => { c[0]!.rdAfter += 1; });
     await expect(planCorrections(w.store, w.recordings)).rejects.toThrow(`stored history not reproduced: antwars/gpt-6-1-sol-high in lobby ${w.lobbies[8]}`);
+    // The plan at start is the never-joined part alone, so the Sol refusal's code is read from planCorrections.
+    expect(await planCorrections(w.store, w.recordings).then(() => null, refusalCode)).toBe("not-reproduced-change");
+  });
+
+  it("serves a refusal as a fixed code naming the check, never an id, a name or the logged detail", async () => {
+    expect(REFUSAL_CODES.every(code => /^[a-z]+(-[a-z]+)*$/.test(code))).toBe(true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const refusal = async (store: Store, recordings: Recordings) => {
+      const { serve } = startCorrectionPlan(store, recordings);
+      await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("refused"));
+      return served(serve).body;
+    };
+    const w = await world();
+    await commit(w.store, [{ op: "delete", path: `watchMatches/${NEVER_JOINED.lobbyId}` }]);
+    const body = await refusal(w.store, w.recordings);
+    expect(JSON.parse(body)).toEqual({ state: "refused", reason: "never-joined-watch-entry" });
+    for (const id of [...w.users, ...w.ids.values(), NEVER_JOINED.lobbyId, NEVER_JOINED.replayId]) expect(body).not.toContain(id);
+    // The log carries the fixed message and the code only, never the check's detail.
+    expect(warn.mock.calls).toEqual([["antwar rating correction plan refused", { reason: "never-joined-watch-entry" }]]);
+    // A failed store read, and any other throw, each have their own code.
+    const failing = (error: Error): Store => ({ ...w.store, get: async () => { throw error; }, transaction: async () => { throw error; } });
+    expect(JSON.parse(await refusal(failing(new FirestoreError("get", 403, "PERMISSION_DENIED")), w.recordings))).toEqual({ state: "refused", reason: "store-error" });
+    expect(JSON.parse(await refusal(failing(new Error(`lobby ${NEVER_JOINED.lobbyId}`)), w.recordings))).toEqual({ state: "refused", reason: "error" });
+    warn.mockRestore();
+  });
+
+  it("codes a stored row that is not reproduced by the field that differs", async () => {
+    const w = await world();
+    // A moved-to handle with matches in the window, so its row is replayed and its record compared.
+    const path = `${ratingCollection(MODE)}/${w.ids.get("antwars/gpt-6-1-sol-high-fast")}`;
+    const row = (await w.store.get(path))!;
+    for (const [fields, reason] of [
+      [{ rating: encodeRating(decodeRating(row.rating!) + 1) }, "not-reproduced-rating"],
+      [{ rd: encodeRating(decodeRating(row.rd!) + 1) }, "not-reproduced-rd"],
+      [{ ratedAt: String(Number(row.ratedAt) + 1) }, "not-reproduced-rated-at"],
+      [{ wins: String(Number(row.wins) + 1), losses: String(Number(row.losses) - 1) }, "not-reproduced-record"],
+    ] as const) {
+      await commit(w.store, [{ op: "update", path, fields }]);
+      // The Sol part is not run at start, so its code is read from planCorrections.
+      expect(await planCorrections(w.store, w.recordings).then(() => null, refusalCode)).toBe(reason);
+      await commit(w.store, [{ op: "update", path, fields: row }]);
+    }
   });
 
   it("orders by each change record's creation: a later rewrite of a record moves nothing; a shared commit time refuses", async () => {
@@ -582,8 +624,8 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
       await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } }]);
       const before = await w.snapshot();
       const { serve, body } = await started(w.store, w.recordings);
-      expect(body()).toEqual({ state: "refused" });
-      expect(served(serve).body).toBe('{"state":"refused"}');
+      expect(body()).toEqual({ state: "refused", reason: "never-joined-rating-change" });
+      expect(served(serve).body).toBe('{"state":"refused","reason":"never-joined-rating-change"}');
       expect(await w.snapshot()).toEqual(before);
       info.mockRestore(); warn.mockRestore();
     }
@@ -599,8 +641,8 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
       await expect(planNeverJoined(w.store, w.recordings)).rejects.toThrow(malformed);
       const spies = quiet();
       const { body } = await started(w.store, w.recordings);
-      expect(body()).toEqual({ state: "refused" });
-      expect(spies[1]!.mock.calls).toEqual([["antwar rating correction plan refused"]]);
+      expect(body()).toEqual({ state: "refused", reason: "never-joined-only-rated-match" });
+      expect(spies[1]!.mock.calls).toEqual([["antwar rating correction plan refused", { reason: "never-joined-only-rated-match" }]]);
       expect(logged(spies)).not.toContain(malformed);
       spies.forEach(spy => spy.mockRestore());
     }
