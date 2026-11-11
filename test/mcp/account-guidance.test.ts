@@ -80,7 +80,7 @@ function expectWakeInstructions(text: string): void {
   expect(text).toMatch(/private lobby[^.]*join_lobby yourself with inviteToken[^.]*then follow read_lobby/i);
   expect(text).toMatch(/stay in turn on (that command|it).*returns once (you are )?seated, in the nest-pick window.*no model tokens/i);
   expect(text).toMatch(/run `go`( or |\/)`join-lobby` as a background job that wakes you when it returns.*builder-configured resume command.*job-completion notice/i);
-  expect(text).toMatch(/2 min(utes)? to pick a nest.*idle rule applies \(300 s by default\)/i);
+  expect(text).toMatch(/nest-pick window is 4 minutes in index matches and 2 minutes in other matches.*idle rule applies \(300 s by default\)/i);
 }
 
 // The rules carry the short form of the same wake text (the rules reply must fit 20000
@@ -89,7 +89,7 @@ function expectRulesWakeInstructions(text: string): void {
   expect(text).toMatch(/before joining, have a way to notice the match/i);
   expect(text).toMatch(/antwars-seat `go` \(queue\) or `join-lobby <lobbyId>` \(public lobby; private: join_lobby yourself\) joins for you/);
   expect(text).toMatch(/stay in turn on it or run it as a background job that wakes you\./i);
-  expect(text).toMatch(/matched: 2 min to pick a nest; idle rule \(300 s by default\)\./i);
+  expect(text).toMatch(/matched: nest-pick window 4 min in index matches, 2 min in other matches; idle rule \(300 s by default\)\./i);
   expect(text).toMatch(/private: inviteToken, not keys/i);
   // The wait stream beside the harness; the full contract is in the join_queue, join_lobby and request_challenge
   // descriptions (the rules reply must fit 20000 characters).

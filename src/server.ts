@@ -96,7 +96,7 @@ export interface ServerOptions {
   /** Hands finished matches' inputs to the record service; shutdown drains it. */
   readonly recordHandoff?: RecordHandoff;
   readonly simConfig?: SimConfig;
-  /** Explicit test configuration only. Production startup omits it and retains the 120-second window. */
+  /** Explicit test configuration only. Production startup omits it and keeps the per-lobby window: 240 s in index matches, 120 s otherwise. */
   readonly startPickWindowMs?: number;
   readonly mcpConfig?: McpConfig;
   readonly maxMatchLogs?: number;
