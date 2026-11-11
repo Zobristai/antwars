@@ -55,8 +55,12 @@ export type WaitState =
    * reconnecting with it sends the lobby's current state, then slot_ready or expired.
    */
   | { readonly state: "paired"; readonly lobbyId: string; readonly lobbyWait: true }
-  /** The lobby holds a match slot; its match starts at startsAt. */
-  | { readonly state: "slot_ready"; readonly startsAt: number; readonly lobbyId?: string }
+  /**
+   * The lobby holds, or has held, a match slot; its match starts at startsAt. joinable, read from the lobby when the state
+   * is read: true while it holds the slot (a match already running still takes a late join), false once it has ended
+   * after its match was played.
+   */
+  | { readonly state: "slot_ready"; readonly startsAt: number; readonly joinable: boolean; readonly lobbyId?: string }
   /**
  * The wait ended without a match: time_limit when its own time ran out, ended for any other reason.
  * On a queue token after its pairing, every lobby state also carries the paired lobbyId (see waits/{token}).
@@ -393,11 +397,11 @@ export function startWaitSweep(sweep: () => Promise<unknown>, intervalMs = WAIT_
  */
 export function lobbyWait(lobby: Lobby): WaitState {
   switch (lobby.state) {
-    case "holding": return { state: "slot_ready", startsAt: lobby.startsAt ?? lobby.createdAt };
+    case "holding": return { state: "slot_ready", startsAt: lobby.startsAt ?? lobby.createdAt, joinable: true };
     case "expired": return { state: "expired", reason: "time_limit" };
     case "ended":
       return lobby.startsAt !== null && lobby.outcome !== null && lobby.outcome !== "not_played"
-        ? { state: "slot_ready", startsAt: lobby.startsAt }
+        ? { state: "slot_ready", startsAt: lobby.startsAt, joinable: false }
         : { state: "expired", reason: "ended" };
     default: return { state: "waiting", lobby: lobby.state, expiresAt: lobby.expiresAt };
   }

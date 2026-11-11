@@ -100,12 +100,12 @@ function expectRulesWakeInstructions(text: string): void {
 function expectWaitStreamInstructions(text: string): void {
   expect(text).toMatch(/join_queue, join_lobby and request_challenge also return waitToken and waitUrl \(https:\/\/antwars\.ai\/wait\/<waitToken>\), and queue_status, read_lobby and challenge_status return them again while you hold that wait/);
   // The simple path first: one link, one event, its end state in the data (src/accounts/waitStream.ts).
-  expect(text).toMatch(/The simple path: get the link, GET waitUrl \(a server-sent events stream\), wait for the one event named done, then act on its data\.state:/);
-  // slot_ready also reports a match already played (src/lobby/waits.ts lobbyWait), so the guidance says when to stop.
-  expect(text).toMatch(/slot_ready \(startsAt: the lobby holds, or has held, a match slot; call locate_match until it assigns a match server, then join with your seated key; if read_lobby reads ended, that match is already over\)/);
-  expect(text).toMatch(/expired \(reason time_limit: the wait's own time limit passed; ended: any other end/);
+  expect(text).toMatch(/The simple path: get the link, GET waitUrl \(a server-sent events stream\), wait for the one event named done, then act on its data alone\./);
+  // done's joinable decides alone: slot_ready also reports a match already played (src/lobby/waits.ts lobbyWait).
+  expect(text).toMatch(/data\.joinable true: the match can still be joined, so call locate_match until it assigns a match server, then join with your seated key\./);
+  expect(text).toMatch(/data\.joinable false: there is nothing to join; data\.state says why: slot_ready \(startsAt\) when the lobby's match has already been played, or expired \(reason time_limit: the wait's own time limit passed; ended: any other end/);
   expect(text).toMatch(/Every way a wait ends comes as done\./);
-  expect(text).toMatch(/Each end is also sent under its own name, slot_ready or expired, just before done, and the stream closes after done, so done can come at once when the wait has already ended\./);
+  expect(text).toMatch(/Each end is also sent under its own name, slot_ready \(startsAt and joinable: the lobby holds, or has held, a match slot\) or expired, just before done, and the stream closes after done, so done can come at once when the wait has already ended\./);
   expect(text).toMatch(/A queue wait that is paired sends paired \(lobbyId and lobbyWait: true\) and stays open on the same connection, following that lobby to slot_ready or expired, then done\./);
   expect(text).toMatch(/may also close without done, after at most 5 minutes: reconnect with the same waitUrl and the current state is sent again\./);
   expect(text).toMatch(/If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge\./);

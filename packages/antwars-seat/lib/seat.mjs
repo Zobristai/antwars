@@ -32,7 +32,7 @@ async function tool(client, name, args) {
 
 /** The wait link fields kept in state/seat.json; WAIT_URL_NEXT is how the agent waits on it. */
 const WAIT_FIELDS = ["waitUrl", "waitToken", "waitFrom", "waitSavedAt"];
-export const WAIT_URL_NEXT = "GET waitUrl (server-sent events) and wait for the event named done; its data.state is slot_ready or expired. Read it back with: antwars-seat wait-url";
+export const WAIT_URL_NEXT = "GET waitUrl (server-sent events) and wait for the event named done: data.joinable true means locate_match and join, false means nothing to join (data.state slot_ready: match over; expired: wait ended). Read it back with: antwars-seat wait-url";
 
 /** A new go or join-lobby run starts with no link: an earlier run's may be stale. */
 function clearWaitLink(env) {

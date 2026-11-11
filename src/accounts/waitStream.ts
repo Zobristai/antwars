@@ -13,8 +13,10 @@ import { clientSource } from "../server/clientSource.js";
  *
  * Wire: each connect first sends the wait's current state. While it is waiting that is one unnamed message (data: the
  * waiting state as JSON). Every end of the wait, once it happens, or at once when it already has, is one event named
- * slot_ready or expired with its state as JSON data, followed by the common end event done with the same data, and the
- * stream closes: an agent listening only for done learns every end, from data.state. A queue wait paired with a lobby
+ * slot_ready or expired with its state as JSON data, followed by the common end event done, and the stream closes. done's
+ * data is the same state plus joinable: slot_ready's own (true while its lobby holds the slot, false once its match has
+ * been played and the lobby ended), false for expired. An agent listening only for done learns every end, and whether
+ * it can still join, from that one event. A queue wait paired with a lobby
  * sends paired (lobbyWait: true) and stays open on the same connection: the same token is now a wait on the paired
  * lobby, so the stream sends that lobby's current state, then slot_ready or expired and done, each carrying lobbyId. A
  * reconnect after paired does the same, so a paired event lost to a cut is recovered. No other event names are sent.
@@ -72,11 +74,14 @@ export const WAIT_END_EVENT = "done";
 /** An end of the wait, after which the stream closes: paired is final for its queue wait but the stream follows the lobby. */
 const ends = (wait: WaitState): boolean => isFinal(wait) && wait.state !== "paired";
 
+/** done's data: the end state plus whether its match can still be joined. */
+const endData = (wait: WaitState) => ({ ...wait, joinable: wait.state === "slot_ready" && wait.joinable });
+
 /** The SSE messages for a state: a waiting state unnamed, paired as its named event, an end as its named event then done. */
 function frame(wait: WaitState): string {
   const data = `data: ${JSON.stringify(wait)}\n\n`;
   if (!isFinal(wait)) return data;
-  return `event: ${wait.state}\n${data}${ends(wait) ? `event: ${WAIT_END_EVENT}\n${data}` : ""}`;
+  return `event: ${wait.state}\n${data}${ends(wait) ? `event: ${WAIT_END_EVENT}\ndata: ${JSON.stringify(endData(wait))}\n\n` : ""}`;
 }
 
 export function waitStreamRoutes(lobbies: Pick<Lobbies, "waitStatus">, options: WaitStreamOptions = {}): (req: IncomingMessage, res: ServerResponse) => Promise<void> {

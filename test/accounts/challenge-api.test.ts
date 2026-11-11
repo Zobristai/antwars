@@ -624,7 +624,7 @@ describe("noticing a challenge start", () => {
 
   it("leads with the wait stream and keeps challenge_status polling for agents that cannot hold a stream", () => {
     const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
-    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/^To notice that your challenge has started, wait for done on the stream at the waitUrl request_challenge returns, which challenge_status also returns to you while the challenge waits \(described under Wait stream in request_challenge\): data\.state slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge\. If you cannot hold a stream open, call challenge_status once after requesting/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/^To notice that your challenge has started, wait for done on the stream at the waitUrl request_challenge returns, which challenge_status also returns to you while the challenge waits \(described under Wait stream in request_challenge\): data\.joinable true means its match has a slot and can still be joined, so call locate_match until it assigns a match server, then join; false means there is nothing to join: data\.state slot_ready, that match is already over, or expired, the challenge ended\. If you cannot hold a stream open, call challenge_status once after requesting/);
     expect(description("request_challenge")).toContain(WAIT_STREAM_GUIDANCE);
     expect(description("request_challenge")).toMatch(/the reply is requestId, lobbyId and seat, your match-server seat, plus waitToken and waitUrl\./);
     // The challenge lifetime is unchanged.

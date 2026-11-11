@@ -67,9 +67,9 @@ async function read(port: number, token: string, forMs = 5_000, method = "GET"):
   return { status: res.status, headers: res.headers, frames: parse(text), text, ended };
 }
 
-/** An end of the wait as the stream sends it: its named event, then the common end event done with the same data. */
+/** An end of the wait as the stream sends it: its named event, then the common end event done with that data plus joinable. */
 function end(event: "slot_ready" | "expired", data: Body): Frame[] {
-  return [{ event, data }, { event: "done", data }];
+  return [{ event, data }, { event: "done", data: { ...data, joinable: event === "slot_ready" && data.joinable === true } }];
 }
 
 function parse(text: string): Frame[] {
@@ -100,10 +100,10 @@ const WAITING_QUEUE: WaitState = { state: "waiting", mode: "1v1", expiresAt: 1_0
 describe("the wait stream route", () => {
   const PAIRED: WaitState = { state: "paired", lobbyId: "q-1", lobbyWait: true };
   const LOBBY_WAITING: WaitState = { state: "waiting", lobby: "waiting", expiresAt: 2_000, lobbyId: "q-1" };
-  const READY: WaitState = { state: "slot_ready", startsAt: 5, lobbyId: "q-1" };
+  const READY: WaitState = { state: "slot_ready", startsAt: 5, joinable: true, lobbyId: "q-1" };
 
   it("sends the current state, then a re-read's end as its named event and done, then closes", async () => {
-    const port = await streamServer(sequence(WAITING_QUEUE, WAITING_QUEUE, { state: "slot_ready", startsAt: 5 }));
+    const port = await streamServer(sequence(WAITING_QUEUE, WAITING_QUEUE, { state: "slot_ready", startsAt: 5, joinable: true }));
     const stream = await read(port, TOKEN);
     expect(stream.status).toBe(200);
     expect(stream.headers.get("content-type")).toBe("text/event-stream");
@@ -111,7 +111,7 @@ describe("the wait stream route", () => {
     expect(stream.ended).toBe(true);
     expect(stream.frames).toEqual([
       { event: null, data: WAITING_QUEUE },
-      ...end("slot_ready", { state: "slot_ready", startsAt: 5 }),
+      ...end("slot_ready", { state: "slot_ready", startsAt: 5, joinable: true }),
     ]);
   });
 
@@ -137,6 +137,19 @@ describe("the wait stream route", () => {
     ]]);
   });
 
+  it("done carries joinable on every end: slot_ready's own, true or false, and false for expired", async () => {
+    const cases: [WaitState, boolean][] = [
+      [{ state: "slot_ready", startsAt: 5, joinable: true, lobbyId: "q-1" }, true],
+      [{ state: "slot_ready", startsAt: 5, joinable: false }, false],
+      [{ state: "expired", reason: "time_limit" }, false],
+      [{ state: "expired", reason: "ended", lobbyId: "q-1" }, false],
+    ];
+    for (const [final, joinable] of cases) {
+      const done = (await read(await streamServer(sequence(final)), TOKEN)).frames.find((frame) => frame.event === "done");
+      expect(done?.data, JSON.stringify(final)).toEqual({ ...final, joinable });
+    }
+  });
+
   it("ends a queue wait that runs out before any pairing with expired and done", async () => {
     const out: WaitState = { state: "expired", reason: "time_limit" };
     const stream = await read(await streamServer(sequence(WAITING_QUEUE, out)), TOKEN);
@@ -150,13 +163,14 @@ describe("the wait stream route", () => {
   });
 
   it.each<WaitState>([
-    { state: "slot_ready", startsAt: 5 },
+    { state: "slot_ready", startsAt: 5, joinable: true },
+    { state: "slot_ready", startsAt: 5, joinable: false },
     { state: "expired", reason: "time_limit" },
     { state: "expired", reason: "ended" },
   ])("a wait already over when connecting gets its named event and done at once, and the close: %j", async (final) => {
     const status = sequence(final);
     const stream = await read(await streamServer(status), TOKEN);
-    expect([stream.status, stream.ended, stream.frames]).toEqual([200, true, [{ event: final.state, data: final }, { event: "done", data: final }]]);
+    expect([stream.status, stream.ended, stream.frames]).toEqual([200, true, end(final.state as "slot_ready" | "expired", final)]);
     expect(status.reads()).toBe(1);
   });
 
@@ -234,7 +248,7 @@ describe("the wait stream route", () => {
   }
 
   it("answers a first read slower than its timeout with the retryable 503, but keeps its place on both caps until the read settles", async () => {
-    const slot: WaitState = { state: "slot_ready", startsAt: 5 };
+    const slot: WaitState = { state: "slot_ready", startsAt: 5, joinable: true };
     const reads = hanging(2, slot);
     const port = await streamServer(reads.status, { limits: { max: 2, perSource: 1 }, firstReadMs: 100 });
     const started = Date.now();
@@ -387,7 +401,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     // otherwise it stays open on the lobby's waiting state.
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
     const after = lobby.state === "holding"
-      ? end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId })
+      ? end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true, lobbyId: queue.lobbyId })
       : [{ event: null, data: { state: "waiting", lobby: lobby.state, expiresAt: lobby.expiresAt, lobbyId: queue.lobbyId } }];
     expect([live.ended, live.frames]).toEqual([lobby.state === "holding", [{ event: null, data: waiting }, paired, ...after]]);
     return { ann, bob, annToken, bobToken, lobbyId: queue.lobbyId as string, paired, live };
@@ -398,12 +412,30 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const { annToken, bobToken, lobbyId, paired } = await pairedQueue(w);
     const lobby = value(await w.lobbies.readLobby(lobbyId));
     expect(lobby.state).toBe("holding");
-    const ready = [...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, lobbyId })];
+    const ready = [...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true, lobbyId })];
     // Ann's live connection already got paired and slot_ready; her next connect is a wait on the lobby.
     expect((await read(w.port, annToken)).frames).toEqual(ready);
     // Bob first connects after the pairing: that connection gets paired, then the lobby's end; the next one the lobby only.
     expect((await read(w.fast, bobToken)).frames).toEqual([paired, ...ready]);
     expect((await read(w.port, bobToken)).frames).toEqual(ready);
+  });
+
+  it("slot_ready is joinable while its lobby holds the slot, its match running included, and not once that match has been played", async () => {
+    const w = await world();
+    const { annToken, lobbyId } = await pairedQueue(w);
+    const lobby = value(await w.lobbies.readLobby(lobbyId));
+    const slot = lobby.slot!;
+    const ready = (joinable: boolean) => end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable, lobbyId });
+    expect(await w.lobbies.registerInstance(slot, { runId: "run-1", mcpUrl: "http://m", spectatorUrl: "http://s" })).toMatchObject({ registered: true });
+    value(await w.lobbies.beginMatch(lobbyId, slot, "run-1"));
+    // A running match still takes a late join.
+    expect((await read(w.fast, annToken)).frames).toEqual(ready(true));
+    value(await w.lobbies.endMatch(lobbyId, "run-1", "colony_1_won"));
+    expect(value(await w.lobbies.readLobby(lobbyId)).state).toBe("ended");
+    // Its match is over: slot_ready still reports the slot it held, and done says it cannot be joined.
+    const over = await read(w.fast, annToken);
+    expect(over.frames).toEqual(ready(false));
+    expect(over.frames[1]).toEqual({ event: "done", data: { state: "slot_ready", startsAt: lobby.startsAt, joinable: false, lobbyId } });
   });
 
   it("a reconnect after paired ends expired: ended when the paired lobby ends without its match being played", async () => {
@@ -424,7 +456,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     // A stream's read reports paired and re-points the token; the lobby's end is not read yet, so the record stays live.
     expect(await w.lobbies.waitStatus(annToken)).toEqual({ state: "paired", lobbyId, lobbyWait: true });
     const before = value(await w.lobbies.readLobby(lobbyId));
-    const ready = [...end("slot_ready", { state: "slot_ready", startsAt: before.startsAt, lobbyId })];
+    const ready = [...end("slot_ready", { state: "slot_ready", startsAt: before.startsAt, joinable: true, lobbyId })];
     // leave_queue leaves a matched entry as it is; a new join replaces it.
     await w.ok("leave_queue", { key: ann.key });
     w.clock.t += 1;
@@ -443,7 +475,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     // A read that re-points the token, as a stream does, whose paired never reaches the agent.
     expect(await w.lobbies.waitStatus(annToken)).toEqual({ state: "paired", lobbyId: queue.lobbyId, lobbyWait: true });
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
-    expect((await read(w.fast, annToken)).frames).toEqual([...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId })]);
+    expect((await read(w.fast, annToken)).frames).toEqual([...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true, lobbyId: queue.lobbyId })]);
     // Before its slot, the lobby's waiting state carries the id too.
     expect(withPairedLobby({ state: "waiting", lobby: "waiting", expiresAt: 1 }, queue.lobbyId)).toEqual({ state: "waiting", lobby: "waiting", expiresAt: 1, lobbyId: queue.lobbyId });
   });
@@ -474,7 +506,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     await w.ok("join_queue", { key: ann.key, mode: "1v1" });
     release();
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
-    expect(await overlapping).toEqual({ state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId });
+    expect(await overlapping).toEqual({ state: "slot_ready", startsAt: lobby.startsAt, joinable: true, lobbyId: queue.lobbyId });
   });
 
   it("re-points a paired queue wait once, with the stored entry's lobbyId, however many reads race to it", async () => {
@@ -486,7 +518,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const raced = await Promise.all([1, 2, 3].map(() => w.lobbies.waitStatus(annToken)));
     const paired = { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true };
     // Each read is paired, or, once another read has re-pointed the token, already the lobby's state.
-    for (const state of raced) expect([paired, { state: "slot_ready", startsAt: expect.any(Number), lobbyId: queue.lobbyId }]).toContainEqual(state);
+    for (const state of raced) expect([paired, { state: "slot_ready", startsAt: expect.any(Number), joinable: true, lobbyId: queue.lobbyId }]).toContainEqual(state);
     expect(raced).toContainEqual(paired);
     // The re-pointed record expires a grace after the paired lobby's own limit, or, once a racing read found slot_ready,
     // a grace after that read.
@@ -643,7 +675,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     await w.ok("join_lobby", { key: b!.key, lobbyId: first.id });
     const filled = value(await w.lobbies.readLobby(first.id));
     expect(filled.state).toBe("holding");
-    expect((await read(w.fast, firstToken)).frames).toEqual([...end("slot_ready", { state: "slot_ready", startsAt: filled.startsAt })]);
+    expect((await read(w.fast, firstToken)).frames).toEqual([...end("slot_ready", { state: "slot_ready", startsAt: filled.startsAt, joinable: true })]);
     // The second stays open past its 12 hours: its earlier token reaches expired.
     w.clock.t += 12 * HOUR;
     expect((await read(w.fast, secondToken)).frames).toEqual([...end("expired", { state: "expired", reason: "time_limit" })]);
@@ -660,7 +692,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
     expect(await w.store.get(`waits/${annToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, identityId: ann.id, expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
     // Its first read still reports paired, once, and follows the lobby on; the next follows the lobby only.
-    const ready = end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId });
+    const ready = end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true, lobbyId: queue.lobbyId });
     expect((await read(w.fast, annToken)).frames).toEqual([{ event: "paired", data: { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true } }, ...ready]);
     expect((await read(w.fast, annToken)).frames).toEqual(ready);
   });
@@ -677,7 +709,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     await w.ok("join_queue", { key: bob.key, mode: "1v1" });
     const lobby = value(await w.lobbies.readLobby(queue.lobbyId));
     expect(await w.store.get(`waits/${bobToken}`)).toMatchObject({ kind: "lobby", lobbyId: queue.lobbyId, identityId: bob.id, paired: "unread", expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
-    const ready = end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, lobbyId: queue.lobbyId });
+    const ready = end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true, lobbyId: queue.lobbyId });
     expect((await read(w.fast, bobToken)).frames).toEqual([{ event: "paired", data: { state: "paired", lobbyId: queue.lobbyId, lobbyWait: true } }, ...ready]);
     expect((await read(w.fast, bobToken)).frames).toEqual(ready);
   });
@@ -788,8 +820,8 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const live = await open;
     const lobby = value(await w.lobbies.readLobby(second.id));
     expect(lobby.state).toBe("holding");
-    expect([live.ended, live.frames]).toEqual([true, [waiting, ...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt })]]);
-    expect((await read(w.fast, cToken)).frames).toEqual([...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt })]);
+    expect([live.ended, live.frames]).toEqual([true, [waiting, ...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true })]]);
+    expect((await read(w.fast, cToken)).frames).toEqual([...end("slot_ready", { state: "slot_ready", startsAt: lobby.startsAt, joinable: true })]);
 
     const { lobby: third } = value(await w.lobbies.createLobby(e!.key, "public", 1));
     const eToken = tokenOf(await w.ok("join_lobby", { key: e!.key, lobbyId: third.id }));
