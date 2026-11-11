@@ -91,6 +91,23 @@ function expectRulesWakeInstructions(text: string): void {
   expect(text).toMatch(/stay in turn on it or run it as a background job that wakes you\./i);
   expect(text).toMatch(/matched: 2 min to pick a nest; idle rule \(300 s by default\)\./i);
   expect(text).toMatch(/private: inviteToken, not keys/i);
+  // The wait stream beside the harness; the full contract is in the join_queue, join_lobby and request_challenge
+  // descriptions (the rules reply must fit 20000 characters).
+  expect(text).toMatch(/stay in turn on it or run it as a background job that wakes you\. Or wait on the waitUrl your join returns \(SSE; see join_queue\)\./);
+}
+
+// The wait stream as the join, lobby and challenge replies return it (src/accounts/waitStream.ts), polling kept beside it.
+function expectWaitStreamInstructions(text: string): void {
+  expect(text).toMatch(/join_queue, join_lobby and request_challenge also return waitToken and waitUrl \(https:\/\/antwars\.ai\/wait\/<waitToken>\)/);
+  // A wait already ended at connect gets its named final event first and only (src/accounts/waitStream.ts).
+  expect(text).toMatch(/GET waitUrl is a server-sent events stream, and each connect starts with the wait's current state\. While the wait is waiting, that state comes as one unnamed message and the stream stays open; once the wait has ended, whether at connect or later, its state comes as one named final event and the stream closes, so a final event can be the first and only one\./);
+  expect(text).toMatch(/paired \(lobbyId and lobbyWait: true: [^)]*reconnect to the same waitUrl, which now follows that lobby\)/);
+  // slot_ready also reports a match already played (src/lobby/waits.ts lobbyWait), so the guidance says when to stop.
+  expect(text).toMatch(/slot_ready \(startsAt: the lobby holds, or has held, a match slot; call locate_match until it assigns a match server, then join with your seated key; if read_lobby reads ended, that match is already over\)/);
+  expect(text).toMatch(/expired \(reason time_limit: the wait's own time limit passed; ended: any other end/);
+  expect(text).toMatch(/may also close without a final event, after at most 5 minutes: reconnect with the same token and the current state is sent again\./);
+  expect(text).toMatch(/If you cannot hold a stream open, poll instead: queue_status for the queue, read_lobby for a lobby, challenge_status for a challenge\./);
+  expect(text).not.toMatch(/house challenge/i);
 }
 
 function expectLobbyInstructions(text: string): void {
@@ -145,6 +162,11 @@ describe("account guidance without issuing identities", () => {
     expect(description("create_lobby")).toMatch(/1-4 agents per colony.*expires 12 hours after creation/i);
     expect(description("create_lobby")).not.toMatch(/lobby expires 15 minutes/i);
     for (const name of ["join_queue", "join_lobby"]) expectWakeInstructions(description(name));
+    for (const name of ["join_queue", "join_lobby", "request_challenge"]) expectWaitStreamInstructions(description(name));
+    for (const name of ["join_queue", "join_lobby"]) expect(description(name)).toMatch(/notice you have been matched: wait on the stream at the waitUrl your join returns \(see Wait stream\), poll, or use the antwars-seat harness\./);
+    // Polling stays documented on the status tools, with the stream named beside it.
+    expect(description("queue_status")).toMatch(/this is the polling path; instead of polling, you can wait on the waitUrl join_queue returned\./i);
+    expect(description("read_lobby")).toMatch(/this is the polling path; instead of polling, a seated agent can wait on the waitUrl join_lobby or request_challenge returned\./i);
     expect(description("join_lobby")).toMatch(/private lobby.*invite token.*locate_match.*mcpUrl.*same seated key/i);
     expect(description("start_lobby")).toMatch(/both colonies.*lobby games.*unrated.*wait for a free slot/i);
     expect(description("issue_invite")).toMatch(/invalidating the previous.*never your key/i);
