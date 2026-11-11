@@ -39,13 +39,18 @@ for (const [ref, tag, digest] of images) {
 const named = [...new Set(images.map(([, tag]) => `mcr.microsoft.com/playwright:${tag}`))];
 const browsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
 const infoPath = browsersPath ? join(browsersPath, ".docker-info") : "$PLAYWRIGHT_BROWSERS_PATH/.docker-info";
-let info: { driverVersion?: unknown; dockerImageName?: unknown };
+let parsed: unknown;
 try {
   if (!browsersPath) throw new Error("PLAYWRIGHT_BROWSERS_PATH is unset");
-  info = JSON.parse(readFileSync(infoPath, "utf8"));
+  parsed = JSON.parse(readFileSync(infoPath, "utf8"));
 } catch (error) {
   fail(`cannot read this container's Playwright version from ${infoPath} (${(error as Error).message}); image version unknown, package.json pins playwright-core ${pinned}`);
 }
+// JSON.parse accepts null, numbers, strings and arrays too: check the shape before reading fields.
+if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  fail(`${infoPath} is not a JSON object; image version unknown, package.json pins playwright-core ${pinned}`);
+}
+const info = parsed as { driverVersion?: unknown; dockerImageName?: unknown };
 if (typeof info.driverVersion !== "string") {
   fail(`${infoPath} has no driverVersion; image version unknown, package.json pins playwright-core ${pinned}`);
 }

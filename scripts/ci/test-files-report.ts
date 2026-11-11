@@ -4,7 +4,7 @@
 // vitest.essential.config.ts writes when ANTWAR_TEST_FILES names its path.
 // Run after the suite: ANTWAR_TEST_FILES=<report.json> node scripts/ci/test-files-report.ts
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 const root = join(import.meta.dirname, "..", "..");
 // The runner cuts any annotation message past 4,096 characters and keeps at most 10 notices a
@@ -64,7 +64,7 @@ let size = header.length;
 let lastDir = "";
 for (const row of rows) {
   const dir = `${dirname(row.file)}/`;
-  const line = `  ${row.counts} ${row.file.slice(dir.length)}`;
+  const line = `  ${row.counts} ${basename(row.file)}`;
   const heading = dir !== lastDir ? [dir] : [];
   const needed = [...heading, line].reduce((sum, text) => sum + text.length + 1, 0);
   if (size + needed > MAX_MESSAGE) {
