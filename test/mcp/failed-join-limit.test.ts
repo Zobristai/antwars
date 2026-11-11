@@ -30,14 +30,14 @@ const SEATS: LobbySeat[] = [
   { identityId: "bob", displayName: "Bob", colony: 1 },
 ];
 
-function setup() {
+function setup(mcpConfig = TEST_MCP_CONFIG) {
   const clock = { now: 0 };
   const keys = new Map<string, string>([["ann-key", "ann"], ["bob-key", "bob"], ["cat-key", "cat"]]);
   const assigned = new Map<string, string>();
   /** Every identity-store read: key lookups and key re-checks. */
   const store = { lookups: 0, rechecks: 0 };
   const keyReads = { held: false, waiting: [] as (() => void)[], release() { this.held = false; for (const done of this.waiting.splice(0)) done(); } };
-  const game = new Game({ simConfig: playable(PUBLIC_CONFIG), mcpConfig: TEST_MCP_CONFIG, now: () => clock.now,
+  const game = new Game({ simConfig: playable(PUBLIC_CONFIG), mcpConfig, now: () => clock.now,
     slot: {
       async identityOf(key) {
         store.lookups += 1;
@@ -184,5 +184,44 @@ describe("a slot session's failed joins are bounded", () => {
     expect((await pending).data.error.code).toBe("key_revoked");
     expect((await session("join", { key: "bob-new-key" })).data.error.code).toBe("too_many_failed_joins");
     expect((await (await connect(game))("join", { key: "bob-new-key" })).error).toBe(false);
+  });
+
+  it("refuses a joined session's join at the limit without re-checking its key, past KEY_RECHECK_MS", async () => {
+    const { game, clock, store } = setup();
+    const session = await connect(game);
+    expect((await session("join", { key: "bob-key" })).error).toBe(false);
+    await failJoins(session, LIMIT, { key: "no-such-key" }, "not_seated");
+    // The joining key is now due its re-check, which a join at the limit must not make.
+    clock.now += KEY_RECHECK_MS;
+    const { lookups, rechecks } = store;
+    for (let i = 0; i < 3; i++) expect((await session("join", { key: "bob-key" })).data.error.code).toBe("too_many_failed_joins");
+    expect(store.lookups).toBe(lookups);
+    expect(store.rechecks).toBe(rechecks);
+    // Other calls still re-check the key as before.
+    expect((await session("observe")).error).toBe(false);
+    expect(store.rechecks).toBe(rechecks + 1);
+  });
+
+  it("answers a joined session's joins at the limit too_many_failed_joins under the default rate limit, never call_rate", async () => {
+    const { game, clock, store } = setup({ ...DEFAULT_MCP_CONFIG, houseIdleSeconds: 86_400 });
+    const session = await connect(game);
+    expect((await session("join", { key: "bob-key" })).error).toBe(false);
+    for (let i = 0; i < LIMIT; i++) {
+      // One second apart, so each failed join's own reply stays under the rate limit.
+      clock.now += 1000;
+      expect((await session("join", { key: "no-such-key" })).data.error.code).toBe("not_seated");
+    }
+    clock.now += 1000;
+    const lookups = store.lookups;
+    for (let i = 0; i < 2 * DEFAULT_MCP_CONFIG.callsPerSecond + 1; i++) {
+      const refused = await session("join", { key: "bob-key" });
+      expect(refused.data.error.code).toBe("too_many_failed_joins");
+      expect(refused.data.retryAfterMs).toBeUndefined();
+    }
+    expect(store.lookups).toBe(lookups);
+    // The rate limit is live for this seat: a burst of observes is refused call_rate.
+    const codes: unknown[] = [];
+    for (let i = 0; i <= DEFAULT_MCP_CONFIG.callsPerSecond; i++) codes.push((await session("observe")).data.error?.code);
+    expect(codes).toContain("call_rate");
   });
 });

@@ -583,12 +583,7 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
         return adapterRefusal(game, session, "join", "bad_service_tier", "Invalid service tier.", `Use 1 to ${game.mcpConfig.serviceTierMaxChars} printable characters, or leave serviceTier out.`);
       }
       // Past the limit the key is never looked up: a session cannot keep trying keys against the store.
-      const limit = game.mcpConfig.maxFailedJoinsPerSession;
-      if ((session.failedJoins ?? 0) + (session.joinsInFlight ?? 0) >= limit) {
-        return adapterRefusal(game, session, "join", "too_many_failed_joins",
-          `This session has had ${limit} joins refused because their key holds no seat here, so it takes no more joins.`,
-          "Check your key and seat (locate_match gives your lobby's mcpUrl), then start a new MCP session and call join from it.");
-      }
+      if (joinLimitReached(game, session)) return tooManyFailedJoins(game);
       let failed = false;
       const joinSeat = async (): Promise<CallToolResult> => {
         // The key's check time, not the join's end: a join can wait (on its tick and the join record) past a rotation.
@@ -744,6 +739,8 @@ function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, sess
     throw new Error("the MCP SDK's tools/call handler was not found, so a replaced key could not end its sessions");
   }
   handlers.set("tools/call", async (request, extra) => {
+    // A join past the failed-join limit is refused without reading the store, so it skips the key re-check too.
+    if (request.params?.name === "join" && joinLimitReached(game, session)) return tooManyFailedJoins(game);
     const admission = session.admission;
     if (admission === undefined || await keyStillHeld(game, slot, admission) || session.admission !== admission) return answer(request, extra);
     unbindSession(session);
@@ -753,6 +750,21 @@ function guardKeyAdmission(server: McpServer, game: Game, slot: SlotAccess, sess
     if (name === "join" || name === "recover_key") return answer(request, extra);
     return keyRevoked();
   });
+}
+
+/** A slot session's failed joins, with those in flight, have reached the limit: its joins are refused unread. */
+function joinLimitReached(game: Game, session: SessionState): boolean {
+  return (session.failedJoins ?? 0) + (session.joinsInFlight ?? 0) >= game.mcpConfig.maxFailedJoinsPerSession;
+}
+
+/**
+ * The refusal for a join past that limit. Terminal: it is answered without the session's seat (no observe, so no
+ * rate limit), since another join from this session can only be refused the same way.
+ */
+function tooManyFailedJoins(game: Game): CallToolResult {
+  return errorResult("too_many_failed_joins",
+    `This session has had ${game.mcpConfig.maxFailedJoinsPerSession} joins refused because their key holds no seat here, so it takes no more joins.`,
+    "Check your key and seat (locate_match gives your lobby's mcpUrl), then start a new MCP session and call join from it.", null);
 }
 
 /** Ends the session's seat binding: it plays no seat until it joins again. */
