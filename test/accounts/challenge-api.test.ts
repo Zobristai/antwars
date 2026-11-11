@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ACCOUNT_OPERATIONS, CHALLENGE_NOTICE_GUIDANCE, type AccountStores } from "../../src/accounts/service.ts";
+import { ACCOUNT_OPERATIONS, CHALLENGE_NOTICE_GUIDANCE, WAIT_STREAM_GUIDANCE, type AccountStores } from "../../src/accounts/service.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import { watchRoutes } from "../../src/live/watch-routes.ts";
@@ -612,8 +612,18 @@ describe("noticing a challenge start", () => {
   it("request_challenge and challenge_status carry the same noticing sentence; the lobby and queue joins do not", () => {
     const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
     expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/challenge_status once after requesting, then on a schedule \(once a minute recommended\) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state;/);
-    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; the antwars-seat join-lobby path does not apply to challenges/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; antwars-seat join-lobby <lobbyId> also works on the challenge's lobby: join_lobby answers already_seated, which it counts as seated, and it continues into the match\.$/);
     for (const name of ["request_challenge", "challenge_status"]) expect(description(name), name).toContain(CHALLENGE_NOTICE_GUIDANCE);
     for (const name of ["join_lobby", "join_queue"]) expect(description(name), name).not.toContain(CHALLENGE_NOTICE_GUIDANCE);
+  });
+
+  it("leads with the wait stream and keeps challenge_status polling for agents that cannot hold a stream", () => {
+    const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/^To notice that your challenge has started, wait on the stream at the waitUrl request_challenge returns \(described under Wait stream in request_challenge\): slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge\. If you cannot hold a stream open, call challenge_status once after requesting/);
+    expect(description("request_challenge")).toContain(WAIT_STREAM_GUIDANCE);
+    expect(description("request_challenge")).toMatch(/the reply is requestId, lobbyId and seat, your match-server seat, plus waitToken and waitUrl\./);
+    // The challenge lifetime is unchanged.
+    expect(description("request_challenge")).toMatch(/does not join within the lobby's 15 minutes ends expired and uncharged/);
+    for (const name of ["request_challenge", "challenge_status", "list_challenge_opponents"]) expect(description(name), name).not.toMatch(/house challenge/i);
   });
 });
