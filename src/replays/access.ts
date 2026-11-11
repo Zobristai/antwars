@@ -13,6 +13,11 @@ export interface ReplayRead {
 export interface ReplaySource {
   /** null means the object is missing. The caller owns and must consume/destroy the body. */
   open(id: string, signal: AbortSignal): Promise<ReplayRead | null>;
+  /**
+   * The seat names a recording's stored rating rows are served under (/watch/ratings/<id>), where this source changes the
+   * names its replay shows, so the replay page still matches each row to its seat by name. Absent: served as read.
+   */
+  ratingNames?<Row extends { readonly displayName: string }>(id: string, rows: readonly Row[]): Promise<readonly Row[]>;
 }
 
 /** Only ids emitted by replayId: an exact UTC millisecond timestamp and positive safe sequence. */

@@ -10,10 +10,15 @@ import { createRatings } from "../../src/rating/ratings.ts";
 import type { StreamMessage } from "../../src/live/format.ts";
 import { restateRatings, storedReplayRatings } from "../../web/src/replay-ratings.ts";
 import { holdMatch, memoryWatchStore } from "./watch-fixtures.ts";
+import type { ReplaySource } from "../../src/replays/access.ts";
+import { correctedReplaySource } from "../../src/replays/correctedRecordings.ts";
+import { CORRECTION_MARKER, SOL_MOVES } from "../../src/rating/correctionPlan.ts";
+import type { Fields, Store } from "../../src/store/firestore.ts";
 
 const lobbyId = "11111111-2222-4333-8444-555555555555";
-const startedAt = Date.parse("2026-01-02T03:04:05.000Z");
-const replayId = "2026-01-02T03-04-05-000Z-281474976710";
+const STARTED_AT = Date.parse("2026-01-02T03:04:05.000Z");
+const REPLAY_ID = "2026-01-02T03-04-05-000Z-281474976710";
+const replayId = REPLAY_ID;
 /** The fixture lobby's match time, in rounds 26-30, and the harness phase it gives a Model Index match. */
 const matchAt = Date.parse("2026-11-07T07:47:00.000Z");
 const round26Phase = { phase: "rounds 26-30", possibleEffortMismatch: false };
@@ -26,7 +31,10 @@ const close: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of close.splice(0)) await fn(); });
 
 async function fixture(options: { kind?: "public" | "private"; rated?: boolean; outcome?: MatchOutcome; changes?: unknown[] | null;
-  colonies?: Lobby["colonies"]; finished?: boolean; mode?: Lobby["mode"]; startsAt?: number | null } = {}) {
+  colonies?: Lobby["colonies"]; finished?: boolean; mode?: Lobby["mode"]; startsAt?: number | null; replayId?: string; replays?: ReplaySource } = {}) {
+  const replayId = options.replayId ?? REPLAY_ID;
+  // A recording is found by its start millisecond, the one its replay id names.
+  const startedAt = options.replayId === undefined ? STARTED_AT : Date.parse(options.replayId.slice(0, 24).replace(/^(.{10}T\d\d)-(\d\d)-(\d\d)-/, "$1:$2:$3."));
   const { docs, store } = memoryWatchStore();
   const registry = createWatchRegistry(store);
   const kind = options.kind ?? "public";
@@ -47,7 +55,7 @@ async function fixture(options: { kind?: "public" | "private"; rated?: boolean; 
   if (options.finished !== false) await registry.playbackFinished(lobbyId, "run");
   await registry.replaySaved(lobbyId, "run", replayId);
   if (options.changes !== null) docs.set(`ratedMatches/${lobbyId}`, { changes: JSON.stringify(options.changes ?? glicko) });
-  const handler = watchRoutes({ accounts, registry, hub: {} as LiveHub });
+  const handler = watchRoutes({ accounts, registry, hub: {} as LiveHub, replays: options.replays });
   const server: Server = createServer((req, res) => { void handler(req, res); });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   close.push(() => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
@@ -75,9 +83,9 @@ function recording(seats: readonly Seat[]): StreamMessage {
  * /watch/ratings/ answer, the page's read of it, then the restatement, or the recording's own figures when none.
  * Asserts the read wrote nothing.
  */
-async function shown(f: Awaited<ReturnType<typeof fixture>>, seats: readonly Seat[]) {
+async function shown(f: Awaited<ReturnType<typeof fixture>>, seats: readonly Seat[], id = REPLAY_ID) {
   const before = JSON.stringify([...f.docs]);
-  const stored = await storedReplayRatings(replayId, null, new AbortController().signal, f.request);
+  const stored = await storedReplayRatings(id, null, new AbortController().signal, f.request);
   const m = stored ? restateRatings(stored)(recording(seats)) : recording(seats);
   expect(JSON.stringify([...f.docs])).toBe(before);
   return m.full!.agents.map((agent, index) => ({ name: agent.identity!.displayName, rating: agent.identity!.elo,
@@ -230,5 +238,46 @@ describe("two identities sharing a display name", () => {
       { name: "glm", rating: 1490, before: 1490, after: 1500 },
       { name: "deepseek", rating: 1386.6, before: 1386.6, after: 1370.4 },
     ]);
+  });
+});
+
+describe("a house-1v1 moved match's stored rating figures", () => {
+  const SOL = SOL_MOVES[0]!;
+  const nothingStored: ReplaySource = { async open() { return null; } };
+  /** The correction records, in memory; `fail` makes each read throw. */
+  const correctionStore = (docs: Record<string, Fields>, fail = false) =>
+    ({ async get(path: string) { if (fail) throw new Error("store down"); return docs[path] ?? null; } }) as Pick<Store, "get">;
+  const marker: Fields = { planDigest: "d".repeat(64), appliedAt: "2026-11-12T00:00:00.000Z" };
+  const solFixture = (docs: Record<string, Fields>, name: string = SOL.from, fail = false) => fixture({ replayId: SOL.replayId,
+    colonies: [[{ id: "glm", displayName: name }], [{ id: "deepseek", displayName: "deepseek" }]],
+    replays: correctedReplaySource(nothingStored, correctionStore(docs, fail)) });
+  const names = async (response: Response) => ((await response.json()) as { ratings: { displayName: string }[] }).ratings.map(row => row.displayName);
+
+  it("names the moved seat as stored until the move reads applied, then by its -fast handle, with the recorded figures", async () => {
+    const before = await solFixture({});
+    expect(await names(await before.get(SOL.replayId))).toEqual([SOL.from, "deepseek"]);
+
+    const after = await solFixture({ [CORRECTION_MARKER]: marker });
+    const response = await after.get(SOL.replayId);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ratings: { colony: number; displayName: string; before: number; after: number }[] };
+    expect(body.ratings).toEqual([
+      { colony: 0, displayName: SOL.to, before: 1412.25, after: 1461.75 },
+      { colony: 1, displayName: "deepseek", before: 1430.5, after: 1388 },
+    ]);
+    // The corrected replay names the seat by its -fast handle: the page still restates both seats from the stored record.
+    expect(await shown(after, [[0, SOL.to, 1383.3, 1399.5], [1, "deepseek", 1386.6, 1370.4]], SOL.replayId)).toEqual([
+      { name: SOL.to, rating: 1412.25, before: 1412.25, after: 1461.75 },
+      { name: "deepseek", rating: 1430.5, before: 1430.5, after: 1388 },
+    ]);
+  });
+
+  it("answers 503 once the move is applied when a name still holds the old handle, and when the move's state cannot be read", async () => {
+    const left = await solFixture({ [CORRECTION_MARKER]: marker }, `${SOL.from} (seat)`);
+    const refused = await left.get(SOL.replayId);
+    expect(refused.status).toBe(503);
+    expect(await refused.text()).not.toContain(SOL.from);
+    const unread = await solFixture({}, SOL.from, true);
+    expect((await unread.get(SOL.replayId)).status).toBe(503);
   });
 });

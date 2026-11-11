@@ -16,10 +16,11 @@ export const REPLAY_ID = "2026-11-09T13-26-59-840Z-160375822867893";
  * A rated ranked recording as the live hub stores it (cf. test/replays/history.test.ts fixture): rated setup, one seat
  * per colony in `joined`, and the delayed final result carrying rating changes. With joined [1], colony 0 never joins.
  */
-export function ratedRecording(joined: readonly ColonyId[] = [1]): { binary: Uint8Array; record: MatchRecord; recordBody: Uint8Array } {
+export function ratedRecording(joined: readonly ColonyId[] = [1], options: { readonly names?: readonly string[]; readonly id?: string } = {}):
+  { binary: Uint8Array; record: MatchRecord; recordBody: Uint8Array } {
   const config = { ...playable(rulesConfig("redesign")), matchTicks: 4, commandFloorTicks: 100, startAnts: 16 };
   let state = createMatch(6006, config);
-  const names = ["omp-dolphin", "other-player"];
+  const names = options.names ?? ["omp-dolphin", "other-player"];
   const recorder = new SpectatorRecorder(state, { identity: agentId => ({ displayName: names[Number(agentId.replace("seat-private-", ""))]!, elo: 1500 }) });
   const full = recorder.initialFull();
   full.setup = { ...full.setup, rated: true };
@@ -39,6 +40,6 @@ export function ratedRecording(joined: readonly ColonyId[] = [1]): { binary: Uin
     state = out.state;
   }
   const binary = new Uint8Array(gzipSync(packMessages(messages)));
-  const record = matchRecord({ id: REPLAY_ID, binary, logLines: lines, endedAt: Date.parse("2026-11-09T13:55:09.465Z") });
+  const record = matchRecord({ id: options.id ?? REPLAY_ID, binary, logLines: lines, endedAt: Date.parse("2026-11-09T13:55:09.465Z") });
   return { binary, record, recordBody: new TextEncoder().encode(JSON.stringify(record) + "\n") };
 }

@@ -117,7 +117,9 @@ export function watchRoutes(options: {
       const retained = await options.registry.read(lobbyId);
       if (kind === "ratings") {
         if (!retained || retained.replayId !== route[3] || !retained.playbackFinished) { reply(res, 404); return; }
-        const ratingsBody = { ratings: await storedRatings(options.accounts, lobby.value) };
+        const stored = await storedRatings(options.accounts, lobby.value);
+        // Under the seat names the recording's replay is served with (correctedRecordings.ts), so the page matches them.
+        const ratingsBody = { ratings: options.replays?.ratingNames ? await options.replays.ratingNames(route[3]!, stored) : stored };
         // A Model Index match also gets its harness phase by its lobby's match time (src/rating/harnessPhase.ts).
         reply(res, 200, isIndexMode(lobby.value.mode)
           ? { ...ratingsBody, harnessPhase: harnessPhaseAt(lobby.value.startsAt ?? lobby.value.createdAt) } : ratingsBody); return;

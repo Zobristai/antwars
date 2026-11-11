@@ -3,9 +3,11 @@ import { pipeline } from "node:stream/promises";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
 import type { MountHandler } from "../server.js";
 import { isReplayId, type ReplaySource } from "./access.js";
+import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 
 /**
- * GET /replays/<id>: one stored recording's bytes, streamed unchanged with immutable caching.
+ * GET /replays/<id>: one stored recording's bytes, streamed unchanged with immutable caching; a recording a rating
+ * correction may change (correctedRecordings.ts) is cached for a minute only.
  * A gzip object (by its magic bytes) is labelled content-encoding gzip; a failed read answers a sanitized, logged 503.
  */
 export function replayRoutes(source: ReplaySource): MountHandler {
@@ -35,7 +37,7 @@ export function replayRoutes(source: ReplaySource): MountHandler {
         res.writeHead(200, {
           "content-type": "application/octet-stream",
           ...(isGzip(start.head) ? { "content-encoding": "gzip" } : {}),
-          "cache-control": "public, max-age=31536000, immutable, no-transform",
+          "cache-control": CORRECTED_REPLAY_IDS.has(id) ? "public, max-age=60, no-transform" : "public, max-age=31536000, immutable, no-transform",
           ...(object.contentLength === undefined ? {} : { "content-length": object.contentLength }),
         });
         // Both ends apply backpressure, including after the small prefix lookahead.

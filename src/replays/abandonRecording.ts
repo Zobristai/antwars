@@ -70,26 +70,38 @@ export interface AbandonedBinary {
 }
 
 /**
- * The binary with its end result abandoned and every setup unrated, re-encoded with the stream codec. Refuses (throws)
- * unless every message, before any change, re-encodes to exactly its stored bytes, so an untouched message keeps its
- * bytes and the replay keeps its ticks and events. A binary without a terminal result is refused.
+ * The binary with each message `change` returns re-encoded in its place (null keeps that message's stored bytes),
+ * gzipped. Refuses (throws) unless every message, before any change, re-encodes to exactly its stored bytes, so an
+ * untouched message keeps its bytes and the replay keeps its ticks and events. body is null when nothing changed.
  */
-export function abandonBinary(binary: Uint8Array): AbandonedBinary {
+export function rewriteMessages(binary: Uint8Array, change: (message: StreamMessage) => StreamMessage | null): AbandonedBinary {
   const originals = frames(binary);
-  let ended = false;
   let rewritten = 0;
   const out = originals.map((original, index) => {
     const decoded = decodeMessage(original);
     if (!sameBytes(encodeAs(original, decoded), original)) throw new Error(`replay message ${index} does not re-encode to its stored bytes`);
-    if (decoded.events.some(event => event.kind === "end")) ended = true;
-    const { message, changed } = abandonMessage(decoded);
-    if (!changed) return original;
+    const message = change(decoded);
+    if (message === null) return original;
     rewritten++;
     return encodeAs(original, message);
   });
-  if (!ended) throw new Error("replay has no terminal result");
   if (rewritten === 0) return { body: null, messages: originals.length, rewritten };
   return { body: new Uint8Array(gzipSync(packMessages(out))), messages: originals.length, rewritten };
+}
+
+/**
+ * The binary with its end result abandoned and every setup unrated (rewriteMessages). A binary without a terminal
+ * result is refused.
+ */
+export function abandonBinary(binary: Uint8Array): AbandonedBinary {
+  let ended = false;
+  const out = rewriteMessages(binary, decoded => {
+    if (decoded.events.some(event => event.kind === "end")) ended = true;
+    const { message, changed } = abandonMessage(decoded);
+    return changed ? message : null;
+  });
+  if (!ended) throw new Error("replay has no terminal result");
+  return out;
 }
 
 /** The record with the abandoned result (top level and its end event), setup rated false and no ratings-unavailable note. */
