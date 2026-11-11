@@ -102,6 +102,8 @@ export interface RecordingOptions {
 /** The waits before the marks' read is tried again after a failure (a network error or a refused request); after the
  * last it keeps being tried at the last wait, and at once when the browser reports it is back online. */
 export const SCAN_RETRY_MS: readonly number[] = [2000, 8000, 30000];
+/** The marks' read works at most this long between yields, so playback keeps drawing frames while it runs. */
+const SCAN_SLICE_MS = 8;
 
 /** At most two seconds decoded ahead; seeks replay every delta in bounded frame-sized batches. */
 export function openRecording(url: string, onError: (error: Error) => void = () => {}, request: typeof fetch = fetch, options: RecordingOptions = {}): Recording {
@@ -162,7 +164,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   };
   // One read of the whole recording, beside playback, for the scrubber's marks. It starts once the end is settled, so
   // the slider is usable when it would be without marks; where the end could not be settled, it settles it. It retains
-  // no messages or boards, only the marks, and yields every 100 messages. A failed read is tried again after
+  // no messages or boards, only the marks, and yields every SCAN_SLICE_MS of work. A failed read is tried again after
   // SCAN_RETRY_MS for as long as the replay is open; a corrupt recording is not, and leaves the marks absent.
   const scanWhole = async (attempt = 0): Promise<void> => {
     let retry = true;
@@ -171,7 +173,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
       if (!response.ok || !response.body) throw new Error("Replay duration unavailable; playback can continue.");
       const scan = new ReplayEventScan();
       let previous: number | null = null;
-      let count = 0;
+      let slice = performance.now();
       for await (const { message: m } of recordingMessages(response.body, lifetime.signal)) {
         if (closed) return;
         if (previous === null ? m.full === null || m.tick !== firstTick : m.full !== null || m.tick !== previous + 1) {
@@ -181,7 +183,10 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         previous = m.tick;
         scan.push(m);
         // A cached response must also yield to input and rendering.
-        if (++count % 100 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
+        if (performance.now() - slice >= SCAN_SLICE_MS) {
+          await new Promise<void>(resolve => setTimeout(resolve, 0));
+          slice = performance.now();
+        }
       }
       if (previous === null) { retry = false; throw new Error("Recording is empty."); }
       if (closed) return;
