@@ -25,13 +25,16 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // house=false texts carry that guidance, and the house=true digests are unchanged.
 // Repinned for that pointer reading "Or wait for done on your waitUrl (SSE; see join_queue)."; the previous pointer
 // restores the previous pins, so nothing else changed.
+// Repinned for the lobby guidance's nest-pick line stating both window lengths ("Matched: nest-pick window 4 min in
+// index matches, 2 min in other matches;"); only the house=false and preview texts carry that guidance, and the previous
+// line ("Matched: 2 min to pick a nest;") restores the previous pins, so nothing else changed.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
-  "join house=false undrawn=true nest=false": "13e5ff0ab2ae3ed00b5164b3db12d82690740bd49bb225581452111ccd88ecf5",
-  "join house=false undrawn=true nest=true": "8df8d22fcdbcc28ba5fa600eb2605c9ef88b2b7787c11edf2dce23ffdccec3fa",
-  "rules house=false undrawn=true": "7e02f2d7583159afe62431066a52d60299ee25d0002fedf3099ca669de653ffe",
-  "join house=false undrawn=false nest=false": "9ec7ce6c9a6465bd831f653af4527435dacf8f24a0f9e1c8cc0d9ef594bc3a5e",
-  "join house=false undrawn=false nest=true": "a35622cd44e28ada663e17442b7410331e68148d476fc7c009ff1a3197c4df62",
-  "rules house=false undrawn=false": "e1253c5e0a14d8f068982e1893f96a19bcdd8d81add1865dad2b3290e6b4540d",
+  "join house=false undrawn=true nest=false": "55e98cad88494bc6587a1329018231e63f40ff9844e1a1ee451799a54b31990f",
+  "join house=false undrawn=true nest=true": "990113f5d4a81a3c658ebeb7e2de786090c05a1074daeafd00ee663b84fc9407",
+  "rules house=false undrawn=true": "22a99ee04de2f18bafd3d0f63862e6c6514fa85109d1478aa58f9d3fd095b85d",
+  "join house=false undrawn=false nest=false": "db86a6f8c5db5b21c8c43e57f63ef096fd578866aa27980de5f41de4795497f2",
+  "join house=false undrawn=false nest=true": "3096fc4fcc51e1d763609db494c10a25c68707cb4bddc05fb8f9d6c303796db5",
+  "rules house=false undrawn=false": "0e623889f1326ed042ac876881285cb249e0a4148599b7bd3d230c2aa781ccda",
   "join house=true undrawn=true nest=false": "8238fa2e15595c076df9bf91b910ab2c4a9b7aa69422c4e7b897daf781d7a9a0",
   "join house=true undrawn=true nest=true": "db81dc9ac07a9e9123304f7b1646e03795157801f25465722c3e0aff9c4a1349",
   "rules house=true undrawn=true": "351e906c3bf6a4faf2ca5d1d67878c8dfdcdcc7cb763adf7059d0cb66c0f3745",
@@ -47,20 +50,21 @@ const HOSTED_AT_5DF81D04: Record<string, string> = {
 // Repinned again for that clause covering every lobby match, as above.
 // Repinned for the same lobby-guidance wait-stream change as above; the v4 digests are unchanged.
 // Repinned again for the same "wait for done" pointer as above; the v4 digests are unchanged.
+// Repinned for the same nest-pick line stating both window lengths as above; the v4 digests are unchanged.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "join v4 players=2": "5c5f62959d1ef08efa3ba6e40a31aede6b967a96ed66b893108ec82d2130d14a",
   "rules v4 players=2": "d74106ae57974263cf40fff2fd2e99c52c1c1e7a8d61be0c074032dc0bc14eae",
   "join v4 players=4": "a5b8a4de730c6992b8a27b29f705e6440724292b1cbe22209c7ddcf873029702",
   "rules v4 players=4": "d57a9e79c59accfa216e17c90e02272ac024a32ffb1d7a02a43d93091364648e",
-  "join count-marks players=2": "b4cef4830385d3523e72de44dcd2c850c9f6da920bfa08d2c4ef819c4e50d6d3",
-  "rules count-marks players=2": "be677e154f5f6f468fc04761a0ccb89d53040a8c85280c572eaceef37f475189",
-  "join count-marks players=4": "d1fe7c223ea9b3ce946c39f78dc357f0273c7aca9145f969fa90b56c1148352c",
-  "rules count-marks players=4": "98d6f769e350395e1e80be619dded2aa89920f88777b52395fcdcbbc494e9812",
-  "join redesign players=2": "43ea07df1a7978fc290d1fc5d6d0d01049120c018f3a3cb8c9d295844be6be7c",
-  "rules redesign players=2": "ff34745bec782fd24e418f1b8166a880eca8f092b00bf29bdeea3e75fd3cd079",
-  "join redesign players=4": "678ba36ef4416545e4004005314c672e87f84a91f2abf3a854e9b011bbed4c06",
-  "rules redesign players=4": "27d90b531d558c430f5b30f836bcbe735152b24c7c2868ccfc93af827ea8125b",
+  "join count-marks players=2": "5d47e87bfdbf7a6f53b2c70b07070163ff06c2f3458ce07b87c25637b101bfa4",
+  "rules count-marks players=2": "74e50fc4f49e3bd3f30fec1484e01e319270592227a5301feb366a38df8166ee",
+  "join count-marks players=4": "6ee40f2fed373eb907d39d6e9e28c12908372e05f586092d9fa331a82bca7aa1",
+  "rules count-marks players=4": "d493637afc5ca34792863292f9575984a4995eb660e2e4e005f5d830b940e16c",
+  "join redesign players=2": "efdc488f5ccc456d544b14ab9794cb2776d33b2171be18cf89c1c1b0bb0a64c6",
+  "rules redesign players=2": "53210f12f6031c23f5a7e74fedd4b512b7097fd715c164916e2fe6628865cc3f",
+  "join redesign players=4": "e9a6471ad3507f3c3fdb64ef5a31c5494ff7c3d46c9127849521b499c45258e8",
+  "rules redesign players=4": "7cc47e6550d905d85cadc6310c6387990eacd492e2138ae3281566539ec1d9d6",
 };
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));

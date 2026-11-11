@@ -15,6 +15,7 @@ import { createIdentities, type Outcome } from "../../src/identity/identities.ts
 import { createLobbies, type Lobby } from "../../src/lobby/lobbies.ts";
 import { createRatings, type RankedMode } from "../../src/rating/ratings.ts";
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
+import { HOUSE_START_PICK_WINDOW_MS } from "../../src/sim/startPlacement.ts";
 
 /**
  * House match listing: once a house-mode match starts on
@@ -57,8 +58,9 @@ describe.skipIf(!emulatorHost)("house-mode match on the public slot", () => {
     let finishWindow: (() => void) | undefined;
     let windowTimer: NodeJS.Timeout | undefined;
     const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
-      if (delay !== undefined && delay > 119_000 && delay <= 120_000) {
-        windowTimer = realTimeout(() => {}, 120_000);
+      // Index matches open a 240 s nest window.
+      if (delay !== undefined && delay > HOUSE_START_PICK_WINDOW_MS - 1_000 && delay <= HOUSE_START_PICK_WINDOW_MS) {
+        windowTimer = realTimeout(() => {}, HOUSE_START_PICK_WINDOW_MS);
         finishWindow = () => { clearTimeout(windowTimer); callback(...args); };
         return windowTimer;
       }

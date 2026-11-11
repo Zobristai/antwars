@@ -1,7 +1,15 @@
 /** Lobby-only starting placement. No ticks, timers, transport or public projections. */
 import { gridScaleOf, type GridScale } from "./gridScale.js";
 
+/** The nest-pick window of every lobby except index matches. */
 export const START_PICK_WINDOW_MS = 120_000;
+/** The nest-pick window of an index match (house-* mode). */
+export const HOUSE_START_PICK_WINDOW_MS = 240_000;
+
+/** The nest-pick window length for a lobby: 240 s in index matches, 120 s in every other lobby. */
+export function startPickWindowMsFor(houseMatch: boolean): number {
+  return houseMatch ? HOUSE_START_PICK_WINDOW_MS : START_PICK_WINDOW_MS;
+}
 
 type Colony = 0 | 1;
 export interface StartBox { readonly x: number; readonly y: number; readonly width: number; readonly height: number }

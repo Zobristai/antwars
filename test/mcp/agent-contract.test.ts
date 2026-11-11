@@ -212,9 +212,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // -> located slot only."; REJOIN_GUIDANCE still says it); undoing both restores 55a6a96c… and 125aa19c….
   // Repinned for that pointer reading "Or wait for done on your waitUrl (SSE; see join_queue)."; the previous pointer
   // restores 458f680a… and 0967acce….
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d540dc30f8d1be66d098e28983fc5c38cf1a4620648fd7dec6559a4361c7a095");
+  // Repinned for the lobby line "Matched: nest-pick window 4 min in index matches, 2 min in other matches;";
+  // "Matched: 2 min to pick a nest;" restores d540dc30… and ed113dd0…, so nothing else changed.
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("125a603619c2a9a679daa482f4ee14d0aa4711e185a3a225d16c4cb86171e7c4");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("ed113dd0845f6719070687b7386b51cda329f7d3a5a8db3aaecae4f94a101b5c");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("90f117d029056fb468d4aefeaca875039fd72976112f01a54179a47eb9c8ea45");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
