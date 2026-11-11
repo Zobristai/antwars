@@ -546,6 +546,15 @@ describe("no house slug on Live now, Waiting or Recordings", () => {
   });
 });
 
+describe("row alignment", () => {
+  it("centres every cell of a Live now or Recordings row, and Watch or Replay beside the stacked row's start and outcome", () => {
+    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+    expect(css).toContain(":is(.d1p-live, .d1p-rec) tbody :is(th, td) { vertical-align: middle; }");
+    expect(css).toContain(".d1p-match-rows > li { align-items: center; }");
+    expect(css).toContain(".d1p-match-rows > li > .d1p-row-pill { grid-row: 1 / span 2; align-self: center; margin-top: 0; }");
+  });
+});
+
 describe("tap height on a phone", () => {
   it("gives the cyan button the grey pills' 44 px tap under 46rem", () => {
     const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
