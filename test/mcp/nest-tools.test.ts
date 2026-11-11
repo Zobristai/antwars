@@ -9,7 +9,7 @@ import { PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { isRockTile, isWaterTile } from "../../src/sim/terrain.js";
-import { startBoxes } from "../../src/sim/startPlacement.js";
+import { MissingStartPicksError, startBoxes } from "../../src/sim/startPlacement.js";
 import { TEST_MCP_CONFIG } from "./harness.js";
 import { playable } from "../playable.ts";
 
@@ -57,8 +57,8 @@ describe("authenticated lobby nest MCP tools", () => {
     game.beginLobbyStart(7001);
     const oldSeat = await connect(game), outsider = await connect(game);
     await oldSeat.call("join", { key: "left-0-secret" });
-    clock.now = 120_000;
-    expect(() => game.finishLobbyStart()).toThrow();
+    clock.now = 240_000;
+    expect(() => game.finishLobbyStart()).toThrow(MissingStartPicksError);
     game.endNotPlayed();
     expect((await oldSeat.call("pick_nest", { tileX: 8, tileY: 24 })).data.error.code).toBe("match_not_played");
     game.seatLobby("next-lobby", seats);
