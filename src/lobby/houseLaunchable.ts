@@ -42,6 +42,7 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "gemini-4-carbon-high",
   "muse-spark-1-3",
   "muse-wonder-1-0",
+  "muse-wonder-full-1-0",
 ];
 
 const LAUNCHABLE = new Set(LAUNCHABLE_HANDLES);
