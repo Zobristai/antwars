@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderView } from "./board.mjs";
+import { claimGameCommand, isGameCommand, procStat, refusalMessage } from "./guard.mjs";
 import { isMatchOver, matchClient, savedMatch, seatContext } from "./match.mjs";
 import { observerSettings, observerStatus, runObserver } from "./observer.mjs";
 import { err, out, redact } from "./redact.mjs";
@@ -33,6 +34,9 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
   tools [name]                              tools the match server lists, with arguments
   call <tool> ['<json args>']               any match tool, one call
   <tool> [--arg value ...]                  any match tool by name, e.g. order --json '{...}'
+                                            game commands (any match tool but observe and rules): at most one per
+                                            shell command; a further one started by the same shell command (chain,
+                                            loop, background job, script) is refused, not sent
   observer start [--interval S] [--retry S] | stop | status
   help
 
@@ -163,9 +167,17 @@ function status(env) {
   return 0;
 }
 
-async function matchCall(name, args, env, clock, { raw = false } = {}) {
+async function matchCall(name, args, env, clock, { raw = false, readStat = procStat } = {}) {
   const ctx = seatContext({ config: readConfig(env), env, clock });
   const client = matchClient(ctx, savedMatch(env).mcpUrl);
+  if (isGameCommand(name)) {
+    // One game command per shell command: claimed before anything is sent.
+    const claim = claimGameCommand(env, readStat);
+    if (!claim.allowed) {
+      progress("game_command_refused", { tool: name, reason: claim.reason }, env);
+      throw new Error(refusalMessage(name, claim.reason));
+    }
+  }
   const reply = await client.callTool(name, args);
   print(reply.data?.view && typeof reply.data.view === "object" && !raw ? renderView(reply.data) : reply.data);
   if (isMatchOver(reply.data)) progress("match_over", { winner: reply.data.winner ?? null }, env);
@@ -215,7 +227,8 @@ async function observer(sub, flags, env, clock) {
   throw new Error("usage: antwars-seat observer start [--interval S] [--retry S] | stop | status");
 }
 
-export async function main(argv, { env = process.env, clock = realClock } = {}) {
+/** readStat reads /proc/<pid>/stat for the one-game-command-per-shell-command guard (tests pass their own). */
+export async function main(argv, { env = process.env, clock = realClock, readStat = procStat } = {}) {
   const [command, ...rest] = argv;
   const { flags, positional } = parseArgs(rest);
   try {
@@ -261,14 +274,14 @@ export async function main(argv, { env = process.env, clock = realClock } = {}) 
       case "call": {
         if (!positional[0]) throw new Error("usage: antwars-seat call <tool> ['<json args>']");
         const args = positional[1] === undefined ? {} : JSON.parse(positional[1]);
-        return await matchCall(positional[0], args, env, clock, { raw: flags.raw === true });
+        return await matchCall(positional[0], args, env, clock, { raw: flags.raw === true, readStat });
       }
       case "observer":
         return await observer(positional[0], flags, env, clock);
       default: {
         const { raw, json, ...named } = flags;
         const args = { ...(typeof json === "string" ? JSON.parse(json) : {}), ...Object.fromEntries(Object.entries(named).map(([k, v]) => [k, coerce(v)])) };
-        return await matchCall(command, args, env, clock, { raw: raw === true });
+        return await matchCall(command, args, env, clock, { raw: raw === true, readStat });
       }
     }
   } catch (error) {

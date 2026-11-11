@@ -177,7 +177,7 @@ describe("entrypoint wiring", () => {
       expect(source).toContain("new Playback({ live: !input.recorded })");
       expect(source).toContain("const now = input.now(realMs)");
       expect(source).not.toMatch(/loadRecording\(|REPLAY_PATH/);
-      expect(source).toContain("modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds, input.harnessPhase, input.matchNote)");
+      expect(source).toContain("modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds, input.matchNote)");
       expect(source).toContain("excerptEnded(frame.tick, input.lastTick)");
       // The stills tap a mark on its label where one is drawn (a label tap opens the mark, never the ant beneath): both boards expose the drawn labels.
       expect(source).toContain("markLabels: () => (words.layer.visible ? words.drawnLabels() : [])");

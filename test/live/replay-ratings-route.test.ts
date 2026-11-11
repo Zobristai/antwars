@@ -163,19 +163,15 @@ describe("a replay's harness phase", () => {
     const f = await fixture();
     let requests = 0;
     const counted = ((url: string, init?: RequestInit) => { requests++; return f.request(url, init); }) as typeof fetch;
-    const facts = await storedReplayFacts(replayId, null, new AbortController().signal, counted);
-    expect(facts.harnessPhase).toEqual(round26Phase);
-    expect(facts.ratings?.ratings.size).toBe(2);
+    const ratings = await storedReplayRatings(replayId, null, new AbortController().signal, counted);
+    expect(ratings?.ratings.size).toBe(2);
     expect(requests).toBe(1);
-    const other = await fixture({ mode: "1v1" });
-    expect((await storedReplayFacts(replayId, null, new AbortController().signal, other.request)).harnessPhase).toBeNull();
   });
 
-  it("serves and reads a match from 2026-11-10T09:01:39.952Z on as from round 31 onward", async () => {
+  it("serves a match from 2026-11-10T09:01:39.952Z on as from round 31 onward", async () => {
     const f = await fixture({ startsAt: Date.parse("2026-11-10T10:32:43.581Z") });
     const roundThirtyOne = { phase: "from round 31 onward", possibleEffortMismatch: false };
     expect((await (await f.get()).json()).harnessPhase).toEqual(roundThirtyOne);
-    expect((await storedReplayFacts(replayId, null, new AbortController().signal, f.request)).harnessPhase).toEqual(roundThirtyOne);
   });
 });
 

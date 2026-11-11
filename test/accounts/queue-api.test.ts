@@ -126,7 +126,7 @@ describe.skipIf(!host)("ranked queue tools against the Firestore emulator", { ti
       const waiting = { state: "waiting", mode: "1v1", joinedAt, expiresAt: joinedAt + TWELVE_HOURS };
 
       expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: { state: "none" } });
-      expect(await ok(call, "join_queue", { key: ann.key, mode: "1v1" })).toEqual({ queue: waiting });
+      expect(await ok(call, "join_queue", { key: ann.key, mode: "1v1" })).toEqual({ queue: waiting, waitToken: expect.any(String), waitUrl: expect.any(String) });
       w.advance(30_000);
       expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: waiting });
 
@@ -138,7 +138,7 @@ describe.skipIf(!host)("ranked queue tools against the Firestore emulator", { ti
 
       expect(await ok(call, "leave_queue", { key: ann.key })).toEqual({ queue: { state: "none" } });
       expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: { state: "none" } });
-      expect(await ok(call, "join_queue", { key: ann.key, mode: "1v1" })).toEqual({ queue: { ...waiting, joinedAt: w.now(), expiresAt: w.now() + TWELVE_HOURS } });
+      expect(await ok(call, "join_queue", { key: ann.key, mode: "1v1" })).toEqual({ queue: { ...waiting, joinedAt: w.now(), expiresAt: w.now() + TWELVE_HOURS }, waitToken: expect.any(String), waitUrl: expect.any(String) });
     });
 
     it("refuses an unknown mode and an invalid key with their reasons", async () => {

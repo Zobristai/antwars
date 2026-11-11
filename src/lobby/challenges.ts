@@ -4,6 +4,7 @@ import type { Identities } from "../identity/identities.js";
 import { HOUSE_LABELS, HOUSE_USERNAME } from "../rating/house.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { queueStatusStep } from "./queue.js";
+import { lobbyWaitWrites, replacedWaitWrites, waitIndexes } from "./waits.js";
 
 /**
  * House challenges: a builder's agent asks for an unrated public 1v1 game against one handle of the House
@@ -43,6 +44,7 @@ import { queueStatusStep } from "./queue.js";
  *   challengeAllowance/{YYYY-MM-DD} { requests }  ids of requests admitted with a place that day, pruned of released ones
  *   challengeOwners/{ownerId}       { requestId }  the owner's latest request: one active challenge per owner
  *   challengeChallengers/{id}       { requestId }  the identity's latest request, for challenge_status without an id
+ *                                     and the live_challenge refusal of queue and lobby joins (liveChallenge)
  *   challengeAvailability/{handle}  { marked ("" | "unavailable"), lastLaunch ("" | launched | failed), failureReason },
  *                                     written only by launched and failed reports and set_challenge_availability
  */
@@ -111,10 +113,14 @@ export interface ChallengeLobbyRules {
   readonly lobbyTtlMs: number;
   readonly now: () => number;
   readonly scanPageSize: number;
+  /** How far back the seated-elsewhere scan reads recent lobbies: a player lobby's lifetime (lobbies.ts LOBBY_TTL_MS). */
+  readonly scanLookbackMs: number;
   /** lobbies.ts isExpired: an open or waiting player-created lobby at or after its expiry. */
   isExpired(fields: Fields, at: number): boolean;
   /** The slot documents of both kinds, as slots/{kind}-{n}. */
   readonly slotPaths: readonly string[];
+  /** The identity's seat pointer, lobbySeats/{identityId}: the lobby its latest successful join seated it in. */
+  seatPointerPath(identityId: string): string;
   /** Creates the public challenge lobby (builder seated in the other colony, HELD_COLONY held) and lists it. */
   challengeLobbyWrites(read: TransactionRead, lobby: {
     readonly id: string; readonly requestId: string; readonly handle: string;
@@ -230,7 +236,8 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
   /**
    * Whether identityId holds a seat in a live lobby.
    * Rerun on every transaction attempt: the slot and public queue indexes and their lobbies are read in the transaction,
-   * then the lobbies created since the cutoff are queried newest first, every page at the first page's read time.
+   * then the lobbies created since the cutoff are queried newest first, every page at the first page's read time, and
+   * last the identity's seat pointer and its lobby are read in the transaction.
    */
   async function seatedElsewhere(read: TransactionRead, identityId: string, at: number): Promise<boolean> {
     const seated = (fields: Fields | null | undefined) => !!fields && isLive(fields, at, rules) && seatsOf(fields).some((seat) => seat.id === identityId);
@@ -242,8 +249,10 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     ])];
     const lobbies = named.length > 0 ? await read(named.map(lobbyPath)) : new Map<string, Fields | null>();
     if (named.some((id) => seated(lobbies.get(lobbyPath(id))))) return true;
-    // Every other live lobby was created after the cutoff: an older open or waiting player lobby has expired.
-    const cutoff = at - rules.lobbyTtlMs;
+    // Every other live lobby was created after the cutoff: an open or waiting player lobby expires exactly
+    // scanLookbackMs (LOBBY_TTL_MS, 12 hours) after creation, not the challenge lifetime lobbyTtlMs. No countdown margin
+    // is needed: a lobby still live past that holds a slot or waits in queues/public, both named above.
+    const cutoff = at - rules.scanLookbackMs;
     let readTime: string | undefined;
     let startAfter: { value: string; path: string } | undefined;
     for (;;) {
@@ -251,12 +260,40 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
       readTime ??= page.readTime;
       if (page.rows.some((row) => seated(row.fields))) return true;
       const last = page.rows.at(-1);
-      if (!last || page.rows.length < rules.scanPageSize || Number(last.fields.createdAt) < cutoff) return false;
+      if (!last || page.rows.length < rules.scanPageSize || Number(last.fields.createdAt) < cutoff) break;
       startAfter = { value: last.fields.createdAt!, path: last.path };
     }
+    // Read by exact path, last: every successful lobby join writes this pointer, so a join that commits after this read
+    // touches a document this transaction read and the two cannot both commit, while one that committed before it is
+    // named here. It names only the latest join and may be stale, so its lobby refuses only while live and seating
+    // the caller; the reads above cover earlier seats.
+    const pointed = (await read([rules.seatPointerPath(identityId)])).get(rules.seatPointerPath(identityId))?.lobbyId;
+    return !!pointed && seated((await read([lobbyPath(pointed)])).get(lobbyPath(pointed)));
   }
 
-  async function requestChallenge(key: string, opponent: string): Promise<ChallengeOutcome<{ requestId: string; lobbyId: string; seat: number }>> {
+  /**
+   * The lobby id of identityId's latest challenge while that lobby is live (isLive, the rule active_challenge uses),
+   * else undefined. Read in the caller's transaction: the challenger pointer it reads is the one requestChallenge
+   * writes, so a join that checks it and a concurrent request for the same identity cannot both commit.
+   */
+  async function liveChallenge(read: TransactionRead, identityId: string, at: number): Promise<string | undefined> {
+    const requestId = (await read([challengerPath(identityId)])).get(challengerPath(identityId))?.requestId;
+    if (!requestId) return undefined;
+    const lobbyId = (await read([requestPath(requestId)])).get(requestPath(requestId))?.lobbyId;
+    if (!lobbyId) return undefined;
+    const lobby = (await read([lobbyPath(lobbyId)])).get(lobbyPath(lobbyId));
+    return lobby && isLive(lobby, at, rules) ? lobbyId : undefined;
+  }
+
+  /** The challenger's lobby wait record and seat key, its index, and the removal of its previous challenge record. */
+  async function challengeWaitWrites(read: TransactionRead, waitToken: string, lobbyId: string, builderId: string, limit: number): Promise<Write[]> {
+    const indexes = waitIndexes(read);
+    const replaced = await replacedWaitWrites(read, indexes, "challenge", builderId);
+    const created = await lobbyWaitWrites(read, indexes, waitToken, lobbyId, builderId, limit, "challenge");
+    return [...replaced, ...created, ...(await indexes.writes())];
+  }
+
+  async function requestChallenge(key: string, opponent: string, waitToken?: string): Promise<ChallengeOutcome<{ requestId: string; lobbyId: string; seat: number }>> {
     const builder = await caller(key);
     if (!builder) return refuse("unknown_key");
     const handle = houseHandle(opponent);
@@ -299,6 +336,9 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
           return places[i]!.doc ? { op: "update", path: allowancePath(day), fields: { requests } } : { op: "create", path: allowancePath(day), fields: { requests } };
         }),
         ...(await rules.challengeLobbyWrites(read, { id: lobbyId, requestId, handle, builder: { id: builder.id, displayName: builder.displayName }, at })),
+        // The challenger's waiting token is a lobby wait on this challenge's lobby, replacing its previous challenge wait
+        // (src/lobby/waits.ts).
+        ...(waitToken === undefined ? [] : await challengeWaitWrites(read, waitToken, lobbyId, builder.id, at + rules.lobbyTtlMs)),
       ];
       // A mirror challenge (the held handle challenging itself) plays colony 1 as match seat 2; seat 1 is the house seat.
       const docsHouseId = docs.get(HOUSE_CLAIM)?.identityId;
@@ -432,7 +472,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     });
   }
 
-  return { requestChallenge, listOpponents, listOpponentsFor, setAvailability, reportLaunch, status };
+  return { requestChallenge, liveChallenge, listOpponents, listOpponentsFor, setAvailability, reportLaunch, status };
 }
 
 export type ChallengeSteps = ReturnType<typeof createChallengeSteps>;

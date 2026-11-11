@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
 import { rpcReply } from "../lib/mcp.mjs";
 import { DEFAULT_MAX_WAIT_MS } from "../lib/seat.mjs";
-import { fakeClock, startFake } from "./fake-server.mjs";
+import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
@@ -44,7 +44,7 @@ async function seat(fakeOptions = {}, { setup = [] } = {}) {
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   const cli = (...argv) => {
-    const command = main(argv, { env, clock });
+    const command = main(argv, { env, clock, readStat: freshShell() });
     commands.push(command);
     return command;
   };

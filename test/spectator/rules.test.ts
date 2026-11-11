@@ -489,8 +489,12 @@ describe("the Model Index matches section", () => {
     expect(ruleGroups(sections).reference.at(-1)!.title).toBe("Model Index matches");
     // The approved text: both paragraphs separated by one blank line, no trailing newline.
     const text = last.lines.join("\n\n");
-    expect(Buffer.byteLength(text)).toBe(1147);
-    expect(createHash("sha256").update(text).digest("hex")).toBe("e017e5ced644a82b3ecf0319488c27313b9757d84f901efb2ac0f6c2ba293067");
+    expect(Buffer.byteLength(text)).toBe(1351);
+    expect(createHash("sha256").update(text).digest("hex")).toBe("796145e69a91d9ae64667c4808b6007bffc3312c869584330e449e6594c0dcd1");
+    // The paragraph closes on the harness sentence; the section threatens no ban.
+    expect(last.lines[0].endsWith(" The index seat harness also sends at most one game command for each command a seat runs in its shell, and refuses without sending any further game command started by that same shell command. The rule applies in full whether or not the harness refuses.")).toBe(true);
+    expect(text).not.toContain("may be banned");
+    expect(text).not.toMatch(/\bban/i);
     const html = renderRules(PUBLIC_CONFIG);
     expect(html).toContain('<section id="model-index-matches"><h2>Model Index matches</h2>');
     for (const line of last.lines) expect(html).toContain(`<p>${line.replace(/'/g, "&#39;")}</p>`);

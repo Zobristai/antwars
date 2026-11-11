@@ -12,7 +12,15 @@
    Layout pass: the title, Refresh and freshness read as one group; each card's head is one band, title and
    state; every table row shares one first baseline; Live now and Recordings share one column grid.
    Layout pass: Matches' colonies take the width the other columns leave; every seat keeps its name and badges on
-   one line, a colony's alike seats once with their count; one head row in both Matches tables. */
+   one line, a colony's alike seats once with their count; one head row in both Matches tables.
+   Layout pass (the Leaderboard only): its band is two lines, the title's and the board choice's, the choice a table of
+   choices on phones; its table's rating column fits the badge; the Challenge list's ratings stand in one column, and
+   from 46rem every Challenge row is two lines tall.
+   Type pass (the Leaderboard only): a card's count is metadata beside its title, not title text; "provisional" takes
+   its rating badge's size, one step quieter; in the Challenge ask the handle is the bright part and its repeated words
+   are quiet, the handle and "on Antwars" moving as one; a name's badges that wrap start on the name's edge.
+   Quieter pass (the Leaderboard only): Last 5 steps back behind the names and ratings, each stamp a weight and an ink
+   step lighter and drawn smaller inside the same target; one row parts from the next by the hairline. */
 
 .d1p {
   /* The HUD's tokens (web/index.html :root), set here as well because /rules declares its own warm ones. */
@@ -92,6 +100,21 @@
 .d1p-tab[aria-pressed="true"] { color: var(--aw-ink-bright); }
 .d1p-tab[aria-pressed="true"] > span::after { content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 2px; border-radius: 1px; background: var(--aw-ink-bright); }
 
+/* The Leaderboard's band, two lines: the title's line, the title at its start and the freshness with Refresh at its end
+   (Refresh holds the end, so the time's arrival moves nothing; where both do not fit, they take the next line, still at
+   the end); then the board choice, the challenge bubble after the Challenge group it opens, their bottoms meeting, the
+   bubble taking the next line where both do not fit. The Leaderboard only: Matches and Rules keep their bands. */
+.d1p[data-page="leaderboard"] .d1p-band { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 16px; }
+.d1p[data-page="leaderboard"] .d1p-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.d1p[data-page="leaderboard"] .d1p-fresh { flex-wrap: nowrap; margin: 0 0 0 auto; }
+.d1p[data-page="leaderboard"] .d1p-lb-strip { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px var(--d1p-gap); min-width: 0; }
+/* Each group one unit: its kicker 2 px over its tabs, the first tab's label on the kicker's edge, 4 px between tabs and
+   32 px between groups, so the three groups read as three. */
+.d1p[data-page="leaderboard"] .d1p-boards { gap: 12px var(--d1p-gap); }
+.d1p[data-page="leaderboard"] .d1p-board-group { gap: 2px; }
+.d1p[data-page="leaderboard"] .d1p-tabs { gap: 4px; margin-left: -10px; }
+.d1p[data-page="leaderboard"] .d1p-tab { min-width: 0; padding: 0 10px; }
+
 /* ---------------------------------------------------------------- record cards */
 /* Each card is a container: its lists choose their form from the card's width, not the window's. */
 .d1p-card { container: d1p-card / inline-size; min-width: 0; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); overflow: hidden; scroll-margin-top: 64px; }
@@ -99,6 +122,9 @@
    fit, the state takes the next line under the title. 15 px under the card's 1 px edge. */
 .d1p-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px; padding: 15px var(--d1p-inset) 11px; }
 .d1p-card-title { font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+/* The Leaderboard's count beside a card's title ("35 shown") is metadata, as the Loaded time is: the text size in the
+   quiet ink and its own words, on the title's baseline, never the title's caps; it adds nothing to the title's 20 px line. */
+.d1p[data-page="leaderboard"] .d1p-card-title > .d1p-count { font-size: 13px; font-weight: 400; line-height: 1; letter-spacing: normal; text-transform: none; }
 .d1p-state { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
 /* The glyph keeps to the state's first line when the words wrap. */
 .d1p-glyph { flex: none; align-self: flex-start; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; }
@@ -153,8 +179,17 @@
 /* "Rated matches" takes two lines, so the name keeps the width; every head sits on the bottom line. */
 .d1p-lb thead th.c-matches { white-space: normal; }
 .d1p-lb .c-form { width: calc(20px + 140px + var(--d1p-inset)); padding-left: 20px; white-space: nowrap; }
+/* On the Leaderboard the columns and their order stay; the rating column is sized to what it holds now, the badge and
+   "provisional" (identity.ts RATING_LOOK "badge"), its head over the badge, and Rated matches takes that width back to
+   hold its head on one line. The front page's card (the same rankingCard) keeps the widths above. */
+.d1p[data-page="leaderboard"] .d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 144px); }
+.d1p[data-page="leaderboard"] .d1p-lb thead th.c-elo { padding-right: 0; text-align: left; }
+.d1p[data-page="leaderboard"] .d1p-lb .c-matches { width: calc(var(--d1p-gutter) + 112px); }
+.d1p[data-page="leaderboard"] .d1p-lb thead th.c-matches { white-space: nowrap; }
 .d1p-lb td.c-rank { font-weight: 600; color: var(--aw-ink-2); }
 .d1p-lb tbody :is(th, td) { padding-top: 6px; padding-bottom: 6px; }
+/* On the Leaderboard one row parts from the next by the hairline; the line under the head and the card's edge keep theirs. */
+.d1p[data-page="leaderboard"] .d1p-lb tbody tr + tr > :is(th, td) { border-top-color: var(--d1p-hair); }
 .d1p-lb tbody th { font-size: 14px; font-weight: 600; color: var(--aw-ink-bright); }
 .d1p-think { margin-left: 6px; font-size: 13px; font-weight: 400; color: var(--aw-ink-3); }
 .d1p-elo { font-weight: 600; color: var(--aw-ink-bright); }
@@ -172,6 +207,9 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 /* A rating below 10 rated matches: the plain word, the HUD's caps label
    role (deck.css .d1-ml), with no note; under the figure on phones. */
 .d1p-prov { margin-left: 8px; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
+/* On the Leaderboard the word qualifies its figure, so it takes the badge's own size and tracking (deck.css .d1-tag,
+   10 px) one step quieter in ink: the figure leads and the word reads with it. */
+.d1p[data-page="leaderboard"] .d1p-prov { font-size: 10px; color: var(--aw-ink-3); }
 .d1p-lb td:is(.c-matches, .c-record) { color: var(--aw-ink); }
 /* Badges (following main): an antwars-owned model's fixed level, and Fast where fast; the record stamp's label
    type, filled where the stamp is outlined. */
@@ -179,10 +217,12 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-tag + .d1p-tag { margin-left: 4px; }
 /* The badges stay together: a name that wraps moves both to the next line, never one. */
 .d1p-tags { display: inline-block; white-space: nowrap; }
+/* On the Leaderboard badges that go to the next line start on their name's edge: the 6 px before them is the name's own
+   trailing margin, which stays on the name's line. Where they share the line the gap is the same 6 px. */
+.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > span:first-child:has(+ .d1p-tags) { margin-right: 6px; }
+.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > .d1p-tags > .d1p-tag:first-child { margin-left: 0; }
 /* A recording's match type: the seat badge, on its own line, in its words as written ("1v1"). */
 .d1p-tag.d1p-type { display: block; width: fit-content; margin: 4px 0 0; text-transform: none; letter-spacing: normal; }
-/* A Model Index match's harness phase: wraps at its spaces to stay inside its column. */
-.d1p-tag.d1p-phase { max-width: 100%; white-space: normal; }
 /* In Recordings' Game type column it is the cell's first line, so it rides the row's first baseline. */
 .d1p-rec td.c-result > .d1p-type { margin-top: 0; }
 /* A match's public note (src/replays/matchNotes.ts): its own line under the badges, in the model line's type. */
@@ -199,6 +239,14 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p .d1p-form-mark:focus-visible { outline-offset: 0; }
 /* In the table a mark keeps to its row's 20 px line, so a row of marks is no taller than a row of words. */
 .d1p-lb.d1p-table .d1p-form-mark { margin-block: -2px; }
+/* On the Leaderboard Last 5 is quiet support for the record beside it. The letters, their order, every replay link and
+   its underline stay, and so do a win's fill and a loss's or a draw's outline. Each letter is a weight lighter and an
+   ink step quieter (a win's the secondary ink, a loss's or a draw's the quiet ink), a mouse over a link still brightens
+   it, and each stamp is drawn 20 px inside the same target (24 px on phones, below). The front page keeps the stamp above. */
+.d1p[data-page="leaderboard"] .d1p-form-mark { font-weight: 600; color: var(--aw-ink-3); }
+.d1p[data-page="leaderboard"] .d1p-form-mark[data-result="W"] { color: var(--aw-ink-2); }
+.d1p[data-page="leaderboard"] a.d1p-form-mark:hover { color: var(--aw-ink-bright); }
+.d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 2px 4px; }
 
 /* Live now and Recordings: one six-column grid, so each list's columns stand under the other's: the start; the outcome
    (Live now's Winner; Recordings' Game type, its winner a badge in its colony's column); a column per colony's models; the record; the action. Every column but the
@@ -297,9 +345,36 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-lb-rows .c-elo { font-size: 14px; font-variant-numeric: tabular-nums; }
 .d1p-lb-rows .d1p-prov { display: block; margin-left: 0; }
 .d1p-lb-rows .d1p-lb-stats { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
+/* On the Leaderboard one stacked row, or one Challenge row, parts from the next by the hairline; the first keeps the line. */
+.d1p[data-page="leaderboard"] .d1p-rows > li + li { border-top-color: var(--d1p-hair); }
 .d1p-stat { min-width: 0; }
 .d1p-stat > .d1p-kicker { margin-right: 3px; }
 .d1p-form { display: inline-flex; vertical-align: middle; }
+
+/* The Challenge list: its two columns as before, the name with its ask under it and then the rating, but the rating
+   column is one column down the whole list (each row a subgrid of it), so every badge stands under the one above, its
+   "provisional" after it (on a phone each row sizes its own, below). A row without a rating gives its name the whole
+   width; the ask takes the row's width under the name. The handle is the agent URL's command (index.html .aw-byoa-url)
+   made compact to its line, and it moves to the next line whole rather than break at its hyphens. */
+.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
+.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: normal; row-gap: 2px; align-items: baseline; }
+.d1p[data-page="leaderboard"] .d1p-challenge li > .is-lead { grid-column: 1; grid-row: 1; }
+.d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { grid-column: 2; grid-row: 1; white-space: nowrap; }
+.d1p[data-page="leaderboard"] .d1p-challenge li:not(:has(> .c-elo)) > .is-lead { grid-column: 1 / -1; }
+.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { grid-column: 1 / -1; }
+.d1p[data-page="leaderboard"] .d1p-challenge .aw-byoa-url { display: inline-block; max-width: 100%; padding: 1px 8px; font-size: 12px; line-height: 16px; vertical-align: baseline; }
+/* The ask's words are the same on every row, so they take the quiet ink; the handle, the one part that changes, is the
+   bright part, its mono a size under the words', as code set in text is. The handle and "on Antwars" move as one, so a
+   phone's ask is the words, then the handle opening the next line; "on Antwars" never parts (copy.ts). The line stays
+   under the 20 px reserved for it below. */
+.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { color: var(--aw-ink-3); }
+.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask-handle { display: inline-block; max-width: 100%; }
+/* From 46rem, where every ask fits its one line, every Challenge row is two lines tall: a row without an ask keeps the
+   ask's 20 px line empty under its name, so every row is 66 px and every name and badge stands 66 px under the one above.
+   Spacing only: nothing in a row moves. A phone's rows keep their own heights, their asks wrapping. */
+@media (width >= 46rem) {
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-rows: auto minmax(20px, auto); }
+}
 
 /* ---------------------------------------------------------------- Rules: a sticky index beside two reading cards */
 /* The container splits: the index, the gap, the reading cards taking the rest. */
@@ -372,20 +447,45 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
   .d1p-foot .d2-link { min-height: 44px; }
 }
 
+/* ---------------------------------------------------------------- the Leaderboard's band on a phone */
+/* Under 46rem the board choice and the bubble stack, the bubble the band's width. The choice is one table of choices: a
+   row per ranking, its kicker in the first column (wrapping where the sizes need the room), a column per size at least
+   44 px wide, so each size stands under the same size and the three rankings take three 44 px rows. */
+@media (width < 46rem) {
+  .d1p[data-page="leaderboard"] .d1p-lb-strip { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .d1p[data-page="leaderboard"] .d1p-boards { grid-template-columns: auto repeat(4, minmax(44px, 1fr)); gap: 0 4px; }
+  .d1p[data-page="leaderboard"] .d1p-board-group { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: normal; align-items: center; }
+  .d1p[data-page="leaderboard"] .d1p-tabs { grid-column: 2 / -1; grid-template-columns: subgrid; column-gap: normal; margin-left: 0; }
+  /* The Challenge list takes the stacked ranking rows' phone form: each badge on the row's end edge, "provisional"
+     under its figure, so the names keep the width. Each row sizes its own rating, the end edge lining the badges up, so
+     "provisional" (85 px, wider than any badge) narrows only its own row's name: shared down the list, it took 50 px
+     from every name, and at 390 px two more rows' level and unavailable badges fell to a second line. */
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: block; }
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
+  .d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { text-align: right; }
+  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-prov { display: block; margin-left: 0; }
+  /* Last 5's stamp drawn 24 px inside its 40 × 44 px tap. */
+  .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 10px 8px; }
+}
+
 /* ---------------------------------------------------------------- the Leaderboard on touch screens */
 /* Every control a 44 px tap at any width a finger uses, a phone on its side included; the Leaderboard only, so Matches,
    Rules and every mouse-driven screen are unchanged. */
 @media (pointer: coarse) {
   .d1p[data-page="leaderboard"] { --d2-tap: 44px; --d1-tap: 44px; }
-  .d1p[data-page="leaderboard"] .d1p-tab { min-height: 44px; }
+  .d1p[data-page="leaderboard"] .d1p-tab { min-height: 44px; min-width: 44px; }
   .d1p[data-page="leaderboard"] .d1-top .d2-nav-link { min-height: 44px; }
   .d1p[data-page="leaderboard"] .d1p-foot .d2-link { min-height: 44px; }
+  /* The rating badge that opens its "± RD" tip: the badge as drawn, its tap area grown around it, 34 px tall in the
+     table's 34 px row and 44 px in the stacked rows and the Challenge list, whose rows are taller. */
+  .d1p[data-page="leaderboard"] button.d1p-elo-badge::before { content: ""; position: absolute; inset: -11px -6px; }
+  .d1p[data-page="leaderboard"] :is(.d1p-narrow, .d1p-challenge) button.d1p-elo-badge::before { inset: -16px -6px; }
 }
-/* Last 5 in the wide table: each link keeps its 28 px column share and grows to a 44 px tap around the same 24 px stamp.
+/* Last 5 in the wide table: each link keeps its 28 px column share and grows to a 44 px tap around the same 20 px stamp.
    Under 46rem the phone form above already sizes it. */
 @media (pointer: coarse) and (width >= 46rem) {
   .d1p[data-page="leaderboard"] .d1p-form-mark { height: 44px; }
-  .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 10px 2px; }
+  .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 12px 4px; }
 }
 
 @media (forced-colors: active) {

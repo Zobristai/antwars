@@ -5,15 +5,12 @@ import { openPreparedFeed, type PreparedFeed } from "./feed.ts";
 import type { Arrival } from "./inbox.ts";
 import type { PreparedTick } from "./buffer.ts";
 import { openRecording, type Recording } from "./recording.ts";
-import { newestStoredReplay, noStoredReplays, recordingError, replayDate, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
+import { newestStoredReplay, noStoredReplays, recordingError, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
 import { loadRecording, streamPath, type LinkState } from "./stream.ts";
 import { randomMatch, watchMatchStatus, type MatchStatus } from "./match-status.ts";
 import { openInviteStream } from "./invite-stream.ts";
 import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.ts";
 import { restateRatings, storedReplayFacts } from "./replay-ratings.ts";
-import { harnessPhaseTags } from "./ui/format.ts";
-import { harnessPhaseAt } from "../../src/rating/harnessPhase.ts";
-import { recordedMatchType, seatHandle, type RecordedMatch } from "../../src/replays/recorded-match-type.ts";
 import { liveStarting } from "./waiting.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
@@ -42,9 +39,6 @@ export interface SpectatorSource {
   readonly lastTick: number;
   /** The link the result's Share on X names (watchUrl); null for a private match or a bundled recording. */
   readonly share: string | null;
-  /** A stored Model Index recording's harness phase tags (ui/format.ts harnessPhaseTags), once its stored record is read;
-   * empty before then and for any other match. */
-  readonly harnessPhase?: readonly string[];
   /** A stored recording's public note (src/replays/matchNotes.ts), once its stored record is read; null before then and for
    * a match without one. */
   readonly matchNote?: string | null;
@@ -64,56 +58,6 @@ export function watchUrl(origin: string, o: { private: boolean; replayId: string
   if (o.private) return null;
   if (o.replayId) return `${origin}/?replay=${encodeURIComponent(o.replayId)}`;
   return o.lobbyId ? `${origin}/?lobby=${encodeURIComponent(o.lobbyId)}` : null;
-}
-
-/** The type read of a stored record: stored records run to about 10 MB, so 32 MB and one minute leave room. */
-export const RECORD_FACTS_LIMITS = { timeoutMs: 60_000, maxBytes: 32 * 1024 * 1024 } as const;
-
-/**
- * A public stored match's recorded setup and seats from its stored record (GET /matches/<id>), read the way the Matches
- * listing reads them (src/replays/history-summary-worker.ts), so a replay with no lobby link is typed as the listing types
- * it, whatever has played. Read once, bounded in time and size (RECORD_FACTS_LIMITS); null when it cannot be read
- * within them. Never sent a private recording's invite.
- */
-export async function recordedMatchFacts(id: string, signal: AbortSignal, request: typeof fetch = fetch,
-  limits: { readonly timeoutMs: number; readonly maxBytes: number } = RECORD_FACTS_LIMITS): Promise<RecordedMatch | null> {
-  const bounded = AbortSignal.any([signal, AbortSignal.timeout(limits.timeoutMs)]);
-  try {
-    const response = await request(`/matches/${encodeURIComponent(id)}`, { signal: bounded, redirect: "error", credentials: "omit" });
-    if (!response.ok || !response.body) { await response.body?.cancel(); return null; }
-    const reader = response.body.getReader();
-    const stop = () => { void reader.cancel().catch(() => undefined); };
-    bounded.addEventListener("abort", stop, { once: true });
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (bounded.aborted) return null;
-        if (done) break;
-        size += value.length;
-        if (size > limits.maxBytes) return null;
-        chunks.push(value);
-      }
-    } finally { bounded.removeEventListener("abort", stop); stop(); reader.releaseLock(); }
-    const bytes = new Uint8Array(size);
-    let at = 0;
-    for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.length; }
-    const record: unknown = JSON.parse(new TextDecoder().decode(bytes));
-    if (typeof record !== "object" || record === null) return null;
-    const { format, version, id: recordId, setup, seats } = record as Record<string, unknown>;
-    if (format !== "antwar.match" || version !== 1 || recordId !== id || !Array.isArray(seats)) return null;
-    if (setup !== undefined && setup !== null && typeof setup !== "object") return null;
-    const read: RecordedMatch["seats"][number][] = [];
-    for (const seat of seats as unknown[]) {
-      if (typeof seat !== "object" || seat === null) return null;
-      const { colony, handle } = seat as Record<string, unknown>;
-      if ((colony !== 0 && colony !== 1) || (handle !== undefined && handle !== null && typeof handle !== "string")) return null;
-      read.push({ colony, handle: handle ?? null });
-    }
-    const facts = setup as { rated?: unknown; modelIndex?: unknown } | null | undefined;
-    return { rated: facts == null ? null : facts.rated === true, modelIndex: facts?.modelIndex === true, seats: read };
-  } catch { return null; }
 }
 
 /** Optional public metadata; never transfer a private recording's invite to history.
@@ -239,45 +183,13 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     abort.signal.addEventListener("abort", () => resolve(null), { once: true });
   });
   const fail = (error: Error) => { if (!abort.signal.aborted) { recordingError(doc, error); reject(error); } };
-  // A stored match's one read of its stored record: the restatement of its rating figures, and its harness phase tags.
-  // undefined while the read is pending; null when the server gave no answer, so the recording itself decides (phaseOf).
-  let phaseTags: readonly string[] | null | undefined;
-  // The same answer's public note: null until read and for a match without one.
+  // A stored match's one read of its stored record: the restatement of its rating figures, and its public note (null until
+  // read and for a match without one).
   let note: string | null = null;
-  // Without that answer, a public replay's recorded setup and seats (recordedMatchFacts), read once alongside playback,
-  // never holding it: undefined until read, null when it cannot be.
-  let recorded: RecordedMatch | null | undefined;
-  // A private lobby's recording (lobbyRecording) never reads public history, invite or not.
-  const storedFacts = (replayId: string, invite: string | null, lobbyRecording = false) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
-    phaseTags = facts.answered ? harnessPhaseTags(facts.harnessPhase) : null;
+  const storedRestate = (replayId: string, invite: string | null) => storedReplayFacts(replayId, invite, abort.signal).then(facts => {
     note = facts.note;
-    if (!facts.answered && !lobbyRecording) void recordedMatchFacts(replayId, abort.signal).then(read => { recorded = read; });
     return facts.ratings && restateRatings(facts.ratings);
   });
-  // A recording's seats as played so far, by agent, from its snapshots' agents and its join events (a recording's
-  // agents join after its opening snapshot); a seek back keeps the seats already seen.
-  const seats = new Map<number, RecordedMatch["seats"][number]>();
-  const seatsOf = (m: StreamMessage) => {
-    m.full?.agents.forEach((agent, i) => seats.set(i, { colony: agent.colony, handle: seatHandle(agent.identity) }));
-    for (const event of m.events) if (event.kind === "join") seats.set(event.agent, { colony: event.colony, handle: seatHandle(event.identity) });
-  };
-  // Without the server's answer, a replay is typed by the rule the Matches listing applies to a recording with no lobby
-  // link (recordedMatchType): from its Model Index marker, else from its stored record. A Model Index match takes its
-  // phase from its recorded start. Until that record is read, where it cannot be, or where it cannot decide, a replay
-  // that may be a Model Index match by what has played reads unknown; only a definite other type shows none.
-  const phaseOf = (head: StreamMessage, replayId: string | null): readonly string[] => {
-    if (phaseTags !== null) return phaseTags ?? [];
-    if (!head.full || replayId === null) return [];
-    const { rated, modelIndex } = head.full.setup;
-    const started = replayDate(replayId);
-    const atStart = () => harnessPhaseTags(harnessPhaseAt(started === null ? null : Date.parse(started)));
-    if (modelIndex === true) return atStart();
-    // A stored record that cannot decide the match type (an unavailable record, a blank seat handle) counts as unread.
-    const stored = recorded ? recordedMatchType(recorded) : null;
-    if (stored) return stored.kind === "index" ? atStart() : [];
-    const played = recordedMatchType({ rated: rated === true, seats: [...seats.values()] });
-    return played === null || played.kind === "index" ? harnessPhaseTags(harnessPhaseAt(null)) : [];
-  };
   // Only startup is timed out, not a large recording's paced, backpressured download.
   const standIn = async (path: string, replayId: string | null) => {
     const startup = new AbortController();
@@ -289,7 +201,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     // A stored stand-in is a past match's public replay: its stored rating record restates it, as on a
     // replay page. The bundled excerpt has no stored id and plays as recorded.
     recording = openRecording(path, error => { if (ready) fail(error); }, request,
-      replayId === null ? {} : { restate: storedFacts(replayId, null) });
+      replayId === null ? {} : { restate: storedRestate(replayId, null) });
     try { const head = await recording.first; ready = true; return head; }
     finally { clearTimeout(recordingTimer); }
   };
@@ -365,7 +277,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         controls: true,
         endTick: lobbyRecording ? undefined : signal => recordedEndTick(storedId!, signal),
         // A stored match's rating figures come from its stored change record; the bundled excerpt has none.
-        ...(storedId === null ? {} : { restate: storedFacts(storedId, lobbyRecording ? invite : null, lobbyRecording) }),
+        ...(storedId === null ? {} : { restate: storedRestate(storedId, lobbyRecording ? invite : null) }),
       });
       head = await recording.first;
     } else if (name) {
@@ -460,13 +372,11 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         replayId: replay || fallback !== null ? storedId : null,
         lobbyId: automatic ? selected?.lobbyId ?? null : params.get("lobby"),
       }),
-      get harnessPhase() { return phaseOf(head, storedId); },
       get matchNote() { return note; },
       linkState: () => state,
       take(realMs) {
         if (recording) {
           const arrivals = recording.take(realMs).map(arrival => ({ ...arrival, kind: "recorded" as const }));
-          for (const arrival of arrivals) seatsOf(arrival.m);
           shown = arrivals.at(-1)?.m.tick ?? shown;
           if (fallback && shown >= recording.lastTick) reload();
           return arrivals;

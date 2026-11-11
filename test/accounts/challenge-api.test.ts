@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ACCOUNT_OPERATIONS, CHALLENGE_NOTICE_GUIDANCE, type AccountStores } from "../../src/accounts/service.ts";
+import { ACCOUNT_OPERATIONS, CHALLENGE_NOTICE_GUIDANCE, WAIT_STREAM_GUIDANCE, type AccountStores } from "../../src/accounts/service.ts";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import { watchRoutes } from "../../src/live/watch-routes.ts";
@@ -144,7 +144,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const builder = await w.claim("builder");
       const ordinary = value(await w.lobbies.createLobby(w.rival.key, "public", 1)).lobby;
       const reply = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
-      expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat"]);
+      expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat", "waitToken", "waitUrl"]);
       expect(reply.seat).toBe(1);
       const { lobby } = await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: reply.lobbyId });
       expect(lobby).toMatchObject({ id: reply.lobbyId, kind: "public", size: 1, state: "open", rated: false, creatorId: builder.id,
@@ -223,6 +223,25 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const handle = await w.handle(builder, "second");
       await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
       await refusedUnchanged(handle, { key: handle.key, opponent: "antwars/glm-5-3" }, "active_challenge");
+    });
+
+    it("refuses join_queue and join_lobby live_challenge while the caller's challenge is live, with no wait token and nothing stored", async () => {
+      const w = await serve(open);
+      const builder = await w.claim("builder");
+      await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const { lobby } = value(await w.lobbies.createLobby(w.rival.key, "public", 1));
+      const snapshot = async () => ({
+        docs: await Promise.all([`queueEntries/${builder.id}`, "queueWaiting/1v1", `lobbies/${lobby.id}`].map(w.raw)),
+        waits: (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 500 })).rows,
+      });
+      const before = await snapshot();
+      for (const [op, args] of [["join_queue", { key: builder.key, mode: "1v1" }], ["join_lobby", { key: builder.key, lobbyId: lobby.id }]] as const) {
+        const reply = await w.call(op, args);
+        expect([reply.ok, reply.body.error, reply.body.waitToken], op).toEqual([false, "live_challenge", undefined]);
+        if (reply.status !== 0) expect(reply.status, op).toBe(409);
+        expect(reply.body.message, op).toContain("challenge_status");
+      }
+      expect(await snapshot()).toEqual(before);
     });
 
     it("refuses owner_daily_limit after an owner's 5 games and shared_daily_limit once 20 places are held today", async () => {
@@ -593,8 +612,18 @@ describe("noticing a challenge start", () => {
   it("request_challenge and challenge_status carry the same noticing sentence; the lobby and queue joins do not", () => {
     const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
     expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/challenge_status once after requesting, then on a schedule \(once a minute recommended\) while it reads waiting_for_house or waiting_for_slot; join when it reads playing; stop on any other state;/);
-    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; the antwars-seat join-lobby path does not apply to challenges/);
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/a late join is allowed until the match server's idle limit, counted from match start, and the house bot plays your colony until you join; if you never join, the match ends abandoned, unrated; antwars-seat join-lobby <lobbyId> also works on the challenge's lobby: join_lobby answers already_seated, which it counts as seated, and it continues into the match\.$/);
     for (const name of ["request_challenge", "challenge_status"]) expect(description(name), name).toContain(CHALLENGE_NOTICE_GUIDANCE);
     for (const name of ["join_lobby", "join_queue"]) expect(description(name), name).not.toContain(CHALLENGE_NOTICE_GUIDANCE);
+  });
+
+  it("leads with the wait stream and keeps challenge_status polling for agents that cannot hold a stream", () => {
+    const description = (name: string) => ACCOUNT_OPERATIONS.find(op => op.name === name)!.description;
+    expect(CHALLENGE_NOTICE_GUIDANCE).toMatch(/^To notice that your challenge has started, wait on the stream at the waitUrl request_challenge returns \(described under Wait stream in request_challenge\): slot_ready means its match has, or had, a slot, so call locate_match until it assigns a match server, then join, unless challenge_status reads finished, when that match is already over; expired ends the challenge\. If you cannot hold a stream open, call challenge_status once after requesting/);
+    expect(description("request_challenge")).toContain(WAIT_STREAM_GUIDANCE);
+    expect(description("request_challenge")).toMatch(/the reply is requestId, lobbyId and seat, your match-server seat, plus waitToken and waitUrl\./);
+    // The challenge lifetime is unchanged.
+    expect(description("request_challenge")).toMatch(/does not join within the lobby's 15 minutes ends expired and uncharged/);
+    for (const name of ["request_challenge", "challenge_status", "list_challenge_opponents"]) expect(description(name), name).not.toMatch(/house challenge/i);
   });
 });

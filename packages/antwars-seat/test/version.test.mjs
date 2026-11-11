@@ -4,20 +4,56 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
 import { CLIENT_INFO, McpClient, errorCode } from "../lib/mcp.mjs";
-import { SEAT_CLIENT_REFUSED_TOOLS, UPDATE_SEAT_CLIENT_FIX, UPDATE_SEAT_CLIENT_MESSAGE, fakeClock, startFake } from "./fake-server.mjs";
+import { SEAT_CLIENT_REFUSED_TOOLS, UPDATE_SEAT_CLIENT_FIX, UPDATE_SEAT_CLIENT_MESSAGE, fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
 const PACKAGE_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
-const cleanups = [];
+// Every case runs on fake time and takes well under a second here; on a heavily loaded machine
+// vitest's default 5 s per case was too short (as in seat.test.mjs).
+vi.setConfig({ testTimeout: 60_000 });
+
+const fakes = [];
+const dirs = [];
+const pending = [];
+let tornDown = false;
+beforeEach(() => { tornDown = false; });
 afterEach(async () => {
+  // Vitest does not stop a case when it fails or runs past its timeout, so its helpers can still be
+  // running here. From now on this case starts nothing new (no fake, folder, capture or command).
+  // Closing its fakes makes running commands fail at once on fake time; waiting, until nothing is
+  // left, for every helper, fake creation and command it started, while its output capture is still
+  // installed, keeps whatever they print out of a later case's capture (as seat.test.mjs does).
+  tornDown = true;
+  while (pending.length || fakes.length) {
+    for (const fake of fakes.splice(0)) await fake.close();
+    await Promise.allSettled(pending.splice(0));
+  }
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   vi.restoreAllMocks();
-  while (cleanups.length) await cleanups.pop()();
 });
+
+/** Refuses new work once this case's teardown has started. */
+function refuseAfterTeardown() {
+  if (tornDown) throw new Error("this case has been torn down: no new work is started");
+}
+
+/** Starts work for this case, unless its teardown has started; teardown waits for it to finish. */
+function track(start) {
+  refuseAfterTeardown();
+  const work = start();
+  pending.push(work);
+  return work;
+}
+
+/** A fake for this case; teardown closes it, including one still being created when teardown starts. */
+function newFake(options) {
+  return track(() => startFake(options).then((fake) => { fakes.push(fake); return fake; }));
+}
 
 /** True when dotted version a is later than b. */
 function later(a, b) {
@@ -27,17 +63,22 @@ function later(a, b) {
 }
 
 /** One seat set up against its own fake (shared fake clock), running the given CLI commands. */
-async function seatRun(fakeOptions, { mode = "house-1v1", setup = [], commands }) {
+function seatRun(fakeOptions, run) {
+  return track(() => runSeat(fakeOptions, run));
+}
+
+async function runSeat(fakeOptions, { mode = "house-1v1", setup = [], commands }) {
   const clock = fakeClock();
-  const fake = await startFake({ key: KEY, clock, ...fakeOptions, baseline: typeof fakeOptions.baseline === "function" ? fakeOptions.baseline(clock) : fakeOptions.baseline });
+  const fake = await newFake({ key: KEY, clock, ...fakeOptions, baseline: typeof fakeOptions.baseline === "function" ? fakeOptions.baseline(clock) : fakeOptions.baseline });
+  refuseAfterTeardown();
   const dir = mkdtempSync(join(tmpdir(), "antwars-seat-version-"));
   writeFileSync(join(dir, "keys.env"), `${KEY_NAME}=${JSON.stringify(KEY)}\n`);
-  cleanups.push(async () => { await fake.close(); rmSync(dir, { recursive: true, force: true }); });
+  dirs.push(dir);
   const printed = [];
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   const env = { ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: fake.url, ANTWARS_MIN_CALL_MS: "600", ANTWARS_POLL_MS: "3000" };
-  const cli = (...argv) => main(argv, { env, clock });
+  const cli = (...argv) => track(() => main(argv, { env, clock, readStat: freshShell() }));
   expect(await cli("setup", "--handle", "antwars/test", "--key-name", KEY_NAME, "--mode", mode, "--model-label", "claude-opus-5-5", "--thinking-level", "max", ...setup)).toBe(0);
   const exits = [];
   for (const command of commands) exits.push(await cli(...command));
@@ -110,8 +151,7 @@ describe("seat client version", () => {
 
   it("control: that server refuses a session presenting 1.0.0 on each of the six calls, in each tool's reply family, and nothing is queued, seated or created", async () => {
     const clock = fakeClock();
-    const fake = await startFake({ key: KEY, clock, refuseOldSeatClient: true, lobbies: { "open-lobby": "open" } });
-    cleanups.push(() => fake.close());
+    const fake = await newFake({ key: KEY, clock, refuseOldSeatClient: true, lobbies: { "open-lobby": "open" } });
     // The tree's client with only its initialize clientInfo rewritten to 1.0.0.
     const presenting = (version) => (url, init) => {
       const body = JSON.parse(init.body);

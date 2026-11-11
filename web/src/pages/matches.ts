@@ -59,7 +59,7 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   queueMicrotask(() => { if (title.isConnected && (doc.activeElement === null || doc.activeElement === doc.body)) title.focus({ preventScroll: true }); });
 
   const parts = rowParts(doc);
-  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseTags } = parts;
+  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList } = parts;
   /** Live now's second colony cell spans the record column Live now does not have. */
   const spanRecord = <T extends HTMLTableCellElement>(colony: 0 | 1, cell: T): T => { if (colony === 1) cell.colSpan = 2; return cell; };
 
@@ -116,7 +116,7 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
         const seated = match.colonies[0].length + match.colonies[1].length > 0;
         const line = h(doc, "tr");
         const result = h(doc, "td", "c-result");
-        result.append(h(doc, "span", "d1p-result", IN_PROGRESS), ...phaseTags(row.phase));
+        result.append(h(doc, "span", "d1p-result", IN_PROGRESS));
         line.append(startCell(when), result);
         if (!seated) {
           const none = h(doc, "td", "c-model");
@@ -140,7 +140,6 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
         // Recordings' stacked row: the start, then the result, beside Watch; then each colony's players.
         const item = h(doc, "li");
         const lead = h(doc, "p", "d1p-line is-lead", IN_PROGRESS);
-        lead.append(...phaseTags(row.phase));
         item.append(h(doc, "p", "d1p-line", `Started ${when}`), lead);
         if (!seated) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
         else item.append(colonyList(COLONIES.map(colony => players(match.colonies[colony]))));
@@ -264,10 +263,7 @@ function rowParts(doc: Document) {
   };
   /** The one six-column grid every Matches list stands on. */
   const matchGrid = (table: HTMLTableElement) => columns(table, MATCH_COLUMNS);
-  /** A Model Index match's harness phase tags (ui/format.ts harnessPhaseTags), in the match-type badge's style. A tag wraps
-   * at its spaces inside its column (archive.css .d1p-phase); a word joiner after each hyphen keeps "11-25" whole. */
-  const phaseTags = (tags: readonly string[]) => tags.map(tag => h(doc, "span", "d1p-tag d1p-type d1p-phase", tag.replace(/-/g, "-\u2060")));
-  return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, colonyList, phaseTags };
+  return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, colonyList };
 }
 
 // ---------------------------------------------------------------- Recordings
@@ -292,7 +288,7 @@ export interface RecordingsCardOptions {
 export function recordingsCard(doc: Document, view: MatchesView, options: RecordingsCardOptions): HTMLElement {
   const { search } = options;
   const notes = options.notes === true;
-  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseTags } = rowParts(doc);
+  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList } = rowParts(doc);
   /** A colony's result badge, in the shared badge style (identity.ts d1p-tag) with its words in the colony's ink: Winner on
    * the winning colony where the record names a winner and the match was not abandoned, never on a colony nobody joined
    * (no recorded seat); Draw on both colonies in a draw; none otherwise. */
@@ -369,8 +365,8 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const start = startCell(row.when);
       start.append(...outcome(r, row.result, marked));
       const type = h(doc, "td", "c-result");
-      type.append(...typeBadge(row.type), ...phaseTags(row.phase));
-      // A match's public note, under its badges (archive.css .d1p-note).
+      type.append(...typeBadge(row.type));
+      // A match's public note, under its badge (archive.css .d1p-note).
       if (notes && row.note !== null) type.append(h(doc, "span", "d1p-note", row.note));
       line.append(start, type);
       if (seats === null) {
@@ -396,7 +392,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       // then each colony's models, the winner's badge on its colony's line as in the table, then the record.
       const item = h(doc, "li");
       const lead = h(doc, "p", "d1p-line is-lead");
-      lead.append(...outcome(r, row.result, marked), ...typeBadge(row.type), ...phaseTags(row.phase));
+      lead.append(...outcome(r, row.result, marked), ...typeBadge(row.type));
       item.append(h(doc, "p", "d1p-line", row.when), lead);
       if (notes && row.note !== null) item.append(h(doc, "p", "d1p-line is-model d1p-note", row.note));
       if (seats === null) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));

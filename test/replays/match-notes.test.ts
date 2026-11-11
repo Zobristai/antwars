@@ -72,17 +72,15 @@ describe("the page's reading of a note", () => {
     expect(recordingRow(base, "").note).toBeNull();
   });
 
-  it("adds the note after the harness tags on the replay's mode line, and leaves the line as it was without one", () => {
-    const tags = ["Harness from round 31 onward"];
-    const whole = "Harness from round 31 onward";
-    expect(modeCopy("replay", 2, false, "/", base.id, true, undefined, tags, TEXT).detail).toBe(`10 Nov 2026 · ${whole} · ${TEXT}`);
-    expect(modeCopy("replay", 2, true, "/", base.id, true, undefined, tags, TEXT).detail).toBe(`· recording ended · ${whole} · ${TEXT}`);
-    expect(modeCopy("replay", 2, false, "/", base.id, true, undefined, tags, null)).toEqual(modeCopy("replay", 2, false, "/", base.id, true, undefined, tags));
+  it("adds the note after the date on the replay's mode line, and leaves the line as it was without one", () => {
+    expect(modeCopy("replay", 2, false, "/", base.id, true, undefined, TEXT).detail).toBe(`10 Nov 2026 · ${TEXT}`);
+    expect(modeCopy("replay", 2, true, "/", base.id, true, undefined, TEXT).detail).toBe(`· recording ended · ${TEXT}`);
+    expect(modeCopy("replay", 2, false, "/", base.id, true, undefined, null)).toEqual(modeCopy("replay", 2, false, "/", base.id, true, undefined));
   });
 
   it("marks a line carrying a note to wrap rather than cut it short, in both HUDs, and no other line", () => {
-    const noted = modeCopy("replay", 2, false, "/", base.id, true, undefined, [], TEXT);
-    const plain = modeCopy("replay", 2, false, "/", base.id, true, undefined, []);
+    const noted = modeCopy("replay", 2, false, "/", base.id, true, undefined, TEXT);
+    const plain = modeCopy("replay", 2, false, "/", base.id, true, undefined);
     expect(noted.wraps).toBe(true);
     expect("wraps" in plain).toBe(false);
     expect(legend(true, 2, "", noted, false).wraps).toBe(true);
