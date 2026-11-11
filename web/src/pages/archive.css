@@ -126,6 +126,9 @@
    quiet ink and its own words, on the title's baseline, never the title's caps; it adds nothing to the title's 20 px line. */
 .d1p[data-page="leaderboard"] .d1p-card-title > .d1p-count { font-size: 13px; font-weight: 400; line-height: 1; letter-spacing: normal; text-transform: none; }
 .d1p-state { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
+/* A clause of the Recordings state with the "·" after it (matches.ts clauseStateLine) is one box: where the state does not
+   fit its line, it breaks between clauses, and inside one only where that clause alone is wider than the line. */
+.d1p-clause { display: inline-block; }
 /* The glyph keeps to the state's first line when the words wrap. */
 .d1p-glyph { flex: none; align-self: flex-start; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; }
 .d1p-glyph[data-glyph="dot"] { background: var(--aw-ink-bright); }

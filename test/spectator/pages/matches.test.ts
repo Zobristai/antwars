@@ -568,6 +568,32 @@ describe("tap height on a phone", () => {
   });
 });
 
+describe("the Recordings state where it wraps", () => {
+  // Catches: the state breaking inside a clause where it takes two lines on a 390 px phone ("… loaded so" over "far").
+  it("holds each clause of its words whole, the words unchanged", () => {
+    const p = page();
+    const view = (recordings: MatchesView["recordings"], next: string | null): MatchesView =>
+      ({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, recordings, next });
+    const state = () => p.body.byClass("d1p-card")[2]!.byClass("d1p-state")[0]!;
+    const clauses = () => state().byClass("d1p-clause").map(clause => clause.textContent);
+    p.mounted.update(view({ status: "ready", rows: [recording] }, "page-2"));
+    expect(state().textContent).toBe("1 recording loaded, newest first · more remain");
+    expect(clauses()).toEqual(["1 recording loaded, newest first ·", "more remain"]);
+    p.mounted.update(view({ status: "loading", rows: [recording] }, "page-2"));
+    expect(state().textContent).toBe("Loading more · 1 recording loaded so far");
+    expect(clauses()).toEqual(["Loading more ·", "1 recording loaded so far"]);
+    p.mounted.update(view({ status: "ready", rows: [recording] }, null));
+    expect(state().textContent).toBe("All 1 recording, newest first");
+    expect(clauses()).toEqual([]);
+    p.mounted.destroy();
+  });
+
+  it("draws each clause as one box", () => {
+    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+    expect(css).toMatch(/^\.d1p-clause \{ display: inline-block; \}$/m);
+  });
+});
+
 describe("Model Index matches show their harness phase in a divider where the rows' phase changes", () => {
   const phased = (id: string, phase: NonNullable<Recording["harnessPhase"]>["phase"], possibleEffortMismatch = false): Recording =>
     ({ ...recording, id, startedAt: `${id.slice(0, 10)}T${id.slice(11, 19).replace(/-/g, ":")}.000Z`, matchType: { kind: "index", size: 1 },

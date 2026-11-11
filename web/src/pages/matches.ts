@@ -309,6 +309,21 @@ export interface RecordingsCardOptions {
   readonly foot?: HTMLElement;
 }
 
+/** The Recordings card's state line (chrome.ts stateLine: its glyph, then its words) with each clause of its words, the
+ * words between its "·"s, held whole with the "·" after it (archive.css .d1p-clause). Where the line does not fit, as on a
+ * phone in a monospace face, it breaks only between clauses ("Loading more ·" over "19 recordings loaded so far", never
+ * "… loaded so" over "far"), and inside one only where that clause alone is wider than the line. Its words are unchanged,
+ * character for character. */
+function clauseStateLine(doc: Document, glyph: string, text: string): HTMLParagraphElement {
+  const line = stateLine(doc, glyph, text);
+  const clauses = text.split(" · ");
+  if (clauses.length > 1) line.children[1]!.replaceChildren(...clauses.flatMap((clause, at) => {
+    const held = h(doc, "span", "d1p-clause", at < clauses.length - 1 ? `${clause} ·` : clause);
+    return at === 0 ? [held] : [" ", held];
+  }));
+  return line;
+}
+
 /** The Recordings list as the Matches page draws it: a record card saying its own state once, its table and stacked rows. */
 export function recordingsCard(doc: Document, view: MatchesView, options: RecordingsCardOptions): HTMLElement {
   const { search } = options;
@@ -365,7 +380,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     return kind === "index" || kind == null ? "unknown" : "outside";
   }));
   // No note under the state (no editorial copy): the record stamp says each record's fidelity.
-  const lines: Node[] = [stateLine(doc, state.glyph, state.text)];
+  const lines: Node[] = [clauseStateLine(doc, state.glyph, state.text)];
   const body: Node[] = [];
   if (rows.length > 0 || loading) {
     const table = h(doc, "table", "d1p-table d1p-rec d1p-wide");
