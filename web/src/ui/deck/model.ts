@@ -4,7 +4,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
-import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen } from "../../../../src/live/format.ts";
+import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
 import { fallWindow, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
 import {
@@ -626,10 +626,39 @@ export function shareHref(frame: Frame | null, url: string | null): string | nul
  */
 export const selfReported = (b: Pick<Board, "setup">): boolean => b.setup.modelIndex !== true;
 
-export interface Player { readonly name: string; readonly elo: string }
+/** A colony's result on its player line once the match has ended, the words a Matches row gives it (pages/matches.ts
+ * colonyResult): Abandoned on both colonies of an abandoned match, Winner on the winning colony, Draw on both in a draw. */
+export type ColonyResult = "Winner" | "Draw" | "Abandoned";
+export function colonyResult(result: Pick<StreamResult, "winner" | "reason" | "decidedBy"> | null, colony: Colony): ColonyResult | null {
+  if (result === null) return null;
+  if (result.reason === "abandoned") return "Abandoned";
+  if (result.winner !== null) return result.winner === colony ? "Winner" : null;
+  return result.decidedBy === "draw" ? "Draw" : null;
+}
+
+/** The rating deviation beside a shown rating, "± 87" in whole points; "" where the stream carries none (older streams). */
+export const rdShown = (identity: StreamAgent["identity"]): string =>
+  identity?.elo !== undefined && identity.rd !== undefined ? `± ${Math.round(identity.rd)}` : "";
+
 /**
- * One agent's small row in its team section, under the colony name: its badge, its Leaderboard-style name, its model and its rating. Its order and its calls
- * are the history's.
+ * The one player holding every seat of a colony, as its heading's player line reads it, in the Matches order: its name
+ * (a builder's username, a Benchmark handle's house display name), the model it reported beside a builder's name with that
+ * model's level and Fast badges (a Benchmark's fixed ones after its name), its rating (figure; rd its "± RD"), how many seats
+ * it holds, and the colony's result once the match has ended.
+ */
+export interface Player {
+  readonly name: string;
+  readonly model: string;
+  readonly badges: readonly string[];
+  readonly elo: string;
+  readonly rd: string;
+  readonly seats: number;
+  readonly result: ColonyResult | null;
+}
+/**
+ * One agent's small row in its team section, under the colony name: its badge, then one player line in the Matches order:
+ * its name, its model, its level and Fast badges, its rating, and the colony's result once the match has ended. Its order
+ * and its calls are the history's.
  */
 export interface Row {
   readonly index: number;
@@ -645,11 +674,13 @@ export interface Row {
   readonly modelBadges: readonly string[];
   /** Whether the row's title is a self-reported model (no identity, outside the Model Index): its asterisk follows it. A builder's row outside the Index carries none. */
   readonly asterisk: boolean;
-  /** A Benchmark handle's fixed level and Fast badges, as the Leaderboard shows them; empty for every other row. */
+  /** The title's badges: a Benchmark handle's fixed level and Fast, as the Leaderboard shows them; a self-reported model's
+   * own when it is the title; else, where no model stands beside the name, the level the stream carries, as a badge. */
   readonly badges: readonly string[];
-  /** The Leaderboard's quiet thinking level, "(high)" or "(not recorded)", after any other row's name; "" for a Benchmark row and for a builder's row outside the Model Index. */
-  readonly quiet: string;
   readonly elo: string | null;
+  /** "± RD" beside the rating, shown on hover, tap or focus; "" where the stream carries none. */
+  readonly rd: string;
+  readonly result: ColonyResult | null;
   /** Everything the row shows, for assistive technology: its visible title first, its badge's shape word last. */
   readonly label: string;
 }
@@ -668,7 +699,7 @@ export interface Member {
 export interface Group {
   readonly colony: Colony;
   readonly heading: string;
-  /** Where one player holds every seat of a colony, its name and Elo once, here, the name as the rows name it. */
+  /** Where one player holds every seat of a colony, its player line once, here, the name as the rows name it. */
   readonly player: Player | null;
   /** One icon per member in the head, in seat order. */
   readonly members: readonly Member[];
@@ -692,7 +723,7 @@ export interface Roster {
 export { isBenchmark, rowName, type RowName };
 
 /** The one player holding every seat of a colony (a ranked team mode), or null: needs two seats or more, one name and one Elo. */
-export function teamPlayer(agents: readonly Pick<StreamAgent, "identity">[]): Player | null {
+export function teamPlayer(agents: readonly Pick<StreamAgent, "identity">[]): { readonly name: string; readonly elo: string } | null {
   if (agents.length < 2) return null;
   let name: string | null = null, elo: number | null = null;
   for (const a of agents) {
@@ -704,6 +735,26 @@ export function teamPlayer(agents: readonly Pick<StreamAgent, "identity">[]): Pl
   return name === null || elo === null ? null : { name, elo: eloText(elo) };
 }
 
+/** One agent's line parts: its title and badges, the model beside it with that model's badges, and its asterisk. */
+function lineParts(a: StreamAgent, reported: boolean) {
+  // Named from the raw identity, so a Benchmark handle is still known as one (e.name is already the shown name).
+  const named = a.identity ? rowName(a.identity.displayName, a.thinkingLevel) : null;
+  // A builder in a non-Index match: the user holds the rating and may switch models, so the row names only this
+  // match's model, with no asterisk.
+  const builder = reported && named !== null;
+  // The model as the HUD names it, with its own badges; without an identity it is the title and its badges the title's.
+  const shownModel = agentModel(a);
+  const beside = named !== null && !named.benchmark ? shownModel : null;
+  // A level the stream carries with no model to badge it is a badge after the name, never quiet text; a builder outside the
+  // Index shows a level only with a model, as on a Matches line.
+  const level = !builder && beside === null && (named === null ? shownModel === null : !named.benchmark) && a.thinkingLevel ? [a.thinkingLevel] : [];
+  const badges = named?.benchmark ? named.badges : named === null && shownModel !== null ? shownModel.badges : level;
+  const title = named?.name ?? shownModel?.name ?? "";
+  // Without an identity the self-reported model is the title itself, and its asterisk follows it.
+  const asterisk = reported && named === null && shownModel !== null;
+  return { named, title, badges, beside, model: beside?.name ?? "", modelBadges: beside?.badges ?? [], asterisk };
+}
+
 export function roster(frame: Frame): Roster {
   const b = frame.board!;
   const reported = selfReported(b);
@@ -712,33 +763,26 @@ export function roster(frame: Frame): Roster {
   for (const colony of COLONIES) {
     const members = entries.filter(e => e.colony === colony).sort((x, y) => x.index - y.index);
     if (members.length === 0) continue;
-    // The one player's name as the rows name it: a Benchmark handle's house display name, any other its own.
+    const result = colonyResult(b.result, colony);
+    // The one player's line as the rows name it: a Benchmark handle's house display name, any other its own.
+    const first = b.agents[members[0]!.index]!;
     const found = teamPlayer(members.map(e => b.agents[e.index]!));
-    const player = found && { ...found, name: rowName(found.name, undefined).name };
-    // One player: its heading carries its name and Rating once and its member icons are the player icons.
+    const player: Player | null = found && (() => {
+      const parts = lineParts(first, reported);
+      return { name: rowName(found.name, undefined).name, model: parts.model, badges: [...parts.badges, ...parts.modelBadges],
+        elo: found.elo, rd: rdShown(first.identity), seats: members.length, result };
+    })();
+    // One player: its heading carries its line once and its member icons are the player icons.
     const rows = player ? [] : members.map((e): Row => {
       const a = b.agents[e.index]!;
       const handle = agentHandle(e.index);
-      // Named from the raw identity, so a Benchmark handle is still known as one (e.name is already the shown name).
-      const named = a.identity ? rowName(a.identity.displayName, a.thinkingLevel) : null;
-      // A builder in a non-Index match: the user holds the rating and may switch models, so the row names only this
-      // match's model, with no asterisk and no thinking level.
-      const builder = reported && named !== null;
-      // Without an identity (older recordings) the model is the title, its level quiet after only where the stream carries one.
-      // The model as the HUD names it, with its own badges; without an identity it is the title and its badges the title's.
-      const shownModel = agentModel(a);
-      const quiet = builder ? "" : named ? named.quiet : shownModel === null && a.thinkingLevel ? `(${a.thinkingLevel})` : "";
-      const badges = named?.badges ?? shownModel?.badges ?? [];
-      const title = named?.name ?? shownModel?.name ?? "";
-      const beside = named !== null && !named.benchmark ? shownModel : null;
-      const model = beside?.name ?? "", modelBadges = beside?.badges ?? [];
-      // Without an identity the self-reported model is the title itself, and its asterisk follows it.
-      const asterisk = reported && named === null && shownModel !== null;
+      const { named, title, badges, beside, model, modelBadges, asterisk } = lineParts(a, reported);
+      const rd = rdShown(a.identity);
       // The accessible name leads with the shown name in full, then its badges.
-      const shown = named ? [named.name, ...badges].join(" ") : shownModel ? [shownModel.name, ...badges].join(" ") : handle;
-      const label = [shown, e.elo ? `Rating ${e.elo}` : "", COLONY_NAMES[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "", quiet,
-        e.name || e.model ? `badge ${handle}` : ""].filter(Boolean).join(" · ");
-      return { index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, quiet, elo: e.elo, label };
+      const shown = named ? [named.name, ...badges].join(" ") : title ? [title, ...badges].join(" ") : handle;
+      const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", COLONY_NAMES[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
+        result ?? "", e.name || e.model ? `badge ${handle}` : ""].filter(Boolean).join(" · ");
+      return { index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
     });
     groups.push({ colony, heading: `${COLONY_NAMES[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
   }

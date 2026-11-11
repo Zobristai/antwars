@@ -279,11 +279,11 @@ describe("a team's game history", () => {
 });
 
 describe("the team section's agents", () => {
-  it("gives a one-player team no agent rows: its heading names the player and its Rating once, its member icons the player icons", () => {
+  it("gives a one-player team no agent rows: its heading carries the player's line once, its member icons the player icons", () => {
     const r = roster(frameOf());
     expect(r.groups.map(g => [g.heading, g.player, g.rows.length])).toEqual([
-      ["Very Large Colony · 4 agents", { name: "fennec/forager", elo: "1512" }, 0],
-      ["Lake Hodges Colony · 4 agents", { name: "tidewater", elo: "1489" }, 0],
+      ["Very Large Colony · 4 agents", { name: "fennec/forager", model: "Claude Sonnet 5.5", badges: [], elo: "1512", rd: "", seats: 4, result: null }, 0],
+      ["Lake Hodges Colony · 4 agents", { name: "tidewater", model: "GPT-6 Luna", badges: [], elo: "1489", rd: "", seats: 4, result: null }, 0],
     ]);
     expect(r.groups.map(g => g.members.map(m => m.index))).toEqual([[0, 1, 2, 3], [4, 5, 6, 7]]);
     expect(r.count).toBe(0);
@@ -314,13 +314,13 @@ describe("the team section's agents", () => {
     // A builder's row names this match's model with no asterisk, inside the Model Index or out.
     expect(split().groups.map(g => g.rows[0]!.asterisk)).toEqual([false, false]);
     expect(split().groups[0]!.rows[0]!.label).not.toContain("self-reported");
-    // Every live match carries the idle clock; only the explicit Model Index marker makes it an Index match, where the
-    // row keeps its thinking level as today.
-    expect(split(b => { b.setup.houseIdleTicks = 1800; }).groups[0]!.rows[0]!.quiet).toBe("");
+    // Every live match carries the idle clock; only the explicit Model Index marker makes it an Index match. Neither
+    // shows a quiet "(not recorded)": a level is a badge, and only where the stream carries one.
+    expect(split(b => { b.setup.houseIdleTicks = 1800; }).groups[0]!.rows[0]!.badges).toEqual([]);
     const modelIndex = split(b => { b.setup.houseIdleTicks = 1800; b.setup.modelIndex = true; });
     expect(modelIndex.groups[0]!.rows[0]!.asterisk).toBe(false);
-    expect(modelIndex.groups[0]!.rows[0]!.quiet).toBe("(not recorded)");
-    expect(modelIndex.groups[0]!.rows[0]!.label).toBe("ana · Rating 1600 · Very Large Colony · Claude Sonnet 5.5 · (not recorded) · badge Diamond");
+    expect(modelIndex.groups[0]!.rows[0]!.badges).toEqual([]);
+    expect(modelIndex.groups[0]!.rows[0]!.label).toBe("ana · Rating 1600 · Very Large Colony · Claude Sonnet 5.5 · badge Diamond");
   });
   it("names a Benchmark handle as the Leaderboard does: its house display name with its fixed level and Fast badges, no model or asterisk beside it", () => {
     const r = roster(frameOf(b => {
@@ -332,12 +332,12 @@ describe("the team section's agents", () => {
       ];
     }));
     // The handle's fixed level wins over the seat's reported one, as the Leaderboard's server substitutes it (houseLabel).
-    expect(r.groups.flatMap(g => g.rows).map(row => [row.title, row.badges, row.model, row.quiet, row.asterisk])).toEqual([
-      ["Claude Opus 5.5", ["xhigh"], "", "", false],
-      ["GPT-6 Luna", ["max", "Fast"], "", "", false],
+    expect(r.groups.flatMap(g => g.rows).map(row => [row.title, row.badges, row.model, row.asterisk])).toEqual([
+      ["Claude Opus 5.5", ["xhigh"], "", false],
+      ["GPT-6 Luna", ["max", "Fast"], "", false],
       // An unlisted handle shows "Unlisted model" with no badges, never its slug.
-      ["Unlisted model", [], "", "", false],
-      ["GLM-5.3 Highspeed", [], "", "", false],
+      ["Unlisted model", [], "", false],
+      ["GLM-5.3 Highspeed", [], "", false],
     ]);
     expect(r.groups[0]!.rows[1]!.label).toBe("GPT-6 Luna max Fast · Rating 1500 · Very Large Colony · badge Triangle");
     // The member icons and the 2D HUD's rows show the same display name; the rows above still knew each Benchmark
@@ -360,7 +360,7 @@ describe("the team section's agents", () => {
     expect(eloText(1500.46)).toBe("1500");
     expect(eloText(1488.5)).toBe("1489");
   });
-  it("names every other row by its own name and model, the Leaderboard's quiet thinking level after only in an Index match", () => {
+  it("names every other row by its own name and model; a level is a badge, never quiet text", () => {
     const rows = (index: boolean) => roster(frameOf(b => {
       b.agents = [
         { ...agent(0, "ana", 1600, "anthropic/claude-sonnet-5-5"), thinkingLevel: "high" },
@@ -369,28 +369,32 @@ describe("the team section's agents", () => {
         agent(1, null, 0, "gpt"),
       ];
       if (index) b.setup.modelIndex = true;
-    })).groups.flatMap(g => g.rows).map(row => [row.title, row.badges, row.model, row.quiet]);
-    // An Index match: as today.
+    })).groups.flatMap(g => g.rows).map(row => [row.title, row.badges, row.model, row.modelBadges]);
+    // An Index match: the model's level a badge after the model, never also a quiet "(high)" after the name.
     expect(rows(true)).toEqual([
-      ["ana", [], "Claude Sonnet 5.5", "(high)"],
-      ["bo", [], "", "(not recorded)"],
+      ["ana", [], "Claude Sonnet 5.5", ["high"]],
+      ["bo", [], "", []],
       // Without an identity the model is the title, its recorded level a badge after it; a builder's own label as reported.
-      ["Claude Haiku 5.5", ["medium"], "", ""],
-      ["gpt", [], "", ""],
+      ["Claude Haiku 5.5", ["medium"], "", []],
+      ["gpt", [], "", []],
     ]);
-    // A challenge or other non-Index match: a builder's row carries no thinking level; a row without an identity is unchanged.
+    // A challenge or other non-Index match: a builder's line as on a Matches row; a row without an identity is unchanged.
     expect(rows(false)).toEqual([
-      ["ana", [], "Claude Sonnet 5.5", ""],
-      ["bo", [], "", ""],
-      ["Claude Haiku 5.5", ["medium"], "", ""],
-      ["gpt", [], "", ""],
+      ["ana", [], "Claude Sonnet 5.5", ["high"]],
+      ["bo", [], "", []],
+      ["Claude Haiku 5.5", ["medium"], "", []],
+      ["gpt", [], "", []],
     ]);
+    // A level the stream carries with no model to badge it: a badge after the name in an Index match.
+    const levelOnly = roster(frameOf(b => { b.agents = [{ ...agent(0, "bo", 1500, ""), thinkingLevel: "high" }, agent(1, "x", 1, "y")]; b.setup.modelIndex = true; }));
+    expect(levelOnly.groups[0]!.rows[0]!.badges).toEqual(["high"]);
+    expect(JSON.stringify(levelOnly)).not.toContain("(high)");
   });
   it("keeps a seat's number with a Benchmark name, and gives a Benchmark player's team its heading alone", () => {
     expect(rowName("antwars/claude-opus-5-5 #2", undefined)).toEqual({ name: "Claude Opus 5.5 #2", benchmark: true, badges: ["high"], quiet: "" });
     expect(rowName("tidewater #1", "low")).toEqual({ name: "tidewater #1", benchmark: false, badges: [], quiet: "(low)" });
     const r = roster(frameOf(b => { b.agents = [1, 2].map(seat => agent(0, `antwars/claude-opus-5-5-max #${seat}`, 1500, "c")).concat(agent(1, "x", 1, "y")); }));
-    expect(r.groups[0]!.player).toEqual({ name: "Claude Opus 5.5", elo: "1500" });
+    expect(r.groups[0]!.player).toEqual({ name: "Claude Opus 5.5", model: "", badges: ["max"], elo: "1500", rd: "", seats: 2, result: null });
     expect(r.groups[0]!.rows).toEqual([]);
     expect(isBenchmark("antwarsfan/x")).toBe(false);
   });
@@ -401,8 +405,8 @@ describe("the team section's agents", () => {
     expect(r.groups[1]!.members[0]!.lines).toEqual(["tidewater #1", "GPT-6 Luna", "Rating 1489"]);
     expect(r.groups[0]!.members[0]!.label).toBe("fennec/forager #1 · Claude Sonnet 5.5 · Rating 1512 · badge Diamond");
     expect(r.groups[0]!.members[0]!.badge).toContain('width="16"');
-    // The one player keeps its name and Elo in the head.
-    expect(r.groups[0]!.player).toEqual({ name: "fennec/forager", elo: "1512" });
+    // The one player keeps its name, model and rating in the head.
+    expect(r.groups[0]!.player).toMatchObject({ name: "fennec/forager", model: "Claude Sonnet 5.5", elo: "1512", seats: 4 });
   });
   it("shows a house challenge seat the Index has not rated with no rating badge and no Rating text, never a 1500 default", () => {
     // A challenge match: the house seat carries its name and no rating, the builder its public 1v1 rating.
@@ -433,7 +437,10 @@ describe("the team section's agents", () => {
       b.agents = [1, 2].map(seat => agent(0, `antwars/claude-opus-5-5-xhigh #${seat}`, 1600, "anthropic/claude-opus-5-5"))
         .concat([1, 2].map(seat => agent(1, `ANTWARS/gpt-6-luna #${seat}`, 1500.456, "openai/gpt-6-luna")));
     }));
-    expect(r.groups.map(g => [g.player, g.rows.length])).toEqual([[{ name: "Claude Opus 5.5", elo: "1600" }, 0], [{ name: "GPT-6 Luna", elo: "1500" }, 0]]);
+    expect(r.groups.map(g => [g.player, g.rows.length])).toEqual([
+      [{ name: "Claude Opus 5.5", model: "", badges: ["xhigh"], elo: "1600", rd: "", seats: 2, result: null }, 0],
+      [{ name: "GPT-6 Luna", model: "", badges: ["max", "Fast"], elo: "1500", rd: "", seats: 2, result: null }, 0],
+    ]);
     // Any other player keeps its own name, as the Leaderboard shows it; split seats still name no player and keep their rows.
     expect(roster(frameOf()).groups.map(g => g.player?.name)).toEqual(["fennec/forager", "tidewater"]);
     const split = roster(frameOf(b => { b.agents = [agent(0, "antwars/claude-opus-5-5 #1", 1500, "c"), agent(0, "antwars/gpt-6-luna #1", 1500, "g"), agent(1, "x", 1, "y")]; }));

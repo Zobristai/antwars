@@ -181,7 +181,10 @@ function playerIdentity(value: StreamIdentity | undefined): { identity?: StreamI
   if (value === undefined) return {};
   if (!value.displayName || (value.elo !== undefined && !Number.isFinite(value.elo))) throw new Error("Invalid spectator player identity");
   const displayName = cutUtf8(value.displayName, 256);
-  return { identity: Object.freeze(value.elo === undefined ? { displayName } : { displayName, elo: value.elo }) };
+  if (value.elo === undefined) return { identity: Object.freeze({ displayName }) };
+  // The RD read with the rating, as the live catalog shows it; the stream carries it only beside a rating.
+  const rd = typeof value.rd === "number" && Number.isFinite(value.rd) && value.rd > 0 ? value.rd : undefined;
+  return { identity: Object.freeze(rd === undefined ? { displayName, elo: value.elo } : { displayName, elo: value.elo, rd }) };
 }
 
 /** Records one match: call initial() once, then record() with each step's output in order. */

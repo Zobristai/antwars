@@ -18,7 +18,7 @@ import { D1_ICON } from "./icons.ts";
 import { mountResultModal } from "./result-modal.ts";
 import {
   COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyName, history as gameHistory, roster, selected,
-  type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Row, type Selected,
+  type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Player, type Row, type Selected,
 } from "./model.ts";
 
 const COLONY_CSS = ["var(--aw-c0)", "var(--aw-c1)"] as const;
@@ -64,8 +64,10 @@ interface RowNode {
   model: HTMLElement;
   modelTags: HTMLElement;
   ast: HTMLElement;
-  quiet: HTMLElement;
   elo: HTMLElement;
+  result: HTMLElement;
+  /** The rating's "± RD", shown in the tip; "" for none. */
+  rd: string;
   written: string;
 }
 
@@ -107,6 +109,15 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     if (!(to && (tip.contains(to) || tipFor?.contains(to)))) hideTip();
   };
   listen(tip, "pointerleave", leaveTip);
+  /**
+   * A rating badge's "± RD" in the same tip as the asterisk's: a mouse or pen over it shows it, a tap shows it without
+   * opening the row's card, and keyboard focus on the badge (the heading's) or its row (an agent row's) shows it too.
+   */
+  const rdTip = (badge: HTMLElement, rd: () => string) => {
+    listen(badge, "pointerenter", e => { if ((e as PointerEvent).pointerType !== "touch" && rd()) showTip(badge, [rd()]); });
+    listen(badge, "pointerleave", leaveTip);
+    listen(badge, "click", e => { if (!rd()) return; e.stopPropagation(); showTip(badge, [rd()]); });
+  };
   listen(doc, "pointerdown", e => { const at = e.target as Node | null; if (tipFor && !(at && (tip.contains(at) || tipFor.contains(at)))) hideTip(); });
 
   // ---------------------------------------------------------------- the team containers
@@ -119,8 +130,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     section.setAttribute("aria-labelledby", name.id);
     // One icon per member, then the one player's name, which gives way before its Elo, always shown in full.
     const members = h(doc, "span", "d1-team-members"), player = h(doc, "span", "d1-team-player");
-    const playerName = h(doc, "span", "d1-team-player-name"), playerElo = h(doc, "span", "d1-team-player-elo");
-    player.append(playerName, playerElo);
+    // The one player's line in the Matches order: its name and model, which give way first, then its level and Fast badges,
+    // its rating, its seat count and the colony's result, always shown in full.
+    const playerName = h(doc, "span", "d1-team-player-name"), playerTitle = h(doc, "span", "d1-title"), playerModel = h(doc, "span", "d1-model");
+    playerName.append(playerTitle, playerModel);
+    const playerTags = h(doc, "span", "d1-tags"), playerElo = h(doc, "span", "d1-tag d1-elo");
+    const playerSeats = h(doc, "span", "d1-seats"), playerResult = h(doc, "span", `d1-tag d1-result c${colony}`);
+    player.append(playerName, playerTags, playerElo, playerSeats, playerResult);
     head.append(name, members, player);
     // The agents: one small row each under the colony name, its badge, name, model and rating; none for one
     // player, whose heading names it once.
@@ -136,8 +152,15 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     section.append(head, rows, hooks.economy[colony], line);
     // Each row's node by its key, written again only when what it shows changes.
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
-    return { section, members, membersKey: "", player, playerName, playerElo, rows, line, entries, none, lineNodes };
+    return { section, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
+      playerRd: "", playerKey: "", rows, line, entries, none, lineNodes };
   });
+
+  for (const team of teamNodes) {
+    rdTip(team.playerElo, () => team.playerRd);
+    listen(team.playerElo, "focus", () => { if (team.playerRd) showTip(team.playerElo, [team.playerRd]); });
+    listen(team.playerElo, "blur", () => { if (tipFor === team.playerElo) hideTip(); });
+  }
 
   // ---------------------------------------------------------------- the rows
   let selectedAgent = -1;
@@ -155,7 +178,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const who = h(doc, "span", "d1-who"), title = h(doc, "span", "d1-title"), model = h(doc, "span", "d1-model");
     const titleBox = h(doc, "span", "d1-title-box"), modelBox = h(doc, "span", "d1-model-box");
     // A Benchmark handle's badges as one unit beside its name, never split or shrunk (the Leaderboard's d1p-tags).
-    const tags = h(doc, "span", "d1-tags"), quiet = h(doc, "span", "d1-quiet");
+    const tags = h(doc, "span", "d1-tags");
     // The self-reported asterisk follows the model it marks, its explanation the same tip: a pointer
     // over it shows it, a tap shows it without opening the card; never a stop for the keyboard,
     // the row's own name says "self-reported".
@@ -164,29 +187,32 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // The model's own level and tier badges after it, in the same badge style.
     const modelTags = h(doc, "span", "d1-tags");
     modelBox.append(model, modelTags);
-    // The rating as a badge right after the level and Fast badges, or after the name where there are none.
-    const elo = h(doc, "span", "d1-tag d1-elo");
-    who.append(titleBox, tags, elo, modelBox, ast, quiet);
+    // The Matches order: name, model, level and Fast badges, the asterisk after a self-reported model, the rating as the
+    // cyan badge (the figure, its "± RD" in the tip), then the colony's result once the match has ended.
+    const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-result");
+    who.append(titleBox, modelBox, tags, ast, elo, result);
     button.append(badge, who);
     for (const child of button.children) child.setAttribute("aria-hidden", "true");
     item.append(button);
     listen(ast, "pointerenter", () => showTip(ast));
     listen(ast, "click", e => { e.stopPropagation(); showTip(ast); });
     listen(ast, "pointerleave", leaveTip);
+    rdTip(elo, () => node.rd);
     // Pointing at a row, or focusing it, lights its squad and its order's tile; choosing it opens its card.
     const point = () => { actions.hover(index); light(index); };
     const leave = () => { actions.hover(selectedAgent); light(targetFor); };
     listen(button, "pointerenter", point);
     listen(button, "pointerleave", leave);
-    listen(button, "focus", point);
-    listen(button, "blur", leave);
+    listen(button, "focus", () => { point(); if (node.rd && button.matches(":focus-visible")) showTip(elo, [node.rd]); });
+    listen(button, "blur", () => { leave(); if (tipFor === elo) hideTip(); });
     listen(button, "click", () => { focusCard = true; actions.select(null); actions.selectAgent(index); });
-    return { index, item, button, badge, title, tags, model, modelTags, ast, quiet, elo, written: "" };
+    const node: RowNode = { index, item, button, badge, title, tags, model, modelTags, ast, elo, result, rd: "", written: "" };
+    return node;
   };
 
   const writeRow = (node: RowNode, row: Row) => {
     const isSelected = row.index === selectedAgent;
-    const written = [row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.quiet, row.elo, row.label, isSelected].join("|");
+    const written = [row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
     if (node.written === written) return;
     node.written = written;
     node.item.className = `d1-agent-item c${row.colony}${isSelected ? " is-selected" : ""}`;
@@ -200,12 +226,16 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     node.modelTags.replaceChildren(...row.modelBadges.map(text => h(doc, "span", "d1-tag", text)));
     setHidden(node.modelTags, row.modelBadges.length === 0);
     setHidden(node.model.parentElement!, row.model === "");
-    setText(node.quiet, row.quiet);
-    setHidden(node.quiet, row.quiet === "");
     setHidden(node.ast, !row.asterisk);
     if (!row.asterisk && tipFor === node.ast) hideTip();
-    setText(node.elo, row.elo ? `Rating ${row.elo}` : "");
+    setText(node.elo, row.elo ?? "");
     setHidden(node.elo, row.elo === null);
+    node.rd = row.elo === null ? "" : row.rd;
+    if (tipFor === node.elo && !node.rd) hideTip();
+    setAttr(node.elo, "data-rd", node.rd === "" ? null : "");
+    setText(node.result, row.result ?? "");
+    setHidden(node.result, row.result === null);
+    node.result.className = `d1-tag d1-result c${row.colony}`;
     setAttr(node.button, "aria-label", row.label);
   };
 
@@ -229,6 +259,33 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     }));
   };
 
+  /** The one player's line in its colony's head, in the Matches order; none hides it. */
+  const writePlayer = (team: (typeof teamNodes)[number], p: Player | null) => {
+    const key = p === null ? "" : JSON.stringify(p);
+    if (key === team.playerKey) return;
+    team.playerKey = key;
+    setHidden(team.player, p === null);
+    team.playerRd = p?.rd ?? "";
+    if (tipFor === team.playerElo && !team.playerRd) hideTip();
+    if (p === null) return;
+    setText(team.playerTitle, p.name);
+    setText(team.playerModel, p.model);
+    setHidden(team.playerModel, p.model === "");
+    team.playerName.title = [p.name, p.model].filter(Boolean).join(" ");
+    team.playerTags.replaceChildren(...p.badges.map(text => h(doc, "span", "d1-tag", text)));
+    setHidden(team.playerTags, p.badges.length === 0);
+    setText(team.playerElo, p.elo);
+    // With an RD the badge is the heading's one stop for it: focus shows its "± RD" as a pointer or a tap does.
+    team.playerElo.tabIndex = p.rd ? 0 : -1;
+    setAttr(team.playerElo, "aria-label", `Rating ${p.elo}${p.rd ? ` ${p.rd}` : ""}`);
+    setAttr(team.playerElo, "data-rd", p.rd === "" ? null : "");
+    setText(team.playerSeats, p.seats > 1 ? `×${p.seats}` : "");
+    setAttr(team.playerSeats, "aria-label", p.seats > 1 ? `${p.seats} seats` : null);
+    setHidden(team.playerSeats, p.seats < 2);
+    setText(team.playerResult, p.result ?? "");
+    setHidden(team.playerResult, p.result === null);
+  };
+
   /** Each colony's small agent rows under its own head, its member icons and any one player beside its name; one player or an empty colony shows no rows. */
   const writeGroups = (groups: readonly Group[]) => {
     for (const colony of COLONIES) {
@@ -236,9 +293,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       const team = teamNodes[colony]!;
       const n = g?.rows.length ?? 0;
       writeMembers(team, g?.members ?? []);
-      setText(team.playerName, g?.player ? g.player.name : "");
-      setText(team.playerElo, g?.player ? ` · Rating ${g.player.elo}` : "");
-      setHidden(team.player, !g?.player);
+      writePlayer(team, g?.player ?? null);
       setHidden(team.rows, n === 0);
       if (!g) { team.rows.replaceChildren(); continue; }
       const items = g.rows.map(row => {
@@ -474,6 +529,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   let lastSubject = "";
   let lastCount = -1;
   let lastSelection = "";
+  let lastResult: unknown = null;
   let lastStory = -1;
   let lastCommands: unknown = null;
   /** What each agent stood on when this viewer arrived at the match shown; kept through a reconnect to it. */
@@ -497,12 +553,12 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         writeGroups([]);
         lastSecond = -1; lastChat = null; lastCount = -1;
       } else {
-        // Rows change at most once a playback second, or when the chat, the count or the choice moves.
+        // Rows change at most once a playback second, or when the chat, the count, the choice or the result moves.
         const second = Math.floor(frame!.tick / tps(b!));
         const newest = frame!.chat.at(-1) ?? null;
         const selection = `${view.selectedAgent}|${view.selected?.antId ?? -1}`;
-        if (second !== lastSecond || newest !== lastChat || b!.agents.length !== lastCount || selection !== lastSelection) {
-          lastSecond = second; lastChat = newest; lastCount = b!.agents.length; lastSelection = selection;
+        if (second !== lastSecond || newest !== lastChat || b!.agents.length !== lastCount || selection !== lastSelection || b!.result !== lastResult) {
+          lastSecond = second; lastChat = newest; lastCount = b!.agents.length; lastSelection = selection; lastResult = b!.result;
           // An asterisk's explanation goes with its asterisk (writeRow); a member's tip stays while its icon does.
           writeGroups(roster(frame!).groups);
           lastStory = -1;

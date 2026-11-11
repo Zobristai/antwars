@@ -34,18 +34,21 @@ describe("the team section's agent rows", () => {
     expect(PANE).toContain("setHidden(team.rows, n === 0);");
   });
 
-  it("writes a row's badge, name, model, asterisk and rating, and nothing of its order or calls", () => {
+  it("writes a row's badge, then its line in the Matches order: name, model, badges, asterisk, rating and result, and nothing of its order or calls", () => {
     const make = body("makeRow");
     expect(make).toContain("button.append(badge, who);");
-    expect(make).toContain("who.append(titleBox, tags, elo, modelBox, ast, quiet);");
-    expect(body("writeRow")).toContain('setText(node.elo, row.elo ? `Rating ${row.elo}` : "");');
+    expect(make).toContain("who.append(titleBox, modelBox, tags, ast, elo, result);");
+    // The rating is the figure alone: no "Rating" word on the row.
+    expect(body("writeRow")).toContain('setText(node.elo, row.elo ?? "");');
+    expect(PANE).not.toMatch(/setText\([^)]*`[^`]*Rating/);
+    expect(CSS).not.toContain(".d1-quiet");
   });
 
   it("shows the rating as a cyan badge right after the level and Fast badges, none without a rating", () => {
     // Directly after the tags in the name line (after the name when the tags are hidden), never a far-right column.
     const make = body("makeRow");
-    expect(make).toContain('const elo = h(doc, "span", "d1-tag d1-elo");');
-    expect(make.indexOf("tags, elo,")).toBeGreaterThan(make.indexOf("who.append(titleBox,"));
+    expect(make).toContain('const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-result");');
+    expect(make.indexOf("tags, ast, elo,")).toBeGreaterThan(make.indexOf("who.append(titleBox,"));
     expect(rule(".d1-agent")).toMatch(/grid-template-columns: 16px minmax\(0, 1fr\);/);
     // The same badge form as the level and Fast badges (it carries .d1-tag), in the site's cyan (the Matches page
     // Refresh button's cyan), not the tags' ink.
@@ -65,7 +68,7 @@ describe("the team section's agent rows", () => {
   it("keeps the row's existing behaviour: pointing or focus lights its squad and order tile, choosing opens its card", () => {
     const make = body("makeRow");
     expect(make).toContain('listen(button, "pointerenter", point);');
-    expect(make).toContain('listen(button, "focus", point);');
+    expect(make).toContain('listen(button, "focus", () => { point();');
     expect(make).toContain('listen(button, "click", () => { focusCard = true; actions.select(null); actions.selectAgent(index); });');
   });
 

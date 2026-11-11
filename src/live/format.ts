@@ -63,6 +63,9 @@
  *            then f64 house-idle ticks and v (last accepted house-call tick + 1) per agent (0 absent).
  *            Each call event appends v (authoritative house activity tick + 1), 0 absent.
  *            Only explicit house metadata selects 20; other messages retain their version and bytes.
+ *   version 25: extends version 24: join events and snapshot agents append u8 rating-deviation presence after the
+ *            service tier, then f64 RD when present: the RD of the rating the identity shows, read before the match
+ *            with it. Only an identity carrying an RD selects 25; every other message keeps its version and bytes.
  *   version 23: extends version 22 with result reason and decidedBy "idle", and house-idle
  *            presence 2: the accepted-call idle clock of a match outside the Antwars Model Index.
  *            Presence 1 stays the Model Index clock, so house-only messages keep their version and bytes.
@@ -118,6 +121,8 @@ export const IDLE_STREAM_VERSION = 23;
 export const SERVICE_TIER_STREAM_VERSION = 24;
 // Version 24 extends v23: join events and snapshot agents append a UTF-8 string
 // after the thinking level; empty means not given. No change to earlier bytes.
+/** A seat's rating deviation beside its rating; selected only when an identity carries one. */
+export const RATING_DEVIATION_STREAM_VERSION = 25;
 export const STREAM_COUNT_CASTES = ["any", "worker", "soldier"] as const;
 /** Append-only count-mark wire indexes; the first four preserve the legacy vocabulary. */
 export const STREAM_COUNT_VERBS = ["DEFEND", "FORAGE", "ATTACK", "GATHER", "PATROL", "LINE"] as const;
@@ -156,6 +161,8 @@ export interface StreamIdentity {
   readonly displayName: string;
   /** Absent for a seat with no rating to show (a house challenge seat its Index has not rated yet). */
   readonly elo?: number;
+  /** The rating deviation of that rating, read with it before the match; absent with no rating, and in older streams. */
+  readonly rd?: number;
 }
 export interface StreamRatingChange {
   readonly agent: number;
@@ -592,6 +599,28 @@ function writeIdentity(w: Writer, identity: StreamIdentity | undefined): void {
   w.str(identity.displayName);
   if (rated) w.f64(rating(identity.elo!));
 }
+/** Version 25's rating deviation after the service tier: u8 presence, then f64 RD. Only a rated identity carries one. */
+function writeDeviation(w: Writer, identity: StreamIdentity | undefined): void {
+  const rd = identity?.elo !== undefined ? identity.rd : undefined;
+  w.u8(rd === undefined ? 0 : 1);
+  if (rd !== undefined) w.f64(deviation(rd));
+}
+function readDeviation(r: Reader): number | undefined {
+  const present = r.u8();
+  if (present === 0) return undefined;
+  if (present !== 1) throw new Error("invalid spectator rating deviation presence");
+  return deviation(r.f64());
+}
+function deviation(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) throw new Error("invalid spectator rating deviation");
+  return value;
+}
+/** An identity with the RD version 25 read after it; an RD without a rating is refused. */
+function withDeviation(identity: StreamIdentity | undefined, rd: number | undefined): StreamIdentity | undefined {
+  if (rd === undefined) return identity;
+  if (identity?.elo === undefined) throw new Error("spectator rating deviation without a rating");
+  return { ...identity, rd };
+}
 function readIdentity(r: Reader): StreamIdentity | undefined {
   const present = r.u8();
   if (present === 0) return undefined;
@@ -729,6 +758,7 @@ function writeEvent(w: Writer, e: StreamEvent, version: number) {
       if (version >= SPECTATOR_STREAM_VERSION) writeIdentity(w, e.identity);
       if (version >= THINKING_LEVEL_STREAM_VERSION) w.str(e.thinkingLevel ?? "");
       if (version >= SERVICE_TIER_STREAM_VERSION) w.str(e.serviceTier ?? "");
+      if (version >= RATING_DEVIATION_STREAM_VERSION) writeDeviation(w, e.identity);
       return;
     case "call":
       w.u8(e.agent);
@@ -807,9 +837,10 @@ function readEvent(r: Reader, version: number): StreamEvent {
       return { kind: "overrun", colony: r.u8() as Colony, progress: r.v(), required: r.v() };
     case EVENT_CODES.join: {
       const agent = r.u8(), colony = r.u8() as Colony, modelLabel = r.str();
-      const identity = version >= SPECTATOR_STREAM_VERSION ? readIdentity(r) : undefined;
+      const named = version >= SPECTATOR_STREAM_VERSION ? readIdentity(r) : undefined;
       const thinkingLevel = version >= THINKING_LEVEL_STREAM_VERSION ? r.str() : "";
       const serviceTier = version >= SERVICE_TIER_STREAM_VERSION ? r.str() : "";
+      const identity = withDeviation(named, version >= RATING_DEVIATION_STREAM_VERSION ? readDeviation(r) : undefined);
       return { kind: "join", agent, colony, modelLabel, ...(identity === undefined ? {} : { identity }),
         ...(thinkingLevel === "" ? {} : { thinkingLevel }), ...(serviceTier === "" ? {} : { serviceTier }) };
     }
@@ -866,7 +897,9 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
   const outsideIndexClock = m.full?.setup.houseIdleTicks !== undefined && m.full.setup.modelIndex !== true;
   const serviceTier = m.full?.agents.some(agent => agent.serviceTier !== undefined) === true ||
     m.events.some(event => event.kind === "join" && event.serviceTier !== undefined);
-  const version = serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
+  const deviation = m.full?.agents.some(agent => agent.identity?.rd !== undefined) === true ||
+    m.events.some(event => event.kind === "join" && event.identity?.rd !== undefined);
+  const version = deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
   w.u8(version);
   w.u8(m.full ? 1 : 0);
   w.v(m.tick);
@@ -927,6 +960,7 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
       if (version >= SPECTATOR_STREAM_VERSION) writeIdentity(w, ag.identity);
       if (version >= THINKING_LEVEL_STREAM_VERSION) w.str(ag.thinkingLevel ?? "");
       if (version >= SERVICE_TIER_STREAM_VERSION) w.str(ag.serviceTier ?? "");
+      if (version >= RATING_DEVIATION_STREAM_VERSION) writeDeviation(w, ag.identity);
     }
     w.v(f.overrun[0]);
     w.v(f.overrun[1]);
@@ -1028,7 +1062,7 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
   const r = new Reader(bytes);
   if (r.u16() !== SNAPSHOT_MAGIC) throw new Error("not a stream message");
   const version = r.u8();
-  if (version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
+  if (version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
   const flags = r.u8();
   const tick = r.v();
 
@@ -1100,6 +1134,11 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
       if (version >= SERVICE_TIER_STREAM_VERSION) {
         const serviceTier = r.str();
         if (serviceTier !== "") agents[agents.length - 1]!.serviceTier = serviceTier;
+      }
+      if (version >= RATING_DEVIATION_STREAM_VERSION) {
+        const agent = agents[agents.length - 1]!;
+        const identity = withDeviation(agent.identity, readDeviation(r));
+        if (identity !== undefined) agent.identity = identity;
       }
     }
     const overrun: [number, number] = [r.v(), r.v()];

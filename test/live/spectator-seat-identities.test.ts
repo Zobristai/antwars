@@ -83,9 +83,10 @@ describe("spectator data for a team-mode match", () => {
     const watched = await watchMatch(seats, [
       { seatKey: "a#2", colony: 0 }, { seatKey: "b", colony: 1 }, { seatKey: "a", colony: 0 }, { seatKey: "b#2", colony: 1 },
     ]);
+    // Each seat's starting rating with the RD read with it.
     expect(watched.agents.map(agent => agent.identity)).toEqual([
-      { displayName: "alice #2", elo: FIRST_WIN.rating }, { displayName: "bob #1", elo: FIRST_LOSS.rating },
-      { displayName: "alice #1", elo: FIRST_WIN.rating }, { displayName: "bob #2", elo: FIRST_LOSS.rating },
+      { displayName: "alice #2", elo: FIRST_WIN.rating, rd: FIRST_WIN.rd }, { displayName: "bob #1", elo: FIRST_LOSS.rating, rd: FIRST_LOSS.rd },
+      { displayName: "alice #1", elo: FIRST_WIN.rating, rd: FIRST_WIN.rd }, { displayName: "bob #2", elo: FIRST_LOSS.rating, rd: FIRST_LOSS.rd },
     ]);
     const [alice, bob] = [await watched.ratingOf("a"), await watched.ratingOf("b")];
     expect(alice).toBeGreaterThan(FIRST_WIN.rating); expect(bob).toBeLessThan(FIRST_LOSS.rating);
@@ -100,7 +101,9 @@ describe("spectator data for a team-mode match", () => {
       [{ identityId: "a", displayName: "alice", colony: 0 }, { identityId: "b", displayName: "bob", colony: 1, seat: 1 }],
       [{ seatKey: "a", colony: 0 }, { seatKey: "b", colony: 1 }],
     );
-    expect(watched.agents.map(agent => agent.identity)).toEqual([{ displayName: "alice", elo: FIRST_WIN.rating }, { displayName: "bob", elo: FIRST_LOSS.rating }]);
+    expect(watched.agents.map(agent => agent.identity)).toEqual([
+      { displayName: "alice", elo: FIRST_WIN.rating, rd: FIRST_WIN.rd }, { displayName: "bob", elo: FIRST_LOSS.rating, rd: FIRST_LOSS.rd },
+    ]);
     expect(watched.changes.map(change => change.agent)).toEqual([0, 1]);
   });
 });

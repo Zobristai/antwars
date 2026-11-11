@@ -219,15 +219,16 @@ describe("house challenge seat ratings", () => {
   };
 
   it("shows the house seat its handle's Model Index 1v1 rating and the builder its public 1v1 rating", async () => {
-    let index = 0, publicHouse = 0, publicBuilder = 0;
+    let index = 0, publicHouse = 0, publicBuilder = 0, indexRd = 0, builderRd = 0;
     const { shown } = await prepared(seats, async ratings => {
       await rated(ratings);
-      index = (await ratings.readRating(house.identityId, "house-1v1")).rating;
+      ({ rating: index, rd: indexRd } = await ratings.readRating(house.identityId, "house-1v1"));
       publicHouse = (await ratings.readRating(house.identityId, "1v1")).rating;
-      publicBuilder = (await ratings.readRating(builder.identityId, "1v1")).rating;
+      ({ rating: publicBuilder, rd: builderRd } = await ratings.readRating(builder.identityId, "1v1"));
     });
     expect(index).not.toBe(1500); expect(index).not.toBe(publicHouse); expect(publicBuilder).not.toBe(1500);
-    expect(shown).toEqual([{ displayName: "antwars/red", elo: index }, { displayName: "kite", elo: publicBuilder }]);
+    // Each seat's rating with the RD read with it, as the live catalog shows them.
+    expect(shown).toEqual([{ displayName: "antwars/red", elo: index, rd: indexRd }, { displayName: "kite", elo: publicBuilder, rd: builderRd }]);
   });
 
   it("shows a house seat the Index has not rated with no rating, never the 1500 default, and keeps that through a handover save", async () => {
@@ -240,7 +241,7 @@ describe("house challenge seat ratings", () => {
     expect(resumed.identity("sim-0")).toEqual({ identityId: house.identityId, displayName: "antwars/red" });
   });
 
-  it("keeps each rated seat's start rating, RD and rated-match count for the record input only, through a handover save", async () => {
+  it("keeps each rated seat's start rating, RD and rated-match count for the record input, through a handover save; the stream shows no count", async () => {
     let index: Rating | undefined, publicBuilder: Rating | undefined;
     const { controller, access, shown } = await prepared(seats, async ratings => {
       await rated(ratings);
@@ -251,8 +252,8 @@ describe("house challenge seat ratings", () => {
       "kite": { rating: publicBuilder!.rating, rd: publicBuilder!.rd, ratedMatches: 1 } };
     expect(index!.rd).not.toBe(350);
     expect(controller.hubOptions.startRatings!(access)).toEqual(expected);
-    // The stream still shows each seat its name and rating alone.
-    expect(shown).toEqual([{ displayName: "antwars/red", elo: index!.rating }, { displayName: "kite", elo: publicBuilder!.rating }]);
+    // The stream shows each seat its name, rating and RD; the rated-match count stays on this server.
+    expect(shown).toEqual([{ displayName: "antwars/red", elo: index!.rating, rd: index!.rd }, { displayName: "kite", elo: publicBuilder!.rating, rd: publicBuilder!.rd }]);
     const save = JSON.parse(JSON.stringify(controller.save(lobbyId)));
     controller.close();
     const other = createWatchController({ accounts: {} as AccountStores, registry: createWatchRegistry(memoryWatchStore().store), slot: "public-0",
@@ -280,13 +281,13 @@ describe("house challenge seat ratings", () => {
 
   it("in a mirror game keys the Index rating on the held colony: the handle's builder seat keeps its public 1v1 rating", async () => {
     const mirror = lobbySeats([[{ id: house.identityId, displayName: house.displayName }], [{ id: house.identityId, displayName: house.displayName }]]);
-    let index = 0, publicHouse = 0;
+    let index = 0, publicHouse = 0, indexRd = 0, publicRd = 0;
     const { shown } = await prepared(mirror, async ratings => {
       await rated(ratings);
-      index = (await ratings.readRating(house.identityId, "house-1v1")).rating;
-      publicHouse = (await ratings.readRating(house.identityId, "1v1")).rating;
+      ({ rating: index, rd: indexRd } = await ratings.readRating(house.identityId, "house-1v1"));
+      ({ rating: publicHouse, rd: publicRd } = await ratings.readRating(house.identityId, "1v1"));
     });
-    expect(shown).toEqual([{ displayName: "antwars/red #1", elo: index }, { displayName: "antwars/red #2", elo: publicHouse }]);
+    expect(shown).toEqual([{ displayName: "antwars/red #1", elo: index, rd: indexRd }, { displayName: "antwars/red #2", elo: publicHouse, rd: publicRd }]);
   });
 });
 
