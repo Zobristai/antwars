@@ -402,7 +402,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const narrow = !(w >= WIDE_MIN_PX || (w >= 560 && w > h * 1.2));
     root.dataset.layout = narrow ? "narrow" : "wide";
     if (!narrow && h < 520) root.dataset.short = ""; else delete root.dataset.short;
-    const paneW = Math.min(296, Math.max(248, 0.17 * w));
+    const paneW = w >= 1280 ? 296 : Math.min(296, Math.max(248, 0.17 * w));
     const main = narrow ? w - 16 : w - 36 - paneW;
     // As drawn: 676 px at most, and on a narrow screen 16 px from each edge (the stylesheet's .d2-plate-wrap).
     const plateW = Math.min(PLATE_PX, narrow ? main - 16 : main);

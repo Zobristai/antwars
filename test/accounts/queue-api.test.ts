@@ -126,15 +126,18 @@ describe.skipIf(!host)("ranked queue tools against the Firestore emulator", { ti
       const waiting = { state: "waiting", mode: "1v1", joinedAt, expiresAt: joinedAt + TWELVE_HOURS };
 
       expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: { state: "none" } });
-      expect(await ok(call, "join_queue", { key: ann.key, mode: "1v1" })).toEqual({ queue: waiting, waitToken: expect.any(String), waitUrl: expect.any(String) });
+      const joined = await ok(call, "join_queue", { key: ann.key, mode: "1v1" });
+      expect(joined).toEqual({ queue: waiting, waitToken: expect.any(String), waitUrl: expect.any(String) });
+      // While the entry waits, queue_status returns the same wait link the join did.
+      const link = { waitToken: joined.waitToken, waitUrl: joined.waitUrl };
       w.advance(30_000);
-      expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: waiting });
+      expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: waiting, ...link });
 
       const again = await call("join_queue", { key: ann.key, mode: "1v1" });
       expect([again.ok, again.body.error]).toEqual([false, "already_queued"]);
       expect(again.body.message).toMatch(/queue_status.*leave_queue/);
       if (transport === "HTTP") expect(again.status).toBe(409);
-      expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: waiting });
+      expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: waiting, ...link });
 
       expect(await ok(call, "leave_queue", { key: ann.key })).toEqual({ queue: { state: "none" } });
       expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: { state: "none" } });
@@ -160,13 +163,18 @@ describe.skipIf(!host)("ranked queue tools against the Firestore emulator", { ti
       const w = world();
       const call = await open(await serve(w.stores));
       const [ann, bob] = [await claim(call, "Ann"), await claim(call, "Bob")];
-      await ok(call, "join_queue", { key: ann.key, mode: "1v1" });
+      const annJoin = await ok(call, "join_queue", { key: ann.key, mode: "1v1" });
       w.advance(1_000);
-      const { queue } = await ok(call, "join_queue", { key: bob.key, mode: "1v1" });
+      const bobJoin = await ok(call, "join_queue", { key: bob.key, mode: "1v1" });
+      const { queue } = bobJoin;
       expect(queue).toEqual({ state: "matched", mode: "1v1", lobbyId: expect.any(String), matchedAt: w.now() });
-      for (const key of [ann.key, bob.key]) expect(await ok(call, "queue_status", { key })).toEqual({ queue });
+      // Each identity's status and lobby read carry its own wait link, the one its join returned.
+      const links = new Map([[ann.key, annJoin.waitToken], [bob.key, bobJoin.waitToken]]);
+      expect(annJoin.waitToken).not.toBe(bobJoin.waitToken);
+      for (const key of [ann.key, bob.key]) expect(await ok(call, "queue_status", { key })).toEqual({ queue, waitToken: links.get(key), waitUrl: `https://antwars.ai/wait/${links.get(key)}` });
       for (const key of [ann.key, bob.key]) {
-        const { lobby } = await ok(call, "read_lobby", { lobbyId: queue.lobbyId, key });
+        const { lobby, waitToken } = await ok(call, "read_lobby", { lobbyId: queue.lobbyId, key });
+        expect(waitToken).toBe(links.get(key));
         expect(lobby).toMatchObject({ kind: "public", size: 1, state: "holding", rated: true, slot: "public-0" });
         expect(lobby.colonies).toEqual([[{ id: ann.id, displayName: "Ann" }], [{ id: bob.id, displayName: "Bob" }]]);
       }

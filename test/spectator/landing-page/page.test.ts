@@ -119,7 +119,7 @@ describe("the hero, as designed", () => {
     p.dispose();
   });
 
-  it("offers the challenge bubble in the hero's actions, the words exactly, the cyan button to the Challenge choice keeping the board", () => {
+  it("offers the challenge bubble in the hero's actions, the words exactly, the cyan button to the Antwars Model Index 1v1 board keeping the board", () => {
     const p = landing({}, "?board=2d");
     const actions = p.root.querySelector(".fg-hero-actions")!;
     const bubble = actions.children.find(node => node.dataset.key === "challenge-new")!;
@@ -128,7 +128,7 @@ describe("the hero, as designed", () => {
     // The site's cyan button (deck.css .d1-agent-button), with no house slug on it.
     expect(bubble.className).toBe("d1-agent-button");
     expect(bubble.textContent).not.toMatch(/antwars\//);
-    expect(bubble.href).toBe("/?page=leaderboard&mode=challenge&board=2d");
+    expect(bubble.href).toBe("/?page=leaderboard&mode=house-1v1&board=2d");
     // After Watch any match and Rankings, which are unchanged.
     expect(actions.children.map(node => node.className)).toEqual(["d1-agent-button", "d2-link fg-quiet", "d1-agent-button"]);
     p.dispose();
@@ -274,7 +274,7 @@ describe("a server without the public leaderboard", () => {
     await vi.waitFor(() => expect(p.state("Recordings")).toBe("No recordings yet"));
     expect(p.card(C.houseModeTitle)).toBeUndefined();
     expect(p.asked.some(call => call.path === "/api/leaderboard")).toBe(false);
-    // Nor the challenge bubble, whose Challenge choice is part of that leaderboard.
+    // Nor the challenge bubble, whose board is part of that leaderboard.
     expect(p.root.all().some(node => node.dataset.key === "challenge-new")).toBe(false);
     p.dispose();
   });

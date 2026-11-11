@@ -22,6 +22,10 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   "claude-opus-5-5-max": ["max", null, "Claude Opus 5.5", ["max"]],
   "claude-fable-5-1": ["max", null, "Claude Fable 5.1", ["max"]],
   "claude-fable-5-2": ["max", null, "Claude Fable 5.2", ["max"]],
+  "claude-fable-5-2-high": ["high", null, "Claude Fable 5.2", ["high"]],
+  "claude-fable-5-2-xhigh": ["xhigh", null, "Claude Fable 5.2", ["xhigh"]],
+  "claude-fable-5-2-medium": ["medium", null, "Claude Fable 5.2", ["medium"]],
+  "claude-fable-5-2-low": ["low", null, "Claude Fable 5.2", ["low"]],
   "claude-sonnet-5-5": ["max", null, "Claude Sonnet 5.5", ["max"]],
   "glm-5-3": ["max", null, "GLM-5.3", ["max"]],
   "k3-1-pro": ["max", null, "K3.1 Pro", ["max"]],
@@ -48,6 +52,9 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   // High at the standard tier, so no Fast badge.
   "gemini-3-8-flash": ["high", "standard", "Gemini 3.8 Flash", ["high"]],
   "gemini-4-argon": ["high", "standard", "Gemini 4 Argon", ["high"]],
+  "gemini-4-carbon-low": ["low", null, "Gemini 4 Carbon", ["low"]],
+  "gemini-4-carbon-medium": ["medium", null, "Gemini 4 Carbon", ["medium"]],
+  "gemini-4-carbon-high": ["high", null, "Gemini 4 Carbon", ["high"]],
   // Abliterated and Mistral models at the standard tier, so no Fast badge.
   "abliterated-model-large": ["max", "standard", "Abliterated GLM-5.2", ["max"]],
   "abliterated-model": ["high", "standard", "Abliterated Model", ["high"]],

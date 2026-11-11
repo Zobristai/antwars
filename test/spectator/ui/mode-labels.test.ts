@@ -1,11 +1,11 @@
 // The game-mode names: the site's match labels are "Index · NvN",
-// "Challenge · 1v1", "Ranked · NvN" and "Lobby · NvN"; the ranked ladder is "Ranked" everywhere; and no shown or
-// agent-facing text says "house challenge", "rated challenge", "Antwars Benchmark", "Benchmark mode", "Open Rankings"
-// or "Unranked". Stored values (recording kind "unranked", challenge.kind "house", house-* mode ids) stay as they are.
+// "Challenge · 1v1", "Ranked · NvN" and "Unranked · NvN" (a public or invite-only lobby, or an unrated match, against Ranked); the ranked ladder
+// is "Ranked" everywhere; and no shown or agent-facing text says "house challenge", "rated challenge", "Antwars
+// Benchmark", "Benchmark mode" or "Open Rankings", nor any other than the match labels "Unranked". Stored values (recording kind "unranked", challenge.kind "house", house-* mode ids) stay as they are.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MATCH_TYPE_WORDS, recordingType } from "../../../web/src/ui/format.ts";
-import { lobbyText, waitingMode } from "../../../web/src/pages/waiting.ts";
+import { waitingType } from "../../../web/src/pages/waiting.ts";
 import { tableTitle } from "../../../web/src/pages/model.ts";
 import { C } from "../../../web/src/leaderboard-page/copy.ts";
 import { ACCOUNT_OPERATIONS } from "../../../src/accounts/service.ts";
@@ -14,22 +14,26 @@ import { rulesConfig } from "../../../src/sim/config.ts";
 import { playable } from "../../playable.ts";
 
 const RETIRED = [/house challenge/i, /\brated challenge/i, /antwars benchmark/i, /benchmark modes?\b/i, /open rankings/i, /\bunranked\b/i];
+/** The match labels' own words: "Unranked" is one of them. */
+const LABEL_RETIRED = RETIRED.filter(word => !word.test("Unranked"));
 
 describe("site match labels", () => {
   it("Recordings words each match type by its standing mode name", () => {
     expect(recordingType({ kind: "index", size: 2 })).toBe("Index · 2v2");
     expect(recordingType({ kind: "challenge", size: 1 })).toBe("Challenge · 1v1");
     expect(recordingType({ kind: "ranked", size: 3 })).toBe("Ranked · 3v3");
-    expect(recordingType({ kind: "unranked", size: 4 })).toBe("Lobby · 4v4");
-    for (const word of Object.values(MATCH_TYPE_WORDS)) for (const retired of RETIRED) expect(word).not.toMatch(retired);
+    expect(recordingType({ kind: "unranked", size: 4 })).toBe("Unranked · 4v4");
+    expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unranked · 1v1");
+    for (const word of Object.values(MATCH_TYPE_WORDS)) for (const retired of LABEL_RETIRED) expect(word).not.toMatch(retired);
   });
 
   it("Waiting words queues and lobbies with the same names", () => {
-    expect(waitingMode("house-1v1")).toBe("Index · 1v1");
-    expect(waitingMode("2v2")).toBe("Ranked · 2v2");
-    const lobby = { size: 1 as const, seated: 1, colonies: [["a"], []] as [string[], string[]], waitingSeconds: 0 };
-    expect(lobbyText({ ...lobby, mode: null, challenge: "house" })).toBe("Challenge · 1v1 · 1 of 2 seats");
-    expect(lobbyText({ ...lobby, mode: null })).toBe("Lobby · 1v1 · 1 of 2 seats");
+    const agent = { displayName: "a", waitingSeconds: 0, since: 0 };
+    expect(waitingType({ ...agent, mode: "house-1v1" })).toBe("Index · 1v1");
+    expect(waitingType({ ...agent, mode: "2v2" })).toBe("Ranked · 2v2");
+    const lobby = { size: 1 as const, seated: 1, colonies: [["a"], []] as [string[], string[]], waitingSeconds: 0, since: 0 };
+    expect(waitingType({ ...lobby, mode: null, challenge: "house" })).toBe("Challenge · 1v1");
+    expect(waitingType({ ...lobby, mode: null })).toBe("Unranked · 1v1");
   });
 
   it("the ranked ladder is Ranked in both of its tables; the Antwars Model Index heads only its own leaderboard", () => {

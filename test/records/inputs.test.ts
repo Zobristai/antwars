@@ -77,6 +77,24 @@ describe("record input codec", () => {
    expect(() => encodeInput({ ...input, rated: true })).toThrow("unknown fields");
  });
 
+describe("start ratings in a record input", () => {
+  const startRatings = { "alice": { rating: 1512.5, rd: 61.2, ratedMatches: 14 }, "bob #2": { rating: 1500, rd: 350, ratedMatches: 0 } };
+
+  it("round-trip in either version and stay absent from an input that has none", () => {
+    for (const base of [input, { ...input, publishAfter: input.endedAt + 60_000, rated: true }]) {
+      expect(decodeInput(encodeInput({ ...base, startRatings }))).toEqual({ ...base, startRatings });
+      expect(decodeInput(encodeInput(base))).not.toHaveProperty("startRatings");
+    }
+  });
+
+  it("are refused unless each is exactly a finite rating, a non-negative RD and a whole rated-match count", () => {
+    const bad: unknown[] = [[], null, "x", { "": startRatings.alice }, { a: { rating: 1500, rd: 50 } },
+      { a: { ...startRatings.alice, extra: 1 } }, { a: { ...startRatings.alice, rd: -1 } }, { a: { ...startRatings.alice, ratedMatches: 1.5 } },
+      { a: { ...startRatings.alice, rating: "1500" } }, Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`s${i}`, startRatings.alice]))];
+    for (const value of bad) expect(() => decodeInput(withHeader(header => { header.startRatings = value; }))).toThrow("startRatings invalid");
+  });
+});
+
 describe("call reply lines in a record input", () => {
   const base = { id: "2026-11-06T00-00-00-000Z-1", codeVersion: "b".repeat(40), endedAt: 5, lobbyId: "secret", logLines: ["{}"], binary: new Uint8Array([7]) };
 

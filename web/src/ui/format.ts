@@ -171,9 +171,10 @@ export function recordingModels(seats: Recording["seats"]): string {
 /** Record fidelity, worded as the record's, not as playability. */
 export const RECORD_LABEL: Record<Recording["status"], string> = { complete: "Record complete", partial: "Record partial", unavailable: "Record unavailable" };
 
-/** Each match type's word on the Recordings badge; never a mode slug. */
+/** Each match type's word on the Matches lists' Game type badge; never a mode slug. A public or invite-only lobby and an
+ * unrated match are both "Unranked", against "Ranked". */
 export const MATCH_TYPE_WORDS: Record<NonNullable<Recording["matchType"]>["kind"], string> = {
-  index: "Index", ranked: "Ranked", unranked: "Lobby", challenge: "Challenge", unrated: "Unrated",
+  index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked",
 };
 /** "Ranked · 2v2"; the word alone where the size is unknown; null for no type, or none sent. */
 export function recordingType(type: Recording["matchType"]): string | null {

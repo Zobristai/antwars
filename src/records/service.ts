@@ -179,7 +179,8 @@ export function createRecordService(deps: RecordServiceDeps): RecordService {
     note(id, `build started ${sinceEnd(buildStart, input.endedAt)}`, buildStart);
     try {
       // A public record carries what re-running its match needs; a sealed private record is unchanged.
-      body = await build({ id, binary: input.binary, logLines: input.logLines, endedAt: input.endedAt, ...(input.lobbyId === null ? { rerun: true } : {}) },
+      body = await build({ id, binary: input.binary, logLines: input.logLines, endedAt: input.endedAt, ...(input.lobbyId === null ? { rerun: true } : {}),
+        ...(input.startRatings === undefined ? {} : { startRatings: input.startRatings }) },
         RECORD_TIMEOUT_MS);
       reason = failureReason(body, id);
       if (input.rated === true) {

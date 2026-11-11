@@ -7,11 +7,15 @@ import type { PrivateArchive } from "../replays/private-archive.js";
 import type { LiveHub } from "./hub.js";
 import { admitMatchWatch, type MatchAccess } from "./match-access.js";
 import { listedMatches, matchWatchStatus, publicMatchCatalog, type PublicColonies, type PublicSeat } from "./match-catalog.js";
-import { publicQueue } from "./queue-catalog.js";
+import { publicQueue, type QueueRatings } from "./queue-catalog.js";
+import { HELD_COLONY } from "../lobby/challenges.js";
+import { seatRating } from "./seat-rating.js";
+import { lobbyMatchType, type RecordingMatchType } from "../replays/recorded-match-type.js";
+import type { RankedMode, Rating } from "../rating/ratings.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { harnessPhaseAt, isIndexMode } from "../rating/harnessPhase.js";
 import type { WatchMatch, WatchRegistry } from "./watch-registry.js";
-import type { Lobby } from "../lobby/lobbies.js";
+import type { Lobby, UnstartedLobby, WaitingAgent } from "../lobby/lobbies.js";
 import { lobbySeats, seatDisplayNames } from "./watch-controller.js";
 import { createAdmissionCap, type CapLimits } from "../net/admission.js";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
@@ -69,18 +73,20 @@ export function watchRoutes(options: {
         const slots = new Map(await Promise.all([...new Set(matches.map(match => match.slot))].map(async slot => [slot, await options.accounts.lobbies.resolveSlot(slot)] as const)));
         // A restarted slot has no retained in-memory playback from its previous process.
         const live = matches.filter(match => slots.get(match.slot)?.runId === match.runId);
-        const players = new Map(await Promise.all(listedMatches(live).map(async match => [match.lobbyId, await matchPlayers(options.accounts, match)] as const)));
-        const catalog = publicMatchCatalog(live, lobbies, players);
+        const read = await Promise.all(listedMatches(live).map(async match => [match.lobbyId, await matchPlayers(options.accounts, match)] as const));
+        const players = new Map(read.map(([id, found]) => [id, found.colonies] as const));
+        const types = new Map(read.flatMap(([id, found]) => found.matchType === null ? [] : [[id, found.matchType] as const]));
+        const catalog = publicMatchCatalog(live, lobbies, players, types);
         // Live now and Waiting show an unlisted house handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("watch catalog", [...catalog.matches.flatMap(match => match.colonies.flat().map(seat => seat.displayName)), ...catalog.lobbies.flatMap(lobby => lobby.colonies.flat())]);
         reply(res, 200, catalog); return;
       }
-      // The agents waiting in the ranked queues: display name, mode and time waited only; and the public lobbies
-      // and queue pairings not yet begun: mode, size, seats and seated names only.
+      // The agents waiting in the ranked queues: display name, mode, when the wait began and rating only; and the public
+      // lobbies and queue pairings not yet begun: mode, size, seats, seated names and their ratings only.
       if (pathname === "/watch/queue") {
         routeClass = pathname;
         const [agents, lobbies] = await Promise.all([options.accounts.lobbies.listWaiting(), options.accounts.lobbies.listUnstarted()]);
-        const queue = publicQueue(agents, Date.now(), lobbies);
+        const queue = publicQueue(agents, Date.now(), lobbies, await queueRatings(options.accounts, agents, lobbies));
         logUnlistedHouse("watch queue", [...queue.waiting.map(agent => agent.displayName), ...queue.lobbies.flatMap(lobby => lobby.colonies.flat())]);
         reply(res, 200, queue); return;
       }
@@ -194,26 +200,57 @@ export function watchRoutes(options: {
 }
 
 /**
- * A live match's seats by colony: each seat's stream display name (watch-controller seatDisplayNames), the model label its
- * slot published for it once it joined (null otherwise), and, in a ranked mode, the identity's current rating there, read
- * once per identity. Both colonies empty when the lobby is gone.
+ * Every rating the Waiting view shows, read once per identity and rule (seatRating): a queued agent's in its queue's mode,
+ * a lobby seat's in the lobby's mode, a house challenge's held seat by the held-seat rule.
  */
-async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels">): Promise<PublicColonies> {
+async function queueRatings(accounts: AccountStores, agents: readonly WaitingAgent[], lobbies: readonly UnstartedLobby[]): Promise<QueueRatings> {
+  const keyOf = (identityId: string, mode: RankedMode | null, held: boolean) => JSON.stringify([identityId, mode, held]);
+  const reads = new Map<string, Promise<Rating | null>>();
+  const read = (identityId: string, mode: RankedMode | null, held: boolean) => {
+    const key = keyOf(identityId, mode, held);
+    if (!reads.has(key)) reads.set(key, seatRating((id, ranked) => accounts.ratings.readRating(id, ranked), identityId, mode, held));
+  };
+  const held = (lobby: UnstartedLobby, colony: 0 | 1) => lobby.challenge === "house" && colony === HELD_COLONY;
+  for (const agent of agents) read(agent.identityId, agent.mode, false);
+  for (const lobby of lobbies) for (const colony of [0, 1] as const) for (const seat of lobby.colonies[colony]) read(seat.id, lobby.mode, held(lobby, colony));
+  const done = new Map(await Promise.all([...reads].map(async ([key, rating]) => [key, await rating] as const)));
+  return {
+    agent: agent => done.get(keyOf(agent.identityId, agent.mode, false)) ?? null,
+    seat: (lobby, colony, seat) => done.get(keyOf(seat.id, lobby.mode, held(lobby, colony))) ?? null,
+  };
+}
+
+/**
+ * A listed match's players and type from its lobby. Each seat carries its stream display name (watch-controller
+ * seatDisplayNames) and the model label, thinking level and service tier its slot published for it once spectators saw it
+ * join (each null otherwise). Each seat's rating is read fresh, by the rule the match stream shows it by (seatRating), so an
+ * unrated match's seats show theirs too; a seat that shows none in the stream shows none here.
+ */
+async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "thinkingLevels" | "serviceTiers">):
+  Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null }> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
-  if (!lobby.ok) return [[], []];
+  if (!lobby.ok) return { colonies: [[], []], matchType: null };
   const seats = lobbySeats(lobby.value.colonies), names = seatDisplayNames(seats);
-  const mode = match.mode;
-  const ratings = new Map(mode == null ? [] : await Promise.all([...new Set(seats.map(seat => seat.identityId))]
-    .map(async identityId => [identityId, await accounts.ratings.readRating(identityId, mode)] as const)));
+  const { challenge } = lobby.value;
+  const held = (colony: 0 | 1) => challenge !== undefined && colony === challenge.heldColony;
+  // One read per identity and rule: an identity holding seats in both colonies of a house challenge is read for each.
+  const reads = new Map<string, Promise<Rating | null>>();
+  const ratingOf = (identityId: string, colony: 0 | 1) => {
+    const key = JSON.stringify([identityId, held(colony)]);
+    if (!reads.has(key)) reads.set(key, seatRating((id, mode) => accounts.ratings.readRating(id, mode), identityId, match.mode ?? null, held(colony)));
+    return reads.get(key)!;
+  };
+  const ratings = await Promise.all(seats.map(seat => ratingOf(seat.identityId, seat.colony)));
   const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
   seats.forEach((seat, index) => {
-    const rating = ratings.get(seat.identityId), displayName = names[index]!;
-    const modelLabel = Object.hasOwn(match.modelLabels ?? {}, displayName) ? match.modelLabels![displayName]! : null;
-    colonies[seat.colony].push(rating === undefined
-      ? { displayName, modelLabel, rating: null, rd: null, ratedMatches: null }
-      : { displayName, modelLabel, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
+    const rating = ratings[index]!, displayName = names[index]!;
+    const own = (map: Readonly<Record<string, string>> | undefined) => map !== undefined && Object.hasOwn(map, displayName) ? map[displayName]! : null;
+    const named = { displayName, modelLabel: own(match.modelLabels), thinkingLevel: own(match.thinkingLevels), serviceTier: own(match.serviceTiers) };
+    colonies[seat.colony].push(rating === null
+      ? { ...named, rating: null, rd: null, ratedMatches: null }
+      : { ...named, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
   });
-  return colonies;
+  return { colonies, matchType: lobbyMatchType(lobby.value) };
 }
 
 /**

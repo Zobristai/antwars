@@ -4,16 +4,30 @@ import { z } from "zod";
 // all three null for an unrated match.
 // The model label a seat self-reported when it joined; null before it joins or where it reported none, absent from a
 // server that sends none.
+// Its thinking level and service tier the same way: what it reported on joining, null where it reported none.
 const seatLabel = z.string().nullable().optional();
+const seatNamed = { displayName: z.string().min(1), modelLabel: seatLabel, thinkingLevel: seatLabel, serviceTier: seatLabel };
 const liveSeat = z.union([
-  z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
-  z.object({ displayName: z.string().min(1), modelLabel: seatLabel, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
+  z.object({ ...seatNamed, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
+  z.object({ ...seatNamed, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
 ]);
+// What kind of match a row is and agents per colony, as GET /matches and GET /watch/catalog both type it
+// (src/replays/recorded-match-type.ts); null where the server could not tell, absent from a server that sends none. A value
+// this page does not know reads null rather than failing the page: the badge is display only.
+const matchType = z.object({
+  kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated"]),
+  size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
+}).nullable().optional().catch(null);
 const liveRow = z.object({
   lobbyId: z.string().min(1), startedAt: z.number().finite(), rated: z.boolean(), delaySeconds: z.union([z.literal(0), z.literal(60), z.literal(300)]),
   colonies: z.tuple([z.array(liveSeat), z.array(liveSeat)]),
+  matchType,
 });
+// A rating as a list row shows it: the figure, its RD and rated-match count. A malformed one reads null (no badge).
+const shownRating = z.object({ rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() })
+  .nullable().optional().catch(null);
 export type LiveSeat = z.infer<typeof liveSeat>;
+export type ShownRating = NonNullable<z.infer<typeof shownRating>>;
 const recordingRow = z.object({
   id: z.string().min(1), startedAt: z.string(), endedAt: z.string().nullable(), simulationEndedAt: z.string().nullable(),
   winner: z.union([z.literal(0), z.literal(1), z.null()]), reason: z.string().nullable(), decidedBy: z.string().nullable(),
@@ -22,39 +36,46 @@ const recordingRow = z.object({
   seats: z.array(z.object({ seat: z.number().int().nonnegative(), colony: z.union([z.literal(0), z.literal(1)]), modelLabel: z.string().nullable(),
     thinkingLevel: z.string().nullable().optional().transform(value => value ?? null),
     serviceTier: z.string().nullable().optional().transform(value => value ?? null),
-    handle: z.string().nullable().optional().transform(value => value ?? null) })),
+    handle: z.string().nullable().optional().transform(value => value ?? null),
+    // The seat's rating as of the match's start, stored on records made from this build on; null on older records.
+    startRating: shownRating })),
   status: z.enum(["complete", "partial", "unavailable"]), unavailable: z.array(z.string()),
-  // What kind of match it was and agents per colony (src/replays/history-routes.ts recordingMatchType); null where
-  // the server could not tell, absent from a server that sends none. A value this page does not know reads null rather
-  // than failing the page: the badge is display only.
-  matchType: z.object({
-    kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated"]),
-    size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
-  }).nullable().optional().catch(null),
+  matchType,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
-// An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode and whole seconds waited
-// when the server read it.
+// An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode, whole seconds waited
+// when the server read it, when its wait began (epoch ms; a server that sends none leaves the page to work it out from the
+// seconds waited) and its rating in that mode (null where it shows none).
 const waitingRow = z.object({
   displayName: z.string().min(1),
   mode: z.enum(["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4"]),
   waitingSeconds: z.number().int().nonnegative(),
+  since: z.number().finite().optional(),
+  rating: shownRating,
 });
 // A public lobby whose match has not begun (GET /watch/queue lobbies): a queue pairing's mode, or null for a
-// player-created lobby, agents per colony, seats taken, each colony's seated names and whole seconds since it was made.
+// player-created lobby, agents per colony, seats taken, each colony's seated names and their ratings, whole seconds since
+// it was made and when that was (epoch ms).
 const waitingLobby = z.object({
   mode: waitingRow.shape.mode.nullable(),
   size: z.number().int().min(1).max(4),
   seated: z.number().int().nonnegative(),
   colonies: z.tuple([z.array(z.string().min(1)), z.array(z.string().min(1))]),
+  // Each seated name's rating, in the order of colonies; absent from a server that sends none.
+  ratings: z.tuple([z.array(shownRating), z.array(shownRating)]).optional().catch(undefined),
+  // How many of its colony's seats each seated name holds, in the order of colonies; absent from a server that sends none,
+  // and read as one each where a count is malformed.
+  seats: z.tuple([z.array(z.number().int().min(1)), z.array(z.number().int().min(1))]).optional().catch(undefined),
   waitingSeconds: z.number().int().nonnegative(),
+  since: z.number().finite().optional(),
   // Present only on an unrated house challenge, which the Waiting card labels.
   challenge: z.literal("house").optional(),
 });
 export type LiveMatch = z.infer<typeof liveRow>;
 export type Recording = z.infer<typeof recordingRow>;
-export type WaitingAgent = z.infer<typeof waitingRow>;
-export type WaitingLobby = z.infer<typeof waitingLobby>;
+/** When a wait began is always known on the page: sent, or worked out from the seconds waited at the read. */
+export type WaitingAgent = z.infer<typeof waitingRow> & { readonly since: number };
+export type WaitingLobby = z.infer<typeof waitingLobby> & { readonly since: number };
 /** A Waiting card row: an agent in a ranked queue, or a public lobby or queue pairing not yet begun. */
 export type WaitingRow = WaitingAgent | WaitingLobby;
 export type Collection<T> =
@@ -118,7 +139,9 @@ export function createMatchesData(request: typeof fetch, publish: (view: Matches
     view = { ...view, waiting: { status: "loading", rows: view.waiting.rows } }; emit();
     try {
       const data = z.object({ waiting: z.array(waitingRow), lobbies: z.array(waitingLobby).optional() }).parse(await json("/watch/queue"));
-      view = { ...view, waiting: { status: "ready", rows: [...data.waiting, ...(data.lobbies ?? [])] } };
+      const at = Date.now();
+      const timed = <T extends { readonly waitingSeconds: number; readonly since?: number }>(row: T) => ({ ...row, since: row.since ?? at - row.waitingSeconds * 1000 });
+      view = { ...view, waiting: { status: "ready", rows: [...data.waiting.map(timed), ...(data.lobbies ?? []).map(timed)] } };
     }
     catch { view = { ...view, waiting: { status: "error", rows: view.waiting.rows } }; }
     emit();

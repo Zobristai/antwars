@@ -32,6 +32,14 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "gpt-6-1-sol-high",
   "gpt-6-1-sol-xhigh",
   "claude-haiku-5-5",
+  "claude-fable-5-2",
+  "claude-fable-5-2-high",
+  "claude-fable-5-2-xhigh",
+  "claude-fable-5-2-medium",
+  "claude-fable-5-2-low",
+  "gemini-4-carbon-low",
+  "gemini-4-carbon-medium",
+  "gemini-4-carbon-high",
 ];
 
 const LAUNCHABLE = new Set(LAUNCHABLE_HANDLES);
