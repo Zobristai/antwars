@@ -126,9 +126,7 @@ it.each([
   const source = await open(doc);
   expect([source.replay, source.recorded, source.feed, source.storedId]).toEqual([true, true, null, newest]);
   expect(await shown(source)).toEqual(expected);
-  // With no stored-ratings answer, the public stand-in's stored record is read once to type it (its harness phase).
-  expect(server.paths).toEqual(["/watch/catalog", "/matches", `/watch/ratings/${newest}`, `/replays/${newest}`,
-    ...(ratings === "fail" ? [`/matches/${newest}`] : [])]);
+  expect(server.paths).toEqual(["/watch/catalog", "/matches", `/watch/ratings/${newest}`, `/replays/${newest}`]);
   expect(error.textContent).toBe("");
 });
 
