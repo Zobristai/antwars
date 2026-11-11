@@ -567,25 +567,19 @@ describe("tap height on a phone", () => {
   });
 });
 
-describe("Model Index matches show their harness phase", () => {
-  it("tags an index recording and a live index match with their phase and flag, in both forms, and no other match", () => {
+describe("no match shows a harness phase", () => {
+  it("draws no phase label on an index recording or a live index match the server sends a phase for, in either form", () => {
     const p = page();
-    const indexRecording: Recording = { ...recording, id: "2026-10-26T01-38-33-692Z-1", matchType: { kind: "index", size: 1 },
-      harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } };
+    // The server still sends a Model Index match's phase; the page parses it away and draws nothing for it.
+    const indexRecording = { ...recording, id: "2026-10-26T01-38-33-692Z-1", matchType: { kind: "index", size: 1 },
+      harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } } as Recording;
     const ranked: Recording = { ...recording, id: "2026-10-27T08-00-00-000Z-1", matchType: { kind: "ranked", size: 1 } };
-    const liveIndex: LiveMatch = { ...live("lobby-i"), harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } };
+    const liveIndex = { ...live("lobby-i"), harnessPhase: { phase: "from round 31 onward", possibleEffortMismatch: false } } as LiveMatch;
     p.mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [liveIndex, live("lobby-r")] },
       recordings: { status: "ready", rows: [indexRecording, ranked] }, next: null });
-    // A word joiner follows each hyphen, so "rounds 26-30" never breaks at its hyphen when the tag wraps.
-    const tags = (scope: ElementPort) => scope.byClass("d1p-phase").map(node => node.textContent?.replace(/-\u2060/g, "-"));
-    expect(p.body.byClass("d1p-phase").every(node => !/-(?!\u2060)/.test(node.textContent ?? ""))).toBe(true);
-    const [liveTable, recTable] = p.body.byClass("d1p-wide");
-    const [liveList, recList] = p.body.byClass("d1p-narrow");
-    const rows = (scope: ElementPort) => scope.querySelector("tbody")!.querySelectorAll("tr");
-    expect(rows(liveTable!).map(tags)).toEqual([["Harness: rounds 26-30"], []]);
-    expect(liveList!.querySelectorAll("li").map(tags)).toEqual([["Harness: rounds 26-30"], []]);
-    expect(rows(recTable!).map(tags)).toEqual([[], ["Harness: rounds 1-7", "Possible effort mismatch"]]);
-    expect(recList!.querySelectorAll("li").map(tags)).toEqual([[], ["Harness: rounds 1-7", "Possible effort mismatch"]]);
+    expect(p.body.byClass("d1p-phase")).toEqual([]);
+    for (const scope of [...p.body.byClass("d1p-wide"), ...p.body.byClass("d1p-narrow")])
+      expect(scope.textContent ?? "").not.toMatch(/harness|effort mismatch|rounds \d|round 31|pin onward/i);
     p.mounted.destroy();
   });
 });
