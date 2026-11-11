@@ -237,5 +237,7 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // 9178696b…, so nothing else changed.
   // Repinned for the ranked never-joined sentence in the pick_nest description; without it the list hashes to 04514aa7….
   // Repinned again for that sentence and the idle rule covering every lobby match; the ranked wording restores 136b9e88….
-  expect(sha(JSON.stringify(tools))).toBe("1c3d5dff3cc9d01c112f84175f119e792d026d1b0dde0aa602523cd733952b55");
+  // Repinned for the myMarks tile and LINE second-end sentence in the observe description; without it the list
+  // hashes to 1c3d5dff….
+  expect(sha(JSON.stringify(tools))).toBe("19395f13ae77952ab3ba6cb99a67f84a7e19522052fff6b729e2635e842f591d");
 });
