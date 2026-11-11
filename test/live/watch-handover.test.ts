@@ -249,6 +249,20 @@ describe("the watch registry's resumed match", () => {
     await expect(registry.register(match)).rejects.toThrow("identity changed");
   });
 
+  it("keeps the start ratings stored at registration through a resume, in its public listing too, and reads a malformed copy as none", async () => {
+    const { docs, store } = memoryWatchStore(); const registry = createWatchRegistry(store);
+    const seatRatings = { a: { rating: 1612.4, rd: 80, ratedMatches: 12 }, b: { rating: 1490, rd: 350, ratedMatches: 0 } };
+    await registry.register({ ...match, mode: "1v1", seatRatings });
+    heldBy(docs, "run-new");
+    expect(await registry.resumed({ ...match, ...moved, mode: "1v1" })).toBe(true);
+    expect(await registry.read(lobbyId)).toEqual({ ...match, ...moved, mode: "1v1", seatRatings, playbackFinished: false });
+    expect((await registry.publicMatches())[0]).toMatchObject({ ...moved, seatRatings });
+    for (const malformed of ["{", "[]", JSON.stringify({ a: { rating: 1500, rd: 350 } }), JSON.stringify({ a: { rating: "1500", rd: 350, ratedMatches: 0 } })]) {
+      docs.set(`watchMatches/${lobbyId}`, { ...docs.get(`watchMatches/${lobbyId}`), seatRatings: malformed });
+      expect((await registry.read(lobbyId))?.seatRatings).toBeUndefined();
+    }
+  });
+
   it("registers a match whose registration never committed", async () => {
     const { docs, store } = memoryWatchStore(); const registry = createWatchRegistry(store);
     heldBy(docs, "run-new");

@@ -1,4 +1,5 @@
 import type { AccountStores } from "../accounts/service.js";
+import type { Rating } from "../rating/ratings.js";
 import { seatKeyOf, type LobbySeat } from "../mcp/game.js";
 import type { LiveGame } from "../server.js";
 import type { SimState } from "../sim/types.js";
@@ -17,6 +18,8 @@ interface Prepared {
   readonly bySeat: ReadonlyMap<string, SeatIdentity>;
   /** The stream's start, the match's registry key; set once the match has started here. */
   readonly startedAt?: number;
+  /** Each seated identity's rating in the lobby's ranked mode as read before start, which the catalog shows (registry seatRatings). */
+  readonly seatRatings?: Readonly<Record<string, Rating>>;
 }
 /** A started lobby's watch metadata as a handover save carries it: JSON-safe. */
 export interface WatchSave {
@@ -142,16 +145,20 @@ export function createWatchController(options: {
       const [lobby, instance] = await Promise.all([accounts.lobbies.readLobby(lobbyId), accounts.lobbies.resolveSlot(options.slot)]);
       if (!lobby.ok || lobby.value.state !== "holding" || lobby.value.slot !== options.slot || lobby.value.rated === null || !instance) throw new Error("Spectator lobby not ready");
       const { challenge, mode } = lobby.value;
-      const members = await Promise.all(seats.map(async seat => {
+      const [members, seatRatings] = await Promise.all([Promise.all(seats.map(async seat => {
         // A house challenge's held seat shows its handle's Model Index 1v1 rating, and none before the Index has rated
         // it; every other seat shows its rating in the lobby's mode (a challenge's builder, its public 1v1 rating).
         const house = challenge !== undefined && seat.colony === challenge.heldColony;
         const read = await accounts.ratings.readRating(seat.identityId, house ? "house-1v1" : mode ?? "1v1");
         return { ...seat, ...(house && read.ratedMatches === 0 ? {} : { elo: read.rating }) };
-      }));
+      })),
+      // The catalog's figures: each identity's rating in the lobby's ranked mode, read once here, before the match can
+      // have a result, so Live now never shows a rating the match itself moved.
+      mode == null ? undefined : Promise.all([...new Set(seats.map(seat => seat.identityId))]
+        .map(async identityId => [identityId, await accounts.ratings.readRating(identityId, mode)] as const)).then(Object.fromEntries)]);
       if (closed) throw new Error("Spectator server closed");
       current = { access: { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated, mode: lobby.value.mode }, runId: instance.runId,
-        bySeat: seatIdentities(members) };
+        bySeat: seatIdentities(members), ...(seatRatings === undefined ? {} : { seatRatings }) };
       prepared.set(lobbyId, current);
     },
     started(seq, state, live, hub) {
@@ -164,7 +171,8 @@ export function createWatchController(options: {
       const { startedAt } = hub.catalogMatches().find(row => row.lobbyId === metadata.access.lobbyId)!;
       prepared.set(metadata.access.lobbyId, { ...metadata, startedAt });
       runs.set(metadata.access.lobbyId, metadata.runId);
-      publish(() => registry.register({ ...metadata.access, startedAt, origin: options.origin, slot: options.slot, runId: metadata.runId }));
+      publish(() => registry.register({ ...metadata.access, startedAt, origin: options.origin, slot: options.slot, runId: metadata.runId,
+        ...(metadata.seatRatings === undefined ? {} : { seatRatings: metadata.seatRatings }) }));
     },
     save(lobbyId) {
       const metadata = prepared.get(lobbyId);

@@ -195,19 +195,18 @@ export function watchRoutes(options: {
 
 /**
  * A live match's seats by colony: each seat's stream display name (watch-controller seatDisplayNames), the model label its
- * slot published for it once it joined (null otherwise), and, in a ranked mode, the identity's current rating there, read
- * once per identity. Both colonies empty when the lobby is gone.
+ * slot published for it once it joined (null otherwise), and, in a ranked mode, the identity's rating there as stored when
+ * the match was registered, read before it started (registry seatRatings), never its current rating; none where none was
+ * stored. Both colonies empty when the lobby is gone.
  */
-async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels">): Promise<PublicColonies> {
+async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "seatRatings">): Promise<PublicColonies> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
   if (!lobby.ok) return [[], []];
   const seats = lobbySeats(lobby.value.colonies), names = seatDisplayNames(seats);
-  const mode = match.mode;
-  const ratings = new Map(mode == null ? [] : await Promise.all([...new Set(seats.map(seat => seat.identityId))]
-    .map(async identityId => [identityId, await accounts.ratings.readRating(identityId, mode)] as const)));
+  const ratings = match.mode == null ? {} : match.seatRatings ?? {};
   const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
   seats.forEach((seat, index) => {
-    const rating = ratings.get(seat.identityId), displayName = names[index]!;
+    const rating = Object.hasOwn(ratings, seat.identityId) ? ratings[seat.identityId]! : undefined, displayName = names[index]!;
     const modelLabel = Object.hasOwn(match.modelLabels ?? {}, displayName) ? match.modelLabels![displayName]! : null;
     colonies[seat.colony].push(rating === undefined
       ? { displayName, modelLabel, rating: null, rd: null, ratedMatches: null }

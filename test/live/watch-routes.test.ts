@@ -30,6 +30,8 @@ const close: (() => void | Promise<void>)[] = [];
 /** Responses of streams a test holds open: fetch cancels a Response that is garbage-collected, which would close its stream mid-test. */
 const held: Response[] = [];
 afterEach(async () => { for (const fn of close.splice(0).reverse()) await fn(); held.length = 0; });
+/** Each seat's rating in a ranked match's mode as the slot read it before start and registered it. */
+const startRatings = { a: { rating: 1612.4, rd: 80, ratedMatches: 12 }, b: { rating: 1490, rd: 80, ratedMatches: 12 }, c: { rating: 1490, rd: 80, ratedMatches: 12 } };
 function lobby(lobbyId: string, kind: "public" | "private", rated = true): Lobby {
   return { id: lobbyId, kind, size: 1, state: "holding", rated, slot: `${kind}-0`, creatorId: "a", createdAt: 0, expiresAt: 1000,
     colonies: [[{ id: "a", displayName: "alice" }], [{ id: "b", displayName: "bob" }]], startsAt: 0, outcome: null, mode: null };
@@ -48,8 +50,8 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
     resolveSlot: async () => ({ runId: "run", mcpUrl: "", spectatorUrl: "" }),
     isInviteCurrent: async (key: string, token: string) => key === id && token === invite,
   }, ratings: {
-    // The catalog reads each seat's rating in a ranked match's mode.
-    readRating: async (identityId: string) => ({ rating: identityId === "a" ? 1612.4 : 1490, rd: 80, ratedMatches: 12 }),
+    // The catalog never reads a current rating: it shows the start ratings registered with the match (startRatings).
+    readRating: async () => { throw new Error("catalog read a current rating"); },
   } } as unknown as AccountStores;
   const clock = new ManualClock();
   const owner = new LiveHub({ clock, currentInvite: accounts.lobbies.isInviteCurrent, relayKey: relay.ownerKey });
@@ -271,7 +273,7 @@ describe("shared spectator HTTP routes", () => {
       lobbyId: second, started: false, playbackFinished: false, delaySeconds: 0,
     });
     await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode, startedAt: 0,
-      origin: f.ownerOrigin, slot: "public-0", runId: "run" });
+      origin: f.ownerOrigin, slot: "public-0", runId: "run", seatRatings: startRatings });
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     // Each seat with its rating, RD and rated-match count in the match's mode, and the Model Index match's harness phase
     // by its start (here time 0, before every boundary).
@@ -297,15 +299,11 @@ describe("shared spectator HTTP routes", () => {
     });
   });
 
-  it("names a team seat held twice by its stream name, reads its rating once, and lists a match whose lobby is gone without seats", async () => {
+  it("names a team seat held twice by its stream name, shows its registered start rating on each, and lists a match whose lobby is gone without seats", async () => {
     const f = await fixture("public");
-    const reads: string[] = [];
-    const ratings = f.accounts.ratings as unknown as { readRating: (identityId: string, mode?: string) => Promise<unknown> };
-    const read = ratings.readRating;
-    ratings.readRating = async (identityId, mode) => { reads.push(`${identityId}:${mode}`); return read(identityId, mode); };
     f.lobbies.set(second, { ...lobby(second, "public"), size: 2, mode: "2v2",
       colonies: [[{ id: "a", displayName: "alice" }, { id: "a", displayName: "alice" }], [{ id: "b", displayName: "bob" }, { id: "c", displayName: "antwars/gpt-6-luna" }]] });
-    await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode: "2v2", startedAt: 5, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
+    await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode: "2v2", startedAt: 5, origin: f.ownerOrigin, slot: "public-0", runId: "run", seatRatings: startRatings });
     const third = "00000000-0000-4000-8000-000000000003";
     await f.registry.register({ lobbyId: third, visibility: "public", rated: true, mode: "1v1", startedAt: 9, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     // The slot published the labels of the seats that reported one; a seat that reported none, or has not joined, carries null.
@@ -315,8 +313,17 @@ describe("shared spectator HTTP routes", () => {
       [{ displayName: "alice #1", modelLabel: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", rating: 1612.4, rd: 80, ratedMatches: 12 }],
       [{ displayName: "bob", modelLabel: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", rating: 1490, rd: 80, ratedMatches: 12 }],
     ]);
-    expect(reads.sort()).toEqual(["a:2v2", "b:2v2", "c:2v2"]);
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === third).colonies).toEqual([[], []]);
+  });
+
+  it("shows a ranked match registered without start ratings with none, never a current rating", async () => {
+    const f = await fixture("public");
+    f.lobbies.set(second, { ...lobby(second, "public"), mode: "1v1" });
+    await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode: "1v1", startedAt: 5, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
+    const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
+    expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === second).colonies).toEqual([
+      [{ displayName: "alice", modelLabel: null, rating: null, rd: null, ratedMatches: null }], [{ displayName: "bob", modelLabel: null, rating: null, rd: null, ratedMatches: null }],
+    ]);
   });
 });
 

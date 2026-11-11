@@ -1,5 +1,5 @@
 import type { Fields, Store, Write } from "../store/firestore.js";
-import type { RankedMode } from "../rating/ratings.js";
+import type { RankedMode, Rating } from "../rating/ratings.js";
 import type { CatalogMatch } from "./match-catalog.js";
 import { captureMatchAccess, type MatchAccess } from "./match-access.js";
 import { isReplayId } from "../replays/access.js";
@@ -15,6 +15,12 @@ export interface WatchMatch extends CatalogMatch {
    * absent where none was published (an older server or row, or no seat has joined yet).
    */
   readonly modelLabels?: Readonly<Record<string, string>>;
+  /**
+   * Each seated identity's rating, RD and rated-match count in the match's ranked mode by identity id, as read before the
+   * match started; stored once at registration and never rewritten, so the catalog shows the figures the match began
+   * with. Absent where none was stored (an unranked mode, an older server or row, or a malformed field).
+   */
+  readonly seatRatings?: Readonly<Record<string, Rating>>;
 }
 export interface WatchRegistry {
   register(match: Omit<WatchMatch, "playbackFinished" | "replayId">): Promise<void>;
@@ -79,7 +85,23 @@ function decode(lobbyId: string, row: Fields): WatchMatch {
   return { ...access, startedAt,
     playbackFinished: row.playbackFinished === "true", origin: origin(row.origin!), slot: row.slot!, runId: row.runId,
     ...(row.replayId === undefined ? {} : { replayId: row.replayId }),
-    ...modelLabels(row.modelLabels) };
+    ...modelLabels(row.modelLabels), ...seatRatings(row.seatRatings) };
+}
+
+/** A stored seatRatings field read back: a JSON object of finite rating, RD and rated-match counts. Absent or malformed
+ * reads as none, so a rating never fails the catalog. */
+function seatRatings(value: string | undefined): { seatRatings: Readonly<Record<string, Rating>> } | undefined {
+  if (value === undefined) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { return undefined; }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+  const ratings: Record<string, Rating> = {};
+  for (const [identityId, entry] of Object.entries(parsed)) {
+    const { rating, rd, ratedMatches } = (entry ?? {}) as Partial<Rating>;
+    if (![rating, rd, ratedMatches].every(Number.isFinite)) return undefined;
+    ratings[identityId] = { rating: rating!, rd: rd!, ratedMatches: ratedMatches! };
+  }
+  return { seatRatings: ratings };
 }
 
 /** A stored modelLabels field read back: a JSON object of non-empty strings. Absent or malformed reads as none, so a
@@ -150,7 +172,8 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       !/^(public|private)-\d+$/.test(match.slot) || !match.runId) throw new Error("Invalid spectator match");
     const access = captureMatchAccess(match);
     const fields = { visibility: access.visibility, rated: String(access.rated), mode: access.mode ?? "", startedAt: String(match.startedAt).padStart(16, "0"),
-      origin: origin(match.origin), slot: match.slot, runId: match.runId, playbackFinished: "false" };
+      origin: origin(match.origin), slot: match.slot, runId: match.runId, playbackFinished: "false",
+      ...(match.seatRatings === undefined ? {} : { seatRatings: JSON.stringify(match.seatRatings) }) };
     return store.transaction<boolean>(async read => {
       const docs = await read([path(match.lobbyId), listing(match.lobbyId), ...(resumed ? [lobby(match.lobbyId)] : [])]);
       // Read inside this write's transaction, which the store serializes with adoptMatch's: no adoption commits between the check and the write.
@@ -163,6 +186,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
         for (const key of ["visibility", "rated", "startedAt", "slot", ...(resumed ? [] : server)] as const) {
           if (before[key] !== fields[key]) throw new Error("Spectator match identity changed");
         }
+        // The stored start ratings are kept as first written: a resumed match's are never replaced.
         if (server.every(key => before[key] === fields[key])) return { result: true, writes: [] };
         const moved = { origin: fields.origin, runId: fields.runId };
         const writes: Write[] = [{ op: "update", path: path(match.lobbyId), fields: moved }];
