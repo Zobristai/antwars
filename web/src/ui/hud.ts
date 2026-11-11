@@ -30,6 +30,7 @@ import {
   type DrawerEvent, type Drawers,
 } from "./format.ts";
 import { navigation } from "./nav.ts";
+import { detailWithoutPhase } from "../replay.ts";
 
 type Colony = 0 | 1;
 const COLONIES = [0, 1] as const;
@@ -327,10 +328,12 @@ export function mountHud(context: HudHost): Mounted<HudView> {
   const status = el("div", "d2-status");
   status.setAttribute("role", "status");
   const modeLabel = el("span", "d2-mode-label"), modeDetail = el("span", "d2-mode-detail"), connection = el("span", "d2-connection");
+  // A recording's harness phase, a part of its own after the date, so it is never cut with the date (replay.ts phase).
+  const modePhase = el("span", "d2-mode-phase");
   const back = el("a", "d2-back");
   const backText = el("span", "d2-back-text");
   back.append(backText);
-  status.append(modeLabel, modeDetail, connection, back);
+  status.append(modeLabel, modeDetail, modePhase, connection, back);
   // Compact: its name, then the address and its Copy, the live controls themselves.
   const join = el("div", "d2-join");
   join.setAttribute("role", "group");
@@ -436,12 +439,16 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const mode = view.mode;
     const recorded = noMatch || !!mode?.label.startsWith("RECORDING");
     const label = noMatch ? D2_COPY.noMatch : mode?.label ?? "";
-    const detail = noMatch ? "" : mode?.detail ?? "";
+    // The detail without the harness phase, which follows it as its own part.
+    const detail = noMatch || !mode ? "" : detailWithoutPhase(mode);
+    const phase = noMatch ? "" : mode?.phase ?? "";
     const href = noMatch ? null : mode?.link?.href ?? null;
     const words = mode?.link?.text ?? "";
     text(modeLabel, label);
     text(modeDetail, withUnits(detail));
+    text(modePhase, phase);
     flag(status, "is-replay", recorded);
+    flag(status, "has-phase", phase !== "");
     text(connection, view.connection);
     // Live with no agents offers the recording in the pane; only Back to live stays on the line.
     const backHere = href !== null && words !== "" && href !== "?replay";

@@ -87,6 +87,23 @@ describe("the 2D HUD's status line from the shared view", () => {
     hud.update(view(recording, null));
     expect(line()).toEqual({ label: "No live match", detail: "", recorded: true, back: null });
   });
+
+  // Catches: a recording's harness phase cut with its date on the wide line (it rode the detail, the one part an ellipsis
+  // shortens), or broken inside itself on a phone.
+  it("paints a recording's harness phase as a part of its own after the date, and none without one", () => {
+    const { hud, host } = mount(false);
+    const part = (cls: string) => host.byClass(cls)[0]!;
+    const phased = modeCopy("replay", 2, false, "/", "2026-10-26T01-38-33-692Z-1", true, undefined, ["Harness: rounds 1-7", "Possible effort mismatch"]);
+    hud.update(view(phased));
+    expect(part("d2-mode-detail").textContent).toBe("26 Oct 2026");
+    expect(part("d2-mode-phase").textContent).toBe(phased.phase);
+    expect(part("d2-status").classList.contains("has-phase")).toBe(true);
+    // The parts in order: the label, the date, the phase, then Back to live.
+    expect(part("d2-status").children.map(node => node.className)).toEqual(["d2-mode-label", "d2-mode-detail", "d2-mode-phase", "d2-connection", "d2-back"]);
+    hud.update(view(modeCopy("replay", 2, false, "/", "2026-10-26T01-38-33-692Z-1", true)));
+    expect([part("d2-mode-detail").textContent, part("d2-mode-phase").textContent]).toEqual(["26 Oct 2026", ""]);
+    expect(part("d2-status").classList.contains("has-phase")).toBe(false);
+  });
 });
 
 describe("the board's live controls handed to each HUD", () => {

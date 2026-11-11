@@ -191,27 +191,34 @@ export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string
   return [named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
 }
 
-/** A list's harness phase said once (listPhase): its note, and each row's own tags where the note does not carry them. */
-export interface ListPhase {
-  /** "Index · Harness from round 31 onward", each tag held whole (replay.ts unbrokenTag); null where the list says none. */
-  readonly note: string | null;
-  /** Each row's own tags, in the rows' order: none where the note carries them. */
-  readonly own: readonly (readonly string[])[];
-}
+/** The divider that ends a phase's divider over a Live now match outside the Model Index, whose row has no badge to say
+ * so; worded as the HUD's tooltip words it ("outside the Antwars Model Index"). */
+export const OUTSIDE_INDEX = "Outside the Model Index";
 
 /**
- * A list's Model Index harness phase, said once in a note over the list rather than on every row. The note carries the
- * first covered row's tags, Recordings' newest, and a row keeps its own tags only where they differ, so every match's
- * phase stays identifiable and older rows loaded later change no row already shown. covered: the rows the note speaks
- * for; a Recordings row its Index badge marks as a Model Index match, and every Live now row, which has no such badge,
- * so there a note needs every row to be one. No note where a covered row has no tags: it would give that row a phase.
+ * One row as phaseDividers reads it: its harness phase tags; [] for a Live now match outside the Model Index, which
+ * carries no badge to say so; or null for a row no divider speaks for: a row with no phase, which in Recordings its badge
+ * marks as another kind of match, or an Index row whose phase the page cannot read, which stands in the time its
+ * divider names (a phase is decided by a match's time alone).
  */
-export function listPhase(rows: readonly { readonly covered: boolean; readonly phase: readonly string[] }[]): ListPhase {
-  const covered = rows.filter(row => row.covered);
-  const shared = covered[0]?.phase ?? [];
-  if (shared.length === 0 || covered.some(row => row.phase.length === 0)) return { note: null, own: rows.map(row => row.phase) };
-  const same = (tags: readonly string[]) => tags.length === shared.length && tags.every((tag, at) => tag === shared[at]);
-  return { note: ["Index", ...shared].map(unbrokenTag).join(" · "), own: rows.map(row => row.covered && same(row.phase) ? [] : row.phase) };
+export type PhaseOf = readonly string[] | null;
+
+/**
+ * Where a list's Model Index harness phase changes, newest first: the divider to draw before each row (its tags joined,
+ * each held whole, replay.ts unbrokenTag), or null for none. A divider stands before the first row of each phase, so
+ * every row's phase reads from the nearest divider above it and no row carries a tag; older rows loaded later add
+ * dividers under the rows already shown and change none of them. A Live now match outside the Index ends the divider
+ * above it with OUTSIDE_INDEX; with no phase above it, nothing needs saying.
+ */
+export function phaseDividers(rows: readonly PhaseOf[]): (string | null)[] {
+  let shown: string | null = null;
+  return rows.map(tags => {
+    if (tags === null) return null;
+    const divider = tags.length > 0 ? tags.map(unbrokenTag).join(" · ") : shown === null ? null : OUTSIDE_INDEX;
+    if (divider === null || divider === shown) return null;
+    shown = divider;
+    return divider;
+  });
 }
 
 export function recordingRow(r: Recording, search: string): RecordingRow {

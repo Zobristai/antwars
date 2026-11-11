@@ -21,7 +21,17 @@ export interface ModeCopy {
   label: string;
   /** Descriptive tail; the only part that may be cut short on a narrow screen. */
   detail: string;
+  /** A stored Model Index recording's harness phase, the words its detail ends with; absent on any other line. A HUD
+   * that shows the phase as a part of its own, never cut, shows the detail without it (detailWithoutPhase). */
+  phase?: string;
   link: { text: string; href: string } | null;
+}
+
+/** A line's detail without the harness phase it ends with (ModeCopy.phase): "26 Oct 2026", "· recording ended". */
+export function detailWithoutPhase(mode: Pick<ModeCopy, "detail" | "phase">): string {
+  const { detail, phase } = mode;
+  if (!phase || !detail.endsWith(phase)) return detail;
+  return detail.slice(0, detail.length - phase.length).replace(/ · $/, "");
 }
 
 export const LIVE_LABEL = "LIVE";
@@ -65,7 +75,8 @@ export const unbrokenTag = (tag: string): string => tag.replace(/ /g, "\u00a0").
  * delay disclosed, after "No active agents — colonies on autopilot" while no agent is in the match.
  * Standing in for the live page (source.ts), the recording's line
  * says why in place of "not live": "RECORDING · no live match · rated match · 4 agents".
- * A stored Model Index recording's harness phase tags follow its detail: "15 Oct 2026 · Harness: rounds 26-30".
+ * A stored Model Index recording's harness phase tags follow its detail: "15 Oct 2026 · Harness: rounds 26-30", and are
+ * also given apart as its phase.
  */
 export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: string, storedId: string | null = null, rated?: boolean, delaySeconds?: number,
   harnessPhase: readonly string[] = []): ModeCopy {
@@ -79,10 +90,12 @@ export function modeCopy(mode: Mode, agents: number, ended: boolean, livePath: s
     const phase = harnessPhase.map(unbrokenTag).join(" · ");
     const after = (text: string) => phase === "" ? text : text === "" ? phase : `${text} · ${phase}`;
     const detail = after(storedId === null ? "" : recordedDateLabel(storedId));
-    if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, link: null };
+    // The phase is also given apart, so a HUD can keep it whole as a part of its own; absent where there is none.
+    const phased = phase === "" ? {} : { phase };
+    if (fallback !== null) return { label: `RECORDING · ${FALLBACK_LABEL[fallback]}${rating} · ${agents} agents`, detail, ...phased, link: null };
     const link = { text: BACK_TEXT, href: liveHref(livePath) };
     const label = RECORDING_LABEL + rating;
-    return ended ? { label, detail: after("· recording ended"), link } : { label: `${label} · ${agents} agents`, detail, link };
+    return ended ? { label, detail: after("· recording ended"), ...phased, link } : { label: `${label} · ${agents} agents`, detail, ...phased, link };
   }
   if (agents === 0) return { label: LIVE_LABEL + rating, detail: `${AUTOPILOT_DETAIL} · ${delay}`, link: { text: OFFER_TEXT, href: "?replay" } };
   return { label: LIVE_LABEL + rating, detail: delay, link: null };

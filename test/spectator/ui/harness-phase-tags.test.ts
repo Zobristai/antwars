@@ -1,8 +1,8 @@
 // A Model Index match's harness phase as the Matches page and the replay word it (web/src/ui/format.ts, web/src/replay.ts).
 import { describe, expect, it } from "vitest";
-import { harnessPhaseTags, listPhase, liveRow, recordingRow } from "../../../web/src/ui/format.ts";
+import { OUTSIDE_INDEX, harnessPhaseTags, liveRow, phaseDividers, recordingRow } from "../../../web/src/ui/format.ts";
 import { harnessPhase } from "../../../web/src/matches-page/data.ts";
-import { modeCopy } from "../../../web/src/replay.ts";
+import { detailWithoutPhase, modeCopy } from "../../../web/src/replay.ts";
 import type { LiveMatch, Recording } from "../../../web/src/matches-page/data.ts";
 
 const phase = (name: string, possibleEffortMismatch: boolean | null = false) =>
@@ -43,41 +43,39 @@ describe("harness phase tags", () => {
     expect(liveRow(live, "").phase).toEqual([]);
   });
 
-  describe("a list says its phase once", () => {
+  describe("a list draws a divider where its phase changes", () => {
     const r31 = ["Harness from round 31 onward"], r26 = ["Harness: rounds 26-30"];
     const flagged = ["Harness: rounds 1-7", "Possible effort mismatch"], unflagged = ["Harness: rounds 1-7"];
-    const index = (phase: string[]) => ({ covered: true, phase }), other = { covered: false, phase: [] };
-    // The note's text as read: each tag is held whole with no-break spaces and a word joiner after each hyphen.
-    const read = (note: string | null) => note?.replace(/ /g, " ").replace(/-⁠/g, "-");
+    // A divider's text as read: each tag is held whole with no-break spaces and a word joiner after each hyphen.
+    const read = (dividers: (string | null)[]) => dividers.map(text => text?.replace(/ /g, " ").replace(/-⁠/g, "-") ?? null);
 
-    it("puts a phase every covered row shares in one note, in the Index badge's word, and on no row", () => {
-      const phase = listPhase([index(r31), other, index(r31)]);
-      expect(phase.note).toBe("Index · Harness from round 31 onward");
-      expect(phase.own).toEqual([[], [], []]);
+    it("draws one before the first row of each phase, the older phases and the effort flag included, and none on a row", () => {
+      // Recordings, newest first: rows with no phase (another kind of match, by its badge) stand under the divider above.
+      expect(read(phaseDividers([null, r31, null, r31, r26, null, r26, unflagged, flagged, flagged]))).toEqual([
+        null, "Harness from round 31 onward", null, null, "Harness: rounds 26-30", null, null, "Harness: rounds 1-7",
+        "Harness: rounds 1-7 · Possible effort mismatch", null,
+      ]);
     });
 
-    it("names the newest covered row's phase, and each row whose phase differs keeps its own tags", () => {
-      const phase = listPhase([other, index(r31), index(r26), other, index(r26)]);
-      expect(read(phase.note)).toBe("Index · Harness from round 31 onward");
-      expect(phase.own).toEqual([[], [], r26, [], r26]);
-      // Older rows loaded later change neither the note nor a row already shown.
-      expect(listPhase([other, index(r31)])).toEqual({ note: phase.note, own: [[], []] });
+    it("holds each tag whole, so a divider breaks only between tags", () => {
+      expect(phaseDividers([flagged])).toEqual(["Harness: rounds 1-⁠7 · Possible effort mismatch"]);
     });
 
-    it("keeps the effort flag identifiable: in the note with its phase, or on a row whose flag differs", () => {
-      const phase = listPhase([index(flagged), index(unflagged), index(flagged)]);
-      expect(read(phase.note)).toBe("Index · Harness: rounds 1-7 · Possible effort mismatch");
-      expect(phase.own).toEqual([[], unflagged, []]);
-      expect(listPhase([index(unflagged), index(flagged)]).own).toEqual([[], flagged]);
+    it("adds dividers for older rows loaded later without moving any already drawn", () => {
+      const first = phaseDividers([r31, null, r31]);
+      expect(phaseDividers([r31, null, r31, null, r26, r26]).slice(0, 3)).toEqual(first);
+      expect(read(phaseDividers([r31, null, r31, null, r26, r26]).slice(3))).toEqual([null, "Harness: rounds 26-30", null]);
     });
 
-    it("has no note, and every row keeps its own tags, where a covered row has no phase or none is covered", () => {
-      // Live now covers every row: a match with no phase leaves each Index match its own tags.
-      expect(listPhase([index(r31), index([])])).toEqual({ note: null, own: [r31, []] });
-      // A Recordings Index row whose phase the page cannot read.
-      expect(listPhase([index(r31), other, index([])])).toEqual({ note: null, own: [r31, [], []] });
-      expect(listPhase([other, other])).toEqual({ note: null, own: [[], []] });
-      expect(listPhase([])).toEqual({ note: null, own: [] });
+    it("ends a phase's divider over a Live now match outside the Index, and says nothing where no phase is above it", () => {
+      expect(read(phaseDividers([r31, [], [], r31]))).toEqual(["Harness from round 31 onward", OUTSIDE_INDEX, null, "Harness from round 31 onward"]);
+      expect(phaseDividers([[], [], null])).toEqual([null, null, null]);
+      expect(read(phaseDividers([[], r31]))).toEqual([null, "Harness from round 31 onward"]);
+    });
+
+    it("draws none for a list with no phase", () => {
+      expect(phaseDividers([null, null])).toEqual([null, null]);
+      expect(phaseDividers([])).toEqual([]);
     });
   });
 
@@ -89,5 +87,20 @@ describe("harness phase tags", () => {
     expect(modeCopy("replay", 2, false, "/", id, true, undefined, tags).detail).toBe(`26 Oct 2026 · ${whole}`);
     expect(modeCopy("replay", 2, true, "/", id, true, undefined, tags).detail).toBe(`· recording ended · ${whole}`);
     expect(modeCopy("replay", 2, false, "/", id, true, undefined, [])).toEqual(modeCopy("replay", 2, false, "/", id, true));
+  });
+
+  it("gives the phase apart, so a HUD can show it as a part of its own after the date", () => {
+    const id = "2026-10-26T01-38-33-692Z-1";
+    const whole = "Harness: rounds 1-⁠7 · Possible effort mismatch";
+    const line = modeCopy("replay", 2, false, "/", id, true, undefined, ["Harness: rounds 1-7", "Possible effort mismatch"]);
+    expect(line.phase).toBe(whole);
+    expect(detailWithoutPhase(line)).toBe("26 Oct 2026");
+    expect(detailWithoutPhase(modeCopy("replay", 2, true, "/", id, true, undefined, ["Harness: rounds 26-30"]))).toBe("· recording ended");
+    // With no date, the detail is the phase alone.
+    expect(detailWithoutPhase(modeCopy("replay", 2, false, "/", null, true, undefined, ["Harness: rounds 26-30"]))).toBe("");
+    // A line with no phase has none apart, and its detail stays whole.
+    const plain = modeCopy("replay", 2, false, "/", id, true);
+    expect("phase" in plain).toBe(false);
+    expect(detailWithoutPhase(plain)).toBe("26 Oct 2026");
   });
 });

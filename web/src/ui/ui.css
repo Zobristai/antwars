@@ -209,8 +209,18 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-mode-label { flex: none; font-weight: 700; color: var(--aw-ink-bright); }
 .d2-mode-label::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: #ff5a4e; }
 .d2-status.is-replay .d2-mode-label::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
-.d2-mode-label:empty, .d2-mode-detail:empty, .d2-connection:empty { display: none; }
+.d2-mode-label:empty, .d2-mode-detail:empty, .d2-mode-phase:empty, .d2-connection:empty { display: none; }
 .d2-mode-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A recording's harness phase (hud.ts modePhase): a part of its own after the date, never cut. Wide, a line with a phase
+   takes a second line inside its 32 px where its parts do not fit on one beside Bring your agent: a part never cut, and a
+   wrapped line never starting with a separator, as on a phone (below). The separators sit in the 24 px between parts,
+   about the one line's 8 px each side of the dot, and the room before a line's first part is cut away. Back to live
+   keeps its 24 px target over a 16 px line. */
+.d2-mode-phase { flex: none; }
+.d2-hud[data-layout="wide"] .d2-status.has-phase { flex-wrap: wrap; column-gap: 0; row-gap: 0; margin-left: -24px; line-height: 16px; overflow: visible; clip-path: inset(-8px -8px -8px 20px); }
+.d2-hud[data-layout="wide"] .d2-status.has-phase > * { position: relative; margin-left: 24px; overflow: visible; }
+.d2-hud[data-layout="wide"] .d2-status.has-phase > :not(:first-child)::before { position: absolute; left: -12px; margin: 0; transform: translateX(-50%); }
+.d2-hud[data-layout="wide"] .d2-status.has-phase > .d2-back { margin-block: -4px; }
 .d2-connection { flex: none; font-weight: 600; color: var(--aw-ink-bright); }
 /* Its words carry the underline, so the separator before them is never drawn as part of the link. */
 .d2-back { flex: none; display: inline-flex; align-items: center; min-height: 24px; font-weight: 600; color: var(--aw-ink-bright); text-decoration: none; }

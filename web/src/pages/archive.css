@@ -132,9 +132,6 @@
 .d1p-glyph[data-glyph="ring"] { box-shadow: inset 0 0 0 1.5px var(--aw-ink-3); }
 .d1p-glyph[data-glyph="half"] { background: linear-gradient(90deg, var(--aw-ink-2) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
 .d1p-glyph[data-glyph="error"] { width: 7px; height: 7px; border-radius: 1px; background: var(--d1p-red); transform: rotate(45deg); }
-/* A list's harness phase, said once (pages/matches.ts phaseNote): a line of its own under the title and the state, in
-   the state's size and ink. */
-.d1p-phase-note { width: 100%; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
 .d1p-notice .d1p-card-head { padding-top: 14px; padding-bottom: 14px; }
 .d1p-notice .d1p-state { font-size: 14px; color: var(--aw-ink-bright); }
 .d1p-card-foot { padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); display: flex; flex-wrap: wrap; gap: 8px; }
@@ -226,8 +223,6 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > .d1p-tags > .d1p-tag:first-child { margin-left: 0; }
 /* A recording's match type: the seat badge, on its own line, in its words as written ("1v1"). */
 .d1p-tag.d1p-type { display: block; width: fit-content; margin: 4px 0 0; text-transform: none; letter-spacing: normal; }
-/* A Model Index match's harness phase: wraps at its spaces to stay inside its column. */
-.d1p-tag.d1p-phase { max-width: 100%; white-space: normal; }
 /* In Recordings' Game type column it is the cell's first line, so it rides the row's first baseline. */
 .d1p-rec td.c-result > .d1p-type { margin-top: 0; }
 /* Last 5, newest first: a result stamp each, a win filled, a loss or a draw outlined; a stored replay makes it a link,
@@ -323,6 +318,15 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-match-rows .d1p-kicker { margin-right: 3px; }
 .d1p-match-rows .d1p-colonies { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 4px 0 0; }
 .d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: 12px; line-height: 18px; }
+/* A list's harness phase (matches.ts phaseRows): a divider across the list before the first row of each phase, in both
+   forms, so every row's phase reads from the nearest divider above it and no row carries a tag. Its words take the
+   match-type badge's type (11 px, semibold, as written) on a faint band between the rows' hairlines, from the inset the
+   rows' first words stand on. They break only between tags; the longest, "Harness: rounds 1-7 · Possible effort
+   mismatch", is 304 px in a monospace fallback, so it holds one line in a 390 px phone's 324 px. */
+.d1p-table .d1p-phase-divider > th, .d1p-rows > li.d1p-phase-divider {
+  padding: 6px var(--d1p-inset); background: rgba(233, 239, 240, 0.04); font-size: 11px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2);
+}
+.d1p-rows > li.d1p-phase-divider { display: block; }
 /* In a card under 28rem, a phone's, each colony's name stands over its seats, so a seat line has the item's whole width:
    beside the names' column a 390 px phone left 193 px, too little for a team seat with two badges ("GPT-6.1 Terra XHIGH
    FAST ×4", 196 px). 4 px part a colony's last seat from the next colony's name. */

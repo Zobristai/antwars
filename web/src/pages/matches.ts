@@ -11,7 +11,7 @@
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
-import { listPhase, liveRow, recordingRows, utcStamp } from "../ui/format.ts";
+import { liveRow, phaseDividers, recordingRows, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
@@ -33,8 +33,6 @@ const RECORDING_HEADS = ["Time", "Game type", "Record"] as const;
 const COLONIES = [0, 1] as const;
 /** One column grid for both lists (archive.css), so Live now's columns stand under Recordings' at every width. */
 const MATCH_COLUMNS = ["c-start", "c-result", "c-model", "c-model", "c-record", "c-go"] as const;
-/** Each list's harness phase note, which its table and stacked rows name as their description. */
-const LIVE_PHASE = "d1p-live-phase", REC_PHASE = "d1p-rec-phase";
 
 export interface MatchesActions { refresh(): void; more(): void }
 
@@ -61,7 +59,7 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   queueMicrotask(() => { if (title.isConnected && (doc.activeElement === null || doc.activeElement === doc.body)) title.focus({ preventScroll: true }); });
 
   const parts = rowParts(doc);
-  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseTags, phaseNote } = parts;
+  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseRows } = parts;
   /** Live now's second colony cell spans the record column Live now does not have. */
   const spanRecord = <T extends HTMLTableCellElement>(colony: 0 | 1, cell: T): T => { if (colony === 1) cell.colSpan = 2; return cell; };
 
@@ -93,9 +91,10 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
     const state = liveLine(view);
     const rows = view.live.rows, loading = view.live.status === "loading" && rows.length === 0;
     const shown = rows.map(match => liveRow(match, search));
-    // The harness phase said once (ui/format.ts listPhase). Live now's rows carry no Index badge, so its note speaks for
-    // every row; a row whose phase differs keeps its own tags.
-    const phase = listPhase(shown.map(row => ({ covered: true, phase: row.phase })));
+    // A divider before the first row of each harness phase (ui/format.ts phaseDividers). Live now's rows carry no Index
+    // badge, so a match outside the Index ends the divider above it; an Index match whose phase the page cannot read
+    // stands under the divider of its time.
+    const dividers = phaseDividers(rows.map((match, at) => match.harnessPhase === undefined ? [] : shown[at]!.phase.length > 0 ? shown[at]!.phase : null));
     const body: Node[] = [];
     if (rows.length > 0 || loading) {
       const table = h(doc, "table", "d1p-table d1p-live d1p-wide");
@@ -109,21 +108,21 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
       for (const colony of COLONIES) labels.append(spanRecord(colony, headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`)));
       labels.append(srHead("Watch", "c-go"));
       head.append(labels);
-      const tbody = h(doc, "tbody");
       const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
       list.setAttribute("aria-labelledby", "d1p-live-title");
-      if (phase.note !== null) for (const form of [table, list]) form.setAttribute("aria-describedby", LIVE_PHASE);
+      const groups = phaseRows(list);
       if (loading) {
         table.setAttribute("aria-hidden", "true"); list.hidden = true;
-        for (let line = 0; line < 2; line++) tbody.append(skeleton(6, ["84px", "120px", "128px", "128px"]));
+        for (let line = 0; line < 2; line++) groups.body().append(skeleton(6, ["84px", "120px", "128px", "128px"]));
       }
       for (const [at, match] of rows.entries()) {
         const row = shown[at]!, when = started(match);
         const name = `Watch, ${liveKind(match)} started ${when}`;
         const seated = match.colonies[0].length + match.colonies[1].length > 0;
+        groups.divide(dividers[at]!);
         const line = h(doc, "tr");
         const result = h(doc, "td", "c-result");
-        result.append(h(doc, "span", "d1p-result", IN_PROGRESS), ...phaseTags(phase.own[at]!));
+        result.append(h(doc, "span", "d1p-result", IN_PROGRESS));
         line.append(startCell(when), result);
         if (!seated) {
           const none = h(doc, "td", "c-model");
@@ -142,22 +141,21 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
         const go = h(doc, "td", "c-go");
         go.append(rowPill("Watch", row.href, name, `live|wide|${row.id}`));
         line.append(go);
-        tbody.append(line);
+        groups.body().append(line);
 
         // Recordings' stacked row: the start, then the result, beside Watch; then each colony's players.
         const item = h(doc, "li");
         const lead = h(doc, "p", "d1p-line is-lead", IN_PROGRESS);
-        lead.append(...phaseTags(phase.own[at]!));
         item.append(h(doc, "p", "d1p-line", `Started ${when}`), lead);
         if (!seated) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
         else item.append(colonyList(COLONIES.map(colony => players(match.colonies[colony]))));
         item.append(rowPill("Watch", row.href, name, `live|narrow|${row.id}`));
         list.append(item);
       }
-      table.append(head, tbody);
+      table.append(head, ...groups.bodies());
       body.push(table, list);
     }
-    return card("d1p-live-title", PAGE_WORDS.live, [stateLine(doc, state.glyph, state.text), ...phaseNote(LIVE_PHASE, phase.note)], body, []);
+    return card("d1p-live-title", PAGE_WORDS.live, [stateLine(doc, state.glyph, state.text)], body, []);
   };
 
   // ---------------------------------------------------------------- update
@@ -271,18 +269,27 @@ function rowParts(doc: Document) {
   };
   /** The one six-column grid every Matches list stands on. */
   const matchGrid = (table: HTMLTableElement) => columns(table, MATCH_COLUMNS);
-  /** A row's own harness phase tags where they differ from its list's note (ui/format.ts listPhase), in the match-type
-   * badge's style. A tag wraps at its spaces inside its column (archive.css .d1p-phase); a word joiner after each hyphen
-   * keeps "11-25" whole. */
-  const phaseTags = (tags: readonly string[]) => tags.map(tag => h(doc, "span", "d1p-tag d1p-type d1p-phase", tag.replace(/-/g, "-\u2060")));
-  /** A list's harness phase said once (ui/format.ts listPhase): its own line under the card's title and state. */
-  const phaseNote = (id: string, note: string | null) => {
-    if (note === null) return [];
-    const line = h(doc, "p", "d1p-phase-note", note);
-    line.id = id;
-    return [line];
+  /** A list's rows grouped by harness phase (ui/format.ts phaseDividers), in both forms: in the table, each divider opens
+   * a row group with a divider row, its one header naming the phase for every row in the group; in the stacked list, a
+   * divider item (archive.css .d1p-phase-divider). divide opens a group before the next row where a divider is due;
+   * body is the group rows go in. */
+  const phaseRows = (list: HTMLElement) => {
+    const groups: HTMLTableSectionElement[] = [];
+    const open = () => { const group = h(doc, "tbody"); groups.push(group); return group; };
+    return {
+      body: () => groups.at(-1) ?? open(),
+      divide(divider: string | null) {
+        if (divider === null) return;
+        const row = h(doc, "tr", "d1p-phase-divider"), head = h(doc, "th", undefined, divider);
+        head.scope = "rowgroup"; head.colSpan = MATCH_COLUMNS.length;
+        row.append(head);
+        open().append(row);
+        list.append(h(doc, "li", "d1p-phase-divider", divider));
+      },
+      bodies: () => groups.length > 0 ? groups : [open()],
+    };
   };
-  return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, colonyList, phaseTags, phaseNote };
+  return { card, skeleton, headCell, srHead, columns, matchGrid, startCell, rowPill, seatBlock, colonyList, phaseRows };
 }
 
 // ---------------------------------------------------------------- Recordings
@@ -304,7 +311,7 @@ export interface RecordingsCardOptions {
 /** The Recordings list as the Matches page draws it: a record card saying its own state once, its table and stacked rows. */
 export function recordingsCard(doc: Document, view: MatchesView, options: RecordingsCardOptions): HTMLElement {
   const { search } = options;
-  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseTags, phaseNote } = rowParts(doc);
+  const { card, skeleton, headCell, srHead, columns, startCell, rowPill, seatBlock, colonyList, phaseRows } = rowParts(doc);
   /** A colony's result badge, in the shared badge style (identity.ts d1p-tag) with its words in the colony's ink: Winner on
    * the winning colony where the record names a winner and the match was not abandoned, never on a colony nobody joined
    * (no recorded seat); Draw on both colonies in a draw; none otherwise. */
@@ -348,11 +355,11 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   const byId = new Map(view.recordings.rows.map(r => [r.id, r]));
   const state = recordingsLine(rows.length < all.length ? { ...view, next: view.next ?? "" } : view, rows.length);
   const loading = view.recordings.status === "loading" && rows.length === 0;
-  // The harness phase said once (ui/format.ts listPhase), for the rows the Index badge marks; a row whose phase differs
-  // keeps its own tags.
-  const phase = listPhase(rows.map(row => ({ covered: byId.get(row.id)!.matchType?.kind === "index", phase: row.phase })));
-  // The state, then the list's phase note; no editorial copy: the record stamp says each record's fidelity.
-  const lines: Node[] = [stateLine(doc, state.glyph, state.text), ...phaseNote(REC_PHASE, phase.note)];
+  // A divider before the first row of each harness phase (ui/format.ts phaseDividers); a row with no phase, which its
+  // badge marks as another kind of match, stands under the divider above it, which does not speak for it.
+  const dividers = phaseDividers(rows.map(row => row.phase.length > 0 ? row.phase : null));
+  // No note under the state (no editorial copy): the record stamp says each record's fidelity.
+  const lines: Node[] = [stateLine(doc, state.glyph, state.text)];
   const body: Node[] = [];
   if (rows.length > 0 || loading) {
     const table = h(doc, "table", "d1p-table d1p-rec d1p-wide");
@@ -366,17 +373,17 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     for (const colony of COLONIES) labels.append(headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`));
     labels.append(headCell(RECORDING_HEADS[2], "c-record"), srHead(PAGE_WORDS.replay, "c-go"));
     head.append(labels);
-    const tbody = h(doc, "tbody");
     const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
     list.setAttribute("aria-labelledby", "d1p-rec-title");
-    if (phase.note !== null) for (const form of [table, list]) form.setAttribute("aria-describedby", REC_PHASE);
+    const groups = phaseRows(list);
     // The stacked list has no skeleton rows: while the first page loads, the card's state line alone says so.
     if (loading) {
       table.setAttribute("aria-hidden", "true"); list.hidden = true;
-      for (let line = 0; line < 2; line++) tbody.append(skeleton(6, ["84px", "", "128px", "128px", "70px"]));
+      for (let line = 0; line < 2; line++) groups.body().append(skeleton(6, ["84px", "", "128px", "128px", "70px"]));
     }
     for (const [at, row] of rows.entries()) {
       const r = byId.get(row.id)!;
+      groups.divide(dividers[at]!);
       const seats = colonySeats(r.seats);
       // A row with no recorded seat has no colony line to carry a badge.
       const marked = seats !== null && (markOf(r, 0, seats) !== null || markOf(r, 1, seats) !== null);
@@ -385,7 +392,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const start = startCell(row.when);
       start.append(...outcome(r, row.result, marked));
       const type = h(doc, "td", "c-result");
-      type.append(...typeBadge(row.type), ...phaseTags(phase.own[at]!));
+      type.append(...typeBadge(row.type));
       line.append(start, type);
       if (seats === null) {
         const none = h(doc, "td", "c-model");
@@ -404,13 +411,13 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       const go = h(doc, "td", "c-go");
       go.append(rowPill(PAGE_WORDS.replay, row.href, name, `rec|wide|${row.id}`));
       line.append(record, go);
-      tbody.append(line);
+      groups.body().append(line);
 
       // The stacked row: its time, then the record's own word where no colony carries a badge and its type, beside Replay;
       // then each colony's models, the winner's badge on its colony's line as in the table, then the record.
       const item = h(doc, "li");
       const lead = h(doc, "p", "d1p-line is-lead");
-      lead.append(...outcome(r, row.result, marked), ...typeBadge(row.type), ...phaseTags(phase.own[at]!));
+      lead.append(...outcome(r, row.result, marked), ...typeBadge(row.type));
       item.append(h(doc, "p", "d1p-line", row.when), lead);
       if (seats === null) item.append(h(doc, "p", "d1p-line is-model d1p-unknown", "Seats not recorded"));
       else item.append(colonyList(markedSeats(r, seats)));
@@ -419,7 +426,7 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
       item.append(stampLine, rowPill(PAGE_WORDS.replay, row.href, name, `rec|narrow|${row.id}`));
       list.append(item);
     }
-    table.append(head, tbody);
+    table.append(head, ...groups.bodies());
     body.push(table, list);
   }
   let act: HTMLElement[] = [];

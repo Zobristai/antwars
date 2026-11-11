@@ -558,7 +558,7 @@ describe("tap height on a phone", () => {
   });
 });
 
-describe("Model Index matches show their harness phase, said once per list", () => {
+describe("Model Index matches show their harness phase in a divider where it changes", () => {
   const phased = (id: string, phase: NonNullable<Recording["harnessPhase"]>["phase"], possibleEffortMismatch = false): Recording =>
     ({ ...recording, id, startedAt: `${id.slice(0, 10)}T${id.slice(11, 19).replace(/-/g, ":")}.000Z`, matchType: { kind: "index", size: 1 },
       harnessPhase: { phase, possibleEffortMismatch } });
@@ -571,61 +571,75 @@ describe("Model Index matches show their harness phase, said once per list", () 
     const [, liveCard, recCard] = p.body.byClass("d1p-card");
     return { p, liveCard: liveCard!, recCard: recCard! };
   };
-  // A word joiner follows each hyphen, so "rounds 26-30" never breaks at its hyphen; the note's tags also keep their spaces.
-  const read = (node: ElementPort) => node.textContent.replace(/-\u2060/g, "-").replace(/\u00a0/g, " ");
-  const tags = (scope: ElementPort) => scope.byClass("d1p-phase").map(read);
-  const rows = (card: ElementPort) => card.byClass("d1p-wide")[0]!.querySelector("tbody")!.querySelectorAll("tr");
-  const items = (card: ElementPort) => card.byClass("d1p-narrow")[0]!.querySelectorAll("li");
-  /** The card's note as read, and whether its table and stacked rows both name it as their description. */
-  const note = (card: ElementPort) => {
-    const [line] = card.byClass("d1p-phase-note");
-    if (!line) return null;
-    const described = [card.byClass("d1p-wide")[0]!, card.byClass("d1p-narrow")[0]!].every(form => form.getAttribute("aria-describedby") === line.id);
-    return { text: read(line), inHead: line.parent?.classes().includes("d1p-card-head"), described };
-  };
+  // A word joiner follows each hyphen and no-break spaces hold each tag, so a divider breaks only between its tags.
+  const read = (node: ElementPort) => node.textContent.replace(/-⁠/g, "-").replace(/ /g, " ");
+  /** The table as read: each row group, its divider's words (null for none) then how many rows it holds. A divider row is
+   * its group's first row, its one header cell spanning the six columns as the group's header. */
+  const groups = (card: ElementPort) => card.byClass("d1p-wide")[0]!.querySelectorAll("tbody").map(group => {
+    const [first, ...rest] = group.children;
+    const divider = first?.classes().includes("d1p-phase-divider") ? first : null;
+    if (divider) {
+      const [cell] = divider.children;
+      expect([divider.children.length, cell!.tag, cell!.scope, cell!.colSpan]).toEqual([1, "th", "rowgroup", 6]);
+    }
+    return [divider ? read(divider) : null, (divider ? rest : group.children).length];
+  });
+  /** The stacked list as read: a divider's words, or "row". */
+  const items = (card: ElementPort) => card.byClass("d1p-narrow")[0]!.querySelectorAll("li")
+    .filter(item => item.parent?.classes().includes("d1p-narrow"))
+    .map(item => item.classes().includes("d1p-phase-divider") ? read(item) : "row");
 
-  it("says the shared phase once in each card's note; only a row whose phase or flag differs keeps its own tags", () => {
+  it("draws a divider before the first row of each phase, the older phases and the effort flag included, and no row carries a tag", () => {
     const { p, liveCard, recCard } = show([liveIndex("lobby-a", "from round 31 onward"), liveIndex("lobby-b", "from round 31 onward")], [
       phased("2026-11-10T15-34-00-357Z-1", "from round 31 onward"), ranked, phased("2026-11-10T14-51-00-000Z-1", "from round 31 onward"),
-      phased("2026-11-09T06-06-49-048Z-1", "rounds 26-30"), phased("2026-10-26T01-38-33-692Z-1", "rounds 1-7", true),
+      phased("2026-11-09T06-06-49-048Z-1", "rounds 26-30"), phased("2026-10-27T01-36-10-770Z-1", "rounds 1-7"),
+      phased("2026-10-26T01-38-33-692Z-1", "rounds 1-7", true), phased("2026-10-26T01-00-00-000Z-1", "rounds 1-7", true),
     ]);
-    expect(p.body.all().filter(node => /-(?!\u2060)/.test(node.textContent) && (node.classes().includes("d1p-phase") || node.classes().includes("d1p-phase-note")))).toEqual([]);
-    expect(note(liveCard)).toEqual({ text: "Index \u00b7 Harness from round 31 onward", inHead: true, described: true });
-    expect(rows(liveCard).map(tags)).toEqual([[], []]);
-    expect(items(liveCard).map(tags)).toEqual([[], []]);
-    // The newest Index row's phase heads Recordings; the ranked row has no phase; older phases keep their own tags.
-    expect(note(recCard)).toEqual({ text: "Index \u00b7 Harness from round 31 onward", inHead: true, described: true });
-    const own = [[], [], [], ["Harness: rounds 26-30"], ["Harness: rounds 1-7", "Possible effort mismatch"]];
-    expect(rows(recCard).map(tags)).toEqual(own);
-    expect(items(recCard).map(tags)).toEqual(own);
-    p.mounted.destroy();
-  });
-
-  it("carries the effort flag in the note where the newest Index row has it", () => {
-    const { p, recCard } = show([], [phased("2026-10-26T01-38-33-692Z-1", "rounds 1-7", true), ranked]);
-    expect(note(recCard)?.text).toBe("Index \u00b7 Harness: rounds 1-7 \u00b7 Possible effort mismatch");
-    expect(rows(recCard).map(tags)).toEqual([[], []]);
-    p.mounted.destroy();
-  });
-
-  it("keeps each row's own tags, with no note, where a note could not speak for every row it would cover", () => {
-    // Live now's rows carry no Index badge: beside a match with no phase, a note could not say which rows it covers.
-    // Recordings: an Index row whose phase the page cannot read would take the note's phase.
-    const unread: Recording = { ...phased("2026-11-10T14-00-00-000Z-1", "from round 31 onward"), harnessPhase: null };
-    const { p, liveCard, recCard } = show([liveIndex("lobby-i", "rounds 26-30"), live("lobby-r")], [phased("2026-11-10T15-34-00-357Z-1", "from round 31 onward"), unread]);
-    expect([note(liveCard), note(recCard)]).toEqual([null, null]);
-    expect(rows(liveCard).map(tags)).toEqual([["Harness: rounds 26-30"], []]);
-    expect(items(liveCard).map(tags)).toEqual([["Harness: rounds 26-30"], []]);
-    expect(rows(recCard).map(tags)).toEqual([["Harness from round 31 onward"], []]);
-    expect(items(recCard).map(tags)).toEqual([["Harness from round 31 onward"], []]);
+    expect(groups(liveCard)).toEqual([["Harness from round 31 onward", 2]]);
+    expect(items(liveCard)).toEqual(["Harness from round 31 onward", "row", "row"]);
+    // The ranked row, by its badge another kind of match, stands under the divider above it, which does not speak for it.
+    expect(groups(recCard)).toEqual([
+      ["Harness from round 31 onward", 3], ["Harness: rounds 26-30", 1], ["Harness: rounds 1-7", 1], ["Harness: rounds 1-7 · Possible effort mismatch", 2],
+    ]);
+    expect(items(recCard)).toEqual([
+      "Harness from round 31 onward", "row", "row", "row", "Harness: rounds 26-30", "row", "Harness: rounds 1-7", "row",
+      "Harness: rounds 1-7 · Possible effort mismatch", "row", "row",
+    ]);
+    // No row carries a phase tag, and no card a phase note; each divider holds every tag whole.
+    expect(p.body.all().filter(node => node.classes().some(name => name === "d1p-phase" || name === "d1p-phase-note"))).toEqual([]);
+    for (const divider of p.body.byClass("d1p-phase-divider")) expect(divider.textContent).not.toMatch(/-(?!⁠)|(?<!·) (?!·)/);
     for (const card of [liveCard, recCard]) for (const form of card.byClass("d1p-wide").concat(card.byClass("d1p-narrow"))) expect(form.getAttribute("aria-describedby")).toBeNull();
     p.mounted.destroy();
   });
 
-  it("has no note on a list with no Index match", () => {
-    const { p, liveCard, recCard } = show([live("lobby-r")], [ranked]);
-    expect([note(liveCard), note(recCard)]).toEqual([null, null]);
-    expect(p.body.byClass("d1p-phase")).toEqual([]);
+  it("adds the divider where Load more appends rows of an older phase, changing no row already drawn", () => {
+    const newest = [phased("2026-11-10T15-34-00-357Z-1", "from round 31 onward"), ranked];
+    const p = page();
+    const view = (rows: Recording[], next: string | null): MatchesView => ({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows }, next });
+    p.mounted.update(view(newest, "page-2"));
+    const card = () => p.body.byClass("d1p-card")[2]!;
+    expect(groups(card())).toEqual([["Harness from round 31 onward", 2]]);
+    p.mounted.update(view([...newest, phased("2026-11-09T06-06-49-048Z-1", "rounds 26-30"), phased("2026-11-09T05-41-00-000Z-1", "rounds 26-30")], null));
+    expect(groups(card())).toEqual([["Harness from round 31 onward", 2], ["Harness: rounds 26-30", 2]]);
+    expect(items(card())).toEqual(["Harness from round 31 onward", "row", "row", "Harness: rounds 26-30", "row", "row"]);
+    p.mounted.destroy();
+  });
+
+  it("ends a phase's divider over a Live now match outside the Index, which no badge marks, and keeps an unread Index row under its time's divider", () => {
+    const unread: Recording = { ...phased("2026-11-10T14-00-00-000Z-1", "from round 31 onward"), harnessPhase: null };
+    const unreadLive: LiveMatch = { ...live("lobby-u"), harnessPhase: null };
+    const { p, liveCard, recCard } = show([liveIndex("lobby-i", "rounds 26-30"), live("lobby-r"), unreadLive], [phased("2026-11-10T15-34-00-357Z-1", "from round 31 onward"), unread]);
+    expect(groups(liveCard)).toEqual([["Harness: rounds 26-30", 1], ["Outside the Model Index", 2]]);
+    expect(items(liveCard)).toEqual(["Harness: rounds 26-30", "row", "Outside the Model Index", "row", "row"]);
+    expect(groups(recCard)).toEqual([["Harness from round 31 onward", 2]]);
+    p.mounted.destroy();
+  });
+
+  it("draws no divider on a list with no Index match, and none over Live now matches outside the Index at its top", () => {
+    const { p, liveCard, recCard } = show([live("lobby-r"), liveIndex("lobby-i", "from round 31 onward")], [ranked]);
+    expect(groups(liveCard)).toEqual([[null, 1], ["Harness from round 31 onward", 1]]);
+    expect(groups(recCard)).toEqual([[null, 1]]);
+    expect(items(recCard)).toEqual(["row"]);
     p.mounted.destroy();
   });
 });
