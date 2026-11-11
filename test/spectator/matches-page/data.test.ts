@@ -29,7 +29,7 @@ describe("matches page data", () => {
       { lobbyId: "unrated", startedAt: 2, rated: false, delaySeconds: 60, colonies: [[{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], []] },
       { lobbyId: "rated", startedAt: 3, rated: true, delaySeconds: 300, colonies: [[], []] },
       // Each seat's self-reported model label, null where it reported none.
-      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", rating: null, rd: null, ratedMatches: null }],
+      { lobbyId: "labelled", startedAt: 4, rated: false, delaySeconds: 60, colonies: [[{ displayName: "kestrel-harness", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: null, rd: null, ratedMatches: null }],
         [{ displayName: "omp-dolphin", modelLabel: null, rating: null, rd: null, ratedMatches: null }]] },
     ];
     const request = async (path: RequestInfo | URL) => new Response(JSON.stringify(
@@ -40,6 +40,8 @@ describe("matches page data", () => {
     expect(data.view.live.rows.map(row => row.lobbyId)).toEqual(["house", "unrated", "rated", "labelled"]);
     expect(data.view.live.rows[1]!.colonies).toEqual([[{ displayName: "alice", rating: null, rd: null, ratedMatches: null }], []]);
     expect(data.view.live.rows[3]!.colonies.map(colony => colony.map(seat => seat.modelLabel))).toEqual([["openai/gpt-6.1-terra"], [null]]);
+    // And its level and tier as it reported them; absent from a seat (or server) that sends none.
+    expect(data.view.live.rows[3]!.colonies.map(colony => colony.map(seat => [seat.thinkingLevel, seat.serviceTier]))).toEqual([[["high", "fast"]], [[undefined, undefined]]]);
     data.destroy();
   });
   it("refuses a live row without its players, or a seat with a partial rating", async () => {
@@ -258,8 +260,8 @@ describe("load more while the first load or a refresh is still in progress", () 
 
 describe("matches page data: the Waiting card's queue read", () => {
   const waiting = [
-    { displayName: "sam/first", mode: "1v1", waitingSeconds: 95 },
-    { displayName: "antwars/agent0", mode: "house-2v2", waitingSeconds: 4 },
+    { displayName: "sam/first", mode: "1v1", waitingSeconds: 95, since: 1_000, rating: { rating: 1540, rd: 80, ratedMatches: 12 } },
+    { displayName: "antwars/agent0", mode: "house-2v2", waitingSeconds: 4, since: 2_000, rating: null },
   ];
   it("reads /watch/queue on each refresh only when asked, beside the catalog and recordings", async () => {
     const answer = async (path: RequestInfo | URL) => new Response(JSON.stringify(
@@ -326,10 +328,12 @@ describe("matches page data: a stalled queue read never holds Refresh", () => {
 });
 
 describe("matches page data: the Waiting card's lobby rows", () => {
-  const waiting = [{ displayName: "sam/first", mode: "1v1", waitingSeconds: 95 }];
+  const waiting = [{ displayName: "sam/first", mode: "1v1", waitingSeconds: 95, since: 1_000, rating: null }];
   const lobbies = [
-    { mode: null, size: 2, seated: 3, colonies: [["ann", "cat"], ["bob"]], waitingSeconds: 250 },
-    { mode: "2v2", size: 2, seated: 4, colonies: [["fay"], ["gus"]], waitingSeconds: 3 },
+    { mode: null, size: 2, seated: 3, colonies: [["ann", "cat"], ["bob"]], ratings: [[null, null], [{ rating: 1490, rd: 80, ratedMatches: 12 }]],
+      waitingSeconds: 250, since: 3_000 },
+    // A queue pairing: each identity once, holding both seats of its colony.
+    { mode: "2v2", size: 2, seated: 4, colonies: [["fay"], ["gus"]], seats: [[2], [2]], waitingSeconds: 3, since: 4_000 },
   ];
   const serve = (queue: () => unknown) => async (path: RequestInfo | URL) => new Response(JSON.stringify(
     path === "/watch/queue" ? queue() : path === "/watch/catalog" ? { matches: [] } : { matches: [], nextPageToken: null },
@@ -357,7 +361,7 @@ describe("matches page data: the Waiting card's lobby rows", () => {
     data.destroy();
   });
   it("keeps a house challenge's tag, and refuses any other tag value", async () => {
-    const challenge = { mode: null, size: 1, seated: 1, colonies: [[], ["player-7"]], waitingSeconds: 269, challenge: "house" };
+    const challenge = { mode: null, size: 1, seated: 1, colonies: [[], ["player-7"]], waitingSeconds: 269, since: 5_000, challenge: "house" };
     let answer: unknown = { waiting: [], lobbies: [challenge, lobbies[0]] };
     const data = createMatchesData(serve(() => answer), () => {}, { waiting: true });
     data.refresh();
@@ -367,5 +371,50 @@ describe("matches page data: the Waiting card's lobby rows", () => {
     data.refresh();
     await vi.waitFor(() => expect(data.view.waiting.status).toBe("error"));
     data.destroy();
+  });
+});
+
+describe("matches page data: the facts the match rows need", () => {
+  const serve = (catalog: unknown, history: unknown) => async (path: RequestInfo | URL) => new Response(JSON.stringify(
+    path === "/watch/catalog" ? catalog : path === "/watch/queue" ? { waiting: [] } : history));
+  const start = { rating: 1540, rd: 80, ratedMatches: 12 };
+  it("reads each recorded seat's start rating, none on an older record, and a malformed one as none", async () => {
+    const seats = [{ ...saved(1).seats[0]!, startRating: start }, { ...saved(1).seats[1]! }, { ...saved(1).seats[1]!, seat: 2, startRating: { rating: "x" } }];
+    const data = createMatchesData(serve({ matches: [] }, { matches: [{ ...saved(1), seats }], nextPageToken: null }), () => {});
+    data.refresh();
+    await vi.waitFor(() => expect(data.view.recordings.status).toBe("ready"));
+    expect(data.view.recordings.rows[0]!.seats.map(seat => seat.startRating ?? null)).toEqual([start, null, null]);
+    data.destroy();
+  });
+  it("reads each live match's game type, none from a server that sends none, and an unknown one as none", async () => {
+    const match = { lobbyId: "a", startedAt: 1, rated: false, delaySeconds: 60, colonies: [[], []] };
+    const data = createMatchesData(serve({ matches: [{ ...match, matchType: { kind: "challenge", size: 1 } }, { ...match, lobbyId: "b" },
+      { ...match, lobbyId: "c", matchType: { kind: "tournament", size: 1 } }] }, { matches: [], nextPageToken: null }), () => {});
+    data.refresh();
+    await vi.waitFor(() => expect(data.view.live.status).toBe("ready"));
+    expect(data.view.live.rows.map(row => row.matchType ?? null)).toEqual([{ kind: "challenge", size: 1 }, null, null]);
+    data.destroy();
+  });
+});
+
+describe("matches page data: when each wait began", () => {
+  it("keeps the sent start, and works one out from the seconds waited where a server sends none", async () => {
+    const at = Date.parse("2026-11-11T05:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"], now: at });
+    try {
+      const queue = { waiting: [{ displayName: "a", mode: "1v1", waitingSeconds: 90, since: 5 }, { displayName: "b", mode: "1v1", waitingSeconds: 90 }],
+        lobbies: [{ mode: null, size: 1, seated: 1, colonies: [["c"], []], waitingSeconds: 30 }] };
+      const data = createMatchesData(async path => new Response(JSON.stringify(path === "/watch/queue" ? queue
+        : path === "/watch/catalog" ? { matches: [] } : { matches: [], nextPageToken: null })), () => {}, { waiting: true });
+      data.refresh();
+      await vi.waitFor(() => expect(data.view.waiting.status).toBe("ready"));
+      // Worked out at the read: the clock at the read, less the seconds waited (the test's waits move the clock a little).
+      const [sent, agent, lobby] = data.view.waiting.rows.map(row => row.since);
+      expect(sent).toBe(5);
+      expect(lobby! - agent!).toBe(60_000);
+      expect(agent! - (at - 90_000)).toBeGreaterThanOrEqual(0);
+      expect(agent! - (at - 90_000)).toBeLessThan(1_000);
+      data.destroy();
+    } finally { vi.useRealTimers(); }
   });
 });
