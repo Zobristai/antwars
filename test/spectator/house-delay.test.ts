@@ -66,7 +66,7 @@ it("keeps legacy fallback and recording copy while all renderer paths receive se
   expect(modeCopy("replay", 2, false, "/", null, true, 0)).toEqual(modeCopy("replay", 2, false, "/", null, true));
   for (const [path, count] of [["../../web/src/main.ts", 2], ["../../web/src/board3d/main3d.ts", 1]] as const) {
     const text = readFileSync(new URL(path, import.meta.url), "utf8");
-    expect(text.match(/input\.storedId, head\.full!\.setup\.rated, input\.delaySeconds, input\.harnessPhase\)/g)).toHaveLength(count);
-    expect(text.match(/input\.storedId, board\.setup\.rated, input\.delaySeconds, input\.harnessPhase\)/g)).toHaveLength(count);
+    expect(text.match(/input\.storedId, head\.full!\.setup\.rated, input\.delaySeconds\)/g)).toHaveLength(count);
+    expect(text.match(/input\.storedId, board\.setup\.rated, input\.delaySeconds\)/g)).toHaveLength(count);
   }
 });
