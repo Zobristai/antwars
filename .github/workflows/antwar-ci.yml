@@ -23,6 +23,13 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    container:
+      # Playwright's image for the playwright-core version in package.json, pinned by digest: its
+      # browsers and their system packages are baked in, so the job installs none at run time.
+      # uid 1001 is the runner user the job ran as before (some tests behave differently as root);
+      # --ipc=host gives the browsers the host's shared memory.
+      image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
+      options: --user 1001 --ipc=host
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -36,8 +43,10 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Firebase CLI (pinned)
         run: npm install -g firebase-tools@15.35.0 --no-audit --no-fund
-      - name: Playwright WebKit browser
-        run: npx playwright-core install --with-deps webkit
+      - name: Playwright image matches playwright-core
+        # Fails with both versions named when the image above and package.json are out of step,
+        # then sets CHROME_BIN to the image's Chromium (the image has no Google Chrome).
+        run: node scripts/ci/playwright-image.ts
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint
@@ -54,6 +63,13 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    container:
+      # Playwright's image for the playwright-core version in package.json, pinned by digest: its
+      # browsers and their system packages are baked in, so the job installs none at run time.
+      # uid 1001 is the runner user the job ran as before (some tests behave differently as root);
+      # --ipc=host gives the browsers the host's shared memory.
+      image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
+      options: --user 1001 --ipc=host
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -67,8 +83,10 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Firebase CLI (pinned)
         run: npm install -g firebase-tools@15.35.0 --no-audit --no-fund
-      - name: Playwright WebKit browser
-        run: npx playwright-core install --with-deps webkit
+      - name: Playwright image matches playwright-core
+        # Fails with both versions named when the image above and package.json are out of step,
+        # then sets CHROME_BIN to the image's Chromium (the image has no Google Chrome).
+        run: node scripts/ci/playwright-image.ts
       - name: Full suite
         env:
           ANTWAR_REQUIRE_EMULATOR: '1'
