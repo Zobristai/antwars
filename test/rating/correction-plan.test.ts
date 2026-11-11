@@ -624,7 +624,17 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
-  it("refuses the house-1v1 plan when the history is not reproduced: serves the first check's code alone and logs the largest deviation", async () => {
+  /** Every handle, identity, lobby, recording and record name in the world: none may be served in a refusal. */
+  const privateNames = (w: Awaited<ReturnType<typeof world>>) => [...w.ids.keys(), ...w.ids.values(), ...w.users, ...w.lobbies,
+    NEVER_JOINED.lobbyId, NEVER_JOINED.replayId, ...SOL_MOVES.map(move => move.replayId), "ratedMatches", ratingCollection(MODE), "antwars/"];
+  /** The store with each history match's change record committed on its own day, in rating order: lobby i on 2026-10-(10+i). */
+  const dated = (w: Awaited<ReturnType<typeof world>>): Store => ({ ...w.store, createTimes: async paths => {
+    const times = new Map(await w.store.createTimes!(paths));
+    w.lobbies.forEach((id, i) => { if (times.has(`ratedMatches/${id}`)) times.set(`ratedMatches/${id}`, `2026-10-${10 + i}T12:00:00.123456Z`); });
+    return times;
+  } });
+
+  it("refuses the house-1v1 plan when the history is not reproduced: serves the code with its figures, never a name or id, and logs the largest deviation", async () => {
     const w = await appliedWorld();
     // Two stored changes not reproduced: by 1 in an earlier match, by 5 in a later one.
     const edits: [number, number][] = [[7, 1], [8, 5]];
@@ -638,16 +648,34 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     const handle = [...w.ids].find(([, id]) => id === largest)![0];
     const before = await w.snapshot();
     const [info, warn] = quiet();
-    const { serve } = startCorrectionPlan(w.store, w.recordings);
-    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change" });
+    const { serve } = startCorrectionPlan(dated(w), w.recordings);
+    // The largest deviation and its kind, both failing values, and the day the earlier failing change was committed.
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change", deviation: expect.closeTo(5, 6), count: 2,
+      kind: "rdAfter", earliestChangeDay: "2026-10-17" });
     expect(warn.mock.calls).toEqual([["antwar house-1v1 rating correction plan refused", { reason: "not-reproduced-change",
       deviation: { deviation: expect.closeTo(5, 6), handle, source: `ratedMatches/${w.lobbies[8]}`, count: 2 } }]]);
-    // The public answer is the code alone: no handle, match, figure or plan.
+    // Numbers and kinds only: no handle, identity, lobby, recording or record name, and no plan.
     const body = served(serve, SOL_PLAN_PATH).body;
-    for (const text of [handle, w.lobbies[7]!, w.lobbies[8]!, "digest", "matches"]) expect(body).not.toContain(text);
+    expect(Object.keys(JSON.parse(body))).toEqual(["state", "reason", "deviation", "count", "kind", "earliestChangeDay"]);
+    for (const text of [...privateNames(w), "digest", "matches"]) expect(body).not.toContain(text);
     expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 rating correction plan"))).toBe(false);
     expect(await w.snapshot()).toEqual(before);
     info.mockRestore(); warn.mockRestore();
+  });
+
+  it("serves a house-1v1 refusal whose largest deviation is in a rating row with that row value's kind and no change day", async () => {
+    for (const [field, kind, reason] of [["rating", "rating", "not-reproduced-rating"], ["rd", "rd", "not-reproduced-rd"]] as const) {
+      const w = await appliedWorld();
+      const path = `${ratingCollection(MODE)}/${w.ids.get("antwars/gpt-6-1-sol-high-fast")}`;
+      const row = (await w.store.get(path))!;
+      await commit(w.store, [{ op: "update", path, fields: { [field]: encodeRating(decodeRating(row[field]!) + 1) } }]);
+      const [info, warn] = quiet();
+      const { serve } = startCorrectionPlan(dated(w), w.recordings);
+      expect(await solServed(serve)).toEqual({ state: "refused", reason, deviation: expect.closeTo(1, 6), count: 1, kind, earliestChangeDay: null });
+      const body = served(serve, SOL_PLAN_PATH).body;
+      for (const text of privateNames(w)) expect(body).not.toContain(text);
+      info.mockRestore(); warn.mockRestore();
+    }
   });
 
   it("does not plan the house-1v1 move while the never-joined correction is not applied", async () => {
