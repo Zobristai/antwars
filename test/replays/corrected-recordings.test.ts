@@ -11,7 +11,7 @@ import { isAbandonedRecord, isAbandonedResult, rewriteMessages } from "../../src
 import type { ReplaySource } from "../../src/replays/access.ts";
 import { CORRECTED_REPLAY_IDS, correctedHistorySource, correctedReplaySource } from "../../src/replays/correctedRecordings.ts";
 import { binaryRecord, type MatchRecord } from "../../src/replays/history.ts";
-import { historyRoutes } from "../../src/replays/history-routes.ts";
+import { historyRoutes, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
 import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 import { replayRoutes } from "../../src/replays/replay-routes.ts";
 import type { Fields, Store } from "../../src/store/firestore.ts";
@@ -60,11 +60,11 @@ function store(docs: Record<string, Fields> = {}, fail = false) {
 
 const servers: Server[] = [];
 afterEach(async () => { for (const server of servers.splice(0)) await new Promise(resolve => server.close(resolve)); vi.restoreAllMocks(); });
-async function serve(docs: Record<string, Fields>, overrides: Parameters<typeof bucket>[0] = {}, fail = false) {
+async function serve(docs: Record<string, Fields>, overrides: Parameters<typeof bucket>[0] = {}, fail = false, lobbies?: RecordingLobbyLookup) {
   const b = bucket(overrides);
   const s = store(docs, fail);
   const replays = replayRoutes(correctedReplaySource(b.replays, s.store));
-  const history = historyRoutes(correctedHistorySource(b.history, s.store));
+  const history = historyRoutes(correctedHistorySource(b.history, s.store), lobbies);
   const route = (handler: MountHandler) => handler;
   const server = createServer((req, res) => void route(req.url!.startsWith("/replays/") ? replays : history)(req, res, {} as LiveGame));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -245,6 +245,31 @@ describe("the matches the rating corrections changed, as served", () => {
     expect(solRow.seats.map(seat => seat.modelLabel)).toEqual([`${SOL.to} (row)`, `${SOL.to} (row)`]);
     expect(JSON.stringify(solRow)).not.toMatch(OLD_HANDLE);
   });
+  it("corrects a Sol row's seat handle the lobby fills in, after the fill: the -fast handle, or 503 when the old one is left", async () => {
+    // An older row records no handle for the moved seat; the route fills it from the lobby, which names the old handle.
+    const row = bucket().objects.get(SOL.replayId)!.row;
+    const unrecorded = { row: { ...row, seats: row.seats.map(seat => seat.handle === SOL.from ? { ...seat, handle: null } : seat) } };
+    const lobby = (name: string): RecordingLobbyLookup => async id => id !== SOL.replayId ? null : { kind: "public", size: 1, mode: null,
+      colonies: [[{ id: "moved", displayName: name }], [{ id: "other", displayName: "antwars/glm-5-3" }]], outcome: "colony_0_won" };
+    const seatsOf = (rows: HistorySummary[]) => rows.find(r => r.id === SOL.replayId)!.seats.map(seat => seat.handle);
+
+    const before = await serve({}, { [SOL.replayId]: unrecorded }, false, lobby(SOL.from));
+    expect(seatsOf(await before.list())).toEqual([SOL.from, "antwars/glm-5-3"]);
+
+    const after = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: unrecorded }, false, lobby(SOL.from));
+    const listed = await after.get("/matches");
+    expect(listed.status).toBe(200);
+    const rows: HistorySummary[] = JSON.parse(listed.body.toString()).matches;
+    expect(seatsOf(rows)).toEqual([SOL.to, "antwars/glm-5-3"]);
+    expect(JSON.stringify(rows.find(r => r.id === SOL.replayId))).not.toMatch(OLD_HANDLE);
+
+    // A filled name the move does not rename, still holding the old handle, is never served.
+    const left = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: unrecorded }, false, lobby(`${SOL.from} (seat)`));
+    const refused = await left.get("/matches");
+    expect(refused.status).toBe(503);
+    expect(refused.body.toString()).not.toMatch(OLD_HANDLE);
+  });
+
   it("answers 503 for an empty Sol replay, or one that names no moved seat, once the Sol move is applied", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const empties = [new Uint8Array(0), new Uint8Array(gzipSync(packMessages([]))), bucket().objects.get(SOL2.replayId)!.binary];

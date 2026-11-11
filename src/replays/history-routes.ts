@@ -232,7 +232,9 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (list) {
         const listed = await source.list(token, abort.signal);
         const typed = await types(listed);
-        const page = handles === undefined ? typed : await handles(typed);
+        const filled = handles === undefined ? typed : await handles(typed);
+        // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
+        const page = source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
         if (res.destroyed) return;
         // Recordings show an unlisted house seat handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("recordings", page.matches.flatMap(row => row.seats.map(seat => seat.handle)));

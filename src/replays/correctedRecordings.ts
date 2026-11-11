@@ -147,7 +147,7 @@ function correctRecord(id: string, correction: Correction, body: Uint8Array): Ui
   } catch { throw new CorrectedRecordingUnavailable("record not correctable"); }
 }
 
-function correctSummary(correction: Correction, row: HistorySummary): HistorySummary {
+function correctSummary<Row extends HistorySummary>(correction: Correction, row: Row): Row {
   if (correction.kind === "never-joined") return { ...row, winner: null, reason: "abandoned", decidedBy: "draw", rated: false };
   const pattern = handlePattern(correction.from);
   const moved = { ...row, seats: row.seats.map(seat => ({ ...seat, handle: seat.handle === correction.from ? correction.to : seat.handle,
@@ -186,17 +186,20 @@ export function correctedReplaySource(source: ReplaySource, store: Pick<Store, "
   };
 }
 
-/** /matches and /matches/<id>: each corrected recording's listing row and record, once its correction reads applied. */
+/**
+ * /matches and /matches/<id>: each corrected recording's listing row and record, once its correction reads applied.
+ * A listing row is corrected in listed (history-routes.ts), after the route has filled its missing seat handles from
+ * the lobby, so a handle the fill adds is replaced and checked like a recorded one.
+ */
 export function correctedHistorySource(source: HistorySource, store: Pick<Store, "get">): HistorySource {
   const applied = appliedReader(store);
   return {
-    async list(pageToken, signal) {
-      const page = await source.list(pageToken, signal);
-      const matches = await Promise.all(page.matches.map(async row => {
+    list: (pageToken, signal) => source.list(pageToken, signal),
+    async listed(rows) {
+      return Promise.all(rows.map(async row => {
         const correction = CORRECTIONS.get(row.id);
         return correction !== undefined && await applied(correction) ? correctSummary(correction, row) : row;
       }));
-      return { ...page, matches };
     },
     async open(id, signal) {
       const correction = CORRECTIONS.get(id);

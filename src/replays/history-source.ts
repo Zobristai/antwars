@@ -35,6 +35,11 @@ export interface HistorySource {
   list(pageToken: string | undefined, signal: AbortSignal): Promise<HistoryPage>;
   /** Decoded JSON byte stream. null means missing; consumer owns its destruction. */
   open(id: string, signal: AbortSignal): Promise<Readable | null>;
+  /**
+   * The listing rows as served, where a source changes them: the /matches route applies it last, after it has typed
+   * each row and filled its missing seat handles from the lobby, so it sees every value the page will serve.
+   */
+  listed?<Row extends HistorySummary>(rows: readonly Row[]): Promise<Row[]>;
 }
 export function validHistoryPageToken(token: string): boolean {
   return token.length > 0 && token.length <= 2048 && /^[\x21-\x7e]+$/.test(token);
