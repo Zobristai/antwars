@@ -44,7 +44,8 @@ jobs:
       - name: Firebase CLI (pinned)
         run: npm install -g firebase-tools@15.35.0 --no-audit --no-fund
       - name: Playwright image matches playwright-core
-        # Fails with both versions named when the image above and package.json are out of step,
+        # Fails with both versions named when the image above (its tag, or the version read inside the
+        # running image) and package.json are out of step,
         # then sets CHROME_BIN to the image's Chromium (the image has no Google Chrome).
         run: node scripts/ci/playwright-image.ts
       - name: Typecheck
@@ -58,7 +59,15 @@ jobs:
           ANTWAR_REQUIRE_EMULATOR: '1'
           # Overrides the script's --maxWorkers=8 (sized for the deploy host) on the runner.
           VITEST_MAX_WORKERS: '2'
+          ANTWAR_TEST_FILES: test-files.json
         run: npm test
+      - name: Test files run
+        # Publishes each test file the suite ran, with its passed/failed/skipped counts, as notice
+        # annotations on this check run, readable through GitHub's check-run annotations API.
+        if: always()
+        env:
+          ANTWAR_TEST_FILES: test-files.json
+        run: node scripts/ci/test-files-report.ts
   full:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -84,7 +93,8 @@ jobs:
       - name: Firebase CLI (pinned)
         run: npm install -g firebase-tools@15.35.0 --no-audit --no-fund
       - name: Playwright image matches playwright-core
-        # Fails with both versions named when the image above and package.json are out of step,
+        # Fails with both versions named when the image above (its tag, or the version read inside the
+        # running image) and package.json are out of step,
         # then sets CHROME_BIN to the image's Chromium (the image has no Google Chrome).
         run: node scripts/ci/playwright-image.ts
       - name: Full suite

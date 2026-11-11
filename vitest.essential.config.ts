@@ -59,6 +59,11 @@ export default mergeConfig(
         provider: "v8",
         reporter: ["text-summary"],
       },
+      // CI sets ANTWAR_TEST_FILES to a path for a JSON report of every file run, which
+      // scripts/ci/test-files-report.ts publishes; vitest's own reporters are kept.
+      ...(process.env.ANTWAR_TEST_FILES && {
+        reporters: [...configDefaults.reporters, ["json", { outputFile: process.env.ANTWAR_TEST_FILES }]],
+      }),
     },
   }),
 );
