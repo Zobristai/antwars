@@ -71,13 +71,14 @@ function moveIdentity(identity: StreamIdentity | undefined, from: string, to: st
 }
 /**
  * The message with each seat named `from` renamed, and the handle replaced wherever it stands whole in an agent's or
- * join's model label and an agent's or order's intent line. null when nothing changed.
+ * join's model label and an agent's or order's intent line; message null when nothing changed. seats counts the seat
+ * identities renamed, apart from any label or intent rewrite: only a renamed seat shows the replay is the moved match's.
  */
-function moveMessage(message: StreamMessage, from: string, to: string): StreamMessage | null {
-  let changed = false;
+function moveMessage(message: StreamMessage, from: string, to: string): { readonly message: StreamMessage | null; readonly seats: number } {
+  let changed = false, seats = 0;
   const move = (identity: StreamIdentity | undefined) => {
     const next = moveIdentity(identity, from, to);
-    if (next !== identity) changed = true;
+    if (next !== identity) { changed = true; seats++; }
     return next;
   };
   const pattern = handlePattern(from);
@@ -101,7 +102,7 @@ function moveMessage(message: StreamMessage, from: string, to: string): StreamMe
     return identity === event.identity && modelLabel === event.modelLabel ? event
       : { ...event, ...(identity === undefined ? {} : { identity }), modelLabel };
   });
-  return changed ? { ...message, full, events } : null;
+  return { message: changed ? { ...message, full, events } : null, seats };
 }
 
 /**
@@ -122,7 +123,7 @@ function holdsHandle(value: unknown, from: string): boolean {
 }
 
 function correctBinary(correction: Correction, binary: Uint8Array): Uint8Array {
-  let first = true;
+  let first = true, renamedSeats = 0;
   try {
     const out = correction.kind === "never-joined" ? abandonBinary(binary)
       : rewriteMessages(binary, message => {
@@ -130,12 +131,13 @@ function correctBinary(correction: Correction, binary: Uint8Array): Uint8Array {
         if (first && message.full === null) throw new Error("no opening snapshot");
         first = false;
         const moved = moveMessage(message, correction.from, correction.to);
-        if (holdsHandle(moved ?? message, correction.from)) throw new Error("moved handle still present");
-        return moved;
+        renamedSeats += moved.seats;
+        if (holdsHandle(moved.message ?? message, correction.from)) throw new Error("moved handle still present");
+        return moved.message;
       });
-    // A moved match's replay names the moved seat: one that renames nothing (empty, or without that seat), or that does
-    // not open with a full snapshot, is not served.
-    if (correction.kind === "sol" && out.rewritten === 0) throw new Error("no moved seat");
+    // A moved match's replay names the moved seat: one that renames no seat identity (empty, without that seat, or
+    // holding the handle only in a model label or intent line), or that does not open with a full snapshot, is not served.
+    if (correction.kind === "sol" && renamedSeats === 0) throw new Error("no moved seat");
     return out.body ?? binary;
   } catch { throw new CorrectedRecordingUnavailable("replay not correctable"); }
 }

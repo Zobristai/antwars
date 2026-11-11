@@ -245,6 +245,23 @@ describe("the matches the rating corrections changed, as served", () => {
     expect(solRow.seats.map(seat => seat.modelLabel)).toEqual([`${SOL.to} (row)`, `${SOL.to} (row)`]);
     expect(JSON.stringify(solRow)).not.toMatch(OLD_HANDLE);
   });
+  it("answers 503 for a Sol replay with an opening snapshot but no moved seat, whose labels and intents hold the old handle", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Another match's replay (no seat named the moved handle), with the moved handle only in model labels and intent lines.
+    let first = true;
+    const binary = rewriteMessages(bucket().objects.get(SOL2.replayId)!.binary, (message): StreamMessage => {
+      const opening = first; first = false;
+      const full = opening && message.full !== null ? { ...message.full, agents: message.full.agents.map(agent =>
+        ({ ...agent, modelLabel: `${SOL.from} (agents)`, intent: `holds for ${SOL.from}` })) } : message.full;
+      const events = message.events.map(event => event.kind === "join" ? { ...event, modelLabel: `${SOL.from} (join)` } : event);
+      return { ...message, full, events };
+    }).body!;
+    const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER }, { [SOL.replayId]: { binary } });
+    const response = await w.get(`/replays/${SOL.replayId}`);
+    expect([response.status, response.cache]).toEqual([503, "no-store"]);
+    expect(response.body.toString("latin1")).not.toMatch(OLD_HANDLE);
+  });
+
   it("answers 503 for a Sol replay that does not open with a full snapshot, once the Sol move is applied", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     let first = true;
