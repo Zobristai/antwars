@@ -4,8 +4,6 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountLeaderboardPage } from "../../../web/src/leaderboard-page/page.ts";
 import { PAGE_WORDS } from "../../../web/src/ui/pages.ts";
-import { baselineTable } from "../../../src/rating/vanillaBaseline.ts";
-import { houseDisplayName } from "../../../src/rating/houseLabels.ts";
 import { dom, type ElementPort } from "./dom.ts";
 import { leaderboardCards } from "./archive.ts";
 
@@ -158,12 +156,11 @@ describe("badges", () => {
       { displayName: "antwars/gpt-6-astra", rating: 1600, ratedMatches: 4, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
       { displayName: "antwars/claude-opus-5-5", rating: 1550, ratedMatches: 3, thinkingLevel: "high", benchmark: true },
     ] })));
-    const index = leaderboardCards(p.root)[0]!.section;
-    const groups = index.byClass("d1p-tags");
+    const groups = p.root.byClass("d1p-tags");
     // Two rows, each drawn in the table and the stacked list.
     expect(groups.map(group => group.children.map(tag => tag.textContent))).toEqual([["max", "Fast"], ["high"], ["max", "Fast"], ["high"]]);
     expect(groups.every(group => group.children.every(tag => tag.classes().includes("d1p-tag")))).toBe(true);
-    expect(index.byClass("d1p-tag").every(tag => tag.parent!.classes().includes("d1p-tags"))).toBe(true);
+    expect(p.root.byClass("d1p-tag").every(tag => tag.parent!.classes().includes("d1p-tags"))).toBe(true);
     p.dispose();
   });
 });
@@ -174,15 +171,15 @@ describe("the band and its cyan Refresh", () => {
     const band = p.root.byClass("d1p-band")[0]!;
     expect(band.byClass("d1p-title")).toHaveLength(1);
     expect(band.byClass("d1p-loaded")).toHaveLength(1);
-    // Both ranking groups' four sizes, then Challenge's one choice.
-    expect(band.byClass("d1p-tab")).toHaveLength(9);
+    // Both ranking groups' four sizes, and nothing else.
+    expect(band.byClass("d1p-tab")).toHaveLength(8);
     expect(p.root.byClass("d1p-rail")).toHaveLength(0);
     expect(p.root.byClass("d1p-refresh").map(node => node.textContent)).toEqual([PAGE_WORDS.refresh]);
     expect(band.all().includes(p.root.byClass("d1p-refresh")[0]!)).toBe(true);
     p.dispose();
   });
 
-  it("puts Loaded then Refresh on the title's line, and the challenge bubble after the board choice, its words exactly, the cyan button to the Challenge choice keeping the board", () => {
+  it("puts Loaded then Refresh on the title's line, and the challenge bubble after the board choice, its words exactly, the cyan button to the Antwars Model Index 1v1 board keeping the board", () => {
     const port = dom({ search: "?page=leaderboard&board=2d", meta: { "antwar-public-matches": "true" } });
     const dispose = mountLeaderboardPage(port.doc, port.win, { request: vi.fn(() => new Promise<Response>(() => {})) });
     const band = port.body.all().find(node => node.id === "aw-leaderboard-page")!.byClass("d1p-band")[0]!;
@@ -192,10 +189,10 @@ describe("the band and its cyan Refresh", () => {
     // The title, then at its line's end the time and Refresh, in that order, so Refresh holds the end.
     expect(summary.children.map(node => node.className)).toEqual(["d1p-title", "d1p-fresh"]);
     expect(summary.children[1]!.children.map(node => node.className)).toEqual(["d1p-loaded", "d2-pill d1p-refresh"]);
-    // The bubble right after the board choice, whose last group is Challenge.
+    // The bubble right after the board choice, whose last group is Ranked.
     expect(strip.hidden).toBe(false);
     expect(strip.children.map(node => node.className)).toEqual(["d1p-boards", "d1-agent-button"]);
-    expect(strip.children[0]!.children.at(-1)!.byClass("d1p-kicker")[0]!.textContent).toBe("Challenge");
+    expect(strip.children[0]!.children.at(-1)!.byClass("d1p-kicker")[0]!.textContent).toBe("Ranked");
     const bubble = strip.children[1]!;
     expect([bubble.tag, bubble.className, bubble.dataset.key]).toEqual(["a", "d1-agent-button", "challenge-new"]);
     // Its words wrap inside the cyan button on a narrow phone; the grey bubble's rule is gone from ui/ui.css.
@@ -203,7 +200,7 @@ describe("the band and its cyan Refresh", () => {
     expect(css).toContain('.d1p .d1-agent-button[data-key="challenge-new"] { white-space: normal;');
     expect(readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8")).not.toContain("challenge-new");
     expect(bubble.textContent).toBe("NEW: Your agent can challenge the top models");
-    expect(bubble.href).toBe("/?page=leaderboard&mode=challenge&board=2d");
+    expect(bubble.href).toBe("/?page=leaderboard&mode=house-1v1&board=2d");
     dispose();
   });
 
@@ -226,8 +223,8 @@ describe("the Leaderboard's layout rules", () => {
   // Style-contract checks on the source rules; the pass captures show the painted layout.
   const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
   const rules = css.split("\n").filter(line => line.includes("{") && !line.trim().startsWith("@"));
-  it("scopes every rule for the band's board line, the Challenge list and the rating badge's tap area to the Leaderboard, so the front page, Matches and Rules are unchanged", () => {
-    const own = rules.filter(rule => /d1p-lb-strip|d1p-challenge|d1p-elo-badge::before/.test(rule));
+  it("scopes every rule for the band's board line and the rating badge's tap area to the Leaderboard, so the front page, Matches and Rules are unchanged", () => {
+    const own = rules.filter(rule => /d1p-lb-strip|d1p-elo-badge::before/.test(rule));
     expect(own.length).toBeGreaterThan(0);
     for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
     // The band's two lines and the tabs' spacing are the Leaderboard's own as well.
@@ -241,23 +238,6 @@ describe("the Leaderboard's layout rules", () => {
     expect(css).toContain(".d1p-lb .c-elo { width: calc(var(--d1p-gutter) + 184px); text-align: left; }");
     expect(css).toContain(".d1p-lb thead th.c-matches { white-space: normal; }");
   });
-  it("draws the Challenge handle as one unit that moves to the next line whole, never breaking at its hyphens", () => {
-    expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{ display: inline-block; max-width: 100%;/);
-  });
-  it("makes every Challenge row two lines tall from 46rem, a row without an ask keeping the ask's line empty, so every row is one height", () => {
-    expect(css).toContain('@media (width >= 46rem) {\n  .d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-rows: auto minmax(20px, auto); }\n}');
-  });
-  it("sizes each Challenge row's rating on its own on a phone, so \"provisional\" under its figure narrows only its own row's name", () => {
-    const phone = css.slice(css.indexOf("the Leaderboard's band on a phone */"));
-    expect(phone.length).toBeLessThan(css.length);
-    const block = phone.slice(0, phone.indexOf("\n}\n"));
-    expect(block).toContain("@media (width < 46rem) {");
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows { display: block; }');
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-rows > li { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }');
-    // Each badge on its row's end edge, "provisional" under its figure.
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge li > .c-elo { text-align: right; }');
-    expect(block).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-prov { display: block; margin-left: 0; }');
-  });
 });
 
 describe("the Leaderboard's type rules", () => {
@@ -270,18 +250,13 @@ describe("the Leaderboard's type rules", () => {
   it("gives \"provisional\" its rating badge's 10 px, one step quieter", () => {
     expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-prov { font-size: 10px; color: var(--aw-ink-3); }');
   });
-  it("quiets the ask's repeated words, sets the handle a size under them, and moves the handle with the words after it", () => {
-    expect(css).toMatch(/\.d1p\[data-page="leaderboard"\] \.d1p-challenge \.aw-byoa-url \{[^}]*font-size: 12px; line-height: 16px;/);
-    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask { color: var(--aw-ink-3); }');
-    expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-challenge .d1p-ask-handle { display: inline-block; max-width: 100%; }');
-  });
   it("starts a name's wrapped badges on the name's edge, the gap the name's own trailing margin", () => {
     expect(css).toContain('.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > span:first-child:has(+ .d1p-tags) { margin-right: 6px; }');
     expect(css).toContain('.d1p[data-page="leaderboard"] :is(.d1p-card .is-lead, .d1p-lb th.c-name) > .d1p-tags > .d1p-tag:first-child { margin-left: 0; }');
   });
   it("scopes every type-pass rule to the Leaderboard, so the front page, Matches and Rules keep their shared rules", () => {
-    const own = rules.filter(rule => /> \.d1p-count|d1p-ask|span:first-child:has\(\+ \.d1p-tags\)|\.d1p-tags > \.d1p-tag:first-child/.test(rule) || rule.startsWith('.d1p[data-page="leaderboard"] .d1p-prov {'));
-    expect(own.length).toBeGreaterThanOrEqual(6);
+    const own = rules.filter(rule => /> \.d1p-count|span:first-child:has\(\+ \.d1p-tags\)|\.d1p-tags > \.d1p-tag:first-child/.test(rule) || rule.startsWith('.d1p[data-page="leaderboard"] .d1p-prov {'));
+    expect(own.length).toBeGreaterThanOrEqual(4);
     for (const rule of own) expect(rule.trim().startsWith('.d1p[data-page="leaderboard"]')).toBe(true);
     expect(css).toContain(".d1p-prov { margin-left: 8px; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2);");
     expect(css).toContain(".d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }");
@@ -315,7 +290,7 @@ describe("the Leaderboard's quieter rules", () => {
     expect(css).toContain(".d1p-form-mark { width: 40px; height: 44px; }");
     expect(coarse.slice(0, coarse.indexOf("\n}\n"))).toContain('.d1p[data-page="leaderboard"] .d1p-form-mark { height: 44px; }');
   });
-  it("parts one row from the next by the hairline, in the table, the stacked rows and the Challenge list, the first row keeping the line", () => {
+  it("parts one row from the next by the hairline, in the table and the stacked rows, the first row keeping the line", () => {
     expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-lb tbody tr + tr > :is(th, td) { border-top-color: var(--d1p-hair); }');
     expect(css).toContain('.d1p[data-page="leaderboard"] .d1p-rows > li + li { border-top-color: var(--d1p-hair); }');
   });
@@ -341,16 +316,14 @@ describe("rating ± RD", () => {
       { displayName: `${mode}-historical`, rating: 1300, ratedMatches: 12 },
     ] }));
     await p.answer("house-1v1", rows("house"));
-    // The Antwars Model Index card; the vanilla baseline beside it draws its own rows.
-    const index = leaderboardCards(p.root)[0]!.section;
-    const shown = () => index.byClass("c-elo").map(cell => cell.textContent).filter(text => /\d/.test(text));
+    const shown = () => p.root.byClass("c-elo").map(cell => cell.textContent).filter(text => /\d/.test(text));
     // The table cell, then the stacked row (which names the column for screen readers).
     expect(shown()).toEqual(expect.arrayContaining(["1663 ± 87", "1337 ± 290, provisional", "1300", "Rating 1663 ± 87"]));
     // The in-match cyan badge holds the figure and ± RD (RATING_LOOK "badge"), the ± RD in its tip.
-    expect(index.byClass("d1-elo").map(node => node.textContent)).toEqual(["1663 ± 87", "1337 ± 290", "1300", "1663 ± 87", "1337 ± 290", "1300"]);
-    expect(index.byClass("d1-elo").map(node => node.children[0]?.tag === "#text" ? node.children[0].textContent : node.textContent))
+    expect(p.root.byClass("d1-elo").map(node => node.textContent)).toEqual(["1663 ± 87", "1337 ± 290", "1300", "1663 ± 87", "1337 ± 290", "1300"]);
+    expect(p.root.byClass("d1-elo").map(node => node.children[0]?.tag === "#text" ? node.children[0].textContent : node.textContent))
       .toEqual(["1663", "1337", "1300", "1663", "1337", "1300"]);
-    expect(index.byClass("d1p-elo-rd").map(node => node.textContent)).toEqual([" ± 87", " ± 290", " ± 87", " ± 290"]);
+    expect(p.root.byClass("d1p-elo-rd").map(node => node.textContent)).toEqual([" ± 87", " ± 290", " ± 87", " ± 290"]);
     expect(p.root.byClass("d1p-rd")).toEqual([]);
     p.choose("Ranked 1v1");
     await p.answer("1v1", rows("public"), undefined, false); await p.answer("1v1", rows("public"));
@@ -359,129 +332,39 @@ describe("rating ± RD", () => {
   });
 });
 
-describe("the Challenge choice", () => {
-  // Keyed by URL: the Challenge list is POST /api/list_challenge_opponents plus the Antwars Model Index 1v1 ranking it follows.
-  const opponents = [
-    { handle: "antwars/claude-opus-5-5", displayName: "Claude Opus 5.5", level: "high", tier: null, available: true, reason: null },
-    { handle: "antwars/claude-opus-5-5-low", displayName: "Claude Opus 5.5", level: "low", tier: null, available: false, reason: "marked unavailable by the house owner" },
-    { handle: "antwars/gpt-6-astra", displayName: "GPT-6 Astra", level: "max", tier: "fast", available: true, reason: null },
-    { handle: "antwars/glm-5-3-highspeed", displayName: "GLM-5.3 Highspeed", level: null, tier: null, available: false, reason: "last launch failed" },
-    { handle: "antwars/mistral-large-latest", displayName: "Mistral Large", level: null, tier: null, available: true, reason: null },
-  ];
-  const listed = () => new Response(JSON.stringify({ opponents, allowanceLeft: 20, resetsAt: 0 }));
-  /** The Model Index 1v1 in two pages: an unlisted handle, and ratings in the ranking's own case. */
-  const index = (body: { cursor?: string }) => new Response(JSON.stringify(body.cursor === undefined
-    ? { entries: [{ displayName: "antwars/gpt-6-astra", rating: 1612, ratedMatches: 14 }, { displayName: "antwars/not-listed", rating: 1590, ratedMatches: 12 }], next: "page-2" }
-    : { entries: [{ displayName: "Antwars/Mistral-Large-Latest", rating: 1540, ratedMatches: 3 }, { displayName: "antwars/claude-opus-5-5-low", rating: 1533, ratedMatches: 11 },
-      { displayName: "antwars/claude-opus-5-5", rating: 1501, ratedMatches: 12 }] }));
-  function mount(search: string, list: () => Response, ranking: (body: { mode?: string; cursor?: string }) => Response = index) {
+describe("the board choice's links", () => {
+  function mount(search: string) {
     const urls: string[] = [];
     const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       urls.push(`${init!.method} ${String(input)} ${String(init!.body)}`);
-      if (String(input) === "/api/list_challenge_opponents") return list();
-      const body = JSON.parse(String(init!.body)) as { mode?: string; cursor?: string };
-      return body.mode === "house-1v1" ? ranking(body) : reply(["ranked"]);
+      return reply(["a"]);
     });
     const port = dom({ search, meta: { "antwar-public-matches": "true" } });
     const dispose = mountLeaderboardPage(port.doc, port.win, { request });
     const root = port.body.all().find(node => node.id === "aw-leaderboard-page")!;
-    const card = () => root.byClass("d1p-challenge")[0];
-    const items = () => card()!.all().filter(node => node.tag === "li");
-    const rows = () => items().map(item => ({
-      lines: item.byClass("d1p-line").map(line => line.textContent),
-      badges: item.byClass("d1p-tag").map(tag => tag.textContent),
-      rating: item.byClass("d1p-elo-badge").map(badge => badge.textContent),
-    }));
     const pressed = () => root.byClass("d1p-tab").filter(node => node.getAttribute("aria-pressed") === "true").map(node => node.getAttribute("aria-label"));
-    const choose = (label: string) => root.byClass("d1p-tab").find(node => node.getAttribute("aria-label") === label)!.click();
-    return { root, urls, dispose, card, items, rows, pressed, choose };
+    return { root, urls, dispose, pressed };
   }
 
-  it("is the third group, after both ranking groups, and its link opens on it and reads the house handle list and the whole Model Index 1v1", async () => {
-    const p = mount("?page=leaderboard&mode=challenge", listed);
-    expect(p.root.byClass("d1p-board-group").map(group => group.byClass("d1p-kicker")[0]!.textContent)).toEqual(["Antwars Model Index", "Ranked", "Challenge"]);
-    expect(p.pressed()).toEqual(["Challenge 1v1"]);
-    await vi.waitFor(() => expect(p.card()?.getAttribute("aria-busy")).toBe("false"));
-    expect(p.urls).toEqual([
-      "POST /api/list_challenge_opponents {}", 'POST /api/leaderboard {"limit":50,"mode":"house-1v1"}',
-      'POST /api/leaderboard {"limit":50,"mode":"house-1v1","cursor":"page-2"}']);
-    expect(p.root.byClass("d1p-card-title").map(node => node.textContent)).toEqual(["Challenge · 1v1"]);
-    expect(p.card()!.byClass("d1p-state")[0]!.textContent).toBe("5 house handles · 3 available");
+  it("offers the two ranking groups and no Challenge choice", () => {
+    const p = mount("?page=leaderboard");
+    expect(p.root.byClass("d1p-board-group").map(group => group.byClass("d1p-kicker")[0]!.textContent)).toEqual(["Antwars Model Index", "Ranked"]);
+    expect(p.root.byClass("d1p-tab").map(node => node.getAttribute("aria-label"))).not.toContain("Challenge 1v1");
     p.dispose();
   });
 
-  it("draws each row in the shared style, in Model Index 1v1 order with its rating badge, unrated handles last, unavailable ones badged in place", async () => {
-    const p = mount("?page=leaderboard&mode=challenge", listed);
-    await vi.waitFor(() => expect(p.card()?.getAttribute("aria-busy")).toBe("false"));
-    // Ranked order (antwars/not-listed is not a listed handle, so it has no row), then antwars/glm-5-3-highspeed, which the
-    // ranking does not rate. Badges are the list's level and tier through the Model Index rows' own badges, then
-    // "unavailable"; antwars/mistral-large-latest's level record holds no level, so it shows none.
-    // "on Antwars" is held together by a no-break space (copy.ts).
-    expect(p.rows()).toEqual([
-      { lines: ["GPT-6 AstramaxFast", "Ask your agent: challenge antwars/gpt-6-astra on Antwars"], badges: ["max", "Fast"], rating: ["1612"] },
-      { lines: ["Mistral Large", "Ask your agent: challenge antwars/mistral-large-latest on Antwars"], badges: [], rating: ["1540"] },
-      { lines: ["Claude Opus 5.5lowunavailable"], badges: ["low", "unavailable"], rating: ["1533"] },
-      { lines: ["Claude Opus 5.5high", "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"], badges: ["high"], rating: ["1501"] },
-      { lines: ["GLM-5.3 Highspeedunavailable"], badges: ["unavailable"], rating: [] },
-    ]);
-    // The ask is each available row's own line under its name (archive.css lays it across the row).
-    expect(p.card()!.byClass("d1p-ask").map(node => node.textContent)).toEqual([
-      "Ask your agent: challenge antwars/gpt-6-astra on Antwars", "Ask your agent: challenge antwars/mistral-large-latest on Antwars",
-      "Ask your agent: challenge antwars/claude-opus-5-5 on Antwars"]);
-    // The handle and the words after it are one unit, so where the ask wraps the handle opens its line.
-    expect(p.card()!.byClass("d1p-ask").map(ask => ask.byClass("d1p-ask-handle").map(unit => [unit.children[0]!.tag, unit.textContent])))
-      .toEqual([[["code", "antwars/gpt-6-astra on Antwars"]], [["code", "antwars/mistral-large-latest on Antwars"]],
-        [["code", "antwars/claude-opus-5-5 on Antwars"]]]);
-    // A provisional rating keeps its word, as on the ranking rows.
-    expect(p.items()[1]!.byClass("d1p-prov").map(node => node.textContent)).toEqual(["provisional"]);
-    // No handle slug after a name, no meta line, no placeholder; the handle appears only as code in the ask.
-    expect(p.card()!.byClass("d1p-think")).toEqual([]);
-    expect(p.card()!.byClass("is-meta")).toEqual([]);
-    expect(p.card()!.textContent).not.toMatch(/not set|Level |Tier /);
-    expect(p.card()!.all().filter(node => node.tag === "code").map(node => node.textContent))
-      .toEqual(["antwars/gpt-6-astra", "antwars/mistral-large-latest", "antwars/claude-opus-5-5"]);
-    // The handle is the command the agent types, in the agent URL's command style, and nowhere else on the row; the row's
-    // name is its display name.
-    expect(p.card()!.all().filter(node => node.tag === "code").map(node => node.className)).toEqual(["aw-byoa-url", "aw-byoa-url", "aw-byoa-url"]);
-    for (const item of p.items()) {
-      expect(item.byClass("is-lead")[0]!.textContent).not.toMatch(/antwars\//);
-      let rest = item.textContent;
-      for (const code of item.all().filter(node => node.tag === "code")) rest = rest.replace(code.textContent, "");
-      expect(rest).not.toMatch(/antwars\//);
-    }
-    expect(p.card()!.textContent).not.toContain("marked unavailable");
-    expect(p.card()!.textContent).not.toContain("last launch failed");
-    p.dispose();
-  });
-
-  it("says a failed read of either list once, Refresh reads both again, and leaving for a ranking reads that ranking as before", async () => {
-    let failList = true, failIndex = false;
-    const p = mount("?page=leaderboard&mode=challenge",
-      () => failList ? new Response("unavailable", { status: 503 }) : new Response(JSON.stringify({ opponents: [] })),
-      body => failIndex ? new Response("unavailable", { status: 503 }) : index(body));
-    const failed = "The house handle list is unavailable. Refresh the leaderboard to try again.";
-    const refresh = () => p.root.all().find(node => node.tag === "button" && node.textContent === PAGE_WORDS.refresh)!.click();
-    await vi.waitFor(() => expect(p.card()?.byClass("d1p-state")[0]!.textContent).toBe(failed));
-    failList = false; failIndex = true;
-    refresh();
-    await vi.waitFor(() => expect(p.card()?.getAttribute("aria-busy")).toBe("false"));
-    expect(p.card()!.byClass("d1p-state")[0]!.textContent).toBe(failed);
-    expect(p.items()).toEqual([]);
-    failIndex = false;
-    refresh();
-    await vi.waitFor(() => expect(p.card()?.byClass("d1p-state")[0]!.textContent).toBe("No house handles listed."));
-    const before = p.urls.length;
-    p.choose("Ranked 2v2");
+  it("opens the old Challenge link on the opening board, the Antwars Model Index 1v1, reading only that ranking", async () => {
+    const p = mount("?page=leaderboard&mode=challenge");
+    expect(p.pressed()).toEqual(["Antwars Model Index 1v1"]);
     await vi.waitFor(() => expect(leaderboardCards(p.root).every(card => card.busy === "false")).toBe(true));
-    expect(p.card()).toBeUndefined();
-    expect(p.pressed()).toEqual(["Ranked 2v2"]);
-    expect(p.urls.slice(before)).toEqual([
-      'POST /api/leaderboard {"limit":50,"mode":"2v2","scope":"house"}', 'POST /api/leaderboard {"limit":50,"mode":"2v2"}']);
+    expect(p.urls).toEqual(['POST /api/leaderboard {"limit":50,"mode":"house-1v1"}']);
+    expect(leaderboardCards(p.root).map(card => card.section.byClass("d1p-card-title")[0]!.textContent.startsWith("Antwars Model Index · 1v1"))).toEqual([true]);
+    expect(p.root.byClass("d1p-challenge")).toEqual([]);
     p.dispose();
   });
 
   it("leaves an unknown mode link on the opening mode", async () => {
-    const p = mount("?page=leaderboard&mode=bogus", () => new Response("{}"));
+    const p = mount("?page=leaderboard&mode=bogus");
     expect(p.pressed()).toEqual(["Antwars Model Index 1v1"]);
     await vi.waitFor(() => expect(p.urls).toEqual(['POST /api/leaderboard {"limit":50,"mode":"house-1v1"}']));
     p.dispose();
@@ -521,39 +404,6 @@ describe("no house slug on the rankings", () => {
       for (const shown of [node.textContent, node.title, node.getAttribute("aria-label") ?? ""]) expect(shown).not.toMatch(/abliterated-large-v2|not-a-row|antwars\//);
     }
     expect(card!.section.textContent).toContain("Abliterated GLM-5.3");
-    p.dispose();
-  });
-});
-
-describe("the vanilla baseline: rounds 26-30", () => {
-  const titles = (root: ElementPort) => leaderboardCards(root).map(card => card.title);
-  it("stands beside the Antwars Model Index 1v1, which is unchanged, with the re-rated rows and no read of its own", async () => {
-    const p = page();
-    await p.answer("house-1v1", reply(["antwars/claude-opus-5-5"]));
-    expect(titles(p.root)).toEqual(["Antwars Model Index · 1v1", "Vanilla baseline: rounds 26-30"]);
-    const [index, baseline] = leaderboardCards(p.root);
-    // The index card holds exactly the server's rows, and none of the baseline's.
-    expect(index!.count).toBe("1 shown");
-    expect(index!.section.textContent).toContain("antwars/claude-opus-5-5");
-    expect(index!.section.textContent).not.toContain("Abliterated GLM-5.3");
-    const expected = baselineTable();
-    const rows = baseline!.section.querySelector("tbody")!.children;
-    expect(rows).toHaveLength(expected.length);
-    expected.forEach((row, at) => expect(rows[at]!.textContent).toContain(houseDisplayName(row.displayName)));
-    expect(baseline!.section.textContent).toContain(`${Math.round(expected[0]!.rating)} ± ${Math.round(expected[0]!.rd)}`);
-    expect(baseline!.more).toBeNull();
-    p.dispose();
-  });
-
-  it("is 1v1 only: the larger Model Index boards and the public rankings show no baseline", async () => {
-    const p = page();
-    await p.answer("house-1v1", reply(["a"]));
-    p.choose("Antwars Model Index 2v2");
-    await p.answer("house-2v2", reply(["b"]));
-    expect(titles(p.root)).toEqual(["Antwars Model Index · 2v2"]);
-    p.choose("Ranked 1v1");
-    await p.answer("1v1", reply(["c"]), undefined, false); await p.answer("1v1", reply(["d"]));
-    expect(titles(p.root)).not.toContain("Vanilla baseline: rounds 26-30");
     p.dispose();
   });
 });

@@ -815,6 +815,11 @@ describe.skipIf(!host)("house challenge seated-elsewhere scan against the Firest
   });
 });
 
+const FABLE_5_2_AND_GEMINI_4_CARBON = [
+  "claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
+  "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
+];
+
 describe("the house handle list", () => {
   it("lists every HOUSE_LABELS handle in its order except antwars/gpt-6-1-terra, a recording label and not a seat", async () => {
     // A store with no documents: every handle available, no places held.
@@ -827,16 +832,20 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 28 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 36 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(28);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(28);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(36);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(36);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+    }
+    // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available.
+    for (const handle of FABLE_5_2_AND_GEMINI_4_CARBON) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
     expect(opponents.filter(o => o.available).map(o => o.handle).sort()).toEqual([...onTable].sort());

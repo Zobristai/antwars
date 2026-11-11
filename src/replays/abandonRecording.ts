@@ -144,10 +144,45 @@ export interface RecordingObjects {
   replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<string>;
 }
 
+/** A temporary hold this apply set: the object at `generation`, its metadata at `metageneration` once the hold was set. */
+export interface HeldObject { readonly name: string; readonly generation: string; readonly metageneration: string }
+
+/**
+ * Temporary holds the apply sets and clears itself. While an object is held, Cloud Storage refuses to replace or delete
+ * it; a hold changes no content and keeps the generation. A temporary hold is a shared flag, not a lock, so a hold is
+ * set only on an object found unheld, and cleared only while the object's metadata is exactly what setting it left:
+ * a hold this apply did not set is never cleared.
+ */
+export interface RecordingHolds {
+  /**
+   * Sets a hold on an unheld object at `generation`, conditioned on the metadata found unheld, and returns it only on a
+   * reply confirming exactly that hold. Fails before the request is sent, having set nothing: RecordingChangedError
+   * when the object is not at `generation` (replaced or deleted); RecordingHeldError when it is already held; any other
+   * error. Once the request is sent, every other reply throws HoldUnknownError: the request may yet land, and the hold is
+   * never inferred from a read-back. That includes a refusal on its conditions (HTTP 412 or 404), which a retry below
+   * this call would also give after an earlier attempt landed.
+   */
+  hold(name: string, generation: string): Promise<HeldObject>;
+  /**
+   * Clears `hold` only while the object is at its generation and metageneration; true only on a reply confirming it
+   * cleared. Anything else is false: the hold may remain. Never throws.
+   */
+  release(hold: HeldObject): Promise<boolean>;
+}
+export class RecordingChangedError extends Error {
+  constructor(name: string) { super(`object ${name} changed since it was verified; no hold set`); this.name = "RecordingChangedError"; }
+}
+export class RecordingHeldError extends Error {
+  constructor(name: string) { super(`object ${name} is already held; no hold set`); this.name = "RecordingHeldError"; }
+}
+export class HoldUnknownError extends Error {
+  constructor(name: string) { super(`object ${name}: whether a hold is set is undetermined`); this.name = "HoldUnknownError"; }
+}
+
 const GENERATION = /^[1-9]\d*$/;
 
 /** A bucket through the Cloud Run service identity (as every other bucket client here); never a key file. */
-export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetch, get?: ReplayGet): RecordingObjects {
+export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetch, get?: ReplayGet): RecordingObjects & RecordingHolds {
   const objects = gcsBucket(bucket, request, get);
   async function metadata(name: string, token: string): Promise<{ generation: string; contentType: string; contentEncoding?: "gzip" } | null> {
     const response = await objects.call(objects.url(name, { fields: "generation,contentType,contentEncoding" }), { token });
@@ -159,6 +194,28 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
     }
     if (value.contentEncoding !== undefined && value.contentEncoding !== "gzip") throw new Error(`unsupported content encoding ${String(value.contentEncoding)}`);
     return { generation: value.generation, contentType: value.contentType, ...(value.contentEncoding === "gzip" ? { contentEncoding: "gzip" as const } : {}) };
+  }
+  type HoldState = { generation: string; metageneration: string; held: boolean };
+  const holdFields = "generation,metageneration,temporaryHold";
+  const parseHold = (value: { generation?: unknown; metageneration?: unknown; temporaryHold?: unknown }): HoldState => {
+    if (typeof value.generation !== "string" || !GENERATION.test(value.generation) || typeof value.metageneration !== "string"
+      || !GENERATION.test(value.metageneration)) throw new Error("object metadata is invalid");
+    return { generation: value.generation, metageneration: value.metageneration, held: value.temporaryHold === true };
+  };
+  async function holdState(name: string, token: string): Promise<HoldState | null> {
+    const response = await objects.call(objects.url(name, { fields: holdFields }), { token });
+    if (response.status === 404) { await response.body?.cancel(); return null; }
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`object metadata read failed: HTTP ${response.status}`); }
+    return parseHold(await response.json() as Record<string, unknown>);
+  }
+  /** Sets or clears the hold only at this generation and metageneration; "precondition" when either differs or the object is gone. */
+  async function patchHold(name: string, generation: string, metageneration: string, held: boolean, token: string): Promise<HoldState | "precondition"> {
+    const target = objects.url(name, { ifGenerationMatch: generation, ifMetagenerationMatch: metageneration, fields: holdFields });
+    const response = await objects.call(target, { method: "PATCH", token, headers: { "content-type": "application/json" },
+      body: Buffer.from(JSON.stringify({ temporaryHold: held })) });
+    if (response.status === 412 || response.status === 404) { await response.body?.cancel(); return "precondition"; }
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`object hold failed: HTTP ${response.status}`); }
+    return parseHold(await response.json() as Record<string, unknown>);
   }
   return {
     async read(name) {
@@ -173,6 +230,30 @@ export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetc
     },
     async generation(name) {
       return (await metadata(name, await metadataAccessToken(request)))?.generation ?? null;
+    },
+    async hold(name, generation) {
+      if (!GENERATION.test(generation)) throw new Error("invalid generation");
+      const token = await metadataAccessToken(request);
+      const found = await holdState(name, token);
+      if (found === null || found.generation !== generation) throw new RecordingChangedError(name);
+      if (found.held) throw new RecordingHeldError(name);
+      // From here the request may land: anything but a confirmed reply leaves the hold undetermined.
+      let reply: HoldState | "precondition";
+      try { reply = await patchHold(name, generation, found.metageneration, true, token); } catch { throw new HoldUnknownError(name); }
+      // A refusal on its conditions does not prove this request set nothing: an earlier attempt of it may have landed.
+      if (reply === "precondition") throw new HoldUnknownError(name);
+      if (reply.generation !== generation || !reply.held || reply.metageneration !== String(BigInt(found.metageneration) + 1n)) throw new HoldUnknownError(name);
+      return { name, generation, metageneration: reply.metageneration };
+    },
+    async release(hold) {
+      try {
+        if (!GENERATION.test(hold.generation) || !GENERATION.test(hold.metageneration)) return false;
+        const reply = await patchHold(hold.name, hold.generation, hold.metageneration, false, await metadataAccessToken(request));
+        return reply !== "precondition" && reply.generation === hold.generation && !reply.held
+          && reply.metageneration === String(BigInt(hold.metageneration) + 1n);
+      } catch {
+        return false;
+      }
     },
     async replace(name, object, generation) {
       if (!GENERATION.test(generation)) throw new Error("invalid generation");

@@ -6,10 +6,10 @@ import type { LiveMatch, MatchesView, Recording } from "../matches-page/data.ts"
 import { HOUSE_USERNAME } from "../../../src/identity/houseOwnership.ts";
 import { UNLISTED_MODEL, houseDisplayName, houseLabel, houseModelEntry } from "../../../src/rating/houseLabels.ts";
 import { C } from "../leaderboard-page/copy.ts";
-import type { Opponent } from "../leaderboard-page/challenge.ts";
 import { LEADERBOARD_HREF } from "../leaderboard-page/route.ts";
 import { benchmarkLabel, recordText, type RankingView } from "../leaderboard-page/view.ts";
 import { RECORD_LABEL, RETRY, keep, liveState, recordingsState, type SectionState } from "../ui/format.ts";
+import type { ShownRating } from "./identity.ts";
 
 // ---------------------------------------------------------------- shared
 
@@ -64,54 +64,9 @@ export const OPENING_MODE: LeaderboardMode = "house-1v1";
 
 export const sizeOf = (mode: LeaderboardMode): Size => mode.replace(/^house-/, "") as Size;
 
-/** The third board choice: the house handles a builder can challenge, always 1v1. Not a ranking mode, so it is not
- * in BOARD_GROUPS; its link is /?page=leaderboard&mode=challenge. */
-export const CHALLENGE = "challenge";
-export const CHALLENGE_SIZE: Size = "1v1";
-export const CHALLENGE_HREF = `${LEADERBOARD_HREF}&mode=${CHALLENGE}`;
-/** What the board shows: a ranking mode, or Challenge. */
-export type BoardChoice = LeaderboardMode | typeof CHALLENGE;
-/** The ranking the Challenge list follows: the Antwars Model Index at the Challenge size. */
-export const CHALLENGE_RANKING: LeaderboardMode = `house-${CHALLENGE_SIZE}`;
-/** One Challenge row: the handle as the list reports it, and its Antwars Model Index 1v1 rating where it has one. */
-export interface ChallengeRow {
-  readonly opponent: Opponent;
-  readonly rating: Pick<LeaderboardRow, "rating" | "rd" | "ratedMatches"> | null;
-}
-/** The Challenge list as the page shows it: its rows so far and whether its reads are in flight or failed. */
-export interface ChallengeView { readonly status: "loading" | "ready" | "error"; readonly rows: readonly ChallengeRow[] }
-
-/** The Challenge card's state, said once, as a table's is. */
-export function challengeState(list: ChallengeView): CardState {
-  if (list.status === "loading") return { glyph: "ring", text: C.challengeLoading };
-  if (list.status === "error") return { glyph: "error", text: C.challengeFailed };
-  const count = list.rows.length;
-  if (count === 0) return { glyph: "ring", text: C.challengeEmpty };
-  const free = list.rows.filter(row => row.opponent.available).length;
-  return { glyph: "dot", text: `${count} house ${count === 1 ? "handle" : "handles"} · ${free} available` };
-}
-
-/** The Challenge rows in the Antwars Model Index 1v1 order: each
- * handle the ranking rates, in its order and with its rating, matched by full handle (antwars/<handle>) case-insensitively;
- * then every handle it does not rate, in the list's order, with no rating. Every listed handle appears exactly once. */
-export function challengeRows(opponents: readonly Opponent[], ranking: readonly LeaderboardRow[]): ChallengeRow[] {
-  const unrated = new Map(opponents.map(opponent => [opponent.handle.toLowerCase(), opponent]));
-  const rated: ChallengeRow[] = [];
-  for (const row of ranking) {
-    const key = row.displayName.toLowerCase(), opponent = unrated.get(key);
-    if (opponent === undefined) continue;
-    unrated.delete(key);
-    rated.push({ opponent, rating: { rating: row.rating, rd: row.rd ?? null, ratedMatches: row.ratedMatches } });
-  }
-  return [...rated, ...[...unrated.values()].map(opponent => ({ opponent, rating: null }))];
-}
-
-/** A Challenge row's badges in the shared badge style: its level and Fast badges as a Model Index row's, from the level and
- * tier the list reports (benchmarkLabel), then "unavailable" where it cannot be challenged now. */
-export const challengeBadges = (opponent: Pick<Opponent, "displayName" | "level" | "tier" | "available">): readonly string[] => [
-  ...benchmarkLabel({ displayName: opponent.displayName, thinkingLevel: opponent.level, serviceTier: opponent.tier }).badges,
-  ...(opponent.available ? [] : [C.unavailable]),
-];
+/** Where the challenge buttons go (the front page's and the Leaderboard's, and the empty Waiting card's): the Leaderboard's
+ * Antwars Model Index 1v1 board. */
+export const CHALLENGE_HREF = `${LEADERBOARD_HREF}&mode=house-1v1`;
 
 /** Each table's title by its stable id, in the settled names: the ranked ladder is "Ranked" for every
  * entry, with the house-only table "Ranked · NvN · house models". */
@@ -179,13 +134,9 @@ export function tableState(table: Pick<RankingView, "status" | "rows">): CardSta
 export const tableCount = (table: Pick<RankingView, "rows">): string | null =>
   table.rows.length > 0 ? `${table.rows.length} shown` : null;
 
-/** The vanilla baseline table's id, beside the Antwars Model Index 1v1 (leaderboard-page/page.ts). */
-export const BASELINE_TABLE = "aw-vanilla-baseline-ranking";
-
-/** Each table as the freshness line reads it, by its id: a table's Load more names that id. The vanilla baseline is
- * committed, never read, so it never moves the Loaded time. */
+/** Each table as the freshness line reads it, by its id: a table's Load more names that id. */
 export const leaderboardLists = (tables: readonly RankingView[]): ListLoad[] =>
-  tables.filter(table => table.id !== BASELINE_TABLE).map(table => ({ id: table.id, status: table.status }));
+  tables.map(table => ({ id: table.id, status: table.status }));
 
 // ---------------------------------------------------------------- matches
 
@@ -248,18 +199,39 @@ export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLa
 const seatWho = (seat: Pick<Recording["seats"][number], "modelLabel" | "handle">): string | null =>
   seat.modelLabel !== null ? `model:${seat.modelLabel}` : seat.handle !== null ? `handle:${seat.handle}` : null;
 
-/** Each colony's recorded seats, seat order, each with who holds it (seatWho, so two unlabelled players never group as one)
- * and how it shows (recordedIdentity); a
- * colony with no recorded seat null; null when no seat was recorded. */
+/** One player line's words and badges, in the order every Matches list draws them: the builder's username (none for a
+ * house model, whose model name leads), the model it reported (none for a builder that named none), then its level and
+ * Fast badges (only with a model). The rating, the seat count and the colony's result follow on the line (matches.ts). */
+export interface PlayerParts { readonly user: string | null; readonly model: string | null; readonly badges: readonly string[] }
+
+/** "model unknown": a recorded seat with neither a model nor a handle. */
+export const MODEL_UNKNOWN = "model unknown";
+
+/** A recorded seat's player line: a house handle by its own HOUSE_LABELS row and badges (recordedIdentity); a builder by its
+ * recorded handle, then the model it reported (seatModelName) with that model's level and Fast badges, the model left out
+ * where the label only repeats the handle ("coffee-ant/local" on coffee-ant), so a builder that named no model shows its
+ * username alone. */
+export function recordedPlayer(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">): PlayerParts {
+  if (seat.handle !== null && isHouseHandle(seat.handle)) {
+    const house = recordedIdentity(seat);
+    return { user: null, model: house.name, badges: house.badges };
+  }
+  const named = seat.modelLabel === null ? null : seatModelName(seat.modelLabel, seat.handle);
+  const model = named !== null && named !== seat.handle ? named : null;
+  if (seat.handle === null && model === null) return { user: null, model: MODEL_UNKNOWN, badges: [] };
+  return { user: seat.handle, model, badges: model === null ? [] : recordedIdentity(seat).badges };
+}
+
+/** Each colony's recorded seats, seat order, each with who holds it (its handle and its model label, so neither two
+ * builders on one model nor two unlabelled players group as one), its player line (recordedPlayer) and its rating at the
+ * match's start where its record stores one; a colony with no recorded seat null; null when no seat was recorded. */
 export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatEntry[] | null, readonly SeatEntry[] | null] | null {
   if (seats.length === 0) return null;
   const entries = (colony: 0 | 1) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
       .map((seat): SeatEntry => {
-        // Shown by its own handle (seatModelName), a seat groups only with seats shown alike: its label alone no longer says how it
-        // shows. That key is a JSON pair, which no "model:"/"handle:" key (seatWho) can spell.
-        const parts = recordedIdentity(seat, { listed: true }), who = seatWho(seat);
-        return { who: parts.name === recordedIdentity(seat).name ? who : JSON.stringify([who, parts.name]), parts };
+        const parts = recordedPlayer(seat);
+        return { who: JSON.stringify([seatWho(seat), parts.user, parts.model]), parts, rating: seat.startRating ?? null };
       });
     return list.length ? list : null;
   };
@@ -268,28 +240,40 @@ export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatE
 
 /** Each colony's recorded models, seat order; a colony with no recorded seat null; null when no seat was recorded. */
 export function colonyModels(seats: Recording["seats"]): readonly [readonly NameParts[] | null, readonly NameParts[] | null] | null {
-  const colonies = colonySeats(seats);
-  return colonies && [colonies[0]?.map(seat => seat.parts) ?? null, colonies[1]?.map(seat => seat.parts) ?? null];
+  if (seats.length === 0) return null;
+  const models = (colony: 0 | 1) => {
+    const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat).map(seat => recordedIdentity(seat, { listed: true }));
+    return list.length ? list : null;
+  };
+  return [models(0), models(1)];
 }
 
-/** One seat as both Matches lists group it: who holds it (seatWho for a recorded seat, or a live
- * player's identity without its seat number), how it shows alone, and, where that differs, how its group shows. */
-export interface SeatEntry { readonly who: string | null; readonly parts: NameParts; readonly alike?: NameParts }
-/** Seats shown alike, and how many they are. */
-export interface SeatGroup { readonly parts: NameParts; readonly seats: number }
-/** A colony's seats as both Matches lists show them: the seats of one identity with the same badges once, with how
- * many they are, in the order each first sits. Seats that differ in identity or badges each keep their own entry, even where
- * two identities show one name (two providers' labels for one model), so no group joins seats their records tell apart. A
- * seat alone shows as itself. */
-export function seatGroups(seats: readonly SeatEntry[]): SeatGroup[] {
-  const groups = new Map<string, { first: SeatEntry; seats: number }>();
+/** What a grouped seat's parts must carry: its badges, and a quiet thinking level where its place shows one. */
+export interface SeatParts { readonly badges: readonly string[]; readonly quiet?: string | null }
+/** One seat as the Matches lists group it: who holds it (a recorded seat's handle and label, or a live player's identity
+ * without its seat number), how it shows alone, where that differs how its group shows, and its rating where the list has
+ * one for it. */
+export interface SeatEntry<P extends SeatParts = PlayerParts> {
+  readonly who: string | null; readonly parts: P; readonly alike?: P; readonly rating?: ShownRating | null;
+}
+/** Seats shown alike, how many they are, and their rating where they have one. */
+export interface SeatGroup<P extends SeatParts = PlayerParts> { readonly parts: P; readonly seats: number; readonly rating?: ShownRating | null }
+/** A colony's seats as the Matches lists show them: the seats of one identity with the same badges and rating once, with how
+ * many they are, in the order each first sits. Seats that differ in identity, badges or rating each keep their own entry,
+ * even where two identities show one name (two providers' labels for one model), so no group joins seats their records tell
+ * apart. A seat alone shows as itself. */
+export function seatGroups<P extends SeatParts>(seats: readonly SeatEntry<P>[]): SeatGroup<P>[] {
+  const groups = new Map<string, { first: SeatEntry<P>; seats: number }>();
   for (const seat of seats) {
-    const key = JSON.stringify([seat.who, seat.parts.badges, seat.parts.quiet]);
+    const rating = seat.rating ?? null;
+    const key = JSON.stringify([seat.who, seat.parts.badges, seat.parts.quiet ?? null, rating && [rating.rating, rating.rd ?? null, rating.ratedMatches]]);
     const group = groups.get(key);
     if (group) group.seats++;
     else groups.set(key, { first: seat, seats: 1 });
   }
-  return [...groups.values()].map(({ first, seats }) => ({ parts: seats > 1 ? first.alike ?? first.parts : first.parts, seats }));
+  return [...groups.values()].map(({ first, seats }) => ({
+    parts: seats > 1 ? first.alike ?? first.parts : first.parts, seats, ...(first.rating ? { rating: first.rating } : {}),
+  }));
 }
 
 /** The record stamp's word, the record's own (ui/format.ts RECORD_LABEL without "Record"). */

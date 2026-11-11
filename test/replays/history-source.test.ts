@@ -114,6 +114,18 @@ it("lists each seat's recorded handle, normalizing old missing fields to null", 
   expect(page.matches[0]!.seats.map(seat => seat.handle)).toEqual(["antwars/gpt-6-1-sol-xhigh", null, null, null, null, null, null, null]);
 });
 
+it("lists each seat's stored start rating, reading an older record's absent or malformed one as null", async () => {
+  const value = record();
+  const start = { rating: 1612.4, rd: 48.5, ratedMatches: 31 };
+  const seats = value.seats.map((seat, index) => ({ ...seat,
+    ...(index === 0 ? { startRating: start } : index === 1 ? { startRating: { rating: 1500, rd: -1, ratedMatches: 0 } }
+      : index === 2 ? { startRating: "1500" } : index === 3 ? { startRating: null } : {}),
+  }));
+  const f = await fixture((_req, res) => res.end(JSON.stringify({ ...value, seats })));
+  const page = await f.source.list(undefined, new AbortController().signal);
+  expect(page.matches[0]!.seats.map(seat => seat.startRating)).toEqual([start, null, null, null, null, null, null, null]);
+});
+
 it.each([
   ["a rated Model Index setup", { mapW: 64, rated: true, modelIndex: true }, { rated: true, modelIndex: true }],
   ["a rated setup without the marker", { mapW: 64, rated: true }, { rated: true, modelIndex: false }],
@@ -181,7 +193,7 @@ it("checks the summary boundary in the parser entry: code-point limits, old miss
   ];
   for (const [label, change] of accepted) expect(() => parse(change), label).not.toThrow();
   const old = parse(value => { value.seats = [{ seat: 3, colony: 1, modelLabel: "😀".repeat(70) }]; delete value.setup; });
-  expect(old.seats).toEqual([{ seat: 3, colony: 1, modelLabel: "😀".repeat(64), thinkingLevel: null, serviceTier: null, handle: null }]);
+  expect(old.seats).toEqual([{ seat: 3, colony: 1, modelLabel: "😀".repeat(64), thinkingLevel: null, serviceTier: null, handle: null, startRating: null }]);
   expect(old).toMatchObject({ winner: 0, reason: "time_up", decidedBy: "territory", rated: null, modelIndex: false });
   expect(parse(value => { value.setup = { modelIndex: true }; })).toMatchObject({ rated: false, modelIndex: true });
   expect(parse(value => { value.setup = { rated: true }; })).toMatchObject({ rated: true, modelIndex: false });

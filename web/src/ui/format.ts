@@ -4,7 +4,7 @@ import type { StreamResult } from "../../../src/live/format.ts";
 import { resultHow } from "../story.ts";
 import { replayDate } from "../replay.ts";
 import { returnTo3dUrl, clear3dRetryUrl } from "../3d-recovery.ts";
-import type { HarnessPhase, LiveMatch, MatchesView, Recording } from "../matches-page/data.ts";
+import type { LiveMatch, MatchesView, Recording } from "../matches-page/data.ts";
 
 // ---------------------------------------------------------------- colony details: two drawers
 
@@ -148,8 +148,6 @@ export interface RecordingRow {
   readonly record: string;
   /** The match-type badge, such as "Index · 2v2"; null where the record and its lobby cannot tell it (no badge). */
   readonly type: string | null;
-  /** A Model Index match's harness phase tags (harnessPhaseTags); empty for any other match. */
-  readonly phase: readonly string[];
 }
 
 /** Known only from the record; null stays unknown, and a null winner is a draw only where the record says so. */
@@ -173,22 +171,15 @@ export function recordingModels(seats: Recording["seats"]): string {
 /** Record fidelity, worded as the record's, not as playability. */
 export const RECORD_LABEL: Record<Recording["status"], string> = { complete: "Record complete", partial: "Record partial", unavailable: "Record unavailable" };
 
-/** Each match type's word on the Recordings badge; never a mode slug. */
+/** Each match type's word on the Matches lists' Game type badge; never a mode slug. A public or invite-only lobby and an
+ * unrated match are both "Unranked", against "Ranked". */
 export const MATCH_TYPE_WORDS: Record<NonNullable<Recording["matchType"]>["kind"], string> = {
-  index: "Index", ranked: "Ranked", unranked: "Lobby", challenge: "Challenge", unrated: "Unrated",
+  index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked",
 };
 /** "Ranked · 2v2"; the word alone where the size is unknown; null for no type, or none sent. */
 export function recordingType(type: Recording["matchType"]): string | null {
   if (type == null) return null;
   return type.size === null ? MATCH_TYPE_WORDS[type.kind] : `${MATCH_TYPE_WORDS[type.kind]} · ${type.size}v${type.size}`;
-}
-
-/** A Model Index match's harness phase as its tags read: the phase, then "Possible effort mismatch" where flagged. None for any other match. */
-export function harnessPhaseTags(phase: HarnessPhase | null | undefined): string[] {
-  if (phase == null) return [];
-  if (phase.phase === "unknown") return ["Harness phase unknown"];
-  const named = phase.phase.startsWith("from ") ? `Harness ${phase.phase}` : `Harness: ${phase.phase}`;
-  return [named, ...(phase.possibleEffortMismatch ? ["Possible effort mismatch"] : [])];
 }
 
 export function recordingRow(r: Recording, search: string): RecordingRow {
@@ -197,7 +188,6 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
     id: r.id, href: keep(`/?replay=${encodeURIComponent(r.id)}`, search),
     when: utcStamp(r.startedAt) ?? utcStamp(replayDate(r.id) ?? "") ?? "Start unknown",
     result, how, models: recordingModels(r.seats), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
-    phase: harnessPhaseTags(r.harnessPhase),
   };
 }
 
@@ -224,8 +214,6 @@ export const withUnits = (s: string): string => s.replace(/(\d) (?=(?:s|ms|min|h
 
 export interface LiveRow {
   readonly id: string; readonly href: string; readonly title: string; readonly detail: string;
-  /** A Model Index match's harness phase tags (harnessPhaseTags); empty for any other match. */
-  readonly phase: readonly string[];
 }
 export function liveRow(m: LiveMatch, search: string): LiveRow {
   const params = new URLSearchParams(search);
@@ -234,7 +222,6 @@ export function liveRow(m: LiveMatch, search: string): LiveRow {
   return {
     id: m.lobbyId, href: `/?${href}`, title: withUnits(`${m.rated ? "Rated" : "Unrated"} match · ${m.delaySeconds} s behind`),
     detail: `Started ${utcStamp(m.startedAt) ?? "at an unknown time"} · lobby ${m.lobbyId}`,
-    phase: harnessPhaseTags(m.harnessPhase),
   };
 }
 
