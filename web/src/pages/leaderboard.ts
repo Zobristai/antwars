@@ -10,7 +10,7 @@ import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine } from "./chrome.ts";
-import { nameNodes, ratingNodes } from "./identity.ts";
+import { builderNameNodes, nameNodes, ratingNodes } from "./identity.ts";
 import {
   BOARD_GROUPS, CHALLENGE, CHALLENGE_HREF, CHALLENGE_SIZE, OPENING_MODE, challengeBadges, challengeState, formMarks, leaderboardLists, loadedText,
   loadsSettled, nameParts, ranks, recordOf, sizeOf, tableCount, tableState, tableTitle, type BoardChoice, type ChallengeView, type ListLoad,
@@ -230,9 +230,10 @@ function foot(doc: Document, ...nodes: HTMLElement[]): HTMLElement {
   return block;
 }
 // ---------------------------------------------------------------- one row's parts, shared by the table and the stacked rows
-/** The name: an antwars-owned model's display name and badges, any other its handle only, with no thinking level,
- * in the one row style every page shares (identity.ts). */
-const nameOf = (doc: Document, entry: LeaderboardRow): Node[] => nameNodes(doc, { ...nameParts(entry), quiet: null });
+/** The name: an antwars-owned model's display name and badges; a builder's username, then the model, level and Fast of its
+ * latest rated match where it named one; in the one row style every page shares (identity.ts). */
+const nameOf = (doc: Document, entry: LeaderboardRow): Node[] =>
+  entry.benchmark === true ? nameNodes(doc, { ...nameParts(entry), quiet: null }) : builderNameNodes(doc, entry);
 /** The rating, ± its RD and the provisional word, in the shared rating look (identity.ts). */
 const eloNodes = (doc: Document, entry: LeaderboardRow): Node[] => ratingNodes(doc, entry);
 /** Last 5, newest first: a result stamp each, a link to its replay where one is stored. Each link is keyed by

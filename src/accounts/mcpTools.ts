@@ -18,8 +18,8 @@ const sameProof = (a: string | null, b: string | null): boolean =>
 
 /**
  * The account operations as MCP tools on one session's server, beside the match
- * tools. A reply's JSON is the same object POST /api/<name> answers with; a
- * refusal is that object as an error result. A store failure thrown here becomes
+ * tools. A reply's JSON is the same object POST /api/<name> answers with, except that the leaderboard tool serves
+ * no model (service.ts WEB_LEADERBOARD); a refusal is that object as an error result. A store failure thrown here becomes
  * the SDK's error result, never a log line. On the entry server (seatClientAdmission),
  * a seat client 1.0.0 session is refused its entry calls before the operation runs.
  *

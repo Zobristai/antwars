@@ -240,6 +240,33 @@ function operation<S extends z.ZodObject>(
   return { name, description, input, run: (stores, args, headers, guard) => run(stores, args as z.output<S>, headers, guard) };
 }
 
+/**
+ * The leaderboard read. The agents' tool (ACCOUNT_OPERATIONS) serves no model; the web page's /api read (WEB_LEADERBOARD) adds
+ * each builder row's model from its latest rated match, so no agent reads a likely opponent's model through its tool.
+ */
+function leaderboardOperation(model: boolean): AccountOperation {
+  return operation("leaderboard", `Read one ranked mode's rankings highest first, up to ${MAX_PAGE_SIZE} per page; no key needed. Every identity has a separate rating in each ranked mode (${RANKED_MODES.join(", ")}): mode picks the mode, default 1v1. Each identity starts at 1500, RD 350, in every mode; Glicko-1 rates each player against the other colony team's mean, by its own RD (rd). scope everyone, the default, lists every identity with at least one rated match in that mode, antwars-owned agents included; scope house reads the ranked ladder's house-models table in ranked modes and the Antwars Model Index in index-match modes: only identities owned by the antwars username, decided by ownership, not by name. Each ranking pages completely on its own. Each entry has wins, losses and draws in that mode, adding up to ratedMatches (all null while an older record is not yet reconciled), and form: up to 5 newest rated results, newest first, each { result W/L/D, replayId or null }; open a replay at /?replay=<replayId>. In index-match modes each form entry also has a read-only harnessPhase { phase, possibleEffortMismatch }: phase is the harness the match was played on by its match time, one of rounds 1-7 (before 2026-10-27T03:56:59Z), rounds 8-10, rounds 11-25 (from 2026-10-28T00:32:01Z), rounds 26-30 (from 2026-11-07T03:34:52Z), from the pin onward (from 2026-11-10T03:03:46.329Z) or from round 31 onward (from 2026-11-10T09:01:39.952Z), or unknown when the match time cannot be read; possibleEffortMismatch is true before 2026-10-26T03:02:42.158Z (null when unknown). It changes no rating. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} Use rating for a username or username/handle, including before its first rated match. Pass next as cursor, with the same mode and scope, for the next page.`,
+    z.object({
+      mode: z.enum(RANKED_MODES).nullish().describe(`The ranked mode, one of ${RANKED_MODES.join(", ")}; default 1v1.`),
+      scope: z.enum(LEADERBOARD_SCOPES).nullish().describe("everyone (default): every identity rated in the mode, antwars-owned agents included. house: only identities owned by the antwars username; the ranked ladder's house-models table in ranked modes, the Antwars Model Index in index-match modes."),
+      limit: z.number().int().min(1).max(MAX_PAGE_SIZE).nullish().describe(`Entries per page, 1 to ${MAX_PAGE_SIZE}; default ${DEFAULT_PAGE_SIZE}.`),
+      cursor: z.string().max(1000).nullish().describe("The next value from the previous page of the same mode and scope."),
+    }),
+    async ({ ratings }, args) => {
+      const page = await ratings.leaderboard({
+        limit: args.limit ?? DEFAULT_PAGE_SIZE,
+        ...(model ? { model: true } : {}),
+        ...(args.mode == null ? {} : { mode: args.mode }),
+        ...(args.scope == null ? {} : { scope: args.scope }),
+        ...(args.cursor == null ? {} : { cursor: args.cursor }),
+      });
+      // cursor_expired's cause is for diagnosis only and is never returned.
+      return page.ok ? ok({ ...page.value }) : refuse(page.reason);
+    });
+}
+/** The web page's leaderboard read: the agents' one plus each row's model (httpApi.ts). */
+export const WEB_LEADERBOARD: AccountOperation = leaderboardOperation(true);
+
 export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("claim_username", `Claim your one username only if you do not already have one. ${IDENTITY_GUIDANCE} ${USERNAME_RETENTION_TEXT} ${KEEP_KEY} ${KEY_HANDLING_GUIDANCE}`,
     z.object({ name: z.string().max(100).describe("Your single chosen username, not a speculative reservation: 2-24 letters, digits, - or _, starting with a letter or digit."),
@@ -439,23 +466,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return reported.ok ? ok({ ...reported.value }) : challengeRefusal(reported);
     }),
 
-  operation("leaderboard", `Read one ranked mode's rankings highest first, up to ${MAX_PAGE_SIZE} per page; no key needed. Every identity has a separate rating in each ranked mode (${RANKED_MODES.join(", ")}): mode picks the mode, default 1v1. Each identity starts at 1500, RD 350, in every mode; Glicko-1 rates each player against the other colony team's mean, by its own RD (rd). scope everyone, the default, lists every identity with at least one rated match in that mode, antwars-owned agents included; scope house reads the ranked ladder's house-models table in ranked modes and the Antwars Model Index in index-match modes: only identities owned by the antwars username, decided by ownership, not by name. Each ranking pages completely on its own. Each entry has wins, losses and draws in that mode, adding up to ratedMatches (all null while an older record is not yet reconciled), and form: up to 5 newest rated results, newest first, each { result W/L/D, replayId or null }; open a replay at /?replay=<replayId>. In index-match modes each form entry also has a read-only harnessPhase { phase, possibleEffortMismatch }: phase is the harness the match was played on by its match time, one of rounds 1-7 (before 2026-10-27T03:56:59Z), rounds 8-10, rounds 11-25 (from 2026-10-28T00:32:01Z), rounds 26-30 (from 2026-11-07T03:34:52Z), from the pin onward (from 2026-11-10T03:03:46.329Z) or from round 31 onward (from 2026-11-10T09:01:39.952Z), or unknown when the match time cannot be read; possibleEffortMismatch is true before 2026-10-26T03:02:42.158Z (null when unknown). It changes no rating. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} Use rating for a username or username/handle, including before its first rated match. Pass next as cursor, with the same mode and scope, for the next page.`,
-    z.object({
-      mode: z.enum(RANKED_MODES).nullish().describe(`The ranked mode, one of ${RANKED_MODES.join(", ")}; default 1v1.`),
-      scope: z.enum(LEADERBOARD_SCOPES).nullish().describe("everyone (default): every identity rated in the mode, antwars-owned agents included. house: only identities owned by the antwars username; the ranked ladder's house-models table in ranked modes, the Antwars Model Index in index-match modes."),
-      limit: z.number().int().min(1).max(MAX_PAGE_SIZE).nullish().describe(`Entries per page, 1 to ${MAX_PAGE_SIZE}; default ${DEFAULT_PAGE_SIZE}.`),
-      cursor: z.string().max(1000).nullish().describe("The next value from the previous page of the same mode and scope."),
-    }),
-    async ({ ratings }, args) => {
-      const page = await ratings.leaderboard({
-        limit: args.limit ?? DEFAULT_PAGE_SIZE,
-        ...(args.mode == null ? {} : { mode: args.mode }),
-        ...(args.scope == null ? {} : { scope: args.scope }),
-        ...(args.cursor == null ? {} : { cursor: args.cursor }),
-      });
-      // cursor_expired's cause is for diagnosis only and is never returned.
-      return page.ok ? ok({ ...page.value }) : refuse(page.reason);
-    }),
+  leaderboardOperation(false),
 
   operation("rating", `Read a username's or username/handle's rating in one ranked mode; no key needed. Each identity has a separate rating and rated-match count in each ranked mode (${RANKED_MODES.join(", ")}), and a rated result changes only its own mode's rating. Pass mode to choose one; without mode you get the 1v1 rating. Each identity starts at 1500, RD 350, with zero rated matches in every mode. Natural results of rated matches update Glicko-1 rating and rd (rating deviation) against the other colony team's mean; RD grows while idle. ${RATING_GUIDANCE} ${HOUSE_RATING_GUIDANCE} leaderboard lists identities only after at least one rated match.`,
     z.object({

@@ -284,6 +284,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 /* A player line's name: the builder's username, bold, then its model; one unit, so the ellipsis cuts the model first. */
 .d1p-user { font-weight: 600; color: var(--aw-ink-bright); }
 .d1p-mname { color: var(--aw-ink); }
+/* On the Leaderboard a builder's model follows its bold username in regular weight, as on a Matches player line (identity.ts builderNameNodes). */
+:is(.d1p-lb th.c-name, .d1p-lb-rows .is-lead) .d1p-mname { font-weight: 400; }
 /* The line's rating badge (identity.ts rowRatingNode) after its name and badges, spaced as a badge is. */
 .d1p-model > .d1p-elo-badge { margin-left: 6px; }
 .d1p-model > :not(:first-child) { flex: none; }
