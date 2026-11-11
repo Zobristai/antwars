@@ -9,7 +9,7 @@ import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
 import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
 import {
-  endedLobbyWaitWrites, endedWrite, isFinal, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
+  endedLobbyWaitWrites, endedWrite, isFinal, isOwnLiveWait, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
   replacedWaitWrites, repointWrites, seatKeyPath, sweepAllExpiredWaits, waitIndexes, waitPath, withPairedLobby, type WaitIndexes, type WaitState,
 } from "./waits.js";
 import { lobbyPageUrl } from "./site.js";
@@ -342,6 +342,13 @@ export interface Lobbies {
    * to a lobby wait on the paired lobby. Nothing else is read or returned.
    */
   waitStatus(token: string): Promise<WaitState | null>;
+  /**
+   * The token of identityId's own live wait (isOwnLiveWait): on "queue", the wait of its current queue entry, a queue
+   * wait of that join or the lobby wait it was re-pointed to; on a lobby, the wait its seat key on that lobby names.
+   * Undefined when it holds none. Read by exact path from identityId's own documents only, so another identity's token
+   * is never found.
+   */
+  ownWaitToken(identityId: string, on: "queue" | { readonly lobbyId: string }): Promise<string | undefined>;
 }
 
 /** A live waiting queue entry by its identity's current display name, with its identity id for server-side reads only. */
@@ -1179,6 +1186,22 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         return lobbyWaitStatus(token, decided.lobbyId, decided.paired);
       }
       return null;
+    },
+
+    async ownWaitToken(identityId, on) {
+      const at = now();
+      if (on === "queue") {
+        const entry = await store.get(queueEntryPath(identityId));
+        const token = entry?.waitToken;
+        if (!entry || !token || !isWaitToken(token)) return undefined;
+        const wait = await store.get(waitPath(token));
+        const thisJoin = wait?.kind === "queue" ? wait.joinedAt === entry.joinedAt : wait?.kind === "lobby" && !!entry.lobbyId && wait.lobbyId === entry.lobbyId;
+        return thisJoin && isOwnLiveWait(wait, identityId, at) ? token : undefined;
+      }
+      const token = (await store.get(seatKeyPath(on.lobbyId, identityId)))?.token;
+      if (!token || !isWaitToken(token)) return undefined;
+      const wait = await store.get(waitPath(token));
+      return wait?.kind === "lobby" && wait.lobbyId === on.lobbyId && isOwnLiveWait(wait, identityId, at) ? token : undefined;
     },
 
     async queueStatus(key) {
