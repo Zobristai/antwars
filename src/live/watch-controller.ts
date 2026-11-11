@@ -7,7 +7,7 @@ import { slotActivity } from "../slots/activity.js";
 import type { StreamAgent, StreamIdentity } from "./format.js";
 import type { LiveHub, LiveHubOptions } from "./hub.js";
 import { captureMatchAccess, type MatchAccess } from "./match-access.js";
-import type { WatchRegistry } from "./watch-registry.js";
+import type { SeatDetails, WatchRegistry } from "./watch-registry.js";
 import type { StartRating } from "../replays/history.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { seatRating } from "./seat-rating.js";
@@ -70,18 +70,21 @@ export function createWatchController(options: {
    * Each lobby's seat model labels by stream display name, as its delayed playback shows them (hub onReleased): a seat's
    * label reaches the catalog no earlier than spectators see that seat join. A seat that reported none is left out.
    */
-  const shown = new Map<string, Readonly<Record<string, string>>>();
+  const shown = new Map<string, ShownSeats>();
   /** The labels last written for each lobby, so an unchanged set is not written again. */
   const published = new Map<string, string>();
   /** Write the lobby's shown labels once its match is this server's run's (started here, or a resumed match once adopted), so
    * a resumed match's labels are published under the run that holds it, whatever the server it came from published. */
   const publishLabels = (lobbyId: string) => {
-    const labels = shown.get(lobbyId);
-    if (!runs.has(lobbyId) || labels === undefined) return;
-    const text = JSON.stringify(labels);
+    const seen = shown.get(lobbyId);
+    if (!runs.has(lobbyId) || seen === undefined) return;
+    const text = JSON.stringify(seen);
     if (published.get(lobbyId) === text) return;
     published.set(lobbyId, text);
-    if (Object.keys(labels).length > 0) publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, labels), "seat labels");
+    const { modelLabels, ...details } = seen;
+    if ([modelLabels, details.thinkingLevels, details.serviceTiers].some(map => Object.keys(map).length > 0)) {
+      publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, modelLabels, details), "seat labels");
+    }
   };
   /** Publish a fenced write under the lobby's run; a run that no longer holds the match leaves the entry its owner's. */
   const publishOwned = (lobbyId: string, write: (runId: string) => Promise<boolean>, what: string) => {
@@ -210,14 +213,26 @@ export function createWatchController(options: {
   };
 }
 
-/** Each seat's self-reported model label by its stream display name, from the agents delayed playback shows. */
-function releasedLabels(agents: readonly StreamAgent[]): Record<string, string> {
-  const labels: Record<string, string> = {};
+/** What delayed playback has shown of each seat that joined, by its stream display name: model label, level and tier. */
+interface ShownSeats extends SeatDetails { readonly modelLabels: Readonly<Record<string, string>> }
+
+/**
+ * Each seat's self-reported model label, thinking level and service tier by its stream display name, from the agents
+ * delayed playback shows: for each, the first agent of that name that reported one; a seat that reported none is left out.
+ */
+function releasedLabels(agents: readonly StreamAgent[]): ShownSeats {
+  const modelLabels: Record<string, string> = {}, thinkingLevels: Record<string, string> = {}, serviceTiers: Record<string, string> = {};
+  const keep = (map: Record<string, string>, name: string, value: string | undefined) => {
+    if (value !== undefined && value !== "" && !Object.hasOwn(map, name)) map[name] = value;
+  };
   for (const agent of agents) {
     const name = agent.identity?.displayName;
-    if (name !== undefined && agent.modelLabel !== "" && !Object.hasOwn(labels, name)) labels[name] = agent.modelLabel;
+    if (name === undefined) continue;
+    keep(modelLabels, name, agent.modelLabel);
+    keep(thinkingLevels, name, agent.thinkingLevel);
+    keep(serviceTiers, name, agent.serviceTier);
   }
-  return labels;
+  return { modelLabels, thinkingLevels, serviceTiers };
 }
 
 /** Each stream agent's spectator identity, found by the seat it plays. */

@@ -200,11 +200,6 @@ export function watchRoutes(options: {
 }
 
 /**
- * A live match's seats by colony: each seat's stream display name (watch-controller seatDisplayNames), the model label its
- * slot published for it once it joined (null otherwise), and, in a ranked mode, the identity's current rating there, read
- * once per identity. Both colonies empty when the lobby is gone.
- */
-/**
  * Every rating the Waiting view shows, read once per identity and rule (seatRating): a queued agent's in its queue's mode,
  * a lobby seat's in the lobby's mode, a house challenge's held seat by the held-seat rule.
  */
@@ -226,10 +221,12 @@ async function queueRatings(accounts: AccountStores, agents: readonly WaitingAge
 }
 
 /**
- * A listed match's players and type from its lobby. Each seat's rating is read fresh, by the rule the match stream shows it
- * by (seatRating), so an unrated match's seats show theirs too; a seat that shows none in the stream shows none here.
+ * A listed match's players and type from its lobby. Each seat carries its stream display name (watch-controller
+ * seatDisplayNames) and the model label, thinking level and service tier its slot published for it once spectators saw it
+ * join (each null otherwise). Each seat's rating is read fresh, by the rule the match stream shows it by (seatRating), so an
+ * unrated match's seats show theirs too; a seat that shows none in the stream shows none here.
  */
-async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels">):
+async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "thinkingLevels" | "serviceTiers">):
   Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null }> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
   if (!lobby.ok) return { colonies: [[], []], matchType: null };
@@ -247,10 +244,11 @@ async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<W
   const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
   seats.forEach((seat, index) => {
     const rating = ratings[index]!, displayName = names[index]!;
-    const modelLabel = Object.hasOwn(match.modelLabels ?? {}, displayName) ? match.modelLabels![displayName]! : null;
+    const own = (map: Readonly<Record<string, string>> | undefined) => map !== undefined && Object.hasOwn(map, displayName) ? map[displayName]! : null;
+    const named = { displayName, modelLabel: own(match.modelLabels), thinkingLevel: own(match.thinkingLevels), serviceTier: own(match.serviceTiers) };
     colonies[seat.colony].push(rating === null
-      ? { displayName, modelLabel, rating: null, rd: null, ratedMatches: null }
-      : { displayName, modelLabel, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
+      ? { ...named, rating: null, rd: null, ratedMatches: null }
+      : { ...named, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
   });
   return { colonies, matchType: lobbyMatchType(lobby.value) };
 }

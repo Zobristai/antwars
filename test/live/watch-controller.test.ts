@@ -76,9 +76,13 @@ describe("spectator metadata and final rating lifecycle", () => {
     controller.started(1, state, live, hub);
     await vi.waitFor(async () => expect(await registry.read(id)).not.toBeNull());
     const labels = async () => (await createWatchRegistry(store).read(id))?.modelLabels;
+    const details = async () => {
+      const match = await createWatchRegistry(store).read(id);
+      return { thinkingLevels: match?.thinkingLevels, serviceTiers: match?.serviceTiers };
+    };
     const settle = () => new Promise(resolve => setImmediate(resolve));
     for (let tick = 1; !state.result; tick++) {
-      const out = step(state, tick === 2 ? [{ type: "join", agentId: "sim-b", placement: 1, modelLabel: "openai/gpt-6.1-terra" }] : []);
+      const out = step(state, tick === 2 ? [{ type: "join", agentId: "sim-b", placement: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast" }] : []);
       clock.advance(100); hub.pushTick(1, out); state = out.state;
     }
     // Not before the delay: not even the label of the seat that joined before the start (60 s after it, at 60.0 s).
@@ -88,9 +92,12 @@ describe("spectator metadata and final rating lifecycle", () => {
     // Playback reaches the start: the house seat only; the builder joined at 0.2 s, so spectators see it at 60.2 s.
     clock.advance(100);
     await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna" }));
-    // Playback reaches the builder's join.
+    // No seat shown so far reported a level or tier.
+    expect(await details()).toEqual({ thinkingLevels: {}, serviceTiers: {} });
+    // Playback reaches the builder's join: its label, level and tier together, from what its join reported.
     clock.advance(200);
     await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna", "kestrel-harness": "openai/gpt-6.1-terra" }));
+    expect(await details()).toEqual({ thinkingLevels: { "kestrel-harness": "high" }, serviceTiers: { "kestrel-harness": "fast" } });
     // Later records with no change write no labels again, through the end of playback.
     const writes = vi.spyOn(registry, "seatLabels");
     clock.advance(1_000);
