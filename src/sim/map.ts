@@ -34,8 +34,8 @@ function startX(config: SimConfig, colony: ColonyId, tx: number): number {
   return x % SUB === 0 ? x + (colony === 0 ? -1 : 1) : x;
 }
 
-/** Lay out the mirrored food patches, drawing per-tile jitter from the PRNG. */
-function layFood(config: SimConfig, rngState: number): { food: number[]; rngState: number } {
+/** Lay out the mirrored food patches, drawing per-tile jitter from the PRNG. colony0Ants are colony 0's start ants. */
+function layFood(config: SimConfig, rngState: number, colony0Ants: readonly Ant[]): { food: number[]; rngState: number } {
   const food = new Array<number>(config.mapWidth * config.mapHeight).fill(0);
   const scale = gridScaleOf(config);
   const reference = referenceFoodConfig(config);
@@ -47,10 +47,18 @@ function layFood(config: SimConfig, rngState: number): { food: number[]; rngStat
       (Math.floor(i / scale) + 0.5 - scale / 2) ** 2;
     return distance(a) - distance(b) || a - b;
   });
+  // A start ant at a reference tile's centre stands in its lower-left fine cell (colony 1 in the mirror). A cell
+  // within reference sight of a start ant fills that lower row first, so the ant's fine distance to its food is
+  // exactly the reference distance times the scale and the scaled sight reaches it. Every other cell is unchanged.
+  const opening = [...offsets].sort((a, b) => Math.floor(b / scale) - Math.floor(a / scale) || offsets.indexOf(a) - offsets.indexOf(b));
+  const starts = colony0Ants.map((ant) => ({ x: Math.floor(ant.x / SUB / scale), y: Math.floor(ant.y / SUB / scale) }));
+  const inOpeningSight = (x: number, y: number) =>
+    starts.some((a) => scale * scale * ((a.x - x) ** 2 + (a.y - y) ** 2) <= config.sightTiles ** 2);
   for (let y = 0; y < reference.mapHeight; y++) for (let x = 0; x < reference.mapWidth / 2; x++) {
     const amount = laid.food[y * reference.mapWidth + x]!;
+    const order = amount > 0 && inOpeningSight(x, y) ? opening : offsets;
     for (let unit = 0; unit < amount; unit++) {
-      const offset = offsets[unit % offsets.length]!;
+      const offset = order[unit % order.length]!;
       const fx = x * scale + offset % scale, fy = y * scale + Math.floor(offset / scale);
       food[fy * config.mapWidth + fx]! += 1;
       food[fy * config.mapWidth + config.mapWidth - 1 - fx]! += 1;
@@ -184,12 +192,6 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
   let terrain = createTerrain(seed, config);
   if (config.foodLayout !== undefined) config = { ...config,
     foodPatches: generateFoodLayout(config, seed, terrain === undefined ? undefined : passableMask(config, terrain)) };
-  const laid = layFood(config, seed >>> 0);
-  // Fixed historical patches retain their food draw schedule. Seeded patches
-  // already have complete dry footprints; never trim their generated budget.
-  if (config.foodLayout === undefined && terrain !== undefined) for (let i = 0; i < laid.food.length; i++) {
-    if (isWaterTile(terrain, i % config.mapWidth, Math.floor(i / config.mapWidth))) laid.food[i] = 0;
-  }
   const tiles = config.mapWidth * config.mapHeight;
   const colonies = ([0, 1] as const).map((id): ColonyState => {
     const { tx, ty } = nestTile(config, id);
@@ -227,6 +229,13 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
       ants.push(newAnt(config, nextAntId, colony, startX(config, colony, tx), tileCentre(nest.ty + dy * scale)));
       nextAntId += 1;
     }
+  }
+
+  const laid = layFood(config, seed >>> 0, ants.filter((ant) => ant.colony === 0));
+  // Fixed historical patches retain their food draw schedule. Seeded patches
+  // already have complete dry footprints; never trim their generated budget.
+  if (config.foodLayout === undefined && terrain !== undefined) for (let i = 0; i < laid.food.length; i++) {
+    if (isWaterTile(terrain, i % config.mapWidth, Math.floor(i / config.mapWidth))) laid.food[i] = 0;
   }
 
   // Keep the existing food and start layout intact; obstacles avoid both footprints.

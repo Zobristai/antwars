@@ -14,8 +14,8 @@
 // Unranked for a public or invite-only lobby, told by the rule the server types a recording's lobby by
 // (src/replays/recorded-match-type.ts).
 //
-// When nothing at all is waiting the card offers "challenge a house handle", a link to the Leaderboard's Challenge choice,
-// in the site's cyan button.
+// When nothing at all is waiting the card offers "challenge a house handle", a link to the Leaderboard's Antwars Model
+// Index 1v1 board, in the site's cyan button.
 import type { MatchesView, ShownRating, WaitingLobby, WaitingRow } from "../matches-page/data.ts";
 import { rowName } from "../ui/deck/model.ts";
 import { MATCH_TYPE_WORDS, keep, utcStamp, type SectionState } from "../ui/format.ts";
@@ -24,7 +24,7 @@ import { STAMPS, seatsStamp, type ColonyCell, type MatchRow, type RowParts } fro
 import { CHALLENGE_HREF, seatGroups, sectionLine, sizeOf, type PlayerParts, type SeatEntry, type SeatGroup } from "./model.ts";
 
 export const WAITING_TITLE = "Waiting";
-/** The empty card's offer, linking to the Leaderboard's Challenge choice. */
+/** The empty card's offer, linking to the Leaderboard's Antwars Model Index 1v1 board. */
 export const CHALLENGE_OFFER = "challenge a house handle";
 /** A house challenge's held colony (src/lobby/challenges.ts HELD_COLONY). */
 const HELD_COLONY = 0;

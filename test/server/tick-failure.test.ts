@@ -12,7 +12,7 @@ import { createMatch } from "../../src/sim/map.js";
 import type { SimInput, SimState, StepOutput } from "../../src/sim/types.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
 import { playable } from "../playable.ts";
-import { connect, logLines, matchLogs, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, logLines, matchLogs, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 
 /**
  * The next advance of the armed match state that carries a call throws after changing that state, as a sim
@@ -66,11 +66,11 @@ describe("a tick that throws", () => {
     const outs: StepOutput[] = [];
     const feed: MatchFeed = { matchStarted() {}, ticked(_seq, out) { outs.push(out); } };
     const dataDir = tempDir();
-    const failing = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "held", simConfig: playable(shortConfig(3000)), mcpConfig: TEST_MCP_CONFIG, feed });
-    const other = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "held", simConfig: playable(shortConfig(3000)), mcpConfig: TEST_MCP_CONFIG });
+    const failing = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(0), simConfig: playable(shortConfig(3000)), mcpConfig: TEST_MCP_CONFIG, feed });
+    const other = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(0), simConfig: playable(shortConfig(3000)), mcpConfig: TEST_MCP_CONFIG });
     servers.push(failing, other);
-    failing.startMatch();
-    other.startMatch();
+    await startComparisonMatch(failing, 0);
+    await startComparisonMatch(other, 0);
     const agent = await connect(failing.port);
     agents.push(agent);
     const joined = await agent.call("join");

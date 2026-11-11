@@ -10,7 +10,7 @@ import { PUBLIC_CONFIG, TERRAIN_RULES, type MapDefinition, type SimConfig } from
 import { median, percentile } from "../../src/tickStats.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
 import { playable } from "../playable.js";
-import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 
 /** A pinned map whose own ant cap (40) differs from the config's (150), so the report's cap is the map's. */
 const REPORT_MAP: MapDefinition = { id: "tick-report", name: "Tick Report", water: [], colonyCap: 40 };
@@ -63,6 +63,14 @@ function exact(values: readonly number[]) {
   return { median: n % 2 === 1 ? sorted[half]! : (sorted[half - 1]! + sorted[half]!) / 2, p90: sorted[Math.ceil(n * 0.9) - 1]! };
 }
 
+const OPERATOR_TOKEN = "tick-report-test-only";
+
+/** The slot operator's stop, which ends the running match synchronously before it answers. */
+async function stopByOperator(port: number): Promise<void> {
+  const res = await fetch(`http://127.0.0.1:${port}/operator/stop`, { method: "POST", headers: { authorization: `Bearer ${OPERATOR_TOKEN}` } });
+  expect(res.status).toBe(200);
+}
+
 let server: GameServer | null = null;
 const dirs: string[] = [], agents: Agent[] = [];
 afterEach(async () => {
@@ -74,8 +82,9 @@ afterEach(async () => {
 
 async function playToEnd(extra: Partial<ServerOptions>, feed: MatchFeed): Promise<GameServer> {
   const dataDir = tempDir(); dirs.push(dataDir);
-  server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "immediate", simConfig: config(MATCH_TICKS), mcpConfig: TEST_MCP_CONFIG, feed, ...extra });
+  server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(0), simConfig: config(MATCH_TICKS), mcpConfig: TEST_MCP_CONFIG, feed, ...extra });
   const s = server;
+  await startComparisonMatch(s, 0);
   await waitFor(() => s.game.match?.result != null);
   return s;
 }
@@ -155,7 +164,7 @@ describe("the match tick report", () => {
     }
     const dataDir = tempDir(); dirs.push(dataDir);
     server = await startServer({ port: 0, host: "127.0.0.1", dataDir, simConfig: config(6000, { queenFounding: PUBLIC_CONFIG.queenFounding }), mcpConfig: TEST_MCP_CONFIG, seed: 91, startPickWindowMs: 5,
-      slot: { slot: "public-0", publicUrl: "http://slot.test", identities, lobbies, pollMs: 10 },
+      slot: { slot: "public-0", publicUrl: "http://slot.test", identities, lobbies, pollMs: 10 }, operatorToken: OPERATOR_TOKEN,
       feed, tickReport, onTickTiming: (sample) => samples.push(sample) });
     const s = server;
     await waitFor(() => s.game.nextStart !== null);
@@ -165,7 +174,7 @@ describe("the match tick report", () => {
       expect(joined.isError, joined.text).toBe(false);
     }
     await waitFor(() => samples.length >= 5);
-    s.stopMatch();
+    await stopByOperator(s.port);
     const ticks = s.game.match!.state.tick;
     expect(s.game.match!.result).not.toBeNull();
     expect(samples.map((sample) => sample.tick)).toEqual(Array.from({ length: ticks - 1 }, (_, i) => i + 1));

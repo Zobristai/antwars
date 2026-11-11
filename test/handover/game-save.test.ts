@@ -5,7 +5,7 @@
 // the result), including the hold behaviour the save records.
 import { describe, expect, it } from "vitest";
 import { createMatchSaves } from "../../src/handover/saveStore.js";
-import { decodeGameSave, encodeGameSave, type GameSave, type MatchGameSave } from "../../src/handover/matchSave.js";
+import { decodeGameSave, encodeGameSave, GAME_SAVE_FORMAT, type GameSave, type MatchGameSave } from "../../src/handover/matchSave.js";
 import { Game, type Outcome } from "../../src/mcp/game.js";
 import { stateHash } from "../../src/sim/log.js";
 import type { SimInput, StepOutput } from "../../src/sim/types.js";
@@ -46,6 +46,11 @@ function matchSave(save: GameSave): MatchGameSave {
   return save;
 }
 
+/** Each agent of the game's match with what it gave at join: what a resume must keep of its seats. */
+function seats(game: Game) {
+  return game.match!.state.agents.map(agent => ({ agentId: agent.id, ...game.agentInfo(agent.id) }));
+}
+
 function freshGame(clock: { now: number }, matchTicks?: number): Game {
   return new Game({ simConfig: widePlainConfig(matchTicks), now: () => clock.now, slot: { identityOf: async () => undefined, locate: async () => undefined } });
 }
@@ -69,11 +74,11 @@ describe("handover game save at Game level (continuation)", () => {
     }
     expect(original.match!.state.agents).toHaveLength(4);
 
-    const beforeHash = stateHash(original.match!.state), beforeAgents = original.matchAgents();
+    const beforeHash = stateHash(original.match!.state), beforeAgents = seats(original);
     const game = matchSave(original.saveMatch());
     // Capturing changes nothing in the running match.
     expect(stateHash(original.match!.state)).toBe(beforeHash);
-    expect(original.matchAgents()).toEqual(beforeAgents);
+    expect(seats(original)).toEqual(beforeAgents);
     expect(game.tick).toBe(MATCH_TICKS - 250);
     expect(game.records.map(rec => rec.agentId)).toEqual(agents);
 
@@ -89,7 +94,7 @@ describe("handover game save at Game level (continuation)", () => {
     resumed.resumeMatch(read!.game);
     expect(resumed.match!.state.tick).toBe(game.tick);
     expect(matchSave(read!.game).holdBehaviour).toBe("ant115");
-    expect(resumed.matchAgents()).toEqual(original.matchAgents());
+    expect(seats(resumed)).toEqual(seats(original));
 
     let ticks = 0;
     for (;;) {
@@ -149,5 +154,36 @@ describe("handover game save at Game level (continuation)", () => {
     const queenOf = (game: Game, agentId: string) => game.match!.state.colonies[1].queens!.find(queen => queen.owner === agentId)?.id;
     expect(queenOf(original, lateAgent)).toBeDefined();
     expect(queenOf(resumed, joined.agentId!)).toBe(queenOf(original, lateAgent));
+  }, 120_000);
+
+  it("a save written before saves stopped carrying sawResult and one written after both resume the same match", async () => {
+    const { game: original, agents, clock } = await wideMatch({ seed: 13 });
+    for (let i = 0; i < 12; i++) {
+      clock.now += 100;
+      await play(original, agents);
+    }
+    const save = matchSave(original.saveMatch());
+    expect(save.format).toBe(GAME_SAVE_FORMAT);
+    expect(GAME_SAVE_FORMAT).toBe("antwar.game-save/1");
+    expect(save.records.every(rec => !("sawResult" in rec))).toBe(true);
+    // The earlier writer's records each carried sawResult; nothing reads it back.
+    const earlier = { ...save, records: save.records.map(rec => ({ ...rec, sawResult: true })) };
+    const games = [save, earlier].map(written => {
+      const game = freshGame(clock);
+      game.resumeMatch(decodeGameSave(encodeGameSave(written)));
+      return game;
+    });
+    const [after, before] = games as [Game, Game];
+    expect(stateHash(before.match!.state)).toBe(stateHash(after.match!.state));
+    expect(seats(before)).toEqual(seats(after));
+    expect(seats(after)).toEqual(seats(original));
+    for (let i = 0; i < 12; i++) {
+      clock.now += 100;
+      const want = await play(after, agents), got = await play(before, agents);
+      expect(compareTicks(want.out!, got.out!)).toBeNull();
+      expect(JSON.stringify(got.answer)).toBe(JSON.stringify(want.answer));
+    }
+    // Saved again, the two write the same bytes: no sawResult carried forward.
+    expect(encodeGameSave(before.saveMatch())).toEqual(encodeGameSave(after.saveMatch()));
   }, 120_000);
 });

@@ -1,6 +1,6 @@
 // The Archive: the Leaderboard. The band at the container's top is two lines: the title, with the freshness line and the page's one
 // Refresh (no eligibility line) at the line's end; then the board choice, the Antwars Model Index first, with the challenge bubble after
-// the Challenge group it opens. Each table is a record card that says its own state once.
+// it. Each table is a record card that says its own state once.
 // Rows are the page's data owner's (leaderboard-page/page.ts), read-only; every change goes through its actions.
 import type { LeaderboardMode, LeaderboardRow } from "../leaderboard.ts";
 import { C } from "../leaderboard-page/copy.ts";
@@ -12,21 +12,18 @@ import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine } from "./chrome.ts";
 import { builderNameNodes, nameNodes, ratingNodes } from "./identity.ts";
 import {
-  BOARD_GROUPS, CHALLENGE, CHALLENGE_HREF, CHALLENGE_SIZE, OPENING_MODE, challengeBadges, challengeState, formMarks, leaderboardLists, loadedText,
-  loadsSettled, nameParts, ranks, recordOf, sizeOf, tableCount, tableState, tableTitle, type BoardChoice, type ChallengeView, type ListLoad,
-  type LoadsSeen,
+  BOARD_GROUPS, CHALLENGE_HREF, OPENING_MODE, formMarks, leaderboardLists, loadedText, loadsSettled, nameParts, ranks, recordOf, sizeOf,
+  tableCount, tableState, tableTitle, type LoadsSeen,
 } from "./model.ts";
 
 /** The capability, the board shown and each of its tables, as the page's data owner publishes them. */
 export interface LeaderboardView {
-  readonly mode: BoardChoice;
+  readonly mode: LeaderboardMode;
   readonly enabled: boolean;
   readonly tables: readonly RankingView[];
-  /** Present only while Challenge is shown. */
-  readonly challenge?: ChallengeView;
 }
 export interface LeaderboardActions {
-  chooseMode(mode: BoardChoice): void;
+  chooseMode(mode: LeaderboardMode): void;
   refresh(): void;
   more(tableId: string): void;
 }
@@ -51,19 +48,17 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
   refresh.addEventListener("click", () => { continuing = new Set(); actions.refresh(); });
   fresh.append(loaded, refresh);
   summary.append(title, fresh);
-  // The board choice, then the challenge bubble after the Challenge group it opens: the site's cyan button
-  // (deck.css .d1-agent-button), linking to the Challenge choice as the Waiting card does.
+  // The board choice, then the challenge bubble: the site's cyan button (deck.css .d1-agent-button), linking to the
+  // Antwars Model Index 1v1 board as the Waiting card does.
   const strip = h(doc, "div", "d1p-lb-strip");
   const boards = h(doc, "div", "d1p-boards");
   boards.setAttribute("role", "group");
   boards.setAttribute("aria-label", C.modes);
-  let mode: BoardChoice = OPENING_MODE;
-  const tabs: { readonly mode: BoardChoice; readonly button: HTMLButtonElement }[] = [];
-  // The two ranking groups, then Challenge, its one choice drawn as the groups' are.
-  const groups: readonly { readonly label: string; readonly choices: readonly { readonly mode: BoardChoice; readonly size: string }[] }[] = [
-    ...BOARD_GROUPS.map(group => ({ label: group.label, choices: group.modes.map(choice => ({ mode: choice, size: sizeOf(choice) })) })),
-    { label: C.challengeTitle, choices: [{ mode: CHALLENGE, size: CHALLENGE_SIZE }] },
-  ];
+  let mode: LeaderboardMode = OPENING_MODE;
+  const tabs: { readonly mode: LeaderboardMode; readonly button: HTMLButtonElement }[] = [];
+  // The two ranking groups.
+  const groups: readonly { readonly label: string; readonly choices: readonly { readonly mode: LeaderboardMode; readonly size: string }[] }[] =
+    BOARD_GROUPS.map(group => ({ label: group.label, choices: group.modes.map(choice => ({ mode: choice, size: sizeOf(choice) })) }));
   groups.forEach((group, index) => {
     const block = h(doc, "div", "d1p-board-group");
     const label = h(doc, "p", "d1p-kicker", group.label);
@@ -110,8 +105,7 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
   return {
     update(view: LeaderboardView) {
       mode = view.mode;
-      const lists: ListLoad[] = [...leaderboardLists(view.tables), ...(view.challenge ? [{ id: CHALLENGE, status: view.challenge.status }] : [])];
-      const settled = loadsSettled(seen, lists, continuing);
+      const settled = loadsSettled(seen, leaderboardLists(view.tables), continuing);
       seen = settled.seen; continuing = settled.continuing;
       if (settled.moved) loadedAt = Date.now();
       const text = loadedAt === null ? "" : loadedText(loadedAt);
@@ -120,12 +114,11 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
       fresh.hidden = !view.enabled;
       strip.hidden = !view.enabled;
       for (const tab of tabs) tab.button.setAttribute("aria-pressed", String(tab.mode === view.mode));
-      const next = JSON.stringify([view.enabled, view.mode, view.tables, view.challenge]);
+      const next = JSON.stringify([view.enabled, view.mode, view.tables]);
       if (next === drawn) return;
       drawn = next;
       const shown = view.mode;
       rebuild(doc, frame.content, () => !view.enabled ? [notEnabled()]
-        : shown === CHALLENGE ? (view.challenge ? [challengeCard(doc, view.challenge)] : [])
         : view.tables.map(table => rankingCard(doc, table, shown, {
           search, more: () => { continuing = new Set([...continuing, table.id]); actions.more(table.id); },
         })));
@@ -175,52 +168,6 @@ export function rankingCard(doc: Document, table: RankingView, shown: Leaderboar
     button.addEventListener("click", options.more);
     button.disabled = table.status === "loading";
     section.append(foot(doc, button));
-  }
-  return section;
-}
-/** The Challenge list as a record card saying its own state once: one row per house handle in the shared row
- * style, in the Antwars Model Index 1v1 order: its name with
- * the shared level, Fast and "unavailable" badges, its Model Index 1v1 rating in the shared rating badge where it has one,
- * and, only where it can be challenged now, what to ask an agent. */
-function challengeCard(doc: Document, list: ChallengeView): HTMLElement {
-  const section = h(doc, "section", "d1p-card d1p-challenge");
-  const titleId = "d1p-challenge-title";
-  section.setAttribute("aria-labelledby", titleId);
-  section.setAttribute("aria-busy", String(list.status === "loading"));
-  const head = h(doc, "div", "d1p-card-head");
-  const heading = h(doc, "h2", "d1p-card-title", `${C.challengeTitle} · ${CHALLENGE_SIZE}`);
-  heading.id = titleId;
-  const state = challengeState(list);
-  head.append(heading, stateLine(doc, state.glyph, state.text));
-  section.append(head);
-  if (list.rows.length > 0) {
-    const rows = h(doc, "ul", "d1p-rows");
-    rows.setAttribute("aria-labelledby", titleId);
-    for (const { opponent: entry, rating } of list.rows) {
-      const item = h(doc, "li");
-      const lead = h(doc, "p", "d1p-line is-lead");
-      lead.append(...nameNodes(doc, { name: entry.displayName, badges: challengeBadges(entry) }));
-      item.append(lead);
-      // The rating beside the name, in the row's second column, as a stacked ranking row has it; that column is one column
-      // down the whole list (archive.css), so every badge stands under the one above it.
-      if (rating !== null) {
-        const elo = h(doc, "p", "c-elo");
-        elo.append(h(doc, "span", "d1p-sr", `${C.eloColumn} `), ...ratingNodes(doc, rating));
-        item.append(elo);
-      }
-      if (entry.available) {
-        const ask = h(doc, "p", "d1p-line d1p-ask");
-        // The handle is the command the agent types, never the row's name:
-        // only here, in the agent URL's command style (aw-byoa-url); the row's name is its display name, above.
-        // The handle and the words after it are one unit (archive.css), so where the ask wraps the handle opens its line.
-        const handle = h(doc, "span", "d1p-ask-handle");
-        handle.append(h(doc, "code", "aw-byoa-url", entry.handle), C.challengeAsk[1]);
-        ask.append(C.challengeAsk[0], handle);
-        item.append(ask);
-      }
-      rows.append(item);
-    }
-    section.append(rows);
   }
   return section;
 }

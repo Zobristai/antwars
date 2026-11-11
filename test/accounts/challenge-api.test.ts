@@ -107,7 +107,7 @@ async function serve(transport: (port: number) => Promise<Call>) {
   const ratings = createRatings(store);
   const stores: AccountStores = { identities, lobbies, ratings };
   const server = await startServer({
-    port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores,
+    port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: playable(shortConfig(60_000)), mcpConfig: TEST_MCP_CONFIG, accounts: stores,
   });
   servers.push(server);
   const cast = await houseCast(identities, store, 0);
@@ -269,7 +269,12 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(28);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(36);
+      // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
+      for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
+        "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+      }
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
       await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);

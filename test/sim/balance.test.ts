@@ -31,8 +31,7 @@ describe("configured battle balance", () => {
     expect(rules.foodPatches.find((p) => p.tileX === 30)!.perTile).toBeLessThan(rulesConfig("v4").foodPatches.find((p) => p.tileX === 30)!.perTile);
     expect(rules.foodPatches.slice(0, PRE_FRONTLINE_CONFIGS.redesign.foodPatches.length).filter((p) => p.tileY !== 24).every((p) => p.perTile > rules.foodPatches.find((p) => p.tileX === 30)!.perTile)).toBe(true);
   });
-  // Known failure: opening food sits 13 fine tiles from starting ants with sight 12; a separate fix is planned.
-  it.fails("makes the near-home patch visible at the opening while placing its entire food supply outside the lane", () => {
+  it("makes the near-home patch visible at the opening while placing its entire food supply outside the lane", () => {
     const patch = rules.foodPatches.find((p) => p.tileX === 10)!;
     expect(patch.tileY + patch.radius).toBeLessThan(18);
     for (const seed of [7001, 7002]) {
