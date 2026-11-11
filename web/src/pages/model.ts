@@ -6,7 +6,6 @@ import type { LiveMatch, MatchesView, Recording } from "../matches-page/data.ts"
 import { HOUSE_USERNAME } from "../../../src/identity/houseOwnership.ts";
 import { UNLISTED_MODEL, houseDisplayName, houseLabel, houseModelEntry } from "../../../src/rating/houseLabels.ts";
 import { C } from "../leaderboard-page/copy.ts";
-import type { Opponent } from "../leaderboard-page/challenge.ts";
 import { LEADERBOARD_HREF } from "../leaderboard-page/route.ts";
 import { benchmarkLabel, recordText, type RankingView } from "../leaderboard-page/view.ts";
 import { RECORD_LABEL, RETRY, keep, liveState, recordingsState, type SectionState } from "../ui/format.ts";
@@ -64,54 +63,9 @@ export const OPENING_MODE: LeaderboardMode = "house-1v1";
 
 export const sizeOf = (mode: LeaderboardMode): Size => mode.replace(/^house-/, "") as Size;
 
-/** The third board choice: the house handles a builder can challenge, always 1v1. Not a ranking mode, so it is not
- * in BOARD_GROUPS; its link is /?page=leaderboard&mode=challenge. */
-export const CHALLENGE = "challenge";
-export const CHALLENGE_SIZE: Size = "1v1";
-export const CHALLENGE_HREF = `${LEADERBOARD_HREF}&mode=${CHALLENGE}`;
-/** What the board shows: a ranking mode, or Challenge. */
-export type BoardChoice = LeaderboardMode | typeof CHALLENGE;
-/** The ranking the Challenge list follows: the Antwars Model Index at the Challenge size. */
-export const CHALLENGE_RANKING: LeaderboardMode = `house-${CHALLENGE_SIZE}`;
-/** One Challenge row: the handle as the list reports it, and its Antwars Model Index 1v1 rating where it has one. */
-export interface ChallengeRow {
-  readonly opponent: Opponent;
-  readonly rating: Pick<LeaderboardRow, "rating" | "rd" | "ratedMatches"> | null;
-}
-/** The Challenge list as the page shows it: its rows so far and whether its reads are in flight or failed. */
-export interface ChallengeView { readonly status: "loading" | "ready" | "error"; readonly rows: readonly ChallengeRow[] }
-
-/** The Challenge card's state, said once, as a table's is. */
-export function challengeState(list: ChallengeView): CardState {
-  if (list.status === "loading") return { glyph: "ring", text: C.challengeLoading };
-  if (list.status === "error") return { glyph: "error", text: C.challengeFailed };
-  const count = list.rows.length;
-  if (count === 0) return { glyph: "ring", text: C.challengeEmpty };
-  const free = list.rows.filter(row => row.opponent.available).length;
-  return { glyph: "dot", text: `${count} house ${count === 1 ? "handle" : "handles"} · ${free} available` };
-}
-
-/** The Challenge rows in the Antwars Model Index 1v1 order: each
- * handle the ranking rates, in its order and with its rating, matched by full handle (antwars/<handle>) case-insensitively;
- * then every handle it does not rate, in the list's order, with no rating. Every listed handle appears exactly once. */
-export function challengeRows(opponents: readonly Opponent[], ranking: readonly LeaderboardRow[]): ChallengeRow[] {
-  const unrated = new Map(opponents.map(opponent => [opponent.handle.toLowerCase(), opponent]));
-  const rated: ChallengeRow[] = [];
-  for (const row of ranking) {
-    const key = row.displayName.toLowerCase(), opponent = unrated.get(key);
-    if (opponent === undefined) continue;
-    unrated.delete(key);
-    rated.push({ opponent, rating: { rating: row.rating, rd: row.rd ?? null, ratedMatches: row.ratedMatches } });
-  }
-  return [...rated, ...[...unrated.values()].map(opponent => ({ opponent, rating: null }))];
-}
-
-/** A Challenge row's badges in the shared badge style: its level and Fast badges as a Model Index row's, from the level and
- * tier the list reports (benchmarkLabel), then "unavailable" where it cannot be challenged now. */
-export const challengeBadges = (opponent: Pick<Opponent, "displayName" | "level" | "tier" | "available">): readonly string[] => [
-  ...benchmarkLabel({ displayName: opponent.displayName, thinkingLevel: opponent.level, serviceTier: opponent.tier }).badges,
-  ...(opponent.available ? [] : [C.unavailable]),
-];
+/** Where the challenge buttons go (the front page's and the Leaderboard's, and the empty Waiting card's): the Leaderboard's
+ * Antwars Model Index 1v1 board. */
+export const CHALLENGE_HREF = `${LEADERBOARD_HREF}&mode=house-1v1`;
 
 /** Each table's title by its stable id, in the settled names: the ranked ladder is "Ranked" for every
  * entry, with the house-only table "Ranked · NvN · house models". */

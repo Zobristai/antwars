@@ -15,8 +15,8 @@
 // types a recording's lobby by (src/replays/history-routes.ts recordingMatchType); "Unranked" is not a mode name and never
 // shows here. A queued agent's mode takes the same words.
 //
-// When nothing at all is waiting the card offers "challenge a house handle", a link to the Leaderboard's Challenge choice,
-// in the site's cyan button.
+// When nothing at all is waiting the card offers "challenge a house handle", a link to the Leaderboard's Antwars Model
+// Index 1v1 board, in the site's cyan button.
 import type { MatchesView, WaitingAgent, WaitingLobby, WaitingRow } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { rowName } from "../ui/deck/model.ts";
@@ -32,7 +32,7 @@ export const WAITING_HEADS = ["Waited", "Match"] as const;
 /** The time waited is as of the list's load. */
 const WHEN_LOADED = "when loaded";
 const COLONIES = [0, 1] as const;
-/** The empty card's offer, linking to the Leaderboard's Challenge choice. */
+/** The empty card's offer, linking to the Leaderboard's Antwars Model Index 1v1 board. */
 export const CHALLENGE_OFFER = "challenge a house handle";
 
 /** A queue's mode in the Recordings badge's words, as a lobby's: "Index · 1v1" for a house

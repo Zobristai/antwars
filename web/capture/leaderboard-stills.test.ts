@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { allowedLeaderboardRequest, expectedView, fakeLeaderboardPage, fakeLeaderboardRanking, fakeReadOf, FIXTURE_CURSOR, LEADERBOARD_MODES, LEADERBOARD_SCENES, LEADERBOARD_VIEWPORTS, MODE_LABELS, navReachExempt, touchViewport, type FakeRead } from "./leaderboard-stills.ts";
 import { readLeaderboard } from "../src/leaderboard.ts";
-import { BOARD_GROUPS, CHALLENGE_SIZE, OPENING_MODE, sizeOf, tableTitle } from "../src/pages/model.ts";
-import { C } from "../src/leaderboard-page/copy.ts";
+import { BOARD_GROUPS, OPENING_MODE, sizeOf, tableTitle } from "../src/pages/model.ts";
 
 const endpoint = "http://localhost:4718/api/leaderboard";
 const READS: FakeRead[] = ["house", "everyone", "house-mode"];
@@ -30,7 +29,7 @@ describe("strict fake-only leaderboard captures", () => {
     expect(source).toContain("(touch && box.height < 44) || offScreen || !hit || !node.contains(hit)");
   });
   it("expects the page's own board choices, opening board and table headings", () => {
-    expect(MODE_LABELS).toEqual([...BOARD_GROUPS.flatMap(group => group.modes.map(mode => `${group.label} ${sizeOf(mode)}`)), `${C.challengeTitle} ${CHALLENGE_SIZE}`]);
+    expect(MODE_LABELS).toEqual(BOARD_GROUPS.flatMap(group => group.modes.map(mode => `${group.label} ${sizeOf(mode)}`)));
     const opening = BOARD_GROUPS.find(group => group.modes.includes(OPENING_MODE))!;
     expect(expectedView("populated")).toMatchObject({ headings: tableTitle({ id: "aw-house-mode-ranking", title: "" }, OPENING_MODE), pressed: `${opening.label} ${sizeOf(OPENING_MODE)}` });
     expect(expectedView("house-mode").headings).toBe(tableTitle({ id: "aw-house-mode-ranking", title: "" }, "house-2v2"));
