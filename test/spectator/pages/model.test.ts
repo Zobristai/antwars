@@ -289,8 +289,8 @@ describe("Matches", () => {
     expect(modelName("google/gemini-3.8-flash")).toBe("Gemini 3.8 Flash");
     expect(modelName("zai/glm-5.3")).toBe("GLM-5.3");
     // A Muse row names muse only for a label from muse; the same model from any other provider is named without one.
-    expect(modelName("muse/muse-spark-1.3")).toBe("Muse Spark 1.3 on muse");
-    expect(modelName("muse/muse-wonder-full-1.0")).toBe("Muse Wonder Full 1.0 on muse");
+    expect(modelName("muse/muse-spark-1.3")).toBe("Muse Spark 1.3 · muse");
+    expect(modelName("muse/muse-wonder-full-1.0")).toBe("Muse Wonder Full 1.0 · muse");
     expect(modelName("other-provider/muse-spark-1.3")).toBe("Muse Spark 1.3");
     expect(modelName("other-provider/muse-wonder-1.0")).toBe("Muse Wonder 1.0");
     expect(modelName("muse-wonder-full-1.0")).toBe("Muse Wonder Full 1.0");

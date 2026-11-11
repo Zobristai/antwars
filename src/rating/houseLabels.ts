@@ -14,11 +14,11 @@ const label = (displayName: string, thinkingLevel: string | null = null, service
   ({ displayName, thinkingLevel, serviceTier });
 
 /** The model name without its provider, by handle, for each row whose display name states the provider it plays on
- * ("<name> on <provider>"): a recorded label from any other provider is named without one (houseModelEntry). */
+ * ("<name> · <provider>"): a recorded label from any other provider is named without one (houseModelEntry). */
 const NAMED_PROVIDER = new Map<string, { readonly provider: string; readonly name: string }>();
 const onProvider = (handle: string, name: string, provider: string, thinkingLevel: string | null = null, serviceTier: string | null = null): HouseLabel => {
   NAMED_PROVIDER.set(handle, { provider, name });
-  return label(`${name} on ${provider}`, thinkingLevel, serviceTier);
+  return label(`${name} · ${provider}`, thinkingLevel, serviceTier);
 };
 
 /**
