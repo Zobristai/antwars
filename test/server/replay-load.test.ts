@@ -11,6 +11,7 @@ import { rulesConfig } from "../../src/sim/config.ts";
 import type { TickTiming } from "../../src/server.ts";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.ts";
 import { playable } from "../playable.ts";
+import { comparison, startComparisonMatch } from "./helpers.ts";
 
 let server: SpectatedServer | null = null;
 let dir: string | null = null;
@@ -37,7 +38,7 @@ it("keeps complete live tick work below 100 ms during a backpressured roughly 32
   const body = Readable.from((function* () { for (let n = 0; n < members; n++) yield member; })(), { objectMode: false, highWaterMark: 64 * 1024 });
   dir = mkdtempSync(join(tmpdir(), "antwar-replay-load-"));
   server = await startSpectatedServer({
-    port: 0, host: "127.0.0.1", dataDir: dir, breakMs: 20,
+    port: 0, host: "127.0.0.1", dataDir: dir, ...comparison(0),
     simConfig: playable({ ...rulesConfig("redesign"), startAnts: 256, colonyCap: 512, matchTicks: 100 }),
     replayStore: { create: async () => {} },
     replaySource: { open: async () => { downloading = true; return { body, contentLength: String(member.length * members) }; } },
@@ -47,6 +48,7 @@ it("keeps complete live tick work below 100 ms during a backpressured roughly 32
       peakSourceBuffer = Math.max(peakSourceBuffer, body.readableLength);
     },
   }, { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
+  await startComparisonMatch(server, 0);
   const target = `http://127.0.0.1:${server.port}/replays/2026-10-18T09-50-00-123Z-1`;
   response = await new Promise<IncomingMessage>((resolve, reject) => httpGet(target, resolve).once("error", reject));
   expect(response.statusCode).toBe(200);

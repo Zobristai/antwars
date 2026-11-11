@@ -301,10 +301,30 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
     keepAlive = startKeepAlive({ activity: slotActivity(wiring.slot), url: `${wiring.publicUrl}${KEEP_ALIVE_PATH}` });
   }
 
+  /** The operator's stop: ends the running match synchronously, including pending calls and its normal final feed. */
+  function stopMatch(): void {
+    if (game.match === null || game.match.result !== null) throw new Error("no on-demand match running");
+    core.clearTimer();
+    stopping = true;
+    // The terminal tick is a whole tick for the report only; the per-tick observer never saw it.
+    const measuredAt = options.tickReport === undefined ? 0 : performance.now();
+    try {
+      core.publish(game.tick(true));
+    } finally {
+      stopping = false;
+    }
+    if (options.tickReport !== undefined) core.reportTick(performance.now() - measuredAt);
+  }
+
   return {
     kind: "slot",
     hostsMatches: true,
-    operator: { token: options.operatorToken, startRefusal: "Matches on this slot server start only from lobbies" },
+    operator: {
+      token: options.operatorToken,
+      startRefusal: "Matches on this slot server start only from lobbies",
+      running: () => game.match !== null && game.match.result === null,
+      stop: stopMatch,
+    },
     routes: [
       { routeClass: KEEP_ALIVE_PATH, path: KEEP_ALIVE_PATH, handle: (req, res) => serveKeepAlive(req, res, slotActivity(wiring.slot), KEEP_ALIVE_HOLD_MS, keepAliveCap) },
       { routeClass: "/lobbies/:id/match", match: (path) => {
@@ -347,23 +367,6 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
       game.endNotPlayed();
       game.setNextStart(null);
       runner?.ended("not_played");
-    },
-    startMatch() {
-      if (game.match !== null && game.match.result === null) throw new Error("a match is already running");
-      throw new Error("no held match to start");
-    },
-    stopMatch() {
-      if (game.match === null || game.match.result !== null) throw new Error("no on-demand match running");
-      core.clearTimer();
-      stopping = true;
-      // The terminal tick is a whole tick for the report only; the per-tick observer never saw it.
-      const measuredAt = options.tickReport === undefined ? 0 : performance.now();
-      try {
-        core.publish(game.tick(true));
-      } finally {
-        stopping = false;
-      }
-      if (options.tickReport !== undefined) core.reportTick(performance.now() - measuredAt);
     },
     async shutdown(saveWithinMs) {
       // A slot server not already retired runs the handover's save step, which saves only a begun

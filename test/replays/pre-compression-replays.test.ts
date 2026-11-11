@@ -64,7 +64,7 @@ it("the stored pre-change replay decodes to run-one's golden frames, apart from 
 it("today's replay route serves the stored object unchanged and the web player plays every frame back unchanged", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "antwar-pre-compression-")); dirs.push(dataDir);
   const publicOptions = comparisonOptions({}, DEFAULT_MCP_CONFIG);
-  server = await startSpectatedServer({ ...publicOptions, port: 0, host: "127.0.0.1", dataDir, match: "held", replaySource: {
+  server = await startSpectatedServer({ ...publicOptions, port: 0, host: "127.0.0.1", dataDir, match: "held", expectedPlayers: 2, replaySource: {
     open: async (id) => id === REPLAY_ID ? { body: Readable.from([FIXTURE]), contentLength: String(FIXTURE.length) } : null,
   } }, { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
   const url = `http://127.0.0.1:${server.port}/replays/${REPLAY_ID}`;

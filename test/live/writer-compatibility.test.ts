@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
 import { startServer } from "../../src/server.ts";
-import { logLines, matchLogs, tempDir } from "../server/helpers.ts";
+import { comparison, logLines, matchLogs, startComparisonMatch, tempDir } from "../server/helpers.ts";
 import { describe, expect, it } from "vitest";
 import { headerLine, replay, stateHash } from "../../src/sim/log.ts";
 import { HISTORICAL_CONFIG } from "../sim/fixtures.ts";
@@ -37,10 +37,10 @@ describe("recording writer compatibility", () => {
 
   it("the actual server writes ant115 on every newly started ordinary live log", async () => {
     const dataDir = tempDir();
-    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir, match: "held",
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir, ...comparison(0),
       simConfig: playable({ ...HISTORICAL_CONFIG, matchTicks: 2 }), seed: 141 });
     try {
-      server.startMatch();
+      await startComparisonMatch(server, 0);
       const paths = [...matchLogs(dataDir).values()];
       expect(paths).toHaveLength(1);
       expect(JSON.parse(logLines(paths[0]!)[0]!).holdBehaviour).toBe("ant115");

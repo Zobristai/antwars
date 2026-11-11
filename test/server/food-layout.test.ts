@@ -1,8 +1,11 @@
 import { readdirSync } from "node:fs";
+import { get as httpGet } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startServer, type GameServer, type ServerOptions } from "../../src/server.js";
+import { Game } from "../../src/mcp/game.js";
+import { startServer, type GameServer } from "../../src/server.js";
 import { PUBLIC_CONFIG } from "../../src/sim/config.js";
-import { tempDir } from "./helpers.js";
+import { FoodLayoutError } from "../../src/sim/foodLayout.js";
+import { comparison, settle, tempDir } from "./helpers.js";
 import { playable } from "../playable.ts";
 
 let server: GameServer | undefined;
@@ -34,15 +37,25 @@ async function assertServing(): Promise<void> {
   expect((await fetch(`http://127.0.0.1:${server!.port}/mcp`)).status).toBe(400);
 }
 
+/** One plain request on /mcp with no pooled connection, so the client leaves no timer behind; resolves with its status. */
+function requestMcp(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    httpGet({ host: "127.0.0.1", port: server!.port, path: "/mcp", agent: false }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res.statusCode ?? 0));
+    }).once("error", reject);
+  });
+}
+
 describe("food-placement failures cannot escape the server's match-start boundary", () => {
-  it.each(["held", "immediate"] as const)("keeps %s starts idle and serving, reports the cause and permits explicit retry", async mode => {
+  it("keeps a held comparison start idle and serving, reports the cause and retries at the next reply on /mcp", async () => {
     const dataDir = tempDir(), config = impossibleConfig();
     const matchStarted = vi.fn();
-    const options: ServerOptions = { port: 0, host: "127.0.0.1", dataDir, simConfig: config,
-      seed: 504997660, feed: { matchStarted, ticked: vi.fn() },
-      match: mode };
-    server = await startServer(options);
-    if (mode !== "immediate") expect(() => server!.startMatch()).not.toThrow();
+    // No players to wait for: each reply on /mcp, while the match is held, releases it.
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, simConfig: config,
+      seed: 504997660, feed: { matchStarted, ticked: vi.fn() }, ...comparison(0) });
+    expect(await requestMcp()).toBe(400);
+    await settle(() => errors().includes("start failed"));
     expect(server.game.match).toBeNull();
     expect(server.game.nextStart).toEqual({ kind: "held" });
     expect(server.game.queuedAgents).toBe(0);
@@ -56,7 +69,8 @@ describe("food-placement failures cannot escape the server's match-start boundar
 
     // Repair the deliberately impossible fixture, without changing seed/mode.
     Object.assign(config.foodLayout!, PLAYABLE_PUBLIC.foodLayout);
-    expect(() => server!.startMatch()).not.toThrow();
+    await assertServing();
+    await settle(() => server!.game.match !== null);
     expect(server.game.match?.seq).toBe(1);
     expect(server.game.match?.state.agents).toEqual([]);
     expect(matchStarted).toHaveBeenCalledTimes(1);
@@ -65,39 +79,16 @@ describe("food-placement failures cannot escape the server's match-start boundar
     expect(server.game.match?.result).not.toBeNull();
   });
 
-  it("retries private scheduled starts only after the existing break and can recover without a process restart", async () => {
-    const config = impossibleConfig(), dataDir = tempDir(), matchStarted = vi.fn();
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir, simConfig: config,
-      seed: 504997660, breakMs: 200, feed: { matchStarted, ticked: vi.fn() } });
-    expect(() => vi.advanceTimersByTime(200)).not.toThrow();
-    expect(server.game.match).toBeNull();
-    expect(server.game.nextStart?.kind).toBe("scheduled");
-    expect(vi.getTimerCount()).toBe(1);
-    expect(matchStarted).not.toHaveBeenCalled();
-    expect(readdirSync(dataDir)).toEqual([]);
-    await assertServing();
-    vi.advanceTimersByTime(199);
-    expect(vi.mocked(console.error)).toHaveBeenCalledTimes(1);
-    Object.assign(config.foodLayout!, PLAYABLE_PUBLIC.foodLayout);
-    vi.advanceTimersByTime(1);
-    expect(server.game.match?.seq).toBe(1);
-    expect(server.game.match?.state.agents).toEqual([]);
-    expect(matchStarted).toHaveBeenCalledTimes(1);
-  });
-
-  it("retains the completed match when the next food layout is impossible", async () => {
+  it("retains the completed match when the next food layout is impossible", () => {
     const config = playable({ ...PUBLIC_CONFIG, matchTicks: 1, foodLayout: { ...PUBLIC_CONFIG.foodLayout! } });
-    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: config, seed: 0, breakMs: 200 });
-    vi.advanceTimersByTime(300);
-    const previous = server.game.match!;
-    expect(previous.result).not.toBeNull();
+    const game = new Game({ simConfig: config });
+    game.startMatch(0);
+    while (game.match!.result === null) game.tick();
+    const previous = game.match!;
     Object.assign(config.foodLayout!, { placementAttempts: 1, layoutAttempts: 1, minStartingFood: 1, maxStartingFood: 1 });
-    expect(() => vi.advanceTimersByTime(200)).not.toThrow();
-    expect(server.game.match?.seq).toBe(previous.seq);
-    expect(server.game.match?.state).toBe(previous.state);
-    expect(server.game.nextStart?.kind).toBe("scheduled");
-    expect(vi.getTimerCount()).toBe(1);
-    await assertServing();
+    expect(() => game.startMatch(1)).toThrow(FoodLayoutError);
+    expect(game.match?.seq).toBe(previous.seq);
+    expect(game.match?.state).toBe(previous.state);
   });
 
   it("refuses retired entry-point operator start without attempting a food layout", async () => {

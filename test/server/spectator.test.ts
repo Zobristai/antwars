@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.js";
 import { decodeMessage, type StreamMessage } from "../../src/live/format.js";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.js";
-import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
+import { comparison, connect, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG, waitFor, type Agent } from "./helpers.js";
 import { playable } from "../playable.ts";
 
 let server: SpectatedServer | null = null;
@@ -56,10 +56,11 @@ const hasResult = (m: StreamMessage): boolean => m.events.some((e) => e.kind ===
 describe("the spectator on the server's one port", () => {
   it("serves an MCP join at /mcp, the live stream of the running match at /live/current, and the page at /", async () => {
     server = await startSpectatedServer(
-      { port: 0, host: "127.0.0.1", dataDir: tempDir(), match: "immediate", simConfig: playable(shortConfig(600)), mcpConfig: TEST_MCP_CONFIG },
+      { port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(0), simConfig: playable(shortConfig(600)), mcpConfig: TEST_MCP_CONFIG },
       { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 },
     );
     const s = server;
+    await startComparisonMatch(s, 0);
     const agent = await connect(s.port);
     agents.push(agent);
     expect((await agent.call("join", {})).isError).toBe(false);
@@ -83,18 +84,18 @@ describe("no early winner on the stream", () => {
   it("delivers ticks before the final one while the match runs, and the result with the server's next start only once delayed playback reaches the final tick", async () => {
     const delaySeconds = 1;
     server = await startSpectatedServer(
-      { port: 0, host: "127.0.0.1", dataDir: tempDir(), breakMs: 300, simConfig: playable(shortConfig(40)), mcpConfig: TEST_MCP_CONFIG },
+      { port: 0, host: "127.0.0.1", dataDir: tempDir(), ...comparison(0), simConfig: playable(shortConfig(40)), mcpConfig: TEST_MCP_CONFIG },
       { ...DEFAULT_LIVE_CONFIG, delaySeconds },
     );
     const s = server;
-    await waitFor(() => s.game.match !== null, 5_000);
+    await startComparisonMatch(s, 0);
     const stream = await openStream(s.port, "/live/current");
     expect(stream.match).toBe(1);
 
     const endedAt = await waitFor(() => s.game.match?.seq === 1 && s.game.match.result !== null, 10_000);
     const finalTick = s.game.match!.state.tick;
-    const nextStart = s.game.nextStart;
-    expect(nextStart?.kind).toBe("scheduled");
+    // A held match has no next start; the end carries the server's none.
+    expect(s.game.nextStart).toBeNull();
     await waitFor(() => stream.messages.some((r) => hasResult(r.m)), 10_000);
 
     const end = stream.messages.find((r) => hasResult(r.m))!;
@@ -106,6 +107,6 @@ describe("no early winner on the stream", () => {
     // The result arrived after the match ended, once the delay had played out.
     expect(end.at - endedAt).toBeGreaterThanOrEqual(delaySeconds * 1000 * 0.8);
     const result = end.m.events.find((e) => e.kind === "end");
-    expect(result?.kind === "end" ? result.result.nextStartMs : undefined).toBe((nextStart as { at: Date }).at.getTime());
+    expect(result?.kind === "end" ? result.result.nextStartMs : undefined).toBeNull();
   }, 20_000);
 });
