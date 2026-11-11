@@ -269,12 +269,18 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(36);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(38);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
       for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
         "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
       }
+      // The two Muse handles on the launch table are listed available; Muse Wonder Full is not on it and stays closed.
+      for (const handle of ["muse-spark-1-3", "muse-wonder-1-0"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+      }
+      expect(listed.opponents.find((entry: { handle: string }) => entry.handle === "antwars/muse-wonder-full-1-0"))
+        .toMatchObject({ available: false, reason: "not on the house launch table" });
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
       await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
