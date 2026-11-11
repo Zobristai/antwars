@@ -9,13 +9,21 @@
 # What is matched. The root check always covers the whole history. The identity and message
 # checks cover only the commits that are not already on main (see --since and <base-sha> below):
 # a commit already on main is public and cannot be changed without rewriting history, so checking
-# it again would only turn every later push red when the list grows. An author or committer email
-# in one of GitHub's no-reply forms (<id>+<login>@users.noreply.github.com,
-# <login>@users.noreply.github.com, noreply@github.com) is not matched: GitHub builds it from the
-# account's public login and id, and it is on every pull request and merge. In the whole-header
-# view, the base64 and checksum lines of a gpgsig or gpgsig-sha256 signature are not matched
-# either, since they are encoded bytes, not text; any other line in a signature, and every other
-# header line, is.
+# it again would only turn every later push red when the list grows. Two GitHub addresses in an
+# author or committer email are not matched: noreply@github.com, and the no-reply addresses
+# (<id>+<login>@users.noreply.github.com and <login>@users.noreply.github.com) of the event's own
+# accounts, given in ANTWARS_EVENT_ACCOUNTS (below). GitHub builds those from the account's public
+# id and login, and they are on every pull request and merge. Every other address, including any
+# other of no-reply form, is matched. In the whole-header view, the base64 and checksum lines
+# between the BEGIN and END lines of a PGP or SSH signature in a gpgsig or gpgsig-sha256 header
+# (for PGP, after the armor's blank line) are not matched either, since they are encoded bytes,
+# not text; any other line of a signature, and every other header line, is.
+#
+# ANTWARS_EVENT_ACCOUNTS (optional): one account per line, "<id> <login>", with "-" for an account
+# whose id the event does not give. In CI these are the push's sender and pusher, or the pull
+# request's sender and author, taken from the event. A line whose id is not digits only, or whose
+# login is not in GitHub's form (letters, digits and single inner hyphens, at most 39 characters),
+# gives no exemption. Unset, only noreply@github.com is exempt.
 #
 # The initial commit is never in the repository either (a commit cannot carry its own id): it
 # comes from the ANTWARS_EXPECTED_ROOT environment variable, the full 40-character lower-case SHA.
@@ -23,6 +31,9 @@
 # environment variable of the same name. Unset, empty or not exactly such a SHA fails.
 #
 # Usage:
+#   history-isolation.sh --push <previous-tip> <commit>
+#       a push to main: as --since <previous-tip> when that is a full SHA of a commit in this
+#       clone; otherwise (empty, all zeros, or not in the clone) the whole history is checked.
 #   history-isolation.sh [--since <sha>] <commit>...
 #       checks the history reachable from each commit (push to main). With --since (the full
 #       SHA of the previous main tip), the identity and message checks leave out the commits
@@ -73,6 +84,20 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$idfile"
 [ "${#ids[@]}" -gt 0 ] || die "the ANTWARS_IDENTIFIERS secret has no identifiers (only blank or whitespace lines)"
 
+# The exempt addresses: noreply@github.com and the no-reply addresses of the event's accounts.
+# An account line that is not "<digits or -> <GitHub login>" is skipped, so its address is matched.
+noreply_ok=(noreply@github.com)
+while IFS= read -r line || [ -n "$line" ]; do
+  [[ "$line" =~ ^(-|[0-9]*)?\ ?$ ]] && continue   # blank, or an account the event does not have
+  if [[ "$line" =~ ^(-|[0-9]{1,20})\ ([A-Za-z0-9]([A-Za-z0-9]|-[A-Za-z0-9])*)$ ]] && [ "${#BASH_REMATCH[2]}" -le 39 ]; then
+    acct_id=${BASH_REMATCH[1]} login=${BASH_REMATCH[2],,}
+    noreply_ok+=("$login@users.noreply.github.com")
+    [ "$acct_id" = - ] || noreply_ok+=("$acct_id+$login@users.noreply.github.com")
+  else
+    echo "history-isolation: an event account is not a GitHub id and login; its addresses are matched like any other"
+  fi
+done <<< "${ANTWARS_EVENT_ACCOUNTS:-}"
+
 remote_git() {
   if [ -n "${FETCH_TOKEN:-}" ]; then
     local auth
@@ -86,7 +111,15 @@ remote_git() {
 
 # Commits already on main, whose identities and messages are not checked again (root check aside).
 exclude=()
-if [ "${1:-}" = --since ]; then
+if [ "${1:-}" = --push ]; then
+  [ "$#" -eq 3 ] || { echo "usage: $0 --push <previous-tip> <commit>" >&2; exit 2; }
+  if [[ "$2" =~ ^[0-9a-f]{40}$ ]] && [[ ! "$2" =~ ^0+$ ]] && git rev-parse --verify --quiet "$2^{commit}" >/dev/null; then
+    exclude+=("$2")
+  else
+    echo "history-isolation: no previous main tip in this clone; the whole history is checked"
+  fi
+  shift 2
+elif [ "${1:-}" = --since ]; then
   [ "$#" -ge 3 ] || { echo "usage: $0 [--since <sha>] <commit>..." >&2; exit 2; }
   [[ "$2" =~ ^[0-9a-f]{40}$ ]] || die "--since is not a full commit SHA"
   git rev-parse --verify --quiet "$2^{commit}" >/dev/null || die "--since commit $2 is not in this clone"
@@ -158,7 +191,7 @@ if [ "${1:-}" = --pull-request ]; then
   fi
 fi
 
-if [ "$#" -eq 0 ]; then echo "usage: $0 [--since <sha>] <commit>... | --pull-request <number> <head-sha> [<base-sha>]" >&2; exit 2; fi
+if [ "$#" -eq 0 ]; then echo "usage: $0 --push <previous-tip> <commit> | [--since <sha>] <commit>... | --pull-request <number> <head-sha> [<base-sha>]" >&2; exit 2; fi
 # Every git read below has its output captured and its exit status checked; a failed read fails.
 shallow=$(git rev-parse --is-shallow-repository) || die "could not tell whether the clone is shallow (git rev-parse failed)"
 [ "$shallow" = false ] || die "the clone is shallow; full history is required"
@@ -177,13 +210,12 @@ done
 # view. A header that is not plainly well formed fails closed. Every id is matched against the
 # author and committer names and emails, against the whole header as well, and against the full
 # message (everything after the header's blank line; NUL bytes are dropped first).
-# GitHub's no-reply addresses, matched whole and strictly: <id>+<login>@users.noreply.github.com,
-# <login>@users.noreply.github.com (a login is letters, digits and single inner hyphens, at most
-# 39 characters) and noreply@github.com. Anything else is an ordinary email and is matched.
+# An exempt address is one of noreply_ok, compared whole (case-insensitively); anything else,
+# including any other address of no-reply form, is an ordinary email and is matched.
 noreply() { # <email>
-  local e=${1,,}
-  [ "$e" = noreply@github.com ] ||
-    [[ "$e" =~ ^([0-9]{1,20}\+)?[a-z0-9]([a-z0-9]|-[a-z0-9]){0,38}@users\.noreply\.github\.com$ ]]
+  local e=${1,,} a
+  for a in "${noreply_ok[@]}"; do [ "$e" != "$a" ] || return 0; done
+  return 1
 }
 fields_hit=0
 match() { # <sha> <field> <value>
@@ -218,15 +250,27 @@ for sha in "${commits[@]}"; do
   esac
   mapfile -t lines < "$hdr" || die "could not read the header of commit $sha"
   header='' prev='' authors=0 committers=0 bad='' fields_hit=0
+  # Signature state: sig is none, armor (PGP armor headers, before its blank line), body
+  # (between the armor and the END line) or done; sigend is the END line awaited; held keeps
+  # the body's base64 and checksum lines, which are dropped only once that END line is seen.
+  sig=none sigend='' held=''
   for line in "${lines[@]}"; do
     [ -n "$line" ] || break
     if [ "${line:0:1}" = ' ' ]; then
       case "$prev" in
         gpgsig|gpgsig-sha256)
-          # A signature's base64 and checksum lines are encoded bytes: left out of the header
-          # view. Any other continuation line of a signature stays in it.
-          [[ "$line" =~ ^\ [A-Za-z0-9+/]*={0,2}$ || "$line" =~ ^\ =[A-Za-z0-9+/]{4}$ ]] ||
-            header+="${line,,}"$'\n' ;;
+          case "$sig" in
+            armor) [ "$line" != ' ' ] || sig=body; header+="${line,,}"$'\n' ;;
+            body)
+              if [ "$line" = "$sigend" ]; then
+                sig=done held=''; header+="${line,,}"$'\n'
+              elif [[ "$line" =~ ^\ [A-Za-z0-9+/]+={0,2}$ || "$line" =~ ^\ =[A-Za-z0-9+/]{4}$ ]]; then
+                held+="${line,,}"$'\n'
+              else
+                header+="${line,,}"$'\n'
+              fi ;;
+            *) header+="${line,,}"$'\n' ;;
+          esac ;;
         mergetag) header+="${line,,}"$'\n' ;;
         *) header+="${line,,}"$'\n'; bad="a continuation line in an unexpected place" ;;
       esac
@@ -234,6 +278,8 @@ for sha in "${commits[@]}"; do
     fi
     view=$line
     key=${line%% *} rest=${line#* } prev=$key
+    # A signature with no END line keeps every line in the header view.
+    header+=$held; held='' sig=none
     case "$key" in
       tree|parent) [[ "$rest" =~ ^[0-9a-f]{40}$ ]] || bad="a malformed $key line" ;;
       author|committer)
@@ -251,11 +297,17 @@ for sha in "${commits[@]}"; do
           bad="a malformed $key line"
         fi ;;
       encoding) [[ "${rest,,}" =~ ^utf-?8$ ]] || bad="an encoding other than UTF-8" ;;
-      gpgsig|gpgsig-sha256|mergetag) ;;
+      gpgsig|gpgsig-sha256)
+        case "$rest" in
+          '-----BEGIN PGP SIGNATURE-----') sig=armor sigend=' -----END PGP SIGNATURE-----' ;;
+          '-----BEGIN SSH SIGNATURE-----') sig=body sigend=' -----END SSH SIGNATURE-----' ;;
+        esac ;;
+      mergetag) ;;
       *) bad="an unrecognised header line" ;;
     esac
     header+="${view,,}"$'\n'
   done
+  header+=$held
   [ "$authors" = 1 ] && [ "$committers" = 1 ] || bad=${bad:-"not exactly one author and one committer line"}
   [ -z "$bad" ] || fail "commit $sha: its header has $bad"
   sed '1,/^$/d' "$obj" > "$body" || die "could not split the message of commit $sha"

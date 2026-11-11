@@ -169,12 +169,32 @@ run "29e control: expected root right, clean chain passes" pass $C
 why "30 PR mode, expected root unset" "$NOTSET" -u ANTWARS_EXPECTED_ROOT bash -c "cd $W/runner && bash $S --pull-request 1 $H_OK"
 why "30b PR mode, expected root empty" "$EMPTY" ANTWARS_EXPECTED_ROOT= bash -c "cd $W/runner && bash $S --pull-request 1 $H_OK"
 why "30c PR mode, expected root another commit, caught" "is not the initial commit $C1" ANTWARS_EXPECTED_ROOT=$C1 bash -c "cd $W/runner && bash $S --pull-request 1 $H_OK"
-# GitHub no-reply addresses are public: not matched, even when the list holds the login or id.
+# The no-reply addresses of the event's own accounts are public: not matched, even when the list
+# holds the login or id. Any other address of no-reply form is matched like any other.
 NR='9876543210+synthid-alpha@users.noreply.github.com'
-run "31 no-reply author <id>+<login>, both listed" pass $(id "Octo <$NR> 1 +0000" "$Z")
-run "31b no-reply author <login> form, login listed" pass $(id 'Octo <synthid-alpha@users.noreply.github.com> 1 +0000' "$Z")
-run "31c no-reply committer, mixed case" pass $(id "$Z" 'Octo <9876543210+Synthid-Alpha@Users.NoReply.GitHub.com> 1 +0000')
+EA='ANTWARS_EVENT_ACCOUNTS=9876543210 synthid-alpha'
+runenv "31 event account's <id>+<login> author, both listed" pass "$EA" bash $S $(id "Octo <$NR> 1 +0000" "$Z")
+runenv "31b event account's <login> form author, login listed" pass "$EA" bash $S $(id 'Octo <synthid-alpha@users.noreply.github.com> 1 +0000' "$Z")
+runenv "31c event account's address as committer, mixed case" pass "$EA" bash $S $(id "$Z" 'Octo <9876543210+Synthid-Alpha@Users.NoReply.GitHub.com> 1 +0000')
 runenv "31d noreply@github.com committer, listed" pass ANTWARS_IDENTIFIERS='noreply@github.com' bash $S $(id "$Z" 'GitHub <noreply@github.com> 1 +0000')
+runenv "31e second event account (pull request author)" pass $'ANTWARS_EVENT_ACCOUNTS=11 other-user\n9876543210 synthid-alpha' bash $S $(id "Octo <$NR> 1 +0000" "$Z")
+runenv "31f account with no id: <login> form passes" pass 'ANTWARS_EVENT_ACCOUNTS=- synthid-alpha' bash $S $(id 'Octo <synthid-alpha@users.noreply.github.com> 1 +0000' "$Z")
+runenv "31g account with no id: <id>+<login> form matched" fail 'ANTWARS_EVENT_ACCOUNTS=- synthid-alpha' bash $S $(id "Octo <$NR> 1 +0000" "$Z")
+run "31h made-up no-reply author, no event accounts" fail $(id "Octo <$NR> 1 +0000" "$Z")
+run "31i made-up no-reply committer, no event accounts" fail $(id "$Z" "Octo <$NR> 1 +0000")
+runenv "31j made-up no-reply author, another event account" fail 'ANTWARS_EVENT_ACCOUNTS=12345 octo-user' bash $S $(id "Octo <$NR> 1 +0000" "$Z")
+runenv "31k made-up no-reply committer, another event account" fail 'ANTWARS_EVENT_ACCOUNTS=12345 octo-user' bash $S $(id "$Z" "Octo <$NR> 1 +0000")
+runenv "31l event account's login with another id" fail "$EA" bash $S $(id 'Octo <1111+synthid-alpha@users.noreply.github.com> 1 +0000' "$Z")
+runenv "31m event account's id with another login" fail "$EA" bash $S $(id "$Z" 'Octo <9876543210+octo-user@users.noreply.github.com> 1 +0000')
+L39=synthid-alpha-bbbbbbbbbbbbbbbbbbbbbbbbb L40=synthid-alpha-bbbbbbbbbbbbbbbbbbbbbbbbbb
+LA=a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a
+runenv "31n event login of 39 characters passes" pass "ANTWARS_EVENT_ACCOUNTS=- $L39" bash $S $(id "Octo <$L39@users.noreply.github.com> 1 +0000" "$Z")
+runenv "31o event login of 40 characters: no exemption" fail "ANTWARS_EVENT_ACCOUNTS=- $L40" bash $S $(id "Octo <$L40@users.noreply.github.com> 1 +0000" "$Z")
+runenv "31p event login a + twenty -a (41): no exemption" fail "ANTWARS_EVENT_ACCOUNTS=9876543210 $LA" bash $S $(id "Octo <9876543210+$LA@users.noreply.github.com> 1 +0000" "$Z")
+runenv "31q control: a + nine -a (19) passes" pass "ANTWARS_EVENT_ACCOUNTS=9876543210 ${LA:0:19}" bash $S $(id "Octo <9876543210+${LA:0:19}@users.noreply.github.com> 1 +0000" "$Z")
+runenv "31r event id not digits only: no exemption" fail 'ANTWARS_EVENT_ACCOUNTS=98x synthid-alpha' bash $S $(id 'Octo <synthid-alpha@users.noreply.github.com> 1 +0000' "$Z")
+runenv "31s event login with a double hyphen: no exemption" fail 'ANTWARS_EVENT_ACCOUNTS=- synthid-alpha--x' bash $S $(id 'Octo <synthid-alpha--x@users.noreply.github.com> 1 +0000' "$Z")
+runenv "31t event account, listed text in the name still caught" fail "$EA" bash $S $(id "Synthid-Alpha <$NR> 1 +0000" "$Z")
 run "32 no-reply email, listed text in the name still caught" fail $(id "Synthid-Alpha <$NR> 1 +0000" "$Z")
 run "32b look-alike: listed text as a subdomain" fail $(id 'Dev <x@synthid-alpha.users.noreply.github.com> 1 +0000' "$Z")
 run "32c look-alike: no-reply form with a suffix" fail $(id 'Dev <1+x@users.noreply.github.com.synthcorp.example> 1 +0000' "$Z")
@@ -188,6 +208,15 @@ runenv "33 listed text inside a signature's base64 line" pass $K bash $S $(sig g
 runenv "33b listed text inside a gpgsig-sha256 base64 line" pass $K bash $S $(sig gpgsig-sha256 ' SynthKey9AAAA')
 runenv "33c listed text in a signature's armor header line" fail $K bash $S $(sig gpgsig ' Comment: synthkey9')
 runenv "33d listed text in a mergetag continuation" fail $K bash $S $(raw "author $Z"$'\n'"committer $Z"$'\n'"mergetag object $C"$'\n'" tagger synthkey9 <t@example.org> 1 +0000")
+hs(){ raw "author $Z"$'\n'"committer $Z"$'\n'"$1"; }
+runenv "33e armorless gpgsig line, listed text" fail $K bash $S $(hs 'gpgsig AAAAsynthkey9BBBB')
+runenv "33f armorless gpgsig, listed text on a base64-like continuation" fail $K bash $S $(hs $'gpgsig AAAA\n SynthKey9AAAA')
+runenv "33g base64-like line before the PGP armor's blank line" fail $K bash $S $(hs $'gpgsig -----BEGIN PGP SIGNATURE-----\n SynthKey9AAAA\n \n AAAA\n -----END PGP SIGNATURE-----')
+runenv "33h base64-like line after the END line" fail $K bash $S $(hs $'gpgsig -----BEGIN PGP SIGNATURE-----\n \n AAAA\n -----END PGP SIGNATURE-----\n SynthKey9AAAA')
+runenv "33i signature with no END line" fail $K bash $S $(hs $'gpgsig -----BEGIN PGP SIGNATURE-----\n \n SynthKey9AAAA')
+runenv "33j listed text inside an SSH signature's base64 line" pass $K bash $S $(hs $'gpgsig -----BEGIN SSH SIGNATURE-----\n U1NIU0lHsynthkey9AAAA\n -----END SSH SIGNATURE-----')
+runenv "33k SSH signature closed by a PGP END line" fail $K bash $S $(hs $'gpgsig -----BEGIN SSH SIGNATURE-----\n U1NIU0lHsynthkey9AAAA\n -----END PGP SIGNATURE-----')
+runenv "33l other armor type: base64 line matched" fail $K bash $S $(hs $'gpgsig -----BEGIN SIGNED MESSAGE-----\n MIIsynthkey9AAAA\n -----END SIGNED MESSAGE-----')
 # Commits already on main (--since, or a pull request's base) are not checked again; the root is.
 B1=$(id 'Dev <dev@synthcorp.example> 1 +0000' "$Z"); B2=$(chain $B1 'after the old commit')
 run "34 --since the old commit: its identity is not checked again" pass --since $B1 $B2
@@ -212,6 +241,26 @@ pr2 "35d PR with base: a listed text in the head's message still caught" fail ba
 pr2 "35e PR with base: a bad identity on the merge ref still caught" fail bash $S --pull-request 3 $H_OK $B1
 pr2 "35f PR base not a full SHA" fail bash $S --pull-request 8 $HB HEAD
 pr2 "35g PR base not in this clone" fail bash $S --pull-request 8 $HB 0123456789abcdef0123456789abcdef01234567
+# Only a two-parent merge ref whose first parent is not the head has its first parent left out.
+cm(){ { printf 'tree %s\n' "$T"; for p in "$@"; do printf 'parent %s\n' "$p"; done; printf 'author %s\ncommitter %s\n\nm\n' "$Z" "$Z"; } | git hash-object -t commit -w --literally --stdin; }
+git push -q $W/origin.git $HB:refs/pull/9/head $(cm $HB):refs/pull/9/merge $HB:refs/pull/11/head $(cm $B1 $HB $C):refs/pull/11/merge \
+  $HB:refs/pull/12/head $(cm $HB $B1):refs/pull/12/merge 2>&1 | grep -v '^$'
+pr2 "35h PR merge ref with one parent: no first-parent exemption" fail bash $S --pull-request 9 $HB $C
+pr2 "35i PR merge ref with three parents: no first-parent exemption" fail bash $S --pull-request 11 $HB $C
+pr2 "35j PR merge ref whose first parent is the head: no exemption" fail bash $S --pull-request 12 $HB $C
+H_NR=$(id "Octo <$NR> 1 +0000" "$Z")
+git push -q $W/origin.git $H_NR:refs/pull/10/head 2>&1 | grep -v '^$'
+pr "35k PR head by an event account (pull request author)" pass "$EA" bash $S --pull-request 10 $H_NR
+pr "35l PR head with a made-up no-reply address" fail bash $S --pull-request 10 $H_NR
+# Push mode: the previous tip is left out when it is a commit in the clone; otherwise (none,
+# all zeros, not a SHA, not in the clone) the whole history is checked.
+run "36 --push with the previous tip: the old commit not checked again" pass --push $B1 $B2
+run "36b --push with no previous tip: the whole history is checked" fail --push '' $B2
+run "36c --push with an all-zero previous tip: the whole history is checked" fail --push 0000000000000000000000000000000000000000 $B2
+run "36d --push with a previous tip not in this clone: whole history" fail --push 0123456789abcdef0123456789abcdef01234567 $B2
+run "36e --push with a previous tip that is not a SHA: whole history" fail --push HEAD $B2
+run "36f --push with no previous tip, clean history passes" pass --push '' $C
+run "36g --push with a missing commit argument" fail --push $B1
 echo "== runner: worktree changes $(git -C $W/runner status --porcelain | wc -l), HEAD $(git -C $W/runner rev-parse HEAD)"
 leaks=$(cat $W/out/*.txt | grep -ciE 'synth|9876543210|none-such')
 echo "== outputs containing a synthetic identifier or its text: $leaks"
