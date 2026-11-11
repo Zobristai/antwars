@@ -69,7 +69,7 @@ export const REFUSAL_CODES = [
   "unknown-identity", "sol-lobby", "sol-handle", "no-commit-times", "unreadable-lobby", "history-unstable", "no-change-record",
   "no-change-record-time", "moved-seats", "moved-not-rated", "shared-commit-time", "no-glicko-change", "not-reproduced-players",
   "not-reproduced-change", "not-reproduced-rating", "not-reproduced-rd", "not-reproduced-rated-at", "not-reproduced-rated-matches",
-  "not-reproduced-record", "no-public-match-id", "no-row", "store-error", "error",
+  "not-reproduced-record", "nonpublic-match", "no-row", "store-error", "error",
 ] as const;
 export type RefusalCode = typeof REFUSAL_CODES[number];
 export type PlanState = { readonly state: "computing" | "applied" } | { readonly state: "refused"; readonly reason: RefusalCode }
@@ -202,6 +202,10 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     refuse(failed ? NEVER_JOINED_CHECKS[failed.name.split(":")[0]!] ?? "error" : "never-joined-stage",
       `${NEVER_JOINED.lobbyId}: ${v.checks.filter(c => !c.ok).map(c => `${c.name}: ${c.detail}`).join("; ") || `stage ${v.stage}`}`);
   }
+  // The plan is served publicly, so it carries only public matches: one that is not refuses the whole plan.
+  if (v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)?.kind !== "public" || v.snapshot.get(`watchMatches/${NEVER_JOINED.lobbyId}`)?.visibility !== "public") {
+    refuse("nonpublic-match", `lobby ${NEVER_JOINED.lobbyId} is not public`);
+  }
   const writes: Write[] = firestoreWrites(v, new Date());
   for (const id of v.identities) names.set(id, await handle(id));
   const unrated = v.identities.map(id => shown(names.get(id)!));
@@ -319,8 +323,11 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     if (relabelled) writes.push({ op: "update", path: `watchMatches/${lobby.id}`, fields: { modelLabels: JSON.stringify(relabelled) } });
     if (rechanged) writes.push({ op: "update", path: `ratedMatches/${lobby.id}`, fields: { changes } });
     if (!move && !rechanged) continue;
-    // A match is named by its recording, or by its public lobby id until a recording is published.
-    const match = docs.get(`watchMatches/${lobby.id}`)?.replayId || (lobby.listed ? lobby.id : refuse("no-public-match-id", `lobby ${lobby.id}: no public match id`));
+    // Only a public match is served: a public lobby whose watch entry, if any, is public. It is named by its recording,
+    // or by its lobby id until a recording is published.
+    const watch = docs.get(`watchMatches/${lobby.id}`);
+    if (!lobby.listed || (watch && watch.visibility !== "public")) refuse("nonpublic-match", `lobby ${lobby.id} is not public`);
+    const match = watch?.replayId || lobby.id;
     matches.push({ match, startedAt: new Date(lobby.at).toISOString(),
       before: { status: "rated", seats: was.seats.map(seat => shown(seat.displayName)), ratingChanges: named(stored.get(lobby.id)!), ...(relabelled ? { labels: shownKeys(labels) } : {}) },
       after: { status: "rated", seats: lobby.seats.map(seat => shown(seat.displayName)), ratingChanges: named(result.changes.get(lobby.id)!),

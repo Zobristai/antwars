@@ -80,7 +80,7 @@ async function world() {
   const at = Date.parse("2026-11-09T13:26:59.840Z");
   const lobby = NEVER_JOINED.lobbyId;
   await commit(store, [
-    { op: "create", path: `lobbies/${lobby}`, fields: { state: "ended", rated: "true", mode: "1v1", outcome: "colony_1_won", createdAt: String(at - MIN),
+    { op: "create", path: `lobbies/${lobby}`, fields: { kind: "public", state: "ended", rated: "true", mode: "1v1", outcome: "colony_1_won", createdAt: String(at - MIN),
       startsAt: String(at), matchRunId: "run-1", seats: JSON.stringify([{ id: users[0], colony: 0 }, { id: users[1], colony: 1 }]) } },
     { op: "create", path: `watchMatches/${lobby}`, fields: { visibility: "public", rated: "true", mode: "1v1", startedAt: startedAt(NEVER_JOINED.replayId),
       playbackFinished: "true", origin: "https://example.test", slot: "public-1", runId: "run-1", replayId: NEVER_JOINED.replayId } },
@@ -278,6 +278,27 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     const failing = (error: Error): Store => ({ ...w.store, get: async () => { throw error; } });
     expect(JSON.parse(await refusal(failing(new FirestoreError("get", 403, "PERMISSION_DENIED")), w.recordings))).toEqual({ state: "refused", reason: "store-error" });
     expect(JSON.parse(await refusal(failing(new Error(`lobby ${NEVER_JOINED.lobbyId}`)), w.recordings))).toEqual({ state: "refused", reason: "error" });
+    warn.mockRestore();
+  });
+
+  it("refuses rather than serve a match that is not public, even one with a recording id", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // A moved match and the never-joined match, each with its recording: hidden by its watch entry or by its lobby.
+    for (const [path, fields, hidden] of [
+      [`watchMatches/${SECOND_LOBBY}`, { visibility: "private" }, SOL_MOVES[1]!.replayId],
+      [`lobbies/${SECOND_LOBBY}`, { kind: "private" }, SOL_MOVES[1]!.replayId],
+      [`watchMatches/${NEVER_JOINED.lobbyId}`, { visibility: "private" }, NEVER_JOINED.replayId],
+      [`lobbies/${NEVER_JOINED.lobbyId}`, { kind: "private" }, NEVER_JOINED.replayId],
+    ] as const) {
+      const w = await world();
+      await commit(w.store, [{ op: "update", path, fields }]);
+      await expect(planCorrections(w.store, w.recordings)).rejects.toThrow("is not public");
+      const { serve } = startCorrectionPlan(w.store, w.recordings);
+      await vi.waitFor(() => expect(JSON.parse(served(serve).body).state).toBe("refused"));
+      const body = served(serve).body;
+      expect(JSON.parse(body)).toEqual({ state: "refused", reason: "nonpublic-match" });
+      for (const id of [hidden, SECOND_LOBBY, NEVER_JOINED.lobbyId]) expect(body).not.toContain(id);
+    }
     warn.mockRestore();
   });
 
