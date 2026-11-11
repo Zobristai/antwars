@@ -24,6 +24,10 @@ export interface SessionState {
   finalResult?: FinalResultReceipt;
   /** Slot servers: the key that joined this session, so a replaced key ends the session's seat. */
   admission?: KeyAdmission;
+  /** Slot servers: joins refused since the last successful one because their key holds no usable seat here. */
+  failedJoins?: number;
+  /** Slot servers: joins in flight, which count toward that limit until they answer. */
+  joinsInFlight?: number;
 }
 
 /**
@@ -578,51 +582,75 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
       if (serviceTier !== undefined && !validText(serviceTier, game.mcpConfig.serviceTierMaxChars)) {
         return adapterRefusal(game, session, "join", "bad_service_tier", "Invalid service tier.", `Use 1 to ${game.mcpConfig.serviceTierMaxChars} printable characters, or leave serviceTier out.`);
       }
-      // The key's check time, not the join's end: a join can wait (on its tick and the join record) past a rotation.
-      const keyCheckedAt = game.wallClock();
-      const identityId = await slot.identityOf(key);
-      // The lobby seating this identity holds the slot but is not seated here yet; nothing touches an older seat.
-      if (identityId !== undefined && await game.lobbyLoading(identityId)) {
-        return errorResult("lobby_loading", "Your lobby holds this slot, but this server has not loaded it yet.",
-          `Call join again with the same key${seat === undefined ? "" : " and seat"} after retryAfterMs; your seat is kept.`, null, { retryAfterMs: LOBBY_LOADING_RETRY_MS });
+      // Past the limit the key is never looked up: a session cannot keep trying keys against the store.
+      const limit = game.mcpConfig.maxFailedJoinsPerSession;
+      if ((session.failedJoins ?? 0) + (session.joinsInFlight ?? 0) >= limit) {
+        return adapterRefusal(game, session, "join", "too_many_failed_joins",
+          `This session has had ${limit} joins refused because their key holds no seat here, so it takes no more joins.`,
+          "Check your key and seat (locate_match gives your lobby's mcpUrl), then start a new MCP session and call join from it.");
       }
-      const held = identityId === undefined ? 0 : game.seatsHeld(identityId);
-      if (held > 1 && seat === undefined) {
-        return adapterRefusal(game, session, "join", "seat_required", `This key holds ${held} seats in this lobby's match, each played from its own session.`,
-          `Call join with key and seat, a number from 1 to ${held}; join each seat from a separate session.`);
+      let failed = false;
+      const joinSeat = async (): Promise<CallToolResult> => {
+        // The key's check time, not the join's end: a join can wait (on its tick and the join record) past a rotation.
+        const keyCheckedAt = game.wallClock();
+        const identityId = await slot.identityOf(key);
+        // The lobby seating this identity holds the slot but is not seated here yet; nothing touches an older seat.
+        if (identityId !== undefined && await game.lobbyLoading(identityId)) {
+          return errorResult("lobby_loading", "Your lobby holds this slot, but this server has not loaded it yet.",
+            `Call join again with the same key${seat === undefined ? "" : " and seat"} after retryAfterMs; your seat is kept.`, null, { retryAfterMs: LOBBY_LOADING_RETRY_MS });
+        }
+        const held = identityId === undefined ? 0 : game.seatsHeld(identityId);
+        if (held > 1 && seat === undefined) {
+          failed = true;
+          return adapterRefusal(game, session, "join", "seat_required", `This key holds ${held} seats in this lobby's match, each played from its own session.`,
+            `Call join with key and seat, a number from 1 to ${held}; join each seat from a separate session.`);
+        }
+        if (held > 0 && seat !== undefined && !(Number.isSafeInteger(seat) && seat >= 1 && seat <= held)) {
+          failed = true;
+          return adapterRefusal(game, session, "join", "no_such_seat", `This key holds ${held === 1 ? "one seat" : `${held} seats`} in this lobby's match; seat ${cutChars(String(seat), 20)} is not one of them.`,
+            held === 1 ? "Leave seat out, or send seat 1." : `Use a seat number from 1 to ${held}.`);
+        }
+        const joined = identityId === undefined ? null : await game.joinSeated(identityId, modelLabel, seat ?? 1, thinkingLevel, serviceTier);
+        if (joined === null) {
+          failed = true;
+          return adapterRefusal(game, session, "join", "not_seated", "That key is not seated in the lobby this server is playing.",
+            "Call locate_match with your lobby id and join at the mcpUrl it returns, with the key of an identity seated in that lobby.");
+        }
+        const { outcome } = joined;
+        // Re-checked by verifier while the session plays (guardKeyAdmission); the key itself is not kept.
+        const admission = slot.holderOfVerifier === undefined ? undefined
+          : { identityId: identityId!, verifier: keyVerifier(key), checkedAt: keyCheckedAt };
+        // A join that finished KEY_RECHECK_MS or more after its key was checked binds only if the key is still current.
+        if (admission !== undefined && !await keyStillHeld(game, slot, admission)) {
+          // That key's own earlier binding in this session ends with it; a binding by another key stays.
+          if (session.admission?.verifier === admission.verifier) unbindSession(session);
+          failed = true;
+          return keyRevoked();
+        }
+        // An ended lobby seat remains identifiable even when its key rejoin hits the rate limit.
+        if (joined.agentId !== null && outcome.kind === "error" &&
+          (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId, admission);
+        if (outcome.kind === "error" || joined.agentId === null) return viewResult(game, joined.config, outcome);
+        bindSession(game, session, joined.agentId, admission);
+        // A join by a current key starts the count again.
+        session.failedJoins = 0;
+        const nest = nestFields(game, joined.agentId, true);
+        const base = { agentId: joined.agentId, briefing: joinBriefing(joined.config, game.mcpConfig, "nestSelection" in nest, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId) }) };
+        if (outcome.kind === "queued") {
+          return payload({ ...base, ...nest, matchStarts: startText(outcome.nextStart), message: "Your lobby's match has not started; you are seated in it. Call observe until it starts." });
+        }
+        const { view } = outcome;
+        if (view.result !== null) return viewResult(game, joined.config, outcome);
+        return pagedView(game, joined.config, view, false, { ...base, colony: view.colonyName, squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
+      };
+      // A join in flight counts toward the limit until it answers, so concurrent joins cannot pass it together.
+      session.joinsInFlight = (session.joinsInFlight ?? 0) + 1;
+      try {
+        return await joinSeat();
+      } finally {
+        session.joinsInFlight = (session.joinsInFlight ?? 1) - 1;
+        if (failed) session.failedJoins = (session.failedJoins ?? 0) + 1;
       }
-      if (held > 0 && seat !== undefined && !(Number.isSafeInteger(seat) && seat >= 1 && seat <= held)) {
-        return adapterRefusal(game, session, "join", "no_such_seat", `This key holds ${held === 1 ? "one seat" : `${held} seats`} in this lobby's match; seat ${cutChars(String(seat), 20)} is not one of them.`,
-          held === 1 ? "Leave seat out, or send seat 1." : `Use a seat number from 1 to ${held}.`);
-      }
-      const joined = identityId === undefined ? null : await game.joinSeated(identityId, modelLabel, seat ?? 1, thinkingLevel, serviceTier);
-      if (joined === null) {
-        return adapterRefusal(game, session, "join", "not_seated", "That key is not seated in the lobby this server is playing.",
-          "Call locate_match with your lobby id and join at the mcpUrl it returns, with the key of an identity seated in that lobby.");
-      }
-      const { outcome } = joined;
-      // Re-checked by verifier while the session plays (guardKeyAdmission); the key itself is not kept.
-      const admission = slot.holderOfVerifier === undefined ? undefined
-        : { identityId: identityId!, verifier: keyVerifier(key), checkedAt: keyCheckedAt };
-      // A join that finished KEY_RECHECK_MS or more after its key was checked binds only if the key is still current.
-      if (admission !== undefined && !await keyStillHeld(game, slot, admission)) {
-        // That key's own earlier binding in this session ends with it; a binding by another key stays.
-        if (session.admission?.verifier === admission.verifier) unbindSession(session);
-        return keyRevoked();
-      }
-      // An ended lobby seat remains identifiable even when its key rejoin hits the rate limit.
-      if (joined.agentId !== null && outcome.kind === "error" &&
-        (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId, admission);
-      if (outcome.kind === "error" || joined.agentId === null) return viewResult(game, joined.config, outcome);
-      bindSession(game, session, joined.agentId, admission);
-      const nest = nestFields(game, joined.agentId, true);
-      const base = { agentId: joined.agentId, briefing: joinBriefing(joined.config, game.mcpConfig, "nestSelection" in nest, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId) }) };
-      if (outcome.kind === "queued") {
-        return payload({ ...base, ...nest, matchStarts: startText(outcome.nextStart), message: "Your lobby's match has not started; you are seated in it. Call observe until it starts." });
-      }
-      const { view } = outcome;
-      if (view.result !== null) return viewResult(game, joined.config, outcome);
-      return pagedView(game, joined.config, view, false, { ...base, colony: view.colonyName, squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
     },
   );
 
