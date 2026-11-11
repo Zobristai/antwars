@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Worker as NodeWorker } from "node:worker_threads";
 import { deflateRawSync } from "node:zlib";
 import { afterEach, expect, it, vi } from "vitest";
-import { decodeMessage, encodePublicMessage } from "../../src/live/format.ts";
+import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
 import { Frame, Playback } from "../../web/src/buffer.ts";
 import { Ants } from "../../web/src/ants.ts";
@@ -10,7 +10,7 @@ import { Texture, type Particle, type Renderer } from "pixi.js";
 import { Waiting } from "../../web/src/waiting.ts";
 import { INBOX_CAP } from "../../web/src/inbox.ts";
 import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/intake.ts";
-import { openSource, RECORD_FACTS_LIMITS } from "../../web/src/source.ts";
+import { openSource } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
@@ -262,124 +262,11 @@ it("keeps incremental replay precedence, bounded catch-up and the recording cloc
     // A full read-ahead queue has not observed EOF yet; draining admits the final read.
     await vi.waitFor(() => expect(source.recording!.complete).toBe(true));
     expect(source.lastTick).toBe(messages.at(-1)!.tick);
-    // The rating-record read starts with the recording; its failure leaves the recording's figures, and the stored record
-    // is read once more, in full, to type the replay (recordedMatchFacts) beside the end-tick read.
-    expect(paths.slice(0, 2)).toEqual(["/watch/ratings/2026-10-21T00-00-00-000Z-1", "/replays/2026-10-21T00-00-00-000Z-1"]);
-    expect(paths.slice(2).sort()).toEqual(["/matches/2026-10-21T00-00-00-000Z-1", "/matches/2026-10-21T00-00-00-000Z-1"]);
+    // The rating-record read starts with the recording; its failure leaves the recording's figures.
+    expect(paths).toEqual(["/watch/ratings/2026-10-21T00-00-00-000Z-1", "/replays/2026-10-21T00-00-00-000Z-1", "/matches/2026-10-21T00-00-00-000Z-1"]);
     expect(reject).not.toHaveBeenCalled();
   } finally { source.close(); }
 });
-
-// A replay with no lobby link: its opening snapshot's rated flag and Model Index marker, the seats that join after it,
-// and its stored record (GET /matches/<id>), readable or not.
-// "unavailable" is a readable record with no setup and no seats; "blank handle" a rated record with one seat handle blank.
-// "timed out" never sends a byte; "too large" never ends. Each read of those is stopped at its bound (storedReadsStopped),
-// cancelled by the reader or ended by its request's abort, as fetch ends a body.
-type Opening = { rated: boolean; modelIndex: boolean; handles: readonly string[];
-  record: "readable" | "unreadable" | "unavailable" | "blank handle" | "timed out" | "too large" };
-const stoppedReads = new Set<ReadableStream>();
-let storedReadsStopped = 0;
-const MIB = new Uint8Array(1024 * 1024);
-const endlessRecord = (record: "timed out" | "too large", signal?: AbortSignal | null) => {
-  const stopped = () => { if (!stoppedReads.has(body)) { stoppedReads.add(body); storedReadsStopped++; } };
-  const body: ReadableStream<Uint8Array> = new ReadableStream<Uint8Array>({
-    start: controller => signal?.addEventListener("abort", () => { stopped(); controller.error(signal.reason); }, { once: true }),
-    pull: controller => { if (record === "too large") controller.enqueue(MIB); else return new Promise<void>(() => undefined); },
-    cancel: stopped,
-  }, { highWaterMark: 0 });
-  return new Response(body);
-};
-const PHASE = ["Harness: rounds 1-7", "Possible effort mismatch"], UNKNOWN = ["Harness phase unknown"];
-const replayWith = (answered: boolean, opening: Opening) => {
-  const id = "2026-10-26T01-38-33-692Z-1";
-  const [first, second, ...rest] = packets.map(decodeMessage);
-  const setup = { ...first!.full!.setup, rated: opening.rated, houseIdleTicks: 600, ...(opening.modelIndex ? { modelIndex: true as const } : {}) };
-  const joins = opening.handles.map((displayName, agent) =>
-    ({ kind: "join" as const, agent, colony: (agent % 2) as 0 | 1, modelLabel: "", identity: { displayName, elo: 1500 } }));
-  const replayPackets = [{ ...first!, full: { ...first!.full!, setup, agents: [] } }, { ...second!, events: [...joins, ...second!.events] }, ...rest]
-    .map(m => encodePublicMessage(m));
-  const record = { format: "antwar.match", version: 1, id, result: { tick: messages.at(-1)!.tick - 1 },
-    setup: { rated: opening.rated, ...(opening.modelIndex ? { modelIndex: true } : {}) },
-    seats: opening.handles.map((name, seat) => ({ seat, colony: seat % 2, modelLabel: null,
-      handle: opening.record === "blank handle" && seat === 0 ? null : name.replace(/ #\d+$/, "") })) };
-  const stored = opening.record === "unavailable" ? { ...record, status: "unavailable", setup: null, seats: [] } : record;
-  storedReadsStopped = 0;
-  vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
-    if (path.startsWith("/watch/ratings/")) return answered
-      ? Response.json({ ratings: [], harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } })
-      : new Response(null, { status: 404 });
-    if (path.startsWith("/matches/")) {
-      if (opening.record === "timed out" || opening.record === "too large") return endlessRecord(opening.record, options?.signal);
-      return opening.record === "unreadable" ? new Response(null, { status: 500 }) : Response.json(stored);
-    }
-    return new Response(new Uint8Array(packMessages(replayPackets)));
-  }));
-  return openSource(new URLSearchParams({ replay: id }), { now: () => 0 }, documentPort().doc, vi.fn());
-};
-/** Plays the whole recording, then seeks back to its start, before any seat joined. */
-async function playThenSeekBack(source: NonNullable<Awaited<ReturnType<typeof openSource>>>) {
-  let at = 0;
-  await vi.waitFor(() => { source.take(at += 1000); expect(source.recording!.complete).toBe(true); });
-  source.recording!.seek(0);
-  for (let i = 0; i < 50 && source.recording!.seeking; i++) { await new Promise(resolve => setImmediate(resolve)); source.take(at += 16); }
-  expect(source.recording!.seeking).toBe(false);
-}
-const legacy: Opening = { rated: true, modelIndex: false, handles: ["antwars/a #1", "antwars/b"], record: "readable" };
-
-it.each([
-  ["the server's phase when its stored record answers", true, { rated: true, modelIndex: false, handles: [], record: "unreadable" }, ["Harness: rounds 26-30"]],
-  ["the recording's own Model Index marker and start", false, { rated: true, modelIndex: true, handles: [], record: "unreadable" }, PHASE],
-  ["no phase for a rated recording whose stored record has another seat handle", false,
-    { rated: true, modelIndex: false, handles: ["antwars/a", "alice/bot"], record: "readable" }, []],
-  ["no phase for an unrated recording", false, { rated: false, modelIndex: false, handles: ["antwars/a", "antwars/b"], record: "unreadable" }, []],
-] as const)("a replay's harness phase: %s, from the first frame and after a seek back", async (_, answered, opening: Opening, expected) => {
-  const source = (await replayWith(answered, opening))!;
-  try {
-    await vi.waitFor(() => expect(source.harnessPhase).toEqual(expected));
-    await playThenSeekBack(source);
-    expect(source.harnessPhase).toEqual(expected);
-  } finally { source.close(); }
-});
-
-it("types a lobby-less recording without the marker from its stored record, as the Matches listing does: its phase from the first frame, kept after a seek back", async () => {
-  const source = (await replayWith(false, legacy))!;
-  try {
-    // No seat has joined yet: the first frame shows the phase, or unknown while the stored record is read, never none.
-    expect([PHASE, UNKNOWN]).toContainEqual(source.harnessPhase);
-    // The stored record decides with nothing played.
-    await vi.waitFor(() => expect(source.harnessPhase).toEqual(PHASE));
-    expect(source.recording!.stats.messages).toBeGreaterThan(0);
-    await playThenSeekBack(source);
-    expect(source.harnessPhase).toEqual(PHASE);
-  } finally { source.close(); }
-});
-
-it.each(["unreadable", "unavailable", "blank handle"] as const)("reads unknown for that recording when its stored record is %s, from the first frame and after a seek back", async record => {
-  const source = (await replayWith(false, { ...legacy, record }))!;
-  try {
-    expect(source.harnessPhase).toEqual(UNKNOWN);
-    await playThenSeekBack(source);
-    // Both reads of the stored record (end tick, then type) have answered, and the label stays.
-    await vi.waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([path]) => String(path).startsWith("/matches/"))).toHaveLength(2));
-    await new Promise(resolve => setImmediate(resolve));
-    expect(source.harnessPhase).toEqual(UNKNOWN);
-  } finally { source.close(); }
-});
-
-it.each(["timed out", "too large"] as const)("bounds the read that types a replay: a stored record that has %s reads unknown, from the first frame and after a seek back", async record => {
-  // Only the read's time limit is shortened (a minute to 50 ms); its size limit is the real one.
-  const timeout = AbortSignal.timeout.bind(AbortSignal);
-  vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => timeout(ms === RECORD_FACTS_LIMITS.timeoutMs ? 50 : ms));
-  const source = (await replayWith(false, { ...legacy, record }))!;
-  try {
-    expect(source.harnessPhase).toEqual(UNKNOWN);
-    await playThenSeekBack(source);
-    // Both reads of the stored record (end tick, then type) were cut off at their bounds, and the label stays.
-    await vi.waitFor(() => expect(storedReadsStopped).toBe(2), { timeout: 10_000 });
-    await new Promise(resolve => setImmediate(resolve));
-    expect(source.harnessPhase).toEqual(UNKNOWN);
-  } finally { source.close(); }
-}, 20_000);
 
 it("all three renderer paths adopt prepared live arrivals and choose buffering from the resolved source", () => {
   const page = readFileSync(new URL("../../web/src/main.ts", import.meta.url), "utf8");
@@ -433,10 +320,7 @@ it.each([false, true])("explicit replay source preserves route authorization and
         expect(call.options).toMatchObject({ redirect: "error", credentials: "same-origin", referrerPolicy: "no-referrer" });
       }
     }
-    // A public replay's stored record: its end-tick read, and its full read once the stored ratings give no answer.
-    // A private recording's is never read.
-    expect(calls.filter(c => c.path === `/matches/${id}`)).toHaveLength(privateReplay ? 0 : 2);
-    for (const call of calls.filter(c => c.path === `/matches/${id}`)) expect(call.options).toMatchObject({ credentials: "omit", redirect: "error" });
+    expect(calls.filter(c => c.path === `/matches/${id}`)).toHaveLength(privateReplay ? 0 : 1);
     // An invite marks the match private: nothing to share.
     expect(source.share).toBeNull();
   } finally { source.close(); }
