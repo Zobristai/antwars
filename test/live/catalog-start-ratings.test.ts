@@ -136,4 +136,50 @@ describe("Live now ratings", () => {
     await vi.waitFor(async () => expect(await colonies(id)).toBeUndefined());
     expect(await colonies(next)).toEqual([[seat("alice", after)], [seat("carol", fresh)]]);
   });
+
+  it("keep the earlier match's start figures in the next match when the earlier slot restarts inside its delay", async () => {
+    const { docs, store } = memoryWatchStore();
+    for (const [key, name] of [["a", "alice"], ["b", "bob"], ["c", "carol"]]) docs.set(`identities/${key}`, { displayName: name });
+    holdMatch(docs, id, "run"); holdMatch(docs, next, "run");
+    let now = 1_000_000;
+    const ratings = createRatings(store), registry = createWatchRegistry(store, { now: () => now });
+    const serving = new Map([["public-0", "run"], ["public-1", "run"]]);
+    const lobbies = new Map([[id, { slot: "public-0", colonies: [[{ id: "a", displayName: "alice" }], [{ id: "b", displayName: "bob" }]] }],
+      [next, { slot: "public-1", colonies: [[{ id: "a", displayName: "alice" }], [{ id: "c", displayName: "carol" }]] }]]);
+    const lobby = (key: string) => ({ id: key, kind: "public", size: 1, rated: true, mode: "1v1", createdAt: 0, startsAt: 0, ...lobbies.get(key)!,
+      state: key === id ? "ended" : "holding", outcome: key === id ? "colony_0_won" : null });
+    const accounts = { ratings, lobbies: {
+      readLobby: async (key: string) => lobbies.has(key) ? { ok: true, value: lobby(key) } : { ok: false, reason: "no_such_lobby" },
+      listPublic: async () => [], resolveSlot: async (slot: string) => ({ runId: serving.get(slot) }), isInviteCurrent: async () => false,
+    } } as unknown as AccountStores;
+    const handle = watchRoutes({ accounts, registry, hub: new LiveHub() });
+    const server = createServer((req, res) => void handle(req, res));
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    cleanup.push(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
+    const catalog = async () => (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/watch/catalog`)).json();
+    const colonies = async (lobbyId: string) => (await catalog()).matches.find((match: { lobbyId: string }) => match.lobbyId === lobbyId)?.colonies;
+    const seat = (displayName: string, rating: { rating: number; rd: number; ratedMatches: number }) => ({ displayName, modelLabel: null, ...rating });
+    const fresh = { rating: 1500, rd: 350, ratedMatches: 0 };
+    const register = (lobbyId: string, startedAt: number, seatRatings: Record<string, { rating: number; rd: number; ratedMatches: number }>) =>
+      registry.register({ lobbyId, visibility: "public", rated: true, mode: "1v1", startedAt, origin: "http://127.0.0.1:9001", slot: lobbies.get(lobbyId)!.slot, runId: "run", seatRatings });
+
+    // Alice's first match is listed with her start figures, then ends and is rated.
+    await register(id, 1000, { a: fresh, b: fresh });
+    expect((await ratings.applyResult({ matchId: id, teams: [["a"], ["b"]], winner: "a" })).status).toBe("applied");
+    const after = await ratings.readRating("a", "1v1");
+    expect(after.rating).toBeGreaterThan(1500);
+    // Her next 1v1 match starts on another slot with her new figures; then the first match's slot restarts inside its delay.
+    await register(next, 2000, { a: after, c: fresh });
+    serving.set("public-0", "run-restarted"); docs.set("instances/public-0", { runId: "run-restarted" });
+    expect(await colonies(id)).toBeUndefined();
+    for (const wait of [0, 150_000, 149_999]) {
+      now += wait;
+      expect(await colonies(next)).toEqual([[seat("alice", fresh)], [seat("carol", fresh)]]);
+    }
+
+    // Once the first match's delay has passed since its slot restarted, the next match shows its own start figures.
+    now += 1;
+    expect(await colonies(next)).toEqual([[seat("alice", after)], [seat("carol", fresh)]]);
+    expect(docs.has(`watchPublic/${id}`)).toBe(false);
+  });
 });

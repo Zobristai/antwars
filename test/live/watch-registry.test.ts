@@ -181,8 +181,10 @@ describe("stale public listing sweep", () => {
   const lobbyAt = (docs: Map<string, Record<string, string>>, lobbyId: string, state: string, slot: string, runId: string) =>
     docs.set(`lobbies/${lobbyId}`, { state, slot, matchRunId: runId });
 
-  it("removes only listings whose slot serves another run and whose lobby no longer holds the slot", async () => {
-    const { docs, store } = memory(); const registry = createWatchRegistry(store);
+  it("removes only listings whose slot serves another run and whose lobby no longer holds the slot, after their delay", async () => {
+    const { docs, store } = memory();
+    let now = 1_000_000;
+    const registry = createWatchRegistry(store, { now: () => now });
     const [ended, handingOver, delayed, unserved] = [1, 2, 3, 4].map(lobbyN) as [string, string, string, string];
     await registry.register({ ...match, lobbyId: ended, startedAt: 1 });
     lobbyAt(docs, ended, "ended", "", "run-one"); // Finished or released, and its run is gone from the slot.
@@ -192,6 +194,13 @@ describe("stale public listing sweep", () => {
     lobbyAt(docs, delayed, "ended", "", "run-two"); // Released, its delayed playback still on the slot's current run.
     await registry.register({ ...match, lobbyId: unserved, startedAt: 4, slot: "public-1" }); // No instance ever registered.
     serving(docs, "public-0", "run-two");
+    // A stale listing is kept for its spectator delay after it is first found stale, then removed.
+    for (const wait of [0, 299_999]) {
+      now += wait;
+      expect((await registry.publicMatches()).map(row => row.lobbyId)).toEqual([ended, handingOver, delayed, unserved]);
+      expect(docs.get(`watchPublic/${ended}`)?.sweptAt).toBe("1000000");
+    }
+    now += 1;
     expect((await registry.publicMatches()).map(row => row.lobbyId)).toEqual([handingOver, delayed, unserved]);
     expect(docs.has(`watchPublic/${ended}`)).toBe(false);
     expect(await registry.read(ended)).toMatchObject({ lobbyId: ended, runId: "run-one", playbackFinished: false });
@@ -214,8 +223,9 @@ describe("stale public listing sweep", () => {
 
   it("sweeps each page before the read limit fails, so a backlog over 1,000 clears over repeated calls", async () => {
     const { docs, store } = memory(); const registry = createWatchRegistry(store);
+    // House matches have no spectator delay, so their stale listings go as soon as they are found.
     for (let n = 1; n <= 1150; n++) {
-      await registry.register({ ...match, lobbyId: lobbyN(n), startedAt: n });
+      await registry.register({ ...match, mode: "house-1v1", lobbyId: lobbyN(n), startedAt: n });
       lobbyAt(docs, lobbyN(n), "ended", "", "run-one");
     }
     const live = lobbyN(1151);

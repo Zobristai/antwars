@@ -199,7 +199,8 @@ export function watchRoutes(options: {
  * the model label its slot published for it once it joined (null otherwise), and, in a ranked mode, a rating stored before
  * a match started (registry seatRatings), never a current one. An identity seated in several unfinished matches of one
  * mode shows, in each, the figures stored for the earliest-started of them, so no match shows a rating another unfinished
- * match moved; none where that match stored none. listed is every unfinished public match, oldest first, shown or not.
+ * match moved; none where that match stored none. listed is every unfinished public match, oldest first, shown or not,
+ * including one whose slot restarted while its result could still be inside its delay (WatchRegistry.publicMatches).
  * Both colonies empty when a lobby is gone.
  */
 async function matchPlayers(accounts: AccountStores, listed: readonly WatchMatch[], shown: ReadonlySet<string>): Promise<Map<string, PublicColonies>> {

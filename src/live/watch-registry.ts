@@ -1,7 +1,7 @@
 import type { Fields, Store, Write } from "../store/firestore.js";
 import type { RankedMode, Rating } from "../rating/ratings.js";
 import type { CatalogMatch } from "./match-catalog.js";
-import { captureMatchAccess, type MatchAccess } from "./match-access.js";
+import { captureMatchAccess, spectatorDelaySeconds, type MatchAccess } from "./match-access.js";
 import { isReplayId } from "../replays/access.js";
 
 /** Original serving process stays attached to this match even when its slot is reused. */
@@ -39,7 +39,10 @@ export interface WatchRegistry {
    * page's stale listings are swept as it is read, before the read limit can throw, so a backlog clears over
    * calls. A listing is stale when its slot's registered instance is another run and its lobby no longer holds that
    * slot: no handover can resume it, and the catalog, which lists only the slot's current run, never shows it again.
-   * Only the listing row is deleted; the match's own row stays readable.
+   * A stale listing is still returned, and kept, for its spectator delay after it is first found stale: its lobby had
+   * already ended then, so any result it has is out of its delay by the end of that hold, and until then the catalog
+   * still counts the match when choosing which start ratings to show (watch-routes matchPlayers). Only the listing row
+   * is deleted; the match's own row stays readable.
    */
   publicMatches(): Promise<readonly WatchMatch[]>;
   /**
@@ -121,16 +124,28 @@ function isStale(match: WatchMatch, listed: Fields | null | undefined, held: Fie
     !(held?.state === "holding" && held.slot === match.slot);
 }
 
-export function createWatchRegistry(store: Store): WatchRegistry {
-  /** Deletes the candidates' listings that are still stale, rechecked in this write's own transaction; returns their lobby ids. */
+/** now defaults to Date.now; tests pass a manual clock. */
+export function createWatchRegistry(store: Store, options: { now?: () => number } = {}): WatchRegistry {
+  const now = options.now ?? Date.now;
+  /**
+   * Of the candidates' listings still stale, rechecked in this write's own transaction: each first found stale is marked
+   * with that time (sweptAt), and each whose spectator delay has passed since then is deleted; returns the deleted lobby ids.
+   */
   async function sweep(candidates: readonly WatchMatch[]): Promise<ReadonlySet<string>> {
     if (candidates.length === 0) return new Set();
     return store.transaction<ReadonlySet<string>>(async read => {
       const docs = await read([...new Set(candidates.flatMap(match => [listing(match.lobbyId), lobby(match.lobbyId), instance(match.slot)]))]);
-      const stale = candidates.filter(match =>
-        isStale(match, docs.get(listing(match.lobbyId)), docs.get(lobby(match.lobbyId)), docs.get(instance(match.slot))));
-      const writes: Write[] = stale.map(match => ({ op: "delete", path: listing(match.lobbyId) }));
-      return { result: new Set(stale.map(match => match.lobbyId)), writes };
+      const at = now(), removed = new Set<string>(), writes: Write[] = [];
+      for (const match of candidates) {
+        const listed = docs.get(listing(match.lobbyId));
+        if (!isStale(match, listed, docs.get(lobby(match.lobbyId)), docs.get(instance(match.slot)))) continue;
+        const sweptAt = /^\d+$/.test(listed!.sweptAt ?? "") ? Number(listed!.sweptAt) : at;
+        if (at >= sweptAt + spectatorDelaySeconds(match) * 1000) {
+          removed.add(match.lobbyId);
+          writes.push({ op: "delete", path: listing(match.lobbyId) });
+        } else if (listed!.sweptAt !== String(sweptAt)) writes.push({ op: "update", path: listing(match.lobbyId), fields: { sweptAt: String(sweptAt) } });
+      }
+      return { result: removed, writes };
     });
   }
   async function update(lobbyId: string, runId: string, fields: Fields, listed: "keep" | "remove" | "update" = "keep"): Promise<boolean> {
