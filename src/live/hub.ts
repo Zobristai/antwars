@@ -32,6 +32,7 @@ import { SpectatorRecorder, SpectatorState, type RecorderResume, type SpectatorP
 import { ReplayRecording } from "../replays/recording.js";
 import type { RecordHandoff } from "../records/handoff.js";
 import type { ReplayStore } from "../replays/store.js";
+import type { StartRating } from "../replays/history.js";
 import type { Activity } from "../slots/activity.js";
 import { headerLine } from "../sim/log.js";
 import { admitMatchWatch, captureMatchAccess, isHouseMatch, spectatorDelaySeconds, type MatchAccess, type CurrentInvite } from "./match-access.js";
@@ -79,6 +80,11 @@ export interface LiveHubOptions {
   /** Each record of a match as it reaches delayed playback, with the agents spectators see at that point. */
   readonly onReleased?: (access: MatchAccess, agents: readonly StreamAgent[]) => void;
   readonly onReplaySaved?: (access: MatchAccess, replayId: string) => void;
+  /**
+   * Each seat's rating as read before the match started, by stream display name, for its private record input only:
+   * never sent on the stream. Read at match end; undefined or a missing seat means none is known.
+   */
+  readonly startRatings?: (access: MatchAccess) => Readonly<Record<string, StartRating>> | undefined;
   /** null means the match's actual rating transaction has not committed yet; retain the final tick. */
   readonly resultRatings?: (access: MatchAccess, agents: readonly StreamAgent[]) => Promise<readonly StreamRatingChange[] | null>;
   /** The slot server's outstanding work; omitted means nothing holds a server up. */
@@ -348,7 +354,9 @@ class MatchStream {
     if (out.state.result !== null) {
       this.ended = true;
       this.endedAt = this.hub.clock.now();
-      this.recording?.ended(this.endedAt, { publishAfter: this.endedAt + this.delayMs, rated: out.state.result.reason === "abandoned" ? false : this.access?.rated ?? false });
+      const startRatings = this.access === undefined ? undefined : this.hub.startRatings?.(this.access);
+      this.recording?.ended(this.endedAt, { publishAfter: this.endedAt + this.delayMs, rated: out.state.result.reason === "abandoned" ? false : this.access?.rated ?? false,
+        ...(startRatings === undefined ? {} : { startRatings }) });
     }
     this.queue.push(rec);
     if (this.access) this.releaseAt.set(rec, this.hub.clock.now() + spectatorDelaySeconds(this.access) * 1000);
@@ -551,6 +559,7 @@ export class LiveHub {
   readonly privateReplayStore: LiveHubOptions["privateReplayStore"];
   readonly recordHandoff: RecordHandoff | undefined;
   readonly resultRatings: LiveHubOptions["resultRatings"];
+  readonly startRatings: LiveHubOptions["startRatings"];
   readonly activity: Activity | undefined;
   private readonly requireMatchAccess: boolean;
   private readonly currentInvite: CurrentInvite;
@@ -578,6 +587,7 @@ export class LiveHub {
     this.privateReplayStore = options.privateReplayStore;
     this.recordHandoff = options.recordHandoff;
     this.resultRatings = options.resultRatings;
+    this.startRatings = options.startRatings;
     this.activity = options.activity;
     this.requireMatchAccess = options.requireMatchAccess === true;
     this.currentInvite = options.currentInvite ?? (async () => false);

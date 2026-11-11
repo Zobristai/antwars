@@ -514,8 +514,8 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     closers.push(() => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }));
     const body = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/watch/queue`)).json() as { lobbies: Body[] };
     expect(body.lobbies.map((row) => Object.keys(row))).toEqual([
-      ["mode", "size", "seated", "colonies", "waitingSeconds"],
-      ["mode", "size", "seated", "colonies", "waitingSeconds", "challenge"],
+      ["mode", "size", "seated", "colonies", "ratings", "seats", "waitingSeconds", "since"],
+      ["mode", "size", "seated", "colonies", "ratings", "seats", "waitingSeconds", "since", "challenge"],
     ]);
     expect(body.lobbies[1]).toMatchObject({ mode: null, size: 1, seated: 1, colonies: [[], [builder.displayName]], challenge: "house" });
     expect(JSON.stringify(body)).not.toContain(lobbyId);
