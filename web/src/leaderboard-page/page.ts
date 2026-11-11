@@ -1,9 +1,8 @@
-import { loadLeaderboard, type LeaderboardMode, type LeaderboardPage, type LeaderboardQuery, type LeaderboardRow } from "../leaderboard.ts";
+import { loadLeaderboard, type LeaderboardMode, type LeaderboardQuery, type LeaderboardRow } from "../leaderboard.ts";
 import { storeFeatureEnabled } from "../store-capabilities.ts";
 import { mountLeaderboard, type LeaderboardView } from "../pages/leaderboard.ts";
-import { BASELINE_TABLE, CHALLENGE, CHALLENGE_RANKING, OPENING_MODE, challengeRows, type BoardChoice } from "../pages/model.ts";
+import { CHALLENGE, CHALLENGE_RANKING, OPENING_MODE, challengeRows, type BoardChoice } from "../pages/model.ts";
 import { loadChallengeOpponents } from "./challenge.ts";
-import { baselineTable } from "../../../src/rating/vanillaBaseline.ts";
 import { C } from "./copy.ts";
 import { loadRanking, type RankingView } from "./view.ts";
 
@@ -14,10 +13,6 @@ const CHOICES: readonly { readonly mode: LeaderboardMode; readonly size: Size; r
   ...SIZES.map(size => ({ mode: size, size, house: false })),
   ...SIZES.map(size => ({ mode: `house-${size}` as const, size, house: true })),
 ];
-
-/** The vanilla baseline as one complete page: computed once, on first show. */
-let baseline: LeaderboardPage | undefined;
-const readBaseline = async (): Promise<LeaderboardPage> => (baseline ??= { entries: baselineTable() });
 
 /**
  * The Leaderboard page (the Archive): this module owns the mode and each mode's rankings, the page
@@ -61,11 +56,7 @@ export function mountLeaderboardPage(doc: Document, win: Window, options: { requ
     mode = next; view = { mode, enabled, tables: [] };
     const chosen = CHOICES.find(entry => entry.mode === next)!;
     mounted = chosen.house
-      ? [
-        loadRanking({ title: `${C.houseModeTitle} · ${chosen.size}`, id: "aw-house-mode-ranking", load: read({ mode: next }) }, publish),
-        // The vanilla baseline is 1v1 only: the committed rounds 26-30 matches re-rated here, never read from the server.
-        ...(next === "house-1v1" ? [loadRanking({ title: C.baselineTitle, id: BASELINE_TABLE, load: readBaseline }, publish)] : []),
-      ]
+      ? [loadRanking({ title: `${C.houseModeTitle} · ${chosen.size}`, id: "aw-house-mode-ranking", load: read({ mode: next }) }, publish)]
       : [
         loadRanking({ title: `${C.houseTitle} · ${chosen.size} · ${C.houseModels}`, id: "aw-house-ranking", load: read({ mode: next, scope: "house" }) }, publish),
         loadRanking({ title: `${C.everyoneTitle} · ${chosen.size}`, id: "aw-everyone-ranking", load: read({ mode: next }) }, publish),
