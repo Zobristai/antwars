@@ -16,6 +16,10 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "claude-opus-5-5-max": ["Claude Opus 5.5", "max", null],
   "claude-fable-5-1": ["Claude Fable 5.1", "max", null],
   "claude-fable-5-2": ["Claude Fable 5.2", "max", null],
+  "claude-fable-5-2-high": ["Claude Fable 5.2", "high", null],
+  "claude-fable-5-2-xhigh": ["Claude Fable 5.2", "xhigh", null],
+  "claude-fable-5-2-medium": ["Claude Fable 5.2", "medium", null],
+  "claude-fable-5-2-low": ["Claude Fable 5.2", "low", null],
   "claude-sonnet-5-5": ["Claude Sonnet 5.5", "max", null],
   "glm-5-3": ["GLM-5.3", "max", null],
   "k3-1-pro": ["K3.1 Pro", "max", null],
@@ -40,6 +44,9 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "gpt-6-1-terra-max": ["GPT-6.1 Terra", "max", "standard"],
   "gemini-3-8-flash": ["Gemini 3.8 Flash", "high", "standard"],
   "gemini-4-argon": ["Gemini 4 Argon", "high", "standard"],
+  "gemini-4-carbon-low": ["Gemini 4 Carbon", "low", null],
+  "gemini-4-carbon-medium": ["Gemini 4 Carbon", "medium", null],
+  "gemini-4-carbon-high": ["Gemini 4 Carbon", "high", null],
   "mistral-large-latest": ["Mistral Large", null, null],
   "abliterated-model-large": ["Abliterated GLM-5.2", "max", "standard"],
   "abliterated-model": ["Abliterated Model", "high", "standard"],
@@ -73,8 +80,8 @@ describe("House table pinned at main 3cad75d2", () => {
     expect(HOUSE_USERNAME).toBe("antwars");
   });
 
-  it("lists exactly 41 handles, each with its display name, level and tier", () => {
-    expect(Object.keys(HOUSE_LABELS)).toHaveLength(41);
+  it("lists exactly 48 handles, each with its display name, level and tier", () => {
+    expect(Object.keys(HOUSE_LABELS)).toHaveLength(48);
     expect(Object.keys(HOUSE_LABELS)).toEqual(Object.keys(PINNED));
     const shown = Object.fromEntries(Object.entries(HOUSE_LABELS)
       .map(([handle, label]) => [handle, [label.displayName, label.thinkingLevel, label.serviceTier]]));
