@@ -42,10 +42,14 @@ function layFood(config: SimConfig, rngState: number): { food: number[]; rngStat
   const laid = layReferenceFood(reference, rngState);
   // Distribute whole food units over the original cell's fine footprint.
   // Mirrored cells use mirrored offsets, retaining exact integer resources.
+  // Ties fill the lower row first, left to right: a start ant at a reference tile's centre stands in its
+  // lower-left fine cell (colony 1 in the mirror), so opening ant-to-food distances are exactly the
+  // reference distances times the scale, and the scaled sight reaches the food reference sight reaches.
+  const order = (i: number) => (scale - 1 - Math.floor(i / scale)) * scale + i % scale;
   const offsets = Array.from({ length: scale * scale }, (_, i) => i).sort((a, b) => {
     const distance = (i: number) => (i % scale + 0.5 - scale / 2) ** 2 +
       (Math.floor(i / scale) + 0.5 - scale / 2) ** 2;
-    return distance(a) - distance(b) || a - b;
+    return distance(a) - distance(b) || order(a) - order(b);
   });
   for (let y = 0; y < reference.mapHeight; y++) for (let x = 0; x < reference.mapWidth / 2; x++) {
     const amount = laid.food[y * reference.mapWidth + x]!;

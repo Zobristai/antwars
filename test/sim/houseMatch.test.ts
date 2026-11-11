@@ -155,12 +155,14 @@ describe("the house bot with agents", () => {
       { type: "order", agentId: "a", order: { kind: "hold" } },
       { type: "order", agentId: "b", order: { kind: "hold" } },
     ]).state;
-    const held = new Map(s.ants.filter((a) => a.squad !== null).map((a) => [a.id, [a.x, a.y]]));
-    expect(held.size).toBe(12);
+    expect(s.ants.filter((a) => a.squad !== null)).toHaveLength(12);
+    // A squad ant already carrying food still takes it home under any order; every other held ant stays put.
+    const held = new Map(s.ants.filter((a) => a.squad !== null && !a.carrying).map((a) => [a.id, [a.x, a.y]]));
+    expect(held.size).toBeGreaterThan(0);
     for (let i = 0; i < 300; i += 1) {
       s = run(s, 1).state;
       for (const ant of s.ants) {
-        if (ant.squad !== null) expect([ant.x, ant.y]).toEqual(held.get(ant.id));
+        if (held.has(ant.id)) expect([ant.x, ant.y]).toEqual(held.get(ant.id));
       }
       for (const c of [0, 1] as const) {
         expect(s.ants.some((a) => a.colony === c && a.squad === null && (a.vx !== 0 || a.vy !== 0))).toBe(true);
