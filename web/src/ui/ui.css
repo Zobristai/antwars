@@ -45,6 +45,8 @@ html[data-d2-hud] #aw-match-status { top: var(--d2-notice-top, 124px); }
   grid-template-columns: var(--d2-gap) minmax(0, 1fr) var(--d2-gap) var(--d2-pane) var(--d2-gap);
   grid-template-rows: 8px var(--d2-plate-h) 6px minmax(0, 1fr) 6px var(--d2-foot) 8px;
 }
+/* From 1280 px the pane takes its widest, so every player's model and level fit on one line in its rows and card. */
+@media (min-width: 1280px) { .d2-hud { --d2-pane: 296px; } }
 .d2-hud[data-short] { --d2-foot: 28px; --d2-lane: 40px; --d2-tap: 32px; }
 body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibility: hidden; }
 .d2-score { grid-column: 2; grid-row: 2; position: relative; z-index: 3; display: flex; justify-content: center; min-width: 0; pointer-events: none; }
