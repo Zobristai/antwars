@@ -1,23 +1,36 @@
 import { readFileSync } from "node:fs";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { openRecording, PLAYBACK_RATES, type Recording } from "../../web/src/recording.ts";
-import { mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
+import { groupMarks, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
+import type { ReplayEvent } from "../../web/src/replay-events.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
 /** Only the external DOM port. Production Recording and all control handlers run unchanged. */
 class Element {
-  className = ""; textContent = ""; value = ""; type = ""; min = ""; max = ""; step = ""; disabled = false;
-  attrs: Record<string, string> = {}; children: Element[] = []; parent: Element | null = null;
+  className = ""; textContent = ""; value = ""; type = ""; min = ""; max = ""; step = ""; disabled = false; hidden = false; innerHTML = "";
+  attrs: Record<string, string> = {}; children: Element[] = []; parent: Element | null = null; style: Record<string, string> = {};
+  // Layout as the 3D deck's desktop row measures it (capture of the replay screen at 1280px).
+  offsetLeft = 111.4; offsetTop = 4; offsetWidth = 230.4; offsetHeight = 28; clientWidth = 419.7;
   onchange: (() => void) | null = null; oninput: (() => void) | null = null;
   onpointerdown: (() => void) | null = null; onpointerup: (() => void) | null = null;
   onpointercancel: (() => void) | null = null; onblur: (() => void) | null = null;
+  onclick: ((event: { detail: number }) => void) | null = null; onfocus: (() => void) | null = null;
+  onpointerenter: ((event: { pointerType: string }) => void) | null = null; onpointerleave: ((event: { pointerType: string }) => void) | null = null;
+  focused = false;
+  readonly classes = new Set<string>();
+  classList = { toggle: (name: string, on: boolean) => { if (on) this.classes.add(name); else this.classes.delete(name); } };
   constructor(readonly tagName: string) {}
-  append(...nodes: Element[]) { for (const n of nodes) { n.parent = this; this.children.push(n); } }
+  append(...nodes: Element[]) { for (const n of nodes) { n.parent?.children.splice(n.parent.children.indexOf(n), 1); n.parent = this; this.children.push(n); } }
+  replaceChildren(...nodes: Element[]) { this.children = []; this.append(...nodes); }
+  contains(node: Element | null): boolean { return node === this || this.children.some(c => c.contains(node)); }
+  focus() { this.focused = true; }
   setAttribute(k: string, v: string) { this.attrs[k] = v; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(n => n !== this); }
+  get text(): string { return this.textContent + this.children.map(c => c.text).join(""); }
 }
+const fakeDoc = () => ({ createElement: (tag: string) => new Element(tag), createTextNode: (text: string) => Object.assign(new Element("#text"), { textContent: text }) }) as unknown as Document;
 const packets = scale2Packets(45);
 const bytes = packMessages(packets);
 const active: Recording[] = [];
@@ -29,7 +42,7 @@ async function page() {
   active.push(recording);
   await recording.first;
   await vi.waitFor(() => expect(recording.duration).toBe(4400));
-  const doc = { createElement: (tag: string) => new Element(tag) } as unknown as Document;
+  const doc = fakeDoc();
   const status = new Element("div");
   const controls = mountReplayControls(doc, recording);
   status.append(controls.el as unknown as Element);
@@ -111,7 +124,7 @@ it("keeps speed usable while duration is loading or unavailable, but never offer
   });
   active.push(r);
   await r.first;
-  const doc = { createElement: (tag: string) => new Element(tag) } as unknown as Document;
+  const doc = fakeDoc();
   const status = new Element("div");
   const controls = mountReplayControls(doc, r);
   status.append(controls.el as unknown as Element);
@@ -128,4 +141,131 @@ it("keeps speed usable while duration is loading or unavailable, but never offer
   expect(label.children[0]!.disabled).toBe(false);
   r.take(0); r.take(100);
   expect(r.time).toBe(100);
+});
+
+// The real match on the signed-off drawing: the house 4v4 of 31 Oct 2026, 13:04 long, read with the marks' rules.
+const DRAWN: ReplayEvent[] = [
+  { kind: "fight", tick: 1338, ms: 133_800, colony: null },
+  { kind: "food", tick: 2050, ms: 205_000, colony: 0 },
+  { kind: "fight", tick: 5194, ms: 519_400, colony: null },
+  { kind: "fight", tick: 5537, ms: 553_700, colony: null },
+  { kind: "nest", tick: 7204, ms: 720_400, colony: 1 },
+  { kind: "nest", tick: 7275, ms: 727_500, colony: 1 },
+  { kind: "nest", tick: 7767, ms: 776_700, colony: 1 },
+  { kind: "nest", tick: 7841, ms: 784_100, colony: 1 },
+];
+const DRAWN_MS = 784_100;
+
+describe("marks on the scrubber", () => {
+  function marked(events: readonly ReplayEvent[] | null = DRAWN, position = 391_600) {
+    const seeks: number[] = [];
+    const recording = { rate: 1, duration: DRAWN_MS, position, error: null, durationError: null, seeking: false, events,
+      setRate() {}, seek(ms: number) { seeks.push(ms); } } as unknown as Recording;
+    const controls = mountReplayControls(fakeDoc(), recording);
+    const el = controls.el as unknown as Element;
+    const layer = el.children.find(c => c.className === "aw-marks");
+    const chip = el.children.find(c => c.className === "aw-mark-label");
+    const list = el.children.find(c => c.className === "aw-mark-list");
+    return { controls, el, layer, chip, list, seeks, marks: layer?.children ?? [] };
+  }
+
+  it("groups as drawn: desktop and phone tracks", () => {
+    const words = (groups: ReturnType<typeof groupMarks>) => groups.map(g => g.events.map(e => `${e.kind}@${replayTime(e.ms)}`).join(" "));
+    // 3D deck at 1280: a 230px slider, marks closer than 18px join.
+    expect(words(groupMarks(DRAWN, DRAWN_MS, 230.4, 18))).toEqual(["fight@2:13", "food@3:25", "fight@8:39 fight@9:13", "nest@12:00 nest@12:07 nest@12:56 nest@13:04"]);
+    // 2D board at 390: a 185px slider, marks closer than 28px join.
+    expect(words(groupMarks(DRAWN, DRAWN_MS, 184.7, 28))).toEqual(["fight@2:13 food@3:25", "fight@8:39 fight@9:13", "nest@12:00 nest@12:07 nest@12:56 nest@13:04"]);
+    // The thumb's travel: the first mark's centre 8px in, the last at the far end less 8px.
+    const at = groupMarks([DRAWN[0]!, DRAWN[7]!], DRAWN_MS, 230.4, 18);
+    expect(at[0]!.x).toBeCloseTo(8 + (133_800 / DRAWN_MS) * 214.4, 5);
+    expect(at[1]!.x).toBeCloseTo(222.4, 5);
+  });
+
+  it("draws nothing before the marks are read, and adds no control to the row", () => {
+    const m = marked(null);
+    expect(m.layer).toBeUndefined();
+    expect(m.el.children.map(c => c.tagName)).toEqual(["label", "input", "output", "span"]);
+  });
+
+  it("names each mark by kind, colony and time, and a group by its count and span", () => {
+    const m = marked();
+    expect(m.marks.map(b => b.attrs["aria-label"])).toEqual([
+      "Fight, 2:13", "Food lead, Very Large Colony, 3:25", "2 marks, 8:39 to 9:13", "4 marks, 12:00 to 13:04",
+    ]);
+    expect(m.marks.map(b => b.className)).toEqual(["aw-mark fight", "aw-mark food c0", "aw-mark group", "aw-mark group"]);
+    expect(m.marks.every(b => b.tagName === "button")).toBe(true);
+    expect(m.marks[3]!.attrs).toMatchObject({ "aria-haspopup": "menu", "aria-expanded": "false" });
+  });
+
+  it("jumps to a mark's exact time on click or tap and shows its label", () => {
+    const m = marked();
+    m.marks[1]!.onclick!({ detail: 1 });
+    expect(m.seeks).toEqual([205_000]);
+    expect(m.chip!.hidden).toBe(false);
+    expect(m.chip!.text).toBe("Food lead · Very Large Colony · 3:25");
+    m.controls.close();
+  });
+
+  it("shows the label on hover or focus without seeking, and hides it after", () => {
+    const m = marked();
+    m.marks[0]!.onfocus!();
+    expect(m.chip!.text).toBe("Fight · 2:13");
+    expect(m.seeks).toEqual([]);
+    m.marks[0]!.onblur!();
+    expect(m.chip!.hidden).toBe(true);
+  });
+
+  it("opens a group's list, jumps from a line, and closes it", () => {
+    const m = marked();
+    m.marks[3]!.onclick!({ detail: 0 }); // Enter on the focused group
+    expect(m.list!.hidden).toBe(false);
+    expect(m.list!.children[0]!.focused).toBe(true);
+    expect(m.marks[3]!.attrs["aria-expanded"]).toBe("true");
+    expect(m.list!.children.map(r => r.attrs["aria-label"])).toEqual([
+      "Nest lost, Lake Hodges Colony, 12:00", "Nest lost, Lake Hodges Colony, 12:07",
+      "Nest lost, Lake Hodges Colony, 12:56", "Nest lost, Lake Hodges Colony, 13:04",
+    ]);
+    m.list!.children[1]!.onclick!({ detail: 1 });
+    expect(m.seeks).toEqual([727_500]);
+    expect(m.list!.hidden).toBe(true);
+    expect(m.marks[3]!.attrs["aria-expanded"]).toBe("false");
+    expect(m.chip!.text).toBe("Nest lost · Lake Hodges Colony · 12:07");
+    m.controls.close();
+  });
+
+  it("opens a group's list when a mouse points at it, but not when a tap reports entering it", () => {
+    const m = marked();
+    m.marks[2]!.onpointerenter!({ pointerType: "touch" });
+    expect(m.list!.hidden).toBe(true);
+    m.marks[2]!.onclick!({ detail: 1 }); // the tap itself
+    expect(m.list!.hidden).toBe(false);
+    expect(m.list!.children[0]!.focused).toBe(false);
+    m.marks[2]!.onclick!({ detail: 1 });
+    expect(m.list!.hidden).toBe(true);
+    m.marks[2]!.onpointerenter!({ pointerType: "mouse" });
+    expect(m.list!.children).toHaveLength(2);
+    m.controls.close();
+  });
+
+  it("hides a mark under the thumb, where it is not a target", () => {
+    // Playback at 3:25: the food mark sits under the thumb; the others stay.
+    const m = marked(DRAWN, 205_000);
+    expect(m.marks.map(b => b.classes.has("is-under"))).toEqual([false, true, false, false]);
+  });
+});
+
+it("reads the marks only for explicit replays: a recording without controls makes no second request and has none", async () => {
+  let requests = 0;
+  const live = openRecording("/replay", undefined, async () => { requests++; return new Response(new Uint8Array(bytes)); });
+  active.push(live);
+  await live.first;
+  for (let i = 0; i < 20; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  expect(requests).toBe(1);
+  expect(live.events).toBeNull();
+  const replay = openRecording("/replay", undefined, async () => { requests++; return new Response(new Uint8Array(bytes)); },
+    { controls: true, endTick: async () => decodeMessage(packets.at(-1)!).tick });
+  active.push(replay);
+  await replay.first;
+  await vi.waitFor(() => expect(replay.events).not.toBeNull());
+  expect(requests).toBe(3);
 });

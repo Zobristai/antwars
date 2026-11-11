@@ -1,0 +1,68 @@
+/* The replay scrubber's marks (replay-controls.ts), shared by the 2D board, the 3D deck and the page without WebGL.
+   As the signed-off drawing: on the slider's track, under its thumb, inside today's row (its height unchanged); a
+   light diamond for a fight, a downward triangle in the losing colony's colour for a nest lost, a dot in the leading
+   colony's colour for the food lead; a counted mark for marks too close to tell apart. The label and a group's list
+   stand on the line over the row, ending left of the Seeking chip's place. Sizes below are the desktop's; the phone
+   layouts (2D narrow, deck under 560px) take the larger targets at the end. */
+.aw-replay-controls {
+  --aw-mark-gap: 18px; --aw-mark-size: 16px; --aw-mark-hit-w: 18px; --aw-mark-hit-h: 28px;
+  --aw-mark-count-width: 19px; --aw-mark-count-h: 14px; --aw-mark-count-font: 10px;
+  --aw-mark-chip-h: 20px; --aw-mark-font: 11px; --aw-mark-icon: 12px; --aw-mark-row: 28px; --aw-mark-list-w: 240px;
+  --aw-mark-sep: transparent; --aw-mark-reserve: 84px;
+}
+.aw-marks { position: absolute; z-index: 1; pointer-events: none; }
+.aw-mark {
+  position: absolute; top: 50%; display: grid; place-items: center; width: var(--aw-mark-hit-w); height: var(--aw-mark-hit-h);
+  margin: 0; padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer;
+  pointer-events: auto; transform: translate(-50%, -50%); -webkit-tap-highlight-color: transparent;
+}
+.aw-mark.is-under { visibility: hidden; pointer-events: none; }
+.aw-mark-glyph { display: block; width: var(--aw-mark-size); height: var(--aw-mark-size); overflow: visible; fill: currentColor; stroke: #121719; stroke-width: 1.6; stroke-linejoin: round; }
+.aw-mark-glyph * { vector-effect: non-scaling-stroke; }
+:is(.aw-mark, .aw-mark-icon).c0 { color: var(--aw-c0); }
+:is(.aw-mark, .aw-mark-icon).c1 { color: var(--aw-c1); }
+.aw-mark-count {
+  display: block; box-sizing: border-box; min-width: var(--aw-mark-count-width); height: var(--aw-mark-count-h); padding: 0 4px;
+  border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1.5px var(--aw-ink);
+  font-size: var(--aw-mark-count-font); font-weight: 700; line-height: var(--aw-mark-count-h); color: var(--aw-ink-bright);
+  text-align: center; font-variant-numeric: tabular-nums;
+}
+.aw-mark:focus { outline: none; }
+.aw-mark:focus-visible > *, .aw-mark[aria-expanded="true"] > * { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; border-radius: 999px; }
+.aw-mark-label, .aw-mark-list { position: absolute; z-index: 2; white-space: nowrap; font-size: var(--aw-mark-font); color: var(--aw-ink); }
+.aw-mark-label {
+  bottom: calc(100% + 4px); display: flex; align-items: center; gap: 6px; height: var(--aw-mark-chip-h); padding: 0 8px;
+  border-radius: 6px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); line-height: 16px; pointer-events: none;
+}
+.aw-mark-label[hidden], .aw-mark-list[hidden] { display: none; }
+.aw-mark-icon { display: block; flex: none; color: var(--aw-ink); }
+.aw-mark-icon .aw-mark-glyph { width: var(--aw-mark-icon); height: var(--aw-mark-icon); }
+.aw-mark-words b { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
+.aw-mark-colony.c0 { color: var(--aw-c0); }
+.aw-mark-colony.c1 { color: var(--aw-c1); }
+.aw-mark-list {
+  bottom: calc(100% + 6px); display: grid; box-sizing: border-box; min-width: var(--aw-mark-list-w); padding: 4px; border-radius: 10px;
+  background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.aw-mark-row {
+  display: flex; align-items: center; gap: 8px; height: var(--aw-mark-row); min-height: 0; margin: 0; padding: 0 8px; border: 0;
+  border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; white-space: nowrap; cursor: pointer;
+}
+.aw-mark-row + .aw-mark-row { box-shadow: inset 0 1px 0 var(--aw-mark-sep); }
+.aw-mark-row:is(:hover, :focus-visible) { outline: none; background: var(--aw-raise); }
+
+/* Phone: every mark or group a 28 x 44 target, marks closer than 28px joined, larger glyphs, chip and list lines. */
+.d2-hud[data-layout="narrow"] .aw-replay-controls {
+  --aw-mark-gap: 28px; --aw-mark-size: 20px; --aw-mark-hit-w: 28px; --aw-mark-hit-h: 44px;
+  --aw-mark-count-width: 26px; --aw-mark-count-h: 18px; --aw-mark-count-font: 11px;
+  --aw-mark-chip-h: 28px; --aw-mark-font: 12px; --aw-mark-icon: 20px; --aw-mark-row: 44px; --aw-mark-list-w: 250px;
+  --aw-mark-sep: rgba(233, 239, 240, 0.08);
+}
+@media (max-width: 559px) {
+  .d1 .aw-replay-controls {
+    --aw-mark-gap: 28px; --aw-mark-size: 20px; --aw-mark-hit-w: 28px; --aw-mark-hit-h: 44px;
+    --aw-mark-count-width: 26px; --aw-mark-count-h: 18px; --aw-mark-count-font: 11px;
+    --aw-mark-chip-h: 28px; --aw-mark-font: 12px; --aw-mark-icon: 20px; --aw-mark-row: 44px; --aw-mark-list-w: 250px;
+    --aw-mark-sep: rgba(233, 239, 240, 0.08);
+  }
+}

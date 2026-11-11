@@ -3,6 +3,7 @@ import { decodeMessage, type StreamMessage } from "../../src/live/format.ts";
 import { TICK_MS } from "../../src/live/snapshot.ts";
 import type { Arrival } from "./inbox.ts";
 import { RENDER_DELAY_MS } from "./buffer.ts";
+import { ReplayEventScan, type ReplayEvent } from "./replay-events.ts";
 
 export const RECORDING_AHEAD = 20;
 export const MAX_RECORDING_MESSAGE_BYTES = 4 * 1024 * 1024;
@@ -78,6 +79,9 @@ export interface Recording {
   readonly position: number;
   readonly rate: PlaybackRate;
   readonly seeking: boolean;
+  /** The scrubber's marks (replay-events.ts), from one read of the whole recording; null until that read has
+   * finished, and always null without controls. */
+  readonly events: readonly ReplayEvent[] | null;
   /** Changes synchronously on seek; consumers rebuild their derived playback state. */
   readonly generation: number;
   setRate(rate: PlaybackRate): void;
@@ -113,6 +117,8 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   let closed = false;
   let error: Error | null = null;
   let durationError: string | null = null;
+  let events: readonly ReplayEvent[] | null = null;
+  let scanned = false;
   let time = 0;
   let real: number | null = null;
   let deliveredAt = 0;
@@ -121,18 +127,18 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   let seekTo: number | null = null;
   const notify = () => { changed?.(); changed = null; };
   const duration = () => firstTick === null || endTick === null ? null : (endTick - firstTick) * TICK_MS;
-  // Duration discovery retains no messages or boards. Missing/private/legacy history
-  // falls back to a cancellable streaming scan, independent of playback backpressure.
-  const discoverEnd = async () => {
+  // One read of the whole recording, beside playback, for the scrubber's marks; it also settles the end when the
+  // stored record has none (missing/private/legacy history, or a record too large to read for it). It retains no
+  // messages or boards, only the marks, and yields every 100 messages. A failed read leaves the marks absent.
+  const scanWhole = async () => {
     try {
-      const known = await options.endTick?.(lifetime.signal).catch(() => null);
-      if (closed || endTick !== null) return;
-      if (known !== undefined && known !== null && Number.isSafeInteger(known) && known >= firstTick!) {
-        endTick ??= known;
-        return;
-      }
+      // A short recording's EOF has already settled its end; only an unknown end asks the stored record.
+      const known = endTick === null ? await options.endTick?.(lifetime.signal).catch(() => null) : null;
+      if (closed) return;
+      if (endTick === null && known !== undefined && known !== null && Number.isSafeInteger(known) && known >= firstTick!) endTick = known;
       const response = await request(url, { signal: lifetime.signal });
       if (!response.ok || !response.body) throw new Error("Replay duration unavailable; playback can continue.");
+      const scan = new ReplayEventScan();
       let previous: number | null = null;
       let count = 0;
       for await (const { message: m } of recordingMessages(response.body, lifetime.signal)) {
@@ -141,14 +147,22 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
           throw new Error("Recording ticks are not continuous.");
         }
         previous = m.tick;
+        scan.push(m);
         // A cached response must also yield to input and rendering.
         if (++count % 100 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
       }
       if (previous === null) throw new Error("Recording is empty.");
-      if (!closed) endTick = previous;
+      if (closed) return;
+      endTick ??= previous;
+      events = scan.events();
     } catch (cause) {
-      if (!closed) durationError = cause instanceof Error ? cause.message : String(cause);
+      if (!closed && endTick === null) durationError = cause instanceof Error ? cause.message : String(cause);
     }
+  };
+  const startScan = () => {
+    if (scanned || !options.controls) return;
+    scanned = true;
+    void scanWhole();
   };
   const pump = async (version: number, signal: AbortSignal) => {
     try {
@@ -169,6 +183,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
             if (previous === null) throw new Error("Recording is empty.");
             done = true;
             endTick = newestTick;
+            startScan();
             break;
           }
           const { bytes } = next.value;
@@ -190,9 +205,8 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
             resolveFirst(m);
             if (m.full?.result) endTick = m.full.result.tick + 1;
           }
-          // Short recordings reach EOF without any second request. Discover an
-          // end independently only when the normal reader reaches backpressure.
-          if (stats.messages === RECORDING_AHEAD && options.controls && endTick === null) void discoverEnd();
+          // The marks' read starts once playback has its first two seconds in hand (or at a short recording's EOF).
+          if (stats.messages === RECORDING_AHEAD) startScan();
         }
       } finally { await messages.return(undefined); }
       if (firstTick === null) throw new Error("Recording is empty.");
@@ -212,6 +226,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     get error() { return error; },
     get duration() { return duration(); },
     get durationError() { return durationError; },
+    get events() { return events; },
     get position() { return Math.min(duration() ?? Infinity, Math.max(0, time - RENDER_DELAY_MS)); },
     get rate() { return rate; },
     get seeking() { return seekTo !== null; },

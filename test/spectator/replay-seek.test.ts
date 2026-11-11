@@ -75,36 +75,39 @@ it("seeks forward, back from a result, to zero and to EOF with the same recorded
   // per target, not the seeks. The harness limit, not an assertion, is raised.
 }, 30_000);
 
-it("uses known duration without a scan, and falls back only when metadata is unavailable", async () => {
+it("uses a known duration at once, and reads the whole recording once for the marks, which also settles an unknown end", async () => {
   const request = vi.fn<typeof fetch>(async () => new Response(stream()));
   const known = open(async () => first.tick + 64, request);
   await known.first;
   await vi.waitFor(() => expect(known.duration).toBe(6400));
-  expect(request).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(known.events).not.toBeNull());
+  expect(request).toHaveBeenCalledTimes(2);
   const unknown = open(async () => { throw new Error("History missing"); }, request);
   await unknown.first;
   await vi.waitFor(() => expect(unknown.duration).toBe(6400));
-  expect(request).toHaveBeenCalledTimes(3);
-  // setup.matchTicks is not the actual end, and EOF scanning does not drain the playback queue.
+  expect(request).toHaveBeenCalledTimes(4);
+  // setup.matchTicks is not the actual end, and the whole-recording read does not drain the playback queue.
   expect(unknown.duration).not.toBe(first.full!.setup.matchTicks * 100);
   expect(unknown.stats.bufferedMessages).toBe(RECORDING_AHEAD);
   expect(unknown.complete).toBe(false);
 });
 
-it("cancels stale seeks, blocked reads and a duration scan on close", async () => {
-  const signals: AbortSignal[] = [];
+it("cancels stale seeks, blocked reads and the whole-recording read on close", async () => {
+  const signals: { url: string; signal: AbortSignal }[] = [];
   let canceled = 0;
-  let requests = 0;
-  const request: typeof fetch = async (_url, options) => {
-    signals.push(options!.signal!);
-    const index = requests++;
-    if (index === 1) return new Response(new ReadableStream<Uint8Array>({ cancel() { canceled++; } }));
+  let playbackReads = 0;
+  // Playback reads and the marks' read share one URL; the marks' read is the one made with the recording's lifetime
+  // signal, after playback has its first two seconds. The second playback read (the first seek) blocks.
+  const request: typeof fetch = async (url, options) => {
+    signals.push({ url: String(url), signal: options!.signal! });
+    if (signals.length === 2) return new Response(stream()); // the marks' read
+    if (++playbackReads === 2) return new Response(new ReadableStream<Uint8Array>({ cancel() { canceled++; } }));
     return new Response(stream());
   };
   const r = open(undefined, request);
-  // Explicit undefined selects the metadata default; force scan in the separate reader below.
   await r.first;
   await vi.waitFor(() => expect(r.duration).toBe(6400));
+  await vi.waitFor(() => expect(signals).toHaveLength(2));
   r.seek(6000); // blocked reopened stream
   await turn();
   r.seek(100);
@@ -113,18 +116,20 @@ it("cancels stale seeks, blocked reads and a duration scan on close", async () =
   expect(r.error).toBeNull();
   expect(r.seeking).toBe(false);
   expect(r.position).toBe(100);
-  expect(signals[0]!.aborted).toBe(true);
-  expect(signals[1]!.aborted).toBe(true);
+  expect(signals[0]!.signal.aborted).toBe(true); // the first playback read
+  expect(signals[2]!.signal.aborted).toBe(true); // the blocked seek
+  expect(signals[1]!.signal.aborted).toBe(false); // the marks' read outlives seeks
   expect(canceled).toBe(1);
+  let reads = 0;
   const scan = open(async () => null, async (_url, options) => {
-    signals.push(options!.signal!);
-    return requests++ === 3 ? new Response(stream()) : new Response(new ReadableStream<Uint8Array>({ cancel() { canceled++; } }));
+    signals.push({ url: "/scan", signal: options!.signal! });
+    return reads++ === 0 ? new Response(stream()) : new Response(new ReadableStream<Uint8Array>({ cancel() { canceled++; } }));
   });
   await scan.first;
-  await turn();
+  await vi.waitFor(() => expect(reads).toBe(2));
   scan.close();
   await turn();
-  expect(signals.at(-1)!.aborted).toBe(true);
+  expect(signals.at(-1)!.signal.aborted).toBe(true);
   expect(canceled).toBe(2);
 });
 

@@ -85,7 +85,8 @@ it.each(["replay", "replay="])("%s waits for complete discovery, then plays and 
   expect(source.lastTick).toBe(frame.tick);
   expect(modeCopy("replay", 4, true, "/", source.storedId).detail).toBe("· recording ended");
   expect(reject).not.toHaveBeenCalled();
-  expect(paths).toEqual(["/matches", "/matches?pageToken=last", `/watch/ratings/${newest}`, `/replays/${newest}`]);
+  // The second read of the recording is the scrubber marks' (recording.ts); the end was settled at EOF.
+  expect(paths).toEqual(["/matches", "/matches?pageToken=last", `/watch/ratings/${newest}`, `/replays/${newest}`, `/replays/${newest}`]);
 });
 
 it("complete empty history shows a status and back link, not an error or bundled recording", async () => {
