@@ -30,7 +30,8 @@ import {
  * Names are published as the public Waiting view shows them (live/queue-catalog.ts): a released owner's placeholder,
  * which embeds its owner id, becomes a fixed name, so the plan holds no identity id.
  *
- * Any failed check refuses the whole plan: the reason is logged and PLAN_PATH says only "refused".
+ * Any failed check refuses the whole plan: PLAN_PATH says only "refused", and the log says only that it refused (a stored
+ * value can be malformed, so no error text is logged).
  * CORRECTION_MARKER is created by the apply in the same transaction as these writes: { planDigest, appliedAt }.
  * While it exists nothing is planned.
  */
@@ -178,9 +179,17 @@ async function neverJoinedPart(store: Store, v: Verification, names: Map<string,
   const writes: Write[] = firestoreWrites(v, new Date(at));
   for (const id of v.identities) names.set(id, names.get(id) ?? await currentName(store, id, at) ?? refuse(`unknown identity ${id}`));
   const unrated = v.identities.map(id => shown(names.get(id)!));
-  const changes = JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!) as RatingChange[];
+  // Served as built here, from checked values only: each change's player must be the lobby's and its ratings finite numbers.
+  const stored = JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!) as unknown[];
+  const ratingChanges = stored.map(change => {
+    const { identityId, before, after } = (change ?? {}) as Record<string, unknown>;
+    if (typeof identityId !== "string" || !v.identities.includes(identityId) || !Number.isFinite(before) || !Number.isFinite(after)) {
+      refuse(`${NEVER_JOINED.lobbyId}: unreadable rating change`);
+    }
+    return { handle: shown(names.get(identityId as string)!), before: before as number, after: after as number };
+  });
   const matches: PublicPlan["matches"][number][] = [{ match: NEVER_JOINED.replayId, startedAt: new Date(Number(v.snapshot.get(`lobbies/${NEVER_JOINED.lobbyId}`)!.startsAt)).toISOString(),
-    before: { status: "rated", seats: unrated, ratingChanges: changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after })) },
+    before: { status: "rated", seats: unrated, ratingChanges },
     after: { status: "abandoned, unrated", seats: unrated, ratingChanges: [] } }];
   const ratings: PublicPlan["ratings"][number][] = v.identities.map(id => ({ handle: shown(names.get(id)!), mode: v.mode!,
     before: standing(id, v.snapshot.get(`${ratingCollection(v.mode!)}/${id}`)), after: null }));
@@ -209,10 +218,16 @@ export const NEVER_JOINED_APPLY_DIGEST = "placeholder: not yet set, matches no p
 export type ApplyOutcome = "applied" | "digest differs" | "changed since planned";
 
 /**
- * Applies the never-joined plan only when its digest is `digest`: one transaction re-reads every document its checks
- * read, and the generation of both recording objects, and commits its writes only while every one is as planned.
- * Otherwise it writes nothing. The recording itself is never rewritten. The writes create the correction record
- * (ratingCorrections/<lobbyId>), so a later plan reads the correction as applied and writes it once.
+ * Applies the never-joined plan only when its digest is `digest`. One transaction re-reads every document its checks read
+ * and commits its writes only while every one is unchanged; otherwise it writes nothing.
+ *
+ * The recording: the writes depend on it only through what the checks read from it (which colony never joined), and
+ * each object was read at one generation, whose content never changes; the correction record names both generations.
+ * Before committing, the transaction also checks that both objects are still at those generations, and writes nothing
+ * if not. Cloud Storage is not part of the transaction, so an object replaced after that check and before the commit is
+ * not detected: the correction is then still the one its record names. The recording itself is never rewritten.
+ * The writes create the correction record (ratingCorrections/<lobbyId>), so a later plan reads the correction as
+ * applied and writes it once.
  */
 export async function applyNeverJoined(store: Store, recordings: RecordingObjects, plan: NeverJoinedPlan, digest = NEVER_JOINED_APPLY_DIGEST): Promise<ApplyOutcome> {
   if (plan.summary.digest !== digest) return "digest differs";
@@ -375,8 +390,8 @@ export function startCorrectionPlan(store: Store, recordings: RecordingObjects, 
   let current: PlanState = { state: "computing" };
   void (async () => {
     let plan: NeverJoinedPlan | "applied";
-    try { plan = await planNeverJoined(store, recordings); } catch (error) {
-      console.warn(`antwar rating correction plan refused: ${error instanceof Error ? error.message : String(error)}`);
+    try { plan = await planNeverJoined(store, recordings); } catch {
+      console.warn("antwar rating correction plan refused");
       current = { state: "refused" };
       return;
     }
@@ -388,8 +403,8 @@ export function startCorrectionPlan(store: Store, recordings: RecordingObjects, 
       const outcome = await applyNeverJoined(store, recordings, plan, applyDigest);
       if (outcome === "applied") current = { state: "applied" };
       console.info(`antwar rating correction ${outcome === "applied" ? "applied" : `not applied: ${outcome}`}`, { digest: plan.summary.digest, writes: plan.writes.length });
-    } catch (error) {
-      console.warn(`antwar rating correction apply failed: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      console.warn("antwar rating correction apply failed");
     }
   })();
   return {

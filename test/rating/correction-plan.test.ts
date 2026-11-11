@@ -386,6 +386,74 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     }
   });
 
+  it("commits from the recording generations its checks read, and names them, when an object is replaced after the check", async () => {
+    const w = await world();
+    const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+    const record = `${NEVER_JOINED.replayId}.json`;
+    // The record object is replaced just after the transaction checks its generation, before the commit.
+    let replaced = false;
+    const replacing: RecordingObjects = { ...w.recordings, async generation(name) {
+      if (replaced && name === record) return "2";
+      const generation = await w.recordings.generation(name);
+      if (name === record) replaced = true;
+      return generation;
+    } };
+    expect(await applyNeverJoined(w.store, replacing, plan, plan.summary.digest)).toBe("applied");
+    expect(await replacing.generation(record)).toBe("2");
+    // The correction is the one its record names: the generations whose content the checks read.
+    const { binary, record: checked } = plan.verification.recording!;
+    expect(await w.store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`)).toMatchObject({ binaryGeneration: binary.generation, recordGeneration: checked.generation });
+    expect(checked.generation).toBe("1");
+  });
+
+  it("serves a rating change only as a checked handle and two finite ratings; anything else refuses and writes nothing", async () => {
+    const path = `ratedMatches/${NEVER_JOINED.lobbyId}`;
+    for (const value of ["1500<b>", { rating: 1500 }, null, undefined, [1500]]) {
+      const w = await world();
+      const [info, warn] = quiet();
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as Record<string, unknown>[];
+      changes[0] = { ...changes[0], before: value };
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } }]);
+      const before = await w.snapshot();
+      const { serve, body } = await started(w.store, w.recordings);
+      expect(body()).toEqual({ state: "refused" });
+      expect(served(serve).body).toBe('{"state":"refused"}');
+      expect(await w.snapshot()).toEqual(before);
+      info.mockRestore(); warn.mockRestore();
+    }
+  });
+
+  it("logs a fixed message, never the error, when the plan refuses or the apply fails", async () => {
+    const malformed = "zz-malformed-rating-value";
+    const logged = (spies: ReturnType<typeof quiet>) => JSON.stringify(spies.flatMap(spy => spy.mock.calls));
+    {
+      // A malformed stored rating: decoding it throws an error that quotes it.
+      const w = await world();
+      await commit(w.store, [{ op: "update", path: `${ratingCollection("1v1")}/${w.users[1]}`, fields: { rating: malformed } }]);
+      await expect(planNeverJoined(w.store, w.recordings)).rejects.toThrow(malformed);
+      const spies = quiet();
+      const { body } = await started(w.store, w.recordings);
+      expect(body()).toEqual({ state: "refused" });
+      expect(spies[1]!.mock.calls).toEqual([["antwar rating correction plan refused"]]);
+      expect(logged(spies)).not.toContain(malformed);
+      spies.forEach(spy => spy.mockRestore());
+    }
+    {
+      // The apply's transaction throws an error that quotes a stored value.
+      const w = await world();
+      const plan = await planNeverJoined(w.store, w.recordings) as NeverJoinedPlan;
+      const spies = quiet();
+      // Once the plan is logged, every transaction (the apply's) throws.
+      const applying = () => spies[0]!.mock.calls.some(([line]) => line === "antwar rating correction plan");
+      const failing: Store = { ...w.store, transaction: step => applying() ? Promise.reject(new Error(`commit failed: ${malformed}`)) : w.store.transaction(step) };
+      const { body } = await started(failing, w.recordings, plan.summary.digest);
+      expect(body().state).toBe("planned");
+      expect(spies[1]!.mock.calls).toEqual([["antwar rating correction apply failed"]]);
+      expect(logged(spies)).not.toContain(malformed);
+      spies.forEach(spy => spy.mockRestore());
+    }
+  });
+
   it("applies once under the matching digest; a second start serves applied and writes nothing", async () => {
     const w = await world();
     const [info, warn] = quiet();
