@@ -72,18 +72,40 @@ export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPa
 }
 
 /**
- * The lookup with each replay id's settled answer cached, so the handle fill and the match type share one store read: a
- * recording's lobby never changes, so a found lobby and no lobby are kept. A failed lookup (a throw) and "pending" are not,
- * and are looked up again on a later listing. Concurrent callers share one in-flight lookup.
+ * How long an answer that can still change is kept before it is looked up again: no lobby, and a lobby whose match has no
+ * recorded outcome yet. A slot publishes a match's registration and replay link through a retrying queue, and records its
+ * outcome when it releases the slot, so a recording can be listed before either has landed. Kept for good, such an answer
+ * would hold the row's handles, type and rated flag (recordingRated) at the record's own until the server restarts.
  */
-export function cachedLobbyLookup(lookup: RecordingLobbyLookup): RecordingLobbyLookup {
-  const cache = new Map<string, Promise<RecordingLobby | null | "pending">>();
+export const UNSETTLED_LOBBY_MS = 60_000;
+
+export interface CachedLobbyLookupOptions {
+  /** How long an answer that can still change is kept (UNSETTLED_LOBBY_MS); 0 keeps none. */
+  readonly unsettledMs?: number;
+  readonly now?: () => number;
+}
+
+/**
+ * The lookup with each replay id's answer cached, so the handle fill and the match type share one store read. A found lobby
+ * with its match's outcome is final and kept. No lobby (a scheduled match, or a lobby match whose registration has not yet
+ * published) and a lobby with no outcome yet are kept for unsettledMs, then looked up again on a later listing. A failed
+ * lookup (a throw) and "pending" are not kept. Concurrent callers share one in-flight lookup.
+ */
+export function cachedLobbyLookup(lookup: RecordingLobbyLookup, options: CachedLobbyLookupOptions = {}): RecordingLobbyLookup {
+  const unsettledMs = options.unsettledMs ?? UNSETTLED_LOBBY_MS, now = options.now ?? Date.now;
+  const cache = new Map<string, { readonly work: Promise<RecordingLobby | null | "pending">; until: number }>();
   return replayId => {
     const hit = cache.get(replayId);
-    if (hit) return hit;
-    const forget = () => { if (cache.get(replayId) === work) cache.delete(replayId); };
-    const work = lookup(replayId).then(lobby => { if (lobby === "pending") forget(); return lobby; });
-    cache.set(replayId, work);
+    if (hit && hit.until > now()) return hit.work;
+    const forget = () => { if (cache.get(replayId) === entry) cache.delete(replayId); };
+    const work = lookup(replayId).then(lobby => {
+      if (lobby === "pending") forget();
+      else if (lobby === null || lobby.outcome == null) entry.until = now() + unsettledMs;
+      return lobby;
+    });
+    // In flight: shared until it settles, whatever its answer.
+    const entry = { work, until: Infinity };
+    cache.set(replayId, entry);
     work.catch(forget);
     return work;
   };
@@ -171,6 +193,8 @@ const RECORD_IDLE_MS = 30_000;
 export interface HistoryRouteOptions {
   /** Longest a record download may go without handing the client a chunk; past it the download is dropped. */
   readonly recordIdleMs?: number;
+  /** How long a lobby answer that can still change is kept (cachedLobbyLookup); defaults to UNSETTLED_LOBBY_MS. */
+  readonly unsettledLobbyMs?: number;
 }
 
 /**
@@ -185,7 +209,7 @@ export interface HistoryRouteOptions {
 export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLookup,
   options: HistoryRouteOptions = {}): MountHandler {
   const recordIdleMs = options.recordIdleMs ?? RECORD_IDLE_MS;
-  const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies);
+  const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies, { unsettledMs: options.unsettledLobbyMs });
   const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
   const types = recordingMatchTypes(cached);
   return async (req, res) => {
