@@ -14,7 +14,7 @@ import { GAME_SAVE_FORMAT, type GameSave, type SavedAgentRecord, type StartGameS
 import { finishedStart, LobbyStart, type FinishedStart } from "./lobbyStart.js";
 import type { RankedMode } from "../rating/ratings.js";
 import { captureCells, cellOffset, type CellSnapshot } from "./cellPages.js";
-import { HOUSE_START_PICK_WINDOW_MS, startPickWindowMsFor, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
+import { startPickWindowMsFor, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
 import { agentsPerColony, DEFAULT_MCP_CONFIG, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { keepsStub, replyLine, stubLine, STUBS_PER_WINDOW, textLine, type ReplyEntry, type StubCall } from "../replays/recording.js";
 import type { ServedText } from "./replies.js";
@@ -319,13 +319,8 @@ export class Game {
    * cannot grow the record; calls beyond it are stubs.
    */
   private readonly heldFull = new Map<string, { readonly seq: number; count: number }>();
-  /** The pre-match allowance of full entries: the recording budget's rate over the countdown, a poll and the nest pick. */
-  private readonly preMatchFullEntries: number;
-  /**
-   * The pre-match bound on held stubs: the stub rule's rate (STUBS_PER_WINDOW a second) over the same period, so a stuck
-   * or held start holds a fixed number of stubs and the calls past it only raise the closing stub's omitted count.
-   */
-  private readonly preMatchStubs: number;
+  /** The countdown plus one slot poll before a seat's nest pick opens; with the lobby's window, its pre-match period. */
+  private readonly preStartMs: number;
   private replyFailureReported = false;
   /** Per seat, the answer times of its calls recorded in full in the last second: its recording budget (recordsInFull). */
   private readonly recordedTimes = new Map<string, number[]>();
@@ -396,10 +391,7 @@ export class Game {
     this.houseIdleSeconds = houseIdleSecondsOf(this.mcpConfig);
     this.now = options.now ?? Date.now;
     this.startPickWindowMs = options.startPickWindowMs;
-    // The allowance covers the longest window a lobby on this server can open.
-    const preMatchMs = (options.preStartMs ?? 0) + (options.startPickWindowMs ?? HOUSE_START_PICK_WINDOW_MS);
-    this.preMatchFullEntries = Math.floor(this.mcpConfig.callsPerSecond * preMatchMs / 1000);
-    this.preMatchStubs = Math.floor(STUBS_PER_WINDOW * preMatchMs / 1000);
+    this.preStartMs = options.preStartMs ?? 0;
     this.onLogLine = options.onLogLine ?? (() => {});
     this.onInputQueued = options.onInputQueued ?? (() => {});
     this.onReply = options.onReply ?? (() => {});
@@ -1179,11 +1171,24 @@ export class Game {
     return this.now();
   }
 
+  /** The pre-match allowance of full entries: the recording budget's rate over the countdown, a poll and the seated lobby's nest pick. */
+  private preMatchFullEntries(): number {
+    return Math.floor(this.mcpConfig.callsPerSecond * (this.preStartMs + this.nestWindowMs()) / 1000);
+  }
+
+  /**
+   * The pre-match bound on held stubs: the stub rule's rate (STUBS_PER_WINDOW a second) over the same period, so a stuck
+   * or held start holds a fixed number of stubs and the calls past it only raise the closing stub's omitted count.
+   */
+  private preMatchStubs(): number {
+    return Math.floor(STUBS_PER_WINDOW * (this.preStartMs + this.nestWindowMs()) / 1000);
+  }
+
   /** Whether the seat may still record a full entry before match seq begins: fewer than preMatchFullEntries so far. */
   private preMatchAllows(seq: number, agentId: string): boolean {
     let held = this.heldFull.get(agentId);
     if (held === undefined || held.seq !== seq) this.heldFull.set(agentId, held = { seq, count: 0 });
-    return held.count < this.preMatchFullEntries;
+    return held.count < this.preMatchFullEntries();
   }
 
   /**
@@ -1194,7 +1199,7 @@ export class Game {
   private holdStub(seq: number, agentId: string, call: StubCall): void {
     let seat = this.heldStubs.get(agentId);
     if (seat === undefined || seat.seq !== seq) this.heldStubs.set(agentId, seat = { seq, kept: [], omitted: 0, last: null, held: 0 });
-    if (seat.held >= this.preMatchStubs - 1 || !keepsStub(seat, call.answeredAt)) {
+    if (seat.held >= this.preMatchStubs() - 1 || !keepsStub(seat, call.answeredAt)) {
       seat.omitted += 1;
       seat.last = { tool: call.tool, receivedAt: call.receivedAt, answeredAt: call.answeredAt, code: call.code };
       return;
