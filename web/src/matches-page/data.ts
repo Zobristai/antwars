@@ -63,6 +63,9 @@ const waitingLobby = z.object({
   colonies: z.tuple([z.array(z.string().min(1)), z.array(z.string().min(1))]),
   // Each seated name's rating, in the order of colonies; absent from a server that sends none.
   ratings: z.tuple([z.array(shownRating), z.array(shownRating)]).optional().catch(undefined),
+  // How many of its colony's seats each seated name holds, in the order of colonies; absent from a server that sends none,
+  // and read as one each where a count is malformed.
+  seats: z.tuple([z.array(z.number().int().min(1)), z.array(z.number().int().min(1))]).optional().catch(undefined),
   waitingSeconds: z.number().int().nonnegative(),
   since: z.number().finite().optional(),
   // Present only on an unrated house challenge, which the Waiting card labels.

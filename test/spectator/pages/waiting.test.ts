@@ -3,7 +3,7 @@
 // narrow one. A waiting builder shows its username and rating; a house model its model, level and Fast.
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
-import { lobbyKind, waitingType } from "../../../web/src/pages/waiting.ts";
+import { lobbyKind, waitingPlayers, waitingType } from "../../../web/src/pages/waiting.ts";
 import type { MatchesView, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
@@ -102,10 +102,11 @@ describe("the Waiting card's lobby rows", () => {
 
   it("lists an identity holding several seats of a queued team pairing once in its colony, with how many", () => {
     const p = page();
-    const pairing: WaitingLobby = { mode: "4v4", size: 4, seated: 8, colonies: [["kite", "kite", "kite", "kite"], ["bob", "bob", "ann", "ann"]],
-      ratings: [[rating(1540), rating(1540), rating(1540), rating(1540)], [rating(1490), rating(1490), null, null]], waitingSeconds: 3, since: T };
-    const house: WaitingLobby = { mode: "house-4v4", size: 4, seated: 8, colonies: [Array(4).fill("antwars/gpt-6-luna"), Array(4).fill("antwars/glm-5-3")],
-      ratings: [Array(4).fill(rating(1979)), Array(4).fill(null)], waitingSeconds: 3, since: T };
+    // As the server sends them: each identity once per colony, with how many of its seats it holds.
+    const pairing: WaitingLobby = { mode: "4v4", size: 4, seated: 8, colonies: [["kite"], ["bob", "ann"]],
+      ratings: [[rating(1540)], [rating(1490), null]], seats: [[4], [2, 2]], waitingSeconds: 3, since: T };
+    const house: WaitingLobby = { mode: "house-4v4", size: 4, seated: 8, colonies: [["antwars/gpt-6-luna"], ["antwars/glm-5-3"]],
+      ratings: [[rating(1979)], [null]], seats: [[4], [4]], waitingSeconds: 3, since: T };
     p.mounted.update(view({ status: "ready", rows: [pairing, house] }));
     const counts = (row: number, colony: 0 | 1) => p.card().byClass("d1p-wide")[0]!.querySelectorAll("tr").filter(tr => tr.parent?.tag === "tbody")[row]!
       .byClass("c-model")[colony]!.byClass("d1p-model").map(line => [line.byClass("d1p-user")[0]?.textContent ?? line.byClass("d1p-mname")[0]?.textContent, line.byClass("d1p-count")[0]?.textContent ?? null]);
@@ -113,6 +114,8 @@ describe("the Waiting card's lobby rows", () => {
     expect(counts(0, 1)).toEqual([["bob", "×2, 2 seats"], ["ann", "×2, 2 seats"]]);
     expect(counts(1, 0)).toEqual([["GPT-6 Luna", "×4, 4 seats"]]);
     expect(counts(1, 1)).toEqual([["GLM-5.3", "×4, 4 seats"]]);
+    // A server that sends no counts shows each name once, one seat each.
+    expect(waitingPlayers(["kite"], undefined).map(line => line.seats)).toEqual([1]);
     // Each group keeps its rating badge once.
     expect(p.card().byClass("d1p-wide")[0]!.byClass("d1p-elo-badge").map(badge => badge.textContent)).toEqual(["1540 ± 80", "1490 ± 80", "1979 ± 80"]);
     p.mounted.destroy();

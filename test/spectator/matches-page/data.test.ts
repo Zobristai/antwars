@@ -332,7 +332,8 @@ describe("matches page data: the Waiting card's lobby rows", () => {
   const lobbies = [
     { mode: null, size: 2, seated: 3, colonies: [["ann", "cat"], ["bob"]], ratings: [[null, null], [{ rating: 1490, rd: 80, ratedMatches: 12 }]],
       waitingSeconds: 250, since: 3_000 },
-    { mode: "2v2", size: 2, seated: 4, colonies: [["fay"], ["gus"]], waitingSeconds: 3, since: 4_000 },
+    // A queue pairing: each identity once, holding both seats of its colony.
+    { mode: "2v2", size: 2, seated: 4, colonies: [["fay"], ["gus"]], seats: [[2], [2]], waitingSeconds: 3, since: 4_000 },
   ];
   const serve = (queue: () => unknown) => async (path: RequestInfo | URL) => new Response(JSON.stringify(
     path === "/watch/queue" ? queue() : path === "/watch/catalog" ? { matches: [] } : { matches: [], nextPageToken: null },

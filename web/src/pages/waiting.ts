@@ -56,9 +56,12 @@ export function waitingSeat(name: string, rating: ShownRating | null): SeatEntry
   return { who: name, parts, rating };
 }
 
-/** A colony's waiting seats as player lines (seatGroups): one identity holding several seats once, with ×N. */
-export function waitingPlayers(names: readonly string[], ratings: readonly (ShownRating | null | undefined)[] | undefined): SeatGroup[] {
-  return seatGroups(names.map((name, at) => waitingSeat(name, ratings?.[at] ?? null)));
+/** A colony's waiting seats as player lines (seatGroups): one identity holding several seats once, with ×N. The server lists
+ * each identity once per colony with how many seats it holds there (one each where it sends no count). */
+export function waitingPlayers(names: readonly string[], ratings: readonly (ShownRating | null | undefined)[] | undefined,
+  seats?: readonly number[]): SeatGroup[] {
+  return seatGroups(names.flatMap((name, at) =>
+    Array.from({ length: seats?.[at] ?? 1 }, () => waitingSeat(name, ratings?.[at] ?? null))));
 }
 
 /** A waiting row as the one row builder draws it. Its id is its place in the list: rows carry no public id. */
@@ -72,7 +75,7 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
   const full = row.seated >= 2 * row.size;
   const colony = (index: 0 | 1): ColonyCell => {
     const names = row.colonies[index];
-    const lines = waitingPlayers(names, row.ratings?.[index]);
+    const lines = waitingPlayers(names, row.ratings?.[index], row.seats?.[index]);
     const open = names.length < row.size && !full;
     const note = !open ? null : row.challenge === "house" && index === HELD_COLONY ? NOT_JOINED_YET : SEAT_OPEN;
     return { lines, result: null, note };
