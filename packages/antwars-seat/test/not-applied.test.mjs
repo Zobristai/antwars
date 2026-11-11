@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
-import { fakeClock, startFake } from "./fake-server.mjs";
+import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
@@ -29,7 +29,7 @@ async function joinedSeat(notApplied) {
   const printed = [];
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
   vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { printed.push(String(chunk)); return true; });
-  const cli = (...argv) => main(argv, { env, clock });
+  const cli = (...argv) => main(argv, { env, clock, readStat: freshShell() });
   expect(await cli("setup", "--handle", "antwars/test", "--key-name", KEY_NAME, "--mode", "house-1v1",
     "--model-label", "claude-opus-5-5", "--thinking-level", "max")).toBe(0);
   expect(await cli("go")).toBe(0);

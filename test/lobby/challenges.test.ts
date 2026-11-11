@@ -6,6 +6,7 @@ import { LAUNCHABLE_HANDLES } from "../../src/lobby/houseLaunchable.ts";
 import { createChallengeSteps, heldDays, type ChallengeLobbyRules, type ChallengeOutcome, type LaunchOutcome } from "../../src/lobby/challenges.ts";
 import { createLobbies, type LobbyOutcome, type LobbySettings } from "../../src/lobby/lobbies.ts";
 import { HOUSE_LABELS } from "../../src/rating/house.ts";
+import { newWaitToken } from "../../src/lobby/waits.ts";
 import { createFirestore, type Store } from "../../src/store/firestore.ts";
 
 /**
@@ -792,6 +793,26 @@ describe.skipIf(!host)("house challenge seated-elsewhere scan against the Firest
     // The injected joins committed: both resolved ok and their seats are stored.
     expect([joinedBetween, await seatedIn(w, made[1]!, other.id), await seatedIn(w, made[2]!, third.id)]).toEqual([true, true, true]);
   });
+
+  it("finds a seat in an open lobby older than a challenge lobby's lifetime, past the first page, while the seat pointer names a newer lobby", async () => {
+    const w = await world(at(12, 0), { challengeScanPageSize: 2 });
+    const caller = await w.claim("caller");
+    const host = async (name: string) => value(await w.main.createLobby((await w.claim(name)).key, "public", 2)).lobby.id;
+    const older = await host("older");
+    value(await w.main.join(older, caller.key)); // stays open for 12 hours
+    w.clock.t += 60_000;
+    await host("laterx");
+    await host("latery");
+    w.clock.t += 60_000;
+    const newer = await host("newer");
+    value(await w.main.join(newer, caller.key));
+    value(await w.main.leave(newer, caller.key));
+    expect((await w.raw(`lobbySeats/${caller.id}`))?.lobbyId).toBe(newer);
+    // The first page is the newer lobby and a later one from 29 minutes ago; the older lobby is on the second page.
+    w.clock.t = at(12, 30);
+    expect(reasonOf(await w.request(caller))).toBe("seated_elsewhere");
+    expect([await w.raw(`challengeChallengers/${caller.id}`), await w.raw(`challengeOwners/${caller.id}`)]).toEqual([null, null]);
+  });
 });
 
 describe("the house handle list", () => {
@@ -847,5 +868,157 @@ describe("the place a started challenge holds", () => {
 
   it("holds none, as before, when the house never took its seat and the lobby expired open", () => {
     expect(heldDays({ state: "open", createdAt: String(at(10, 0)), startsAt: "", seats: "[]" }, at(10, 0) + TTL, rules)).toEqual([]);
+  });
+});
+
+/** What a refused join must leave as it was: the caller's queue entry and seat pointer, the 1v1 waiting list, a lobby and every wait record. */
+async function joinState(w: World, identityId: string, lobbyId: string) {
+  const store = storeFor(w.namespace);
+  return {
+    entry: await w.raw(`queueEntries/${identityId}`),
+    seatPointer: await w.raw(`lobbySeats/${identityId}`),
+    waiting: await w.raw("queueWaiting/1v1"),
+    lobby: await w.raw(`lobbies/${lobbyId}`),
+    waits: (await store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 500 })).rows,
+  };
+}
+
+describe.skipIf(!host)("queue and lobby joins while a challenge is live, against the Firestore emulator", { timeout: 180_000 }, () => {
+  it("refuses a queue join and another lobby's join live_challenge with nothing written, wait token included, until the game ends", async () => {
+    const w = await world(at(12, 0));
+    const builder = await w.claim("builder"), host1 = await w.claim("host1");
+    const { requestId, lobbyId } = value(await w.request(builder));
+    const { lobby } = value(await w.main.createLobby(host1.key, "public", 1));
+    const refusedUnchanged = async () => {
+      const before = await joinState(w, builder.id, lobby.id);
+      const queueToken = newWaitToken(), lobbyToken = newWaitToken();
+      expect(await w.main.joinQueue(builder.key, "1v1", queueToken)).toEqual({ ok: false, reason: "live_challenge" });
+      expect(await w.main.join(lobby.id, builder.key, undefined, undefined, lobbyToken)).toEqual({ ok: false, reason: "live_challenge" });
+      expect(await joinState(w, builder.id, lobby.id)).toEqual(before);
+      expect([await w.raw(`waits/${queueToken}`), await w.raw(`waits/${lobbyToken}`)]).toEqual([null, null]);
+    };
+    // Waiting for the house seat, then playing once it has joined.
+    await refusedUnchanged();
+    expect(reasonOf(await w.main.join(lobbyId, builder.key))).toBe("already_seated");
+    expect((await w.houseJoins(requestId)).state).toBe("holding");
+    await refusedUnchanged();
+    // The game has ended: both joins are admitted.
+    value(await w.main.releaseSlot(lobbyId));
+    expect(value(await w.main.join(lobby.id, builder.key)).colonies.flat().map((seat) => seat.id)).toContain(builder.id);
+    expect(value(await w.main.joinQueue(builder.key, "1v1")).state).toBe("waiting");
+  });
+
+  it("admits both joins once the challenge has ended without a game: its builder left before start, or it expired unfilled", async () => {
+    const w = await world(at(12, 0));
+    const left = await w.claim("left"), lapsed = await w.claim("lapsed"), host1 = await w.claim("host1");
+    const first = value(await w.request(left));
+    value(await w.main.leave(first.lobbyId, left.key));
+    expect(value(await w.main.joinQueue(left.key, "1v1")).state).toBe("waiting");
+    value(await w.request(lapsed, HANDLES[1]));
+    const { lobby } = value(await w.main.createLobby(host1.key, "public", 2));
+    expect(reasonOf(await w.main.join(lobby.id, lapsed.key))).toBe("live_challenge");
+    w.clock.t = at(12, 0) + TTL;
+    value(await w.main.join(lobby.id, lapsed.key));
+  });
+
+  it("refuses the second of a challenge request and a queue join for one identity, in either commit order", async () => {
+    const w = await world(at(12, 0));
+    // The challenge commits first: the queue join is refused live_challenge and writes nothing.
+    const a = await w.claim("first-challenge");
+    let challenged: Requested | undefined;
+    const token = newWaitToken();
+    const queued = await w.lobbies(committedFirst(async () => { challenged = await w.request(a); })).joinQueue(a.key, "1v1", token);
+    expect([reasonOf(challenged!), reasonOf(queued)]).toEqual(["ok", "live_challenge"]);
+    expect([await w.raw(`queueEntries/${a.id}`), await w.raw(`waits/${token}`)]).toEqual([null, null]);
+    // The queue join commits first: the challenge request is refused already_queued.
+    const b = await w.claim("first-queue");
+    let joined: Awaited<ReturnType<Lobbies["joinQueue"]>> | undefined;
+    const requested = await w.request(b, HANDLES[1], w.lobbies(committedFirst(async () => { joined = await w.main.joinQueue(b.key, "1v1"); })));
+    expect([reasonOf(joined!), reasonOf(requested)]).toEqual(["ok", "already_queued"]);
+    expect(await w.raw(`challengeChallengers/${b.id}`)).toBeNull();
+  });
+
+  it("lets exactly one of a concurrent challenge request and queue join for one identity commit", async () => {
+    const w = await world(at(12, 0));
+    for (let round = 0; round < 3; round++) {
+      const who = await w.claim(`racer${round}`);
+      const gate = startGate(2);
+      const [requested, queued] = await Promise.all([
+        w.request(who, HANDLES[round % HANDLES.length], w.lobbies(gate.contender(0))),
+        w.lobbies(gate.contender(1)).joinQueue(who.key, "1v1"),
+      ]);
+      gate.check(`challenge and queue join, round ${round}`);
+      const outcome = [reasonOf(requested), reasonOf(queued)];
+      expect([["ok", "live_challenge"], ["already_queued", "ok"]], JSON.stringify(outcome)).toContainEqual(outcome);
+      // Only the winner's record is stored.
+      const entry = await w.raw(`queueEntries/${who.id}`), pointer = await w.raw(`challengeChallengers/${who.id}`);
+      expect([entry === null, pointer === null]).toEqual(requested.ok ? [true, false] : [false, true]);
+    }
+  });
+
+  it("refuses the second of a challenge request and a lobby join for one identity, in either commit order", async () => {
+    const w = await world(at(12, 0));
+    const host1 = await w.claim("host1");
+    // The challenge commits first: the lobby join is refused live_challenge and writes nothing.
+    const a = await w.claim("first-challenge");
+    const first = value(await w.main.createLobby(host1.key, "public", 1)).lobby;
+    let challenged: Requested | undefined;
+    const token = newWaitToken();
+    const joined = await w.lobbies(committedFirst(async () => { challenged = await w.request(a); })).join(first.id, a.key, undefined, undefined, token);
+    expect([reasonOf(challenged!), reasonOf(joined)]).toEqual(["ok", "live_challenge"]);
+    expect([await w.raw(`lobbySeats/${a.id}`), await w.raw(`waits/${token}`), await seatedIn(w, first.id, a.id)]).toEqual([null, null, false]);
+    // The lobby join, with no waiting token, commits first: the challenge request is refused seated_elsewhere.
+    const b = await w.claim("first-join");
+    const second = value(await w.main.createLobby(host1.key, "public", 1)).lobby;
+    let seated: Joined | undefined;
+    const requested = await w.request(b, HANDLES[1], w.lobbies(committedFirst(async () => { seated = await w.main.join(second.id, b.key); })));
+    expect([reasonOf(seated!), reasonOf(requested)]).toEqual(["ok", "seated_elsewhere"]);
+    expect([await w.raw(`challengeChallengers/${b.id}`), (await w.raw(`lobbySeats/${b.id}`))?.lobbyId]).toEqual([null, second.id]);
+  });
+
+  it("lets exactly one of a concurrent challenge request and lobby join for one identity commit", async () => {
+    const w = await world(at(12, 0));
+    const host1 = await w.claim("host1");
+    for (let round = 0; round < 3; round++) {
+      const who = await w.claim(`racer${round}`);
+      const { lobby } = value(await w.main.createLobby(host1.key, "public", 1));
+      const gate = startGate(2);
+      const [requested, joined] = await Promise.all([
+        w.request(who, HANDLES[round % HANDLES.length], w.lobbies(gate.contender(0))),
+        w.lobbies(gate.contender(1)).join(lobby.id, who.key),
+      ]);
+      gate.check(`challenge and lobby join, round ${round}`);
+      const outcome = [reasonOf(requested), reasonOf(joined)];
+      expect([["ok", "live_challenge"], ["seated_elsewhere", "ok"]], JSON.stringify(outcome)).toContainEqual(outcome);
+      // Only the winner's records are stored.
+      const pointer = await w.raw(`lobbySeats/${who.id}`), challenger = await w.raw(`challengeChallengers/${who.id}`);
+      expect([pointer === null, challenger === null, await seatedIn(w, lobby.id, who.id)]).toEqual(requested.ok ? [true, false, false] : [false, true, true]);
+    }
+  });
+
+  it("never refuses a join for a stale seat pointer, and refuses a challenge for one only while its lobby is live and seats the caller", async () => {
+    const w = await world(at(12, 0));
+    const host1 = await w.claim("host1"), player = await w.claim("player");
+    // A 2v2 lobby the host also sits in, so it stays open when the player leaves.
+    const { lobby: left } = value(await w.main.createLobby(host1.key, "public", 2));
+    value(await w.main.join(left.id, host1.key));
+    value(await w.main.join(left.id, player.key));
+    expect((await w.raw(`lobbySeats/${player.id}`))?.lobbyId).toBe(left.id);
+    expect(reasonOf(await w.request(player))).toBe("seated_elsewhere");
+    // Left: the pointer still names the lobby, which no longer seats the player. Joins are admitted, and so is a challenge.
+    value(await w.main.leave(left.id, player.key));
+    value(await w.main.join(left.id, player.key));
+    value(await w.main.leave(left.id, player.key));
+    expect((await w.raw(`lobbySeats/${player.id}`))?.lobbyId).toBe(left.id);
+    expect(reasonOf(await w.request(player))).toBe("ok");
+    // Ended: the pointer names a lobby whose game has finished.
+    const one = await w.claim("one"), two = await w.claim("two");
+    const { lobby: game } = value(await w.main.createLobby(host1.key, "public", 1));
+    value(await w.main.join(game.id, one.key));
+    expect(value(await w.main.join(game.id, two.key)).state).toBe("holding");
+    expect(reasonOf(await w.request(one, HANDLES[1]))).toBe("seated_elsewhere");
+    value(await w.main.releaseSlot(game.id));
+    expect((await w.raw(`lobbySeats/${one.id}`))?.lobbyId).toBe(game.id);
+    expect(reasonOf(await w.request(one, HANDLES[1]))).toBe("ok");
   });
 });
