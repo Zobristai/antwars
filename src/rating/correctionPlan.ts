@@ -260,9 +260,9 @@ export async function planNeverJoined(store: Store, recordings: RecordingObjects
 
 /**
  * The digest of the one never-joined plan the apply may write: set, in a reviewed commit, to the digest the plan
- * published. A placeholder until then: it is not a SHA-256, so it matches no plan and nothing is applied.
+ * published. Only a plan with exactly this digest is applied.
  */
-export const NEVER_JOINED_APPLY_DIGEST = "placeholder: not yet set, matches no plan";
+export const NEVER_JOINED_APPLY_DIGEST = "8f93769fdb6663f3cbfb34f3ad2e0c2ba610efe22ca3826017a90805d9049928";
 export type ApplyOutcome = "applied" | "digest differs" | "changed since planned" | "already claimed" | "recording already held";
 
 /** The one apply's claim on the never-joined correction: created only where absent, so only one apply runs at a time. */
