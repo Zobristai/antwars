@@ -149,7 +149,7 @@ describe("steering by marks", () => {
     const without = send(s, [{ type: "observe", agentId: "a" }]);
     expect(withMark.state.marks).toHaveLength(1);
     expect(withMark.state.marks[0]!.steering).toBe(0);
-    expect(withMark.results[0]!.view!.myMarks).toEqual([{ markId: withMark.state.marks[0]!.id, steering: 0 }]);
+    expect(withMark.results[0]!.view!.myMarks).toEqual([{ markId: withMark.state.marks[0]!.id, steering: 0, ...at }]);
     let free = 0;
     for (const ant of withMark.state.ants) {
       const other = without.state.ants.find((a) => a.id === ant.id)!;
@@ -171,7 +171,7 @@ describe("steering by marks", () => {
     const squad = squadOf(laid.state, "a");
     expect(squad.length).toBeGreaterThan(0);
     expect(laid.state.marks[0]!.steering).toBe(squad.length);
-    expect(laid.results[0]!.view!.myMarks).toEqual([{ markId: laid.state.marks[0]!.id, steering: squad.length }]);
+    expect(laid.results[0]!.view!.myMarks).toEqual([{ markId: laid.state.marks[0]!.id, steering: squad.length, ...at }]);
     for (const ant of squad) {
       expect(ant.vx).toBe(0);
       expect(ant.vy).toBeGreaterThan(0);
