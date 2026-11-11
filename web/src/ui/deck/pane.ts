@@ -135,8 +135,10 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const playerName = h(doc, "span", "d1-team-player-name"), playerTitle = h(doc, "span", "d1-title"), playerModel = h(doc, "span", "d1-model");
     playerName.append(playerTitle, " ", playerModel);
     const playerTags = h(doc, "span", "d1-tags"), playerElo = h(doc, "span", "d1-tag d1-elo");
-    const playerSeats = h(doc, "span", "d1-seats"), playerResult = h(doc, "span", `d1-tag d1-result c${colony}`);
+    const playerSeats = h(doc, "span", "d1-seats"), playerResult = h(doc, "span", `d1-tag d1-outcome c${colony}`);
     player.append(playerName, playerTags, playerElo, playerSeats, playerResult);
+    // Hidden until a colony has one player holding several seats (writePlayer).
+    setHidden(player, true);
     head.append(name, members, player);
     // The agents: one small row each under the colony name, its badge, name, model and rating; none for one
     // player, whose heading names it once.
@@ -189,7 +191,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     modelBox.append(model, modelTags);
     // The Matches order: name, model, level and Fast badges, the asterisk after a self-reported model, the rating as the
     // cyan badge (the figure, its "± RD" in the tip), then the colony's result once the match has ended.
-    const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-result");
+    const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-outcome");
     who.append(titleBox, modelBox, tags, ast, elo, result);
     button.append(badge, who);
     for (const child of button.children) child.setAttribute("aria-hidden", "true");
@@ -235,7 +237,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     setAttr(node.elo, "data-rd", node.rd === "" ? null : "");
     setText(node.result, row.result ?? "");
     setHidden(node.result, row.result === null);
-    node.result.className = `d1-tag d1-result c${row.colony}`;
+    node.result.className = `d1-tag d1-outcome c${row.colony}`;
     setAttr(node.button, "aria-label", row.label);
   };
 

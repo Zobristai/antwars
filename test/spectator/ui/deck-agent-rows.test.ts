@@ -47,7 +47,7 @@ describe("the team section's agent rows", () => {
   it("shows the rating as a cyan badge right after the level and Fast badges, none without a rating", () => {
     // Directly after the tags in the name line (after the name when the tags are hidden), never a far-right column.
     const make = body("makeRow");
-    expect(make).toContain('const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-result");');
+    expect(make).toContain('const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-outcome");');
     expect(make.indexOf("tags, ast, elo,")).toBeGreaterThan(make.indexOf("who.append(titleBox,"));
     expect(rule(".d1-agent")).toMatch(/grid-template-columns: 16px minmax\(0, 1fr\);/);
     // The same badge form as the level and Fast badges (it carries .d1-tag), in the site's cyan (the Matches page

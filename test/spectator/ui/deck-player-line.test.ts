@@ -57,6 +57,8 @@ describe("a colony panel's player line", () => {
     const all = m.team(0).textContent + m.team(1).textContent;
     expect(all).not.toContain("Rating");
     expect(all).not.toContain("(high)");
+    // One seat a colony: no heading line, from the first frame on.
+    expect([0, 1].map(colony => m.team(colony as 0 | 1).byClass("d1-team-player")[0]!.hidden)).toEqual([true, true]);
   });
 
   it("shows the rating's ± RD in the tip on a pointer, a tap that opens no card, and the row's keyboard focus", () => {
@@ -103,16 +105,16 @@ describe("a colony panel's player line", () => {
   it("adds WINNER, DRAW or ABANDONED in the colony's ink once the match has ended, and nothing before", () => {
     const m = mounted();
     const agents = [agent(0, house, "openai/gpt-6-luna"), agent(1, kite, "openai/gpt-6.1-terra")];
-    const results = (colony: 0 | 1) => m.team(colony).byClass("d1-who")[0]!.byClass("d1-result").filter(node => !node.hidden).map(node => [node.textContent, node.className]);
+    const results = (colony: 0 | 1) => m.team(colony).byClass("d1-who")[0]!.byClass("d1-outcome").filter(node => !node.hidden).map(node => [node.textContent, node.className]);
     m.update(frameOf(agents));
     expect([results(0), results(1)]).toEqual([[], []]);
     const end = (result: Partial<StreamResult>) => ({ winner: null, reason: "time_up", decidedBy: "territory", tick: TICK, nextStartMs: null, ...result }) as StreamResult;
     m.update(frameOf(agents, end({ winner: 1 })));
-    expect([results(0), results(1)]).toEqual([[], [["Winner", "d1-tag d1-result c1"]]]);
+    expect([results(0), results(1)]).toEqual([[], [["Winner", "d1-tag d1-outcome c1"]]]);
     m.update(frameOf(agents, end({ decidedBy: "draw" })));
-    expect([results(0), results(1)]).toEqual([[["Draw", "d1-tag d1-result c0"]], [["Draw", "d1-tag d1-result c1"]]]);
+    expect([results(0), results(1)]).toEqual([[["Draw", "d1-tag d1-outcome c0"]], [["Draw", "d1-tag d1-outcome c1"]]]);
     m.update(frameOf(agents, end({ winner: 0, reason: "abandoned" })));
-    expect([results(0), results(1)]).toEqual([[["Abandoned", "d1-tag d1-result c0"]], [["Abandoned", "d1-tag d1-result c1"]]]);
+    expect([results(0), results(1)]).toEqual([[["Abandoned", "d1-tag d1-outcome c0"]], [["Abandoned", "d1-tag d1-outcome c1"]]]);
   });
 
   it("shows a builder whose label only repeats its own name by its name alone, as a Matches line does", () => {

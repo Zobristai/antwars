@@ -59,7 +59,7 @@ describe("deck polish", () => {
   it("keeps a Benchmark name's badges whole beside it, as the Leaderboard's tags", () => {
     expect(rule(".d1-tags")).toMatch(/flex: none/);
     expect(rule(".d1-tag")).toMatch(/white-space: nowrap/);
-    expect(rule(".d1-result")).toMatch(/flex: none/);
+    expect(rule(".d1-outcome")).toMatch(/flex: none/);
     // No quiet thinking level: a level is always a badge.
     expect(CSS).not.toContain(".d1-quiet");
     // An agent row never cuts a name: it wraps, as the Leaderboard's does, on every width.
