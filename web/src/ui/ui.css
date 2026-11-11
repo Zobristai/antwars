@@ -174,9 +174,10 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-cells.c1 .d2-cell.is-overrun { background: var(--aw-c0); }
 .d2-cell.is-attacked { box-shadow: 0 0 0 1.5px var(--aw-ink-bright); }
 .d2-cell.is-hit .d2-cell-fill { background: #fff; transition: none; }
-/* The phone form: the clock over the names, each row's figures and label over its two half-tracks. */
-.d2-hud[data-plate="stacked"] .d2-rows { grid-template-rows: 48px repeat(4, 44px); row-gap: 4px; padding-top: 8px; }
-.d2-hud[data-plate="stacked"] .d2-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "clock clock" "c0 c1"; column-gap: 8px; height: 48px; }
+/* The phone form: the clock, then each colony's name on its own full-width line (side by side, "Lake Hodges Colony" is
+   cut at 390 px), each row's figures and label over its two half-tracks. */
+.d2-hud[data-plate="stacked"] .d2-rows { grid-template-rows: 72px repeat(4, 44px); row-gap: 4px; padding-top: 8px; }
+.d2-hud[data-plate="stacked"] .d2-head { grid-template-columns: minmax(0, 1fr); grid-template-areas: "clock" "c0" "c1"; height: 72px; }
 .d2-hud[data-plate="stacked"] .d2-name.c0 { grid-area: c0; }
 .d2-hud[data-plate="stacked"] .d2-name.c1 { grid-area: c1; }
 .d2-hud[data-plate="stacked"] .d2-clock { grid-area: clock; justify-self: center; }
@@ -351,8 +352,8 @@ button.d2-history-button:hover .d2-said { text-decoration: underline; text-under
 .d2-hud[data-layout="narrow"] .d2-nav-link { min-height: 44px; padding: 0 5px; }
 .d2-hud[data-layout="narrow"] .d2-nav-link[aria-current="page"]::after { left: 5px; right: 5px; bottom: 9px; }
 
-/* The phone form of the plate is taller (the drawing: 258px), in either layout. */
-.d2-hud[data-plate="stacked"] { --d2-plate-h: 258px; }
+/* The phone form of the plate is taller (the drawing's 258px, and 24px for the names' second line), in either layout. */
+.d2-hud[data-plate="stacked"] { --d2-plate-h: 282px; }
 
 @media (prefers-reduced-motion: reduce) {
   .d2 *, .d2 *::before, .d2 *::after { animation: none !important; }
