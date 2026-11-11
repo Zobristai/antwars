@@ -17,9 +17,9 @@ describe("carrier guidance, whatever the match type or text generation", () => {
         expect(text).toContain("they never stop for combat.");
       }
       // The agent reply with count marks drops the overrun clause (it says "There is no overrun");
-      // the Rules page keeps it.
+      // the Rules page keeps it wherever overrun exists, and drops it under queen HP.
       expect(briefing(current).includes("Carriers do not count toward overrunning an enemy queen.")).toBe(!lineMarksEnabled(current));
-      expect(renderRules(current)).toContain("Carriers do not count toward overrunning an enemy queen.");
+      expect(renderRules(current).includes("Carriers do not count toward overrunning an enemy queen.")).toBe(current.queenHp === undefined);
       expect(joinBriefing(current)).toContain("Carriers never bite ants or queens");
       const compactText = compact && config.countMarks !== undefined;
       expect(briefing(current)).toContain(compactText ? "- Combat: non-carrying ants" : "every non-carrying ant within");
