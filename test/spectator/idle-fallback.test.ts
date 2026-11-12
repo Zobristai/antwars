@@ -148,9 +148,9 @@ function failing(cause: (typeof CAUSES)[number][0], initial: ReturnType<typeof m
     vi.stubGlobal("fetch", (path: string, options?: RequestInit) => {
       if (!path.startsWith("/matches")) return request(path, options);
       server.paths.push(path);
-      // Unavailable: the history route fails. Incomplete: its continuation repeats a page it already gave.
+      // Unavailable: the history route fails. Incomplete: before any match is listed, its continuation repeats a page it already gave.
       return Promise.resolve(cause === "unavailable stored history" ? new Response(null, { status: 503 })
-        : Response.json({ matches: [{ id: newest }], nextPageToken: "again" }));
+        : Response.json({ matches: [], nextPageToken: "again" }));
     });
   }
   return server;

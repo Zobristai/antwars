@@ -38,12 +38,12 @@ function documentPort() {
   return { doc, state, error, links, listeners };
 }
 
-it("follows empty continuation pages and chooses by immutable timestamp, with numeric ties, not restart-local sequence", async () => {
+it("follows empty continuation pages to the first listed page and chooses there by immutable timestamp, with numeric ties, not restart-local sequence", async () => {
   const request = vi.fn<typeof fetch>(async input => {
-    if (input === "/matches") return Response.json({ ...history(oldest), nextPageToken: "empty" });
+    if (input === "/matches") return Response.json({ ...history(), nextPageToken: "empty" });
     if (input === "/matches?pageToken=empty") return Response.json({ ...history(), nextPageToken: "last+/=" });
     expect(input).toBe("/matches?pageToken=last%2B%2F%3D");
-    return Response.json(history(newest, simultaneous, oldest));
+    return Response.json({ ...history(newest, simultaneous, oldest), nextPageToken: "older" });
   });
   expect(await newestStoredReplay(request)).toBe(simultaneous);
   expect(request).toHaveBeenCalledTimes(3);
@@ -53,13 +53,22 @@ it("follows empty continuation pages and chooses by immutable timestamp, with nu
   }
 });
 
-it.each(["replay", "replay="])("%s waits for complete discovery, then plays and labels the resolved recording through the shared source", async query => {
+// Regression caught: walking the whole stored history before choosing, which outran the deadline on a long
+// history and left Watch on "Connecting…" and then an error. /matches is newest first, so the first listed page decides.
+it("takes the newest from the first listed page without reading older pages", async () => {
+  const request = vi.fn<typeof fetch>(async () => Response.json({ ...history(newest, oldest), nextPageToken: "older" }));
+  expect(await newestStoredReplay(request)).toBe(newest);
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request.mock.calls[0]![0]).toBe("/matches");
+});
+
+it.each(["replay", "replay="])("%s waits for the first listed page, then plays and labels the resolved recording through the shared source", async query => {
   let finish!: (value: Response) => void;
   const last = new Promise<Response>(resolve => { finish = resolve; });
   const paths: string[] = [];
   vi.stubGlobal("fetch", async (path: string) => {
     paths.push(path);
-    if (path === "/matches") return Response.json({ ...history(oldest), nextPageToken: "last" });
+    if (path === "/matches") return Response.json({ ...history(), nextPageToken: "last" });
     if (path === "/matches?pageToken=last") return last;
     // The stored match's rating record; this one has none, so the recording's figures stay.
     if (path === `/watch/ratings/${newest}`) return Response.json({ ratings: [] });
@@ -69,7 +78,7 @@ it.each(["replay", "replay="])("%s waits for complete discovery, then plays and 
   const { doc } = documentPort(), reject = vi.fn();
   const opening = openSource(new URLSearchParams(query), { now: () => 0 }, doc, reject);
   await vi.waitFor(() => expect(paths).toEqual(["/matches", "/matches?pageToken=last"]));
-  finish(Response.json(history(newest)));
+  finish(Response.json({ ...history(newest, oldest), nextPageToken: "older" }));
   const source = (await opening)!;
   active.push(source);
   expect(source.storedId).toBe(newest);
@@ -115,12 +124,12 @@ it.each([
   await expect(newestStoredReplay(async () => Response.json(page))).rejects.toThrow(/unavailable or incomplete/);
 });
 
-it.each(["cycle", "json", "network", "http"])("%s after a valid first page produces visible failure, no empty/newest claim and no retries", async failure => {
+it.each(["cycle", "json", "network", "http"])("%s after a valid empty first page produces visible failure, no empty/newest claim and no retries", async failure => {
   const paths: string[] = [];
   vi.stubGlobal("fetch", async (path: string) => {
     paths.push(path);
-    if (path === "/matches") return Response.json({ ...history(oldest), nextPageToken: "next" });
-    if (failure === "cycle") return Response.json({ ...history(newest), nextPageToken: "next" });
+    if (path === "/matches") return Response.json({ ...history(), nextPageToken: "next" });
+    if (failure === "cycle") return Response.json({ ...history(), nextPageToken: "next" });
     if (failure === "json") return new Response("invalid json");
     if (failure === "network") throw new Error("network failure");
     return new Response(null, { status: 503 });
@@ -133,9 +142,9 @@ it.each(["cycle", "json", "network", "http"])("%s after a valid first page produ
   expect(paths).toEqual(["/matches", "/matches?pageToken=next"]);
 });
 
-it("a long non-cyclic history that reaches the page bound fails instead of playing a partial selection", async () => {
+it("a long non-cyclic run of empty pages that reaches the page bound fails instead of claiming an empty history", async () => {
   let pages = 0;
-  const request = vi.fn(async () => Response.json({ ...history(oldest), nextPageToken: `page-${++pages}` }));
+  const request = vi.fn(async () => Response.json({ ...history(), nextPageToken: `page-${++pages}` }));
   await expect(newestStoredReplay(request)).rejects.toThrow(/unavailable or incomplete/);
   expect(request).toHaveBeenCalledTimes(1000);
 });
