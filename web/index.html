@@ -53,6 +53,8 @@
 
       /* ---------------------------------------------------------------- the wordmark */
       .aw-wordmark { font-size: 28px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; color: var(--aw-ink-bright); }
+      /* The waiting panel's wordmark links home: it is the only way out when no match or recording can be shown. */
+      .aw-home { color: inherit; text-decoration: none; }
       /* How a match ends, open on first view under the key, in the secondary ink so it reads before the key's. */
       .aw-how { display: block; margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--aw-ink-2); }
 
@@ -218,7 +220,7 @@
   </head>
   <body>
     <div class="aw-waiting" id="aw-waiting" role="status">
-      <p class="aw-wordmark">Antwars</p>
+      <p class="aw-wordmark"><a class="aw-home" href="/" aria-label="Antwars home">Antwars</a></p>
       <p class="aw-wait-state">Connecting…</p>
     </div>
     <script type="module" src="./src/leaderboard-page/entry.ts"></script>

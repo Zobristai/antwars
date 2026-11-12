@@ -47,7 +47,9 @@ describe("never blank: a waiting state until the first frames draw", () => {
     expect(open, "web/index.html has no waiting panel").not.toBeNull();
     expect(open![0]).not.toMatch(/\shidden\b/);
     const body = html.slice(open!.index, html.indexOf("</div>", html.indexOf("</p>", open!.index)));
-    expect(body).toContain('class="aw-wordmark">Antwars</p>');
+    // The wordmark links home (the landing at /, no query): when no match or recording can be shown, the panel is the
+    // whole page, and this is its way back.
+    expect(body).toContain('class="aw-wordmark"><a class="aw-home" href="/" aria-label="Antwars home">Antwars</a></p>');
     expect(body).toContain("Connecting…");
     expect(body).not.toMatch(/MCP|CLI|60 s behind|next match/i);
   });
