@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
+  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, refusalFigures, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
@@ -319,6 +319,33 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
     expect(refusalCode(error)).toBe("not-reproduced-change");
     expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(3, 6), handle: [...w.ids].find(([, id]) => id === changes[0]!.identityId)![0], source: path, count: 2 });
+  });
+
+  it("still compares a match whose players differ: each player on both sides is counted, and can be the largest deviation", async () => {
+    const w = await world();
+    type Stored = { identityId: string; after: number };
+    const edit = async (i: number, change: (c: Stored[]) => void) => {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as Stored[];
+      change(changes);
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+      return changes[0]!.identityId;
+    };
+    // An earlier match off by 2. A later one with a player it did not have, and a player who is in both off by 7.
+    await edit(7, c => { c[0]!.after += 2; });
+    const largest = await edit(8, c => { c[0]!.after += 7; c.push({ ...c[1]!, identityId: w.users[0]! }); });
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    // Three failures: the earlier value, the later match's players, and its value off by 7, which is the largest.
+    expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(7, 6), handle: [...w.ids].find(([, id]) => id === largest)![0],
+      source: `ratedMatches/${w.lobbies[8]}`, count: 3 });
+    expect(refusalFigures(error)).toMatchObject({ deviation: expect.closeTo(7, 6), count: 3, kind: "after" });
+    // Its players alone differing: one failure, with no deviation.
+    await edit(7, c => { c[0]!.after -= 2; });
+    await edit(8, c => { c[0]!.after -= 7; });
+    const players = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(players)).toBe("not-reproduced-players");
+    expect(refusalFigures(players)).toMatchObject({ deviation: null, count: 1, kind: null });
   });
 
   it("a missing value counts as a difference but never hides a finite deviation in another field", async () => {

@@ -419,13 +419,17 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const [replayed, kept] = [check.changes.get(lobby.id)!, stored.get(lobby.id)!];
     const source = `ratedMatches/${lobby.id}`;
     const ids = (changes: readonly RatingChange[]) => JSON.stringify(changes.map(c => c.identityId).sort());
-    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) {
+    const mismatched = replayed.length !== kept.length || ids(replayed) !== ids(kept);
+    if (mismatched) {
       failures.push({ code: "not-reproduced-players", reason: `stored history not reproduced: the players of lobby ${lobby.id}`, deviation: null, handle: "", source,
         kind: null, committedAt: createdAt(lobby) });
-      continue;
     }
+    // A match whose players differ still has its values compared and counted for every player it holds exactly once
+    // on both sides, so the count and the largest deviation include them.
+    const once = (changes: readonly RatingChange[], id: string) => changes.filter(each => each.identityId === id).length === 1;
     for (const c of replayed) {
-      const k = change(lobby, c.identityId);
+      if (mismatched && !(once(replayed, c.identityId) && once(kept, c.identityId))) continue;
+      const k = kept.find(each => each.identityId === c.identityId)!;
       compare("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`,
         shown(names.get(c.identityId) ?? ""), source, createdAt(lobby),
         [["before", c.before, k.before], ["rdBefore", c.rdBefore, k.rdBefore], ["after", c.after, k.after], ["rdAfter", c.rdAfter, k.rdAfter]]);
