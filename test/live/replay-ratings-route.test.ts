@@ -11,8 +11,7 @@ import type { StreamMessage } from "../../src/live/format.ts";
 import { restateRatings, storedReplayRatings } from "../../web/src/replay-ratings.ts";
 import { holdMatch, memoryWatchStore } from "./watch-fixtures.ts";
 import type { ReplaySource } from "../../src/replays/access.ts";
-import { correctedReplaySource } from "../../src/replays/correctedRecordings.ts";
-import { CORRECTION_MARKER, SOL_MOVES } from "../../src/rating/correctionPlan.ts";
+import { CORRECTION_MARKER, correctedReplaySource, SOL_MOVES } from "../../src/replays/correctedRecordings.ts";
 import type { Fields, Store } from "../../src/store/firestore.ts";
 
 const lobbyId = "11111111-2222-4333-8444-555555555555";
