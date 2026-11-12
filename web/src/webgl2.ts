@@ -113,8 +113,8 @@ export function showNeedsWebGL(doc: Document): void {
 /**
  * With no board, the needs-WebGL panel is the whole page until the HUD mounts: while the match or recording loads,
  * while a lobby waits for its first frame, and for good when it cannot be opened (an error, or no stored matches).
- * Throughout, it carries the way home: a link to the landing at / with no query, styled as the panel's Back to live
- * link (replay.ts noStoredReplays). Its line is a div, not a paragraph, so replayWaiting's paragraph rewrite leaves it.
+ * Throughout, it carries the way home: a link to the landing at / with no query, in the bright ink visited or not
+ * (index.html .aw-board-home). Its line is a div, not a paragraph, so replayWaiting's paragraph rewrite leaves it.
  */
 export function linkNeedsWebGLHome(doc: Document): void {
   const panel = doc.getElementById("aw-waiting");

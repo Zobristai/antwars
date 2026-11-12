@@ -90,6 +90,9 @@ describe("never blank: a waiting state until the first frames draw", () => {
     // Linked before the source is awaited (a lobby's whole wait), unlinked only where the HUD mounts.
     expect(main).toMatch(/async function startWithoutBoard\([^)]*\)[^]*?linkNeedsWebGLHome\(document\);\s*const input = await openSource\(/);
     expect(main).toMatch(/unlinkNeedsWebGLHome\(document\);[^]*overlays\.mountHud\(\{ deck: false/);
+    // The link reads in the bright ink on the dark panel, visited or not, never the browser's link blue.
+    const page = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+    expect(page).toMatch(/\.aw-board-home, \.aw-board-home:visited, \.aw-board-home:hover \{ color: var\(--aw-ink-bright\);/);
   });
 
   it("the panel stays until the first frame draws, then hides", async () => {
