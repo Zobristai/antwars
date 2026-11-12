@@ -23,9 +23,9 @@ import {
  * 1. Ranked lobby NEVER_JOINED, which one seat never joined, becomes abandoned and unrated with its rating effect
  *    removed: unrateNeverJoined.ts's verify and Firestore writes, without its recording rewrite.
  * 2. Two 2026-11-01 house-1v1 matches move from the standard Sol handles to the -fast handles that played them
- *    (SOL_MOVES), and house-1v1 ratings are recomputed with rateMatch, in the order they were applied, from each
- *    player's state before the first moved match. Ratings are applied when a match ends, so that order is the
- *    createTime of each match's stored change record. The pass refuses unless the same replay without the move
+ *    (SOL_MOVES), and house-1v1 ratings are recomputed with rateMatch, in match order (each lobby's match time), from
+ *    each player's state before the first moved match. A stored record's creation time is no guide to that order: a
+ *    copy of the data gives every record a new one. The pass refuses unless the same replay without the move
  *    reproduces every stored change and row.
  *
  * Names are published as the public Waiting view shows them (live/queue-catalog.ts): a released owner's placeholder,
@@ -72,13 +72,13 @@ export const REFUSAL_CODES = [
   "never-joined-watch-entry", "never-joined-match-record", "never-joined-never-joined", "never-joined-recording-rewrite", "never-joined-stage",
   "never-joined-rating-change",
   "unknown-identity", "sol-lobby", "sol-handle", "no-commit-times", "unreadable-lobby", "history-unstable", "no-change-record",
-  "no-change-record-time", "moved-seats", "moved-not-rated", "shared-commit-time", "no-glicko-change", "not-reproduced-players",
+  "no-change-record-time", "moved-seats", "moved-not-rated", "shared-match-time", "no-glicko-change", "not-reproduced-players",
   "not-reproduced-change", "not-reproduced-rating", "not-reproduced-rd", "not-reproduced-rated-at", "not-reproduced-rated-matches",
   "not-reproduced-record", "no-public-match-id", "no-row", "never-joined-not-applied", "store-error", "error",
 ] as const;
 export type RefusalCode = typeof REFUSAL_CODES[number];
 export type PlanState = { readonly state: "computing" | "applied" } | { readonly state: "refused"; readonly reason: RefusalCode }
-  | ({ readonly state: "planned" } & PublicPlan);
+  | ({ readonly state: "refused"; readonly reason: RefusalCode } & RefusalFigures) | ({ readonly state: "planned" } & PublicPlan);
 
 /**
  * Where a not-reproduced history deviates most, for the server log only: the largest finite difference between a replayed
@@ -88,15 +88,46 @@ export type PlanState = { readonly state: "computing" | "applied" } | { readonly
  */
 export interface Deviation { readonly deviation: number | null; readonly handle: string; readonly source: string; readonly count: number }
 
+/** The kind of a compared value: a change record's before, after, rdBefore or rdAfter, or a rating row's rating or rd. */
+export type ValueKind = "before" | "after" | "rdBefore" | "rdAfter" | "rating" | "rd";
+
+/**
+ * A not-reproduced refusal's public figures, numbers and kinds only: the largest deviation and how many values fail (as
+ * in Deviation), the kind of the value the largest deviation is in (null whenever that deviation is null: a missing value,
+ * the players, a count, a time or a record), and the UTC day (YYYY-MM-DD) of the earliest commit among the failing change records, null
+ * when only rating rows fail. Never a handle, identity, row, lobby, match or record name.
+ */
+export interface RefusalFigures {
+  readonly deviation: number | null; readonly count: number; readonly kind: ValueKind | null; readonly earliestChangeDay: string | null;
+}
+
 class PlanRefused extends Error {
   // Explicit fields, not parameter properties, which Node's type stripping refuses (store/firestore.ts).
   readonly code: RefusalCode;
   readonly deviation?: Deviation;
-  constructor(code: RefusalCode, reason: string, deviation?: Deviation) { super(reason); this.code = code; if (deviation) this.deviation = deviation; }
+  readonly figures?: RefusalFigures;
+  constructor(code: RefusalCode, reason: string, deviation?: Deviation, figures?: RefusalFigures) {
+    super(reason); this.code = code; if (deviation) this.deviation = deviation; if (figures) this.figures = figures;
+  }
 }
 const refuse = (code: RefusalCode, reason: string): never => { throw new PlanRefused(code, reason); };
 /** A not-reproduced refusal's largest deviation; undefined for any other refusal. */
 export const refusalDeviation = (error: unknown): Deviation | undefined => error instanceof PlanRefused ? error.deviation : undefined;
+/**
+ * The UTC day (YYYY-MM-DD) of a strict RFC 3339 UTC timestamp (YYYY-MM-DDTHH:MM:SS, optional fractional seconds, then
+ * Z) that is a real instant, taken from the parsed instant; null for anything else, so no other text can be served.
+ */
+const utcDay = (time: string): string | null => {
+  const at = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/.exec(time);
+  if (!at) return null;
+  const [y, mo, d, h, mi, s] = at.slice(1).map(Number) as [number, number, number, number, number, number];
+  const instant = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+  if (instant.getUTCFullYear() !== y || instant.getUTCMonth() !== mo - 1 || instant.getUTCDate() !== d || instant.getUTCHours() !== h
+    || instant.getUTCMinutes() !== mi || instant.getUTCSeconds() !== s) return null;
+  return instant.toISOString().slice(0, 10);
+};
+/** A not-reproduced refusal's public figures; undefined for any other refusal. */
+export const refusalFigures = (error: unknown): RefusalFigures | undefined => error instanceof PlanRefused ? error.figures : undefined;
 /** The served code of a refusal: its check's code, store-error for a failed store read, error for anything else. */
 export const refusalCode = (error: unknown): RefusalCode =>
   error instanceof PlanRefused ? error.code : error instanceof FirestoreError ? "store-error" : "error";
@@ -314,9 +345,9 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     return at ? `${at[1]}.${(at[2] ?? "").padEnd(9, "0")}Z` : refuse("no-change-record-time", `lobby ${lobby.id}: no change record time`);
   };
 
-  // The order ratings were applied: each match's change record is created in the commit that rated it, so its
-  // createTime (never its updateTime, which a later write moves) orders the ratings.
-  const order = [...lobbies].sort((a, b) => createdAt(a) < createdAt(b) ? -1 : createdAt(a) > createdAt(b) ? 1 : 0);
+  // Match order: the lobbies by match time, then id, as houseLobbies returns them. It sets the window's start and its
+  // matches as well as the replay. createdAt only dates a failing change record for the refusal's earliestChangeDay.
+  const order = lobbies;
   const moved = order.map(lobby => {
     const move = moves.find(each => each.lobbyId === lobby.id);
     if (!move) return lobby;
@@ -326,10 +357,20 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const first = Math.min(...moves.map(move => order.findIndex(lobby => lobby.id === move.lobbyId)));
   if (first < 0) refuse("moved-not-rated", `a moved lobby is not a rated ${MODE} match`);
   const window = order.slice(first);
-  // Sorted, so equal times are neighbours; the match just before the window counts too.
-  for (let i = Math.max(first, 1); i < order.length; i++) {
-    const [a, b] = [order[i - 1]!, order[i]!];
-    if (createdAt(a) === createdAt(b)) refuse("shared-commit-time", `order of lobbies ${a.id} and ${b.id} not established: their ratings share a commit time`);
+  // Matches with the same match time have no established order. Sorted, so they are neighbours: from the first that
+  // shares the window's first match time, any two in one run that share a player, as stored or after the move, refuse.
+  let start = first;
+  while (start > 0 && order[start - 1]!.at === order[first]!.at) start--;
+  for (let i = start, end; i < order.length; i = end) {
+    for (end = i + 1; end < order.length && order[end]!.at === order[i]!.at; end++);
+    const seen = new Map<string, string>();
+    for (let k = i; k < end; k++) {
+      for (const id of new Set([...teamsOf(order[k]!), ...teamsOf(moved[k]!)].flat())) {
+        const other = seen.get(id);
+        if (other !== undefined) refuse("shared-match-time", `order of lobbies ${other} and ${order[k]!.id} not established: they share a player and a match time`);
+        seen.set(id, order[k]!.id);
+      }
+    }
   }
   const players = [...new Set([...window, ...moved.slice(first)].flatMap(lobby => teamsOf(lobby).flat()))];
 
@@ -365,32 +406,43 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     const value = a === undefined || b === undefined ? NaN : Math.abs(a - b);
     return Number.isFinite(value) ? value : null;
   };
-  const failures: { code: RefusalCode; reason: string; deviation: number | null; handle: string; source: string }[] = [];
-  /** One entry for each of the pairs that is not reproduced, each with its own deviation. */
-  const compare = (code: RefusalCode, reason: string, handle: string, source: string, pairs: readonly (readonly [number | undefined, number | undefined])[]) => {
-    for (const [a, b] of pairs) if (!near(a, b)) failures.push({ code, reason, deviation: gap(a, b), handle, source });
+  /** committedAt: the change record's commit time (createTime) for a failure in one, else null. */
+  const failures: { code: RefusalCode; reason: string; deviation: number | null; handle: string; source: string;
+    kind: ValueKind | null; committedAt: string | null }[] = [];
+  /** One entry for each of the pairs that is not reproduced, each with its own deviation and kind. */
+  const compare = (code: RefusalCode, reason: string, handle: string, source: string, committedAt: string | null,
+    pairs: readonly (readonly [ValueKind, number | undefined, number | undefined])[]) => {
+    for (const [kind, a, b] of pairs) if (!near(a, b)) failures.push({ code, reason, deviation: gap(a, b), handle, source, kind, committedAt });
   };
   const check = replay(order);
   for (const lobby of window) {
     const [replayed, kept] = [check.changes.get(lobby.id)!, stored.get(lobby.id)!];
     const source = `ratedMatches/${lobby.id}`;
     const ids = (changes: readonly RatingChange[]) => JSON.stringify(changes.map(c => c.identityId).sort());
-    if (replayed.length !== kept.length || ids(replayed) !== ids(kept)) {
-      failures.push({ code: "not-reproduced-players", reason: `stored history not reproduced: the players of lobby ${lobby.id}`, deviation: null, handle: "", source });
-      continue;
+    const mismatched = replayed.length !== kept.length || ids(replayed) !== ids(kept);
+    if (mismatched) {
+      failures.push({ code: "not-reproduced-players", reason: `stored history not reproduced: the players of lobby ${lobby.id}`, deviation: null, handle: "", source,
+        kind: null, committedAt: createdAt(lobby) });
     }
+    // A match whose players differ still has its values compared and counted for every player it holds exactly once
+    // on both sides, so the count and the largest deviation include them.
+    const once = (changes: readonly RatingChange[], id: string) => changes.filter(each => each.identityId === id).length === 1;
     for (const c of replayed) {
-      const k = change(lobby, c.identityId);
+      if (mismatched && !(once(replayed, c.identityId) && once(kept, c.identityId))) continue;
+      const k = kept.find(each => each.identityId === c.identityId)!;
       compare("not-reproduced-change", `stored history not reproduced: ${names.get(c.identityId)} in lobby ${lobby.id}`,
-        shown(names.get(c.identityId) ?? ""), source, [[c.before, k.before], [c.rdBefore, k.rdBefore], [c.after, k.after], [c.rdAfter, k.rdAfter]]);
+        shown(names.get(c.identityId) ?? ""), source, createdAt(lobby),
+        [["before", c.before, k.before], ["rdBefore", c.rdBefore, k.rdBefore], ["after", c.after, k.after], ["rdAfter", c.rdAfter, k.rdAfter]]);
     }
   }
   for (const id of players) {
     const [now, replayed] = [storedState(id, row(id)), check.state.get(id)!];
     const [reason, handle, source] = [`stored history not reproduced: ${names.get(id)}`, shown(names.get(id) ?? ""), `${ROWS}/${id}`];
-    compare("not-reproduced-rating", reason, handle, source, [[replayed.rating, now.rating]]);
-    compare("not-reproduced-rd", reason, handle, source, [[replayed.rd, now.rd]]);
-    const other = (code: RefusalCode, differs: boolean) => { if (differs) failures.push({ code, reason, deviation: null, handle, source }); };
+    compare("not-reproduced-rating", reason, handle, source, null, [["rating", replayed.rating, now.rating]]);
+    compare("not-reproduced-rd", reason, handle, source, null, [["rd", replayed.rd, now.rd]]);
+    const other = (code: RefusalCode, differs: boolean) => {
+      if (differs) failures.push({ code, reason, deviation: null, handle, source, kind: null, committedAt: null });
+    };
     other("not-reproduced-rated-at", replayed.ratedAt !== now.ratedAt);
     other("not-reproduced-rated-matches", replayed.ratedMatches !== now.ratedMatches);
     other("not-reproduced-record", movers.includes(id) && JSON.stringify(storedRecord(id, row(id))) !== JSON.stringify(records(order, id)));
@@ -399,7 +451,11 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     // The largest finite deviation over every value; a missing value counts but never masks one; the first wins a tie.
     const most = failures.reduce((a, b) => (b.deviation ?? -1) > (a.deviation ?? -1) ? b : a);
     const first = failures[0]!;
-    throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length });
+    // kind names where the largest numeric deviation is, so it is null whenever there is none (a missing value only).
+    // Only strict UTC timestamps that are real instants count; padded alike, so text order is time order among them.
+    const earliest = failures.flatMap(f => f.committedAt !== null && utcDay(f.committedAt) !== null ? [f.committedAt] : []).sort()[0];
+    throw new PlanRefused(first.code, first.reason, { deviation: most.deviation, handle: most.handle, source: most.source, count: failures.length },
+      { deviation: most.deviation, count: failures.length, kind: most.deviation === null ? null : most.kind, earliestChangeDay: earliest === undefined ? null : utcDay(earliest) });
   }
 
   // The move: lobbies' seats, watch-entry labels, changed change records and rating rows.
@@ -442,7 +498,7 @@ export const SOL_PLAN_PATH = `${PLAN_PATH}/house-1v1`;
 /**
  * The house-1v1 move, read-only: planned, logged and served once the never-joined correction is applied, never applied
  * here. A refusal logs its code and, where the stored history is not reproduced, its largest deviation (refusalDeviation);
- * only the code is served.
+ * it serves the code, and for a not-reproduced history also its public figures (refusalFigures), never a name or id.
  */
 async function planSol(store: Store, recordings: RecordingObjects): Promise<PlanState> {
   let plan: Plan | "applied";
@@ -450,7 +506,8 @@ async function planSol(store: Store, recordings: RecordingObjects): Promise<Plan
     const reason = refusalCode(error);
     const deviation = refusalDeviation(error);
     console.warn("antwar house-1v1 rating correction plan refused", { reason, ...(deviation ? { deviation } : {}) });
-    return { state: "refused", reason };
+    const figures = refusalFigures(error);
+    return figures ? { state: "refused", reason, ...figures } : { state: "refused", reason };
   }
   if (plan === "applied") return { state: "applied" };
   for (const write of plan.writes) console.info(`antwar house-1v1 rating correction planned: ${write.op} ${write.path}`);

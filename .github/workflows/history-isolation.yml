@@ -1,6 +1,12 @@
 # Refuses any push to main, or pull request into main, whose history has a root other than
 # the repository's initial commit or a commit whose author, committer or message matches a
-# private identifier. It is a required check on main.
+# private identifier. It is a required check on main. The root check covers the whole history;
+# the identity and message checks cover the commits not already on main: on a push, those after
+# the previous main tip (the whole history when there is none); on a pull request, those not
+# reachable from its base. noreply@github.com, the GitHub no-reply addresses of the event's own
+# accounts (the push's sender and pusher, or the pull request's sender and author, passed from
+# the event through the environment) and the encoded lines of commit signatures are not matched
+# (.github/scripts/history-isolation.sh says why).
 # Pull requests are checked by main's copy of .github/scripts/history-isolation.sh: the
 # pull request's commits are fetched only as git objects, and none of its files is checked
 # out, sourced or run. The identifiers come from the ANTWARS_IDENTIFIERS Actions secret, and
@@ -34,14 +40,24 @@ jobs:
           EVENT: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
+          SENDER_ID: ${{ github.event.sender.id }}
+          SENDER_LOGIN: ${{ github.event.sender.login }}
+          PUSHER_LOGIN: ${{ github.event.pusher.name }}
+          PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
           FETCH_TOKEN: ${{ github.token }}
           ANTWARS_IDENTIFIERS: ${{ secrets.ANTWARS_IDENTIFIERS }}
           ANTWARS_EXPECTED_ROOT: ${{ vars.ANTWARS_EXPECTED_ROOT }}
         run: |
           set -euo pipefail
+          # One "<id> <login>" line per event account; the script checks their form.
+          ANTWARS_EVENT_ACCOUNTS=$(printf '%s %s\n' "${SENDER_ID:--}" "$SENDER_LOGIN" - "$PUSHER_LOGIN" "${PR_AUTHOR_ID:--}" "$PR_AUTHOR_LOGIN")
+          export ANTWARS_EVENT_ACCOUNTS
           if [ "$EVENT" = pull_request_target ]; then
-            bash .github/scripts/history-isolation.sh --pull-request "$PR_NUMBER" "$PR_HEAD_SHA"
+            bash .github/scripts/history-isolation.sh --pull-request "$PR_NUMBER" "$PR_HEAD_SHA" "$PR_BASE_SHA"
           else
-            bash .github/scripts/history-isolation.sh "$PUSH_SHA"
+            bash .github/scripts/history-isolation.sh --push "$BEFORE" "$PUSH_SHA"
           fi

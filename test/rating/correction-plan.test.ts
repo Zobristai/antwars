@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
+  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, refusalFigures, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
   type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
@@ -29,27 +29,33 @@ const SECOND_LOBBY = SOL_MOVES[1]!.lobbyId!;
 /** The never-joined lobby's run. */
 const RUN = "3f2b8c1e-6a4d-4e2f-9b7c-0d1e2f3a4b5c";
 
-// House-1v1 history around the moved matches, in the order rated: [colony 0, colony 1, winner, start in minutes from the
-// first moved match]. The two at 1200 and 1000 share glm-5-3 and end in the opposite order to their starts.
+// House-1v1 history around the moved matches: [colony 0, colony 1, winner, start in minutes from the first moved match].
+// Rated in match order (by start), not in the order listed: the two at 1200 and 1000 share glm-5-3.
 const HISTORY: readonly [string, string, Winner, number][] = [
   ["gpt-6-1-sol-high", "glm-5-3", "a", -900], ["gpt-6-1-sol-high-fast", "grok-4-7", "b", -800], ["gpt-6-1-sol-xhigh", "glm-5-3", "b", -700],
   ["gpt-6-1-sol-xhigh-fast", "gpt-6-1-sol-high", "a", -600], ["grok-4-7", "gpt-6-1-sol-xhigh", "draw", -500],
   ["gpt-6-1-sol-high", "glm-5-3", "b", 0], ["gpt-6-1-sol-xhigh", "grok-4-7", "b", 6.1],
   ["gpt-6-1-sol-high-fast", "glm-5-3", "a", 300], ["gpt-6-1-sol-high", "grok-4-7", "a", 2000], ["gpt-6-1-sol-xhigh-fast", "gpt-6-1-sol-xhigh", "b", 2600],
   ["glm-5-3", "grok-4-7", "b", 1200], ["glm-5-3", "gpt-6-1-sol-high-fast", "a", 1000],
-  // A draw between equal ratings, each player's only match: it leaves both ratings unchanged.
-  ["kimi-k3", "qwen-4", "draw", 100],
-  // Started before the first moved match and rated after every other; after the move it shares sol-high-fast with it.
+  // A draw between equal ratings, each player's only match: it leaves both ratings unchanged. It starts with the match
+  // at 300 and shares no player with it, so their order does not matter.
+  ["kimi-k3", "qwen-4", "draw", 300],
+  // Started just before the first moved match, so it is outside the window; after the move it shares sol-high-fast with it.
   ["gpt-6-1-sol-high-fast", "deepseek-v4", "a", -5],
 ];
 const MOVED: Readonly<Record<number, string>> = { 5: "gpt-6-1-sol-high", 6: "gpt-6-1-sol-xhigh" };
+/** HISTORY's indices in match order: by start, then as listed. */
+const MATCH_ORDER = HISTORY.map((_, i) => i).sort((a, b) => HISTORY[a]![3] - HISTORY[b]![3] || a - b);
+/** Match order but for the two overlapping glm-5-3 matches, rated in the order they end: the one at 1200 first. */
+const END_ORDER = MATCH_ORDER.map(i => i === 10 ? 11 : i === 11 ? 10 : i);
 
 /** Glicko-1 written out from Glickman's paper, apart from src/rating/glicko.ts: each match its own rating period, RD
  * growing only over a positive gap since the player's previous rated match. */
 function independentReplay(moved: boolean): Map<string, { r: number; rd: number }> {
   const q = Math.LN10 / 400, c2 = (350 ** 2 - 50 ** 2) / 365, g = (rd: number) => 1 / Math.sqrt(1 + 3 * q * q * rd * rd / Math.PI ** 2);
   const state = new Map<string, { r: number; rd: number; t: number | null }>();
-  HISTORY.forEach(([a, b, winner, minutes], i) => {
+  MATCH_ORDER.forEach(i => {
+    const [a, b, winner, minutes] = HISTORY[i]!;
     const names = [a, b].map(name => moved && MOVED[i] === name ? `${name}-fast` : name);
     const at = T0 + minutes * MIN;
     const p = names.map(name => {
@@ -114,7 +120,8 @@ function bucket(bodies: Map<string, Uint8Array>): Recordings {
   };
 }
 
-async function world() {
+/** The fixture world, its history rated in ratedIn order (HISTORY indices). */
+async function world(ratedIn: readonly number[] = MATCH_ORDER) {
   const store = createFirestore({ projectId, namespace: `c${process.pid}-${Date.now().toString(36)}-${counter++}`, emulatorHost: host });
   const identities = createIdentities(store);
   const users: string[] = [];
@@ -143,8 +150,10 @@ async function world() {
     if (!created.ok) throw new Error(created.reason);
     ids.set(`antwars/${name}`, created.value.identity.id);
   }
+  // Indexed as HISTORY; rated in ratedIn order.
   const lobbies: string[] = [];
-  for (const [i, [a, b, winner, minutes]] of HISTORY.entries()) {
+  for (const i of ratedIn) {
+    const [a, b, winner, minutes] = HISTORY[i]!;
     const id = i === 6 ? SECOND_LOBBY : randomUUID(), at = T0 + minutes * MIN;
     const seats = [a, b].map((name, colony) => ({ id: ids.get(`antwars/${name}`)!, displayName: `antwars/${name}`, colony }));
     const outcome = winner === "draw" ? "draw" : `colony_${winner === "a" ? 0 : 1}_won`;
@@ -154,7 +163,7 @@ async function world() {
       playbackFinished: "true", origin: "https://example.test", slot: "public-1", runId: "run", replayId: SOL_MOVES[i - 5]!.replayId,
       modelLabels: JSON.stringify({ [`antwars/${MOVED[i]}`]: "fast", [`antwars/${b}`]: "other" }) } }] : [])]);
     await store.transaction(read => ratingWrites(read, { matchId: id, teams: [[seats[0]!.id], [seats[1]!.id]], winner, mode: MODE, at }));
-    lobbies.push(id);
+    lobbies[i] = id;
   }
   const paths = [...users.flatMap(id => RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`)), ...[...ids.values()].map(id => `${ratingCollection(MODE)}/${id}`),
     ...[lobby, ...lobbies].flatMap(id => [`lobbies/${id}`, `ratedMatches/${id}`, `watchMatches/${id}`]), `ratingCorrections/${lobby}`, `ratingCorrectionClaims/${lobby}`, CORRECTION_MARKER,
@@ -315,6 +324,33 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(3, 6), handle: [...w.ids].find(([, id]) => id === changes[0]!.identityId)![0], source: path, count: 2 });
   });
 
+  it("still compares a match whose players differ: each player on both sides is counted, and can be the largest deviation", async () => {
+    const w = await world();
+    type Stored = { identityId: string; after: number };
+    const edit = async (i: number, change: (c: Stored[]) => void) => {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as Stored[];
+      change(changes);
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+      return changes[0]!.identityId;
+    };
+    // An earlier match off by 2. A later one with a player it did not have, and a player who is in both off by 7.
+    await edit(7, c => { c[0]!.after += 2; });
+    const largest = await edit(8, c => { c[0]!.after += 7; c.push({ ...c[1]!, identityId: w.users[0]! }); });
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    // Three failures: the earlier value, the later match's players, and its value off by 7, which is the largest.
+    expect(refusalDeviation(error)).toEqual({ deviation: expect.closeTo(7, 6), handle: [...w.ids].find(([, id]) => id === largest)![0],
+      source: `ratedMatches/${w.lobbies[8]}`, count: 3 });
+    expect(refusalFigures(error)).toMatchObject({ deviation: expect.closeTo(7, 6), count: 3, kind: "after" });
+    // Its players alone differing: one failure, with no deviation.
+    await edit(7, c => { c[0]!.after -= 2; });
+    await edit(8, c => { c[0]!.after -= 7; });
+    const players = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(players)).toBe("not-reproduced-players");
+    expect(refusalFigures(players)).toMatchObject({ deviation: null, count: 1, kind: null });
+  });
+
   it("a missing value counts as a difference but never hides a finite deviation in another field", async () => {
     const w = await world();
     type Stored = { identityId: string; after: number; rdAfter?: number };
@@ -374,20 +410,59 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     }
   });
 
-  it("orders by each change record's creation: a later rewrite of a record moves nothing; a shared commit time refuses", async () => {
+  /** The store with each history match's change record created at time(place), place its lobby's index in match order. */
+  const createdIn = (w: Awaited<ReturnType<typeof world>>, time: (place: number) => string): Store => ({ ...w.store, createTimes: async paths => {
+    const times = new Map(await w.store.createTimes!(paths));
+    MATCH_ORDER.forEach((i, place) => { if (times.has(`ratedMatches/${w.lobbies[i]}`)) times.set(`ratedMatches/${w.lobbies[i]}`, time(place)); });
+    return times;
+  } });
+  const second = (s: number) => `2026-11-09T12:00:${String(s).padStart(2, "0")}.5Z`;
+
+  it("refuses, and writes nothing, when two overlapping matches sharing a player were rated in the order they ended", async () => {
+    expect(HISTORY[10]![3]).toBeGreaterThan(HISTORY[11]![3]);
+    expect(END_ORDER.indexOf(10)).toBeLessThan(END_ORDER.indexOf(11));
+    const w = await world(END_ORDER);
+    const before = await w.snapshot();
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    expect(await w.snapshot()).toEqual(before);
+  });
+
+  it("replays in match order, its window included, whatever order the change records were created in", async () => {
     const w = await world();
     const plan = await planCorrections(w.store, w.recordings) as Plan;
-    // A later write to the earliest match's record (as a marker or record fill would make) keeps its createTime.
+    // Created in the reverse of match order, as a copy of the data may leave them. In that order the window would start
+    // at the second moved match, take in every match before the first moved one and leave out every later one.
+    const reversed = createdIn(w, place => second(MATCH_ORDER.length - place));
+    expect(((await planCorrections(reversed, w.recordings)) as Plan).summary).toEqual(plan.summary);
+    // In match order but for the match just before the window, created after every other: in that order it would be
+    // inside the window, rated last.
+    const before = MATCH_ORDER.indexOf(13);
+    const late = createdIn(w, place => second(place === before ? 59 : place));
+    expect(((await planCorrections(late, w.recordings)) as Plan).summary).toEqual(plan.summary);
+    // A later write to a change record moves nothing either.
     await commit(w.store, [{ op: "update", path: `ratedMatches/${w.lobbies[0]}`, fields: { filled: "true" } }]);
-    // The same plan, digest included (an updateTime order would put that match last and change it).
     expect(((await planCorrections(w.store, w.recordings)) as Plan).summary).toEqual(plan.summary);
+  });
 
-    const [a, b] = [w.lobbies[7]!, w.lobbies[8]!];
-    const tied: Store = { ...w.store, createTimes: async paths => {
-      const times = new Map(await w.store.createTimes!(paths));
-      return times.set(`ratedMatches/${b}`, times.get(`ratedMatches/${a}`)!);
-    } };
-    await expect(planCorrections(tied, w.recordings)).rejects.toThrow(new RegExp(`lobbies (${a} and ${b}|${b} and ${a}) not established`));
+  it("refuses matches that share a match time and a player, as stored or after the move; a shared match time alone plans", async () => {
+    const w = await world();
+    /** The code planning gives with lobby i starting when lobby j does. */
+    const tied = async (i: number, j: number) => {
+      const path = `lobbies/${w.lobbies[i]}`;
+      const startsAt = (await w.store.get(path))!.startsAt!;
+      await commit(w.store, [{ op: "update", path, fields: { startsAt: String(T0 + HISTORY[j]![3] * MIN) } }]);
+      const code = await planCorrections(w.store, w.recordings).then(() => null, refusalCode);
+      await commit(w.store, [{ op: "update", path, fields: { startsAt } }]);
+      return code;
+    };
+    // Stored, both play grok-4-7.
+    expect(await tied(8, 10)).toBe("shared-match-time");
+    // Only after the move: the match just before the window and the first moved match then both play sol-high-fast.
+    expect(await tied(13, 5)).toBe("shared-match-time");
+    // HISTORY's two matches at 300 share no player: planned.
+    expect(HISTORY[7]![3]).toBe(HISTORY[12]![3]);
+    expect(await planCorrections(w.store, w.recordings)).toHaveProperty("summary.digest");
   });
 
   it("reads commit times for more documents than one batch, and a document's stays put when it is rewritten", async () => {
@@ -624,7 +699,17 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     info.mockRestore(); warn.mockRestore();
   });
 
-  it("refuses the house-1v1 plan when the history is not reproduced: serves the first check's code alone and logs the largest deviation", async () => {
+  /** Every handle, identity, lobby, recording and record name in the world: none may be served in a refusal. */
+  const privateNames = (w: Awaited<ReturnType<typeof world>>) => [...w.ids.keys(), ...w.ids.values(), ...w.users, ...w.lobbies,
+    NEVER_JOINED.lobbyId, NEVER_JOINED.replayId, ...SOL_MOVES.map(move => move.replayId), "ratedMatches", ratingCollection(MODE), "antwars/"];
+  /** The store with each history match's change record committed on its own day: lobby i (as listed in HISTORY) on 2026-10-(10+i). */
+  const dated = (w: Awaited<ReturnType<typeof world>>): Store => ({ ...w.store, createTimes: async paths => {
+    const times = new Map(await w.store.createTimes!(paths));
+    w.lobbies.forEach((id, i) => { if (times.has(`ratedMatches/${id}`)) times.set(`ratedMatches/${id}`, `2026-10-${10 + i}T12:00:00.123456Z`); });
+    return times;
+  } });
+
+  it("refuses the house-1v1 plan when the history is not reproduced: serves the code with its figures, never a name or id, and logs the largest deviation", async () => {
     const w = await appliedWorld();
     // Two stored changes not reproduced: by 1 in an earlier match, by 5 in a later one.
     const edits: [number, number][] = [[7, 1], [8, 5]];
@@ -638,16 +723,83 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     const handle = [...w.ids].find(([, id]) => id === largest)![0];
     const before = await w.snapshot();
     const [info, warn] = quiet();
-    const { serve } = startCorrectionPlan(w.store, w.recordings);
-    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change" });
+    const { serve } = startCorrectionPlan(dated(w), w.recordings);
+    // The largest deviation and its kind, both failing values, and the day the earlier failing change was committed.
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change", deviation: expect.closeTo(5, 6), count: 2,
+      kind: "rdAfter", earliestChangeDay: "2026-10-17" });
     expect(warn.mock.calls).toEqual([["antwar house-1v1 rating correction plan refused", { reason: "not-reproduced-change",
       deviation: { deviation: expect.closeTo(5, 6), handle, source: `ratedMatches/${w.lobbies[8]}`, count: 2 } }]]);
-    // The public answer is the code alone: no handle, match, figure or plan.
+    // Numbers and kinds only: no handle, identity, lobby, recording or record name, and no plan.
     const body = served(serve, SOL_PLAN_PATH).body;
-    for (const text of [handle, w.lobbies[7]!, w.lobbies[8]!, "digest", "matches"]) expect(body).not.toContain(text);
+    expect(Object.keys(JSON.parse(body))).toEqual(["state", "reason", "deviation", "count", "kind", "earliestChangeDay"]);
+    for (const text of [...privateNames(w), "digest", "matches"]) expect(body).not.toContain(text);
     expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 rating correction plan"))).toBe(false);
     expect(await w.snapshot()).toEqual(before);
     info.mockRestore(); warn.mockRestore();
+  });
+
+  it("serves kind null when the largest deviation is null: a later change missing only rdAfter", async () => {
+    const w = await appliedWorld();
+    const path = `ratedMatches/${w.lobbies[8]}`;
+    const changes = JSON.parse((await w.store.get(path))!.changes!) as { identityId: string; rdAfter?: number }[];
+    delete changes[0]!.rdAfter;
+    await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    const handle = [...w.ids].find(([, id]) => id === changes[0]!.identityId)![0];
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(dated(w), w.recordings);
+    expect(await solServed(serve)).toEqual({ state: "refused", reason: "not-reproduced-change", deviation: null, count: 1, kind: null,
+      earliestChangeDay: "2026-10-18" });
+    // The log line is as before: the entry, its handle and source, with no deviation.
+    expect(warn.mock.calls).toEqual([["antwar house-1v1 rating correction plan refused", { reason: "not-reproduced-change",
+      deviation: { deviation: null, handle, source: path, count: 1 } }]]);
+    for (const text of privateNames(w)) expect(served(serve, SOL_PLAN_PATH).body).not.toContain(text);
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("serves earliestChangeDay only from a strict UTC commit time that is a real instant, never from other text", async () => {
+    const w = await appliedWorld();
+    for (const i of [7, 8]) {
+      const path = `ratedMatches/${w.lobbies[i]}`;
+      const changes = JSON.parse((await w.store.get(path))!.changes!) as { rdAfter: number }[];
+      changes[0]!.rdAfter += 1;
+      await commit(w.store, [{ op: "update", path, fields: { changes: JSON.stringify(changes) } as Fields }]);
+    }
+    /** The store with each history match's commit time given by time(i), i as listed in HISTORY. */
+    const timed = (time: (i: number) => string): Store => ({ ...w.store, createTimes: async paths => {
+      const times = new Map(await w.store.createTimes!(paths));
+      w.lobbies.forEach((id, i) => { if (times.has(`ratedMatches/${id}`)) times.set(`ratedMatches/${id}`, time(i)); });
+      return times;
+    } });
+    const refused = async (store: Store) => {
+      const [info, warn] = quiet();
+      const { serve } = startCorrectionPlan(store, w.recordings);
+      const sol = await solServed(serve);
+      info.mockRestore(); warn.mockRestore();
+      return { sol, body: served(serve, SOL_PLAN_PATH).body };
+    };
+    // Every commit time a name-like string ending in Z: no day, and none of it served.
+    const named = await refused(timed(i => `antwars/gpt-6-1-sol-high-${10 + i}Z`));
+    expect(named.sol).toMatchObject({ state: "refused", reason: "not-reproduced-change", count: 2, earliestChangeDay: null });
+    for (const text of ["antwars", "gpt-6-1", "sol-high", ...privateNames(w)]) expect(named.body).not.toContain(text);
+    // The earlier failing change's time is shaped like a timestamp but is no real instant (hour 25): the later one's day is served.
+    const late = await refused(timed(i => i === 7 ? "2026-10-17T25:00:00Z" : `2026-10-${10 + i}T12:00:00.5Z`));
+    expect(late.sol).toMatchObject({ state: "refused", reason: "not-reproduced-change", count: 2, earliestChangeDay: "2026-10-18" });
+    expect(late.body).not.toContain("T25");
+  });
+
+  it("serves a house-1v1 refusal whose largest deviation is in a rating row with that row value's kind and no change day", async () => {
+    for (const [field, kind, reason] of [["rating", "rating", "not-reproduced-rating"], ["rd", "rd", "not-reproduced-rd"]] as const) {
+      const w = await appliedWorld();
+      const path = `${ratingCollection(MODE)}/${w.ids.get("antwars/gpt-6-1-sol-high-fast")}`;
+      const row = (await w.store.get(path))!;
+      await commit(w.store, [{ op: "update", path, fields: { [field]: encodeRating(decodeRating(row[field]!) + 1) } }]);
+      const [info, warn] = quiet();
+      const { serve } = startCorrectionPlan(dated(w), w.recordings);
+      expect(await solServed(serve)).toEqual({ state: "refused", reason, deviation: expect.closeTo(1, 6), count: 1, kind, earliestChangeDay: null });
+      const body = served(serve, SOL_PLAN_PATH).body;
+      for (const text of privateNames(w)) expect(body).not.toContain(text);
+      info.mockRestore(); warn.mockRestore();
+    }
   });
 
   it("does not plan the house-1v1 move while the never-joined correction is not applied", async () => {
