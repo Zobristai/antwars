@@ -54,6 +54,17 @@ describe("never blank: a waiting state until the first frames draw", () => {
     expect(body).not.toMatch(/MCP|CLI|60 s behind|next match/i);
   });
 
+  it("a replay's waiting words leave the wordmark's link home in place, and still restore other heading words", async () => {
+    const { replayWaiting } = await import("../../web/src/replay.ts");
+    const line = (text: string) => { const p = { written: 0, text, get textContent() { return p.text; }, set textContent(v: string) { p.written++; p.text = v; } }; return p; };
+    for (const [first, writes] of [["Antwars", 0], ["The game view needs WebGL", 1]] as const) {
+      const heading = line(first), state = line("…");
+      const doc = { title: "", getElementById: () => ({ querySelectorAll: () => [heading, state] }) } as unknown as Document;
+      replayWaiting(doc);
+      expect([heading.text, heading.written, state.text]).toEqual(["Antwars", writes, "Connecting…"]);
+    }
+  });
+
   it("the panel stays until the first frame draws, then hides", async () => {
     const { Waiting } = await import("../../web/src/waiting.ts");
     const el = { hidden: false };
