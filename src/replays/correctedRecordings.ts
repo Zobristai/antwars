@@ -1,8 +1,6 @@
 /// <reference types="node" />
 import { Readable } from "node:stream";
 import type { StreamIdentity, StreamMessage } from "../live/format.js";
-import { CORRECTION_MARKER, NEVER_JOINED, SOL_MOVES } from "../rating/correctionPlan.js";
-import { CORRECTION_KIND } from "../rating/unrateNeverJoined.js";
 import type { Store } from "../store/firestore.js";
 import { abandonBinary, abandonRecord, isAbandonedRecord, parseRecord, rewriteMessages, serializeRecord } from "./abandonRecording.js";
 import type { ReplayRead, ReplaySource } from "./access.js";
@@ -11,13 +9,13 @@ import { seatHandle } from "./recorded-match-type.js";
 
 /**
  * The public view of the matches the one-off rating corrections changed, without rewriting any stored recording.
- * Each match is shown corrected only once its own correction reads applied:
+ * Both corrections have been applied; each match is shown corrected once its own correction reads applied:
  *
  * - the never-joined match (NEVER_JOINED), once its correction record ratingCorrections/<lobby id> names it: its replay,
  *   record and listing row read abandoned and unrated (abandonRecording.ts);
- * - each house-1v1 match moved to a -fast handle (SOL_MOVES), once CORRECTION_MARKER exists. The Sol apply creates that
- *   marker in the same transaction as its writes; nothing writes it yet. Its replay, record and listing row then name
- *   the -fast handle wherever they named the moved one.
+ * - each house-1v1 match moved to a -fast handle (SOL_MOVES), once CORRECTION_MARKER exists. The Sol apply created that
+ *   marker in the same transaction as its writes. Its replay, record and listing row then name the -fast handle
+ *   wherever they named the moved one.
  *
  * Until then the stored bytes are served unchanged. Once a correction reads applied, a recording that cannot be
  * corrected (undecodable, a moved match's replay that renames no seat or does not open with a full snapshot, a message that does not re-encode to its stored bytes, too large, or a moved match whose
@@ -25,6 +23,18 @@ import { seatHandle } from "./recorded-match-type.js";
  * answer CorrectedRecordingUnavailable, served as a 503: never the stored bytes, never the old handle or result.
  * The recorded rating figures are kept as recorded. Every other recording passes straight through, with no store read.
  */
+
+/** The ranked lobby a colony never joined, and its recording. */
+export const NEVER_JOINED = { lobbyId: "f14ece51-223b-4c40-9817-b365d9f7415d", replayId: "2026-11-09T13-26-59-840Z-160375822867893" };
+/** The kind its correction record carries. */
+export const CORRECTION_KIND = "unrate-never-joined";
+/** The two 2026-11-01 house-1v1 matches moved from the standard Sol handles to the -fast handles that played them. */
+export const SOL_MOVES: readonly { readonly replayId: string; readonly from: string; readonly to: string }[] = [
+  { replayId: "2026-11-01T21-29-08-783Z-4247401107838", from: "antwars/gpt-6-1-sol-high", to: "antwars/gpt-6-1-sol-high-fast" },
+  { replayId: "2026-11-01T21-35-14-507Z-201306744279384", from: "antwars/gpt-6-1-sol-xhigh", to: "antwars/gpt-6-1-sol-xhigh-fast" },
+];
+/** The marker the Sol apply created with its writes: { planDigest, appliedAt }. */
+export const CORRECTION_MARKER = "migrations/ratingCorrection";
 
 type Correction = { readonly kind: "never-joined" } | { readonly kind: "sol"; readonly from: string; readonly to: string };
 const CORRECTIONS: ReadonlyMap<string, Correction> = new Map<string, Correction>([

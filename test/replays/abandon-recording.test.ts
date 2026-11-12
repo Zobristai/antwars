@@ -2,7 +2,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { binaryRecord } from "../../src/replays/history.ts";
-import { abandonBinary, abandonRecord, assertConsistent, isAbandonedRecord, unjoinedColonies } from "../../src/replays/abandonRecording.ts";
+import { abandonBinary, abandonRecord, isAbandonedRecord } from "../../src/replays/abandonRecording.ts";
 import { RATINGS_UNAVAILABLE } from "../../src/records/service.ts";
 import { ratedRecording, REPLAY_ID } from "./never-joined-fixture.ts";
 
@@ -56,13 +56,13 @@ describe("abandoning a rated recording", () => {
     expect(end.kind === "end" && end.result.ratingChanges).toBe(undefined);
     expect(isAbandonedRecord(record)).toBe(false);
     expect(isAbandonedRecord(abandoned)).toBe(true);
-    expect(() => assertConsistent(REPLAY_ID, abandonBinary(binary).body!, abandoned)).not.toThrow();
-    expect(() => assertConsistent(REPLAY_ID, binary, abandoned)).toThrow(/disagree on the result/);
-  });
-
-  it("finds the colony with no seat and no join", () => {
-    expect(unjoinedColonies(ratedRecording([1]).record, [0, 1])).toEqual([0]);
-    expect(unjoinedColonies(ratedRecording([0, 1]).record, [0, 1])).toEqual([]);
+    // The abandoned binary decodes to the abandoned record's result and an unrated setup, with the same seats.
+    const decoded = binaryRecord({ id: REPLAY_ID, binary: abandonBinary(binary).body! });
+    expect(decoded.result).toEqual(abandoned.result);
+    expect(decoded.setup!.rated).toBe(false);
+    const seats = (list: typeof record.seats) => list.map(({ seat, colony, joinedTick }) => ({ seat, colony, joinedTick }));
+    expect(seats(decoded.seats)).toEqual(seats(abandoned.seats));
+    expect(binaryRecord({ id: REPLAY_ID, binary }).result).not.toEqual(abandoned.result);
   });
 
   it("refuses a binary whose messages do not re-encode to their stored bytes", () => {
