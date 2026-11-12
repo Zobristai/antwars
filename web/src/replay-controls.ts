@@ -11,8 +11,6 @@ export function replayTime(ms: number): string {
 const KIND_NAMES = { fight: "Fight", nest: "Nest lost", food: "Food lead" } as const;
 /** The native thumb's half width: its centre travels this far inside each end of the track. */
 const THUMB_INSET = 8;
-/** How near its moment playback must be for a mark to stand under the thumb, not drawn. */
-const AT_MARK_MS = 500;
 /** How long a mark's label stays after a tap or a chosen line. */
 const LABEL_MS = 2000;
 // Static markup (no recording data): a diamond, a downward triangle and a dot, outlined dark so each reads on the
@@ -35,13 +33,11 @@ export function markX(ms: number, duration: number, width: number): number {
   return THUMB_INSET + Math.min(1, Math.max(0, ms / duration)) * Math.max(0, width - 2 * THUMB_INSET);
 }
 
-/** Marks closer than `gap` px along a track of `width` px join one group, chained left to right. Each mark stands at
- * its moment, or at `xs[i]` where the caller placed it elsewhere. */
-export function groupMarks(events: readonly ReplayEvent[], duration: number, width: number, gap: number, xs?: readonly number[]): { x: number; events: ReplayEvent[] }[] {
-  const placed = events.map((e, i) => ({ e, x: xs?.[i] ?? markX(e.ms, duration, width), i }))
-    .sort((a, b) => a.x - b.x || a.i - b.i);
+/** Marks closer than `gap` px along a track of `width` px join one group, chained left to right. */
+export function groupMarks(events: readonly ReplayEvent[], duration: number, width: number, gap: number): { x: number; events: ReplayEvent[] }[] {
   const groups: { xs: number[]; events: ReplayEvent[] }[] = [];
-  for (const { e, x } of placed) {
+  for (const e of events) {
+    const x = markX(e.ms, duration, width);
     const last = groups.at(-1);
     if (last && x - last.xs.at(-1)! < gap) { last.xs.push(x); last.events.push(e); }
     else groups.push({ xs: [x], events: [e] });
@@ -110,16 +106,15 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
   let laidOut: readonly ReplayEvent[] | null = null;
   let laidDuration = 0;
   let trackWidth = 0;
-  /** Where the marks the thumb covers stood, as last laid out; and how near the thumb a mark is covered. */
-  let laidCovered = "";
-  let coverReach = THUMB_INSET;
+  /** Where the thumb's centre stood along the track when the covered marks were last marked. */
+  let laidThumb = NaN;
   // Re-laid out only when the slider's box changes, never measured every frame.
   let dirty = true;
   const Observer = doc.defaultView?.ResizeObserver;
   const resized = Observer ? new Observer(() => { dirty = true; }) : null;
   resized?.observe(el);
   resized?.observe(seek);
-  let items: { x: number; events: ReplayEvent[]; button: HTMLButtonElement }[] = [];
+  let items: { x: number; events: ReplayEvent[]; button: HTMLButtonElement; reach: number }[] = [];
   let openItem: (typeof items)[number] | null = null;
   /** A list a mouse opened by pointing stays open when that mouse then clicks; only a list a click opened toggles. */
   let openedByPointing = false;
@@ -213,55 +208,26 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     if (openItem && target && !list.contains(target) && !openItem.button.contains(target)) closeList();
   };
   doc.addEventListener?.("pointerdown", outside);
-  /** Where each mark stands while the thumb covers some. A covered mark at the moment playback is at stands under the
-   * thumb and is not drawn (null); a covered mark at another moment stands beside the thumb, on its own side (the other
-   * side where the track ends there), so every other moment stays a mark or a group to choose. `key` names the covered. */
-  const placed = (all: readonly ReplayEvent[], duration: number) => {
-    const now = Number(seek.value);
-    const thumb = markX(now, duration, trackWidth);
-    const xs: (number | null)[] = [];
-    const key: string[] = [];
-    all.forEach((e, i) => {
-      const x = markX(e.ms, duration, trackWidth);
-      if (Math.abs(x - thumb) >= coverReach) return void xs.push(x);
-      let at: number | null = null;
-      if (Math.abs(e.ms - now) >= AT_MARK_MS) {
-        at = e.ms > now ? thumb + coverReach : thumb - coverReach;
-        if (at > trackWidth - THUMB_INSET) at = thumb - coverReach;
-        else if (at < THUMB_INSET) at = thumb + coverReach;
-      }
-      xs.push(at);
-      key.push(`${i}:${at === null ? "-" : Math.round(at)}`);
-    });
-    return { xs, key: key.join(",") };
-  };
   const layout = () => {
     const duration = recording.duration;
     if (!events || !duration) return;
-    const resize = dirty || laidOut !== events || laidDuration !== duration;
-    if (resize) {
-      trackWidth = seek.offsetWidth;
-      // The glyph fills 12 of its 16-unit box; the thumb covers a mark whose glyph it overlaps.
-      coverReach = THUMB_INSET + px("--aw-mark-size", 16) * 0.375;
-    }
-    const { xs, key: cover } = placed(events, duration);
-    if (!resize && cover === laidCovered) return;
-    // The thumb moved onto, along or off a mark: regroup, but not under an open list, a shown label or focus.
-    const active = doc.activeElement ?? null;
-    if (!resize && (openItem || (!chip.hidden && !chipTimer) || (active !== null && layer.contains(active)))) return;
+    if (!dirty && laidOut === events && laidDuration === duration) return;
     dirty = false;
     laidOut = events;
     laidDuration = duration;
-    laidCovered = cover;
-    const width = trackWidth;
-    if (resize) { closeList(); hideChip(); }
+    laidThumb = NaN;
+    const width = trackWidth = seek.offsetWidth;
+    closeList();
+    hideChip();
+    // The glyph fills 12 of its 16-unit box; the thumb covers a mark (or a group's count) its own half width overlaps.
+    const glyphReach = THUMB_INSET + px("--aw-mark-size", 16) * 0.375;
+    const countReach = THUMB_INSET + px("--aw-mark-count-width", 19) / 2;
     layer.style.left = `${seek.offsetLeft}px`;
     layer.style.top = `${seek.offsetTop}px`;
     layer.style.width = `${width}px`;
     layer.style.height = `${seek.offsetHeight}px`;
     layer.replaceChildren();
-    const shown = events.flatMap((e, i) => xs[i] === null ? [] : [{ e, x: xs[i]! }]);
-    items = groupMarks(shown.map(s => s.e), duration, width, px("--aw-mark-gap", 18), shown.map(s => s.x)).map(group => {
+    items = groupMarks(events, duration, width, px("--aw-mark-gap", 18)).map(group => {
       const button = doc.createElement("button");
       button.type = "button";
       button.style.left = `${group.x}px`;
@@ -280,7 +246,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
         count.textContent = String(group.events.length);
         button.append(count);
       }
-      const item = { ...group, button };
+      const item = { ...group, button, reach: group.events.length === 1 ? glyphReach : countReach };
       if (group.events.length === 1) {
         button.onclick = () => jump(first, group.x);
         button.onpointerenter = (event: PointerEvent) => { if (mouse(event)) showChip(first, group.x, null); };
@@ -309,6 +275,17 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     });
     el.append(layer, chip, list);
   };
+  /** As drawn, the marks lie on the track under the thumb: the layer is cut away in the thumb's shape, and a mark the
+   * thumb covers takes no pointer, so the thumb stays the target there. Keyboard focus still reaches it. */
+  const underThumb = () => {
+    const duration = recording.duration;
+    if (!duration || !items.length) return;
+    const thumb = markX(Number(seek.value), duration, trackWidth);
+    if (Math.abs(thumb - laidThumb) < 0.25) return;
+    laidThumb = thumb;
+    layer.style.setProperty("--aw-thumb-x", `${thumb.toFixed(1)}px`);
+    for (const item of items) item.button.classList.toggle("is-covered", Math.abs(item.x - thumb) < item.reach);
+  };
   const update = () => {
     const duration = recording.duration;
     speed.disabled = recording.error !== null;
@@ -322,7 +299,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     if (state.textContent !== text) state.textContent = text;
     el.setAttribute("aria-busy", String(recording.seeking));
     events = recording.events;
-    if (events && events.length && !recording.error) layout();
+    if (events && events.length && !recording.error) { layout(); underThumb(); }
   };
   update();
   return { el, update, close: () => {

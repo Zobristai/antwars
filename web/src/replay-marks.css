@@ -10,7 +10,14 @@
   --aw-mark-chip-h: 20px; --aw-mark-font: 11px; --aw-mark-icon: 12px; --aw-mark-row: 28px; --aw-mark-list-w: 240px;
   --aw-mark-sep: transparent; --aw-mark-reserve: 84px;
 }
-.aw-marks { position: absolute; z-index: 1; pointer-events: none; }
+.aw-marks {
+  --aw-thumb-r: 8px;
+  position: absolute; z-index: 1; pointer-events: none;
+  /* Under the thumb: the layer is cut away in the native thumb's round shape where it stands (replay-controls.ts). */
+  -webkit-mask-image: radial-gradient(circle var(--aw-thumb-r) at var(--aw-thumb-x, -99px) 50%, transparent calc(var(--aw-thumb-r) - 0.5px), #000 var(--aw-thumb-r));
+  mask-image: radial-gradient(circle var(--aw-thumb-r) at var(--aw-thumb-x, -99px) 50%, transparent calc(var(--aw-thumb-r) - 0.5px), #000 var(--aw-thumb-r));
+}
+.aw-mark.is-covered { pointer-events: none; }
 .aw-mark {
   position: absolute; top: 50%; display: grid; place-items: center; width: var(--aw-mark-hit-w); height: var(--aw-mark-hit-h);
   margin: 0; padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer;
