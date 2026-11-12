@@ -54,7 +54,7 @@ async function joinedSeat(fakeOptions = {}) {
     "--model-label", "claude-opus-5-5", "--thinking-level", "max")).toBe(0);
   expect(await cli("go")).toBe(0);
   const state = (name) => JSON.parse(readFileSync(join(dir, "state", name), "utf8"));
-  return { clock, fake, cli, printed, state };
+  return { clock, fake, cli, printed, state, dir };
 }
 
 /** One agent command: exit code, fake time taken, everything printed, and the requests the fake answered normally. */
@@ -260,6 +260,45 @@ describe("other HTTP 4xx answers", () => {
     expect(r.output).toBe(`antwars-seat observe: tools/call failed: HTTP ${status}\n`);
     expect(s.fake.outageHits).toHaveLength(1);
     expect(r.elapsedMs).toBeLessThan(1_000);
+  });
+});
+
+// Another instance takes the slot between a reconnect's initialize and its initialized notification:
+// the notification reaches a server that does not know the session, which answers HTTP 404.
+describe("a 404 to the initialized notification", () => {
+  it("starts the handshake again with a fresh initialize, re-joins the same seat by key and completes the call", async () => {
+    const s = await joinedSeat();
+    s.fake.expireSessions();
+    s.fake.forgetInitialized(1);
+    const r = await run(s, "observe", "--raw");
+    expect(r.exit).toBe(0);
+    expectSeatView(r.output);
+    expect(r.calls).toEqual(["initialize", "notifications/initialized", "initialize", "join", "observe"]);
+    expect(s.fake.toolCalls("join").at(-1).args.key).toBe(KEY);
+    const steps = readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(steps.filter((line) => line.step === "session_gone").map((line) => line.method)).toEqual(["tools/call", "notifications/initialized"]);
+    expect(s.state("status.json").step).toBe("rejoined");
+    expect(r.elapsedMs).toBeLessThan(60_000);
+  });
+
+  it("keeps starting it again only until the command's 60 s deadline, then reports the timeout", async () => {
+    const s = await joinedSeat();
+    s.fake.expireSessions();
+    s.fake.forgetInitialized(Infinity);
+    const r = await run(s, "observe");
+    expect(r.exit).toBe(1);
+    expect(r.output).toBe("antwars-seat observe: The operation was aborted due to timeout\n");
+    expect(r.calls.filter((call) => call === "join" || call === "observe")).toEqual([]);
+    expect(r.elapsedMs).toBeLessThanOrEqual(61_000);
+  });
+
+  it("on the entry client is reported at once, as before", async () => {
+    const s = await joinedSeat();
+    s.fake.forgetInitialized(1);
+    const r = await run(s, "leave");
+    expect(r.exit).toBe(1);
+    expect(r.output).toBe("antwars-seat leave: initialized notification failed: HTTP 404\n");
+    expect(r.calls.filter((call) => call === "initialize")).toHaveLength(1);
   });
 });
 
