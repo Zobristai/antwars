@@ -257,7 +257,8 @@ describe("leaderboard page mode choice", () => {
   it("shows no lobby, queue or account surface", async () => {
     const p = mount(server({ ...emptyIndex })); await p.settled();
     expect(p.root.textContent).not.toMatch(/lobb|queue|account|sign in|username/i);
-    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=house-1v1", "/rules", INSPIRED_BY_URL]); p.dispose();
+    // The links: the brand home, the tabs, the house-1v1 mode, Rules and Inspired by.
+    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/", "/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=house-1v1", "/rules", INSPIRED_BY_URL]); p.dispose();
   });
 });
 
