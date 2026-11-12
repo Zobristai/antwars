@@ -23,9 +23,9 @@ import {
  * 1. Ranked lobby NEVER_JOINED, which one seat never joined, becomes abandoned and unrated with its rating effect
  *    removed: unrateNeverJoined.ts's verify and Firestore writes, without its recording rewrite.
  * 2. Two 2026-11-01 house-1v1 matches move from the standard Sol handles to the -fast handles that played them
- *    (SOL_MOVES), and house-1v1 ratings are recomputed with rateMatch, in the order they were applied, from each
- *    player's state before the first moved match. Ratings are applied when a match ends, so that order is the
- *    createTime of each match's stored change record. The pass refuses unless the same replay without the move
+ *    (SOL_MOVES), and house-1v1 ratings are recomputed with rateMatch, in match order (each lobby's match time), from
+ *    each player's state before the first moved match. A stored record's creation time is no guide to that order: a
+ *    copy of the data gives every record a new one. The pass refuses unless the same replay without the move
  *    reproduces every stored change and row.
  *
  * Names are published as the public Waiting view shows them (live/queue-catalog.ts): a released owner's placeholder,
@@ -72,7 +72,7 @@ export const REFUSAL_CODES = [
   "never-joined-watch-entry", "never-joined-match-record", "never-joined-never-joined", "never-joined-recording-rewrite", "never-joined-stage",
   "never-joined-rating-change",
   "unknown-identity", "sol-lobby", "sol-handle", "no-commit-times", "unreadable-lobby", "history-unstable", "no-change-record",
-  "no-change-record-time", "moved-seats", "moved-not-rated", "shared-commit-time", "no-glicko-change", "not-reproduced-players",
+  "no-change-record-time", "moved-seats", "moved-not-rated", "shared-match-time", "no-glicko-change", "not-reproduced-players",
   "not-reproduced-change", "not-reproduced-rating", "not-reproduced-rd", "not-reproduced-rated-at", "not-reproduced-rated-matches",
   "not-reproduced-record", "no-public-match-id", "no-row", "never-joined-not-applied", "store-error", "error",
 ] as const;
@@ -345,9 +345,9 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     return at ? `${at[1]}.${(at[2] ?? "").padEnd(9, "0")}Z` : refuse("no-change-record-time", `lobby ${lobby.id}: no change record time`);
   };
 
-  // The order ratings were applied: each match's change record is created in the commit that rated it, so its
-  // createTime (never its updateTime, which a later write moves) orders the ratings.
-  const order = [...lobbies].sort((a, b) => createdAt(a) < createdAt(b) ? -1 : createdAt(a) > createdAt(b) ? 1 : 0);
+  // Match order: the lobbies by match time, then id, as houseLobbies returns them. It sets the window's start and its
+  // matches as well as the replay. createdAt only dates a failing change record for the refusal's earliestChangeDay.
+  const order = lobbies;
   const moved = order.map(lobby => {
     const move = moves.find(each => each.lobbyId === lobby.id);
     if (!move) return lobby;
@@ -357,10 +357,20 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const first = Math.min(...moves.map(move => order.findIndex(lobby => lobby.id === move.lobbyId)));
   if (first < 0) refuse("moved-not-rated", `a moved lobby is not a rated ${MODE} match`);
   const window = order.slice(first);
-  // Sorted, so equal times are neighbours; the match just before the window counts too.
-  for (let i = Math.max(first, 1); i < order.length; i++) {
-    const [a, b] = [order[i - 1]!, order[i]!];
-    if (createdAt(a) === createdAt(b)) refuse("shared-commit-time", `order of lobbies ${a.id} and ${b.id} not established: their ratings share a commit time`);
+  // Matches with the same match time have no established order. Sorted, so they are neighbours: from the first that
+  // shares the window's first match time, any two in one run that share a player, as stored or after the move, refuse.
+  let start = first;
+  while (start > 0 && order[start - 1]!.at === order[first]!.at) start--;
+  for (let i = start, end; i < order.length; i = end) {
+    for (end = i + 1; end < order.length && order[end]!.at === order[i]!.at; end++);
+    const seen = new Map<string, string>();
+    for (let k = i; k < end; k++) {
+      for (const id of new Set([...teamsOf(order[k]!), ...teamsOf(moved[k]!)].flat())) {
+        const other = seen.get(id);
+        if (other !== undefined) refuse("shared-match-time", `order of lobbies ${other} and ${order[k]!.id} not established: they share a player and a match time`);
+        seen.set(id, order[k]!.id);
+      }
+    }
   }
   const players = [...new Set([...window, ...moved.slice(first)].flatMap(lobby => teamsOf(lobby).flat()))];
 
