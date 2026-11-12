@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { FirestoreError, type Fields, type Store, type Write } from "../store/firestore.js";
 import type { RecordingObjects } from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
@@ -17,8 +18,8 @@ import {
  * The never-joined correction ships first, on its own: at start the entry-point server plans only it (planNeverJoined),
  * logs each write's operation and path and a SHA-256 digest of those writes alone, and serves the plan's public facts at PLAN_PATH.
  * That correction was applied by an earlier release and reads applied from what it wrote (neverJoinedApplied); its apply
- * is removed, so the server writes nothing for either correction. Once it reads applied, the Sol move is planned at
- * start read-only and served at SOL_PLAN_PATH; nothing applies it.
+ * is removed. Once it reads applied, the Sol move is planned at start and served at SOL_PLAN_PATH, and applied once,
+ * only when its digest is SOL_APPLY_DIGEST (applySol).
  *
  * 1. Ranked lobby NEVER_JOINED, which one seat never joined, becomes abandoned and unrated with its rating effect
  *    removed: unrateNeverJoined.ts's verify and Firestore writes, without its recording rewrite.
@@ -34,8 +35,8 @@ import {
  * Any failed check refuses the whole plan: PLAN_PATH says "refused" with only a fixed code naming the check
  * (RefusalCode), never an id, a name or a stored figure, and the log says only that it refused, with that code (a
  * stored value can be malformed, so no error text is logged).
- * CORRECTION_MARKER is to be created by a later Sol apply in the same transaction as its writes: { planDigest, appliedAt }.
- * Nothing writes it today. While it exists nothing is planned.
+ * applySol creates CORRECTION_MARKER in the same transaction as the Sol move's writes: { planDigest, appliedAt }. While
+ * it exists nothing is planned or applied.
  */
 export const NEVER_JOINED = { lobbyId: "f14ece51-223b-4c40-9817-b365d9f7415d", replayId: "2026-11-09T13-26-59-840Z-160375822867893" };
 export const SOL_MOVES: readonly { readonly replayId: string; readonly lobbyId?: string; readonly from: string; readonly to: string }[] = [
@@ -66,6 +67,8 @@ export interface PublicPlan {
   readonly ratings: readonly { readonly handle: string; readonly mode: string; readonly before: Standing | null; readonly after: Standing | null }[];
 }
 export interface Plan { readonly writes: readonly Write[]; readonly summary: PublicPlan }
+/** A plan with every document it was computed from, as read (null where missing), for the apply to read again. */
+export interface CheckedPlan extends Plan { readonly reads: ReadonlyMap<string, Fields | null> }
 /** Every check that can refuse, as PLAN_PATH serves it; store-error and error are a failed read and any other throw. */
 export const REFUSAL_CODES = [
   "never-joined-lobby", "never-joined-correction-marker", "never-joined-change-record", "never-joined-only-rated-match",
@@ -226,7 +229,7 @@ async function houseHistory(store: Store, extra: readonly string[]) {
   for (let attempt = 1; ; attempt++) {
     const lobbies = await houseLobbies(store);
     const players = [...new Set([...extra, ...lobbies.flatMap(lobby => lobby.seats.map(seat => seat.id))])];
-    const paths = [...lobbies.flatMap(lobby => [`ratedMatches/${lobby.id}`, `watchMatches/${lobby.id}`]), ...players.map(id => `${ROWS}/${id}`)];
+    const paths = [...lobbies.flatMap(lobby => [`lobbies/${lobby.id}`, `ratedMatches/${lobby.id}`, `watchMatches/${lobby.id}`]), ...players.map(id => `${ROWS}/${id}`)];
     const docs = new Map<string, Fields | null>();
     for (let i = 0; i < paths.length; i += 100) {
       for (const entry of await store.transaction(async read => ({ result: await read(paths.slice(i, i + 100)), writes: [] }))) docs.set(...entry);
@@ -304,15 +307,16 @@ export async function planNeverJoined(store: Store, recordings: RecordingObjects
  * plan is then the Sol move alone. Throws (refuses) on any failed check. Reads only. Run at start only once the
  * never-joined correction is applied, so there it is the Sol move alone.
  */
-export async function planCorrections(store: Store, recordings: RecordingObjects): Promise<Plan | "applied"> {
+export async function planCorrections(store: Store, recordings: RecordingObjects): Promise<CheckedPlan | "applied"> {
   if (await store.get(CORRECTION_MARKER) !== null) return "applied";
   const names = new Map<string, string>();
   const at = Date.now();
 
   // 1. The never-joined lobby, unless its correction is already applied.
-  const { writes, matches, ratings } = await neverJoinedApplied(store)
+  const verified = await neverJoinedApplied(store) ? null : await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
+  const { writes, matches, ratings } = verified === null
     ? { writes: [] as Write[], matches: [] as PublicPlan["matches"][number][], ratings: [] as PublicPlan["ratings"][number][] }
-    : await neverJoinedPart(store, await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId), names, at);
+    : await neverJoinedPart(store, verified, names, at);
   const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.
@@ -489,19 +493,56 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     writes.push({ op: "update", path: `${ROWS}/${id}`, fields: updated });
     ratings.push({ handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
   }
-  return { writes, summary: { digest: planDigest(writes), matches, ratings } };
+  // Every document the plan was computed from: the never-joined checks' reads and the house-1v1 history.
+  const reads = new Map<string, Fields | null>([...(verified?.snapshot ?? []), ...docs]);
+  return { writes, summary: { digest: planDigest(writes), matches, ratings }, reads };
 }
 
-/** Where the house-1v1 move's read-only plan is served, under PLAN_PATH's mount. */
+/**
+ * The digest of the one house-1v1 plan applySol may write: set, in a reviewed commit, to the digest the plan served.
+ * Each rated house-1v1 match changes the plan, so only a plan read while none can finish carries a digest that holds.
+ */
+export const SOL_APPLY_DIGEST = "076f87cda7858e1d80fea0b59bd07e93adf130cea07785f5d7fda7027bd658f5";
+/**
+ * The most writes the apply puts in its one commit, its marker included: Firestore's long-standing per-commit write
+ * limit, kept as a bound; a larger plan writes nothing. Its documented request-size limit (10 MiB) is far above this.
+ */
+export const APPLY_WRITE_LIMIT = 500;
+export type SolApplyOutcome = "applied" | "digest differs" | "too many writes" | "already applied" | "changed since planned";
+
+/**
+ * Applies the plan once, only when its digest is `digest`. One transaction reads again every document the plan was
+ * computed from, and CORRECTION_MARKER. It commits the plan's writes and creates the marker only while the marker is
+ * absent and every document is as the plan read it; otherwise it writes nothing. The marker's create also requires it
+ * absent at commit, so of two concurrent applies only one commits. No recording or other stored object is touched.
+ */
+export async function applySol(store: Store, plan: CheckedPlan, digest = SOL_APPLY_DIGEST): Promise<SolApplyOutcome> {
+  if (plan.summary.digest !== digest) return "digest differs";
+  if (plan.writes.length + 1 > APPLY_WRITE_LIMIT) return "too many writes";
+  const paths = [...plan.reads.keys()];
+  const marker: Write = { op: "create", path: CORRECTION_MARKER, fields: { planDigest: digest, appliedAt: new Date().toISOString() } };
+  return store.transaction(async read => {
+    if ((await read([CORRECTION_MARKER])).get(CORRECTION_MARKER)) return { result: "already applied" as const, writes: [] };
+    for (let i = 0; i < paths.length; i += 100) {
+      const now = await read(paths.slice(i, i + 100));
+      if (!paths.slice(i, i + 100).every(path => isDeepStrictEqual(now.get(path) ?? null, plan.reads.get(path) ?? null))) {
+        return { result: "changed since planned" as const, writes: [] };
+      }
+    }
+    return { result: "applied" as const, writes: [...plan.writes, marker] };
+  });
+}
+
+/** Where the house-1v1 move's plan is served, under PLAN_PATH's mount. */
 export const SOL_PLAN_PATH = `${PLAN_PATH}/house-1v1`;
 
 /**
- * The house-1v1 move, read-only: planned, logged and served once the never-joined correction is applied, never applied
- * here. A refusal logs its code and, where the stored history is not reproduced, its largest deviation (refusalDeviation);
+ * The house-1v1 move: planned, logged and served once the never-joined correction is applied, then applied by applySol
+ * when its digest is applyDigest, the outcome logged; an apply that throws is logged and leaves the plan served. A refusal logs its code and, where the stored history is not reproduced, its largest deviation (refusalDeviation);
  * it serves the code, and for a not-reproduced history also its public figures (refusalFigures), never a name or id.
  */
-async function planSol(store: Store, recordings: RecordingObjects): Promise<PlanState> {
-  let plan: Plan | "applied";
+async function planSol(store: Store, recordings: RecordingObjects, applyDigest: string): Promise<PlanState> {
+  let plan: CheckedPlan | "applied";
   try { plan = await planCorrections(store, recordings); } catch (error) {
     const reason = refusalCode(error);
     const deviation = refusalDeviation(error);
@@ -512,17 +553,26 @@ async function planSol(store: Store, recordings: RecordingObjects): Promise<Plan
   if (plan === "applied") return { state: "applied" };
   for (const write of plan.writes) console.info(`antwar house-1v1 rating correction planned: ${write.op} ${write.path}`);
   console.info("antwar house-1v1 rating correction plan", { digest: plan.summary.digest, writes: plan.writes.length });
+  try {
+    const outcome = await applySol(store, plan, applyDigest);
+    console.info(`antwar house-1v1 rating correction ${outcome === "applied" ? "applied" : `not applied: ${outcome}`}`,
+      { digest: plan.summary.digest, writes: plan.writes.length });
+    if (outcome === "applied" || outcome === "already applied") return { state: "applied" };
+  } catch {
+    console.warn("antwar house-1v1 rating correction apply failed");
+  }
   return { state: "planned", ...plan.summary };
 }
 
 /**
- * The corrections as the entry point runs them at start, in the background, reading only: logged, never thrown. It plans
- * the never-joined correction and logs the plan; it never applies it. Once that correction reads applied, it plans the
- * house-1v1 move read-only (planSol); while it does not, that plan is refused as never-joined-not-applied. serve answers
+ * The corrections as the entry point runs them at start, in the background: logged, never thrown. It plans the
+ * never-joined correction and logs the plan; it never applies it. Once that correction reads applied, it plans the
+ * house-1v1 move and applies it when its digest is applyDigest (planSol); while it does not, that plan is refused as
+ * never-joined-not-applied. serve answers
  * GET PLAN_PATH with the never-joined plan's public facts while it is pending, "applied" once it reads applied, or
  * "refused" with its code, and GET SOL_PLAN_PATH likewise with the house-1v1 plan.
  */
-export function startCorrectionPlan(store: Store, recordings: RecordingObjects): { readonly serve: MountHandler } {
+export function startCorrectionPlan(store: Store, recordings: RecordingObjects, applyDigest = SOL_APPLY_DIGEST): { readonly serve: MountHandler } {
   let current: PlanState = { state: "computing" };
   let sol: PlanState = { state: "computing" };
   const notApplied: PlanState = { state: "refused", reason: "never-joined-not-applied" };
@@ -536,7 +586,7 @@ export function startCorrectionPlan(store: Store, recordings: RecordingObjects):
       sol = notApplied;
       return;
     }
-    if (plan === "applied") { current = { state: "applied" }; sol = await planSol(store, recordings); return; }
+    if (plan === "applied") { current = { state: "applied" }; sol = await planSol(store, recordings, applyDigest); return; }
     // A safe projection of each write: its operation and path, every path a constant or a checked identity id.
     for (const write of plan.writes) console.info(`antwar rating correction planned: ${write.op} ${write.path}`);
     console.info("antwar rating correction plan", { digest: plan.summary.digest, writes: plan.writes.length });
