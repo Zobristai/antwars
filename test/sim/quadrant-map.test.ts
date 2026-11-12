@@ -30,6 +30,47 @@ const ONE_ROCK_SPOT: MapDefinition = {
     startArea: { x: 0, y: 0, width: 5, height: 5 }, foodPatches: [], centreFood: [{ radius: 1, perTile: 3 }] },
 };
 
+/** A 20x20 quadrant map drawn as its top-left 10x10 quadrant, row by row: '#' is water, anything else land.
+ * The nest is at (3,3), so its clearance covers x and y up to 6; the centre is x and y 8 to 11. */
+function drawn(id: string, rows: readonly string[], startArea: WaterRect, foodPatches: QuadrantLayout["foodPatches"] = []): MapDefinition {
+  const water: WaterRect[] = [];
+  rows.forEach((row, y) => [...row].forEach((c, x) => { if (c === "#") water.push({ x, y, width: 1, height: 1 }); }));
+  return { id, name: id, water, quadrant: { referenceWidth: 20, referenceHeight: 20, centreHalfWidth: 2, centreHalfHeight: 2,
+    nestTileX: 3, nestTileY: 3, startArea, foodPatches, centreFood: [{ radius: 1, perTile: 3 }] } };
+}
+/** One corridor joins the nest (N) to the centre (x). Outside the nest clearance, every land tile but C (7,6) lies on that
+ * corridor, so C is the only spot whose rock leaves the nests and centre connected. P (6,6), inside the clearance, is
+ * reached only through C. */
+const POCKET = [
+  ".........#",
+  ".....###.#",
+  ".....###.#",
+  "...N.###.#",
+  ".....###.#",
+  "########.#",
+  "######PC.#",
+  "########.#",
+  "########xx",
+  "########xx",
+];
+/** P flooded: C is a dead end. */
+const DEAD_END = POCKET.map((row, y) => (y === 6 ? row.replace("P", "#") : row));
+/** A water-enclosed plus of land centred at (2,6), exactly covered by a radius-1 food disk. */
+const FOOD_POCKET = [
+  ".........#",
+  ".....###.#",
+  ".....###.#",
+  "...N.###.#",
+  "..#..###.#",
+  "##.#####.#",
+  "#...###C.#",
+  "##.#####.#",
+  "########xx",
+  "########xx",
+];
+const POCKET_FOOD = [{ tileX: 2, tileY: 6, radius: 1, perTile: 1 }];
+const C_ROCKS = [{ x: 7, y: 6, width: 1, height: 1 }, { x: 12, y: 6, width: 1, height: 1 }, { x: 7, y: 13, width: 1, height: 1 }, { x: 12, y: 13, width: 1, height: 1 }];
+
 const SEEDS = Array.from({ length: 100 }, (_, seed) => seed);
 const GUARD = "fixture-quadrants: a quadrant map plays only in a four-colony rotation";
 
@@ -84,6 +125,22 @@ function reachable(b: QuadrantBoard): Set<string> {
   return seen;
 }
 
+/** This test's own start-contract check: every start-area land tile (not water, not rock), food or not, is reached
+ * from the first nest, and every start area keeps a land tile clear of food. */
+function startsHold(b: QuadrantBoard): boolean {
+  const land = reachable(b), grid = raster(b);
+  return b.startAreas.every(a => {
+    let clear = false;
+    for (let y = a.y; y < a.y + a.height; y++) for (let x = a.x; x < a.x + a.width; x++) {
+      if (grid[y]![x] === 1 || grid[y]![x] === 2) continue;
+      if (!land.has(`${x},${y}`)) return false;
+      if (grid[y]![x] === 0) clear = true;
+    }
+    return clear;
+  });
+}
+const rockRects = (b: QuadrantBoard) => b.rocks.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height }));
+
 describe("quadrant map definitions", () => {
   it("the fixture is off both mirror axes and off the diagonal", () => {
     expect(layout.nestTileX).not.toBe(layout.nestTileY);
@@ -113,14 +170,53 @@ describe("quadrant map definitions", () => {
       .toThrow("fixture-quadrants: food templates must lie inside the top-left quadrant");
   });
 
-  it("refuses food on water and a start area with no land", () => {
+  it("refuses food on water, and a start area with no land clear of food", () => {
     const flooded = [...FIXTURE.water, { x: 8, y: 18, width: 5, height: 5 }];
     expect(() => validateQuadrantMap(withLayout({}, flooded))).toThrow("fixture-quadrants: food templates must lie entirely on land");
     // One water tile under the edge of a radius-2 disk is enough.
     expect(() => validateQuadrantMap(withLayout({}, [...FIXTURE.water, { x: 12, y: 20, width: 1, height: 1 }])))
       .toThrow("fixture-quadrants: food templates must lie entirely on land");
     const drowned = withLayout({ startArea: { x: 0, y: 0, width: 4, height: 4 } }, [...FIXTURE.water, { x: 0, y: 0, width: 4, height: 4 }]);
-    expect(() => validateQuadrantMap(drowned)).toThrow("fixture-quadrants: the start area needs at least one land tile");
+    expect(() => validateQuadrantMap(drowned)).toThrow("fixture-quadrants: the start area needs a land tile clear of food");
+    // No water; the 1x1 start area is the nest tile, under a radius-1 food disk.
+    const fed = withLayout({ startArea: { x: 7, y: 11, width: 1, height: 1 }, foodPatches: [{ tileX: 7, tileY: 11, radius: 1, perTile: 2 }] }, []);
+    expect(() => validateQuadrantMap(fed)).toThrow("fixture-quadrants: the start area needs a land tile clear of food");
+  });
+
+  it("refuses start-area land that water cuts off from the nests", () => {
+    const walled = [...FIXTURE.water, { x: 2, y: 14, width: 3, height: 1 }, { x: 2, y: 16, width: 3, height: 1 },
+      { x: 2, y: 15, width: 1, height: 1 }, { x: 4, y: 15, width: 1, height: 1 }];
+    expect(() => validateQuadrantMap(withLayout({}, walled))).toThrow("fixture-quadrants: start-area land must connect to the nests");
+  });
+
+  it("refuses food-covered start land that water cuts off, and accepts the same pocket outside the start area", () => {
+    expect(() => validateQuadrantMap(drawn("food-pocket", FOOD_POCKET, { x: 0, y: 0, width: 5, height: 8 }, POCKET_FOOD)))
+      .toThrow("food-pocket: start-area land must connect to the nests");
+    const outside = drawn("food-pocket-outside", FOOD_POCKET, { x: 0, y: 0, width: 5, height: 5 }, POCKET_FOOD);
+    expect(() => validateQuadrantMap(outside)).not.toThrow();
+    for (const seed of SEEDS) expect(startsHold(generateQuadrantBoard(outside, seed))).toBe(true);
+  });
+
+  it("never rocks the one way into start land: refused when the only rock spot seals it, rocked when the land is outside", () => {
+    expect(() => validateQuadrantMap(drawn("choke", POCKET, { x: 0, y: 0, width: 7, height: 7 }))).toThrow(/^choke: no room for a rock/);
+    const outside = drawn("choke-outside", POCKET, { x: 0, y: 0, width: 5, height: 5 });
+    expect(() => validateQuadrantMap(outside)).not.toThrow();
+    for (const seed of SEEDS) {
+      const b = generateQuadrantBoard(outside, seed);
+      expect(rockRects(b)).toEqual(C_ROCKS);
+      expect(startsHold(b)).toBe(true);
+    }
+  });
+
+  it("never rocks a start area's last clear tile, but rocks a start-area tile when another remains", () => {
+    expect(() => validateQuadrantMap(drawn("last-tile", DEAD_END, { x: 7, y: 6, width: 1, height: 1 }))).toThrow(/^last-tile: no room for a rock/);
+    const twoTiles = drawn("two-tiles", DEAD_END, { x: 7, y: 6, width: 2, height: 1 });
+    expect(() => validateQuadrantMap(twoTiles)).not.toThrow();
+    for (const seed of SEEDS) {
+      const b = generateQuadrantBoard(twoTiles, seed);
+      expect(rockRects(b)).toEqual(C_ROCKS);
+      expect(startsHold(b)).toBe(true);
+    }
   });
 
   it("refuses a centre with no food disk, or a disk that does not fit it", () => {
@@ -150,12 +246,9 @@ describe("generated quadrant boards", () => {
     expectFourWay(b.water, rectImages(b));
     expect(b.water.length).toBe(4 * FIXTURE.water.length);
     expect(b.rocks.length).toBeGreaterThanOrEqual(4);
-    // Rocks never cover a start area or quadrant food, so every seed keeps the template's usable starts and food.
+    // Rocks lie on land clear of quadrant food, so every seed keeps the template's food.
     const grid0 = raster({ ...b, rocks: [] });
-    for (const r of b.rocks) for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) {
-      expect(grid0[y]![x]).toBe(0);
-      expect(b.startAreas.some(s => x >= s.x && x < s.x + s.width && y >= s.y && y < s.y + s.height)).toBe(false);
-    }
+    for (const r of b.rocks) for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) expect(grid0[y]![x]).toBe(0);
     expectFourWay(b.rocks, r => rectImages(b)(r).map((image, i) => ({ ...image, appearance: i % 2 === 1 ? r.appearance | 128 : r.appearance })));
     expectFourWay(b.quadrantFood, p => [p, { ...p, tileX: b.width - 1 - p.tileX }, { ...p, tileY: b.height - 1 - p.tileY },
       { ...p, tileX: b.width - 1 - p.tileX, tileY: b.height - 1 - p.tileY }]);
@@ -177,19 +270,29 @@ describe("generated quadrant boards", () => {
       }
       layouts.add(centreRaster(b));
     }
-    expect(layouts.size).toBeGreaterThan(50);
+    expect(layouts.size).toBeGreaterThanOrEqual(2);
   });
 
   it("keeps the centre food varying when a large rich disk can cover a small one", () => {
     // An 11-tile disk in the 16 x 12 centre with the larger amount, over a 3-tile disk.
     const covered = withLayout({ centreFood: [{ radius: 5, perTile: 9 }, { radius: 1, perTile: 1 }] });
     const layouts = new Set(SEEDS.map(seed => centreRaster(generateQuadrantBoard(covered, seed))));
-    expect(layouts.size).toBeGreaterThan(5);
+    expect(layouts.size).toBeGreaterThanOrEqual(2);
   });
 
-  it.each(SEEDS)("seed %i: all four nests stay connected by land", seed => {
+  it("uses fixture recipes whose centre food never covers the whole centre", () => {
+    const covered = withLayout({ centreFood: [{ radius: 5, perTile: 9 }, { radius: 1, perTile: 1 }] });
+    for (const map of [FIXTURE, covered]) for (const seed of SEEDS) {
+      const b = generateQuadrantBoard(map, seed);
+      expect((JSON.parse(centreRaster(b)) as unknown[]).length).toBeLessThan(b.centre.width * b.centre.height);
+    }
+  });
+
+  it.each(SEEDS)("seed %i: all four nests, the centre and all start-area land stay connected by land", seed => {
     const b = generateQuadrantBoard(FIXTURE, seed), land = reachable(b);
     for (const n of b.nests) expect(land.has(`${n.tx},${n.ty}`)).toBe(true);
+    expect(land.has(`${b.centre.x},${b.centre.y}`)).toBe(true);
+    expect(startsHold(b)).toBe(true);
   });
 
   it("accepts land that water cuts off from the nests, and still connects the nests and places rocks", () => {

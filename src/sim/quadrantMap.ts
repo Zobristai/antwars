@@ -4,8 +4,8 @@
  * A quadrant map describes its top-left quadrant (water, nest, start area and food templates)
  * and a contested centre region around the board's centre point. The board is the quadrant
  * mirrored left/right and up/down, so every colony starts with the same ground and food.
- * The match seed adds four-way mirrored rock groups outside the centre, clear of food and start areas, then places the centre
- * food anywhere it fits inside the centre region.
+ * The match seed adds four-way mirrored rock groups outside the centre, clear of food and of every nest's clearance, that
+ * keep the start contract (connectionProblem), then places the centre food anywhere it fits inside the centre region.
  *
  * Quadrant order everywhere: top-left, top-right (left/right mirror), bottom-left (up/down
  * mirror), bottom-right (both). Two-colony rotations refuse quadrant maps (validateMapBoard).
@@ -72,23 +72,23 @@ function diskTiles(p: { readonly tileX: number; readonly tileY: number; readonly
 /** A quadrant layout with the map's water, which is the top-left quadrant's. */
 type Layout = QuadrantLayout & { readonly waterTemplates: readonly WaterRect[] };
 
-/** The seed-free board (water, quadrant food, start areas and nests) and the land region holding the first nest. */
+/** The board without centre food: land (not water, not rock), quadrant food, start areas and nests. */
 interface Ground {
   readonly q: Layout;
   readonly width: number;
   readonly centre: WaterRect;
   readonly nests: readonly QuadrantTile[];
+  readonly startAreas: readonly WaterRect[];
   readonly land: Uint8Array;
-  /** Quadrant food and start-area tiles, which rocks never cover. */
-  readonly kept: Uint8Array;
-  region: Uint8Array;
-  regionSize: number;
+  /** Quadrant food tiles, which rocks never cover. */
+  readonly food: Uint8Array;
 }
 
-function flood(g: Ground): { seen: Uint8Array; size: number } {
+/** The land tiles reachable from the first nest. */
+function flood(g: Ground): Uint8Array {
   const width = g.width, height = g.q.referenceHeight, seen = new Uint8Array(g.land.length);
   const start = g.nests[0]!.ty * width + g.nests[0]!.tx;
-  if (!g.land[start]) return { seen, size: 0 };
+  if (!g.land[start]) return seen;
   const queue = new Int32Array(g.land.length);
   let read = 0, write = 1;
   queue[0] = start; seen[start] = 1;
@@ -98,24 +98,41 @@ function flood(g: Ground): { seen: Uint8Array; size: number } {
       if (next >= 0 && g.land[next] && !seen[next]) { seen[next] = 1; queue[write++] = next; }
     }
   }
-  return { seen, size: write };
+  return seen;
+}
+
+/**
+ * The start contract, or what breaks it: the four nests, the centre and every land tile of every start area,
+ * food or not, share the first nest's land region, and every start area keeps a land tile clear of food.
+ * Food-covered start land counts because food need not cover all of a tile once the board is played at a finer grid.
+ */
+function connectionProblem(g: Ground): string | null {
+  const seen = flood(g);
+  if (![...g.nests, { tx: g.centre.x, ty: g.centre.y }].every(t => seen[t.ty * g.width + t.tx])) {
+    return "the four nests and the centre must share one land region";
+  }
+  for (const r of g.startAreas) {
+    let clear = false;
+    for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) {
+      const i = y * g.width + x;
+      if (!g.land[i]) continue;
+      if (!seen[i]) return "start-area land must connect to the nests";
+      if (!g.food[i]) clear = true;
+    }
+    if (!clear) return "the start area needs a land tile clear of food";
+  }
+  return null;
 }
 
 function ground(q: Layout): Ground {
-  const width = q.referenceWidth, land = new Uint8Array(width * q.referenceHeight).fill(1), kept = new Uint8Array(land.length);
+  const width = q.referenceWidth, land = new Uint8Array(width * q.referenceHeight).fill(1), food = new Uint8Array(land.length);
   for (const water of q.waterTemplates) for (const r of rectImages(q, water)) {
     for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) land[y * width + x] = 0;
   }
   for (const patch of q.foodPatches) for (const { tx, ty } of tileImages(q, patch.tileX, patch.tileY)) {
-    for (const tile of diskTiles({ ...patch, tileX: tx, tileY: ty })) kept[tile.ty * width + tile.tx] = 1;
+    for (const tile of diskTiles({ ...patch, tileX: tx, tileY: ty })) food[tile.ty * width + tile.tx] = 1;
   }
-  for (const r of rectImages(q, q.startArea)) {
-    for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) kept[y * width + x] = 1;
-  }
-  const g: Ground = { q, width, centre: centreOf(q), nests: tileImages(q, q.nestTileX, q.nestTileY), land, kept, region: new Uint8Array(0), regionSize: 0 };
-  const region = flood(g);
-  g.region = region.seen; g.regionSize = region.size;
-  return g;
+  return { q, width, centre: centreOf(q), nests: tileImages(q, q.nestTileX, q.nestTileY), startAreas: rectImages(q, q.startArea), land, food };
 }
 
 /** Rock spots of one size: inside the top-left quadrant and outside the centre, row by row. */
@@ -128,23 +145,20 @@ function rockSpots(g: Ground, width: number, height: number): WaterRect[] {
   return spots;
 }
 
-/** Place a rock and its three mirror images when all four lie on land, clear of food, start areas and every
- * nest's clearance, and the nests' land region loses no tile but the rocks' own; otherwise change nothing. */
+/** Place a rock and its three mirror images when all four lie on land, clear of food and every nest's clearance,
+ * and the board still keeps the start contract; otherwise change nothing. Rocks may sit in start areas. */
 function placeRock(g: Ground, spot: WaterRect): boolean {
   const clearance = ROCK_RULES.nestClearanceTiles, cells: number[] = [];
   for (const r of rectImages(g.q, spot)) for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) {
     const i = y * g.width + x;
-    if (!g.land[i] || g.kept[i] || g.nests.some(n => Math.max(Math.abs(x - n.tx), Math.abs(y - n.ty)) <= clearance)) return false;
+    if (!g.land[i] || g.food[i] || g.nests.some(n => Math.max(Math.abs(x - n.tx), Math.abs(y - n.ty)) <= clearance)) return false;
     cells.push(i);
   }
-  const lost = cells.filter(i => g.region[i]).length;
   for (const i of cells) g.land[i] = 0;
-  const after = flood(g);
-  if (after.size !== g.regionSize - lost) {
+  if (connectionProblem(g) !== null) {
     for (const i of cells) g.land[i] = 1;
     return false;
   }
-  g.region = after.seen; g.regionSize = after.size;
   return true;
 }
 
@@ -155,7 +169,7 @@ function layoutOf(map: MapDefinition): Layout {
 
 /**
  * Refuse, never clamp. Beyond the format itself, validation proves what generation then guarantees for
- * every seed: the four nests and the centre share one land region, and at least one rock group fits.
+ * every seed: the board keeps the start contract (connectionProblem), and at least one rock group fits.
  */
 export function validateQuadrantMap(map: MapDefinition): void {
   checkedLayout(map);
@@ -195,26 +209,21 @@ function checkedLayout(map: MapDefinition): Layout {
     place("food templates", rect(p.tileX - p.radius, p.tileY - p.radius, 2 * p.radius + 1, 2 * p.radius + 1), () => diskTiles(p));
   }
   if (q.centreFood.length === 0) fail("the centre needs at least one food disk");
-  // The centre's sides are even and a disk spans an odd 2 x radius + 1 tiles, so every disk that fits has at
-  // least two positions on each axis: the centre food differs between draws.
+  // The match seed draws each disk's position anywhere it fits inside the centre region.
   for (const disk of q.centreFood) {
     if (!whole(disk.radius, disk.perTile) || disk.radius < 1 || disk.perTile < 1) fail("centre food disks must have whole radius and amount at least 1");
     if (2 * disk.radius + 1 > Math.min(centre.width, centre.height)) fail("centre food disks must fit inside the centre region");
   }
   const g = ground(q);
   if (!g.land[q.nestTileY * width + q.nestTileX]) fail("the nest must be on land");
-  // As seeded food is laid today, every food tile is dry; rocks never cover food or start areas, so both stay usable for every seed.
+  // As seeded food is laid today, every food tile is dry; rocks never cover food, so it stays for every seed.
   if (q.foodPatches.some(p => diskTiles(p).some(t => !g.land[t.ty * width + t.tx]))) fail("food templates must lie entirely on land");
-  let startLand = false;
-  for (let y = start.y; y < start.y + start.height; y++) for (let x = start.x; x < start.x + start.width; x++) startLand ||= g.land[y * width + x] === 1;
-  if (!startLand) fail("the start area needs at least one land tile");
-  if (![...g.nests, { tx: centre.x, ty: centre.y }].every(t => g.region[t.ty * width + t.tx])) {
-    fail("the four nests and the centre must share one land region");
-  }
+  const problem = connectionProblem(g);
+  if (problem !== null) fail(problem);
   // The same rule the first rock group falls back to on the same seed-free board: one spot proves every seed gets a rock group.
   const proof = ground(q);
   if (!rockSpots(proof, 1, 1).some(spot => placeRock(proof, spot))) {
-    fail("no room for a rock: every spot touches water, food, a start area or a nest's clearance, or cuts land off from the nests");
+    fail("no room for a rock: every spot touches water, food or a nest's clearance, or breaks a nest, centre or start-area connection");
   }
   return q;
 }
