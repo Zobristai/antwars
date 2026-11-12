@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { FirestoreError, type Fields, type Store, type Write } from "../store/firestore.js";
+import { FirestoreError, type Fields, type Store, type TransactionRead, type Write } from "../store/firestore.js";
 import type { RecordingObjects } from "../replays/abandonRecording.js";
 import type { MountHandler } from "../server.js";
 import { identityDisplay, nameState } from "../identity/retention.js";
@@ -144,12 +144,25 @@ const NEVER_JOINED_CHECKS: Readonly<Record<string, RefusalCode>> = {
 const shown = publicWaitingName;
 const shownKeys = (labels: Readonly<Record<string, string>>) => Object.fromEntries(Object.entries(labels).map(([name, label]) => [shown(name), label]));
 
+/** Documents a plan was computed from, by path; a missing document is null. A path read twice keeps its first value. */
+type Seen = Map<string, Fields | null>;
+const keep = (seen: Seen, docs: ReadonlyMap<string, Fields | null | undefined>) => {
+  for (const [path, fields] of docs) if (!seen.has(path)) seen.set(path, fields ?? null);
+};
+/** A transaction read that also keeps each document it returns in seen. */
+const seeing = (read: TransactionRead, seen: Seen): TransactionRead => async paths => {
+  const docs = await read(paths);
+  keep(seen, docs);
+  return docs;
+};
+
 /**
  * An identity's current display name, as findById projects it, from reads alone: findById would also record an expired
- * name's new state and drop its username index, a write. Undefined for a missing or purged identity.
+ * name's new state and drop its username index, a write. Undefined for a missing or purged identity. seen keeps its reads.
  */
-async function currentName(store: Store, id: string, at: number): Promise<string | undefined> {
-  return store.transaction(async read => {
+async function currentName(store: Store, id: string, at: number, seen: Seen): Promise<string | undefined> {
+  return store.transaction(async transactionRead => {
+    const read = seeing(transactionRead, seen);
     const fields = (await read([`identities/${id}`])).get(`identities/${id}`);
     const ownerId = fields?.ownerId ?? id;
     const owner = !fields ? null : ownerId === id ? fields : (await read([`identities/${ownerId}`])).get(`identities/${ownerId}`);
@@ -160,11 +173,12 @@ async function currentName(store: Store, id: string, at: number): Promise<string
 
 /**
  * A house handle's identity id ("antwars/<handle>"), by the indexes findByDisplayName reads (identities.ts), from reads
- * alone. The house account's name never expires (retention.ts), so there is no expiry to account for.
+ * alone. The house account's name never expires (retention.ts), so there is no expiry to account for. seen keeps its reads.
  */
-async function houseHandleId(store: Store, displayName: string): Promise<string | undefined> {
+async function houseHandleId(store: Store, displayName: string, seen: Seen): Promise<string | undefined> {
   const [owner, handle] = displayName.toLowerCase().split("/");
-  return store.transaction(async read => {
+  return store.transaction(async transactionRead => {
+    const read = seeing(transactionRead, seen);
     const ownerId = (await read([`usernames/${owner}`])).get(`usernames/${owner}`)?.identityId;
     const index = `identityHandles/${ownerId}-${handle}`;
     const id = ownerId ? (await read([index])).get(index)?.identityId : undefined;
@@ -250,10 +264,10 @@ const refusedNeverJoined = (v: Verification) => {
  * The never-joined lobby, verified as still rated: exactly the existing correction's Firestore writes, without its
  * recording rewrite, and their public facts. names gains each player's published name. Throws (refuses) on any failed check.
  */
-async function neverJoinedPart(store: Store, v: Verification, names: Map<string, string>, at: number) {
+async function neverJoinedPart(store: Store, v: Verification, names: Map<string, string>, at: number, seen: Seen) {
   if (!v.ok || v.stage !== "rated") refusedNeverJoined(v);
   const writes: Write[] = firestoreWrites(v, new Date(at));
-  for (const id of v.identities) names.set(id, names.get(id) ?? await currentName(store, id, at) ?? refuse("unknown-identity", `unknown identity ${id}`));
+  for (const id of v.identities) names.set(id, names.get(id) ?? await currentName(store, id, at, seen) ?? refuse("unknown-identity", `unknown identity ${id}`));
   const unrated = v.identities.map(id => shown(names.get(id)!));
   // Served as built here, from checked values only: each change's player must be the lobby's and its ratings finite numbers.
   const stored = JSON.parse(v.snapshot.get(`ratedMatches/${NEVER_JOINED.lobbyId}`)!.changes!) as unknown[];
@@ -282,9 +296,14 @@ export interface NeverJoinedPlan extends Plan { readonly verification: Verificat
  * played since. Reads only.
  */
 export async function neverJoinedApplied(store: Store): Promise<boolean> {
+  return neverJoinedRead(store, new Map());
+}
+/** neverJoinedApplied, keeping the documents it read in seen. */
+async function neverJoinedRead(store: Store, seen: Seen): Promise<boolean> {
   const id = NEVER_JOINED.lobbyId;
   const paths = [`lobbies/${id}`, `watchMatches/${id}`, `ratedMatches/${id}`, `ratingCorrections/${id}`];
   const docs = await store.transaction(async read => ({ result: await read(paths), writes: [] }));
+  keep(seen, docs);
   const [lobby, watch, change, record] = paths.map(path => docs.get(path) ?? null);
   return !!lobby && !!watch && !!record && change === null && lobby.rated === "false" && lobby.outcome === "abandoned"
     && watch.rated === "false" && watch.replayId === NEVER_JOINED.replayId && record.kind === CORRECTION_KIND && record.lobbyId === id
@@ -298,7 +317,7 @@ export async function neverJoinedApplied(store: Store): Promise<boolean> {
 export async function planNeverJoined(store: Store, recordings: RecordingObjects): Promise<NeverJoinedPlan | "applied"> {
   if (await neverJoinedApplied(store)) return "applied";
   const v = await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
-  const { writes, matches, ratings } = await neverJoinedPart(store, v, new Map(), Date.now());
+  const { writes, matches, ratings } = await neverJoinedPart(store, v, new Map(), Date.now(), new Map());
   return { writes, summary: { digest: planDigest(writes), matches, ratings }, verification: v };
 }
 
@@ -311,12 +330,15 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   if (await store.get(CORRECTION_MARKER) !== null) return "applied";
   const names = new Map<string, string>();
   const at = Date.now();
+  /** Every document the plan is computed from: the earlier correction's, the never-joined checks', the identity indexes and the house-1v1 history. */
+  const seen: Seen = new Map();
 
   // 1. The never-joined lobby, unless its correction is already applied.
-  const verified = await neverJoinedApplied(store) ? null : await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
+  const verified = await neverJoinedRead(store, seen) ? null : await verify({ store, recordings }, NEVER_JOINED.lobbyId, NEVER_JOINED.replayId);
+  if (verified) keep(seen, verified.snapshot);
   const { writes, matches, ratings } = verified === null
     ? { writes: [] as Write[], matches: [] as PublicPlan["matches"][number][], ratings: [] as PublicPlan["ratings"][number][] }
-    : await neverJoinedPart(store, verified, names, at);
+    : await neverJoinedPart(store, verified, names, at, seen);
   const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.
@@ -324,7 +346,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const moves = await Promise.all(SOL_MOVES.map(async move => {
     const lobbyId = await registry.findByReplay(move.replayId);
     if (lobbyId === null || (move.lobbyId !== undefined && lobbyId !== move.lobbyId)) refuse("sol-lobby", `recording ${move.replayId}: lobby ${lobbyId}`);
-    const [fromId, toId] = await Promise.all([houseHandleId(store, move.from), houseHandleId(store, move.to)]);
+    const [fromId, toId] = await Promise.all([houseHandleId(store, move.from, seen), houseHandleId(store, move.to, seen)]);
     if (!fromId || !toId) refuse("sol-handle", `${move.from} or ${move.to} not found`);
     names.set(fromId!, move.from).set(toId!, move.to);
     return { ...move, lobbyId: lobbyId!, fromId: fromId!, toId: toId! };
@@ -332,6 +354,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const movers = moves.flatMap(move => [move.fromId, move.toId]);
   if (!store.createTimes) refuse("no-commit-times", "the store cannot read commit times");
   const { lobbies, docs, created } = await houseHistory(store, movers);
+  keep(seen, docs);
   for (const seat of lobbies.flatMap(lobby => lobby.seats)) names.set(seat.id, seat.displayName);
   const row = (id: string) => docs.get(`${ROWS}/${id}`) ?? null;
   const stored = new Map(lobbies.map(lobby => {
@@ -493,9 +516,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     writes.push({ op: "update", path: `${ROWS}/${id}`, fields: updated });
     ratings.push({ handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
   }
-  // Every document the plan was computed from: the never-joined checks' reads and the house-1v1 history.
-  const reads = new Map<string, Fields | null>([...(verified?.snapshot ?? []), ...docs]);
-  return { writes, summary: { digest: planDigest(writes), matches, ratings }, reads };
+  return { writes, summary: { digest: planDigest(writes), matches, ratings }, reads: seen };
 }
 
 /**

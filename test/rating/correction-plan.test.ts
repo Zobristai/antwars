@@ -871,6 +871,33 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     }
   });
 
+  /** Each other kind of document the plan reads: the identity indexes behind the moved handles and the earlier correction's documents. */
+  const reread: readonly (readonly [string, (w: Awaited<ReturnType<typeof world>>, ownerId: string) => string])[] = [
+    ["the house account's username index", () => "usernames/antwars"],
+    ["a moved handle's handle index", (_w, ownerId) => `identityHandles/${ownerId}-${SOL_MOVES[0]!.to.split("/")[1]}`],
+    ["a moved handle's identity", w => `identities/${w.ids.get(SOL_MOVES[0]!.to)}`],
+    ["the earlier correction's record", () => `ratingCorrections/${NEVER_JOINED.lobbyId}`],
+    ["the earlier correction's lobby", () => `lobbies/${NEVER_JOINED.lobbyId}`],
+    ["the earlier correction's watch entry", () => `watchMatches/${NEVER_JOINED.lobbyId}`],
+    ["the earlier correction's removed change record", () => `ratedMatches/${NEVER_JOINED.lobbyId}`],
+  ];
+  it.each(reread)("writes nothing when %s has changed since the plan read it", async (_kind, target) => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    const path = target(w, (await w.store.get("usernames/antwars"))!.identityId!);
+    // The plan read it, and keeps it for the apply to read again.
+    expect(plan.reads.has(path)).toBe(true);
+    const stored = await w.store.get(path);
+    expect(stored).toEqual(plan.reads.get(path));
+    await commit(w.store, [stored === null
+      ? { op: "create", path, fields: { changedSincePlanned: "true" } }
+      : { op: "update", path, fields: { changedSincePlanned: "true" } }]);
+    const changed = await w.snapshot();
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("changed since planned");
+    expect(await w.snapshot()).toEqual(changed);
+    expect(await w.store.get(CORRECTION_MARKER)).toBeNull();
+  });
+
   it("commits once when two applies run together", async () => {
     const w = await appliedWorld();
     const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
