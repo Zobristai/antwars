@@ -1,6 +1,7 @@
 import { isHouseMatch, isPublicMatch, spectatorDelaySeconds, type MatchAccess } from "./match-access.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import type { RecordingMatchType } from "../replays/recorded-match-type.js";
+import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 
 /** Match identity is its lobby, not the slot or whichever sequence runs there next. */
 export interface CatalogMatch extends MatchAccess {
@@ -47,6 +48,8 @@ export interface PublicLiveMatch extends PublicMatchEntry {
   readonly matchType: RecordingMatchType | null;
   /** Present only on a Model Index match: its harness phase by its start (src/rating/harnessPhase.ts). */
   readonly harnessPhase?: HarnessPhase;
+  /** Present only on an unrated match: the colony names it drew from its lobby id; absent means the rated names. */
+  readonly colonyNames?: ColonyNamePair;
 }
 export interface PublicLobbyEntry {
   readonly id: string;
@@ -91,10 +94,16 @@ export function publicMatchCatalog(
       colonies: publicColonies(players.get(match.lobbyId)),
       matchType: publicType(types.get(match.lobbyId)),
       ...(isHouseMatch(match) ? { harnessPhase: harnessPhaseAt(match.startedAt) } : {}),
+      ...drawnNames(match),
     })),
     lobbies: lobbies.filter(lobby => lobby.kind === "public" && (lobby.state === "open" || lobby.state === "waiting"))
       .map(lobby => ({ id: lobby.id, size: lobby.size, state: lobby.state as "open" | "waiting", colonies: lobby.colonies.map(colony => colony.map(seat => seat.displayName)) })),
   };
+}
+
+function drawnNames(match: CatalogMatch): { colonyNames?: ColonyNamePair } {
+  const names = lobbyColonyNames(match.lobbyId, match.rated);
+  return isClassicColonyNames(names) ? {} : { colonyNames: names };
 }
 
 /** The matches discovery lists, oldest first: public, with playback not yet finished. Only these have players read. */

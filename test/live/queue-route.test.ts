@@ -138,4 +138,14 @@ describe("GET /watch/queue lobbies", () => {
     expect(queue.lobbies).toEqual([{ mode: "1v1", size: 1, seated: 2, colonies: [["released account/first"], ["bea"]], ratings: [[null], [null]], seats: [[1], [1]], waitingSeconds: 61, since: 0 }]);
     expect(JSON.stringify(queue)).not.toContain(ownerId);
   });
+
+  it("passes a waiting lobby's drawn colony names through, and adds none for a rated pairing", () => {
+    const seat = { id: "a", displayName: "ann", seats: 1 };
+    const queue = publicQueue([], 0, [
+      { mode: null, size: 1, seated: 1, createdAt: 0, colonies: [[seat], []], colonyNames: ["Kobe A Colony", "Kobe C Colony"] },
+      { mode: "1v1", size: 1, seated: 1, createdAt: 0, colonies: [[seat], []] },
+    ]);
+    expect(queue.lobbies.map(lobby => lobby.colonyNames)).toEqual([["Kobe A Colony", "Kobe C Colony"], undefined]);
+    expect("colonyNames" in queue.lobbies[1]!).toBe(false);
+  });
 });

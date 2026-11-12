@@ -1,4 +1,5 @@
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig } from "../sim/config.js";
+import type { ColonyNamePair } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
@@ -85,7 +86,11 @@ export const IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the sea
 
 /** undrawn: the seed has not yet drawn the map, so config is the rotation's, not the match's.
  * local: the server serves no accounts (the local route), so no account, key or lobby text. */
-export interface BriefingContext { readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean }
+export interface BriefingContext {
+  readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean;
+  /** The match's colony names, index = colony id; COLONY_NAMES when absent (rated and non-lobby matches). */
+  readonly colonyNames?: ColonyNamePair;
+}
 
 /** The board size a reply may state: the drawn match's, or before the draw the size every
  * selectable map shares. Null when those sizes differ: no single size is stated. */
@@ -376,11 +381,12 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
   const base = damagePerTick(config);
   const bonus = Math.trunc((base * config.defenderBonusPermille) / 1000);
   const board = statedBoardSize(config, context);
+  const names = context.colonyNames ?? COLONY_NAMES;
   return [
     houseIdleText(mcpConfig),
     ...(compact && context.local !== true ? [IDENTITY_GUIDANCE, KEY_HANDLING_GUIDANCE, context.house ? HOUSE_MODE_GUIDANCE : LOBBY_GUIDANCE] : []),
     ...terrainLines(config),
-    compact ? `Antwars: ${COLONY_NAMES[0]} vs ${COLONY_NAMES[1]}; ${board === null ? `board ${boardSizeChoices(config)}, set by the seed's map; x 0 to width-1 left-right, y 0 to height-1 top-bottom (observe cells.width/height)` : `${board.width}x${board.height}, x 0-${board.width - 1} left-right, y 0-${board.height - 1} top-bottom`}. ${durationText}; ${config.ticksPerSecond} ticks/s.${antCapText(config, context)} ${config.localAnts === undefined ? "House bot: non-squad ants" : "Active colony seat: free ants act autonomously"}. Squad up to ${config.squadSize} ants; fewer/none if unavailable, refills as ants free up.` : `Antwars: two supercolonies, the ${COLONY_NAMES[0]} and the ${COLONY_NAMES[1]}, fight on a ${board === null ? `tile map whose size is set by the map the seed selects: ${boardSizeChoices(config)} (x 0 to width - 1 left to right, y 0 to height - 1 top to bottom; observe cells give width and height)` : `${board.width}x${board.height} tile map (x 0-${board.width - 1} left to right, y 0-${board.height - 1} top to bottom)`}. A match lasts ${durationText} at ${config.ticksPerSecond} ticks per second. ${config.localAnts === undefined ? "A house bot runs every ant outside agents' squads" : "Free ants act autonomously while your colony has an active seat"}; you command a squad of up to ${config.squadSize} ants (fewer, or none, when your colony has no spare ants; squads fill as ants become free).`,
+    compact ? `Antwars: ${names[0]} vs ${names[1]}; ${board === null ? `board ${boardSizeChoices(config)}, set by the seed's map; x 0 to width-1 left-right, y 0 to height-1 top-bottom (observe cells.width/height)` : `${board.width}x${board.height}, x 0-${board.width - 1} left-right, y 0-${board.height - 1} top-bottom`}. ${durationText}; ${config.ticksPerSecond} ticks/s.${antCapText(config, context)} ${config.localAnts === undefined ? "House bot: non-squad ants" : "Active colony seat: free ants act autonomously"}. Squad up to ${config.squadSize} ants; fewer/none if unavailable, refills as ants free up.` : `Antwars: two supercolonies, the ${names[0]} and the ${names[1]}, fight on a ${board === null ? `tile map whose size is set by the map the seed selects: ${boardSizeChoices(config)} (x 0 to width - 1 left to right, y 0 to height - 1 top to bottom; observe cells give width and height)` : `${board.width}x${board.height} tile map (x 0-${board.width - 1} left to right, y 0-${board.height - 1} top to bottom)`}. A match lasts ${durationText} at ${config.ticksPerSecond} ticks per second. ${config.localAnts === undefined ? "A house bot runs every ant outside agents' squads" : "Free ants act autonomously while your colony has an active seat"}; you command a squad of up to ${config.squadSize} ants (fewer, or none, when your colony has no spare ants; squads fill as ants become free).`,
     compact ? `Non-lobby join: ${agentLimitText(mcpConfig)}` : agentLimitText(mcpConfig),
     compact ? `Calls: ${mcpConfig.callsPerSecond}/agent/sliding 1s; join/reconnect/rules/observe/commands all count. call_rate: wait retryAfterMs; no idle reset.` : callLimitText(mcpConfig),
     observeDetailText(config, mcpConfig, context, false),

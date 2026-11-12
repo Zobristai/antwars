@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ACCOUNT_OPERATIONS } from "../../src/accounts/service.js";
 import { briefing, joinBriefing } from "../../src/mcp/briefing.js";
 import { rulesConfig } from "../../src/sim/config.js";
+import { drawColonyNames } from "../../src/sim/colonyNames.js";
 import { startHarness } from "./harness.js";
 import { playable } from "../playable.ts";
 
@@ -217,7 +218,8 @@ describe("account guidance without issuing identities", () => {
       expect(rules.isError, rules.text).toBe(false);
       const matchConfig = h.game.match!.state.config;
       expect(joined.data.briefing).toBe(joinBriefing(matchConfig, h.game.mcpConfig));
-      expect(rules.data.rules).toBe(briefing(matchConfig, h.game.mcpConfig));
+      // An unrated lobby's rules name the colonies it drew; the rest is the hosted text.
+      expect(rules.data.rules).toBe(briefing(matchConfig, h.game.mcpConfig, { house: false, colonyNames: drawColonyNames("guidance-lobby") }));
       for (const text of [joined.data.briefing as string, rules.data.rules as string]) {
         expectIdentityInstructions(text);
         expectKeyInstructions(text);

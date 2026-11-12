@@ -70,6 +70,9 @@
  *            presence 2: the accepted-call idle clock of a match outside the Antwars Model Index.
  *            Presence 1 stays the Model Index clock, so house-only messages keep their version and bytes.
  *            Only an idle result or a clock outside the Model Index selects 23.
+ *   version 26: extends version 25: full snapshots append u8 colony-names presence after the house-idle
+ *            payload, then the two colony names (s, s) when present: an unrated lobby match's drawn names.
+ *            Only a setup carrying colony names selects 26; every other message keeps its version and bytes.
  */
 import { SNAPSHOT_MAGIC, SUB_TILE, type Colony } from "./snapshot.js";
 import { gridScaleOf, type GridScale } from "../sim/gridScale.js";
@@ -123,6 +126,8 @@ export const SERVICE_TIER_STREAM_VERSION = 24;
 // after the thinking level; empty means not given. No change to earlier bytes.
 /** A seat's rating deviation beside its rating; selected only when an identity carries one. */
 export const RATING_DEVIATION_STREAM_VERSION = 25;
+/** A match's own colony names (an unrated lobby's drawn pair); absent means the rated names. */
+export const COLONY_NAMES_STREAM_VERSION = 26;
 export const STREAM_COUNT_CASTES = ["any", "worker", "soldier"] as const;
 /** Append-only count-mark wire indexes; the first four preserve the legacy vocabulary. */
 export const STREAM_COUNT_VERBS = ["DEFEND", "FORAGE", "ATTACK", "GATHER", "PATROL", "LINE"] as const;
@@ -255,6 +260,8 @@ export interface StreamSetup {
   houseIdleTicks?: number;
   /** With houseIdleTicks: the match is in the Antwars Model Index (house-*). Decoded from presence 1. */
   modelIndex?: true;
+  /** The match's colony names, index = colony id; absent where the match uses COLONY_NAMES (rated and historical matches). */
+  colonyNames?: readonly [string, string];
   overrunRadiusTiles: number;
   /** Queen positions in sub-tile units, per colony. */
   queens: [[number, number], [number, number]];
@@ -899,7 +906,7 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
     m.events.some(event => event.kind === "join" && event.serviceTier !== undefined);
   const deviation = m.full?.agents.some(agent => agent.identity?.rd !== undefined) === true ||
     m.events.some(event => event.kind === "join" && event.identity?.rd !== undefined);
-  const version = deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
+  const version = m.full?.setup.colonyNames !== undefined ? COLONY_NAMES_STREAM_VERSION : deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
   w.u8(version);
   w.u8(m.full ? 1 : 0);
   w.v(m.tick);
@@ -1032,6 +1039,13 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
         for (const agent of f.agents) w.v(agent.lastHouseCallTick === undefined ? 0 : agent.lastHouseCallTick + 1);
       }
     }
+    if (version >= COLONY_NAMES_STREAM_VERSION) {
+      w.u8(s.colonyNames === undefined ? 0 : 1);
+      if (s.colonyNames !== undefined) {
+        if (s.colonyNames.length !== 2 || s.colonyNames.some(name => name.length === 0)) throw new Error("invalid colony names");
+        w.str(s.colonyNames[0]); w.str(s.colonyNames[1]);
+      }
+    }
   }
 
   w.v(m.events.length);
@@ -1062,7 +1076,7 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
   const r = new Reader(bytes);
   if (r.u16() !== SNAPSHOT_MAGIC) throw new Error("not a stream message");
   const version = r.u8();
-  if (version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
+  if (version !== COLONY_NAMES_STREAM_VERSION && version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
   const flags = r.u8();
   const tick = r.v();
 
@@ -1224,6 +1238,15 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
         full.setup.houseIdleTicks = r.f64();
         if (!Number.isFinite(full.setup.houseIdleTicks) || full.setup.houseIdleTicks <= 0) throw new Error("invalid house idle ticks");
         for (const agent of full.agents) { const activity = r.v(); if (activity > 0) agent.lastHouseCallTick = activity - 1; }
+      }
+    }
+    if (version >= COLONY_NAMES_STREAM_VERSION) {
+      const present = r.u8();
+      if (present > 1) throw new Error("invalid colony names presence");
+      if (present === 1) {
+        const names = [r.str(), r.str()] as const;
+        if (names.some(name => name.length === 0)) throw new Error("invalid colony names");
+        full.setup.colonyNames = names;
       }
     }
   }

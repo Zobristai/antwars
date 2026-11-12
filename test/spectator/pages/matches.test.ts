@@ -136,6 +136,22 @@ describe("one six-column layout in every list", () => {
     p.mounted.destroy();
   });
 
+  it("heads a list whose rows name their colonies differently with neutral colony heads, each cell naming its own, with its source", () => {
+    const drawn: LiveMatch = { ...liveIndex, lobbyId: "lobby-u", rated: false, matchType: { kind: "unranked", size: 1 }, colonyNames: ["Kobe B Colony", "Japanese Main Colony"] };
+    const { p, live: liveList, recordings } = show({ waiting: { status: "ready", rows: [waitingRow] }, live: { status: "ready", rows: [liveIndex, drawn] },
+      recordings: { status: "ready", rows: [recording] } });
+    const heads = (table: ElementPort) => table.querySelector("thead")!.byClass("c-model").map(node => node.textContent);
+    expect(heads(liveList.table)).toEqual(["First colony", "Second colony"]);
+    expect(heads(recordings.table)).toEqual(["Very Large Colony", "Lake Hodges Colony"]);
+    const named = bodyRows(liveList.table).map(row => row.byClass("c-model").map(cell => cell.byClass("d1p-colony")[0]!));
+    expect(named.map(row => row.map(node => node.textContent))).toEqual([["Very Large Colony", "Lake Hodges Colony"], ["Kobe B Colony", "Japanese Main Colony"]]);
+    expect(named[1]!.map(node => node.title)).toEqual(["Kobe Port, Japan (Sunamura et al. 2009, Insectes Sociaux)", "About 400 km of western Japan's coast (Sunamura et al. 2009, Insectes Sociaux)"]);
+    expect(named[0]!.map(node => node.title)).toEqual(["", ""]);
+    const [, stacked] = liveList.list.querySelectorAll("li");
+    expect(colonies(stacked!).map(([name]) => name)).toEqual(["Kobe B Colony", "Japanese Main Colony"]);
+    p.mounted.destroy();
+  });
+
   it("drops Live now's Winner column, Waiting's Waited and Match columns and the loose result word under a recording's time", () => {
     const abandoned = at("rec-ab", { winner: null, reason: "abandoned", decidedBy: null });
     const unknown = at("rec-unknown", { winner: null, reason: "time_up", decidedBy: null });

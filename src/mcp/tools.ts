@@ -169,8 +169,8 @@ function squadTiles(view: AgentView | null): string {
 }
 
 /** The winner fields of an ended match, as observe reports them. */
-function winnerFields(result: MatchResult): Record<string, unknown> {
-  return { matchOver: true, winner: result.reason === "abandoned" ? "abandoned" : result.winner === null ? "draw" : COLONY_NAMES[result.winner], result };
+function winnerFields(game: Game, agentId: string | null, result: MatchResult): Record<string, unknown> {
+  return { matchOver: true, winner: result.reason === "abandoned" ? "abandoned" : result.winner === null ? "draw" : game.colonyNames(agentId)[result.winner], result };
 }
 
 /** The re-lay hint; nearestTile is the sim's read-only answer for the refused tick. */
@@ -218,7 +218,7 @@ function explain(
       ? `${howToFix} Wait ${extra.retryAfterMs} ms (retryAfterMs) first.`
     : (code === "count_mark_not_visible" || code === "water_tile" || code === "rock_tile") && "nearestTile" in extra
       ? `${howToFix} ${nearestTileText(code, extra.nearestTile, lineEnd)}` : howToFix;
-  return errorResult(code, canonicalMessage ? message : simMessage ?? message, fix, view, { ...extra, ...(result === null ? {} : winnerFields(result)) });
+  return errorResult(code, canonicalMessage ? message : simMessage ?? message, fix, view, { ...extra, ...(result === null ? {} : winnerFields(game, view?.agentId ?? null, result)) });
 }
 
 /** Each founding refusal names the checks that still follow it, in foundQueen's order (FOUNDING_CHECKS). */
@@ -306,7 +306,7 @@ function observeResult(game: Game, config: SimConfig, outcome: Outcome, withMap:
   outcome = { ...outcome, observeInfo: outcome.observeInfo ?? observeInfo(null, "", config) };
   if (outcome.kind !== "view") return viewResult(game, config, outcome, queuedExtra);
   const { result } = outcome.view;
-  const final = result === null ? {} : { message: "This match has ended.", ...winnerFields(result) };
+  const final = result === null ? {} : { message: "This match has ended.", ...winnerFields(game, outcome.view.agentId, result) };
   if (since !== undefined && since > game.eventHistory(outcome.view.agentId).length) {
     return errorResult("bad_event_cursor", "Event cursor exceeds this seat's retained event count.",
       `Use a cursor from 0 to ${game.eventHistory(outcome.view.agentId).length}; observe returns eventCursor.${result === null ? "" : ` ${POST_MATCH_OBSERVE_TEXT} ${IDLE_COUNTDOWN_TEXT}`}`, outcome.view, { ...outcome.observeInfo, ...final });
@@ -343,7 +343,7 @@ function commandResult(game: Game, config: SimConfig, outcome: Outcome, input?: 
         ...(outcome.broodSet === undefined ? {} : { queenId: outcome.broodSet.queenId, brood: outcome.broodSet.brood }),
         ...(newQueen === undefined ? {} : { queen: publicQueen(game, view.agentId, newQueen), foodStore: view.queenFounding?.foodStore, nextFoundTick: view.queenFounding?.nextFoundTick,
           ...(config.castes !== undefined ? { broodNote: NEW_QUEEN_BROOD_TEXT } : {}) }) };
-      return payload(view.result === null ? reply : { ...winnerFields(view.result), ...reply });
+      return payload(view.result === null ? reply : { ...winnerFields(game, view.agentId, view.result), ...reply });
     }
     case "queued": return viewResult(game, config, outcome);
     case "error": return explain(game, config, outcome.code,
@@ -390,7 +390,7 @@ function viewResult(game: Game, config: SimConfig, outcome: Outcome, queuedExtra
   switch (outcome.kind) {
     case "view": {
       const { view } = outcome;
-      return pagedView(game, config, view, false, { ...outcome.observeInfo, ...(view.result === null ? {} : winnerFields(view.result)) }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
+      return pagedView(game, config, view, false, { ...outcome.observeInfo, ...(view.result === null ? {} : winnerFields(game, view.agentId, view.result)) }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
     }
     case "queued":
       return payload({ waiting: true, matchStarts: startText(outcome.nextStart), message: "Your match has not started; keep calling observe.", ...outcome.observeInfo, ...queuedExtra });
@@ -636,7 +636,7 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
         }
         const { view } = outcome;
         if (view.result !== null) return viewResult(game, joined.config, outcome);
-        return pagedView(game, joined.config, view, false, { ...base, colony: view.colonyName, squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
+        return pagedView(game, joined.config, view, false, { ...base, colony: game.colonyNames(joined.agentId)[view.colony], squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
       };
       // A join in flight counts toward the limit until it answers, so concurrent joins cannot pass it together.
       session.joinsInFlight = (session.joinsInFlight ?? 0) + 1;
@@ -860,14 +860,14 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     inputSchema: {},
   }, async () => {
     const agentId = session.agentId;
-    if (agentId === null) return payload({ rules: briefing(game.undrawnConfig, game.mcpConfig, { house: game.isHouseMatch(), undrawn: true, ...local }) });
+    if (agentId === null) return payload({ rules: briefing(game.undrawnConfig, game.mcpConfig, { house: game.isHouseMatch(), undrawn: true, colonyNames: game.colonyNames(), ...local }) });
     // A rules read is an ordinary admitted observe call for rate limits and seat timers.
     const outcome = await game.call(agentId, { type: "observe", agentId });
     if (outcome.kind === "error") return viewResult(game, game.simConfig, outcome);
     const result = outcome.kind === "view" ? outcome.view.result : null;
-    const rules = briefing(game.configForAgent(agentId), game.mcpConfig, { house: game.isHouseMatch(agentId), undrawn: !game.mapDrawnFor(agentId), ...local });
+    const rules = briefing(game.configForAgent(agentId), game.mcpConfig, { house: game.isHouseMatch(agentId), undrawn: !game.mapDrawnFor(agentId), colonyNames: game.colonyNames(agentId), ...local });
     // The window text omits its founding-price sentence only where this briefing already states it.
-    return payload({ rules, ...nestFields(game, agentId, false, rules.includes("starting queens do not count")), ...(result === null ? {} : winnerFields(result)) });
+    return payload({ rules, ...nestFields(game, agentId, false, rules.includes("starting queens do not count")), ...(result === null ? {} : winnerFields(game, agentId, result)) });
   });
   if (game.slot !== undefined) guardKeyAdmission(server, game, game.slot, session);
   recordCalls(server, game, session);
@@ -934,12 +934,12 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       if (outcome.kind === "queued") {
         const placement = game.queuedLineup().find(seat => seat.agentId === joined.agentId);
         if (placement === undefined) throw new Error("Queued join has no colony placement");
-        return payload({ ...base, colony: COLONY_NAMES[placement.colony], matchStarts: startText(outcome.nextStart),
+        return payload({ ...base, colony: game.colonyNames(joined.agentId)[placement.colony], matchStarts: startText(outcome.nextStart),
           message: `No match is running; you are in the next one. Call observe until it starts. ${sessionExpiryText(game.mcpConfig)}` });
       }
       const { view } = outcome;
       if (view.result !== null) return viewResult(game, joined.config, outcome);
-      return pagedView(game, joined.config, view, false, { ...base, colony: view.colonyName, squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
+      return pagedView(game, joined.config, view, false, { ...base, colony: game.colonyNames(joined.agentId)[view.colony], squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
     },
   );
 

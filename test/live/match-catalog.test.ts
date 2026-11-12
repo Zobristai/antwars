@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { listedMatches, matchWatchStatus, publicMatchCatalog, type CatalogMatch } from "../../src/live/match-catalog.js";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
 
 const publicMatch: CatalogMatch = { lobbyId: "first", visibility: "public", rated: true, startedAt: 1000, playbackFinished: false };
 
@@ -28,7 +29,7 @@ describe("public spectator catalog projection", () => {
     const next: CatalogMatch = { ...publicMatch, lobbyId: "next", rated: false, startedAt: 2000 };
     expect(publicMatchCatalog([next, publicMatch], []).matches.map(match => match.lobbyId)).toEqual(["first", "next"]);
     expect(publicMatchCatalog([next, { ...publicMatch, playbackFinished: true }], []).matches).toEqual([
-      { lobbyId: "next", startedAt: 2000, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null },
+      { lobbyId: "next", startedAt: 2000, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null, colonyNames: drawColonyNames("next") },
     ]);
   });
 
@@ -80,9 +81,18 @@ describe("public spectator catalog projection", () => {
       { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 0, colonies: [[], []], matchType: null,
         harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
       { lobbyId: "ranked", startedAt: beforePin + 1, rated: true, delaySeconds: 300, colonies: [[], []], matchType: null },
-      { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null },
+      { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null, colonyNames: drawColonyNames("lobby") },
     ]);
     expect(result.matches.map(match => "harnessPhase" in match)).toEqual([true, false, false]);
+  });
+
+  it("names an unrated match by the pair it drew from its lobby id, and leaves a rated match on the rated names", () => {
+    const result = publicMatchCatalog([
+      { ...publicMatch, lobbyId: "ranked", mode: "1v1", rated: true },
+      { ...publicMatch, lobbyId: "unrated", mode: null, rated: false, startedAt: publicMatch.startedAt + 1 },
+    ], []);
+    expect(result.matches.map(match => [match.lobbyId, match.colonyNames])).toEqual([["ranked", undefined], ["unrated", drawColonyNames("unrated")]]);
+    expect("colonyNames" in result.matches[0]!).toBe(false);
   });
 
   it("carries each listed match's type as given, copied, and none where it is unknown", () => {

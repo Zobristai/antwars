@@ -2,7 +2,8 @@
 import { randomUUID } from "node:crypto";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { chooseJoinColony } from "../sim/agents.js";
-import { PUBLIC_CONFIG, withoutHousePausedMaps, type SimConfig } from "../sim/config.js";
+import { COLONY_NAMES, PUBLIC_CONFIG, withoutHousePausedMaps, type SimConfig } from "../sim/config.js";
+import { lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { newMatchConfig } from "../sim/gridScale.js";
 import { headerLine, tickLine } from "../sim/log.js";
 import { cloneState, createMatch } from "../sim/map.js";
@@ -244,6 +245,8 @@ interface AgentRecord {
   readonly matchSeq: number;
   /** Captured at admission so an ended caller keeps its own match mode. */
   readonly houseMatch: boolean;
+  /** The colony names of this agent's match, captured at admission (and recomputed from the lobby on resume). */
+  readonly colonyNames: ColonyNamePair;
   readonly displayName: string | null;
   readonly modelLabel: string | null;
   readonly thinkingLevel: string | null;
@@ -881,7 +884,7 @@ export class Game {
   private restoreRecords(records: readonly SavedAgentRecord[], seq: number): void {
     for (const saved of records) {
       const { lastSquad, cellSnapshot, callTimes, events, priorityEvents, finalResult, appliedCalls, ...fields } = saved;
-      const rec: AgentRecord = { ...fields, colony: saved.colony, matchSeq: seq, callTimes: [...callTimes], events: [...events],
+      const rec: AgentRecord = { ...fields, colony: saved.colony, colonyNames: this.seatColonyNames(saved.seatKey), matchSeq: seq, callTimes: [...callTimes], events: [...events],
         priorityEvents: [...priorityEvents], finalResult: { ...finalResult }, lastSquad: lastSquad === null ? null : new Set(lastSquad),
         appliedCalls: [...appliedCalls],
         cellSnapshot: cellSnapshot === null ? null : { ...cellSnapshot, offsets: new Set(cellSnapshot.offsets) } };
@@ -1035,6 +1038,7 @@ export class Game {
       token: randomUUID(),
       matchSeq,
       houseMatch: fields.seatKey !== null && this.lobby?.mode?.startsWith("house-") === true,
+      colonyNames: this.seatColonyNames(fields.seatKey),
       ...fields,
       callTimes: [this.now()],
       finalResult: { result: null },
@@ -1433,6 +1437,25 @@ export class Game {
     const resets = [...new Set([...base.status[1].split(" "), ...brood, "observe", "rules", "join"])].join(" ");
     return { houseIdleSeconds: this.houseIdleSeconds,
       status: base.status[2] === undefined ? [left, resets] : [left, resets, base.status[2]] };
+  }
+
+  /**
+   * The colony names a seat's match uses: an unrated lobby's drawn pair, otherwise COLONY_NAMES
+   * (rated lobbies and matches outside a lobby).
+   */
+  private seatColonyNames(seatKey: string | null): ColonyNamePair {
+    const lobby = this.lobby;
+    return seatKey === null || lobby === null || !seatKey.startsWith(`${lobby.id}/`) ? COLONY_NAMES : lobbyColonyNames(lobby.id, lobby.mode !== null);
+  }
+
+  /** Unjoined callers see the seated lobby's names (COLONY_NAMES outside a lobby); joined callers keep their own match's. */
+  colonyNames(agentId: string | null = null): ColonyNamePair {
+    if (agentId !== null) {
+      const rec = this.records.get(agentId);
+      if (rec !== undefined) return rec.colonyNames;
+    }
+    const lobby = this.lobby;
+    return lobby === null ? COLONY_NAMES : lobbyColonyNames(lobby.id, lobby.mode !== null);
   }
 
   /** Unjoined callers see the slot mode; joined callers retain their own mode. */

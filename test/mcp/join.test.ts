@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { COLONY_NAMES, DEFAULT_CONFIG, type SimConfig } from "../../src/sim/config.js";
+import { drawColonyNames } from "../../src/sim/colonyNames.js";
 import { WORDS } from "../../src/sim/types.js";
 import { ORDER_KINDS } from "../../src/mcp/tools.js";
 import { Game } from "../../src/mcp/game.js";
@@ -530,15 +531,39 @@ describe("slot server joins", () => {
     const bob = await rig.connect();
     const live = await bob.call("join", { key: "key-bob" });
     expect(live.isError, live.text).toBe(false);
-    expect(live.data.colony).toBe(VLC);
+    // An unrated lobby: its colonies carry the names it drew from its lobby id.
+    expect(live.data.colony).toBe(drawColonyNames("lobby-1")[0]);
     expect(live.data).not.toHaveProperty("reconnectToken");
     // A new session presenting the same key is the same seat.
     const again = await rig.connect();
     const rejoined = await again.call("join", { key: "key-ann" });
     expect(rejoined.isError, rejoined.text).toBe(false);
     expect(rejoined.data.agentId).toBe(queued.data.agentId);
-    expect(rejoined.data.colony).toBe(LHC);
+    expect(rejoined.data.colony).toBe(drawColonyNames("lobby-1")[1]);
     expect(rig.game.match!.state.agents).toHaveLength(2);
+  });
+
+  it("names an unrated lobby's colonies by its drawn pair in join, observe and rules, and a rated lobby's by the rated names", async () => {
+    const drawn = drawColonyNames("lobby-1");
+    for (const [mode, names] of [[null, drawn], ["1v1", COLONY_NAMES]] as const) {
+      rig = await startSlotRig();
+      rig.game.seatLobby("lobby-1", seats, mode);
+      const ann = await rig.connect(), bob = await rig.connect();
+      const unjoinedRules: string = (await (await rig.connect()).call("rules")).data.rules;
+      for (const name of names) expect(unjoinedRules).toContain(name);
+      expect((await ann.call("join", { key: "key-ann" })).isError).toBe(false);
+      rig.game.startMatch(1);
+      rig.advance(1);
+      const joined = await bob.call("join", { key: "key-bob" });
+      expect(joined.data.colony).toBe(names[0]);
+      const view = (await ann.call("observe")).data.view;
+      expect(view.colonyName).toBe(names[1]);
+      const rules: string = (await ann.call("rules")).data.rules;
+      for (const name of names) expect(rules).toContain(name);
+      if (mode !== null) expect(rules).not.toMatch(new RegExp(drawn.join("|")));
+      await rig.close();
+      rig = null;
+    }
   });
 
   it("refuses a keyless join, an unseated or unknown key, and token, reconnectToken or colony by name", async () => {

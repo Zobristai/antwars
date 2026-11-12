@@ -11,6 +11,7 @@ import "./ui.css";
 import type { HudHost, HudView, Mounted } from "./types.ts";
 import type { Rect } from "../words.ts";
 import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../../src/sim/config.ts";
+import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
 import { streamQueens, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type Frame } from "../buffer.ts";
 import {
@@ -51,7 +52,7 @@ export const OVERVIEW_LABEL = "Whole board, from above";
 
 /** New words this HUD adds; every other string is the page's own. */
 export const D2_COPY = {
-  details: (colony: Colony) => `${COLONY_NAMES[colony]} details`,
+  details: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]} details`,
   board: "Board",
   kills: "Kills",
   /** The clock's time left, as the score panel draws it: "29:20 · 0:40 left". */
@@ -156,6 +157,22 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     name.append(...(colony === 0 ? [chevron, words] : [words, chevron]));
     return name;
   });
+  const nameWords = names.map(name => name.querySelector<HTMLElement>(".d2-name-text")!);
+  /** The colony names shown: the match's own, else the rated names; written again only when they change. */
+  let shownNames = `${COLONY_NAMES[0]}\n${COLONY_NAMES[1]}`;
+  const paintNames = (setup: StreamSetup | null) => {
+    const pair = colonyNamesOf(setup), key = `${pair[0]}\n${pair[1]}`;
+    if (key === shownNames) return;
+    shownNames = key;
+    for (const c of COLONIES) {
+      text(nameWords[c]!, pair[c]);
+      // A drawn name has its source as its tooltip; the rated names are shown as they were.
+      const note = setup?.colonyNames ? colonyNameNote(pair[c]) : null;
+      if (note) nameWords[c]!.title = note; else nameWords[c]!.removeAttribute("title");
+      attr(halves[c]!, "aria-label", D2_COPY.details(c, pair));
+      attr(drawerEls[c]!.drawer, "aria-label", D2_COPY.details(c, pair));
+    }
+  };
   const clock = el("span", "d2-clock");
   const plateHead = el("div", "d2-head");
   plateHead.append(names[0]!, clock, names[1]!);
@@ -549,7 +566,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
       const cells = standing.map(q => cell(q, frame, b, hp?.hp, attacked));
       if (cells.length !== list.childElementCount || cells.some((node, i) => list.children[i] !== node)) list.replaceChildren(...cells);
       text(queens.figures[colony]!, String(standing.length));
-      attr(list, "aria-label", `${COLONY_NAMES[colony]}: ${standing.length} standing ${standing.length === 1 ? "queen" : "queens"}`);
+      attr(list, "aria-label", `${colonyNamesOf(b.setup)[colony]}: ${standing.length} standing ${standing.length === 1 ? "queen" : "queens"}`);
     }
   }
   /** One queen's cell: her HP filling it from her colony's end (or, where queens have no HP, her safety from overrun). */
@@ -573,7 +590,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     flag(entry.node, "is-overrun", progress > 0);
     width(entry.fill, `${share.toFixed(1)}%`);
     const reading = fullHp !== undefined ? `${Math.ceil((q.hp ?? 0) / 1000)} HP` : progress > 0 ? `overrun ${Math.round(progress)}%` : "safe";
-    attr(entry.node, "aria-label", `${COLONY_NAMES[q.colony]} queen ${q.id + 1}: ${reading}${under ? ", under attack" : ""}`);
+    attr(entry.node, "aria-label", `${colonyNamesOf(b.setup)[q.colony]} queen ${q.id + 1}: ${reading}${under ? ", under attack" : ""}`);
     return entry.node;
   }
 
@@ -632,7 +649,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     let lines: { what: string; who: string; when: string; colony: Colony; kind: string } | null = null;
     const e = ended ? null : significant(frame.story, frame.tick, tps);
     if (e) {
-      const t = storyText(e, b.agents, frame.tick, b.queens);
+      const t = storyText(e, b.agents, frame.tick, b.queens, false, colonyNamesOf(b.setup));
       const when = matchTime(storyWhen(e, frame.tick), tps);
       lines = { what: t.what, who: t.who, when, colony: e.colony, kind: e.kind };
     }
@@ -641,7 +658,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
       const q = fallenQueen(b);
       const colony = fallen.indexOf(true) as Colony;
       const when = matchTime(q?.lostTick ?? frame.tick, tps);
-      lines = { what: `Queen ${(q?.id ?? 0) + 1} lost`, who: `${COLONY_NAMES[colony]} · ${when}`, when: "", colony, kind: "fall" };
+      lines = { what: `Queen ${(q?.id ?? 0) + 1} lost`, who: `${colonyNamesOf(b.setup)[colony]} · ${when}`, when: "", colony, kind: "fall" };
     }
     const keyNow = lines ? JSON.stringify(lines) : "";
     if (keyNow === toastKey) return;
@@ -661,7 +678,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const visible = b !== null && !!ant && agent < 0;
     show(card, visible);
     if (!visible || !ant) { cardKey = ""; return; }
-    const lines = [`Ant ${ant.antId} · ${COLONY_NAMES[ant.colony as Colony]}`, "No squad"];
+    const lines = [`Ant ${ant.antId} · ${colonyNamesOf(b!.setup)[ant.colony as Colony]}`, "No squad"];
     const keyNow = JSON.stringify(lines);
     if (keyNow === cardKey) return;
     cardKey = keyNow;
@@ -682,6 +699,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     // The result tells the ending: open drawers go with it, held or not.
     if (ended && !wasEnded) state = CLOSED;
     paintDrawers();
+    paintNames(b?.setup ?? null);
     paintPlate(frame, b);
     flag(root, "is-falling", !!frame && fallWindow(frame).some(Boolean));
     if (!b || !frame) {

@@ -6,7 +6,7 @@
 // shows as a modal over the whole screen; the page places it and the recording's offer, shown when there are no agents.
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
-import type { Frame } from "../../buffer.ts";
+import type { Board, Frame } from "../../buffer.ts";
 import type { HudActions, HudView } from "../types.ts";
 import type { AgentLineModel } from "../hud-model.ts";
 import { tps } from "../hud-model.ts";
@@ -17,7 +17,7 @@ import { OFFER_TEXT } from "../../replay.ts";
 import { D1_ICON } from "./icons.ts";
 import { mountResultModal } from "./result-modal.ts";
 import {
-  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyName, history as gameHistory, roster, selected,
+  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyName, colonyNote, history as gameHistory, roster, selected,
   type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Player, type Row, type Selected,
 } from "./model.ts";
 
@@ -154,7 +154,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     section.append(head, rows, hooks.economy[colony], line);
     // Each row's node by its key, written again only when what it shows changes.
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
-    return { section, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
+    return { section, name, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
       playerRd: "", playerKey: "", rows, line, entries, none, lineNodes };
   });
 
@@ -537,6 +537,20 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   /** What each agent stood on when this viewer arrived at the match shown; kept through a reconnect to it. */
   let arrived: Arrival | null = null;
   let lastSeed: readonly HistoryRow[] = [];
+  /** The colony names the headings show: the match's own, else the rated names; written again only when they change. */
+  let shownNames = `${colonyName(0)}\n${colonyName(1)}`;
+  const writeNames = (setup: Board["setup"] | null) => {
+    const names = `${colonyName(0, setup)}\n${colonyName(1, setup)}`;
+    if (names === shownNames) return;
+    shownNames = names;
+    for (const colony of COLONIES) {
+      const node = teamNodes[colony]!, named = colonyName(colony, setup), note = colonyNote(colony, setup);
+      node.name.textContent = named;
+      if (note) node.name.title = note; else node.name.removeAttribute("title");
+      node.rows.setAttribute("aria-label", `${named} agents`);
+      node.line.setAttribute("aria-label", `${named} ${D1_COPY.history.toLowerCase()}`);
+    }
+  };
   return {
     teams: [teamNodes[0]!.section, teamNodes[1]!.section],
     result: resultModal.dialog,
@@ -544,6 +558,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     update(view, connecting) {
       const frame: Frame | null = view.frame;
       const b = frame?.board ?? null;
+      writeNames(b?.setup ?? null);
       selectedAgent = view.selectedAgent;
       const none = !frame || !b || b.agents.length === 0;
       // With no agents, or no match, the footer holds the recording's offer, once; while connecting, nothing yet.

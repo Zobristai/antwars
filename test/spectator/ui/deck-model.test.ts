@@ -10,7 +10,8 @@ import { recordedIdentity } from "../../../web/src/pages/model.ts";
 import { squadTipText } from "../../../web/src/squads.ts";
 import { agentEntries } from "../../../web/src/ui/hud-model.ts";
 import {
-  D1_COPY, arrival, arrivalRows, balance, caption, clock, dials, eloText, history, isBenchmark, legend, mapName, resultView, roster, rowName, selected, teamPlayer,
+  D1_COPY, arrival, arrivalRows, balance, caption, clock, colonyName, colonyNote, dials, eloText, history, isBenchmark, legend, mapName, resultView, roster, rowName, selected,
+  shareText, teamPlayer,
   winConditions, type ModeText,
 } from "../../../web/src/ui/deck/model.ts";
 
@@ -160,6 +161,35 @@ describe("the deck", () => {
   it("reads a hatch due now as the full ring at no wait, never a word", () => {
     const [vlc] = dials(frameOf(b => { b.stores = [{ food: 57, nextHatchTick: TICK, nextCost: 3 }, b.stores[1]]; }));
     expect(vlc.next).toEqual({ kind: "waiting", fill: 1, caste: "worker" });
+  });
+});
+
+describe("a match's own colony names", () => {
+  const drawn = ["Kobe A Colony", "Catalonian Colony"] as const;
+  it("names the colonies as the match carries them in the caption, result, roster and share text, with each name's source note", () => {
+    const story: StoryEntry[] = [{ id: 1, kind: "queen_attack", queenId: 2, tick: TICK - 10, colony: 0, agent: -1, x: 20, y: 20 }];
+    expect(caption(frameOf((b, f) => { b.setup = { ...b.setup, rated: false, colonyNames: drawn }; f.story = story; }))!.who).toBe("Kobe A Colony");
+    const ended = frameOf((b, f) => {
+      b.setup = { ...b.setup, rated: false, colonyNames: drawn };
+      b.result = { winner: 1, reason: "queens_killed", decidedBy: "queens_killed", tick: TICK - 100, nextStartMs: null };
+      f.targetMs = TICK * 100 + 10_000;
+    });
+    expect(resultView(ended)!.headline).toBe("Catalonian Colony wins");
+    expect(roster(frameOf(b => { b.setup = { ...b.setup, colonyNames: drawn }; })).groups.map(g => g.heading.split(" · ")[0])).toEqual([...drawn]);
+    // A side with no named player is named by its colony, as the match names it.
+    const shared = shareText(frameOf((b, f) => {
+      b.setup = { ...b.setup, colonyNames: drawn }; b.agents = b.agents.filter(a => a.colony === 0);
+      b.result = { winner: 1, reason: "queens_killed", decidedBy: "queens_killed", tick: TICK - 100, nextStartMs: null };
+      f.targetMs = TICK * 100 + 10_000;
+    }), "https://example.test/r");
+    expect(shared).toMatch(/^Catalonian Colony beat /);
+    expect(colonyName(0, { colonyNames: drawn })).toBe("Kobe A Colony");
+    expect(colonyNote(1, { colonyNames: drawn })).toBe("Eastern Spain (Giraud, Pedersen and Keller 2002, PNAS)");
+  });
+  it("keeps the rated names, shown as they were with no note, where the match carries none", () => {
+    expect([colonyName(0), colonyName(1), colonyName(0, {})]).toEqual(["Very Large Colony", "Lake Hodges Colony", "Very Large Colony"]);
+    expect([colonyNote(0), colonyNote(1), colonyNote(1, {})]).toEqual(["", "", ""]);
+    expect(colonyNote(1, { colonyNames: ["Sweetwater Colony", "Lake Hodges Colony"] })).toBe("Southern California, about 11 km² (Thomas et al. 2006, Molecular Ecology)");
   });
 });
 

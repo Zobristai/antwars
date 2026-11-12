@@ -299,6 +299,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-c0 { color: var(--aw-c0); }
 .d1p-c1 { color: var(--aw-c1); }
 .d1p-colony { font-weight: 600; }
+/* A colony name heading its own cell, where a list's rows name their colonies differently (matches.ts colonyLabel). */
+td.c-model > .d1p-colony { display: block; }
 
 /* Status stamps, as the signed-off rows drawing draws them: a record's word (COMPLETE, PARTIAL, UNAVAILABLE) solid and
    light; a waiting row's (WAITING, STARTING, n OF m SEATS) dashed grey; LIVE red. */

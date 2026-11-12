@@ -2,6 +2,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Identities } from "../identity/identities.js";
 import type { ColonyId } from "../sim/types.js";
+import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
@@ -369,6 +370,8 @@ export interface UnstartedLobby {
   readonly colonies: readonly [readonly UnstartedSeat[], readonly UnstartedSeat[]];
   /** Present only on a house challenge lobby, which the Waiting card labels. */
   readonly challenge?: "house";
+  /** Present only on a player-created lobby or house challenge: the colony names its unrated match draws from its id. */
+  readonly colonyNames?: ColonyNamePair;
 }
 
 export interface LobbySettings {
@@ -1256,8 +1259,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const distinct = (colony: readonly Seat[]): UnstartedSeat[] => colony
           .filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index)
           .map((seat) => ({ ...seat, seats: colony.filter((other) => other.id === seat.id).length }));
+        const names = lobbyColonyNames(id, lobby.mode !== null);
         unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(lobby.colonies[0]), distinct(lobby.colonies[1])],
-          ...(lobby.challenge ? { challenge: "house" as const } : {}) });
+          ...(lobby.challenge ? { challenge: "house" as const } : {}), ...(isClassicColonyNames(names) ? {} : { colonyNames: names }) });
       }
       // A seat stores the name at seating; each is shown by its identity's current display name, as listWaiting names
       // queue entries, and a seat whose identity no longer resolves is left unnamed.

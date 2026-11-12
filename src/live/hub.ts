@@ -35,6 +35,7 @@ import type { ReplayStore } from "../replays/store.js";
 import type { StartRating } from "../replays/history.js";
 import type { Activity } from "../slots/activity.js";
 import { headerLine } from "../sim/log.js";
+import { isClassicColonyNames, lobbyColonyNames } from "../sim/colonyNames.js";
 import { admitMatchWatch, captureMatchAccess, isHouseMatch, spectatorDelaySeconds, type MatchAccess, type CurrentInvite } from "./match-access.js";
 import { matchWatchStatus, type CatalogMatch, type MatchWatchStatus } from "./match-catalog.js";
 import { createAdmissionCap, EXEMPT, refuseBusy, type AdmissionCap } from "../net/admission.js";
@@ -299,7 +300,10 @@ class MatchStream {
     this.access = access === undefined ? undefined : captureMatchAccess(access);
     this.identity = resume?.identity ?? randomInt(1, 2 ** 48);
     this.startedAt = resume?.startedAt ?? hub.clock.now();
+    // An unrated lobby match is named by its drawn pair, the same names its game server gives its agents.
+    const names = this.access === undefined ? undefined : lobbyColonyNames(this.access.lobbyId, this.access.rated);
     this.recorder = new SpectatorRecorder(state, { rated: this.access?.rated, identity,
+      ...(names === undefined || isClassicColonyNames(names) ? {} : { colonyNames: names }),
       // Every live match carries its accepted-call idle clock; the Model Index is marked explicitly.
       ...(houseIdle === undefined ? {} : { houseIdle, modelIndex: this.access !== undefined && isHouseMatch(this.access) }) }, resume?.recorder);
     const store = this.access?.visibility === "private" ? hub.privateReplayStore?.(this.access.lobbyId) : hub.replayStore;
