@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, type SimConfig } from "../sim/config.js";
+import type { ColonyNamePair } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
@@ -169,8 +170,9 @@ function squadTiles(view: AgentView | null): string {
 }
 
 /** The winner fields of an ended match, as observe reports them. */
-function winnerFields(game: Game, agentId: string | null, result: MatchResult): Record<string, unknown> {
-  return { matchOver: true, winner: result.reason === "abandoned" ? "abandoned" : result.winner === null ? "draw" : game.colonyNames(agentId)[result.winner], result };
+/** names: the result's own match's colony names where the caller has them (a viewless refusal); else the agent's match's. */
+function winnerFields(game: Game, agentId: string | null, result: MatchResult, names = game.colonyNames(agentId)): Record<string, unknown> {
+  return { matchOver: true, winner: result.reason === "abandoned" ? "abandoned" : result.winner === null ? "draw" : names[result.winner], result };
 }
 
 /** The re-lay hint; nearestTile is the sim's read-only answer for the refused tick. */
@@ -204,6 +206,8 @@ function explain(
   matchResult: MatchResult | null = null,
   extra: Record<string, unknown> = {},
   command?: SimInput["type"],
+  /** With matchResult: the colony names of that result's match, from the refused outcome. */
+  colonyNames?: ColonyNamePair,
 ): CallToolResult {
   // The sim's empty-squad omission message is the true cause; range is not.
   const emptySquadOmission = code === "count_mark_not_visible" && simMessage === EMPTY_SQUAD_COUNT_MARK;
@@ -218,7 +222,7 @@ function explain(
       ? `${howToFix} Wait ${extra.retryAfterMs} ms (retryAfterMs) first.`
     : (code === "count_mark_not_visible" || code === "water_tile" || code === "rock_tile") && "nearestTile" in extra
       ? `${howToFix} ${nearestTileText(code, extra.nearestTile, lineEnd)}` : howToFix;
-  return errorResult(code, canonicalMessage ? message : simMessage ?? message, fix, view, { ...extra, ...(result === null ? {} : winnerFields(game, view?.agentId ?? null, result)) });
+  return errorResult(code, canonicalMessage ? message : simMessage ?? message, fix, view, { ...extra, ...(result === null ? {} : winnerFields(game, view?.agentId ?? null, result, colonyNames ?? game.colonyNames(view?.agentId ?? null))) });
 }
 
 /** Each founding refusal names the checks that still follow it, in foundQueen's order (FOUNDING_CHECKS). */
@@ -350,7 +354,7 @@ function commandResult(game: Game, config: SimConfig, outcome: Outcome, input?: 
       outcome.code === "intent_too_long" && intentLength !== undefined
         ? `Intent length ${intentLength} exceeds the ${config.intentMaxChars}-character limit.` : outcome.simMessage,
       outcome.view, outcome.result ?? null, { ...nextCommandTick(outcome.view), ...outcome.timing,
-        ...(outcome.nearestTile === undefined ? {} : { nearestTile: outcome.nearestTile }) }, input?.type);
+        ...(outcome.nearestTile === undefined ? {} : { nearestTile: outcome.nearestTile }) }, input?.type, outcome.colonyNames);
   }
 }
 
@@ -395,7 +399,7 @@ function viewResult(game: Game, config: SimConfig, outcome: Outcome, queuedExtra
     case "queued":
       return payload({ waiting: true, matchStarts: startText(outcome.nextStart), message: "Your match has not started; keep calling observe.", ...outcome.observeInfo, ...queuedExtra });
     case "error":
-      return explain(game, config, outcome.code, outcome.simMessage, outcome.view, outcome.result ?? null, { ...outcome.timing, ...outcome.observeInfo });
+      return explain(game, config, outcome.code, outcome.simMessage, outcome.view, outcome.result ?? null, { ...outcome.timing, ...outcome.observeInfo }, undefined, outcome.colonyNames);
   }
 }
 
@@ -435,7 +439,7 @@ async function sessionObserve(game: Game, agentId: string, receipt: FinalResultR
   const outcome = await game.call(agentId, { type: "observe", agentId }, countsAsHouseActivity);
   const result = receipt?.result;
   if (outcome.kind === "error" && outcome.code === "unknown_agent" && result != null) {
-    return { kind: "error", code: "match_over", view: null, result,
+    return { kind: "error", code: "match_over", view: null, result, ...(receipt?.colonyNames === undefined ? {} : { colonyNames: receipt.colonyNames }),
       observeInfo: observeInfo(null, "", game.simConfig) };
   }
   return outcome;
@@ -630,7 +634,7 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
         // A join by a current key starts the count again.
         session.failedJoins = 0;
         const nest = nestFields(game, joined.agentId, true);
-        const base = { agentId: joined.agentId, briefing: joinBriefing(joined.config, game.mcpConfig, "nestSelection" in nest, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId) }) };
+        const base = { agentId: joined.agentId, briefing: joinBriefing(joined.config, game.mcpConfig, "nestSelection" in nest, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId), colonyNames: game.colonyNames(joined.agentId) }) };
         if (outcome.kind === "queued") {
           return payload({ ...base, ...nest, matchStarts: startText(outcome.nextStart), message: "Your lobby's match has not started; you are seated in it. Call observe until it starts." });
         }
@@ -930,7 +934,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
         (outcome.code === "match_over" || (outcome.code === "call_rate" && game.status(joined.agentId) === "ended"))) bindSession(game, session, joined.agentId);
       if (outcome.kind === "error" || joined.agentId === null) return viewResult(game, joined.config, outcome);
       bindSession(game, session, joined.agentId);
-      const base = { agentId: joined.agentId, reconnectToken: joined.token, briefing: joinBriefing(joined.config, game.mcpConfig, false, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId), ...local }) };
+      const base = { agentId: joined.agentId, reconnectToken: joined.token, briefing: joinBriefing(joined.config, game.mcpConfig, false, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId), colonyNames: game.colonyNames(joined.agentId), ...local }) };
       if (outcome.kind === "queued") {
         const placement = game.queuedLineup().find(seat => seat.agentId === joined.agentId);
         if (placement === undefined) throw new Error("Queued join has no colony placement");

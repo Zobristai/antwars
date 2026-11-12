@@ -114,8 +114,9 @@ describe("hosted briefing stays byte-identical to main 5df81d04", () => {
       expect(joined.isError, joined.text).toBe(false);
       const rules = await agent.call("rules");
       const config = h.game.match!.state.config;
-      expect(joined.data.briefing).toBe(joinBriefing(config, h.game.mcpConfig, false, { house: false, undrawn: false }));
       const names = mode === null ? { colonyNames: drawColonyNames("pin-lobby") } : {};
+      expect(joined.data.briefing).toBe(joinBriefing(config, h.game.mcpConfig, false, { house: false, undrawn: false, ...names }));
+      if (mode !== null) expect(joined.data.briefing).toBe(joinBriefing(config, h.game.mcpConfig, false, { house: false, undrawn: false }));
       expect(rules.data.rules).toBe(briefing(config, h.game.mcpConfig, { house: false, undrawn: false, ...names }));
       if (mode !== null) expect(rules.data.rules).toBe(briefing(config, h.game.mcpConfig, { house: false, undrawn: false }));
       expect(joined.data.briefing).toContain("Accounts are required");

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { chooseJoinColony } from "../sim/agents.js";
 import { COLONY_NAMES, PUBLIC_CONFIG, withoutHousePausedMaps, type SimConfig } from "../sim/config.js";
-import { lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
+import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { newMatchConfig } from "../sim/gridScale.js";
 import { headerLine, tickLine } from "../sim/log.js";
 import { cloneState, createMatch } from "../sim/map.js";
@@ -38,6 +38,8 @@ export type GameErrorCode = InputErrorCode | AdapterErrorCode;
 export interface FinalResultReceipt {
   readonly result: MatchResult | null;
   readonly notPlayed?: true;
+  /** The colony names of the receipt's match, so its result is named as that match named it after its record is gone. */
+  readonly colonyNames?: ColonyNamePair;
 }
 
 /** One seat of the lobby whose match this slot server plays. An identity may hold several seats of its colony. */
@@ -110,6 +112,8 @@ export type Outcome = (
       readonly view: AgentView | null;
       /** An ended match's result, for a refused call that produced no view. */
       readonly result?: MatchResult | null;
+      /** With result: the colony names of that result's match. */
+      readonly colonyNames?: ColonyNamePair;
       readonly timing?: CallTiming;
     }) & { readonly observeInfo?: ObserveInfo };
 
@@ -245,8 +249,6 @@ interface AgentRecord {
   readonly matchSeq: number;
   /** Captured at admission so an ended caller keeps its own match mode. */
   readonly houseMatch: boolean;
-  /** The colony names of this agent's match, captured at admission (and recomputed from the lobby on resume). */
-  readonly colonyNames: ColonyNamePair;
   readonly displayName: string | null;
   readonly modelLabel: string | null;
   readonly thinkingLevel: string | null;
@@ -256,7 +258,8 @@ interface AgentRecord {
   readonly seat: LineupSeat | null;
   callTimes: number[];
   /** Sessions keep only this receipt, not a retired record's events or match state. */
-  readonly finalResult: { result: MatchResult | null; notPlayed?: true };
+  /** colonyNames: this agent's match's names, captured at admission and taken from the lobby again on resume. */
+  readonly finalResult: { result: MatchResult | null; notPlayed?: true; readonly colonyNames: ColonyNamePair };
   /** Slot servers: the lobby and seat key this seat belongs to, its rejoin key. */
   readonly seatKey: string | null;
   /** Slot servers: the identity holding this seat, whose join activity is recorded. */
@@ -343,7 +346,9 @@ export class Game {
    * matchSeq is null during its countdown, then the sequence of its one match.
    * start is its finished pick window, which gave each seat its starting queen; null before then.
    */
-  private lobby: { readonly id: string; readonly mode: RankedMode | null; readonly seats: ReadonlyMap<string, LobbySeat>; notPlayed: boolean; matchSeq: number | null; start: FinishedStart | null } | null = null;
+  private lobby: { readonly id: string; readonly mode: RankedMode | null; readonly seats: ReadonlyMap<string, LobbySeat>; notPlayed: boolean; matchSeq: number | null; start: FinishedStart | null;
+    /** Its match's colony names, decided once when it is seated and carried by its handover saves. */
+    readonly names: ColonyNamePair } | null = null;
   /** Slot servers: the identities of the last lobby whose match was not played here. */
   private notPlayed: { readonly lobbyId: string; readonly identities: ReadonlySet<string> } | null = null;
   readonly slot: SlotAccess | undefined;
@@ -404,7 +409,8 @@ export class Game {
   /** Slot servers: seat the lobby whose match is next; only its identities may join, each seat by its seat key. */
   seatLobby(lobbyId: string, seats: readonly LobbySeat[], mode: RankedMode | null = null): void {
     this.starting = null;
-    this.lobby = { id: lobbyId, mode, seats: new Map(seats.map((seat) => [seatKeyOf(seat), seat])), notPlayed: false, matchSeq: null, start: null };
+    this.lobby = { id: lobbyId, mode, seats: new Map(seats.map((seat) => [seatKeyOf(seat), seat])), notPlayed: false, matchSeq: null, start: null,
+      names: lobbyColonyNames(lobbyId, mode !== null) };
     // An earlier lobby's seat queued for a match that never started was not played; it never joins this lobby's match.
     const started = this.current?.seq ?? 0;
     for (const rec of this.records.values()) {
@@ -558,7 +564,7 @@ export class Game {
     if (this.lobbyMatchEnded(lobby)) {
       // The lobby's match has ended: a first join sees its result and never queues for a later lobby's match.
       const result = this.current?.seq === matchSeq ? this.current.state.result : null;
-      return { agentId: null, token: null, config: this.simConfig, outcome: { kind: "error", code: "match_over", view: null, result } };
+      return { agentId: null, token: null, config: this.simConfig, outcome: { kind: "error", code: "match_over", view: null, result, colonyNames: lobby.names } };
     }
     const live = matchSeq !== null;
     const rec = this.newRecord(matchSeq ?? (this.current?.seq ?? 0) + 1, {
@@ -781,7 +787,7 @@ export class Game {
       format: GAME_SAVE_FORMAT, phase: "match", seed: m.seed, tick: m.state.tick, holdBehaviour: HOLD_BEHAVIOUR, state: m.state, startJoins,
       houseActivity: [...this.houseActivity], records, replies: this.heldRepliesOf(m.seq),
       lobby: lobby === null ? null : { id: lobby.id, mode: lobby.mode, seats: [...lobby.seats.values()],
-        startingQueens: lobby.start === null ? null : [...lobby.start.startingQueens()] },
+        startingQueens: lobby.start === null ? null : [...lobby.start.startingQueens()], ...savedNames(lobby.names) },
       notPlayed: this.notPlayed === null ? null : { lobbyId: this.notPlayed.lobbyId, identities: [...this.notPlayed.identities] },
     };
     // A deep copy: the live state, records and event histories keep changing after this returns.
@@ -808,8 +814,10 @@ export class Game {
     this.next = null;
     this.starting = null;
     const lobby = restored.lobby;
+    // A save with no names (an older server's) began its match, and its spectator stream, with the rated names; it keeps them.
     this.lobby = lobby === null ? null : { id: lobby.id, mode: lobby.mode, seats: new Map(lobby.seats.map(seat => [seatKeyOf(seat), seat])),
-      notPlayed: false, matchSeq: seq, start: lobby.startingQueens === null ? null : finishedStart(new Map(lobby.startingQueens)) };
+      notPlayed: false, matchSeq: seq, start: lobby.startingQueens === null ? null : finishedStart(new Map(lobby.startingQueens)),
+      names: lobby.colonyNames ?? COLONY_NAMES };
     this.notPlayed = restored.notPlayed === null ? null : { lobbyId: restored.notPlayed.lobbyId, identities: new Set(restored.notPlayed.identities) };
     this.restoreRecords(restored.records, seq);
     this.restoreHeldReplies(restored.replies, seq);
@@ -835,7 +843,7 @@ export class Game {
       .map(savedRecord);
     const save: StartGameSave = {
       format: GAME_SAVE_FORMAT, phase: "start", seed: starting.seed, tick: 0, start: starting.window.save(this.now()), records, replies: this.heldRepliesOf(seq),
-      lobby: { id: lobby.id, mode: lobby.mode, seats: [...lobby.seats.values()], startingQueens: null },
+      lobby: { id: lobby.id, mode: lobby.mode, seats: [...lobby.seats.values()], startingQueens: null, ...savedNames(lobby.names) },
       notPlayed: this.notPlayed === null ? null : { lobbyId: this.notPlayed.lobbyId, identities: [...this.notPlayed.identities] },
     };
     // A deep copy: the window and the queued seats' records keep changing after this returns.
@@ -853,8 +861,10 @@ export class Game {
     const restored = structuredClone(save);
     const window = LobbyStart.reopen(restored.seed, restored.start, this.now());
     const seq = (this.current?.seq ?? 0) + 1;
+    // A match not yet begun has no stream: an older server's save, with no names, draws them as this server would have.
     this.lobby = { id: restored.lobby.id, mode: restored.lobby.mode, seats: new Map(restored.lobby.seats.map(seat => [seatKeyOf(seat), seat])),
-      notPlayed: false, matchSeq: null, start: null };
+      notPlayed: false, matchSeq: null, start: null,
+      names: restored.lobby.colonyNames ?? lobbyColonyNames(restored.lobby.id, restored.lobby.mode !== null) };
     this.starting = { seed: restored.seed, window };
     this.notPlayed = restored.notPlayed === null ? null : { lobbyId: restored.notPlayed.lobbyId, identities: new Set(restored.notPlayed.identities) };
     this.restoreRecords(restored.records, seq);
@@ -884,8 +894,8 @@ export class Game {
   private restoreRecords(records: readonly SavedAgentRecord[], seq: number): void {
     for (const saved of records) {
       const { lastSquad, cellSnapshot, callTimes, events, priorityEvents, finalResult, appliedCalls, ...fields } = saved;
-      const rec: AgentRecord = { ...fields, colony: saved.colony, colonyNames: this.seatColonyNames(saved.seatKey), matchSeq: seq, callTimes: [...callTimes], events: [...events],
-        priorityEvents: [...priorityEvents], finalResult: { ...finalResult }, lastSquad: lastSquad === null ? null : new Set(lastSquad),
+      const rec: AgentRecord = { ...fields, colony: saved.colony, matchSeq: seq, callTimes: [...callTimes], events: [...events],
+        priorityEvents: [...priorityEvents], finalResult: { ...finalResult, colonyNames: this.seatColonyNames(saved.seatKey) }, lastSquad: lastSquad === null ? null : new Set(lastSquad),
         appliedCalls: [...appliedCalls],
         cellSnapshot: cellSnapshot === null ? null : { ...cellSnapshot, offsets: new Set(cellSnapshot.offsets) } };
       this.records.set(rec.agentId, rec);
@@ -1038,10 +1048,9 @@ export class Game {
       token: randomUUID(),
       matchSeq,
       houseMatch: fields.seatKey !== null && this.lobby?.mode?.startsWith("house-") === true,
-      colonyNames: this.seatColonyNames(fields.seatKey),
       ...fields,
       callTimes: [this.now()],
-      finalResult: { result: null },
+      finalResult: { result: null, colonyNames: this.seatColonyNames(fields.seatKey) },
       events: [],
       lastSquad: null,
       broodVoteLost: false,
@@ -1082,7 +1091,10 @@ export class Game {
    * With an identity, the call's reply is remembered under its call id if the match applies it.
    */
   async call(agentId: string, input: SimInput, countsAsHouseActivity = true, identity?: CallIdentity): Promise<Outcome> {
-    return this.answer(agentId, input, countsAsHouseActivity, identity);
+    const outcome = await this.answer(agentId, input, countsAsHouseActivity, identity);
+    // A refused call with no view still names its result's colonies as the caller's own match did.
+    const names = this.records.get(agentId)?.finalResult.colonyNames;
+    return outcome.kind === "error" && outcome.result != null && names !== undefined ? { ...outcome, colonyNames: names } : outcome;
   }
 
   /** The reply of this seat's applied call with that call id, if it is still remembered. */
@@ -1445,17 +1457,13 @@ export class Game {
    */
   private seatColonyNames(seatKey: string | null): ColonyNamePair {
     const lobby = this.lobby;
-    return seatKey === null || lobby === null || !seatKey.startsWith(`${lobby.id}/`) ? COLONY_NAMES : lobbyColonyNames(lobby.id, lobby.mode !== null);
+    return seatKey === null || lobby === null || !seatKey.startsWith(`${lobby.id}/`) ? COLONY_NAMES : lobby.names;
   }
 
   /** Unjoined callers see the seated lobby's names (COLONY_NAMES outside a lobby); joined callers keep their own match's. */
   colonyNames(agentId: string | null = null): ColonyNamePair {
-    if (agentId !== null) {
-      const rec = this.records.get(agentId);
-      if (rec !== undefined) return rec.colonyNames;
-    }
-    const lobby = this.lobby;
-    return lobby === null ? COLONY_NAMES : lobbyColonyNames(lobby.id, lobby.mode !== null);
+    const rec = agentId === null ? undefined : this.records.get(agentId);
+    return rec?.finalResult.colonyNames ?? this.lobby?.names ?? COLONY_NAMES;
   }
 
   /** Unjoined callers see the slot mode; joined callers retain their own mode. */
@@ -1540,11 +1548,21 @@ export function observeInfo(state: SimState | null, agentId: string, config: Sim
   };
 }
 
+/** A seat's result as saved: its names are its lobby's, which the save carries once (savedNames). */
+function savedResult({ colonyNames: _names, ...result }: AgentRecord["finalResult"]): SavedAgentRecord["finalResult"] {
+  return result;
+}
+
+/** A lobby's drawn colony names as its save carries them; the rated names are left implicit. */
+function savedNames(names: ColonyNamePair): { colonyNames?: readonly [string, string] } {
+  return isClassicColonyNames(names) ? {} : { colonyNames: [names[0], names[1]] };
+}
+
 function savedRecord(rec: AgentRecord): SavedAgentRecord {
   return {
     agentId: rec.agentId, token: rec.token, houseMatch: rec.houseMatch, displayName: rec.displayName, modelLabel: rec.modelLabel,
     thinkingLevel: rec.thinkingLevel, serviceTier: rec.serviceTier, ...(rec.colony === undefined ? {} : { colony: rec.colony }), seat: rec.seat,
-    callTimes: rec.callTimes, finalResult: rec.finalResult, seatKey: rec.seatKey, identityId: rec.identityId,
+    callTimes: rec.callTimes, finalResult: savedResult(rec.finalResult), seatKey: rec.seatKey, identityId: rec.identityId,
     events: rec.events, lastSquad: rec.lastSquad === null ? null : [...rec.lastSquad], broodVoteLost: rec.broodVoteLost,
     eventCursor: rec.eventCursor, currentEventCursor: rec.currentEventCursor, priorityEvents: rec.priorityEvents,
     cellSnapshot: rec.cellSnapshot === null ? null : { ...rec.cellSnapshot, offsets: [...rec.cellSnapshot.offsets] },

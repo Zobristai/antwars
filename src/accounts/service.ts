@@ -11,6 +11,7 @@ import type { Colony, Lobbies, Lobby, LobbyRefusal } from "../lobby/lobbies.js";
 import { lobbyPageUrl, waitStreamUrl } from "../lobby/site.js";
 import { newWaitToken } from "../lobby/waits.js";
 import { DEFAULT_PAGE_SIZE, LEADERBOARD_SCOPES, MAX_PAGE_SIZE, RANKED_MODES, type Ratings } from "../rating/ratings.js";
+import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 
 /**
  * Usernames, handles, lobbies and the leaderboard as operations over the shared
@@ -211,6 +212,15 @@ export const CHALLENGE_NOTICE_GUIDANCE = "To notice that your challenge has star
 /** The one recoverable case, shared by claim_username's warning and recover_key. */
 const LOST_REPLY_RECOVERY = "The only exception: if your connection dropped during the call that issued it, so its reply never arrived, call recover_key once in the same session with the same key argument that call used (none after claiming a new username) for a fresh key; the undelivered key then stops working. Any other lost key cannot be recovered.";
 const KEEP_KEY = `This key is shown once and is never shown again. Keep it secret: losing it loses the username. ${LOST_REPLY_RECOVERY}`;
+/**
+ * A lobby as create_lobby, join_lobby, start_lobby and read_lobby return it: an unrated lobby (no ranked mode) also names
+ * its two colonies, colonyNames[0] and [1], as its match will; a rated pairing's lobby is returned as it was.
+ */
+function named(lobby: Lobby): Lobby & { readonly colonyNames?: ColonyNamePair } {
+  const names = lobbyColonyNames(lobby.id, lobby.mode !== null);
+  return isClassicColonyNames(names) ? lobby : { ...lobby, colonyNames: names };
+}
+
 const RATING_GUIDANCE = "Rated games come only from the ranked queue; lobby games (create_lobby, join_lobby) are unrated, whatever their size, kind or fill. join_queue {key, mode} (a ranked mode such as 1v1) holds one entry per identity: it pairs you at random with a waiting identity of a different owner and starts a full public match, or leaves you waiting. A handle belongs to its username's owner. queue_status {key} shows waiting with expiresAt, matched with the lobbyId to follow with read_lobby, or expired; leave_queue {key} removes your waiting entry. An unpaired entry expires 12 hours after joining (15 minutes for an index match), with no game and no rating change.";
 const HOUSE_RATING_GUIDANCE = "Index matches, modes house-1v1, house-2v2, house-3v3 and house-4v4, are open only to handles of the antwars username (antwars/<handle>), and they play only each other. Each index-match size has its own Antwars Model Index rating, separate from the other index-match sizes and from the ranked ladder's 1v1, 2v2, 3v3 and 4v4: pass an index-match mode to read that size's Antwars Model Index ratings.";
 
@@ -324,7 +334,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       const created = await lobbies.createLobby(args.key, args.kind, args.size as 1 | 2 | 3 | 4);
       if (!created.ok) return lobbyRefusal(created.reason);
       const { lobby, inviteToken: token } = created.value;
-      return ok(token === undefined ? { lobby } : { lobby, inviteLink: inviteLink(lobby.id, token), inviteToken: token });
+      return ok(token === undefined ? { lobby: named(lobby) } : { lobby: named(lobby), inviteLink: inviteLink(lobby.id, token), inviteToken: token });
     }),
 
   operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with fewer seats, colony 0 on a tie. You play your seat's colony in the match. The last seat starts the lobby automatically. Leave before the match starts with leave_lobby. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE} ${WAIT_STREAM_GUIDANCE}`,
@@ -336,7 +346,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
       const token = newWaitToken();
       const joined = await stores.lobbies.join(args.lobbyId, args.key, args.inviteToken ?? undefined, (args.colony ?? undefined) as Colony | undefined, token);
-      return joined.ok ? ok({ lobby: joined.value, ...waitFields(token) }) : lobbyRefusal(joined.reason);
+      return joined.ok ? ok({ lobby: named(joined.value), ...waitFields(token) }) : lobbyRefusal(joined.reason);
     }),
 
   operation("revoke_invite", "With the lobby creator's identity key, invalidate the current private invite link. That link cannot admit anyone again; issue_invite creates a replacement. Do not share your identity key as an invite.",
@@ -361,7 +371,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     async (stores, args) => {
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
       const started = await stores.lobbies.startEarly(args.lobbyId, args.key);
-      return started.ok ? ok({ lobby: started.value }) : lobbyRefusal(started.reason);
+      return started.ok ? ok({ lobby: named(started.value) }) : lobbyRefusal(started.reason);
     }),
 
   operation("leave_lobby", "Leave a lobby you are seated in, with your key and the lobbyId, at any time before its match starts: no rating change and no charge. When the last seated identity leaves, the lobby closes. The match starts when the lobby stops accepting joins (its last seat fills or its creator starts it); after that a leave is refused started and changes nothing. Once you have left you may join the ranked queue, another lobby or request a challenge at once.",
@@ -392,8 +402,8 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       const holder = identity !== undefined
         && (lobby.creatorId === identity.id || lobby.colonies.some((colony) => colony.some((seat) => seat.id === identity.id)));
       // Only the identity holding a wait on this lobby is given its link; a creator without a seat and an invite reader are not.
-      if (holder) return ok({ lobby, ...(await ownWait(stores.lobbies, identity!.id, { lobbyId: args.lobbyId })) });
-      if (token !== undefined && await stores.lobbies.isInviteCurrent(args.lobbyId, token)) return ok({ lobby });
+      if (holder) return ok({ lobby: named(lobby), ...(await ownWait(stores.lobbies, identity!.id, { lobbyId: args.lobbyId })) });
+      if (token !== undefined && await stores.lobbies.isInviteCurrent(args.lobbyId, token)) return ok({ lobby: named(lobby) });
       return refuse("no_such_lobby");
     }),
 

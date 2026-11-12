@@ -217,7 +217,7 @@ describe("account guidance without issuing identities", () => {
       const rules = await agent.call("rules");
       expect(rules.isError, rules.text).toBe(false);
       const matchConfig = h.game.match!.state.config;
-      expect(joined.data.briefing).toBe(joinBriefing(matchConfig, h.game.mcpConfig));
+      expect(joined.data.briefing).toBe(joinBriefing(matchConfig, h.game.mcpConfig, false, { house: false, colonyNames: drawColonyNames("guidance-lobby") }));
       // An unrated lobby's rules name the colonies it drew; the rest is the hosted text.
       expect(rules.data.rules).toBe(briefing(matchConfig, h.game.mcpConfig, { house: false, colonyNames: drawColonyNames("guidance-lobby") }));
       for (const text of [joined.data.briefing as string, rules.data.rules as string]) {

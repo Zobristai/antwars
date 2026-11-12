@@ -690,6 +690,63 @@ describe("slot server joins", () => {
 
   const catSeat = [{ identityId: "cat", displayName: "Cat", colony: 0 as const }];
 
+  it("names an ended seat's result by its own match's colonies after the next lobby is seated, with or without its record", async () => {
+    rig = await startSlotRig(1);
+    rig.game.seatLobby("lobby-1", seats, "1v1");
+    rig.game.startMatch(1);
+    const first = await (await rig.connect()).call("join", { key: "key-ann" });
+    rig.game.tick(true);
+    rig.game.seatLobby("lobby-2", catSeat);
+    expect(rig.game.colonyNames()).toEqual(drawColonyNames("lobby-2"));
+    // A viewless rate-limited call by the ended rated seat names its result by the rated names.
+    const refused = await rig.game.call(first.data.agentId, { type: "observe", agentId: first.data.agentId });
+    expect(refused).toMatchObject({ kind: "error", code: "call_rate", colonyNames: COLONY_NAMES });
+    expect(rig.game.colonyNames(first.data.agentId)).toBe(COLONY_NAMES);
+    // The receipt its session keeps carries the names too, so they outlive the record.
+    expect(rig.game.finalResultReceipt(first.data.agentId)!.colonyNames).toBe(COLONY_NAMES);
+  });
+
+  it("decides a lobby's names once: its handover save carries them, and an older save without them keeps what its stream began with", async () => {
+    rig = await startSlotRig();
+    rig.game.seatLobby("lobby-1", seats);
+    rig.game.startMatch(1);
+    const ann = await (await rig.connect()).call("join", { key: "key-ann" });
+    rig.advance(1);
+    const save = rig.game.saveMatch();
+    if (save.phase !== "match") throw new Error("expected a match save");
+    expect(save.lobby!.colonyNames).toEqual(drawColonyNames("lobby-1"));
+    expect(save.records.every(record => !("colonyNames" in record.finalResult))).toBe(true);
+    const resumed = (from: typeof save) => {
+      const game = new Game({ simConfig: playable(TEST_CONFIG), mcpConfig: TEST_MCP_CONFIG, now: () => 0, slot: { identityOf: async () => undefined, locate: async () => undefined } });
+      game.resumeMatch(from);
+      return game;
+    };
+    expect(resumed(save).colonyNames(ann.data.agentId)).toEqual(drawColonyNames("lobby-1"));
+    // An older server's save of a running match has no names: its spectator stream began on the rated names, so do its agents.
+    const { colonyNames: _names, ...olderLobby } = save.lobby!;
+    expect(resumed({ ...save, lobby: olderLobby }).colonyNames(ann.data.agentId)).toBe(COLONY_NAMES);
+    // A rated lobby's save leaves its names implicit.
+    rig.game.seatLobby("lobby-r", catSeat, "1v1");
+    expect(rig.game.colonyNames()).toBe(COLONY_NAMES);
+  });
+
+  it("states an unrated lobby's drawn names in its queued and live join briefings, and nothing new in a rated one", async () => {
+    for (const [mode, line] of [[null, `This match's colonies: ${drawColonyNames("lobby-1").join(" (colony 0) and ")} (colony 1).`], ["1v1", null]] as const) {
+      rig = await startSlotRig();
+      rig.game.seatLobby("lobby-1", seats, mode);
+      const queued = await (await rig.connect()).call("join", { key: "key-ann" });
+      rig.game.startMatch(1);
+      rig.advance(1);
+      const live = await (await rig.connect()).call("join", { key: "key-bob" });
+      for (const briefing of [queued.data.briefing as string, live.data.briefing as string]) {
+        if (line === null) expect(briefing).not.toContain("This match's colonies");
+        else expect(briefing.split("\n")).toContain(line);
+      }
+      await rig.close();
+      rig = null;
+    }
+  });
+
   // Slot refusals name key, seat and a new lobby, never the root server's reconnectToken.
   it("tells an unjoined or ended slot session to use its key and a new lobby, never reconnectToken", async () => {
     rig = await startSlotRig();
