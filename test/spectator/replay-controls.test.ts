@@ -21,18 +21,33 @@ class Element {
   onclick: ((event: { detail: number }) => void) | null = null; onfocus: (() => void) | null = null;
   onpointerenter: ((event: { pointerType: string }) => void) | null = null; onpointerleave: ((event: { pointerType: string }) => void) | null = null;
   focused = false;
+  /** Set on a document that follows focus as a browser does: one focused element, with blur and focus handlers run. */
+  owner: { activeElement: Element | null; tracksFocus: boolean } | null = null;
   readonly classes = new Set<string>();
   classList = { toggle: (name: string, on: boolean) => { if (on) this.classes.add(name); else this.classes.delete(name); } };
   constructor(readonly tagName: string) {}
   append(...nodes: Element[]) { for (const n of nodes) { n.parent?.children.splice(n.parent.children.indexOf(n), 1); n.parent = this; this.children.push(n); } }
   replaceChildren(...nodes: Element[]) { this.children = []; this.append(...nodes); }
   contains(node: Element | null): boolean { return node === this || this.children.some(c => c.contains(node)); }
-  focus() { this.focused = true; }
+  focus() {
+    this.focused = true;
+    const doc = this.owner;
+    if (!doc?.tracksFocus || doc.activeElement === this) return;
+    const was = doc.activeElement;
+    doc.activeElement = this;
+    if (was) { was.focused = false; was.onblur?.(); }
+    this.onfocus?.();
+  }
   setAttribute(k: string, v: string) { this.attrs[k] = v; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(n => n !== this); }
   get text(): string { return this.textContent + this.children.map(c => c.text).join(""); }
 }
-const fakeDoc = () => ({ createElement: (tag: string) => new Element(tag), createTextNode: (text: string) => Object.assign(new Element("#text"), { textContent: text }) }) as unknown as Document;
+const fakeDoc = (tracksFocus = false) => {
+  const doc = { activeElement: null as Element | null, tracksFocus,
+    createElement: (tag: string) => Object.assign(new Element(tag), { owner: doc }),
+    createTextNode: (text: string) => Object.assign(new Element("#text"), { textContent: text }) };
+  return doc as unknown as Document;
+};
 const packets = scale2Packets(45);
 const bytes = packMessages(packets);
 const active: Recording[] = [];
@@ -294,7 +309,7 @@ describe("marks on the scrubber", () => {
     // The page's ResizeObserver, fired by hand: the row and the slider are what the controls watch.
     function resizable(position = 391_600) {
       const fired: (() => void)[] = [];
-      const doc = Object.assign(fakeDoc(), { defaultView: {
+      const doc = Object.assign(fakeDoc(true), { defaultView: {
         ResizeObserver: class { constructor(cb: () => void) { fired.push(cb); } observe() {} disconnect() {} },
         getComputedStyle: () => ({ getPropertyValue: () => "" }),
       } }) as unknown as Document;
@@ -305,7 +320,8 @@ describe("marks on the scrubber", () => {
       const el = controls.el as unknown as Element;
       const part = (name: string) => el.children.find(c => c.className === name)!;
       const resize = () => { for (const cb of fired) cb(); controls.update(); };
-      return { controls, el, seek: el.children[1]!, layer: part("aw-marks"), chip: part("aw-mark-label"), list: part("aw-mark-list"), seeks, resize };
+      return { controls, el, seek: el.children[1]!, layer: part("aw-marks"), chip: part("aw-mark-label"), list: part("aw-mark-list"), seeks, resize,
+        focusedNow: () => (doc as unknown as { activeElement: Element | null }).activeElement };
     }
 
     it("keeps the marks, an open list and a shown label when only the time grows a digit's width", () => {
@@ -351,6 +367,29 @@ describe("marks on the scrubber", () => {
       expect(r.chip.hidden).toBe(false);
       expect(r.chip.text).toBe("Fight · 9:13");
       expect(r.chip.style.left).not.toBe(chipLeft);
+      r.controls.close();
+    });
+
+    it("keeps a list the mouse opened, and keyboard focus on another mark, when the slider then resizes", () => {
+      const r = resizable();
+      r.layer.children[0]!.focus(); // keyboard focus on the single 2:13 fight: its label shows
+      expect(r.chip.text).toBe("Fight · 2:13");
+      r.layer.children[3]!.onpointerenter!({ pointerType: "mouse" }); // the mouse opens the 4-mark group's list
+      expect(r.chip.hidden).toBe(true);
+      const lines = r.list.children.map(c => c.attrs["aria-label"]);
+      expect(lines).toHaveLength(4);
+      r.seek.offsetWidth -= 7;
+      r.resize();
+      // Focus is back on the fight, and the group's list is still open with its moments, not just marked open.
+      const [fight, , , group] = r.layer.children as [Element, Element, Element, Element];
+      expect(r.focusedNow()).toBe(fight);
+      expect(group.attrs["aria-label"]).toBe("4 marks, 12:00 to 13:04");
+      expect(group.attrs["aria-expanded"]).toBe("true");
+      expect(r.list.hidden).toBe(false);
+      expect(r.list.children.map(c => c.attrs["aria-label"])).toEqual(lines);
+      expect(r.chip.hidden).toBe(true);
+      r.list.children[2]!.onclick!({ detail: 1 });
+      expect(r.seeks).toEqual([776_700]);
       r.controls.close();
     });
   });

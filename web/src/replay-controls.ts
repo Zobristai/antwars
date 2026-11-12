@@ -124,6 +124,9 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
   let openedByPointing = false;
   /** The mark the label shows, so a new layout can move the label with it. */
   let chipEvent: ReplayEvent | null = null;
+  /** True while a new layout swaps the marks and gives focus back: that focus move is not a person's, so it shows no
+   * label and closes no list. */
+  let relaying = false;
   let chipTimer: ReturnType<typeof setTimeout> | null = null;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
@@ -239,6 +242,8 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     layer.style.top = `${seek.offsetTop}px`;
     layer.style.width = `${width}px`;
     layer.style.height = `${seek.offsetHeight}px`;
+    // The marks being replaced say nothing as they go: losing focus by removal is not a person moving it.
+    for (const item of items) item.button.onfocus = item.button.onblur = null;
     layer.replaceChildren();
     items = groupMarks(events, duration, width, px("--aw-mark-gap", 18)).map(group => {
       const button = doc.createElement("button");
@@ -264,8 +269,8 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
         button.onclick = () => jump(first, group.x);
         button.onpointerenter = (event: PointerEvent) => { if (mouse(event)) showChip(first, group.x, null); };
         button.onpointerleave = (event: PointerEvent) => { if (mouse(event) && !chipTimer) hideChip(); };
-        button.onfocus = () => showChip(first, group.x, null);
-        button.onblur = () => { if (!chipTimer) hideChip(); };
+        button.onfocus = () => { if (!relaying) showChip(first, group.x, null); };
+        button.onblur = () => { if (!relaying && !chipTimer) hideChip(); };
       } else {
         // A keyboard press (a click with no pointer detail) also moves focus into the list, to its first line.
         button.onclick = (event: MouseEvent) => {
@@ -288,7 +293,10 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     });
     el.append(layer, chip, list);
     const same = (a: readonly ReplayEvent[], b: readonly ReplayEvent[]) => a.length === b.length && a.every((e, i) => e === b[i]);
-    if (focused) items.find(item => same(item.events, focused))?.button.focus();
+    if (focused) {
+      relaying = true;
+      try { items.find(item => same(item.events, focused))?.button.focus(); } finally { relaying = false; }
+    }
     if (wasOpen) {
       // The group may have joined or split at the new width; a list for a group that no longer exists closes.
       const now = items.find(item => same(item.events, wasOpen));
