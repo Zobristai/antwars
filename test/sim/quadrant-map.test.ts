@@ -108,6 +108,21 @@ describe("quadrant map definitions", () => {
     expect(() => validateQuadrantMap(overlapping)).toThrow(`fixture-quadrants: ${kind} must not overlap the centre region`);
   });
 
+  it("refuses an oversized food radius as leaving the quadrant, without listing its tiles", () => {
+    expect(() => validateQuadrantMap(withLayout({ foodPatches: [{ tileX: 10, tileY: 20, radius: 1_000_000, perTile: 1 }] })))
+      .toThrow("fixture-quadrants: food templates must lie inside the top-left quadrant");
+  });
+
+  it("refuses food on water and a start area with no land", () => {
+    const flooded = [...FIXTURE.water, { x: 8, y: 18, width: 5, height: 5 }];
+    expect(() => validateQuadrantMap(withLayout({}, flooded))).toThrow("fixture-quadrants: food templates must lie entirely on land");
+    // One water tile under the edge of a radius-2 disk is enough.
+    expect(() => validateQuadrantMap(withLayout({}, [...FIXTURE.water, { x: 12, y: 20, width: 1, height: 1 }])))
+      .toThrow("fixture-quadrants: food templates must lie entirely on land");
+    const drowned = withLayout({ startArea: { x: 0, y: 0, width: 4, height: 4 } }, [...FIXTURE.water, { x: 0, y: 0, width: 4, height: 4 }]);
+    expect(() => validateQuadrantMap(drowned)).toThrow("fixture-quadrants: the start area needs at least one land tile");
+  });
+
   it("refuses a centre with no food disk, or a disk that does not fit it", () => {
     expect(() => validateQuadrantMap(withLayout({ centreFood: [] }))).toThrow("fixture-quadrants: the centre needs at least one food disk");
     // The centre is 16 x 12: a radius-6 disk spans 13 rows.
@@ -135,6 +150,12 @@ describe("generated quadrant boards", () => {
     expectFourWay(b.water, rectImages(b));
     expect(b.water.length).toBe(4 * FIXTURE.water.length);
     expect(b.rocks.length).toBeGreaterThanOrEqual(4);
+    // Rocks never cover a start area or quadrant food, so every seed keeps the template's usable starts and food.
+    const grid0 = raster({ ...b, rocks: [] });
+    for (const r of b.rocks) for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) {
+      expect(grid0[y]![x]).toBe(0);
+      expect(b.startAreas.some(s => x >= s.x && x < s.x + s.width && y >= s.y && y < s.y + s.height)).toBe(false);
+    }
     expectFourWay(b.rocks, r => rectImages(b)(r).map((image, i) => ({ ...image, appearance: i % 2 === 1 ? r.appearance | 128 : r.appearance })));
     expectFourWay(b.quadrantFood, p => [p, { ...p, tileX: b.width - 1 - p.tileX }, { ...p, tileY: b.height - 1 - p.tileY },
       { ...p, tileX: b.width - 1 - p.tileX, tileY: b.height - 1 - p.tileY }]);
