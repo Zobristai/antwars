@@ -537,7 +537,7 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
  * The digest of the one house-1v1 plan applySol may write: set, in a reviewed commit, to the digest the plan served.
  * Each rated house-1v1 match changes the plan, so only a plan read while none can finish carries a digest that holds.
  */
-export const SOL_APPLY_DIGEST = "076f87cda7858e1d80fea0b59bd07e93adf130cea07785f5d7fda7027bd658f5";
+export const SOL_APPLY_DIGEST = "668907bee01d2138525d624172b607d3648ec967f3e221d2cff08e86e7353f30";
 /**
  * The most writes the apply puts in its one commit, its marker included: Firestore's long-standing per-commit write
  * limit, kept as a bound; a larger plan writes nothing. Its documented request-size limit (10 MiB) is far above this.
