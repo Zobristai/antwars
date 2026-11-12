@@ -9,8 +9,6 @@ import { firestoreFromEnv } from "./store/firestore.js";
 import { createIdentities } from "./identity/identities.js";
 import { createLobbies, STALE_HOLD_GRACE_MS } from "./lobby/lobbies.js";
 import { createRatings, startRecordFill } from "./rating/ratings.js";
-import { PLAN_PATH, startCorrectionPlan } from "./rating/correctionPlan.js";
-import { gcsRecordingObjects } from "./replays/abandonRecording.js";
 import { correctedHistorySource, correctedReplaySource } from "./replays/correctedRecordings.js";
 import type { AccountStores } from "./accounts/service.js";
 import { usernameClaimLimitRuleFromEnv } from "./accounts/caller.js";
@@ -77,7 +75,6 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   const store = firestoreFromEnv(process.env);
   let slot: SlotWiring | undefined;
   let accounts: AccountStores | undefined;
-  let correction: ReturnType<typeof startCorrectionPlan> | undefined;
   if (store !== undefined) {
     const identities = createIdentities(store);
     // Slots are assigned through the waking store, so each taken slot's server is woken after commit.
@@ -87,8 +84,6 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     // In the background: rows rated before records existed get theirs; the fill runs
     // once and records completion, so later starts scan nothing.
     void startRecordFill(store);
-    // One-off, read-only: the entry point alone plans the owed rating corrections, logs them and serves them at PLAN_PATH.
-    if (slotSettings === undefined && process.env.ANTWAR_REPLAY_BUCKET) correction = startCorrectionPlan(store, gcsRecordingObjects(process.env.ANTWAR_REPLAY_BUCKET));
     // Superseded by another instance of its slot, the server has saved any begun match it was
     // playing and closed itself: the process exits so Cloud Run retires this instance
     // and routes the slot only to its owner. Handover saves go to Firestore and the
@@ -108,7 +103,6 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, privateArchive, recordHandoff, watchRegistry, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
     // Every match a deployed server plays reports its tick times to Cloud Run logs.
     tickReport: { log: (line) => console.log(line) } });
-  if (correction !== undefined) server.mount(PLAN_PATH, correction.serve);
   console.log(`antwar listening on port ${server.port} (spectator at /, agents at /mcp)${slot !== undefined || comparison.match !== undefined ? `; match logs in ${dataDir}` : "; entry point does not host matches"}`);
   if (slot !== undefined) console.log(`antwar slot server for ${slot.slot} at ${slot.publicUrl}`);
   if (comparison.match === "held") {

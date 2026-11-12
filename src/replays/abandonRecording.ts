@@ -2,17 +2,14 @@
 import { gunzipSync, gzipSync } from "node:zlib";
 import { decodeMessage, encodeMessage, encodePublicMessage, type StreamMessage, type StreamResult } from "../live/format.js";
 import { packMessages } from "../live/snapshot.js";
-import { metadataAccessToken } from "../auth/metadata-token.js";
-import { collect, gcsBucket, ReplayCreateError, type ReplayGet } from "../store/gcs.js";
-import { binaryRecord, type MatchRecord } from "./history.js";
-import { isReplayId } from "./access.js";
+import type { MatchRecord } from "./history.js";
 import { RATINGS_UNAVAILABLE } from "../records/service.js";
 
 /**
- * One-off correction support: turn a stored public recording of a rated match into the shape a house-mode
- * abandoned recording carries — end result winner null, reason "abandoned", decidedBy "draw", the same tick, no rating
- * changes, and setup rated false — keeping every tick and event of the replay. Used only by
- * scripts/unrate-never-joined.ts through src/rating/unrateNeverJoined.ts.
+ * Turns a stored public recording of a rated match into the shape a house-mode abandoned recording carries — end
+ * result winner null, reason "abandoned", decidedBy "draw", the same tick, no rating changes, and setup rated false —
+ * keeping every tick and event of the replay. Used to serve the corrected never-joined match (correctedRecordings.ts),
+ * which also uses rewriteMessages, parseRecord and serializeRecord; no stored recording is rewritten.
  */
 
 /** The result an abandoned match records (src/live/hub.ts, src/replays/history.ts): no winner, decided by draw. */
@@ -120,170 +117,6 @@ export function abandonRecord(record: MatchRecord): MatchRecord {
 export const isAbandonedRecord = (record: MatchRecord): boolean =>
   isAbandonedResult(record.result) && record.setup?.rated === false && !record.unavailable.includes(RATINGS_UNAVAILABLE) &&
   record.events.every(entry => entry.event.kind !== "end" || isAbandonedResult(entry.event.result));
-
-/** Colonies with no seat and no join event in the record. */
-export function unjoinedColonies(record: MatchRecord, colonies: readonly (0 | 1)[]): (0 | 1)[] {
-  return colonies.filter(colony => !record.seats.some(seat => seat.colony === colony) &&
-    !record.events.some(entry => entry.event.kind === "join" && entry.event.colony === colony));
-}
-
-/**
- * Checks a rewritten binary and record against each other with the existing decoder: the binary decodes to the
- * record's result and an unrated setup, with the same seats.
- */
-export function assertConsistent(id: string, binary: Uint8Array, record: MatchRecord): void {
-  const decoded = binaryRecord({ id, binary });
-  if (JSON.stringify(decoded.result) !== JSON.stringify(record.result)) throw new Error("rewritten binary and record disagree on the result");
-  if (decoded.setup?.rated !== false || record.setup?.rated !== false) throw new Error("rewritten recording is not unrated");
-  const seats = (list: MatchRecord["seats"]) => JSON.stringify(list.map(({ seat, colony, joinedTick }) => ({ seat, colony, joinedTick })));
-  if (seats(decoded.seats) !== seats(record.seats)) throw new Error("rewritten binary and record disagree on seats");
-}
-
-export interface StoredObject {
-  readonly body: Uint8Array;
-  readonly generation: string;
-  readonly contentType: string;
-  readonly contentEncoding?: "gzip";
-}
-
-/** The object operations the correction needs from one bucket. */
-export interface RecordingObjects {
-  /** The stored bytes as stored (never transcoded) with their generation; null when absent. */
-  read(name: string): Promise<StoredObject | null>;
-  /** The object's current generation only (no body); null when absent. */
-  generation(name: string): Promise<string | null>;
-  /** Replaces exactly `generation` and returns the new generation; a changed object fails (GCS 412) and nothing is written. */
-  replace(name: string, object: Omit<StoredObject, "generation">, generation: string): Promise<string>;
-}
-
-/** A temporary hold this apply set: the object at `generation`, its metadata at `metageneration` once the hold was set. */
-export interface HeldObject { readonly name: string; readonly generation: string; readonly metageneration: string }
-
-/**
- * Temporary holds the apply sets and clears itself. While an object is held, Cloud Storage refuses to replace or delete
- * it; a hold changes no content and keeps the generation. A temporary hold is a shared flag, not a lock, so a hold is
- * set only on an object found unheld, and cleared only while the object's metadata is exactly what setting it left:
- * a hold this apply did not set is never cleared.
- */
-export interface RecordingHolds {
-  /**
-   * Sets a hold on an unheld object at `generation`, conditioned on the metadata found unheld, and returns it only on a
-   * reply confirming exactly that hold. Fails before the request is sent, having set nothing: RecordingChangedError
-   * when the object is not at `generation` (replaced or deleted); RecordingHeldError when it is already held; any other
-   * error. Once the request is sent, every other reply throws HoldUnknownError: the request may yet land, and the hold is
-   * never inferred from a read-back. That includes a refusal on its conditions (HTTP 412 or 404), which a retry below
-   * this call would also give after an earlier attempt landed.
-   */
-  hold(name: string, generation: string): Promise<HeldObject>;
-  /**
-   * Clears `hold` only while the object is at its generation and metageneration; true only on a reply confirming it
-   * cleared. Anything else is false: the hold may remain. Never throws.
-   */
-  release(hold: HeldObject): Promise<boolean>;
-}
-export class RecordingChangedError extends Error {
-  constructor(name: string) { super(`object ${name} changed since it was verified; no hold set`); this.name = "RecordingChangedError"; }
-}
-export class RecordingHeldError extends Error {
-  constructor(name: string) { super(`object ${name} is already held; no hold set`); this.name = "RecordingHeldError"; }
-}
-export class HoldUnknownError extends Error {
-  constructor(name: string) { super(`object ${name}: whether a hold is set is undetermined`); this.name = "HoldUnknownError"; }
-}
-
-const GENERATION = /^[1-9]\d*$/;
-
-/** A bucket through the Cloud Run service identity (as every other bucket client here); never a key file. */
-export function gcsRecordingObjects(bucket: string, request: typeof fetch = fetch, get?: ReplayGet): RecordingObjects & RecordingHolds {
-  const objects = gcsBucket(bucket, request, get);
-  async function metadata(name: string, token: string): Promise<{ generation: string; contentType: string; contentEncoding?: "gzip" } | null> {
-    const response = await objects.call(objects.url(name, { fields: "generation,contentType,contentEncoding" }), { token });
-    if (response.status === 404) { await response.body?.cancel(); return null; }
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`object metadata read failed: HTTP ${response.status}`); }
-    const value = await response.json() as { generation?: unknown; contentType?: unknown; contentEncoding?: unknown };
-    if (typeof value.generation !== "string" || !GENERATION.test(value.generation) || typeof value.contentType !== "string") {
-      throw new Error("object metadata is invalid");
-    }
-    if (value.contentEncoding !== undefined && value.contentEncoding !== "gzip") throw new Error(`unsupported content encoding ${String(value.contentEncoding)}`);
-    return { generation: value.generation, contentType: value.contentType, ...(value.contentEncoding === "gzip" ? { contentEncoding: "gzip" as const } : {}) };
-  }
-  type HoldState = { generation: string; metageneration: string; held: boolean };
-  const holdFields = "generation,metageneration,temporaryHold";
-  const parseHold = (value: { generation?: unknown; metageneration?: unknown; temporaryHold?: unknown }): HoldState => {
-    if (typeof value.generation !== "string" || !GENERATION.test(value.generation) || typeof value.metageneration !== "string"
-      || !GENERATION.test(value.metageneration)) throw new Error("object metadata is invalid");
-    return { generation: value.generation, metageneration: value.metageneration, held: value.temporaryHold === true };
-  };
-  async function holdState(name: string, token: string): Promise<HoldState | null> {
-    const response = await objects.call(objects.url(name, { fields: holdFields }), { token });
-    if (response.status === 404) { await response.body?.cancel(); return null; }
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`object metadata read failed: HTTP ${response.status}`); }
-    return parseHold(await response.json() as Record<string, unknown>);
-  }
-  /** Sets or clears the hold only at this generation and metageneration; "precondition" when either differs or the object is gone. */
-  async function patchHold(name: string, generation: string, metageneration: string, held: boolean, token: string): Promise<HoldState | "precondition"> {
-    const target = objects.url(name, { ifGenerationMatch: generation, ifMetagenerationMatch: metageneration, fields: holdFields });
-    const response = await objects.call(target, { method: "PATCH", token, headers: { "content-type": "application/json" },
-      body: Buffer.from(JSON.stringify({ temporaryHold: held })) });
-    if (response.status === 412 || response.status === 404) { await response.body?.cancel(); return "precondition"; }
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`object hold failed: HTTP ${response.status}`); }
-    return parseHold(await response.json() as Record<string, unknown>);
-  }
-  return {
-    async read(name) {
-      const token = await metadataAccessToken(request);
-      const meta = await metadata(name, token);
-      if (meta === null) return null;
-      const body = await collect(await objects.open(name, token, AbortSignal.timeout(120_000),
-        { failed: "recording read failed", headers: "recording read headers timed out", idle: "recording read idle" }, meta.generation)
-        .then(res => res === null ? null : { body: res }));
-      if (body === null) throw new Error(`object ${name} vanished during read`);
-      return { ...meta, body };
-    },
-    async generation(name) {
-      return (await metadata(name, await metadataAccessToken(request)))?.generation ?? null;
-    },
-    async hold(name, generation) {
-      if (!GENERATION.test(generation)) throw new Error("invalid generation");
-      const token = await metadataAccessToken(request);
-      const found = await holdState(name, token);
-      if (found === null || found.generation !== generation) throw new RecordingChangedError(name);
-      if (found.held) throw new RecordingHeldError(name);
-      // From here the request may land: anything but a confirmed reply leaves the hold undetermined.
-      let reply: HoldState | "precondition";
-      try { reply = await patchHold(name, generation, found.metageneration, true, token); } catch { throw new HoldUnknownError(name); }
-      // A refusal on its conditions does not prove this request set nothing: an earlier attempt of it may have landed.
-      if (reply === "precondition") throw new HoldUnknownError(name);
-      if (reply.generation !== generation || !reply.held || reply.metageneration !== String(BigInt(found.metageneration) + 1n)) throw new HoldUnknownError(name);
-      return { name, generation, metageneration: reply.metageneration };
-    },
-    async release(hold) {
-      try {
-        if (!GENERATION.test(hold.generation) || !GENERATION.test(hold.metageneration)) return false;
-        const reply = await patchHold(hold.name, hold.generation, hold.metageneration, false, await metadataAccessToken(request));
-        return reply !== "precondition" && reply.generation === hold.generation && !reply.held
-          && reply.metageneration === String(BigInt(hold.metageneration) + 1n);
-      } catch {
-        return false;
-      }
-    },
-    async replace(name, object, generation) {
-      if (!GENERATION.test(generation)) throw new Error("invalid generation");
-      // As gcsBucket's media upload (encoding is object metadata, not a request header), reading the new generation back.
-      const target = objects.url(undefined, { uploadType: "media", name, ifGenerationMatch: generation, contentEncoding: object.contentEncoding }, true);
-      const response = await objects.call(target, { method: "POST", token: await metadataAccessToken(request),
-        headers: { "content-type": object.contentType }, body: Buffer.from(object.body) });
-      if (response.status === 412) { await response.body?.cancel(); throw new Error(`object ${name} changed since it was verified; nothing replaced`); }
-      if (!response.ok) { await response.body?.cancel(); throw new ReplayCreateError(response.status); }
-      const value = await response.json() as { generation?: unknown };
-      if (typeof value.generation !== "string" || !GENERATION.test(value.generation)) throw new Error(`object ${name} replaced but its new generation is unknown`);
-      return value.generation;
-    },
-  };
-}
-
-export const recordName = (replayId: string): string => { if (!isReplayId(replayId)) throw new Error("invalid replay id"); return `${replayId}.json`; };
-export const binaryName = (replayId: string): string => { if (!isReplayId(replayId)) throw new Error("invalid replay id"); return `${replayId}.bin`; };
 
 export function parseRecord(id: string, body: Uint8Array): MatchRecord {
   const raw = body[0] === 0x1f && body[1] === 0x8b ? gunzipSync(body) : body;
