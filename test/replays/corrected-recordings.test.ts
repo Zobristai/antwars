@@ -5,11 +5,9 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StreamAgent, StreamEvent, StreamMessage } from "../../src/live/format.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
-import { CORRECTION_MARKER, NEVER_JOINED, SOL_MOVES } from "../../src/rating/correctionPlan.ts";
-import { CORRECTION_KIND } from "../../src/rating/unrateNeverJoined.ts";
 import { isAbandonedRecord, isAbandonedResult, rewriteMessages } from "../../src/replays/abandonRecording.ts";
 import type { ReplaySource } from "../../src/replays/access.ts";
-import { CORRECTED_REPLAY_IDS, correctedHistorySource, correctedReplaySource } from "../../src/replays/correctedRecordings.ts";
+import { CORRECTED_REPLAY_IDS, CORRECTION_KIND, CORRECTION_MARKER, correctedHistorySource, correctedReplaySource, NEVER_JOINED, SOL_MOVES } from "../../src/replays/correctedRecordings.ts";
 import { binaryRecord, type MatchRecord } from "../../src/replays/history.ts";
 import { historyRoutes, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
 import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
@@ -166,6 +164,35 @@ describe("the matches the rating corrections changed, as served", () => {
     expect(rows.find(row => row.id === OTHER)).toMatchObject(w.objects.get(OTHER)!.row);
     expect(new Uint8Array((await w.get(`/replays/${OTHER}`)).body)).toEqual(w.objects.get(OTHER)!.binary);
     expect(new Uint8Array((await w.get(`/replays/${NEVER_JOINED.replayId}`)).body)).toEqual(w.objects.get(NEVER_JOINED.replayId)!.binary);
+  });
+
+  it("names the -fast handle on the second Sol match's replay, record and row once the Sol move is recorded applied, and never the old one", async () => {
+    const oldHandle = new RegExp(`${SOL2.from}(?![\\w-])`);
+    const before = await serve({ [`ratingCorrections/${NEVER_JOINED.lobbyId}`]: NEVER_JOINED_RECORD });
+    expect(handles(replayOf(SOL2.replayId, (await before.get(`/replays/${SOL2.replayId}`)).body))).toEqual(["antwars/grok-4-7", SOL2.from]);
+    expect(handles(JSON.parse((await before.get(`/matches/${SOL2.replayId}`)).body.toString()) as MatchRecord)).toEqual(["antwars/grok-4-7", SOL2.from]);
+
+    const w = await serve({ [CORRECTION_MARKER]: SOL_MARKER });
+    const replayBody = (await w.get(`/replays/${SOL2.replayId}`)).body;
+    const replay = replayOf(SOL2.replayId, replayBody);
+    expect(handles(replay)).toEqual(["antwars/grok-4-7", SOL2.to]);
+    expect(joinNames(replay)).toEqual(["antwars/grok-4-7", SOL2.to]);
+    expect(JSON.stringify(replay)).not.toMatch(oldHandle);
+    expect(Buffer.from(unzip(replayBody)).toString("latin1")).not.toMatch(oldHandle);
+    const original = replayOf(SOL2.replayId, Buffer.from(w.objects.get(SOL2.replayId)!.binary));
+    expect(replay.result).toEqual(original.result);
+    expect(replay.events.length).toBe(original.events.length);
+
+    const text = (await w.get(`/matches/${SOL2.replayId}`)).body.toString();
+    expect(text).not.toMatch(oldHandle);
+    const record = JSON.parse(text) as MatchRecord;
+    expect(handles(record)).toEqual(["antwars/grok-4-7", SOL2.to]);
+    expect(joinNames(record)).toEqual(["antwars/grok-4-7", SOL2.to]);
+    expect(record.result).toEqual(JSON.parse(Buffer.from(w.objects.get(SOL2.replayId)!.record).toString()).result);
+
+    const row = (await w.list()).find(entry => entry.id === SOL2.replayId)!;
+    expect(row.seats.map(seat => seat.handle)).toEqual(["antwars/grok-4-7", SOL2.to]);
+    expect(JSON.stringify(row)).not.toMatch(oldHandle);
   });
 
   it("answers 503, never the stored bytes, for an undecodable Sol replay or record once the Sol move is applied", async () => {
