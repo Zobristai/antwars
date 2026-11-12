@@ -65,6 +65,25 @@ describe("never blank: a waiting state until the first frames draw", () => {
     }
   });
 
+  it("without WebGL, when no match or recording opens and the HUD never mounts, the needs-WebGL panel links home", async () => {
+    const { linkNeedsWebGLHome } = await import("../../web/src/webgl2.ts");
+    const { dom } = await import("./pages/dom.ts");
+    const port = dom({ search: "?replay=2000-01-01T00-00-00-000Z-0" });
+    const doc = port.doc as unknown as Document;
+    // The panel as showNeedsWebGL leaves it: its heading and text, no link.
+    const waiting = port.doc.createElement("div"); waiting.id = "aw-waiting";
+    waiting.append(port.doc.createElement("p"), port.doc.createElement("p"));
+    port.body.append(waiting as never);
+    linkNeedsWebGLHome(doc);
+    linkNeedsWebGLHome(doc);
+    const panel = doc.getElementById("aw-waiting")!;
+    const links = panel.querySelectorAll(".aw-board-home");
+    expect(links.length).toBe(1);
+    expect([(links[0] as unknown as { tag: string }).tag, links[0]!.getAttribute("href"), links[0]!.textContent, panel.hidden]).toEqual(["a", "/", "Antwars home", false]);
+    const main = readFileSync(new URL("../../web/src/main.ts", import.meta.url), "utf8");
+    expect(main).toMatch(/async function startWithoutBoard\([^)]*\)[\s\S]*catch \(e\) \{ linkNeedsWebGLHome\(document\); throw e; \}\s*if \(!input\) \{ linkNeedsWebGLHome\(document\); return; \}/);
+  });
+
   it("the panel stays until the first frame draws, then hides", async () => {
     const { Waiting } = await import("../../web/src/waiting.ts");
     const el = { hidden: false };

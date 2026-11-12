@@ -13,6 +13,7 @@
  *   and ready rejects, as before. A board that started is never replaced.
  */
 import { clear3dRetryUrl } from "./3d-recovery.ts";
+import { PAGE_COPY } from "./story.ts";
 
 export type BoardMode = "2d" | "3d";
 
@@ -106,5 +107,24 @@ export function showNeedsWebGL(doc: Document): void {
   panel.replaceChildren(heading, text);
   panel.setAttribute("role", "alert");
   panel.dataset.needsWebgl = "1";
+  panel.hidden = false;
+}
+
+/**
+ * With no board and no HUD (the match or recording could not be opened: an error, or no stored matches), the
+ * needs-WebGL panel is the whole page, so it gets the way home: a link to the landing at / with no query, styled
+ * as the panel's Back to live link (replay.ts noStoredReplays).
+ */
+export function linkNeedsWebGLHome(doc: Document): void {
+  const panel = doc.getElementById("aw-waiting");
+  if (!panel || panel.querySelector(".aw-board-home")) return;
+  const home = doc.createElement("a");
+  home.className = "aw-board-home";
+  home.href = "/";
+  home.textContent = PAGE_COPY.home;
+  home.style.cssText = "display:inline-flex;align-items:center;min-width:44px;min-height:44px";
+  const line = doc.createElement("p");
+  line.append(home);
+  panel.append(line);
   panel.hidden = false;
 }
