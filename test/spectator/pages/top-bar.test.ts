@@ -24,8 +24,11 @@ describe("the pages' top bar", () => {
     expect(bar.tag).toBe("header");
     expect(bar.classes()).toEqual(["d1-top"]);
     const brand = bar.children[0]!;
-    expect(brand.children.map(part => part.className)).toEqual(["d1-emblem", "d2-wordmark", "d2-credit d1-top-credit"]);
-    expect(brand.children[2]!.textContent).toBe(PAGE_COPY.credit);
+    expect(brand.children.map(part => part.className)).toEqual(["d1-home", "d2-credit d1-top-credit"]);
+    const home = brand.children[0]!;
+    expect([home.tag, home.href, home.getAttribute("aria-label")]).toEqual(["a", "/", PAGE_COPY.home]);
+    expect(home.children.map(part => part.className)).toEqual(["d1-emblem", "d2-wordmark"]);
+    expect(brand.children[1]!.textContent).toBe(PAGE_COPY.credit);
     expect(root.byClass("d1-agent-button")).toHaveLength(1);
     expect(root.byClass("d1-dialog")).toHaveLength(1);
     expect(root.all().some(node => node.classes().some(name => name.startsWith("d1p-top") || name === "d1p-brand"))).toBe(false);
@@ -66,6 +69,6 @@ describe("the pages' top bar", () => {
 
   it("keeps the credit under the wordmark on a phone, where the board's bar moves it to its footer", () => {
     expect(rule(".d1p .d1-brand > .d1-top-credit", phone())).toMatch(/display: inline/);
-    expect(rule(".d1p .d1-brand > .d2-wordmark", phone())).toMatch(/grid-row: 1; align-self: end/);
+    expect(rule(".d1p .d1-home > .d2-wordmark", phone())).toMatch(/grid-row: 1; align-self: end/);
   });
 });

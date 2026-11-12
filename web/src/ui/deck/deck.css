@@ -45,8 +45,13 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-top { display: flex; align-items: center; gap: 30px; min-width: 0; padding: 0 12px 0 16px; pointer-events: auto; }
 /* The emblem, then the wordmark with the credit stacked under it, the pair centred on the emblem. */
 .d1-brand { display: inline-grid; grid-template-columns: auto auto; grid-template-rows: auto auto; align-content: center; column-gap: 10px; white-space: nowrap; }
+/* The emblem and the wordmark are one link home (brand.ts) that shares the brand's grid, so neither moves; the credit
+   beside it is not part of the link, so its focus ring is drawn on the two parts it holds. */
+.d1-home { display: grid; grid-column: 1 / 3; grid-row: 1 / 3; grid-template-columns: subgrid; grid-template-rows: subgrid; color: inherit; text-decoration: none; }
+.d1 .d1-home:focus-visible, .d1p .d1-home:focus-visible { outline: none; }
+.d1-home:focus-visible > * { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .d1-emblem { grid-row: 1 / 3; height: 28px; width: auto; align-self: center; }
-.d1-brand > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; }
+.d1-home > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; }
 .d1-brand > .d1-top-credit { grid-column: 2; grid-row: 2; align-self: start; margin-top: 2px; font-size: 11px; line-height: 13px; }
 .d1-top-end { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 /* The primary action of its context: the one cyan pill, the emblem's cyan, its text the page's dark. */
@@ -440,7 +445,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 4px auto minmax(0, 1fr); }
   .d1-top { padding: 0 2px 0 12px; gap: 8px; }
   .d1-top-credit { display: none; }
-  .d1-brand > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
+  .d1-home > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
   .d1-top .d2-nav { margin-left: auto; }
   .d1-top .d2-nav-link { min-height: 44px; padding: 0 5px; }
   .d1-top .d2-nav-link[aria-current="page"]::after { left: 5px; right: 5px; bottom: 9px; }

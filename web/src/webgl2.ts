@@ -13,6 +13,7 @@
  *   and ready rejects, as before. A board that started is never replaced.
  */
 import { clear3dRetryUrl } from "./3d-recovery.ts";
+import { PAGE_COPY } from "./story.ts";
 
 export type BoardMode = "2d" | "3d";
 
@@ -107,4 +108,30 @@ export function showNeedsWebGL(doc: Document): void {
   panel.setAttribute("role", "alert");
   panel.dataset.needsWebgl = "1";
   panel.hidden = false;
+}
+
+/**
+ * With no board, the needs-WebGL panel is the whole page until the HUD mounts: while the match or recording loads,
+ * while a lobby waits for its first frame, and for good when it cannot be opened (an error, or no stored matches).
+ * Throughout, it carries the way home: a link to the landing at / with no query, in the bright ink visited or not
+ * (index.html .aw-board-home). Its line is a div, not a paragraph, so replayWaiting's paragraph rewrite leaves it.
+ */
+export function linkNeedsWebGLHome(doc: Document): void {
+  const panel = doc.getElementById("aw-waiting");
+  if (!panel || panel.querySelector(".aw-board-home")) return;
+  const home = doc.createElement("a");
+  home.className = "aw-board-home";
+  home.href = "/";
+  home.textContent = PAGE_COPY.home;
+  home.style.cssText = "display:inline-flex;align-items:center;min-width:44px;min-height:44px";
+  const line = doc.createElement("div");
+  line.className = "aw-board-home-line";
+  line.append(home);
+  panel.append(line);
+  panel.hidden = false;
+}
+
+/** The HUD has mounted and carries its own home link: the panel's goes. */
+export function unlinkNeedsWebGLHome(doc: Document): void {
+  doc.getElementById("aw-waiting")?.querySelector(".aw-board-home-line")?.remove();
 }

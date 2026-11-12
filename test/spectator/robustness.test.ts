@@ -47,9 +47,52 @@ describe("never blank: a waiting state until the first frames draw", () => {
     expect(open, "web/index.html has no waiting panel").not.toBeNull();
     expect(open![0]).not.toMatch(/\shidden\b/);
     const body = html.slice(open!.index, html.indexOf("</div>", html.indexOf("</p>", open!.index)));
-    expect(body).toContain('class="aw-wordmark">Antwars</p>');
+    // The wordmark links home (the landing at /, no query): when no match or recording can be shown, the panel is the
+    // whole page, and this is its way back.
+    expect(body).toContain('class="aw-wordmark"><a class="aw-home" href="/" aria-label="Antwars home">Antwars</a></p>');
     expect(body).toContain("Connecting…");
     expect(body).not.toMatch(/MCP|CLI|60 s behind|next match/i);
+  });
+
+  it("a replay's waiting words leave the wordmark's link home in place, and still restore other heading words", async () => {
+    const { replayWaiting } = await import("../../web/src/replay.ts");
+    const line = (text: string) => { const p = { written: 0, text, get textContent() { return p.text; }, set textContent(v: string) { p.written++; p.text = v; } }; return p; };
+    for (const [first, writes] of [["Antwars", 0], ["The game view needs WebGL", 1]] as const) {
+      const heading = line(first), state = line("…");
+      const doc = { title: "", getElementById: () => ({ querySelectorAll: () => [heading, state] }) } as unknown as Document;
+      replayWaiting(doc);
+      expect([heading.text, heading.written, state.text]).toEqual(["Antwars", writes, "Connecting…"]);
+    }
+  });
+
+  it("without WebGL the panel links home from the start of loading until the HUD mounts, and for good if nothing opens", async () => {
+    const { linkNeedsWebGLHome, unlinkNeedsWebGLHome } = await import("../../web/src/webgl2.ts");
+    const { replayWaiting } = await import("../../web/src/replay.ts");
+    const { dom } = await import("./pages/dom.ts");
+    const port = dom({ search: "?replay=2000-01-01T00-00-00-000Z-0" });
+    const doc = port.doc as unknown as Document;
+    // The panel as showNeedsWebGL leaves it: its heading and text, no link.
+    const waiting = port.doc.createElement("div"); waiting.id = "aw-waiting";
+    waiting.append(port.doc.createElement("p"), port.doc.createElement("p"));
+    port.body.append(waiting as never);
+    linkNeedsWebGLHome(doc);
+    linkNeedsWebGLHome(doc);
+    const panel = doc.getElementById("aw-waiting")!;
+    const links = panel.querySelectorAll(".aw-board-home");
+    expect(links.length).toBe(1);
+    expect([(links[0] as unknown as { tag: string }).tag, links[0]!.getAttribute("href"), links[0]!.textContent, panel.hidden]).toEqual(["a", "/", "Antwars home", false]);
+    // A replay's loading words rewrite the panel's paragraphs and drop a third one; the link's line is not a paragraph.
+    replayWaiting(doc);
+    expect(panel.querySelectorAll(".aw-board-home").length).toBe(1);
+    unlinkNeedsWebGLHome(doc);
+    expect(panel.querySelectorAll(".aw-board-home").length).toBe(0);
+    const main = readFileSync(new URL("../../web/src/main.ts", import.meta.url), "utf8");
+    // Linked before the source is awaited (a lobby's whole wait), unlinked only where the HUD mounts.
+    expect(main).toMatch(/async function startWithoutBoard\([^)]*\)[^]*?linkNeedsWebGLHome\(document\);\s*const input = await openSource\(/);
+    expect(main).toMatch(/unlinkNeedsWebGLHome\(document\);[^]*overlays\.mountHud\(\{ deck: false/);
+    // The link reads in the bright ink on the dark panel, visited or not, never the browser's link blue.
+    const page = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");
+    expect(page).toMatch(/\.aw-board-home, \.aw-board-home:visited, \.aw-board-home:hover \{ color: var\(--aw-ink-bright\);/);
   });
 
   it("the panel stays until the first frame draws, then hides", async () => {

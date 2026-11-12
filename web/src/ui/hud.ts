@@ -25,6 +25,7 @@ import { AGENT_ADDRESS_LABEL, AGENT_HEADING, buildAgentPanel, mcpAddress, type C
 import { STEPPE_LOOK } from "./steppe-look.ts";
 import { mountAgents } from "./agents.ts";
 import { mountResultModal } from "./deck/result-modal.ts";
+import { homeLink } from "./deck/brand.ts";
 import {
   CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, shares, spawnFill, stepped, withUnits, withoutCasteGlyph,
   type DrawerEvent, type Drawers,
@@ -344,7 +345,10 @@ export function mountHud(context: HudHost): Mounted<HudView> {
   pane.setAttribute("aria-label", "Agents and thoughts");
   const head = el("div", "d2-pane-head");
   const brand = el("span", "d2-brand");
-  brand.append(el("span", "d2-wordmark", PAGE_COPY.name), el("span", "d2-credit", PAGE_COPY.credit));
+  // The wordmark links home, as the deck's emblem and wordmark do (deck/brand.ts); the credit stays plain text.
+  const home = homeLink(doc, "d2-home");
+  home.append(el("span", "d2-wordmark", PAGE_COPY.name));
+  brand.append(home, el("span", "d2-credit", PAGE_COPY.credit));
   head.append(brand, navigation(doc, "watch", search()));
   // An ant picked on the board outside any squad; an agent's details open in its own row instead.
   const card = el("section", "d2-card");
