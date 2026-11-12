@@ -93,13 +93,43 @@ export interface MapBoard {
   /** Left-half food templates, mirrored like the config's. One list serves every rules config. */
   readonly foodPatches: readonly FoodPatch[];
 }
+/** A food disk the match seed places anywhere it fits inside a quadrant map's centre region. */
+export interface CentreFood {
+  readonly radius: number;
+  readonly perTile: number;
+}
+/**
+ * A four-colony board split into four quadrants, mirrored left/right and up/down around a
+ * contested centre region. Every value is in reference tiles; the templates describe the
+ * top-left quadrant only (src/sim/quadrantMap.ts validates and generates the board).
+ */
+export interface QuadrantLayout {
+  readonly referenceWidth: number;
+  readonly referenceHeight: number;
+  /** The centre region is centreHalfWidth tiles either side of the vertical centre line, and
+   * centreHalfHeight tiles either side of the horizontal one. */
+  readonly centreHalfWidth: number;
+  readonly centreHalfHeight: number;
+  /** The top-left colony's nest; the other three are its mirrors. */
+  readonly nestTileX: number;
+  readonly nestTileY: number;
+  /** The top-left colony's start area, half-open like water. */
+  readonly startArea: WaterRect;
+  /** Top-left food templates, mirrored into every quadrant. */
+  readonly foodPatches: readonly FoodPatch[];
+  /** Centre food: each disk lands where the match seed puts it inside the centre region. */
+  readonly centreFood: readonly CentreFood[];
+}
 export interface MapDefinition {
   readonly id: string;
   readonly name: string;
-  /** With a board, rectangles are in that board's reference tiles. */
+  /** With a board, rectangles are in that board's reference tiles; with a quadrant layout,
+   * they are the top-left quadrant's water in its reference tiles. */
   readonly water: readonly WaterRect[];
   /** Absent: the config's size, nest and food, as every recorded map plays. */
   readonly board?: MapBoard;
+  /** A four-colony quadrant board. No two-colony rotation accepts a map that carries one. */
+  readonly quadrant?: QuadrantLayout;
   /** The one grid scale this map plays at; absent on every recorded map. */
   readonly gridScale?: GridScale;
   /** Living ants per colony on this map; absent: the config's colonyCap. */

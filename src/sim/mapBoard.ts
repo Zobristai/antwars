@@ -52,8 +52,10 @@ export function hasOwnMapValues(map: MapDefinition): boolean {
 /** A map with its own grid scale plays at that scale only; a map with its own board,
  * ant cap or match length plays at grid scale 2 only. Ant cap and match length are
  * positive whole numbers the stream, replay and record formats hold. A board map's size, nest,
- * water and food centres must fit its own board. Refuse, never clamp. */
+ * water and food centres must fit its own board. A quadrant map plays in no rotation checked here,
+ * so every two-colony match config refuses it. Refuse, never clamp. */
 export function validateMapBoard(map: MapDefinition, scale: number): void {
+  if (map.quadrant !== undefined) throw new RangeError(`${map.id}: a quadrant map plays only in a four-colony rotation`);
   if (map.gridScale !== undefined && map.gridScale !== scale) {
     throw new RangeError(`${map.id}: plays only at grid scale ${map.gridScale}, not at grid scale ${scale}`);
   }
