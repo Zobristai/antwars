@@ -106,9 +106,13 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
   let laidOut: readonly ReplayEvent[] | null = null;
   let laidDuration = 0;
   let trackWidth = 0;
+  /** The slider's box the marks were last laid out on: only a change to it moves them. */
+  let laidBox = "";
   /** Where the thumb's centre stood along the track when the covered marks were last marked. */
   let laidThumb = NaN;
-  // Re-laid out only when the slider's box changes, never measured every frame.
+  // Re-laid out only when the slider's box changes, never measured every frame. The row is watched too, because the
+  // slider can move inside it without changing size; a row that only changes width (its time growing a digit, say)
+  // leaves the slider's box, and so the marks, the label and an open list, as they are.
   let dirty = true;
   const Observer = doc.defaultView?.ResizeObserver;
   const resized = Observer ? new Observer(() => { dirty = true; }) : null;
@@ -118,6 +122,8 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
   let openItem: (typeof items)[number] | null = null;
   /** A list a mouse opened by pointing stays open when that mouse then clicks; only a list a click opened toggles. */
   let openedByPointing = false;
+  /** The mark the label shows, so a new layout can move the label with it. */
+  let chipEvent: ReplayEvent | null = null;
   let chipTimer: ReturnType<typeof setTimeout> | null = null;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
@@ -156,11 +162,12 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     chipTimer = null;
     closeList();
     words(chip, e);
+    chipEvent = e;
     chip.hidden = false;
     place(chip, x);
     if (forMs !== null) chipTimer = setTimeout(hideChip, forMs);
   };
-  const hideChip = () => { if (chipTimer) clearTimeout(chipTimer); chipTimer = null; chip.hidden = true; };
+  const hideChip = () => { if (chipTimer) clearTimeout(chipTimer); chipTimer = null; chipEvent = null; chip.hidden = true; };
   const jump = (e: ReplayEvent, x: number) => {
     recording.seek(e.ms);
     showChip(e, x, LABEL_MS);
@@ -191,7 +198,8 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       row.setAttribute("role", "menuitem");
       row.setAttribute("aria-label", markWords(e).join(", "));
       words(row, e);
-      row.onclick = () => { const x = item.x; closeList(); item.button.focus(); jump(e, x); };
+      // The group as now laid out: a new layout may have moved it since its list opened.
+      row.onclick = () => { const at = openItem ?? item; closeList(); at.button.focus(); jump(e, at.x); };
       list.append(row);
     }
     list.hidden = false;
@@ -213,12 +221,17 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     if (!events || !duration) return;
     if (!dirty && laidOut === events && laidDuration === duration) return;
     dirty = false;
+    const box = `${seek.offsetLeft},${seek.offsetTop},${seek.offsetWidth},${seek.offsetHeight}`;
+    if (box === laidBox && laidOut === events && laidDuration === duration) return;
+    laidBox = box;
     laidOut = events;
     laidDuration = duration;
     laidThumb = NaN;
     const width = trackWidth = seek.offsetWidth;
-    closeList();
-    hideChip();
+    // An open list and a shown label stay open across a new layout and move with their marks (below); the mark that
+    // held focus keeps it.
+    const wasOpen = openItem?.events ?? null;
+    const focused = items.find(item => item.button === doc.activeElement)?.events ?? null;
     // The glyph fills 12 of its 16-unit box; the thumb covers a mark (or a group's count) its own half width overlaps.
     const glyphReach = THUMB_INSET + px("--aw-mark-size", 16) * 0.375;
     const countReach = THUMB_INSET + px("--aw-mark-count-width", 19) / 2;
@@ -274,6 +287,23 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       return item;
     });
     el.append(layer, chip, list);
+    const same = (a: readonly ReplayEvent[], b: readonly ReplayEvent[]) => a.length === b.length && a.every((e, i) => e === b[i]);
+    if (focused) items.find(item => same(item.events, focused))?.button.focus();
+    if (wasOpen) {
+      // The group may have joined or split at the new width; a list for a group that no longer exists closes.
+      const now = items.find(item => same(item.events, wasOpen));
+      if (now) {
+        openItem = now;
+        now.button.setAttribute("aria-expanded", "true");
+        place(list, now.x);
+      } else {
+        openItem = null;
+        list.hidden = true;
+        list.replaceChildren();
+      }
+    }
+    const shown = chipEvent;
+    if (shown && !chip.hidden) place(chip, items.find(item => item.events.includes(shown))?.x ?? markX(shown.ms, duration, width));
   };
   /** As drawn, the marks lie on the track under the thumb: the layer is cut away in the thumb's shape, and a mark the
    * thumb covers takes no pointer, so the thumb stays the target there. Keyboard focus still reaches it. */

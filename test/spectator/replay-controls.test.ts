@@ -289,6 +289,71 @@ describe("marks on the scrubber", () => {
     expect(covered(between.marks)).toEqual([]);
     between.controls.close();
   });
+
+  describe("when the row changes width during playback", () => {
+    // The page's ResizeObserver, fired by hand: the row and the slider are what the controls watch.
+    function resizable(position = 391_600) {
+      const fired: (() => void)[] = [];
+      const doc = Object.assign(fakeDoc(), { defaultView: {
+        ResizeObserver: class { constructor(cb: () => void) { fired.push(cb); } observe() {} disconnect() {} },
+        getComputedStyle: () => ({ getPropertyValue: () => "" }),
+      } }) as unknown as Document;
+      const seeks: number[] = [];
+      const recording = { rate: 1, duration: DRAWN_MS, position, error: null, durationError: null, seeking: false, events: DRAWN,
+        setRate() {}, seek(ms: number) { seeks.push(ms); } } as unknown as Recording;
+      const controls = mountReplayControls(doc, recording);
+      const el = controls.el as unknown as Element;
+      const part = (name: string) => el.children.find(c => c.className === name)!;
+      const resize = () => { for (const cb of fired) cb(); controls.update(); };
+      return { controls, el, seek: el.children[1]!, layer: part("aw-marks"), chip: part("aw-mark-label"), list: part("aw-mark-list"), seeks, resize };
+    }
+
+    it("keeps the marks, an open list and a shown label when only the time grows a digit's width", () => {
+      const r = resizable();
+      const before = [...r.layer.children];
+      r.layer.children[0]!.onclick!({ detail: 1 }); // the 2:13 fight: its label shows for a while
+      expect(r.chip.hidden).toBe(false);
+      r.el.clientWidth += 1; // a wider digit in the time; the slider's box is unchanged
+      r.resize();
+      expect(r.chip.hidden).toBe(false);
+      expect(r.chip.text).toBe("Fight · 2:13");
+      expect(r.layer.children).toEqual(before);
+      before[3]!.onclick!({ detail: 1 }); // the 4-mark group's list
+      r.el.clientWidth += 1;
+      r.resize();
+      expect(r.list.hidden).toBe(false);
+      expect(before[3]!.attrs["aria-expanded"]).toBe("true");
+      expect(r.layer.children).toEqual(before);
+      r.controls.close();
+    });
+
+    it("moves an open list and a shown label with their marks when the slider narrows as the time reaches 10:00", () => {
+      const r = resizable(599_000);
+      r.list.offsetWidth = r.chip.offsetWidth = 120; // as wide as the drawn list and label, not the whole row
+      r.layer.children[2]!.onclick!({ detail: 1 }); // the 2-mark group's list, 8:39 to 9:13
+      const listLeft = r.list.style.left;
+      r.seek.offsetWidth -= 7; // "10:00" is wider than "9:59", so the slider gives up the width
+      r.resize();
+      const group = r.layer.children[2]!;
+      expect(group.attrs["aria-label"]).toBe("2 marks, 8:39 to 9:13");
+      expect(group.attrs["aria-expanded"]).toBe("true");
+      expect(r.list.hidden).toBe(false);
+      expect(r.list.style.left).not.toBe(listLeft);
+      // A line chosen from the moved list jumps there and labels it beside the moved group.
+      r.list.children[1]!.onclick!({ detail: 1 });
+      expect(r.seeks).toEqual([553_700]);
+      expect(r.list.hidden).toBe(true);
+      expect(group.attrs["aria-expanded"]).toBe("false");
+      expect(r.chip.text).toBe("Fight · 9:13");
+      const chipLeft = r.chip.style.left;
+      r.seek.offsetWidth -= 7;
+      r.resize();
+      expect(r.chip.hidden).toBe(false);
+      expect(r.chip.text).toBe("Fight · 9:13");
+      expect(r.chip.style.left).not.toBe(chipLeft);
+      r.controls.close();
+    });
+  });
 });
 
 it("reads the marks only for explicit replays: a recording without controls makes no second request and has none", async () => {
