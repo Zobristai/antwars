@@ -898,6 +898,33 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(await w.store.get(CORRECTION_MARKER)).toBeNull();
   });
 
+  it("writes nothing when a moved match's watch entry changes between the recording lookup and the plan's later read of it", async () => {
+    const w = await appliedWorld();
+    const [move, other] = [SOL_MOVES[0]!, SOL_MOVES[1]!];
+    let lobbyId = "";
+    // Once the lookup's query has returned, the entry is pointed at another recording before the history reads it.
+    let changed = false;
+    const store: Store = { ...w.store, query: async (collectionId, options) => {
+      const result = await w.store.query(collectionId, options);
+      const found = result.rows.find(row => row.fields.replayId === move.replayId);
+      if (collectionId === "watchMatches" && !changed && found) {
+        changed = true;
+        lobbyId = found.path.slice("watchMatches/".length);
+        await commit(w.store, [{ op: "update", path: found.path, fields: { replayId: other.replayId } }]);
+      }
+      return result;
+    } };
+    const plan = await planCorrections(store, w.recordings) as CheckedPlan;
+    expect(changed).toBe(true);
+    // The plan keeps the entry as the lookup's query returned it, and its later read of the changed one.
+    expect(plan.moved.find(each => each.lobbyId === lobbyId)?.watchEntry.replayId).toBe(move.replayId);
+    expect(plan.reads.get(`watchMatches/${lobbyId}`)?.replayId).toBe(other.replayId);
+    const before = await w.snapshot();
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("changed since planned");
+    expect(await w.snapshot()).toEqual(before);
+    expect(await w.store.get(CORRECTION_MARKER)).toBeNull();
+  });
+
   it("commits once when two applies run together", async () => {
     const w = await appliedWorld();
     const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;

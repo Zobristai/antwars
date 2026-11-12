@@ -67,8 +67,13 @@ export interface PublicPlan {
   readonly ratings: readonly { readonly handle: string; readonly mode: string; readonly before: Standing | null; readonly after: Standing | null }[];
 }
 export interface Plan { readonly writes: readonly Write[]; readonly summary: PublicPlan }
-/** A plan with every document it was computed from, as read (null where missing), for the apply to read again. */
-export interface CheckedPlan extends Plan { readonly reads: ReadonlyMap<string, Fields | null> }
+/** A moved match as the recording lookup found it: the recording, its lobby and that lobby's watch entry as the query returned it. */
+export interface MovedMatch { readonly recording: string; readonly lobbyId: string; readonly watchEntry: Fields }
+/**
+ * A plan with every document it was computed from, as read (null where missing), and each moved match's recording
+ * lookup as its query returned it, for the apply to read again.
+ */
+export interface CheckedPlan extends Plan { readonly reads: ReadonlyMap<string, Fields | null>; readonly moved: readonly MovedMatch[] }
 /** Every check that can refuse, as PLAN_PATH serves it; store-error and error are a failed read and any other throw. */
 export const REFUSAL_CODES = [
   "never-joined-lobby", "never-joined-correction-marker", "never-joined-change-record", "never-joined-only-rated-match",
@@ -342,14 +347,22 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
   const named = (changes: readonly RatingChange[]) => changes.map(c => ({ handle: shown(names.get(c.identityId)!), before: c.before, after: c.after }));
 
   // 2. The Sol move. Each moved match's lobby, found by its recording, and the two handles of its move.
-  const registry = createWatchRegistry(store);
+  // The watch entry the lookup chose is kept as its query returned it: a later read of it is not what chose the lobby.
   const moves = await Promise.all(SOL_MOVES.map(async move => {
-    const lobbyId = await registry.findByReplay(move.replayId);
+    const queried = new Map<string, Fields>();
+    const lookup = createWatchRegistry({ ...store, query: async (collectionId, options) => {
+      const result = await store.query(collectionId, options);
+      if (collectionId === "watchMatches") for (const row of result.rows) queried.set(row.path, row.fields);
+      return result;
+    } });
+    const lobbyId = await lookup.findByReplay(move.replayId);
     if (lobbyId === null || (move.lobbyId !== undefined && lobbyId !== move.lobbyId)) refuse("sol-lobby", `recording ${move.replayId}: lobby ${lobbyId}`);
+    const watchEntry = queried.get(`watchMatches/${lobbyId}`);
+    if (watchEntry?.replayId !== move.replayId) refuse("sol-lobby", `recording ${move.replayId}: lobby ${lobbyId} not found by its watch entry`);
     const [fromId, toId] = await Promise.all([houseHandleId(store, move.from, seen), houseHandleId(store, move.to, seen)]);
     if (!fromId || !toId) refuse("sol-handle", `${move.from} or ${move.to} not found`);
     names.set(fromId!, move.from).set(toId!, move.to);
-    return { ...move, lobbyId: lobbyId!, fromId: fromId!, toId: toId! };
+    return { ...move, lobbyId: lobbyId!, fromId: fromId!, toId: toId!, watchEntry: watchEntry! };
   }));
   const movers = moves.flatMap(move => [move.fromId, move.toId]);
   if (!store.createTimes) refuse("no-commit-times", "the store cannot read commit times");
@@ -516,7 +529,8 @@ export async function planCorrections(store: Store, recordings: RecordingObjects
     writes.push({ op: "update", path: `${ROWS}/${id}`, fields: updated });
     ratings.push({ handle: shown(names.get(id)!), mode: MODE, before: standing(id, fields), after: standing(id, { ...fields!, ...updated }) });
   }
-  return { writes, summary: { digest: planDigest(writes), matches, ratings }, reads: seen };
+  return { writes, summary: { digest: planDigest(writes), matches, ratings }, reads: seen,
+    moved: moves.map(move => ({ recording: move.replayId, lobbyId: move.lobbyId, watchEntry: move.watchEntry })) };
 }
 
 /**
@@ -533,8 +547,9 @@ export type SolApplyOutcome = "applied" | "digest differs" | "too many writes" |
 
 /**
  * Applies the plan once, only when its digest is `digest`. One transaction reads again every document the plan was
- * computed from, and CORRECTION_MARKER. It commits the plan's writes and creates the marker only while the marker is
- * absent and every document is as the plan read it; otherwise it writes nothing. The marker's create also requires it
+ * computed from, each moved match's watch entry, and CORRECTION_MARKER. It commits the plan's writes and creates the
+ * marker only while the marker is absent, every document is as the plan read it and each moved match's watch entry is
+ * as the recording lookup's query returned it; otherwise it writes nothing. The marker's create also requires it
  * absent at commit, so of two concurrent applies only one commits. No recording or other stored object is touched.
  */
 export async function applySol(store: Store, plan: CheckedPlan, digest = SOL_APPLY_DIGEST): Promise<SolApplyOutcome> {
@@ -544,6 +559,11 @@ export async function applySol(store: Store, plan: CheckedPlan, digest = SOL_APP
   const marker: Write = { op: "create", path: CORRECTION_MARKER, fields: { planDigest: digest, appliedAt: new Date().toISOString() } };
   return store.transaction(async read => {
     if ((await read([CORRECTION_MARKER])).get(CORRECTION_MARKER)) return { result: "already applied" as const, writes: [] };
+    // Each moved match's lobby is still the one its recording's watch entry named when the lookup ran.
+    const entries = await read(plan.moved.map(move => `watchMatches/${move.lobbyId}`));
+    if (!plan.moved.every(move => isDeepStrictEqual(entries.get(`watchMatches/${move.lobbyId}`) ?? null, move.watchEntry))) {
+      return { result: "changed since planned" as const, writes: [] };
+    }
     for (let i = 0; i < paths.length; i += 100) {
       const now = await read(paths.slice(i, i + 100));
       if (!paths.slice(i, i + 100).every(path => isDeepStrictEqual(now.get(path) ?? null, plan.reads.get(path) ?? null))) {
