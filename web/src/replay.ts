@@ -125,15 +125,17 @@ export function replayPath(params: URLSearchParams): string {
   return `/replays/${encodeURIComponent(id)}`;
 }
 
-/** Resolve once across the complete stored history, never the restart-local live list.
- * A deadline/page bound is an incomplete discovery, not permission to use a partial newest. */
+/** The newest stored id, never the restart-local live list. /matches serves stored matches strictly newest first by
+ * immutable id, each continuation an exclusive boundary below the last id served (src/replays/history-source.ts list),
+ * so the first page that lists any match holds the newest; an empty page (its records left off) is followed. A page
+ * is validated in full, continuation included, before it is used. A deadline/page bound before any match is listed is
+ * an incomplete discovery, not an empty history. */
 export async function newestStoredReplay(request: typeof fetch = fetch, signal?: AbortSignal): Promise<string | null> {
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), 60_000);
   const abort = signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal;
   const seen = new Set<string>();
   let path = "/matches";
-  let newest: ReplayLink | null = null;
   try {
     for (let pages = 0; pages < 1000; pages++) {
       abort.throwIfAborted();
@@ -144,6 +146,7 @@ export async function newestStoredReplay(request: typeof fetch = fetch, signal?:
       if (typeof page !== "object" || page === null || !("matches" in page) || !Array.isArray(page.matches) || !("nextPageToken" in page)) {
         throw new Error("Invalid history page.");
       }
+      let newest: ReplayLink | null = null;
       for (const value of page.matches) {
         const replay = historyReplay(value);
         if (!replay) throw new Error("Invalid stored match identity.");
@@ -152,10 +155,11 @@ export async function newestStoredReplay(request: typeof fetch = fetch, signal?:
         if (!newest || at > previous || (at === previous && replay.seq > newest.seq)) newest = replay;
       }
       const token = page.nextPageToken;
-      if (token === null) return newest?.replayId ?? null;
-      if (typeof token !== "string" || token.length === 0 || token.length > 2048 || !/^[\x21-\x7e]+$/.test(token) || seen.has(token)) {
+      if (token !== null && (typeof token !== "string" || token.length === 0 || token.length > 2048 || !/^[\x21-\x7e]+$/.test(token) || seen.has(token))) {
         throw new Error("Invalid history continuation.");
       }
+      if (newest) return newest.replayId;
+      if (token === null) return null;
       seen.add(token);
       path = `/matches?pageToken=${encodeURIComponent(token)}`;
     }
