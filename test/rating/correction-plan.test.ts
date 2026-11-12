@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { decodeRating, encodeRating, ratingCollection, ratingWrites, RANKED_MODES, storedRecord, type RankedMode, type Winner } from "../../src/rating/ratings.ts";
 import {
-  CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, refusalFigures, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
-  type NeverJoinedPlan, type Plan, type PlanState,
+  APPLY_WRITE_LIMIT, applySol, CORRECTION_MARKER, NEVER_JOINED, planCorrections, planDigest, planNeverJoined, PLAN_PATH, REFUSAL_CODES, refusalCode, refusalDeviation, refusalFigures, SOL_MOVES, SOL_PLAN_PATH, startCorrectionPlan,
+  type CheckedPlan, type NeverJoinedPlan, type Plan, type PlanState,
 } from "../../src/rating/correctionPlan.ts";
 import { DAY_MS } from "../../src/identity/retention.ts";
 import { RELEASED_NAME } from "../../src/live/queue-catalog.ts";
@@ -14,6 +15,8 @@ import { createFirestore, CREATE_TIME_BATCH, FirestoreError, type Fields, type S
 import { RecordingChangedError, RecordingHeldError, type RecordingHolds, type RecordingObjects } from "../../src/replays/abandonRecording.ts";
 import type { LiveGame } from "../../src/server.ts";
 import { ratedRecording } from "../replays/never-joined-fixture.ts";
+import { correctedHistorySource } from "../../src/replays/correctedRecordings.ts";
+import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 
 // Runs inside `firebase emulators:exec --only firestore` (FIRESTORE_EMULATOR_HOST); the recording bucket is in memory.
 const host = process.env.FIRESTORE_EMULATOR_HOST;
@@ -811,5 +814,152 @@ describe.skipIf(!host)("the never-joined correction on its own, at start", { tim
     expect(JSON.parse(served(serve).body).state).toBe("planned");
     expect(info.mock.calls.some(([line]) => String(line).startsWith("antwar house-1v1 "))).toBe(false);
     info.mockRestore(); warn.mockRestore();
+  });
+
+  it("applies the house-1v1 plan at start when its digest is the reviewed one: its writes and the marker in one commit, once", async () => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    const before = await w.snapshot();
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(w.store, w.recordings, plan.summary.digest);
+    expect(await solServed(serve)).toEqual({ state: "applied" });
+    const after = await w.snapshot();
+    // Exactly the plan's writes, and the marker naming its digest.
+    const written = Object.keys(after).filter(path => !isDeepStrictEqual(after[path], before[path])).sort();
+    expect(written).toEqual([...new Set([...plan.writes.map(write => write.path), CORRECTION_MARKER])].sort());
+    for (const write of plan.writes) if (write.op === "update") expect(after[write.path]).toEqual({ ...before[write.path], ...write.fields });
+    expect(after[CORRECTION_MARKER]).toEqual({ planDigest: plan.summary.digest, appliedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT.+Z$/) });
+    // The house-1v1 rows are the independent replay with the move.
+    for (const [handle, { r, rd }] of independentReplay(true)) {
+      const row = after[`${ratingCollection(MODE)}/${w.ids.get(handle)}`]!;
+      expect([decodeRating(row.rating!), decodeRating(row.rd!)]).toEqual([expect.closeTo(r, 9), expect.closeTo(rd, 9)]);
+    }
+    expect(info).toHaveBeenCalledWith("antwar house-1v1 rating correction applied", { digest: plan.summary.digest, writes: plan.writes.length });
+    expect(warn).not.toHaveBeenCalled();
+    // A later start, a second instance or the default digest: the marker is present, so nothing is planned or written.
+    const again = startCorrectionPlan(w.store, w.recordings, plan.summary.digest);
+    expect(await solServed(again.serve)).toEqual({ state: "applied" });
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("already applied");
+    expect(await w.snapshot()).toEqual(after);
+    // No recording object was replaced, held or released.
+    expect(w.recordings.holdCalls).toEqual([]);
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("writes nothing, and logs the plan's digest, when the digest is not the reviewed one", async () => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    const before = await w.snapshot();
+    const [info, warn] = quiet();
+    const { serve } = startCorrectionPlan(w.store, w.recordings, "0".repeat(64));
+    expect(await solServed(serve)).toEqual({ state: "planned", ...plan.summary });
+    expect(await w.snapshot()).toEqual(before);
+    expect(info).toHaveBeenCalledWith("antwar house-1v1 rating correction not applied: digest differs", { digest: plan.summary.digest, writes: plan.writes.length });
+    info.mockRestore(); warn.mockRestore();
+  });
+
+  it("writes nothing when a document the plan read has changed since: a rating row, a lobby or a change record", async () => {
+    for (const target of ["row", "lobby", "change"] as const) {
+      const w = await appliedWorld();
+      const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+      const path = target === "row" ? `${ratingCollection(MODE)}/${w.ids.get("antwars/kimi-k3")}`
+        : target === "lobby" ? `lobbies/${w.lobbies[0]}` : `ratedMatches/${w.lobbies[0]}`;
+      await commit(w.store, [{ op: "update", path, fields: { changedSincePlanned: "true" } }]);
+      const changed = await w.snapshot();
+      expect(await applySol(w.store, plan, plan.summary.digest)).toBe("changed since planned");
+      expect(await w.snapshot()).toEqual(changed);
+    }
+  });
+
+  /** Each other kind of document the plan reads: the identity indexes behind the moved handles and the earlier correction's documents. */
+  const reread: readonly (readonly [string, (w: Awaited<ReturnType<typeof world>>, ownerId: string) => string])[] = [
+    ["the house account's username index", () => "usernames/antwars"],
+    ["a moved handle's handle index", (_w, ownerId) => `identityHandles/${ownerId}-${SOL_MOVES[0]!.to.split("/")[1]}`],
+    ["a moved handle's identity", w => `identities/${w.ids.get(SOL_MOVES[0]!.to)}`],
+    ["the earlier correction's record", () => `ratingCorrections/${NEVER_JOINED.lobbyId}`],
+    ["the earlier correction's lobby", () => `lobbies/${NEVER_JOINED.lobbyId}`],
+    ["the earlier correction's watch entry", () => `watchMatches/${NEVER_JOINED.lobbyId}`],
+    ["the earlier correction's removed change record", () => `ratedMatches/${NEVER_JOINED.lobbyId}`],
+  ];
+  it.each(reread)("writes nothing when %s has changed since the plan read it", async (_kind, target) => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    const path = target(w, (await w.store.get("usernames/antwars"))!.identityId!);
+    // The plan read it, and keeps it for the apply to read again.
+    expect(plan.reads.has(path)).toBe(true);
+    const stored = await w.store.get(path);
+    expect(stored).toEqual(plan.reads.get(path));
+    await commit(w.store, [stored === null
+      ? { op: "create", path, fields: { changedSincePlanned: "true" } }
+      : { op: "update", path, fields: { changedSincePlanned: "true" } }]);
+    const changed = await w.snapshot();
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("changed since planned");
+    expect(await w.snapshot()).toEqual(changed);
+    expect(await w.store.get(CORRECTION_MARKER)).toBeNull();
+  });
+
+  it("writes nothing when a moved match's watch entry changes between the recording lookup and the plan's later read of it", async () => {
+    const w = await appliedWorld();
+    const [move, other] = [SOL_MOVES[0]!, SOL_MOVES[1]!];
+    let lobbyId = "";
+    // Once the lookup's query has returned, the entry is pointed at another recording before the history reads it.
+    let changed = false;
+    const store: Store = { ...w.store, query: async (collectionId, options) => {
+      const result = await w.store.query(collectionId, options);
+      const found = result.rows.find(row => row.fields.replayId === move.replayId);
+      if (collectionId === "watchMatches" && !changed && found) {
+        changed = true;
+        lobbyId = found.path.slice("watchMatches/".length);
+        await commit(w.store, [{ op: "update", path: found.path, fields: { replayId: other.replayId } }]);
+      }
+      return result;
+    } };
+    const plan = await planCorrections(store, w.recordings) as CheckedPlan;
+    expect(changed).toBe(true);
+    // The plan keeps the entry as the lookup's query returned it, and its later read of the changed one.
+    expect(plan.moved.find(each => each.lobbyId === lobbyId)?.watchEntry.replayId).toBe(move.replayId);
+    expect(plan.reads.get(`watchMatches/${lobbyId}`)?.replayId).toBe(other.replayId);
+    const before = await w.snapshot();
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("changed since planned");
+    expect(await w.snapshot()).toEqual(before);
+    expect(await w.store.get(CORRECTION_MARKER)).toBeNull();
+  });
+
+  it("commits once when two applies run together", async () => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    const outcomes = await Promise.allSettled([applySol(w.store, plan, plan.summary.digest), applySol(w.store, plan, plan.summary.digest)]);
+    expect(outcomes.filter(o => o.status === "fulfilled" && o.value === "applied")).toHaveLength(1);
+    const after = await w.snapshot();
+    expect(after[CORRECTION_MARKER]?.planDigest).toBe(plan.summary.digest);
+    // Applying again changes nothing: the second commit, had it landed, would have rewritten appliedAt.
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("already applied");
+    expect(await w.snapshot()).toEqual(after);
+  });
+
+  it("keeps the apply's one commit within the store's per-transaction write limit; a larger plan writes nothing", async () => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    // The plan's writes plus the marker, in one commit.
+    expect(plan.writes.length + 1).toBeLessThanOrEqual(APPLY_WRITE_LIMIT);
+    expect(APPLY_WRITE_LIMIT).toBe(500);
+    const before = await w.snapshot();
+    const large: CheckedPlan = { ...plan, writes: Array.from({ length: APPLY_WRITE_LIMIT }, (_, i) => plan.writes[i % plan.writes.length]!) };
+    expect(await applySol(w.store, large, plan.summary.digest)).toBe("too many writes");
+    expect(await w.snapshot()).toEqual(before);
+    // At the limit exactly (its writes plus the marker), the commit goes through.
+    expect(await applySol(w.store, { ...plan, writes: large.writes.slice(0, APPLY_WRITE_LIMIT - 1) }, plan.summary.digest)).toBe("applied");
+  });
+
+  it("serves the moved Sol match's listing row under the -fast handle once applied, and stored as is before", async () => {
+    const w = await appliedWorld();
+    const plan = await planCorrections(w.store, w.recordings) as CheckedPlan;
+    const move = SOL_MOVES[0]!;
+    const row = { id: move.replayId, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: move.from },
+      { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "antwars/glm-5-3" }] } as unknown as HistorySummary;
+    const history = () => correctedHistorySource({ list: async () => ({ matches: [], nextPageToken: null }), open: async () => null } as HistorySource, w.store);
+    expect((await history().listed!([row]))[0]!.seats.map(seat => seat.handle)).toEqual([move.from, "antwars/glm-5-3"]);
+    expect(await applySol(w.store, plan, plan.summary.digest)).toBe("applied");
+    expect((await history().listed!([row]))[0]!.seats.map(seat => seat.handle)).toEqual([move.to, "antwars/glm-5-3"]);
   });
 });
