@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { COUNTDOWN_MS, createLobbies, LOBBY_TTL_MS } from "../../src/lobby/lobbies.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
 import type { Fields, Store } from "../../src/store/firestore.ts";
 
 function memoryStore(): Store & { readonly docs: Map<string, Fields> } {
@@ -71,17 +72,18 @@ describe("well-formed lobby documents (characterization)", () => {
     expect(value(await w.lobbies.readLobby(open.id))).toEqual({
       id: open.id, kind: "public", size: 2, state: "open", rated: null, slot: null, creatorId: ann!.identity.id,
       createdAt: START, expiresAt: START + LOBBY_TTL_MS, colonies: [[{ id: ann!.identity.id, displayName: ann!.identity.displayName }], []],
-      startsAt: null, outcome: null, mode: null,
+      startsAt: null, outcome: null, mode: null, colonyNames: drawColonyNames(open.id),
     });
     expect(value(await w.lobbies.readLobby(hidden.id))).toEqual({
       id: hidden.id, kind: "private", size: 1, state: "open", rated: null, slot: null, creatorId: bob!.identity.id,
       createdAt: START, expiresAt: START + LOBBY_TTL_MS, colonies: [[], []], startsAt: null, outcome: null, mode: null,
+      colonyNames: drawColonyNames(hidden.id),
     });
     expect(value(await w.lobbies.readLobby(OPERATOR_ID))).toEqual({
       id: OPERATOR_ID, kind: "public", size: 2, state: "open", rated: null, slot: null, creatorId: bob!.identity.id,
       createdAt: START, expiresAt: START + LOBBY_TTL_MS,
       colonies: [[{ id: bob!.identity.id, displayName: bob!.identity.displayName }], [{ id: cat!.identity.id, displayName: cat!.identity.displayName }]],
-      startsAt: null, outcome: null, mode: null,
+      startsAt: null, outcome: null, mode: null, colonyNames: drawColonyNames(OPERATOR_ID),
     });
     expect(await w.lobbies.readLobby("no-such-lobby")).toEqual({ ok: false, reason: "no_such_lobby" });
   });
@@ -101,7 +103,7 @@ describe("well-formed lobby documents (characterization)", () => {
       id: first.id, kind: "public", size: 1, state: "holding", rated: false, slot: "public-0", creatorId: ann!.identity.id,
       createdAt: START, expiresAt: START + LOBBY_TTL_MS,
       colonies: [[{ id: ann!.identity.id, displayName: ann!.identity.displayName }], [{ id: bob!.identity.id, displayName: bob!.identity.displayName }]],
-      startsAt: START + COUNTDOWN_MS, outcome: null, mode: null,
+      startsAt: START + COUNTDOWN_MS, outcome: null, mode: null, colonyNames: drawColonyNames(first.id),
     });
     expect(value(await w.lobbies.readLobby(second.id))).toMatchObject({ state: "waiting", rated: false, slot: null, startsAt: null });
     expect(await w.lobbies.join(first.id, eve!.key)).toEqual({ ok: false, reason: "full" });

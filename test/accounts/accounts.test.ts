@@ -13,7 +13,6 @@ import { createFirestore } from "../../src/store/firestore.ts";
 import { comparison, connect, matchLogs, shortConfig, startComparisonMatch, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
 import { FIRST_LOSS, FIRST_WIN } from "../rating/glicko-values.ts";
 import { playable } from "../playable.ts";
-import { drawColonyNames } from "../../src/sim/colonyNames.ts";
 
 // The store tests run inside `firebase emulators:exec --only firestore`, which sets
 // FIRESTORE_EMULATOR_HOST and GCLOUD_PROJECT; they are skipped only when it is unset.
@@ -206,18 +205,6 @@ describe("account operations without a store", () => {
       expect(created).toEqual({ ok: true, body: { lobby: { id: lobbyId }, inviteLink: `https://antwars.ai/?lobby=${lobbyId}#invite=made-token`, inviteToken: "made-token" } });
       const issued = await run("issue_invite", { key: "k", lobbyId }, headers);
       expect(issued).toEqual({ ok: true, body: { inviteLink: `https://antwars.ai/?lobby=${lobbyId}#invite=fresh-token`, inviteToken: "fresh-token" } });
-    }
-  });
-});
-
-describe("a lobby's colony names in its replies", () => {
-  it("names an unrated lobby's colonies as its match will, and leaves a rated pairing's lobby as it was", async () => {
-    const lobbyId = "0f0e0d0c-0b0a-4908-8706-050403020100";
-    for (const [mode, names] of [[null, drawColonyNames(lobbyId)], ["1v1", undefined]] as const) {
-      const lobby = { id: lobbyId, mode };
-      const lobbies = { createLobby: async () => ({ ok: true, value: { lobby } }) } as unknown as AccountStores["lobbies"];
-      const created = await ACCOUNT_OPERATIONS.find((op) => op.name === "create_lobby")!.run({ lobbies } as AccountStores, { key: "k", size: 1, kind: "public" }, {});
-      expect(created).toEqual({ ok: true, body: { lobby: names === undefined ? lobby : { ...lobby, colonyNames: names } } });
     }
   });
 });

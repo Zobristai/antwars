@@ -16,6 +16,7 @@ import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { harnessPhaseAt, isIndexMode } from "../rating/harnessPhase.js";
 import type { WatchMatch, WatchRegistry } from "./watch-registry.js";
 import type { Lobby, UnstartedLobby, WaitingAgent } from "../lobby/lobbies.js";
+import type { ColonyNamePair } from "../sim/colonyNames.js";
 import { lobbySeats, seatDisplayNames } from "./watch-controller.js";
 import { createAdmissionCap, type CapLimits } from "../net/admission.js";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
@@ -76,7 +77,8 @@ export function watchRoutes(options: {
         const read = await Promise.all(listedMatches(live).map(async match => [match.lobbyId, await matchPlayers(options.accounts, match)] as const));
         const players = new Map(read.map(([id, found]) => [id, found.colonies] as const));
         const types = new Map(read.flatMap(([id, found]) => found.matchType === null ? [] : [[id, found.matchType] as const]));
-        const catalog = publicMatchCatalog(live, lobbies, players, types);
+        const names = new Map(read.flatMap(([id, found]) => found.colonyNames === undefined ? [] : [[id, found.colonyNames] as const]));
+        const catalog = publicMatchCatalog(live, lobbies, players, types, names);
         // Live now and Waiting show an unlisted house handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("watch catalog", [...catalog.matches.flatMap(match => match.colonies.flat().map(seat => seat.displayName)), ...catalog.lobbies.flatMap(lobby => lobby.colonies.flat())]);
         reply(res, 200, catalog); return;
@@ -229,7 +231,7 @@ async function queueRatings(accounts: AccountStores, agents: readonly WaitingAge
  * unrated match's seats show theirs too; a seat that shows none in the stream shows none here.
  */
 async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "thinkingLevels" | "serviceTiers">):
-  Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null }> {
+  Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null; colonyNames?: ColonyNamePair }> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
   if (!lobby.ok) return { colonies: [[], []], matchType: null };
   const seats = lobbySeats(lobby.value.colonies), names = seatDisplayNames(seats);
@@ -252,7 +254,8 @@ async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<W
       ? { ...named, rating: null, rd: null, ratedMatches: null }
       : { ...named, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
   });
-  return { colonies, matchType: lobbyMatchType(lobby.value) };
+  // The names the match plays under, as its lobby records them: absent where they are the rated names.
+  return { colonies, matchType: lobbyMatchType(lobby.value), ...(lobby.value.colonyNames === undefined ? {} : { colonyNames: lobby.value.colonyNames }) };
 }
 
 /**
