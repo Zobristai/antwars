@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages, TICK_MS } from "../../src/live/snapshot.ts";
-import { openRecording, PLAYBACK_RATES, SCAN_RETRY_MS, type Recording } from "../../web/src/recording.ts";
+import { openRecording, PLAYBACK_RATES, SCAN_RETRY_MS, serveMarks, type MarksPort, type MarksWorker, type Recording } from "../../web/src/recording.ts";
 import { groupMarks, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
 import type { ReplayEvent } from "../../web/src/replay-events.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
@@ -357,4 +357,103 @@ it("keeps trying the marks' read after the listed waits, and at once when the br
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+describe("the marks' read in a background worker", () => {
+  const end = async () => decodeMessage(packets.at(-1)!).tick;
+  // The real worker side (serveMarks) on the far end of a message channel, as replay-events.worker.ts runs it.
+  function channelWorker(log: { made: number; terminated: number }): MarksWorker {
+    log.made++;
+    const { port1, port2 } = new MessageChannel();
+    serveMarks(port2 as unknown as MarksPort);
+    const worker: MarksWorker = {
+      onmessage: null, onerror: null,
+      postMessage: (request, transfer) => port1.postMessage(request, transfer),
+      terminate() { log.terminated++; port1.close(); port2.close(); },
+    };
+    port1.onmessage = event => worker.onmessage?.(event as MessageEvent);
+    return worker;
+  }
+  // The recording in many small network chunks, so the hand-over to the worker is paced.
+  const chunked = (size = 512) => new ReadableStream<Uint8Array>({
+    start(controller) { for (let i = 0; i < bytes.length; i += size) controller.enqueue(bytes.slice(i, i + size)); controller.close(); },
+  });
+
+  it("gives the marks the page would, from the same one read of the recording, and ends the worker", async () => {
+    const onPage = openRecording("/replay", undefined, async () => new Response(new Uint8Array(bytes)), { controls: true, endTick: end, marksWorker: null });
+    active.push(onPage);
+    await vi.waitFor(() => expect(onPage.events).not.toBeNull());
+    const log = { made: 0, terminated: 0 };
+    let requests = 0;
+    const r = openRecording("/replay", undefined, async () => { requests++; return new Response(chunked()); },
+      { controls: true, endTick: end, marksWorker: () => channelWorker(log) });
+    active.push(r);
+    await vi.waitFor(() => expect(r.events).not.toBeNull());
+    expect(r.events).toEqual(onPage.events);
+    expect(requests).toBe(2); // playback, then the marks' read: the worker fetches nothing itself
+    expect(log).toEqual({ made: 1, terminated: 1 });
+  });
+
+  it("hands the worker at most four chunks it has not read yet", async () => {
+    const posted: string[] = [];
+    let worker!: MarksWorker;
+    const r = openRecording("/replay", undefined, async () => new Response(chunked(64)), {
+      controls: true, endTick: end,
+      marksWorker: () => (worker = { onmessage: null, onerror: null, postMessage: request => { posted.push(request.kind); }, terminate() {} }),
+    });
+    active.push(r);
+    await vi.waitFor(() => expect(posted.filter(k => k === "chunk")).toHaveLength(4));
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setTimeout(resolve, 2));
+    expect(posted.filter(k => k === "chunk")).toHaveLength(4);
+    worker.onmessage!({ data: { kind: "ack" } } as MessageEvent);
+    await vi.waitFor(() => expect(posted.filter(k => k === "chunk")).toHaveLength(5));
+  });
+
+  it("does not read a corrupt recording again, in the worker as on the page", async () => {
+    const log = { made: 0, terminated: 0 };
+    let requests = 0;
+    const gap = packMessages([packets[0]!, ...packets.slice(2)]);
+    const r = openRecording("/replay", undefined, async () => ++requests === 1 ? new Response(new Uint8Array(bytes)) : new Response(new Uint8Array(gap)),
+      { controls: true, endTick: end, marksWorker: () => channelWorker(log) });
+    active.push(r);
+    await vi.waitFor(() => expect(log.terminated).toBe(1));
+    await new Promise(resolve => setTimeout(resolve, SCAN_RETRY_MS[0]! + 500));
+    expect(requests).toBe(2);
+    expect(r.events).toBeNull();
+  }, 10_000);
+
+  it("reads the marks on the page after the worker fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let made = 0;
+      let requests = 0;
+      const r = openRecording("/replay", undefined, async () => { requests++; return new Response(new Uint8Array(bytes)); }, {
+        controls: true, endTick: end,
+        marksWorker: () => {
+          made++;
+          const worker: MarksWorker = { onmessage: null, onerror: null, postMessage() {}, terminate() {} };
+          setTimeout(() => worker.onerror?.({ message: "load failed" } as ErrorEvent), 0);
+          return worker;
+        },
+      });
+      active.push(r);
+      await vi.waitFor(() => expect(r.events).not.toBeNull(), { timeout: SCAN_RETRY_MS[0]! + 2000 });
+      expect(made).toBe(1);
+      expect(requests).toBe(3);
+      expect(error).toHaveBeenCalledWith(expect.stringMatching(/marks worker failed/), expect.anything());
+    } finally { error.mockRestore(); }
+  }, 10_000);
+
+  it("ends the worker when the replay closes mid-read", async () => {
+    let terminated = 0;
+    let started = false;
+    const r = openRecording("/replay", undefined, async () => new Response(chunked(64)), {
+      controls: true, endTick: end,
+      marksWorker: () => ({ onmessage: null, onerror: null, postMessage: request => { if (request.kind === "start") started = true; }, terminate() { terminated++; } }),
+    });
+    await vi.waitFor(() => expect(started).toBe(true));
+    r.close();
+    expect(terminated).toBe(1);
+    expect(r.events).toBeNull();
+  });
 });
