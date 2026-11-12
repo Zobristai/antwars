@@ -129,7 +129,8 @@ export function errorCode(data) {
  * from state so a later process reuses it; onSession persists a new one.
  * When the server forgets the session (HTTP 404), the client initializes
  * again, runs onReinit (a match client re-joins its seat there) and retries
- * the request once.
+ * the request once. A 404 to the initialized notification itself starts the
+ * handshake again inside a command's retry window (see initialize).
  * With retryWindowMs (the match client), each command (callTool, listTools)
  * fixes a deadline that far after its first send, and every send inside it,
  * including a reconnect's initialize and re-join, retries 503, 429, timeouts
@@ -261,18 +262,33 @@ export class McpClient {
     return this.clock.timeout ? this.clock.timeout(ms) : AbortSignal.timeout(ms);
   }
 
+  /**
+   * initialize, then the initialized notification. With retryWindowMs (the match client), a 404
+   * to the notification means the server it reached does not know the session the initialize
+   * just opened: another instance took the slot between the two sends. Inside a command's retry
+   * window the handshake then starts again with a fresh initialize, until the command's deadline,
+   * which post enforces (a send past it fails with fetch's own timeout error). Outside one (the
+   * entry client), and for any other failed answer, it throws as before.
+   */
   async initialize() {
-    const id = this.nextId++;
-    const { response, text } = await this.post({ jsonrpc: "2.0", id, method: "initialize",
-      params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: CLIENT_INFO } }, { withSession: false });
-    const sessionId = response.headers.get("mcp-session-id");
-    if (!response.ok || sessionId === null) throw new McpHttpError(response.status, `initialize failed: HTTP ${response.status}`);
-    const reply = rpcReply(response.headers.get("content-type"), text, id);
-    this.session = { sessionId, protocolVersion: reply?.result?.protocolVersion ?? PROTOCOL_VERSION };
-    const { response: ack } = await this.post({ jsonrpc: "2.0", method: "notifications/initialized" });
-    if (!ack.ok && ack.status !== 202) throw new McpHttpError(ack.status, `initialized notification failed: HTTP ${ack.status}`);
-    this.onSession(this.session);
-    return this.session;
+    for (;;) {
+      const id = this.nextId++;
+      const { response, text } = await this.post({ jsonrpc: "2.0", id, method: "initialize",
+        params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: CLIENT_INFO } }, { withSession: false });
+      const sessionId = response.headers.get("mcp-session-id");
+      if (!response.ok || sessionId === null) throw new McpHttpError(response.status, `initialize failed: HTTP ${response.status}`);
+      const reply = rpcReply(response.headers.get("content-type"), text, id);
+      this.session = { sessionId, protocolVersion: reply?.result?.protocolVersion ?? PROTOCOL_VERSION };
+      const { response: ack } = await this.post({ jsonrpc: "2.0", method: "notifications/initialized" });
+      if (ack.status === 404 && this.deadline !== null) {
+        this.log("session_gone", { method: "notifications/initialized" });
+        this.session = null;
+        continue;
+      }
+      if (!ack.ok && ack.status !== 202) throw new McpHttpError(ack.status, `initialized notification failed: HTTP ${ack.status}`);
+      this.onSession(this.session);
+      return this.session;
+    }
   }
 
   async request(method, params, { recover = true } = {}) {
