@@ -28,6 +28,8 @@ export function howToWinLine(queensRoute: string): string {
 export const PAGE_COPY = {
   name: "Antwars",
   credit: "Built with Zobrist",
+  /** The emblem and wordmark link's accessible name: it goes to the home page. */
+  home: "Antwars home",
   zoomOut: "Zoom out",
   zoomIn: "Zoom in",
   wholeBoard: "Whole board",

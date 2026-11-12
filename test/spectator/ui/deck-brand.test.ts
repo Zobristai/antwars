@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { EMBLEM_SRC, deckBrand } from "../../../web/src/ui/deck/brand.ts";
+import { EMBLEM_SRC, HOME_HREF, deckBrand } from "../../../web/src/ui/deck/brand.ts";
 import { PAGE_COPY } from "../../../web/src/story.ts";
 
 /** The approved cut of the antwars emblem (v2). */
@@ -16,6 +16,7 @@ class FakeElement {
   alt = "";
   width = 0;
   height = 0;
+  href = "";
   readonly children: FakeElement[] = [];
   readonly attributes = new Map<string, string>();
   constructor(readonly tagName: string) {}
@@ -27,12 +28,21 @@ class FakeElement {
 const doc = { createElement: (tag: string) => new FakeElement(tag.toUpperCase()) } as unknown as Document;
 
 describe("deck top bar brand", () => {
-  it("puts the decorative emblem before the unchanged wordmark and credit", () => {
+  it("links the decorative emblem and the unchanged wordmark home, with the credit beside the link", () => {
     const brand = deckBrand(doc) as unknown as FakeElement;
     expect(brand.tagName).toBe("P");
     expect(brand.className).toBe("d1-brand");
-    const [emblem, wordmark, credit] = brand.children;
-    expect(brand.children).toHaveLength(3);
+    expect(brand.children).toHaveLength(2);
+    const [home, credit] = brand.children;
+    // The home page is the landing at / with no query, never the match screen (?watch=1) or a recording.
+    expect(HOME_HREF).toBe("/");
+    expect(home.tagName).toBe("A");
+    expect(home.className).toBe("d1-home");
+    expect(home.href).toBe("/");
+    expect(home.getAttribute("aria-label")).toBe("Antwars home");
+    expect(home.getAttribute("aria-label")).toBe(PAGE_COPY.home);
+    expect(home.children).toHaveLength(2);
+    const [emblem, wordmark] = home.children;
     expect(emblem.tagName).toBe("IMG");
     expect(emblem.className).toBe("d1-emblem");
     expect(emblem.alt).toBe("");
@@ -42,6 +52,7 @@ describe("deck top bar brand", () => {
     expect(emblem.src).toBe(EMBLEM_SRC);
     expect(wordmark.className).toBe("d2-wordmark");
     expect(wordmark.textContent).toBe(PAGE_COPY.name);
+    expect(credit.tagName).toBe("SPAN");
     expect(credit.className).toBe("d2-credit d1-top-credit");
     expect(credit.textContent).toBe(PAGE_COPY.credit);
   });

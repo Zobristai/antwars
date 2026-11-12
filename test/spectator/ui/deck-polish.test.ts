@@ -46,7 +46,11 @@ describe("deck polish", () => {
     expect(CSS).toMatch(/grid-template-rows: 48px /);
     expect(rule(".d1-emblem")).toMatch(/grid-row: 1 \/ 3/);
     expect(rule(".d1-emblem")).toMatch(/height: 28px/);
-    expect(rule(".d1-brand > .d2-wordmark")).toMatch(/grid-column: 2; grid-row: 1/);
+    expect(rule(".d1-home > .d2-wordmark")).toMatch(/grid-column: 2; grid-row: 1/);
+    // The link home holding the emblem and wordmark shares the brand's two columns and rows, so neither moves.
+    expect(rule(".d1-home")).toMatch(/grid-column: 1 \/ 3; grid-row: 1 \/ 3; grid-template-columns: subgrid; grid-template-rows: subgrid;/);
+    expect(rule(".d1-home")).toMatch(/text-decoration: none/);
+    expect(rule(".d1-home:focus-visible > *")).toMatch(/outline: 2px solid/);
     expect(rule(".d1-brand > .d1-top-credit")).toMatch(/grid-column: 2; grid-row: 2/);
     const phone = block("@media (max-width: 559px)");
     expect(rule(".d1-top-credit", phone)).toMatch(/display: none/);

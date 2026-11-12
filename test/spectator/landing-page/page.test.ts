@@ -116,6 +116,11 @@ describe("the hero, as designed", () => {
     // The front page is no tab of its own.
     expect(nav.querySelectorAll("a").some(a => a.hasAttribute("aria-current"))).toBe(false);
     expect(p.root.querySelector(".fg-emblem")!.src).toBe(EMBLEM_SRC);
+    // The emblem and wordmark link to this page itself, the home page at / with no query; the credit is not in the link.
+    const home = p.root.querySelector(".fg-home")!;
+    expect([home.tag, home.href, home.getAttribute("aria-label")]).toEqual(["a", "/", "Antwars home"]);
+    expect(home.children.map(part => part.className)).toEqual(["fg-emblem", "d2-wordmark"]);
+    expect(p.root.querySelector(".fg-brand")!.children.map(part => part.className)).toEqual(["fg-home", "d2-credit"]);
     p.dispose();
   });
 

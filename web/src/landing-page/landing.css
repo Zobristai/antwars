@@ -18,8 +18,13 @@
 .fg-mast { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 40px; min-height: 64px; border-bottom: 1px solid var(--aw-line); }
 /* The deck's brand (ui/deck/brand.ts): the emblem, then the wordmark with the credit stacked under it. */
 .fg-brand { display: inline-grid; grid-template-columns: auto auto; grid-template-rows: auto auto; align-content: center; column-gap: 10px; min-height: 44px; white-space: nowrap; }
+/* The link home holding the emblem and the wordmark shares the brand's grid, so neither moves; its focus ring is drawn
+   on those two, not round the credit beside them. */
+.fg-home { display: grid; grid-column: 1 / 3; grid-row: 1 / 3; grid-template-columns: subgrid; grid-template-rows: subgrid; color: inherit; text-decoration: none; }
+.d1p .fg-home:focus-visible { outline: none; }
+.fg-home:focus-visible > * { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .fg-emblem { grid-row: 1 / 3; height: 28px; width: auto; align-self: center; }
-.fg-brand > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; font-size: 18px; }
+.fg-home > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; font-size: 18px; }
 .fg-brand > .d2-credit { grid-column: 2; grid-row: 2; align-self: start; margin-top: 2px; font-size: 11px; line-height: 13px; }
 .fg-nav { gap: 8px; }
 
