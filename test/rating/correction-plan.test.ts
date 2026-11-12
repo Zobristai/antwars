@@ -46,6 +46,8 @@ const HISTORY: readonly [string, string, Winner, number][] = [
 const MOVED: Readonly<Record<number, string>> = { 5: "gpt-6-1-sol-high", 6: "gpt-6-1-sol-xhigh" };
 /** HISTORY's indices in match order: by start, then as listed. */
 const MATCH_ORDER = HISTORY.map((_, i) => i).sort((a, b) => HISTORY[a]![3] - HISTORY[b]![3] || a - b);
+/** Match order but for the two overlapping glm-5-3 matches, rated in the order they end: the one at 1200 first. */
+const END_ORDER = MATCH_ORDER.map(i => i === 10 ? 11 : i === 11 ? 10 : i);
 
 /** Glicko-1 written out from Glickman's paper, apart from src/rating/glicko.ts: each match its own rating period, RD
  * growing only over a positive gap since the player's previous rated match. */
@@ -118,7 +120,8 @@ function bucket(bodies: Map<string, Uint8Array>): Recordings {
   };
 }
 
-async function world() {
+/** The fixture world, its history rated in ratedIn order (HISTORY indices). */
+async function world(ratedIn: readonly number[] = MATCH_ORDER) {
   const store = createFirestore({ projectId, namespace: `c${process.pid}-${Date.now().toString(36)}-${counter++}`, emulatorHost: host });
   const identities = createIdentities(store);
   const users: string[] = [];
@@ -147,9 +150,9 @@ async function world() {
     if (!created.ok) throw new Error(created.reason);
     ids.set(`antwars/${name}`, created.value.identity.id);
   }
-  // Indexed as HISTORY; rated in match order.
+  // Indexed as HISTORY; rated in ratedIn order.
   const lobbies: string[] = [];
-  for (const i of MATCH_ORDER) {
+  for (const i of ratedIn) {
     const [a, b, winner, minutes] = HISTORY[i]!;
     const id = i === 6 ? SECOND_LOBBY : randomUUID(), at = T0 + minutes * MIN;
     const seats = [a, b].map((name, colony) => ({ id: ids.get(`antwars/${name}`)!, displayName: `antwars/${name}`, colony }));
@@ -414,6 +417,16 @@ describe.skipIf(!host)("one-off rating correction plan", { timeout: 60_000 }, ()
     return times;
   } });
   const second = (s: number) => `2026-11-09T12:00:${String(s).padStart(2, "0")}.5Z`;
+
+  it("refuses, and writes nothing, when two overlapping matches sharing a player were rated in the order they ended", async () => {
+    expect(HISTORY[10]![3]).toBeGreaterThan(HISTORY[11]![3]);
+    expect(END_ORDER.indexOf(10)).toBeLessThan(END_ORDER.indexOf(11));
+    const w = await world(END_ORDER);
+    const before = await w.snapshot();
+    const error = await planCorrections(w.store, w.recordings).then(() => null, (e: unknown) => e);
+    expect(refusalCode(error)).toBe("not-reproduced-change");
+    expect(await w.snapshot()).toEqual(before);
+  });
 
   it("replays in match order, its window included, whatever order the change records were created in", async () => {
     const w = await world();
