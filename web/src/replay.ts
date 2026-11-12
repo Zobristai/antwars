@@ -90,7 +90,8 @@ export function replayWaiting(doc: Document): void {
   doc.title = "Antwars — recording";
   const panel = doc.getElementById("aw-waiting");
   const [heading, state, delay] = panel ? [...panel.querySelectorAll("p")] : [];
-  if (heading) heading.textContent = "Antwars";
+  // Already the wordmark, it keeps its link home (web/index.html); only other words are replaced.
+  if (heading && heading.textContent !== "Antwars") heading.textContent = "Antwars";
   if (state) state.textContent = "Connecting…";
   delay?.remove();
 }

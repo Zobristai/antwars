@@ -86,6 +86,9 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  * end); or cut, with new connections refused until the span ends (`refuse`). Queued outages run one after
  * another; fake.outageHits lists every request an outage took.
  *
+ * fake.forgetInitialized(times) answers the next `times` initialized notifications HTTP 404 and forgets their
+ * session, as a slot instance answers a session another instance opened just before it took the slot.
+ *
  * Every initialize call and session records its clientInfo; every answered tool call records its result.
  *
  * Wait links, as the entry server returns them: join_queue's reply carries waitToken queue-wait-<n> and its waitUrl
@@ -110,6 +113,7 @@ export async function startFake(options = {}) {
   let picked = null;
   const notApplied = { times: 0, ...options.notApplied };
   let lostReply = false;
+  let forgetInitialized = 0;
   const orders = [];
   const appliedCalls = new Map();
   const box = options.box ?? { x: 2, y: 0, width: 3, height: 3 };
@@ -316,6 +320,12 @@ export async function startFake(options = {}) {
     }
     const session = sessions.get(sid);
     if (session === undefined) return send(404, { jsonrpc: "2.0", error: { code: -32000, message: "Unknown session." }, id: null });
+    if (body?.method === "notifications/initialized" && forgetInitialized > 0) {
+      forgetInitialized -= 1;
+      sessions.delete(sid);
+      calls.push({ server: isMatch ? "match" : "entry", method: "notifications/initialized", forgotten: true });
+      return send(404, { jsonrpc: "2.0", error: { code: -32000, message: "Unknown session." }, id: null });
+    }
     if (req.headers["mcp-protocol-version"] === undefined) return send(400, { jsonrpc: "2.0", error: { code: -32000, message: "missing protocol version" }, id: null });
     if (body.id === undefined) return send(202);
     let result;
@@ -354,6 +364,7 @@ export async function startFake(options = {}) {
     calls,
     toolCalls: (tool) => calls.filter((c) => c.tool === tool),
     expireSessions: () => sessions.clear(),
+    forgetInitialized: (times) => { forgetInitialized = times; },
     picked: () => picked,
     orders: () => orders,
     outage: (outage) => outages.push({ ...outage }),

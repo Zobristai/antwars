@@ -17,7 +17,7 @@ import { CHALLENGE_HREF } from "../pages/model.ts";
 import { mountTip, recordingsCard } from "../pages/matches.ts";
 import { storeFeatureEnabled } from "../store-capabilities.ts";
 import { INSPIRED_BY_URL, PAGE_COPY } from "../story.ts";
-import { EMBLEM_SRC } from "../ui/deck/brand.ts";
+import { EMBLEM_SRC, homeLink } from "../ui/deck/brand.ts";
 import { h } from "../ui/dom.ts";
 import { PAGES, keep } from "../ui/format.ts";
 import { PAGE_WORDS } from "../ui/pages.ts";
@@ -67,7 +67,10 @@ export function mountLandingPage(doc: Document, win: Window, options: { request?
   const brand = h(doc, "p", "fg-brand");
   const emblem = h(doc, "img", "fg-emblem");
   emblem.src = EMBLEM_SRC; emblem.alt = ""; emblem.setAttribute("aria-hidden", "true"); emblem.width = 36; emblem.height = 28;
-  brand.append(emblem, h(doc, "span", "d2-wordmark", PAGE_COPY.name), h(doc, "span", "d2-credit", PAGE_COPY.credit));
+  // The emblem and the wordmark link home, as on every other page (ui/deck/brand.ts); the credit stays plain text.
+  const home = homeLink(doc, "fg-home");
+  home.append(emblem, h(doc, "span", "d2-wordmark", PAGE_COPY.name));
+  brand.append(home, h(doc, "span", "d2-credit", PAGE_COPY.credit));
   mast.append(brand, nav);
 
   // ---------------------------------------------------------------- the hero: The words over one frame of a match

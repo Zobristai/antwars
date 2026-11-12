@@ -11,5 +11,5 @@
   .d1p { --d1-tap: 44px; }
   /* "Built with Zobrist" stays under the wordmark at every width: the HUD's phone move of the credit to its footer does not apply. */
   .d1p .d1-brand > .d1-top-credit { display: inline; }
-  .d1p .d1-brand > .d2-wordmark { grid-row: 1; align-self: end; }
+  .d1p .d1-home > .d2-wordmark { grid-row: 1; align-self: end; }
 }
