@@ -44,7 +44,7 @@ import type { RecordingStats } from "./recording.ts";
 import { Waiting } from "./waiting.ts";
 import { TOUCH_RADIUS_PX, linkLine, tiltOn as tiltParam } from "./compose.ts";
 import { excerptEnded, modeCopy } from "./replay.ts";
-import { boardMode, fallbackUrl, hasWebGL2, linkNeedsWebGLHome, runBoard, showNeedsWebGL } from "./webgl2.ts";
+import { boardMode, fallbackUrl, hasWebGL2, linkNeedsWebGLHome, runBoard, showNeedsWebGL, unlinkNeedsWebGLHome } from "./webgl2.ts";
 import { clear3dRetryUrl, start3dWithRecovery } from "./3d-recovery.ts";
 
 /** Internal resolution is capped at a 2560 px long side. */
@@ -226,10 +226,10 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   void loadIcons();
   const params = new URLSearchParams(location.search);
   const clock = createClock();
-  // Without a source the HUD never mounts, so the needs-WebGL panel is the page: it links home (webgl2.ts).
-  let input: Awaited<ReturnType<typeof openSource>>;
-  try { input = await openSource(params, clock, document, rejectReady); } catch (e) { linkNeedsWebGLHome(document); throw e; }
-  if (!input) { linkNeedsWebGLHome(document); return; }
+  // Until the HUD mounts, and for good if the source never opens, the needs-WebGL panel is the page: it links home (webgl2.ts).
+  linkNeedsWebGLHome(document);
+  const input = await openSource(params, clock, document, rejectReady);
+  if (!input) return;
   const { replay, head, linkState } = input;
   const overlays = new Overlays(document.body, { hover() {}, focusMark() {} }, "unavailable");
   // The HUD's window, where the board would be: the one part of the board's API a page without one has.
@@ -242,6 +242,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
   // The needs-WebGL message stands in the HUD's window, where the board would be; its join panel is the HUD's.
   message?.querySelector(".aw-byoa")?.remove();
+  unlinkNeedsWebGLHome(document);
   let playback = new Playback({ live: !input.recorded });
   let replayGeneration = input.recording?.generation ?? 0;
   let frame = new Frame();

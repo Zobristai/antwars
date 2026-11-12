@@ -111,9 +111,10 @@ export function showNeedsWebGL(doc: Document): void {
 }
 
 /**
- * With no board and no HUD (the match or recording could not be opened: an error, or no stored matches), the
- * needs-WebGL panel is the whole page, so it gets the way home: a link to the landing at / with no query, styled
- * as the panel's Back to live link (replay.ts noStoredReplays).
+ * With no board, the needs-WebGL panel is the whole page until the HUD mounts: while the match or recording loads,
+ * while a lobby waits for its first frame, and for good when it cannot be opened (an error, or no stored matches).
+ * Throughout, it carries the way home: a link to the landing at / with no query, styled as the panel's Back to live
+ * link (replay.ts noStoredReplays). Its line is a div, not a paragraph, so replayWaiting's paragraph rewrite leaves it.
  */
 export function linkNeedsWebGLHome(doc: Document): void {
   const panel = doc.getElementById("aw-waiting");
@@ -123,8 +124,14 @@ export function linkNeedsWebGLHome(doc: Document): void {
   home.href = "/";
   home.textContent = PAGE_COPY.home;
   home.style.cssText = "display:inline-flex;align-items:center;min-width:44px;min-height:44px";
-  const line = doc.createElement("p");
+  const line = doc.createElement("div");
+  line.className = "aw-board-home-line";
   line.append(home);
   panel.append(line);
   panel.hidden = false;
+}
+
+/** The HUD has mounted and carries its own home link: the panel's goes. */
+export function unlinkNeedsWebGLHome(doc: Document): void {
+  doc.getElementById("aw-waiting")?.querySelector(".aw-board-home-line")?.remove();
 }

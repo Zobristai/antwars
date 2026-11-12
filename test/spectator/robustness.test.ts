@@ -65,8 +65,9 @@ describe("never blank: a waiting state until the first frames draw", () => {
     }
   });
 
-  it("without WebGL, when no match or recording opens and the HUD never mounts, the needs-WebGL panel links home", async () => {
-    const { linkNeedsWebGLHome } = await import("../../web/src/webgl2.ts");
+  it("without WebGL the panel links home from the start of loading until the HUD mounts, and for good if nothing opens", async () => {
+    const { linkNeedsWebGLHome, unlinkNeedsWebGLHome } = await import("../../web/src/webgl2.ts");
+    const { replayWaiting } = await import("../../web/src/replay.ts");
     const { dom } = await import("./pages/dom.ts");
     const port = dom({ search: "?replay=2000-01-01T00-00-00-000Z-0" });
     const doc = port.doc as unknown as Document;
@@ -80,8 +81,15 @@ describe("never blank: a waiting state until the first frames draw", () => {
     const links = panel.querySelectorAll(".aw-board-home");
     expect(links.length).toBe(1);
     expect([(links[0] as unknown as { tag: string }).tag, links[0]!.getAttribute("href"), links[0]!.textContent, panel.hidden]).toEqual(["a", "/", "Antwars home", false]);
+    // A replay's loading words rewrite the panel's paragraphs and drop a third one; the link's line is not a paragraph.
+    replayWaiting(doc);
+    expect(panel.querySelectorAll(".aw-board-home").length).toBe(1);
+    unlinkNeedsWebGLHome(doc);
+    expect(panel.querySelectorAll(".aw-board-home").length).toBe(0);
     const main = readFileSync(new URL("../../web/src/main.ts", import.meta.url), "utf8");
-    expect(main).toMatch(/async function startWithoutBoard\([^)]*\)[\s\S]*catch \(e\) \{ linkNeedsWebGLHome\(document\); throw e; \}\s*if \(!input\) \{ linkNeedsWebGLHome\(document\); return; \}/);
+    // Linked before the source is awaited (a lobby's whole wait), unlinked only where the HUD mounts.
+    expect(main).toMatch(/async function startWithoutBoard\([^)]*\)[^]*?linkNeedsWebGLHome\(document\);\s*const input = await openSource\(/);
+    expect(main).toMatch(/unlinkNeedsWebGLHome\(document\);[^]*overlays\.mountHud\(\{ deck: false/);
   });
 
   it("the panel stays until the first frame draws, then hides", async () => {
