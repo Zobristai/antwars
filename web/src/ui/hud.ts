@@ -166,9 +166,10 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     shownNames = key;
     for (const c of COLONIES) {
       text(nameWords[c]!, pair[c]);
-      // A drawn name has its source as its tooltip; the rated names are shown as they were.
+      // A drawn name has its source as its tooltip; the rated names are shown as they were. The name sits in the rows,
+      // which take no pointer, so the note is on the colony's half under it, the control a pointer over the name reaches.
       const note = setup?.colonyNames ? colonyNameNote(pair[c]) : null;
-      if (note) nameWords[c]!.title = note; else nameWords[c]!.removeAttribute("title");
+      attr(halves[c]!, "title", note);
       attr(halves[c]!, "aria-label", D2_COPY.details(c, pair));
       attr(drawerEls[c]!.drawer, "aria-label", D2_COPY.details(c, pair));
     }
