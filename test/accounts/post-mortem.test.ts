@@ -51,7 +51,7 @@ const observe = (seat: number): SimInput => ({ type: "observe", agentId: `seat-p
  * server does not count (an adapter refusal's observe).
  */
 function houseMatch(id: string, options: {
-  names?: readonly [string, string]; idleTicks: number; stopAt: number; modelIndex?: boolean;
+  names?: readonly string[]; idleTicks: number; stopAt: number; modelIndex?: boolean;
   /** The match's rules give no command idle allowance: any call keeps a seat awake (historical configs). */
   callIdle?: boolean;
   calls: Record<number, readonly (SimInput | { input: SimInput; counts: false })[]>;
@@ -83,6 +83,28 @@ function houseMatch(id: string, options: {
     state = out.state;
   }
   return { ...JSON.parse(JSON.stringify(matchRecord({ id, binary: gzipSync(packMessages(messages)), logLines: lines, endedAt: RECEIVED + 404, rerun: true }))), codeVersion: CODE };
+}
+
+const joinAs = (seat: number, colony?: 0 | 1): SimInput =>
+  ({ type: "join", agentId: `seat-private-${seat}`, modelLabel: `model-${seat}`, ...(colony === undefined ? {} : { colony }) }) as SimInput;
+
+/**
+ * Seat 0's recorded commands are join 0, observe 1, set_brood 2, a refused set_brood 3 and, in one step, a repeat of
+ * its brood 4 (no effect) then a change 5; seat 1 sets its brood at tick 1 and repeats it at tick 2, its index 2.
+ */
+function indexRecord(id: string) {
+  return houseMatch(id, { idleTicks: 1000, stopAt: 4, calls: {
+    0: [joinAs(0), joinAs(1)],
+    1: [brood(1, "soldiers"), observe(0), brood(0, "soldiers"), brood(0, "nope")],
+    2: [brood(1, "soldiers"), brood(0, "soldiers"), brood(0, "mixed")],
+  } });
+}
+
+/** A 2v2 record of four players, alice and carol on colony 0, bob and dave on colony 1, its handles in that order. */
+function teamRecord(id: string) {
+  return houseMatch(id, { names: ["alice", "carol", "bob", "dave"], idleTicks: 1000, stopAt: 4, calls: {
+    0: [joinAs(0, 0), joinAs(1, 0), joinAs(2, 1), joinAs(3, 1)],
+  } });
 }
 
 /**
@@ -186,13 +208,28 @@ describe("match_post_mortem", () => {
     expect(first.body).not.toHaveProperty("timeNote");
     const done = await settled(() => f.postMortem.query({ key: alice.key, matchId: id }));
     expect(bodyOf(done).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE,
-      commands: [{ seat: 0, type: "set_brood", tick: 2, tickBasis: "simulation step", viewerTick: 3, viewerSeconds: 0.3 }] });
+      commands: [{ seat: 0, commandIndex: 2, type: "set_brood", tick: 2, tickBasis: "simulation step", viewerTick: 3, viewerSeconds: 0.3 }] });
     expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toEqual([CODE]);
     // The same cached record, filtered to bob's own seat: none of alice's calls or findings.
     const other = await f.postMortem.query({ key: bob.key, lobbyId });
     expect(bodyOf(other).seats).toEqual([{ seat: 1, colony: 1, refusedNotRetained: 0, refused: [
       { tick: null, at: new Date(RECEIVED - 40).toISOString(), tool: "observe", code: "sdk_error" }] }]);
     expect(bodyOf(other).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE, commands: [] });
+  }, 60_000);
+
+  // Credible regression: the index dropped, the wrong one of two same-type commands in one step listed, or a counter
+  // other than the seat's own recorded commands (across seats 7, accepted or non-observe only 3, within the step 1 or 0).
+  it("names each no-effect command by its index in its seat's recorded commands, telling apart same-type commands of one step", async () => {
+    const f = world();
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const { lobbyId, id } = f.match(80, [[alice, 0], [bob, 1]], { record: indexRecord(replayId(80)) });
+    const mine = await settled(() => f.postMortem.query({ key: alice.key, lobbyId }));
+    expect((bodyOf(mine).seats as { refused: { code: string }[] }[])[0]!.refused.map(r => r.code)).toEqual(["bad_brood"]);
+    expect(bodyOf(mine).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE,
+      commands: [{ seat: 0, commandIndex: 4, type: "set_brood", tick: 2, tickBasis: "simulation step", viewerTick: 3, viewerSeconds: 0.3 }] });
+    const theirs = await settled(() => f.postMortem.query({ key: bob.key, matchId: id }));
+    expect(bodyOf(theirs).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE,
+      commands: [{ seat: 1, commandIndex: 2, type: "set_brood", tick: 2, tickBasis: "simulation step", viewerTick: 3, viewerSeconds: 0.3 }] });
   }, 60_000);
 
   it("refuses a non-owner by match id exactly as an unknown match, before reading any record", async () => {
@@ -632,6 +669,18 @@ describe("ownership by the lobby's seat identities alone (report-ee0b8157)", () 
     expect(seatsOf(await f.postMortem.query({ key: bob.key, matchId: queue.id }))).toEqual([1]);
     const split = f.match(65, [[alice, 0], [alice, 1], [carol, 1]]);
     expect(seatsOf(await f.postMortem.query({ key: alice.key, lobbyId: split.lobbyId }))).toEqual([0]);
+  });
+
+  // Credible regression: pairing a team colony's players to its record seats by name or order when their counts match.
+  it.each(["public", "private"] as const)("refuses every player of a %s team lobby whose colonies each hold different players", async visibility => {
+    const f = world();
+    const alice = f.w.played("alice"), carol = f.w.played("carol"), bob = f.w.played("bob"), dave = f.w.played("dave");
+    const team = f.match(81, [[alice, 0], [carol, 0], [bob, 1], [dave, 1]], { visibility, record: teamRecord(replayId(81)) });
+    for (const key of [alice.key, carol.key, bob.key, dave.key]) {
+      for (const ask of [{ lobbyId: team.lobbyId }, { matchId: team.id }]) {
+        expect(JSON.stringify(await f.postMortem.query({ key, ...ask }))).toBe(JSON.stringify(UNCONFIRMED));
+      }
+    }
   });
 
   it("cannot confirm ownership by match id when the lobby's seat entries can't be read", async () => {

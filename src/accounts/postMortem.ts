@@ -70,7 +70,9 @@ export function undecidedSentence(n: number): string {
 }
 
 export type NoEffectStatus =
-  | { readonly status: "shown"; readonly commands: readonly { seat: number; tick: number; type: string }[];
+  | { readonly status: "shown";
+      /** index: the command's 0-based position in its seat's commands list in the stored match record. */
+      readonly commands: readonly { seat: number; index: number; tick: number; type: string }[];
       /** [seat, commands the record cannot settle], every seat; replies show only the caller's own seats' total. */
       readonly undecided: readonly [number, number][] }
   | { readonly status: "not_available"; readonly reason: string }
@@ -343,7 +345,7 @@ function tryLater(why: string): NoEffectStatus {
 
 export function noEffectOf(outcome: RerunOutcome): NoEffectStatus {
   switch (outcome.kind) {
-    case "findings": return { status: "shown", commands: outcome.findings.map(f => ({ seat: f.seat, tick: f.tick, type: f.type })), undecided: outcome.undecided };
+    case "findings": return { status: "shown", commands: outcome.findings.map(f => ({ seat: f.seat, index: f.index, tick: f.tick, type: f.type })), undecided: outcome.undecided };
     case "not_reproduced": return { status: "not_available", reason: "Re-running this match did not reproduce its stored record, so no-effect commands are not available for this match." };
     case "no_rerun_data": return { status: "not_available", reason: "This match's stored record carries no re-run data." };
     case "no_idle_data": return { status: "not_available", reason: "This match's stored record lacks the idle-clock data its re-run needs, so no-effect commands are not available for this match." };
@@ -368,7 +370,7 @@ export function ownNoEffect(noEffect: NoEffectStatus, mine: ReadonlySet<number>,
   if (noEffect.status !== "shown") return noEffect;
   const undecided = noEffect.undecided.filter(([seat]) => mine.has(seat)).reduce((sum, [, n]) => sum + n, 0);
   return { status: "shown", note: callIdle ? `${NO_EFFECT_NOTE} ${CALL_IDLE_NOTE}` : NO_EFFECT_NOTE,
-    commands: noEffect.commands.filter(c => mine.has(c.seat)).map(c => ({ seat: c.seat, type: c.type, ...timeOf(c.tick, "step", ticksPerSecond) })),
+    commands: noEffect.commands.filter(c => mine.has(c.seat)).map(c => ({ seat: c.seat, commandIndex: c.index, type: c.type, ...timeOf(c.tick, "step", ticksPerSecond) })),
     ...(undecided === 0 ? {} : { notListed: undecidedSentence(undecided) }) };
 }
 
@@ -392,7 +394,7 @@ function shape(matchId: string, lobbyId: string, summary: ScanSummary, noEffect:
   };
 }
 
-export const POST_MORTEM_DESCRIPTION = "After a match you played has ended and its delayed playback has finished: which of your seats' calls were refused (tool, error code, the time the server received the call, and the recorded tick with how it was taken: the tick the call was answered at, or the simulation step that refused it, plus the tick a viewer of the match sees it at and that viewer's seconds where the match records a tick rate), and, for a public match whose re-run reproduces its stored record, which accepted commands had no effect (with the same times). Needs the key of the identity that held the seat, and exactly one of lobbyId or matchId. Shows only your own seats. Private matches, records without re-run data and records whose re-run does not reproduce say no-effect commands are not available; refused calls are still shown. A re-run can take minutes: until then noEffect says so, and asking again later shows the result.";
+export const POST_MORTEM_DESCRIPTION = "After a match you played has ended and its delayed playback has finished: which of your seats' calls were refused (tool, error code, the time the server received the call, and the recorded tick with how it was taken: the tick the call was answered at, or the simulation step that refused it, plus the tick a viewer of the match sees it at and that viewer's seconds where the match records a tick rate), and, for a public match whose re-run reproduces its stored record, which accepted commands had no effect (with the same times, and commandIndex: the command's 0-based position in its seat's commands list in the published match record, which tells apart commands of one type in one step; calls refused before reaching the game may be absent from that list). Needs the key of the identity that held the seat, and exactly one of lobbyId or matchId. Shows only your own seats. Where the stored records cannot establish who held a seat, ownership can't be confirmed and nothing is shown. Private matches, records without re-run data and records whose re-run does not reproduce say no-effect commands are not available; refused calls are still shown. A re-run can take minutes: until then noEffect says so, and asking again later shows the result.";
 
 export function registerPostMortemTool(server: McpServer, postMortem: ReturnType<typeof createPostMortem>, options: { seatClientAdmission?: boolean } = {}): void {
   server.registerTool(POST_MORTEM_TOOL, {
