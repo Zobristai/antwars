@@ -5,7 +5,6 @@ import { routeToward } from "./navigation.js";
 import { SUB } from "./config.js";
 import { chebyshev, direction, tileCentre, ZERO, type Vec } from "./geometry.js";
 import { activeQueens, nearestQueen, newAnt, tileIndex } from "./map.js";
-import { territoryCounts } from "./territory.js";
 import { startSpawnWalk } from "./spawnWalk.js";
 import type { HatchBlockedRecord } from "./marks.js";
 import type { Ant, Brood, Caste, ColonyId, ColonyState, QueenState, SimEvent, SimState } from "./types.js";
@@ -269,24 +268,8 @@ export function hatch(state: SimState, tick: number, events: SimEvent[], observe
   }
 }
 
-/** One food per currently held tile at each configured match-global payout.
- * Pure so the private income report can reconcile the exact same calculation.
- * Old log configs omit the interval and retain their original economy.
- */
-export function groundIncome(state: SimState, tick: number): [number, number] {
-  const interval = state.config.groundFoodIntervalTicks;
-  if (interval === undefined || interval <= 0 || tick === 0 || tick % interval !== 0) return [0, 0];
-  const held = territoryCounts(state);
-  const excessRate = state.config.groundIncomeExcessPermille;
-  if (excessRate === undefined) return [Math.floor(held[0]), Math.floor(held[1])];
-  const half = (held[0] + held[1]) / 2;
-  return held.map((tiles) => Math.floor(Math.min(tiles, half) + Math.max(0, tiles - half) * excessRate / 1000)) as [number, number];
-}
-
-/** Credit held ground, then regrow patch food on its independent cadence. */
+/** Regrow patch food on its own cadence. */
 export function regrow(state: SimState, tick: number): void {
-  const ground = groundIncome(state, tick);
-  for (const colony of state.colonies) colony.foodStore += ground[colony.id];
   if (tick === 0 || tick % state.config.foodRegrowTicks !== 0) return;
   const scale = gridScaleOf(state.config);
   const width = state.config.mapWidth;

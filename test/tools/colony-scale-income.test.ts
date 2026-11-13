@@ -8,8 +8,8 @@ import { step } from "../../src/sim/step.js";
 import type { SimEvent } from "../../src/sim/types.js";
 import { playable } from "../playable.ts";
 
-const shortMatch: SimConfig = playable({ ...PUBLIC_CONFIG, foodLayout: undefined, startAnts: 6, colonyCap: 20,
-  matchTicks: 40, groundFoodIntervalTicks: 1, hatchIntervalTicks: 3,
+const shortMatch: SimConfig = playable({ ...PUBLIC_CONFIG, foodLayout: undefined, startAnts: 6, colonyCap: 8,
+  matchTicks: 600, hatchIntervalTicks: 3,
   queenFounding: { ...PUBLIC_CONFIG.queenFounding!, cost: 2, costMultiplier: 3,
     firstFoundTick: 0, cooldownTicks: 0, minDistanceTiles: 1, houseReserveFood: 0, maxLiveQueens: 4 } });
 
