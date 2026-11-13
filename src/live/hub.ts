@@ -35,6 +35,7 @@ import type { ReplayStore } from "../replays/store.js";
 import type { StartRating } from "../replays/history.js";
 import type { Activity } from "../slots/activity.js";
 import { headerLine } from "../sim/log.js";
+import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { admitMatchWatch, captureMatchAccess, isHouseMatch, spectatorDelaySeconds, type MatchAccess, type CurrentInvite } from "./match-access.js";
 import { matchWatchStatus, type CatalogMatch, type MatchWatchStatus } from "./match-catalog.js";
 import { createAdmissionCap, EXEMPT, refuseBusy, type AdmissionCap } from "../net/admission.js";
@@ -293,13 +294,16 @@ class MatchStream {
    * recording is that save's recording side (meta.recording and its recording-* parts), continued here.
    */
   constructor(hub: LiveHub, seq: number, state: SimState, access?: MatchAccess, identity?: SpectatorPlayerOptions["identity"], houseIdle?: SpectatorPlayerOptions["houseIdle"],
-    resume?: StreamResume, recording?: { readonly meta: unknown; readonly parts: ReadonlyMap<string, Uint8Array> }) {
+    resume?: StreamResume, recording?: { readonly meta: unknown; readonly parts: ReadonlyMap<string, Uint8Array> }, colonyNames?: ColonyNamePair) {
     this.hub = hub;
     this.seq = seq;
     this.access = access === undefined ? undefined : captureMatchAccess(access);
     this.identity = resume?.identity ?? randomInt(1, 2 ** 48);
     this.startedAt = resume?.startedAt ?? hub.clock.now();
+    // A match is named as its game server names it to its agents; a resumed stream keeps its saved setup's names.
+    const names = colonyNames ?? (this.access === undefined ? undefined : lobbyColonyNames(this.access.lobbyId, this.access.rated));
     this.recorder = new SpectatorRecorder(state, { rated: this.access?.rated, identity,
+      ...(names === undefined || isClassicColonyNames(names) ? {} : { colonyNames: names }),
       // Every live match carries its accepted-call idle clock; the Model Index is marked explicitly.
       ...(houseIdle === undefined ? {} : { houseIdle, modelIndex: this.access !== undefined && isHouseMatch(this.access) }) }, resume?.recorder);
     const store = this.access?.visibility === "private" ? hub.privateReplayStore?.(this.access.lobbyId) : hub.replayStore;
@@ -599,9 +603,11 @@ export class LiveHub {
   }
 
   /** Begin streaming a match from its starting state (tick 0, before any step). */
-  startMatch(seq: number, state: SimState, access?: MatchAccess, identity?: SpectatorPlayerOptions["identity"], houseIdle?: SpectatorPlayerOptions["houseIdle"]): void {
+  /** colonyNames: the names the match's game server gives its agents; without them, an unrated lobby's are drawn from its lobby id. */
+  startMatch(seq: number, state: SimState, access?: MatchAccess, identity?: SpectatorPlayerOptions["identity"], houseIdle?: SpectatorPlayerOptions["houseIdle"],
+    colonyNames?: ColonyNamePair): void {
     if (this.requireMatchAccess && access === undefined) throw new Error("Match access metadata required");
-    this.add(seq, access, () => new MatchStream(this, seq, state, access, identity, houseIdle));
+    this.add(seq, access, () => new MatchStream(this, seq, state, access, identity, houseIdle, undefined, undefined, colonyNames));
   }
 
   /**
