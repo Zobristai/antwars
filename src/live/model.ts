@@ -15,7 +15,7 @@ import { activeQueens, cloneState, queensOf } from "../sim/map.js";
 import { startBoxes } from "../sim/startPlacement.js";
 import { nextCaste, queenNextCaste } from "../sim/forage.js";
 import type { SimEvent, SimState, StepOutput } from "../sim/types.js";
-import { WORDS } from "../sim/types.js";
+import { asTwoColony, WORDS } from "../sim/types.js";
 import {
   ORDER_KINDS,
   SUB_TILE,
@@ -137,7 +137,7 @@ export function storesOf(state: SimState): [StreamStore, StreamStore] {
 }
 
 export function streamResult(result: NonNullable<SimState["result"]>, nextStartMs: number | null): StreamResult {
-  return { winner: result.winner, reason: result.reason, decidedBy: result.decidedBy, tick: result.tick, nextStartMs };
+  return { winner: result.winner === null ? null : asTwoColony(result.winner), reason: result.reason, decidedBy: result.decidedBy, tick: result.tick, nextStartMs };
 }
 
 /** Read the evaluator's existing progress; never re-evaluate territory qualification here.
@@ -147,7 +147,7 @@ export function territoryWinOf(state: SimState): StreamTerritoryWin | undefined 
   const progress = state.earlyWinProgress, rules = state.config.earlyWin;
   if (state.result !== null || rules === undefined || progress?.leader == null || progress.ticks <= 0) return undefined;
   const startTick = state.tick - progress.ticks;
-  return { colony: progress.leader, startTick, winTick: startTick + rules.holdTicks - 1 };
+  return { colony: asTwoColony(progress.leader), startTick, winTick: startTick + rules.holdTicks - 1 };
 }
 
 export interface SpectatorPlayerOptions {
@@ -259,7 +259,7 @@ export class SpectatorRecorder {
       marks: [...this.marksOf(s).values()],
       agents: s.agents.map(
         (a): StreamAgent => ({
-          colony: a.colony,
+          colony: asTwoColony(a.colony),
           modelLabel: cutUtf8(a.modelLabel ?? "", LABEL_BYTES),
           ...(a.thinkingLevel === undefined ? {} : { thinkingLevel: cutUtf8(a.thinkingLevel, THINKING_LEVEL_BYTES) }),
           ...(a.serviceTier === undefined ? {} : { serviceTier: cutUtf8(a.serviceTier, SERVICE_TIER_BYTES) }),
@@ -365,7 +365,7 @@ export class SpectatorRecorder {
     return {
       id: m.id,
       agent,
-      colony: m.colony,
+      colony: asTwoColony(m.colony),
       tileX: m.tileX,
       tileY: m.tileY,
       words: m.words.map((w) => WORDS.indexOf(w)),
@@ -385,10 +385,10 @@ export class SpectatorRecorder {
         return { kind: "birth", antId: e.antId };
       case "death": {
         const [x, y] = this.lastPos.get(e.antId) ?? [e.tileX * SUB_TILE + SUB_TILE / 2, e.tileY * SUB_TILE + SUB_TILE / 2];
-        return { kind: "death", antId: e.antId, colony: e.colony, x, y };
+        return { kind: "death", antId: e.antId, colony: asTwoColony(e.colony), x, y };
       }
       case "fight":
-        return { kind: "fight", antId: e.antId, targetId: e.targetId, colony: e.colony, tileX: e.tileX, tileY: e.tileY };
+        return { kind: "fight", antId: e.antId, targetId: e.targetId, colony: asTwoColony(e.colony), tileX: e.tileX, tileY: e.tileY };
       case "mark_laid": {
         const mark = marks.get(e.markId);
         return mark === undefined ? null : { kind: "mark", mark };
@@ -399,16 +399,16 @@ export class SpectatorRecorder {
         return queen ? { kind: e.type === "queen_founded" ? "queenFounded" : "queenLost", queen } : null;
       }
       case "queen_hp":
-        return { kind: "queenHp", colony: e.colony, queenId: e.queenId, hp: e.hp };
+        return { kind: "queenHp", colony: asTwoColony(e.colony), queenId: e.queenId, hp: e.hp };
       case "overrun_progress":
-        return e.queenId === undefined ? { kind: "overrun", colony: e.colony, progress: e.progressTicks, required: e.requiredTicks }
-          : { kind: "queenOverrun", colony: e.colony, queenId: e.queenId, progress: e.progressTicks, required: e.requiredTicks };
+        return e.queenId === undefined ? { kind: "overrun", colony: asTwoColony(e.colony), progress: e.progressTicks, required: e.requiredTicks }
+          : { kind: "queenOverrun", colony: asTwoColony(e.colony), queenId: e.queenId, progress: e.progressTicks, required: e.requiredTicks };
       case "match_end":
         return { kind: "end", result: streamResult(e.result, null) };
       case "agent_join": {
         const agent = this.agentIndex.size;
         this.agentIndex.set(e.agentId, agent);
-        return { kind: "join", agent, colony: e.colony, modelLabel: cutUtf8(e.modelLabel ?? "", LABEL_BYTES),
+        return { kind: "join", agent, colony: asTwoColony(e.colony), modelLabel: cutUtf8(e.modelLabel ?? "", LABEL_BYTES),
           ...(e.thinkingLevel === undefined ? {} : { thinkingLevel: cutUtf8(e.thinkingLevel, THINKING_LEVEL_BYTES) }),
           ...(e.serviceTier === undefined ? {} : { serviceTier: cutUtf8(e.serviceTier, SERVICE_TIER_BYTES) }), ...playerIdentity(this.players.identity?.(e.agentId)) };
       }
@@ -628,7 +628,7 @@ export class SpectatorState {
 }
 
 export function queensForStream(state: SimState): StreamQueen[] {
-  return state.colonies.flatMap((c) => queensOf(c).map((q) => ({ id: q.id, colony: c.id,
+  return state.colonies.flatMap((c) => queensOf(c).map((q) => ({ id: q.id, colony: asTwoColony(c.id),
     x: toSubTile(q.queenX, state.config.mapWidth), y: toSubTile(q.queenY, state.config.mapHeight),
     foundedTick: q.foundedTick, lostTick: q.lostTick, overrun: q.overrunTicks, ...(q.hp === undefined ? {} : { hp: q.hp }) })));
 }

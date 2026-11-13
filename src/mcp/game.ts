@@ -8,6 +8,7 @@ import { headerLine, tickLine } from "../sim/log.js";
 import { cloneState, createMatch } from "../sim/map.js";
 import { advance, prepareInitialPointRests, step, type ServerTerminal } from "../sim/step.js";
 import type { Agent, BroodSet, ColonyId, InputErrorCode, InputResult, MatchResult, SimInput, SimState, StepOutput, VisibleEvent } from "../sim/types.js";
+import { asTwoColony } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
 import { GAME_SAVE_FORMAT, type GameSave, type SavedAgentRecord, type StartGameSave } from "../handover/matchSave.js";
@@ -429,7 +430,7 @@ export class Game {
     }
     if (this.starting !== null) throw new Error("Lobby pick window already open");
     // Picks are per seat: the starting roster is keyed by seat key, never by identity.
-    const roster = [...this.lobby.seats].map(([key, seat]) => ({ identityId: key, colony: seat.colony }));
+    const roster = [...this.lobby.seats].map(([key, seat]) => ({ identityId: key, colony: asTwoColony(seat.colony) }));
     const window = new LobbyStart(seed, this.undrawnConfig, roster, this.now(), this.nestWindowMs(), this.lobby.mode?.startsWith("house-") === true);
     this.starting = { seed, window };
     this.setNextStart({ kind: "scheduled", at: new Date(window.closesAt) });

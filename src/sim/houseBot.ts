@@ -143,11 +143,13 @@ export interface SightScan { readonly own: number; readonly enemy: number; reado
  */
 export function sightScan(state: SimState, grid: Grid, ant: Ant, tx: number, ty: number, r: number): SightScan {
   const dense = gridBuckets(grid);
-  if (dense === undefined || !Number.isInteger(r) || r < 0) return scanNear(state, grid, ant, tx, ty, r);
+  // Area counts exist for two-colony matches only; any other count takes the per-ant scan.
+  const counts = dense === undefined || !Number.isInteger(r) || r < 0 ? undefined : colonyAreaCounts(state, grid);
+  if (dense === undefined || counts === undefined) return scanNear(state, grid, ant, tx, ty, r);
   // The same circle of tiles, row by row: counts from each colony's per-row prefix sums, and the nearest
   // enemy (nearer, then lowest id, which no visiting order changes) from the buckets of rows holding enemies.
   const { mapWidth: width, mapHeight: height } = state.config;
-  const counts = colonyAreaCounts(state, grid)!, half = circleHalfWidths(r);
+  const half = circleHalfWidths(r);
   const mine = counts[ant.colony], theirs = counts[ant.colony === 0 ? 1 : 0];
   const y0 = Math.max(0, ty - r), y1 = Math.min(height - 1, ty + r);
   let own = 0;
@@ -245,7 +247,8 @@ function queenIntruders(state: SimState, grid: Grid, colony: ColonyId, qx: numbe
     intruderCandidates.set(grid, byQueen);
   }
   const { mapWidth, mapHeight } = state.config;
-  const key = (r * mapWidth * mapHeight + qy * mapWidth + qx) * 2 + colony;
+  // The key leaves room for four colonies per queen tile.
+  const key = (r * mapWidth * mapHeight + qy * mapWidth + qx) * 4 + colony;
   let found = byQueen.get(key);
   if (found === undefined) {
     const list: Ant[] = [];
@@ -454,12 +457,24 @@ type HouseIntent =
   | { readonly kind: "explore"; readonly x: number; readonly y: number }
   | { readonly kind: "chase" | "pursue"; readonly targetId: number; readonly x: number; readonly y: number }
   | { readonly kind: "post" | "retreat"; readonly homeId: number; readonly x: number; readonly y: number }
-  | { readonly kind: "rally"; readonly homeId: number; readonly targetId: number; readonly x: number; readonly y: number }
-  | { readonly kind: "queen"; readonly targetId: number; readonly x: number; readonly y: number };
+  | { readonly kind: "rally"; readonly homeId: number; readonly targetId: number; readonly x: number; readonly y: number; readonly targetColony?: ColonyId }
+  | { readonly kind: "queen"; readonly targetId: number; readonly x: number; readonly y: number; readonly targetColony?: ColonyId };
 interface IntentHold { readonly intent: HouseIntent; readonly role: Ant["role"]; readonly selectedTick: number }
 function sameIntent(a: HouseIntent, b: HouseIntent): boolean {
   return a.kind === b.kind && ("homeId" in a ? a.homeId : null) === ("homeId" in b ? b.homeId : null) &&
-    ("targetId" in a ? a.targetId : null) === ("targetId" in b ? b.targetId : null);
+    ("targetId" in a ? a.targetId : null) === ("targetId" in b ? b.targetId : null) &&
+    ("targetColony" in a ? a.targetColony : null) === ("targetColony" in b ? b.targetColony : null);
+}
+/**
+ * The colony a queen or rally intent targets. Recorded on the intent only with more than two colonies, so a
+ * two-colony intent keeps today's shape and its target is the other colony.
+ */
+function intentTargetColony(ant: Ant, intent: { readonly targetColony?: ColonyId }): ColonyId {
+  return intent.targetColony ?? (ant.colony === 0 ? 1 : 0);
+}
+/** The target colony field for a new queen or rally intent: present only with more than two colonies. */
+function targetColonyField(state: SimState, colony: ColonyId): { readonly targetColony?: ColonyId } {
+  return state.colonies.length > 2 ? { targetColony: colony } : {};
 }
 /** Validate only a competing choice; ordinary same-target ticks need no whole-ant scan. */
 function liveIntent(state: SimState, ant: Ant, intent: HouseIntent): HouseIntent | null {
@@ -468,8 +483,11 @@ function liveIntent(state: SimState, ant: Ant, intent: HouseIntent): HouseIntent
     return enemy === undefined ? null : { ...intent, x: enemy.x, y: enemy.y };
   }
   if ("homeId" in intent && !activeQueens(state.colonies[ant.colony]).some(q => q.id === intent.homeId)) return null;
-  if ((intent.kind === "rally" || intent.kind === "queen") &&
-    !activeQueens(state.colonies[ant.colony === 0 ? 1 : 0]).some(q => q.id === intent.targetId)) return null;
+  if (intent.kind === "rally" || intent.kind === "queen") {
+    // Every colony's first queen has id 0, so the target is matched by colony and queen id.
+    const target = intentTargetColony(ant, intent), colony = state.colonies[target];
+    if (target === ant.colony || colony === undefined || !activeQueens(colony).some(q => q.id === intent.targetId)) return null;
+  }
   return intent;
 }
 /** Hold intent/target, not velocity: live enemies still move and routing is unchanged. */
@@ -535,15 +553,16 @@ function fighterDirection(state: SimState, grid: Grid, ant: Ant): Vec {
   if (home === null) return ZERO;
   const fight = pushOrRetreat(state, grid, ant, home);
   if (fight !== null) return fight;
-  const enemyQueen = nearestQueen(state.colonies[ant.colony === 0 ? 1 : 0], ant.x, ant.y);
+  const enemyColony = ant.colony === 0 ? 1 : 0;
+  const enemyQueen = nearestQueen(state.colonies[enemyColony], ant.x, ant.y);
   if (enemyQueen === null) return ZERO;
   if (withinTiles(tx, ty, Math.floor(enemyQueen.queenX / SUB), Math.floor(enemyQueen.queenY / SUB), config.sightTiles)) {
-    return assignmentDirection(state, ant, { kind: "queen", targetId: enemyQueen.id, x: enemyQueen.queenX, y: enemyQueen.queenY });
+    return assignmentDirection(state, ant, { kind: "queen", targetId: enemyQueen.id, x: enemyQueen.queenX, y: enemyQueen.queenY, ...targetColonyField(state, enemyColony) });
   }
   const permille = overMatch(state, config.rallyStartPermille, config.rallyEndPermille);
   const rally = config.queenFounding === undefined ? rallyX(state, ant.colony) : home.queenX + Math.trunc((enemyQueen.queenX - home.queenX) * permille / 1000);
   const goal = waterRallyGoal(state, rally, laneY(state, ant), enemyQueen);
-  return assignmentDirection(state, ant, { kind: "rally", homeId: home.id, targetId: enemyQueen.id, ...goal });
+  return assignmentDirection(state, ant, { kind: "rally", homeId: home.id, targetId: enemyQueen.id, ...goal, ...targetColonyField(state, enemyColony) });
 }
 
 function guardDirection(state: SimState, grid: Grid, ant: Ant): Vec {

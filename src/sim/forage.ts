@@ -136,7 +136,7 @@ export function retargetClusterForager(state: SimState, ant: Ant): Vec {
 export function pickupAndDeliver(state: SimState, foraging: ReadonlySet<number>): void {
   const { config } = state;
   // Each colony's live queens, read once: delivery changes no queen.
-  const live = [activeQueens(state.colonies[0]), activeQueens(state.colonies[1])];
+  const live = state.colonies.map((colony) => activeQueens(colony));
   for (const ant of state.ants) {
     const tx = Math.floor(ant.x / SUB);
     const ty = Math.floor(ant.y / SUB);

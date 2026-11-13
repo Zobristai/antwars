@@ -212,7 +212,7 @@ export function claimCountMarks(state: SimState, tick: number, observers?: StepO
     for (const ant of group.splice(0, group.length - mark.count!)) releaseClaim(state, ant);
   }
 
-  for (const colony of [0, 1] as const) {
+  for (const { id: colony } of state.colonies) {
     const colonyMarks = ordered.filter((m) => m.colony === colony);
     if (colonyMarks.length === 0) continue;
     const live = state.ants.filter((a) => a.colony === colony);

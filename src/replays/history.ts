@@ -7,7 +7,7 @@ import { parseLog, terminalAt, type ParsedLog } from "../sim/log.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
 import { createMatch } from "../sim/map.js";
 import { advance } from "../sim/step.js";
-import type { ColonyId, SimInput } from "../sim/types.js";
+import { asTwoColony, type ColonyId, type SimInput } from "../sim/types.js";
 import { SpectatorRecorder, cutUtf8, LABEL_BYTES, SERVICE_TIER_BYTES, THINKING_LEVEL_BYTES } from "../live/model.js";
 
 export interface CommandRecord {
@@ -281,7 +281,7 @@ export function matchRecord(input: HistoryInput): MatchRecord {
     for (const event of out.events) {
       if (event.type === "agent_join") {
         seatIds.set(event.agentId, seats.length);
-        seats.push({ seat: seats.length, colony: event.colony, modelLabel: event.modelLabel, thinkingLevel: event.thinkingLevel ?? null,
+        seats.push({ seat: seats.length, colony: asTwoColony(event.colony), modelLabel: event.modelLabel, thinkingLevel: event.thinkingLevel ?? null,
           serviceTier: event.serviceTier ?? null, handle: null, joinedTick: event.tick, commands: [] });
       }
     }

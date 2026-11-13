@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
+import { asTwoColony } from "../../src/sim/types.ts";
 import { replaySteps } from "../../test/tools/summary.ts";
 import { loadReplayFile } from "../../src/live/replayOptions.ts";
 import { frameOf, openPage, pollResult, type ResultPoll } from "./live-check.ts";
@@ -51,7 +52,7 @@ export function matchEnd(log: string, holds?: string): { finalTick: number; winn
   const state = replaySteps(lines, "result", () => {});
   if (state.result === null) throw new Error(`${log} does not reach a result`);
   // The stream's final record is the state after the deciding step, as the page's playback tick counts.
-  return { finalTick: state.tick, winner: state.result.winner };
+  return { finalTick: state.tick, winner: state.result.winner === null ? null : asTwoColony(state.result.winner) };
 }
 
 const catalog = z.object({ matches: z.array(z.object({ lobbyId: z.string().uuid() })) });

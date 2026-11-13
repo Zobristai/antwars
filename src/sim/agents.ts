@@ -24,21 +24,25 @@ export interface Allocator {
   rankSpare(state: SimState, colony: ColonyId, spare: readonly Ant[]): Ant[];
 }
 
-function agentCounts(state: SimState): [number, number] {
-  const counts: [number, number] = [0, 0];
+/** Agents per colony, one entry per colony of the match. */
+function agentCounts(state: SimState): number[] {
+  const counts = state.colonies.map(() => 0);
   for (const agent of state.agents) counts[agent.colony] += 1;
   return counts;
 }
 
 /**
- * Shared by tick placement and the adapter's admission projection. Operator
- * placement wins; named colonies are honoured; unnamed joins choose the colony
- * with fewer agents (colony 0 on a tie). The adapter enforces seating caps.
+ * Shared by tick placement and the adapter's admission projection; counts has
+ * one entry per colony. Operator placement of a colony in the match wins; named
+ * colonies are honoured; unnamed joins choose the colony with the fewest agents
+ * (the lowest colony on a tie). The adapter enforces seating caps.
  */
-export function chooseJoinColony(counts: readonly [number, number], join: Pick<JoinInput, "colony" | "placement">): ColonyId {
-  if (join.placement === 0 || join.placement === 1) return join.placement;
+export function chooseJoinColony(counts: readonly number[], join: Pick<JoinInput, "colony" | "placement">): ColonyId {
+  if (join.placement !== undefined && Number.isInteger(join.placement) && join.placement >= 0 && join.placement < counts.length) return join.placement;
   if (join.colony !== undefined) return join.colony;
-  return counts[1] < counts[0] ? 1 : 0;
+  let fewest = 0;
+  for (let colony = 1; colony < counts.length; colony += 1) if (counts[colony]! < counts[fewest]!) fewest = colony;
+  return fewest;
 }
 
 /**
@@ -686,7 +690,7 @@ export function pruneSquads(state: SimState): void {
  */
 export function fillSquads(state: SimState, allocator: Allocator, tick: number, events: SimEvent[]): void {
   const size = state.config.squadSize;
-  for (const colony of [0, 1] as const) {
+  for (const { id: colony } of state.colonies) {
     const agents = state.agents.filter((a) => a.colony === colony).sort((a, b) => a.joinSeq - b.joinSeq);
     let used = agents.reduce((n, a) => n + a.squad.length, 0);
     const wanting = agents.filter((a) => !a.idle && a.squad.length < size);
@@ -718,7 +722,7 @@ export function fillSquads(state: SimState, allocator: Allocator, tick: number, 
 
 /** If deaths left squads above half the colony, release the latest-joined squads' newest ants. */
 export function trimSquads(state: SimState, tick: number, events: SimEvent[]): void {
-  for (const colony of [0, 1] as const) {
+  for (const { id: colony } of state.colonies) {
     const agents = state.agents.filter((a) => a.colony === colony).sort((a, b) => b.joinSeq - a.joinSeq);
     let used = agents.reduce((n, a) => n + a.squad.length, 0);
     // No squad ant to trim: the loop below would stop at once for any limit of 0 or more.
