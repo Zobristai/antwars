@@ -15,6 +15,14 @@ class Element {
     Object.assign(Object.create({ setProperty(this: Record<string, string>, name: string, value: string) { this[name] = value; } }) as Record<string, string>, {}) as never;
   // Layout as the 3D deck's desktop row measures it (capture of the replay screen at 1280px).
   offsetLeft = 111.4; offsetTop = 4; offsetWidth = 230.4; offsetHeight = 28; clientWidth = 419.7;
+  /** The box's top in the window: the deck's replay row sits at the foot of an 800px desktop window. */
+  rectTop = 756; scrollTop = 0;
+  getBoundingClientRect() { return { top: this.rectTop }; }
+  closest(selectors: string): Element | null {
+    const names = selectors.split(",").map(s => s.trim().replace(/^\./, ""));
+    for (let e: Element | null = this; e; e = e.parent) if (e.className.split(" ").some(c => names.includes(c))) return e;
+    return null;
+  }
   onchange: (() => void) | null = null; oninput: (() => void) | null = null;
   onpointerdown: (() => void) | null = null; onpointerup: (() => void) | null = null;
   onpointercancel: (() => void) | null = null; onblur: (() => void) | null = null;
@@ -248,6 +256,54 @@ describe("marks on the scrubber", () => {
     expect(m.marks[3]!.attrs["aria-expanded"]).toBe("false");
     expect(m.chip!.text).toBe("Nest lost · Lake Hodges Colony · 12:07");
     m.controls.close();
+  });
+
+  it("keeps every line of a long group's list reachable: the list holds to the board's room over the row and scrolls", () => {
+    // Twenty fights 30 s apart on the phone's 2D board: one group whose 44px lines, stacked, are taller than the window.
+    const dense: ReplayEvent[] = Array.from({ length: 20 }, (_, i) => ({ kind: "fight", tick: 600 + 300 * i, ms: 60_000 + 30_000 * i, colony: null }));
+    const phone: Record<string, string> = { "--aw-mark-gap": "28px", "--aw-mark-row": "44px", "--aw-mark-size": "20px", "--aw-mark-count-width": "26px" };
+    const doc = Object.assign(fakeDoc(true), { defaultView: { getComputedStyle: () => ({ getPropertyValue: (name: string) => phone[name] ?? "" }) } }) as unknown as Document;
+    const recording = { rate: 1, duration: DRAWN_MS, position: 0, error: null, durationError: null, seeking: false, events: dense,
+      setRate() {}, seek() {} } as unknown as Recording;
+    const controls = mountReplayControls(doc, recording);
+    const el = controls.el as unknown as Element;
+    // As the 2D board lays out a 390 x 844 phone: the board's stage below the score panel, the row at its foot.
+    const stage = Object.assign(new Element("div"), { className: "d2-stage", rectTop: 270 });
+    stage.append(el);
+    el.rectTop = 540;
+    const marks = el.children.find(c => c.className === "aw-marks")!.children;
+    expect(marks.map(b => b.attrs["aria-label"])).toEqual(["20 marks, 1:00 to 10:30"]);
+    marks[0]!.onclick!({ detail: 0 }); // Enter on the focused group
+    const list = el.children.find(c => c.className === "aw-mark-list")!;
+    const rows = list.children;
+    expect(rows).toHaveLength(20);
+    expect(rows.every(r => r.tagName === "button")).toBe(true);
+    expect(rows[0]!.focused).toBe(true);
+    // The list stands 6px over the row and grows upward over the board. Laid out as replay-marks.css lays it, its lines
+    // keep their 44px and it scrolls inside its height, so a line is reachable when the list's height fits in the board's
+    // room over the row (above the stage, the score panel would cover it).
+    const css = readFileSync(new URL("../../web/src/replay-marks.css", import.meta.url), "utf8");
+    const rule = css.match(/^\.aw-mark-list \{([^}]*)\}/m)![1]!;
+    expect(rule).toMatch(/overflow-y: auto/);
+    expect(rule).toMatch(/grid-auto-rows: var\(--aw-mark-row\)/);
+    const natural = 20 * 44 + 8;
+    const max = parseFloat(list.style.maxHeight ?? "");
+    const height = Number.isFinite(max) ? Math.min(natural, max) : natural;
+    const room = el.rectTop - stage.rectTop - 6;
+    expect(natural).toBeGreaterThan(room);
+    expect(height).toBeLessThanOrEqual(room);
+    // Every line, scrolled to, stands wholly inside the list's height.
+    for (let i = 0; i < rows.length; i++) {
+      const scroll = Math.min(Math.max(0, 4 + 44 * (i + 1) - (height - 4)), natural - height);
+      expect(4 + 44 * i - scroll).toBeGreaterThanOrEqual(0);
+      expect(4 + 44 * (i + 1) - scroll).toBeLessThanOrEqual(height);
+    }
+    // Opened again, the list starts at its first line.
+    list.scrollTop = 300;
+    marks[0]!.onclick!({ detail: 1 });
+    marks[0]!.onclick!({ detail: 0 });
+    expect(list.scrollTop).toBe(0);
+    controls.close();
   });
 
   it("opens a group's list when a mouse points at it, but not when a tap reports entering it", () => {

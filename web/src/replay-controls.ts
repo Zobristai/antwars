@@ -13,6 +13,12 @@ const KIND_NAMES = { fight: "Fight", nest: "Nest lost", food: "Food lead" } as c
 const THUMB_INSET = 8;
 /** How long a mark's label stays after a tap or a chosen line. */
 const LABEL_MS = 2000;
+/** A list's gap over the row, its inner padding top and bottom (replay-marks.css), and the room it leaves at the window's top. */
+const LIST_GAP = 6;
+const LIST_PADDING = 8;
+const LIST_MARGIN = 8;
+/** The board's area the row stands in: the 2D board's stage (ui.css) or the 3D deck's board frame (deck.css). */
+const BOARD_AREA = ".d2-stage, .d1-frame";
 // Static markup (no recording data): a diamond, a downward triangle and a dot, outlined dark so each reads on the
 // track's filled and empty parts alike (replay-marks.css colours them).
 const GLYPHS = {
@@ -139,6 +145,16 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     const right = el.clientWidth - px("--aw-mark-reserve", 84);
     node.style.left = `${Math.max(0, Math.min(seek.offsetLeft + x - width / 2, right - width))}px`;
   };
+  /** A group's list stands on the line over the row and grows upward over the board: it is held to the room between the
+   * row's top and the board's top (or the window's, if higher), never under two and a half lines, and scrolls inside
+   * past that (replay-marks.css), so every line of a long group stays reachable and none hides under the panels above
+   * the board. */
+  const fitList = () => {
+    const board = el.closest?.(BOARD_AREA)?.getBoundingClientRect().top ?? 0;
+    const room = el.getBoundingClientRect().top - Math.max(0, board) - LIST_GAP - LIST_MARGIN;
+    const least = px("--aw-mark-row", 28) * 2.5 + LIST_PADDING;
+    list.style.maxHeight = `${Math.floor(Math.max(least, room))}px`;
+  };
   const words = (node: HTMLElement, e: ReplayEvent) => {
     node.replaceChildren();
     const glyph = doc.createElement("span");
@@ -205,6 +221,8 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       row.onclick = () => { const at = openItem ?? item; closeList(); at.button.focus(); jump(e, at.x); };
       list.append(row);
     }
+    fitList();
+    list.scrollTop = 0;
     list.hidden = false;
     place(list, item.x);
   };
@@ -303,6 +321,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       if (now) {
         openItem = now;
         now.button.setAttribute("aria-expanded", "true");
+        fitList();
         place(list, now.x);
       } else {
         openItem = null;
