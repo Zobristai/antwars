@@ -2,7 +2,24 @@ import { damagePerTick, SUB } from "./config.js";
 import { withinTiles } from "./geometry.js";
 import { gridScaleOf } from "./gridScale.js";
 import { activeQueens, clearLostQueenSpawn, forEachNear, gridBuckets, noEnemyNear, tileIndex, type Grid } from "./map.js";
-import type { Ant, Mark, QueenState, SimEvent, SimState } from "./types.js";
+import type { Ant, ColonyId, Mark, QueenState, SimEvent, SimState } from "./types.js";
+
+/** Four-colony kill credit: each dying ant (by id) or queen, and the colony credited with it. */
+type KillCredit = Map<number | QueenState, ColonyId>;
+
+/**
+ * The one kill-credit rule (four-colony matches): the hit that takes the target's HP to zero or below,
+ * in the order damage is resolved (ant hits by ant, then queen bites by colony and queen), credits the
+ * hitter's colony. Later hits that tick credit nothing, and a kill is never split.
+ */
+function creditLastHit(credit: KillCredit, target: number | QueenState, hp: number, dealtBefore: number, hit: number, colony: ColonyId): void {
+  if (dealtBefore < hp && dealtBefore + hit >= hp) credit.set(target, colony);
+}
+
+function creditKill(state: SimState, credit: KillCredit, target: number | QueenState): void {
+  const killer = credit.get(target);
+  if (killer !== undefined) state.colonies[killer]!.kills = (state.colonies[killer]!.kills ?? 0) + 1;
+}
 
 /** Telemetry only: null is a queen, which wins equal-damage ties against ants. */
 interface DamageSource {
@@ -81,6 +98,8 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     .filter(mark => mark.verb !== undefined && mark.count !== undefined && mark.laidTick <= tick && tick - mark.laidTick < config.markLifetimeTicks)
     .map(mark => [mark.id, mark])) : undefined;
   const sources = marks !== undefined && marks.size > 0 ? new Map<number, DamageSource>() : undefined;
+  // Attribution only: two-colony matches keep their kill totals as opposing deaths.
+  const credit: KillCredit | undefined = state.colonies.length > 2 ? new Map() : undefined;
   // Ants of one colony on one tile have the same adjacent enemies, and no HP changes until all have chosen.
   // The key leaves room for four colonies per tile.
   const targets = new Map<number, Ant | null>(), width = config.mapWidth;
@@ -99,7 +118,11 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
       // at today's per-tick damage with no territory bonus, and never before the shield ends.
       if (config.queenHp !== undefined && tick >= config.queenHp.shieldTicks) {
         const queen = adjacentEnemyQueen(state, ant);
-        if (queen !== null) queenDamage.set(queen, (queenDamage.get(queen) ?? 0) + (ant.caste === "soldier" ? soldier : worker));
+        if (queen !== null) {
+          const bite = ant.caste === "soldier" ? soldier : worker, dealt = queenDamage.get(queen) ?? 0;
+          if (credit !== undefined) creditLastHit(credit, queen, queen.hp ?? config.queenHp.hp, dealt, bite, ant.colony);
+          queenDamage.set(queen, dealt + bite);
+        }
       }
       continue;
     }
@@ -109,6 +132,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     if (onOwn) state.stats.bonusHits[ant.colony] += 1;
     const isSoldier = ant.caste === "soldier";
     const hit = onOwn ? (isSoldier ? soldierBonus : workerBonus) : isSoldier ? soldier : worker;
+    if (credit !== undefined) creditLastHit(credit, target.id, target.hp, damage.get(target.id) ?? 0, hit, ant.colony);
     damage.set(target.id, (damage.get(target.id) ?? 0) + hit);
     if (sources !== undefined) recordSource(sources, target.id, hit, ant);
     if (ant.lastTargetId !== target.id) {
@@ -117,7 +141,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     }
     ant.lastTargetId = target.id;
   }
-  if (config.queenHp !== undefined) resolveQueens(state, grid, tick, events, damage, queenDamage, sources);
+  if (config.queenHp !== undefined) resolveQueens(state, grid, tick, events, damage, queenDamage, sources, credit);
   if (damage.size === 0) return;
   const survivors: Ant[] = [];
   for (const ant of state.ants) {
@@ -131,6 +155,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     const i = tileIndex(config, tx, ty);
     state.food[i] += config.corpseFood;
     state.stats.deaths[ant.colony] += 1;
+    if (credit !== undefined) creditKill(state, credit, ant.id);
     if (sources !== undefined && marks !== undefined) {
       const lost = claimedMark(marks, ant);
       if (lost !== undefined) lost.antsLost = (lost.antsLost ?? 0) + 1;
@@ -171,7 +196,7 @@ export function adjacentEnemyQueen(state: SimState, ant: Ant): QueenState | null
  * and at zero HP she is lost. While no enemy is within regenClearTiles she
  * regains regenHp each regenIntervalTicks, up to her full HP.
  */
-function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEvent[], damage: Map<number, number>, queenDamage: ReadonlyMap<QueenState, number>, sources?: Map<number, DamageSource>): void {
+function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEvent[], damage: Map<number, number>, queenDamage: ReadonlyMap<QueenState, number>, sources?: Map<number, DamageSource>, credit?: KillCredit): void {
   const rules = state.config.queenHp!;
   for (const colony of state.colonies) {
     for (const q of activeQueens(colony)) {
@@ -186,6 +211,7 @@ function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEve
         });
         if (target !== null) {
           const hit: Ant = target;
+          if (credit !== undefined) creditLastHit(credit, hit.id, hit.hp, damage.get(hit.id) ?? 0, rules.biteDamage, colony.id);
           damage.set(hit.id, (damage.get(hit.id) ?? 0) + rules.biteDamage);
           if (sources !== undefined) recordSource(sources, hit.id, rules.biteDamage, null);
           q.lastBiteTick = tick;
@@ -206,6 +232,7 @@ function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEve
       events.push({ type: "queen_hp", tick, colony: colony.id, queenId: q.id, hp: q.hp, tileX: qx, tileY: qy });
       if (q.hp === 0) {
         q.lostTick = tick;
+        if (credit !== undefined) creditKill(state, credit, q);
         events.push({ type: "queen_lost", tick, colony: colony.id, queenId: q.id, tileX: qx, tileY: qy });
         clearLostQueenSpawn(state, colony.id, q);
       }

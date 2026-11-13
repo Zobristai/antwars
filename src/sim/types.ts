@@ -306,6 +306,29 @@ export interface ColonyState {
   mixedNext?: Caste;
   /** Tile indexes holding food the colony's ants have seen; redesign only. */
   seenFood?: number[];
+  /** Four-colony matches only: kills credited to this colony (the last hit on an ant or queen). */
+  kills?: number;
+  /** Four-colony matches only: set once, on the tick the colony left the match. */
+  eliminated?: Elimination;
+}
+
+/** Why a four-colony colony left the match: its last queen died, or the server found its seats idle. */
+export type EliminationReason = "queens_killed" | "idle";
+
+/** A colony's time-up scores, in time-up order. */
+export interface ColonyScores {
+  readonly kills: number;
+  /** Physical original-tile area held. */
+  readonly territory: number;
+  readonly ants: number;
+  readonly delivered: number;
+}
+
+export interface Elimination {
+  readonly tick: number;
+  readonly reason: EliminationReason;
+  /** The colony's scores just before that tick removed its ants and neutralised its tiles. */
+  readonly scores: ColonyScores;
 }
 
 export interface MatchStats {

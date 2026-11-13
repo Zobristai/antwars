@@ -4,7 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { chooseJoinColony } from "../sim/agents.js";
 import { PUBLIC_CONFIG, withoutHousePausedMaps, type SimConfig } from "../sim/config.js";
 import { newMatchConfig } from "../sim/gridScale.js";
-import { headerLine, tickLine } from "../sim/log.js";
+import { eliminationsAt, headerLine, tickLine } from "../sim/log.js";
 import { cloneState, createMatch } from "../sim/map.js";
 import { advance, prepareInitialPointRests, step, type ServerTerminal } from "../sim/step.js";
 import type { Agent, BroodSet, ColonyId, InputErrorCode, InputResult, MatchResult, SimInput, SimState, StepOutput, VisibleEvent } from "../sim/types.js";
@@ -950,7 +950,9 @@ export class Game {
     const house = this.isRatedHouse(m.seq);
     const inputs = pending.map((p) => p.input);
     const idleTicks = this.houseIdleSeconds * m.state.config.ticksPerSecond;
-    const isIdle = (agent: Agent) => tick - (this.houseActivity.get(agent.id) ?? agent.joinedTick ?? 0) >= idleTicks;
+    // A colony already out of a four-colony match is never idle again: it cannot be ended twice.
+    const isIdle = (agent: Agent) => m.state.colonies[agent.colony]?.eliminated === undefined
+      && tick - (this.houseActivity.get(agent.id) ?? agent.joinedTick ?? 0) >= idleTicks;
     // The tick advances the match in place. An idle end re-runs it from its start state,
     // so keep a copy only when an idle end is possible: a seat already at its deadline
     // before this tick's calls (calls only move a seat's activity later), a seat joining
@@ -981,7 +983,7 @@ export class Game {
       out = advance(start, inputs, undefined, undefined, undefined, terminal, true);
       if (neverJoined) m.absentColonies = absent;
     }
-    this.onLogLine(tickLine(tick, inputs, terminal, true));
+    this.onLogLine(tickLine(tick, inputs, terminal, true, eliminationsAt(out.state, tick)));
     m.state = out.state;
     if (out.state.result !== null) {
       for (const rec of this.records.values()) {
@@ -1506,13 +1508,15 @@ export function observeInfo(state: SimState | null, agentId: string, config: Sim
   const ticks = state === null || since === null ? null
     : Math.max(0, (config.commandIdleTicks ?? config.squadTimerTicks) - (state.tick - since));
   let enemyTiles = 0;
-  if (state !== null && agent !== undefined && config.rules === "redesign") {
+  // An agent learns no enemy territory total in a four-colony match.
+  const enemyShare = state !== null && state.colonies.length <= 2;
+  if (state !== null && agent !== undefined && config.rules === "redesign" && enemyShare) {
     for (const owner of state.owner) if (owner === 1 - agent.colony) enemyTiles += 1;
   }
   const secondsLeft = state?.result != null ? null : agent?.idle ? 0 : ticks === null ? null : Math.ceil(ticks / config.ticksPerSecond);
   const resets = (commandIdle ? commands : [...commands, "observe", "rules", "join"]).join(" ");
   return {
-    status: state === null || agent === undefined || config.rules !== "redesign"
+    status: state === null || agent === undefined || config.rules !== "redesign" || !enemyShare
       ? [secondsLeft, resets]
       : [secondsLeft, resets, Math.trunc(enemyTiles * 1000 / (config.mapWidth * config.mapHeight))],
   };

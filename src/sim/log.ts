@@ -1,9 +1,10 @@
 import { RULES_MARKERS, RULES_VERSION, type SimConfig } from "./config.js";
 import { createMatch } from "./map.js";
 import { gridScaleOf } from "./gridScale.js";
+import { colonyCountOf } from "./mapBoard.js";
 import { HOLD_BEHAVIOUR, parseHoldBehaviour, type HoldBehaviour } from "./holdBehaviour.js";
 import { step, type ServerTerminal } from "./step.js";
-import type { ColonyId, SimInput, SimState } from "./types.js";
+import type { ColonyId, EliminationReason, SimInput, SimState } from "./types.js";
 
 /**
  * JSONL match log. Line 1 is the header; each
@@ -32,6 +33,19 @@ export interface LogTick {
   readonly idle?: readonly ColonyId[];
   /** Adapter-owned house activity policy; absent on historical match logs. */
   readonly houseActive?: true;
+  /** Four-colony matches: the colonies that left the match on this tick, and why. A record of
+   * the tick's outcome, which replay derives again; it is not an input. */
+  readonly eliminated?: readonly LoggedElimination[];
+}
+
+export interface LoggedElimination {
+  readonly colony: ColonyId;
+  readonly reason: EliminationReason;
+}
+
+/** The colonies a tick's state shows leaving the match on that tick, for its log line. */
+export function eliminationsAt(state: SimState, tick: number): LoggedElimination[] {
+  return state.colonies.flatMap(colony => colony.eliminated?.tick === tick ? [{ colony: colony.id, reason: colony.eliminated.reason }] : []);
 }
 
 export function headerLine(seed: number, config: SimConfig): string {
@@ -39,9 +53,10 @@ export function headerLine(seed: number, config: SimConfig): string {
   return JSON.stringify(header);
 }
 
-export function tickLine(tick: number, inputs: readonly SimInput[], stop: ServerTerminal = false, houseActive = false): string {
+export function tickLine(tick: number, inputs: readonly SimInput[], stop: ServerTerminal = false, houseActive = false,
+  eliminated: readonly LoggedElimination[] = []): string {
   const terminal = typeof stop === "object" ? { idle: [...stop.idle] } : stop === "abandoned" ? { abandoned: true as const } : stop ? { stop: true as const } : {};
-  const line: LogTick = { tick, inputs, ...terminal, ...(houseActive ? { houseActive: true } : {}) };
+  const line: LogTick = { tick, inputs, ...terminal, ...(houseActive ? { houseActive: true } : {}), ...(eliminated.length === 0 ? {} : { eliminated }) };
   return JSON.stringify(line);
 }
 
@@ -71,17 +86,19 @@ export function parseLog(lines: readonly string[]): ParsedLog {
   const abandonments = new Set<number>();
   const idle = new Map<number, readonly ColonyId[]>();
   const houseActive = new Set<number>();
+  const colonies = colonyCountOf(header.config);
   for (const line of rest) {
     const entry = JSON.parse(line) as LogTick;
     ticks.set(entry.tick, entry.inputs);
     if (entry.stop === true) stops.add(entry.tick);
     if (entry.abandoned === true) abandonments.add(entry.tick);
     if (entry.idle !== undefined) {
-      const colonies = entry.idle;
-      if (!Array.isArray(colonies) || colonies.length < 1 || colonies.length > 2 || colonies.some(c => c !== 0 && c !== 1) || new Set(colonies).size !== colonies.length) {
+      const idleColonies = entry.idle;
+      if (!Array.isArray(idleColonies) || idleColonies.length < 1 || idleColonies.length > colonies
+        || idleColonies.some(c => !Number.isInteger(c) || c < 0 || c >= colonies) || new Set(idleColonies).size !== idleColonies.length) {
         throw new Error(`invalid idle colonies at log tick ${entry.tick}`);
       }
-      idle.set(entry.tick, colonies);
+      idle.set(entry.tick, idleColonies);
     }
     if (entry.houseActive === true) houseActive.add(entry.tick);
   }
