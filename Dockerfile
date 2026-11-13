@@ -13,7 +13,7 @@ RUN npm ci --no-audit --no-fund
 # record-service) imports; test/image/runtime-files.test.ts checks this list against their import
 # closure. Pruned in a stage of its own, so no layer of the runtime image holds the removed files.
 FROM build AS runtime-src
-RUN rm -r src/live/record.ts src/live/replayOptions.ts src/sim/tuningMap.ts
+RUN rm -r src/live/record.ts src/live/replayOptions.ts src/sim/tuningMap.ts src/sim/quadrantMap.ts
 
 # Runtime stage: production packages only. No .npmrc, so --omit=dev holds, and the dev-only
 # H.264 encoder (@ffmpeg-installer) is never installed; scripts are skipped because the
