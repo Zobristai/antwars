@@ -16,6 +16,7 @@ export function expandCells(table) {
     return parsed;
   };
   if (!Number.isSafeInteger(table.foodRadix) || table.foodRadix < 1) throw new RangeError("Invalid food radix");
+  const colonies = table.colonies ?? 2, kinds = 3 * colonies;
   const cells = [];
   let previousIndex = 0;
   for (const row of table.data.split(";")) {
@@ -27,9 +28,9 @@ export function expandCells(table) {
     const delta = Math.floor(packedTile / table.foodRadix), food = packedTile - delta * table.foodRadix;
     const ants = body === "" ? [] : body.split("/").map(record => {
       const [antId, packed] = record.split(".").map(n);
-      const hp = Math.floor(packed / 6), kind = packed % 6;
-      return { antId, hp, colony: (kind % 2),
-        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") }) };
+      const hp = Math.floor(packed / kinds), kind = packed % kinds, caste = Math.floor(kind / colonies);
+      return { antId, hp, colony: (kind % colonies),
+        ...(caste === 0 ? {} : { caste: (caste === 1 ? "worker" : "soldier") }) };
     });
     for (let i = 0; i < count; i++) {
       const index = previousIndex + delta;
