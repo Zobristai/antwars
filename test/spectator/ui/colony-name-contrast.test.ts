@@ -7,13 +7,15 @@
 // text's colour counts. Rows and buttons are measured again with :hover and :focus-visible forced. A rated match (no
 // drawn names) is held to the same floor and must draw no ground at all, so its text is drawn as before. The HUDs are
 // written out as the desktop lays them out, so they are measured at 1280px; the result box and the replay row, whose
-// markup is the same on a phone, at 1280px and 390px. The served page's phone layouts are measured by the captures.
+// markup is the same on a phone, at 1280px and 390px. The served page's phone layouts are measured by the captures. The
+// Matches page's rows naming their own colonies (a name and its result badge) are measured the same way, as its table
+// at 1280px and as its stacked rows at 390px; a rated row draws no ground.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { Frame, type Board } from "../../../web/src/buffer.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { SUPERCOLONY_NAMES, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { SUPERCOLONY_NAMES, colonyColours, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
 import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
 import { setMatchColonies } from "../../../web/src/colony-palette.ts";
 import { mountHud } from "../../../web/src/ui/hud.ts";
@@ -23,6 +25,8 @@ import { mountReplayControls } from "../../../web/src/replay-controls.ts";
 import type { Recording } from "../../../web/src/recording.ts";
 import type { ReplayEvent } from "../../../web/src/replay-events.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
+import { mountMatches } from "../../../web/src/pages/matches.ts";
+import type { LiveMatch, Recording as MatchRecording, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
 
@@ -30,6 +34,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 /** The page's tokens (web/index.html's :root) and the stylesheets the match view bundles. */
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
 const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css", "colony-ground.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+/** The Matches page's stylesheets, as its pages bundle them (pages/chrome.ts, pages/top-bar.ts, colony-palette.ts). */
+const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "pages/archive.css", "colony-ground.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 const COLOURS = SUPERCOLONY_NAMES.map(n => n.colour);
 /** Each colour as colony 0 and as colony 1, and as the winner, in pairs a match can draw. */
 const PAIRS: ColonyNamePair[] = [
@@ -179,8 +185,8 @@ beforeAll(async () => { browser = await chromium.launch({ executablePath: proces
 afterAll(async () => { await browser?.close(); });
 
 /** Each coloured text's worst contrast at rest, and its row's or button's with :hover and with :focus-visible forced. */
-async function measured(page: string, width: number) {
-  const tab = await browser.newPage({ viewport: { width, height: 800 } });
+async function measured(page: string, width: number, height = 800) {
+  const tab = await browser.newPage({ viewport: { width, height } });
   try {
     await tab.setContent(page);
     const texts = await tab.evaluate(findTexts, COLOURS.map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")));
@@ -230,4 +236,42 @@ describe("text in a colony's colour keeps 4.5:1 on what it sits on", () => {
     expect(grounds).toEqual(["0 1", "0 1", null, "1", "1"]);
     expect(mounted(undefined, "result", { winner: 0 }).ground).toBeNull();
   });
+});
+
+/** The Matches page with one row of each list naming `names` (undefined: rated rows), the recordings won by each colony. */
+function matchesPage(names: ColonyNamePair | undefined) {
+  const port = dom({ search: "" });
+  const host = port.doc.createElement("div") as unknown as ElementPort;
+  port.body.append(host);
+  const own = names ? { colonyNames: [names[0], names[1]] as [string, string] } : {};
+  const seats = [{ seat: 0, colony: 0 as const, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1 as const, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }];
+  const recording = (id: string, winner: 0 | 1): MatchRecording => ({ id, startedAt: "2026-10-27T09:00:00.000Z", endedAt: null, simulationEndedAt: null, winner,
+    reason: "queens_killed", decidedBy: null, seats, status: "complete", unavailable: [], ...own });
+  const live: LiveMatch = { lobbyId: "lobby-u", startedAt: Date.parse("2026-10-27T10:00:00Z"), rated: !names, delaySeconds: 60,
+    colonies: [[{ displayName: "fennec", rating: 1500, rd: 90, ratedMatches: 3 }], [{ displayName: "tidewater", rating: 1482, rd: 70, ratedMatches: 20 }]], ...own };
+  const waiting: WaitingLobby = { mode: null, size: 1, seated: 1, colonies: [["sugar-ant"], []], waitingSeconds: 30, since: Date.parse("2026-11-11T05:02:00Z"), ...own };
+  const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
+  mounted.update({ waiting: { status: "ready", rows: [waiting] }, live: { status: "ready", rows: [live] },
+    recordings: { status: "ready", rows: [recording("2026-10-27T09-00-00-000Z-1", 0), recording("2026-10-27T09-00-00-000Z-2", 1)] }, next: null });
+  const body = markup(host);
+  mounted.destroy();
+  return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
+}
+
+describe("the Matches page's text in a colony's colour keeps 4.5:1 on what it sits on", () => {
+  for (const pair of [...PAIRS, undefined]) {
+    for (const width of [1280, 390]) {
+      it(`${pair ? pair.join(" against ") : "rated"}: Matches at ${width}px`, async () => {
+        // Tall enough that every list's rows are on screen.
+        const { body, page } = matchesPage(pair);
+        const rows = await measured(page, width, 2400);
+        if (process.env.CONTRAST_REPORT) (await import("node:fs")).appendFileSync(process.env.CONTRAST_REPORT, JSON.stringify({ pair: pair ?? "rated", width, rows: rows.map(r => [r.text, r.rgb, r.state, +r.min.toFixed(2)]) }) + "\n");
+        expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
+        for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
+        // Each recording's result badge stands in its winner's colour.
+        expect(rows.filter(r => r.text === "Winner").map(r => r.rgb).sort()).toEqual(colonyColours(pair ?? COLONY_NAMES).map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")).sort());
+        if (!pair) expect(body, "a rated row draws no ground").not.toContain("data-aw-ground");
+      });
+    }
+  }
 });

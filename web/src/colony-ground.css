@@ -20,3 +20,11 @@
 :root[data-aw-ground~="1"] :is(.d1-result-head.c1, .d2-toast[data-colony="1"][data-kind="fall"] .d2-toast-what) {
   justify-self: start; width: fit-content;
 }
+/* The Matches page inks each row naming its own colonies on its own (matches.ts inkColonies), so the row, not the page
+   root, carries data-aw-ground and --aw-ink-ground: a colony's name, and its WINNER, DRAW or ABANDONED badge, whose grey
+   fill the ground replaces. A name heading its cell keeps its ground to its words. */
+.d1p [data-aw-ground~="0"] .d1p-c0, .d1p [data-aw-ground~="1"] .d1p-c1 { background-color: var(--aw-ink-ground); }
+.d1p [data-aw-ground~="0"] .d1p-colony.d1p-c0, .d1p [data-aw-ground~="1"] .d1p-colony.d1p-c1 {
+  justify-self: start; width: fit-content; max-width: 100%; box-shadow: 0 0 0 2px var(--aw-ink-ground);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
