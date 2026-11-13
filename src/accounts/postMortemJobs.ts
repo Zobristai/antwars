@@ -21,7 +21,12 @@ import { pipeline } from "node:stream/promises";
 import type { ChildMessage, ChildRequest } from "./postMortemChild.js";
 export { paddedBits } from "./postMortemRecord.js";
 
-/** The child's peak under CHILD_FLAGS: a heap flood dies at the V8 limit with peaks of 1,065-1,076 MiB (tests). */
+/**
+ * The child's reserve under CHILD_FLAGS. A heap flood dies at the V8 limit with peaks of 1,038-1,076 MiB, but a probe
+ * holding reply-line columns on the heap peaked at 1,111-1,117 MiB before its heap-limit abort (measured in tests and
+ * probes, not production): up to 17 MiB over this reserve. That overshoot is taken from MARGIN_MIB, so admission
+ * (reserve + scans + margin) still covers it; the margin left for the watchdog is then smaller by as much.
+ */
 export const CHILD_RESERVE_MIB = 1100;
 /** Two concurrent worst-case refused-call scans, over a base read in the scanning process (tests: post-mortem-jobs.test.ts). */
 export const SCAN_RESERVE_MIB = 200;

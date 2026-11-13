@@ -1088,6 +1088,15 @@ describe("no-effect answers that settle nothing now, or for good", () => {
     const at = g.match(316, [[bob, 0]]);
     await g.postMortem.query({ key: bob.key, lobbyId: at.lobbyId });
     await vi.waitFor(() => expect(held.started).toEqual([at.id]));
+    // Two seat elements of one seat number are padded each in turn, never merged: 8 + 8 bits, over a limit of 15
+    // (merged, their 6 commands would pad to 8).
+    const h = world({ jobs: held.jobs, maxRerunBits: 15 });
+    const carol = h.w.played("carol");
+    const record = generatedRecord(replayId(317));
+    record.seats[1].seat = 0;
+    const same = h.match(317, [[carol, 0]], { record });
+    expect(bodyOf(await h.postMortem.query({ key: carol.key, lobbyId: same.lobbyId })).noEffect).toEqual({ status: "not_available", reason: TOO_LARGE });
+    expect(held.started).toEqual([at.id]);
   });
 
   // Credible regression: every temporary answer worded as short of memory, which only memory causes are.

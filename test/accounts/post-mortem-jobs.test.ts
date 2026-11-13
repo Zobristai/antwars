@@ -590,13 +590,40 @@ describe("too large to re-run", () => {
     }
   });
 
-  // Credible regression: a second attempt started without its own admission check, so memory pressure reads as too large.
-  it("admits the second attempt afresh: no room then is a stop for memory, never too large", async () => {
-    let headroom = 4096;
-    const forkChild = vi.fn(() => { const child = abortingChild("heap"); headroom = 100; return child; });
-    const jobs = createJobs({ ...quiet, meter: () => reading(headroom), forkChild });
-    expect(await jobs.rerun("m", VERSION, OPEN).outcome).toEqual({ kind: "stopped", cause: "admission" });
-    expect(forkChild).toHaveBeenCalledTimes(1);
+  // Credible regression: a second attempt started without its own admission check, after a heap abort or an engine
+  // error, so memory pressure reads as too large or a second child starts with no room for it.
+  it("admits the second attempt afresh, after a heap abort or an engine error: no room then is a stop for memory", async () => {
+    for (const first of ["heap", "threw"] as const) {
+      let headroom = 4096;
+      const forkChild = vi.fn(() => {
+        headroom = 100;
+        if (first === "heap") return abortingChild("heap");
+        const child = fakeChild();
+        setTimeout(() => { child.emit("message", { kind: "threw", message: "boom" }); child.emit("exit", 0, null); }, 10);
+        return child as unknown as ChildProcess;
+      });
+      const jobs = createJobs({ ...quiet, meter: () => reading(headroom), forkChild });
+      expect(await jobs.rerun("m", VERSION, OPEN).outcome, first).toEqual({ kind: "stopped", cause: "admission" });
+      expect(forkChild, first).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  // Credible regression: an abort classified on the child's exit before its stderr has been read to its end, so the
+  // heap-limit line that arrives after the exit is missed and an oversized record is never settled.
+  it("reads the child's stderr to its end after its exit before it classifies the abort", async () => {
+    const forkChild = vi.fn(() => {
+      const child = fakeChild();
+      // This child's stderr does not end with its exit: the heap-limit line and the end arrive after it.
+      child.removeAllListeners("exit");
+      setTimeout(() => {
+        child.emit("exit", null, "SIGABRT");
+        setTimeout(() => { child.stderr.write("FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n"); child.stderr.end(); }, 20);
+      }, 10);
+      return child as unknown as ChildProcess;
+    });
+    const jobs = createJobs({ ...quiet, meter: ROOMY, forkChild });
+    expect(await jobs.rerun("m", VERSION, OPEN).outcome).toEqual({ kind: "too_large" });
+    expect(forkChild).toHaveBeenCalledTimes(2);
   });
 
   it("is not the answer when the parent stopped the child, though it aborted at the heap limit", async () => {
@@ -638,6 +665,30 @@ describe("too large to re-run", () => {
     expect(await jobs.rerun("big", VERSION, open).outcome).toEqual({ kind: "too_large" });
     expect(forkChild).toHaveBeenCalledTimes(2);
   }, 300_000);
+
+  // Credible regression: the reply-line columns held off the V8 heap (typed arrays), so a reply-heavy record grows past
+  // the child's reserve without its heap cap ending it, and is stopped by the parent as a temporary failure instead of
+  // being settled as too large.
+  it("settles a reply-heavy record as too large through the real child under a small heap: its reply columns are on the heap", async () => {
+    const LINES = 2 ** 21;
+    const generator = `
+      const out = process.stdout;
+      const w = s => new Promise(r => out.write(s) ? r() : out.once("drain", r));
+      (async () => {
+        await w('{"codeVersion":"${VERSION}","seats":[],"replies":[');
+        for (let i = 0; i < ${LINES}; i += 1000) {
+          let s = "";
+          for (let k = i; k < i + 1000; k++) s += (k ? "," : "") + '{"type":"stub","seat":' + (k & 3) + ',"tick":' + (k >> 4) + ',"tool":"observe","receivedAt":' + k + ',"answeredAt":' + k + ',"code":"call_rate"}';
+          await w(s);
+        }
+        await w("]}");
+      })();`;
+    const forkChild = vi.fn(() => { const child = forkRerunChild(["--max-old-space-size=48", "--max-semi-space-size=1"]); children.push(child); return child; });
+    const jobs = createJobs({ ...quiet, meter: ROOMY, stallMs: 600_000, forkChild });
+    const open = async () => { const gen = spawn(process.execPath, ["-e", generator], { stdio: ["ignore", "pipe", "ignore"] }); children.push(gen); return gen.stdout!; };
+    expect(await jobs.rerun("replies", VERSION, open).outcome).toEqual({ kind: "too_large" });
+    expect(forkChild).toHaveBeenCalledTimes(2);
+  }, 300_000);
 });
 
 describe("the re-run's bit limit", () => {
@@ -670,6 +721,11 @@ describe("the re-run's bit limit", () => {
     const jobs = createJobs({ ...quiet, meter: ROOMY, forkChild });
     expect(await jobs.rerun("over", VERSION, async () => Readable.from([Buffer.from(record)]), 8).outcome).toEqual({ kind: "too_large" });
     expect(forkChild).toHaveBeenCalledTimes(1);
+    // Two elements of one seat number are padded each in turn, never merged: 8 + 8 bits, over a limit of 8.
+    const sameSeat = JSON.stringify({ codeVersion: VERSION, seats: [{ seat: 0, colony: 0, commands: [{ tick: 0, type: "observe", accepted: true }] },
+      { seat: 0, colony: 0, commands: [{ tick: 0, type: "observe", accepted: true }] }] });
+    expect(await jobs.rerun("same-seat", VERSION, async () => Readable.from([Buffer.from(sameSeat)]), 8).outcome).toEqual({ kind: "too_large" });
+    expect(forkChild).toHaveBeenCalledTimes(2);
   }, 60_000);
 });
 
