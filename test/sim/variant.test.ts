@@ -21,7 +21,7 @@ const COUNT: SimConfig = { ...PRE_FRONTLINE_CONFIGS["count-marks"], adjudication
 // replayable; balance.test.ts exercises the new public rules separately.
 const REDESIGN: SimConfig = { ...PRE_FRONTLINE_CONFIGS.redesign, adjudication: undefined, softSeparation: undefined, hatchTiming: undefined, terrain: { ...PUBLIC_CONFIG.terrain!, rocks: undefined }, foodLayout: undefined, squadSize: 1,
   controlRevision: undefined, marksPerAgent: 3, countMarks: HISTORICAL_COUNTS, localAnts: LOCAL_ANT_RULES,
-  foodPatches: PRE_FRONTLINE_PUBLIC_CONFIG.foodPatches, earlyWin: undefined, groundIncomeExcessPermille: undefined };
+  foodPatches: PRE_FRONTLINE_PUBLIC_CONFIG.foodPatches, earlyWin: undefined };
 const tile = (ant: Ant): [number, number] => [Math.floor(ant.x / SUB), Math.floor(ant.y / SUB)];
 // Every match plays at grid scale 2. Converted scenarios place reference tile t at fine tile
 // f(t) = 2t + 1, so tile distances double exactly. Colony 0's queen sits one subunit homeward of her

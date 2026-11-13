@@ -26,7 +26,6 @@ export const HISTORICAL_CASTE_CONFIG: SimConfig = {
 export const HISTORICAL_CONFIG: SimConfig = {
   ...HISTORICAL_DEFAULT_CONFIG,
   matchTicks: 12 * 60 * 10,
-  groundFoodIntervalTicks: undefined,
   overrunGraceTicks: 600,
   overrunTicks: 100,
   guardCount: 2,
