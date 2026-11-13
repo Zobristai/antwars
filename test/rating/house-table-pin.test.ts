@@ -47,6 +47,10 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "gemini-4-carbon-low": ["Gemini 4 Carbon", "low", null],
   "gemini-4-carbon-medium": ["Gemini 4 Carbon", "medium", null],
   "gemini-4-carbon-high": ["Gemini 4 Carbon", "high", null],
+  "gemini-4-hydrogen-low": ["Gemini 4 Hydrogen", "low", null],
+  "gemini-4-hydrogen-medium": ["Gemini 4 Hydrogen", "medium", null],
+  "gemini-4-hydrogen-high": ["Gemini 4 Hydrogen", "high", null],
+  "gemini-4-hydrogen-xhigh": ["Gemini 4 Hydrogen", "xhigh", null],
   "mistral-large-latest": ["Mistral Large", null, null],
   "abliterated-model-large": ["Abliterated GLM-5.2", "max", "standard"],
   "abliterated-model": ["Abliterated Model", "high", "standard"],
@@ -80,8 +84,8 @@ describe("House table pinned at main 3cad75d2", () => {
     expect(HOUSE_USERNAME).toBe("antwars");
   });
 
-  it("lists exactly 48 handles, each with its display name, level and tier", () => {
-    expect(Object.keys(HOUSE_LABELS)).toHaveLength(48);
+  it("lists exactly 52 handles, each with its display name, level and tier", () => {
+    expect(Object.keys(HOUSE_LABELS)).toHaveLength(52);
     expect(Object.keys(HOUSE_LABELS)).toEqual(Object.keys(PINNED));
     const shown = Object.fromEntries(Object.entries(HOUSE_LABELS)
       .map(([handle, label]) => [handle, [label.displayName, label.thinkingLevel, label.serviceTier]]));
