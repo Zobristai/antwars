@@ -123,8 +123,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 /* The header: each chevron at the plate's outer edge, then the colony's name over its figures; the clock between. */
 .d2-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: 16px; height: 24px; }
 .d2-name { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; font-weight: 700; white-space: nowrap; }
-.d2-name.c0 { color: var(--aw-c0); justify-self: start; margin-left: -1px; }
-.d2-name.c1 { color: var(--aw-c1); justify-self: end; margin-right: -1px; }
+/* A colony's colour: its name's (--aw-k0, --aw-k1, colony-palette.ts), else the rated names' (--aw-c0, --aw-c1). */
+.d2-name.c0 { color: var(--aw-k0, var(--aw-c0)); justify-self: start; margin-left: -1px; }
+.d2-name.c1 { color: var(--aw-k1, var(--aw-c1)); justify-self: end; margin-right: -1px; }
 .d2-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .d2-chevron { flex: none; display: inline-flex; color: var(--aw-ink-bright); transition: transform 160ms var(--aw-ease); }
 .d2-chevron svg { display: block; }
@@ -137,8 +138,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-slabel { min-width: 0; color: var(--aw-ink-2); text-align: center; white-space: nowrap; }
 /* A track: 16px, 4px corners, filled in the colony's colour from the colony's own end. */
 .d2-track { position: relative; height: 16px; border-radius: 4px; background: rgba(233, 239, 240, 0.12); }
-.d2-tfill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 4px; background: var(--aw-c0); overflow: hidden; transition: width 0.25s linear; }
-.d2-track.c1 .d2-tfill { left: auto; right: 0; background: var(--aw-c1); }
+.d2-tfill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 4px; background: var(--aw-k0, var(--aw-c0)); overflow: hidden; transition: width 0.25s linear; }
+.d2-track.c1 .d2-tfill { left: auto; right: 0; background: var(--aw-k1, var(--aw-c1)); }
 /* Ants: workers solid, soldiers hatched at the fill's inner end. */
 .d2-soldiers { position: absolute; top: 0; bottom: 0; right: 0; width: 0; background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.6) 0 2.5px, transparent 2.5px 6px); transition: width 0.25s linear; }
 .d2-track.c1 .d2-soldiers { right: auto; left: 0; }
@@ -154,8 +155,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-chip svg { display: block; }
 .d2-pie-track { fill: #333b3d; }
 .d2-pie { fill: none; stroke-width: 9; stroke-dasharray: 100 200; stroke-dashoffset: 100; transition: stroke-dashoffset 120ms linear; }
-.d2-chip.c0 .d2-pie { stroke: var(--aw-c0); }
-.d2-chip.c1 .d2-pie { stroke: var(--aw-c1); }
+.d2-chip.c0 .d2-pie { stroke: var(--aw-k0, var(--aw-c0)); }
+.d2-chip.c1 .d2-pie { stroke: var(--aw-k1, var(--aw-c1)); }
 .d2-chip.is-restart .d2-pie { transition: none; }
 /* The two states no hatch follows share one grey, half the pill's ink and half its ground (3.4:1 on the pill). At the
    colony's cap the ring is full. Short of food the pill holds only an empty, still ring, with
@@ -173,10 +174,10 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-cells { display: flex; gap: 2px; min-width: 0; height: 16px; }
 .d2-cells.c1 { flex-direction: row-reverse; }
 .d2-cell { position: relative; flex: 0 1 14px; min-width: 3px; height: 16px; border-radius: 3px; background: rgba(233, 239, 240, 0.12); overflow: hidden; }
-.d2-cell-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; border-radius: 3px; background: var(--aw-c0); transition: width 0.25s linear; }
-.d2-cells.c1 .d2-cell-fill { left: auto; right: 0; background: var(--aw-c1); }
-.d2-cells.c0 .d2-cell.is-overrun { background: var(--aw-c1); }
-.d2-cells.c1 .d2-cell.is-overrun { background: var(--aw-c0); }
+.d2-cell-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; border-radius: 3px; background: var(--aw-k0, var(--aw-c0)); transition: width 0.25s linear; }
+.d2-cells.c1 .d2-cell-fill { left: auto; right: 0; background: var(--aw-k1, var(--aw-c1)); }
+.d2-cells.c0 .d2-cell.is-overrun { background: var(--aw-k1, var(--aw-c1)); }
+.d2-cells.c1 .d2-cell.is-overrun { background: var(--aw-k0, var(--aw-c0)); }
 .d2-cell.is-attacked { box-shadow: 0 0 0 1.5px var(--aw-ink-bright); }
 .d2-cell.is-hit .d2-cell-fill { background: #fff; transition: none; }
 /* The phone form: the clock over the names, each row's figures and label over its two half-tracks. */
@@ -198,8 +199,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 /* The drawers drop from under their halves, side by side, edged in their colony's colour: the next hatch first, at the
    colony's outer edge, then the five pairs. The right drawer mirrors the left by column, as the plate does. */
 .d2-drawer { container-type: inline-size; position: absolute; top: calc(100% + 4px); width: calc(50% - 2px); padding: 7px 12px 6px; border-top: 3px solid currentColor; border-radius: 0 0 12px 12px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 6px 18px rgba(0, 0, 0, 0.4); font-size: 16px; line-height: 24px; animation: d2-drop 180ms var(--aw-ease); }
-.d2-drawer.c0 { left: 0; color: var(--aw-c0); }
-.d2-drawer.c1 { right: 0; color: var(--aw-c1); }
+.d2-drawer.c0 { left: 0; color: var(--aw-k0, var(--aw-c0)); }
+.d2-drawer.c1 { right: 0; color: var(--aw-k1, var(--aw-c1)); }
 .d2-hud[data-plate="stacked"] .d2-drawer { padding-inline: 8px; }
 @keyframes d2-drop { from { transform: translateY(-6px); opacity: 0; } }
 /* Two pairs a line: the outer column 162px, the spawn chip's widest state as drawn ("Needs food"), beside the inner. */
@@ -265,8 +266,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-key p { margin: 0 0 4px; text-wrap: balance; }
 .d2-agent-list { flex: none; margin: 0; padding: 0; list-style: none; }
 .d2-agent-item { border-top: 1px solid var(--aw-line); box-shadow: inset 3px 0 0 var(--d2-side); }
-.d2-agent-item.c0 { --d2-side: var(--aw-c0); }
-.d2-agent-item.c1 { --d2-side: var(--aw-c1); }
+.d2-agent-item.c0 { --d2-side: var(--aw-k0, var(--aw-c0)); }
+.d2-agent-item.c1 { --d2-side: var(--aw-k1, var(--aw-c1)); }
 .d2-agent-item.is-first { border-top: 6px solid var(--aw-bg); }
 .d2-agent { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto auto; grid-template-areas: "badge name name name name" ". sub sub sub sub" ". said elo order idle"; align-items: center; column-gap: 6px; row-gap: 1px; width: 100%; min-height: 40px; margin: 0; padding: 5px 10px 5px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; cursor: pointer; }
 .d2-agent:hover, .d2-agent-item.is-open .d2-agent { background: var(--aw-raise); }

@@ -27,6 +27,11 @@ const startRating = (value: Json): { rating: number; rd: number; ratedMatches: n
     typeof ratedMatches === "number" && Number.isSafeInteger(ratedMatches) && ratedMatches >= 0 ? { rating, rd, ratedMatches } : null;
 };
 
+/** A record's drawn colony names (setup.colonyNames); absent, or anything not exactly two names, reads as null. */
+const colonyNames = (value: Json): [string, string] | null =>
+  Array.isArray(value) && value.length === 2 && value.every(name => typeof name === "string" && name.length > 0)
+    ? [clip(value[0] as string, 64)!, clip(value[1] as string, 64)!] : null;
+
 export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   const record = object(JSON.parse(new TextDecoder().decode(bytes)));
   oneOf(record.format, ["antwar.match"]); oneOf(record.version, [1]);
@@ -46,11 +51,13 @@ export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   const unavailable = list(record.unavailable, 32).map(reason => text(reason));
   const setup = record.setup === undefined || record.setup === null ? null : object(record.setup);
   const rated = setup === null ? undefined : optionalFlag(setup.rated), modelIndex = setup === null ? undefined : optionalFlag(setup.modelIndex);
+  const names = setup === null ? null : colonyNames(setup.colonyNames);
   return { id, startedAt, endedAt, simulationEndedAt, winner, reason, decidedBy,
     seats: seats.map(seat => ({ ...seat, modelLabel: clip(seat.modelLabel, 64), thinkingLevel: clip(seat.thinkingLevel, 32),
       serviceTier: clip(seat.serviceTier, 32), handle: clip(seat.handle, 256) })),
     status, unavailable: unavailable.map(reason => clip(reason, 256)!),
-    rated: setup === null ? null : rated === true, modelIndex: modelIndex === true };
+    rated: setup === null ? null : rated === true, modelIndex: modelIndex === true,
+    ...(names === null ? {} : { colonyNames: names }) };
 }
 
 if (parentPort !== null && workerData?.kind === "match-summary") {

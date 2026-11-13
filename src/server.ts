@@ -39,7 +39,7 @@ export const MAX_MATCH_LOGS = 10;
 
 /** What a mounted route may read: the live match (running or ended, with its result), an open start window's config, the next start and how many agents wait for it. */
 export type LiveGame = Pick<Game, "match" | "nextStart" | "queuedAgents" | "agentInfo"> &
-  Partial<Pick<Game, "spectatorHouseIdle" | "startWindowConfig" | "undrawnConfig" | "seatedHouseUndrawnConfig">>;
+  Partial<Pick<Game, "spectatorHouseIdle" | "startWindowConfig" | "undrawnConfig" | "seatedHouseUndrawnConfig" | "colonyNames">>;
 
 export type MountHandler = (req: IncomingMessage, res: ServerResponse, live: LiveGame) => void | Promise<void>;
 

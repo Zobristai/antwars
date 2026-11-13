@@ -1,10 +1,12 @@
 // The Archive Matches page: one row layout for every list (the signed-off rows drawing), and a row link or rating badge
 // keeps keyboard focus when another list settles and the page redraws. The test DOM tracks the document's active element,
 // including when the focused node is removed; it is not native browser focus.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
-import type { LiveMatch, MatchesView, Recording } from "../../../web/src/matches-page/data.ts";
+import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
+import type { LiveMatch, MatchesView, Recording, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
 const live = (lobbyId: string): LiveMatch => ({ lobbyId, startedAt: Date.parse("2026-10-27T10:00:00Z"), rated: true, delaySeconds: 60, colonies: [[], []] });
@@ -102,6 +104,18 @@ const lineParts = (line: ElementPort) => line.children.map(node => {
   return ["other", node.textContent];
 });
 const css = () => readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+/** A drawn node: its tag, classes, attributes, the element properties the pages set, inks, markup and words, and its children. */
+function drawnTree(node: ElementPort): unknown {
+  const { id, type, hidden, disabled, tabIndex, scope, colSpan, rowSpan, src, alt, title, target, rel } = node;
+  return {
+    tag: node.tag, className: node.className, attrs: Object.entries(node.attrs).sort(), dataset: Object.entries(node.dataset).sort(),
+    props: { id, type, hidden, disabled, tabIndex, scope, colSpan, rowSpan, src, alt, title, target, rel },
+    style: [...node.style.properties].sort(), html: node.html, text: node.textContent, children: node.children.map(drawnTree),
+  };
+}
+/** sha256 of the rated rows-only Waiting, Live now and Recordings tables and stacked rows (drawnTree) on main 62e84f92. */
+const MAIN_RATED_ROWS = "b7d6fd01adad09b2490e4934834ba097152c232f80a48271a80ad380e99853e3";
 
 const rated = (rating: number, rd = 80, ratedMatches = 12) => ({ rating, rd, ratedMatches });
 const seat = (seatNo: number, colony: 0 | 1, modelLabel: string | null, handle: string | null, more: Partial<Recording["seats"][number]> = {}) =>
@@ -133,6 +147,55 @@ describe("one six-column layout in every list", () => {
     }
     // Every row has the six cells, none spanning another's column.
     for (const { table } of [waiting, liveList, recordings]) expect(bodyRows(table).every(row => row.children.length === 6 && row.children.every(cell => cell.colSpan === 1))).toBe(true);
+    p.mounted.destroy();
+  });
+
+  // Unrated matches carrying drawn colony names, one in each list.
+  const drawnLive: LiveMatch = { ...liveIndex, lobbyId: "lobby-u", rated: false, matchType: { kind: "unranked", size: 1 }, colonyNames: ["Lake Skinner Colony", "Sweetwater Colony"] };
+  const drawnLive2: LiveMatch = { ...drawnLive, lobbyId: "lobby-v", colonyNames: ["Lake Hodges Colony", "Very Large Colony"] };
+  const drawnRecording: Recording = { ...recording, id: "2026-10-27T10-00-00-000Z-2", startedAt: "2026-10-27T10:00:00.000Z", colonyNames: ["Sweetwater Colony", "Very Large Colony"] };
+  const drawnWaiting: WaitingLobby = { mode: null, size: 1, seated: 1, colonies: [["sugar-ant"], []], waitingSeconds: 30, since: Date.parse("2026-11-11T05:02:00Z"),
+    colonyNames: ["Very Large Colony", "Lake Skinner Colony"] };
+  /** A list's `index`th row: the table holding it, drawn as a whole, and its stacked copy. */
+  const rowAt = (card: ElementPort, index: number) => {
+    const row = card.byClass("d1p-wide").flatMap(bodyRows)[index]!;
+    return { table: row.parent!.parent!, item: card.byClass("d1p-narrow")[0]!.children[index]! };
+  };
+  const rowDrawn = (card: ElementPort, index: number) => { const { table, item } = rowAt(card, index); return [drawnTree(table), drawnTree(item)]; };
+
+  it("draws a rated row beside drawn-name rows exactly as in a list of rated rows only, which is as main draws it", () => {
+    const lists = ["waiting", "live", "recordings"] as const;
+    const ratedOnly = show({ waiting: { status: "ready", rows: [waitingRow] }, live: { status: "ready", rows: [liveIndex] }, recordings: { status: "ready", rows: [recording] } });
+    const alone = lists.map(list => rowDrawn(ratedOnly[list].card, 0));
+    ratedOnly.p.mounted.destroy();
+    // Each list mixes rated and drawn-name rows. A waiting row's id is its place in the list, so the rated one stays first.
+    const mixed = show({ waiting: { status: "ready", rows: [waitingRow, drawnWaiting] }, live: { status: "ready", rows: [drawnLive, liveIndex, drawnLive2] },
+      recordings: { status: "ready", rows: [drawnRecording, recording] } });
+    const beside = lists.map(list => rowDrawn(mixed[list].card, list === "waiting" ? 0 : 1));
+    expect(beside).toEqual(alone);
+    // Each card is one table per run of rows of one kind, in the list's order, then its stacked rows.
+    expect(lists.map(list => mixed[list].card.byClass("d1p-wide").length)).toEqual([2, 3, 2]);
+    mixed.p.mounted.destroy();
+    // The rated rows-only cards' tables and stacked rows as main 62e84f92 drew them, through drawnTree.
+    expect(sha(JSON.stringify(alone))).toBe(MAIN_RATED_ROWS);
+  });
+
+  it("heads a run of rows naming their own colonies with neutral colony heads, each cell naming its own, with its source", () => {
+    const { p, live: liveList } = show({ live: { status: "ready", rows: [liveIndex, drawnLive] } });
+    const { table, item } = rowAt(liveList.card, 1);
+    expect(table.querySelector("thead")!.byClass("c-model").map(node => [node.className, node.textContent])).toEqual([["c-model", "First colony"], ["c-model", "Second colony"]]);
+    const [drawnRow] = bodyRows(table);
+    expect(bodyRows(table)).toHaveLength(1);
+    const named = drawnRow!.byClass("c-model").map(cell => cell.byClass("d1p-colony")[0]!);
+    expect(named.map(node => [node.textContent, node.title])).toEqual([
+      ["Lake Skinner Colony", "Southern California, under 1 km² (Thomas et al. 2006, Molecular Ecology)"],
+      ["Sweetwater Colony", "Southern California (Thomas et al. 2006, Molecular Ecology)"]]);
+    expect(colonies(item).map(([name]) => name)).toEqual(["Lake Skinner Colony", "Sweetwater Colony"]);
+    // Each drawn name in its own colour, through its row's colony inks.
+    const ink = (node: ElementPort) => ["--aw-k0", "--aw-k1"].map(key => node.style.getPropertyValue(key));
+    const drawnInk = colonyColours(drawnLive.colonyNames!).map(colourCss);
+    expect(ink(drawnRow!)).toEqual(drawnInk);
+    expect(ink(item)).toEqual(drawnInk);
     p.mounted.destroy();
   });
 

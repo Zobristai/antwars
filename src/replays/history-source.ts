@@ -29,6 +29,8 @@ export interface HistorySummary {
   rated?: boolean | null;
   /** The record's setup.modelIndex marker: an Antwars Model Index match. */
   modelIndex?: boolean;
+  /** The record's setup.colonyNames: an unrated match's drawn names; absent where the match used the rated names. */
+  colonyNames?: [string, string];
 }
 export interface HistoryPage { matches: HistorySummary[]; nextPageToken: string | null }
 export interface HistorySource {
