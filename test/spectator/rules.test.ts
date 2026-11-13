@@ -144,9 +144,8 @@ describe("shared rules", () => {
       "Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default 300 seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In any match, a seat that has not joined by the idle limit, counted from match start, or by an earlier end, abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match."]);
   });
 
-  it("follows the landed founding, ground income and all-queens win rules", () => {
+  it("follows the landed founding, frontline food and all-queens win rules", () => {
     const text = ruleSections(PUBLIC_CONFIG).flatMap((s) => s.lines).join(" ");
-    expect(text).not.toContain("Held ground earns food");
     expect(text).toContain("Frontline food: four small mirrored patches");
     expect(text).toContain("Founding opens 300 seconds after match start");
     expect(text).toContain("cooldown of 180 seconds");
@@ -157,9 +156,8 @@ describe("shared rules", () => {
     expect(text).toContain("Each live queen hatches independently");
     expect(text).toContain("A lost queen cannot hatch, receive food or be refounded");
     expect(text).toContain("Overrun every enemy queen");
-    const historical = ruleSections({ ...PUBLIC_CONFIG, queenFounding: undefined, groundFoodIntervalTicks: undefined, overrunGraceTicks: 0 }).flatMap((s) => s.lines).join(" ");
+    const historical = ruleSections({ ...PUBLIC_CONFIG, queenFounding: undefined, overrunGraceTicks: 0 }).flatMap((s) => s.lines).join(" ");
     expect(historical).not.toContain("found_queen");
-    expect(historical).not.toContain("Held ground earns food");
     expect(historical).not.toContain("protection");
     expect(historical).toContain("Overrun the enemy queen");
   });
@@ -194,14 +192,13 @@ describe("shared rules", () => {
     expect(changed).toContain("a whole count of 1 or more, at most 10,000,");
   });
 
-  it("takes soldier defaults, taper and early-win numbers from the same config as the agent briefing", () => {
+  it("takes soldier defaults and early-win numbers from the same config as the agent briefing", () => {
     const rules = rulesConfig("redesign");
-    const altered = { ...rules, groundIncomeExcessPermille: 125, localAnts: { ...rules.localAnts!, defendTiles: 5 },
+    const altered = { ...rules, localAnts: { ...rules.localAnts!, defendTiles: 5 },
       earlyWin: { ...rules.earlyWin!, territoryRatioPermille: 7000, holdTicks: 2100 } };
     const text = renderRules(altered);
     expect(text).toContain("With none in sight it holds within 5 tiles of where it became free");
     expect(text).toContain("walk outward from their nearest live nest until the colony sees food");
-    expect(text).toContain("above that half pay 12.5% income");
     expect(text).toContain("7 times the opponent");
     expect(text).toContain("continuously for 210 s");
     expect(text).toContain("replacements colony-wide");
