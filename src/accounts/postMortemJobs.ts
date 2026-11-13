@@ -10,8 +10,8 @@
  * memory.current. The headroom is the smallest of these; with no numeric level the configured limit is required. There
  * is no default: no usable limit, or any reading that cannot be read or parsed, admits nothing and stops a running child.
  * A re-run starts only while the headroom holds the child's reserve (its V8 heap cap's measured peak), two scans and the
- * margin, and a watchdog reading the meter every 50 ms kills the child once the headroom falls below the margin. These
- * figures were measured in tests, not in production.
+ * margin, checked afresh before each attempt, and a watchdog reading the meter every 50 ms kills the child once the
+ * headroom falls below the margin. These figures were measured in tests, not in production.
  */
 import { fork, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -19,6 +19,7 @@ import { resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ChildMessage, ChildRequest } from "./postMortemChild.js";
+export { paddedBits } from "./postMortemRecord.js";
 
 /** The child's peak under CHILD_FLAGS: a heap flood dies at the V8 limit with peaks of 1,065-1,076 MiB (tests). */
 export const CHILD_RESERVE_MIB = 1100;
@@ -32,6 +33,12 @@ export const CHILD_FLAGS = ["--max-old-space-size=900", "--max-semi-space-size=8
 export const SCAN_CONCURRENCY = 2;
 export const SCAN_QUEUE = 16;
 export const RERUN_QUEUE = 8;
+/**
+ * The most command bits a re-run may answer: each seat element's commands padded to whole bytes, 8 * ceil(n / 8) summed.
+ * It follows from the fixed 2 MiB findings bitset budget alone (2 MiB = 2^24 bits), not from the child's heap cap, and
+ * is not to be lowered without that budget itself being decided again.
+ */
+export const MAX_RERUN_BITS = 2 ** 24;
 /** The configured limit's environment variable. */
 export const MEMORY_LIMIT_ENV = "ANTWAR_MEMORY_LIMIT";
 /** The end of a child's stderr that is kept, to tell a V8 heap-limit abort from another. */
@@ -161,7 +168,10 @@ export type RerunOutcome =
   | { readonly kind: "no_rerun_data" }
   | { readonly kind: "no_idle_data" }
   | { readonly kind: "engine_error" }
-  /** Two attempts each ended at the child's V8 heap limit with room left: this record does not fit the re-run's limits. */
+  /**
+   * The record does not fit the re-run's fixed limits: its command bits exceed the bit limit, or two attempts, each
+   * admitted afresh, ended at the child's V8 heap limit with the parent never stopping it.
+   */
   | { readonly kind: "too_large" }
   | { readonly kind: "stopped"; readonly cause: StopCause };
 
@@ -186,7 +196,7 @@ export interface PostMortemJobs {
    * Queues a re-run of match id, proven of game version, unless it is already queued or running; "busy" when the
    * queue is full. `open` opens the record's bytes afresh for each attempt (null: no such record).
    */
-  rerun(id: string, version: string, open: RecordOpener): { readonly state: "queued" | "running" | "busy"; readonly outcome?: Promise<RerunOutcome> };
+  rerun(id: string, version: string, open: RecordOpener, maxBits?: number): { readonly state: "queued" | "running" | "busy"; readonly outcome?: Promise<RerunOutcome> };
   /** The re-run of id now in flight or queued, if any. */
   pending(id: string): Promise<RerunOutcome> | undefined;
 }
@@ -205,8 +215,8 @@ export function forkRerunChild(flags: readonly string[] = CHILD_FLAGS): ChildPro
   });
 }
 
-/** A reproduced re-run's answer is used only when its bitset is exactly as long as its counts make it. */
-export function validFindings(message: { counts?: unknown; bits?: unknown }): message is { counts: [number, number][]; bits: Uint8Array } {
+/** A reproduced re-run's answer is used only when its bitset is exactly as long as its counts make it, within the bit limit. */
+export function validFindings(message: { counts?: unknown; bits?: unknown }, maxBits = MAX_RERUN_BITS): message is { counts: [number, number][]; bits: Uint8Array } {
   const { counts, bits } = message;
   if (!Array.isArray(counts) || !(bits instanceof Uint8Array)) return false;
   let bytes = 0;
@@ -214,7 +224,7 @@ export function validFindings(message: { counts?: unknown; bits?: unknown }): me
     if (!Array.isArray(pair) || pair.length !== 2 || !Number.isSafeInteger(pair[0]) || !Number.isSafeInteger(pair[1]) || pair[1] < 0) return false;
     bytes += Math.ceil(pair[1] / 8);
   }
-  return bits.byteLength === bytes;
+  return bits.byteLength === bytes && bytes * 8 <= maxBits;
 }
 
 type Attempt = Exclude<ChildMessage, { kind: "progress" }> | { readonly kind: "stopped"; readonly cause: StopCause; readonly heapLimit?: true };
@@ -247,7 +257,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
     }
   }
 
-  interface Job { readonly id: string; readonly version: string; readonly open: RecordOpener; readonly outcome: Promise<RerunOutcome>; settle(outcome: RerunOutcome): void }
+  interface Job { readonly id: string; readonly version: string; readonly open: RecordOpener; readonly maxBits: number; readonly outcome: Promise<RerunOutcome>; settle(outcome: RerunOutcome): void }
   const queue: Job[] = [];
   let running: Job | null = null;
   let lastRefusalLog = -Infinity;
@@ -309,7 +319,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
         child.stderr.once("end", () => { clearTimeout(timer); finish(signal); });
       });
       child.once("close", (_code, signal) => finish(signal));
-      child.send({ version: job.version } satisfies ChildRequest, error => { if (error) stop("crashed"); });
+      child.send({ version: job.version, maxBits: job.maxBits } satisfies ChildRequest, error => { if (error) stop("crashed"); });
       // Never .pipe: a child gone mid-stream would raise an unhandled EPIPE in this server. pipeline rejects instead,
       // and destroys the record stream.
       void (async () => {
@@ -327,39 +337,51 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
   }
 
   /** What one attempt settles; "retry" where only a second attempt can. */
-  function outcomeOf(attempt: Attempt): RerunOutcome {
+  function outcomeOf(attempt: Attempt, maxBits: number): RerunOutcome {
     switch (attempt.kind) {
       case "stopped": return { kind: "stopped", cause: attempt.cause };
       case "mismatch": return { kind: "not_reproduced" };
       case "no_rerun_data": case "no_idle_data": return { kind: attempt.kind };
       case "allocation_failed": return { kind: "stopped", cause: "memory" };
+      case "too_large": return { kind: "too_large" };
       case "done":
-        if (!validFindings(attempt)) return { kind: "stopped", cause: "crashed" };
+        if (!validFindings(attempt, maxBits)) return { kind: "stopped", cause: "crashed" };
         return { kind: "findings", tested: attempt.tested, counts: attempt.counts, bits: attempt.bits, undecided: attempt.undecided };
       // "changed", "unreadable", a lone "threw": nothing is settled about this match now.
       default: return { kind: "stopped", cause: "crashed" };
     }
   }
 
-  async function execute(job: Job): Promise<RerunOutcome> {
+  /** Whether a child may start now: the headroom holds it, two scans and the margin. A refusal is logged at most once a minute. */
+  function admitted(): StopCause | null {
     const reading = meter();
-    if (reading === null || !admits(reading, policy)) {
-      refusalLog(`antwar post-mortem: re-run not started; ${reading === null ? "no usable memory limit" : `${Math.round(reading.headroomMiB)} MiB of headroom`}`);
-      return { kind: "stopped", cause: reading === null ? "meter" : "admission" };
-    }
+    if (reading !== null && admits(reading, policy)) return null;
+    refusalLog(`antwar post-mortem: re-run not started; ${reading === null ? "no usable memory limit" : `${Math.round(reading.headroomMiB)} MiB of headroom`}`);
+    return reading === null ? "meter" : "admission";
+  }
+
+  async function execute(job: Job): Promise<RerunOutcome> {
+    const refused = admitted();
+    if (refused !== null) return { kind: "stopped", cause: refused };
     const first = await runChild(job);
     // An engine error is an answer only when a fresh child, reading the record afresh, repeats it exactly; a heap-limit
-    // abort means the record is too large only when a fresh child aborts the same way.
+    // abort means the record is too large only when a fresh child, admitted afresh, aborts the same way.
     if (first.kind === "threw" || (first.kind === "stopped" && first.heapLimit === true)) {
-      const again = await runChild(job);
-      if (first.kind === "threw" && again.kind === "threw" && again.message === first.message) return { kind: "engine_error" };
-      if (first.kind === "stopped" && again.kind === "stopped" && again.heapLimit === true) return { kind: "too_large" };
-      if (again.kind === "threw") return { kind: "stopped", cause: "crashed" };
-      const outcome = outcomeOf(again);
-      if (outcome.kind === "stopped") refusalLog(`antwar post-mortem: re-run stopped (${outcome.cause})`);
-      return outcome;
+      const again = admitted();
+      if (again !== null) return { kind: "stopped", cause: again };
+      return settleSecond(job, first, await runChild(job));
     }
-    const outcome = outcomeOf(first);
+    const outcome = outcomeOf(first, job.maxBits);
+    if (outcome.kind === "stopped") refusalLog(`antwar post-mortem: re-run stopped (${outcome.cause})`);
+    return outcome;
+  }
+
+  /** A second attempt's answer: an engine error or a too-large record only where it repeats the first's exactly. */
+  function settleSecond(job: Job, first: Attempt, again: Attempt): RerunOutcome {
+    if (first.kind === "threw" && again.kind === "threw" && again.message === first.message) return { kind: "engine_error" };
+    if (first.kind === "stopped" && again.kind === "stopped" && again.heapLimit === true) return { kind: "too_large" };
+    if (again.kind === "threw") return { kind: "stopped", cause: "crashed" };
+    const outcome = outcomeOf(again, job.maxBits);
     if (outcome.kind === "stopped") refusalLog(`antwar post-mortem: re-run stopped (${outcome.cause})`);
     return outcome;
   }
@@ -378,14 +400,14 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
 
   return {
     scan,
-    rerun(id, version, open) {
+    rerun(id, version, open, maxBits = MAX_RERUN_BITS) {
       if (running?.id === id) return { state: "running", outcome: running.outcome };
       const waiting = queue.find(job => job.id === id);
       if (waiting) return { state: "queued", outcome: waiting.outcome };
       if (queue.length >= RERUN_QUEUE) return { state: "busy" };
       let settle!: (outcome: RerunOutcome) => void;
       const outcome = new Promise<RerunOutcome>(resolve => { settle = resolve; });
-      const job: Job = { id, version, open, outcome, settle };
+      const job: Job = { id, version, open, maxBits, outcome, settle };
       queue.push(job);
       drain();
       return { state: running === job ? "running" : "queued", outcome };

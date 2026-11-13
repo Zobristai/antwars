@@ -10,10 +10,9 @@ import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  admits, cgroupMeter, CHILD_ENV, CHILD_FLAGS, createJobs, forkRerunChild, JobsBusy, MEMORY_POLICY, overLimit, ownCgroup, parseCgroupBytes,
-  parseMemoryQuantity, RERUN_QUEUE, SAMPLE_MS, SCAN_CONCURRENCY, SCAN_QUEUE, STALL_MS, STDERR_TAIL_BYTES, type Meter, type RerunOutcome,
+  admits, cgroupMeter, CHILD_ENV, CHILD_FLAGS, createJobs, forkRerunChild, JobsBusy, MAX_RERUN_BITS, MEMORY_POLICY, overLimit, ownCgroup, paddedBits,
+  parseCgroupBytes, parseMemoryQuantity, RERUN_QUEUE, SAMPLE_MS, SCAN_CONCURRENCY, SCAN_QUEUE, STALL_MS, STDERR_TAIL_BYTES, validFindings, type Meter, type RerunOutcome,
 } from "../../src/accounts/postMortemJobs.ts";
-import { packFindings } from "../../src/accounts/postMortemChild.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
 
 const VERSION = "c".repeat(40);
@@ -296,7 +295,7 @@ describe("re-run supervision", () => {
     jobs.rerun("b", VERSION, second);
     await vi.waitFor(() => expect(first).toHaveBeenCalledTimes(1));
     expect(second).not.toHaveBeenCalled();
-    expect(live[0]!.sent).toEqual([{ version: VERSION }]);
+    expect(live[0]!.sent).toEqual([{ version: VERSION, maxBits: MAX_RERUN_BITS }]);
     live[0]!.emit("message", { kind: "mismatch", tick: 1 });
     live[0]!.emit("exit", 0, null);
     await vi.waitFor(() => expect(second).toHaveBeenCalledTimes(1));
@@ -591,6 +590,15 @@ describe("too large to re-run", () => {
     }
   });
 
+  // Credible regression: a second attempt started without its own admission check, so memory pressure reads as too large.
+  it("admits the second attempt afresh: no room then is a stop for memory, never too large", async () => {
+    let headroom = 4096;
+    const forkChild = vi.fn(() => { const child = abortingChild("heap"); headroom = 100; return child; });
+    const jobs = createJobs({ ...quiet, meter: () => reading(headroom), forkChild });
+    expect(await jobs.rerun("m", VERSION, OPEN).outcome).toEqual({ kind: "stopped", cause: "admission" });
+    expect(forkChild).toHaveBeenCalledTimes(1);
+  });
+
   it("is not the answer when the parent stopped the child, though it aborted at the heap limit", async () => {
     vi.useFakeTimers();
     let headroom = 2000;
@@ -632,42 +640,38 @@ describe("too large to re-run", () => {
   }, 300_000);
 });
 
-// Credible regression: a bitset larger than IPC and the cache are built for. The child's heap cap bounds the commands it
-// can hold; each costs at least the floor measured here through the real scanner, with the smallest command a record can
-// hold, so its bitset is at most 900 MiB / floor / 8 bytes.
-it("bounds the findings bitset: the child's heap cap holds few enough commands for at most 4 MiB of bits", async () => {
-  const root = new URL("../..", import.meta.url);
-  const dir = mkdtempSync(join(tmpdir(), "antwar-pm-floor-"));
-  const N = 200_000;
-  try {
-    const parts = ['{"seats":[{"seat":0,"colony":0,"commands":['];
-    for (let i = 0; i < N; i++) parts.push(`${i ? "," : ""}{"tick":${i},"type":"o","accepted":true}`);
-    parts.push("]}]}");
-    writeFileSync(join(dir, "record.json"), parts.join(""));
-    const script = `
-      const { createReadStream } = await import("node:fs");
-      const { scanRecord } = await import(${JSON.stringify(new URL("src/accounts/postMortemRecord.ts", root).href)});
-      for (let i = 0; i < 4; i++) globalThis.gc();
-      const before = process.memoryUsage().heapUsed;
-      const scan = await scanRecord(createReadStream(${JSON.stringify(join(dir, "record.json"))}, { highWaterMark: 65536 }), undefined, "rerun");
-      for (let i = 0; i < 4; i++) globalThis.gc();
-      const after = process.memoryUsage().heapUsed;
-      process.stdout.write(JSON.stringify({ held: scan.reduced.seats[0].commands.length, perCommand: (after - before) / ${N} }));`;
-    const run = spawn(process.execPath, ["--expose-gc", "--import", new URL("src/ts-resolve.mjs", root).href, "--input-type=module", "-e", script], { stdio: ["ignore", "pipe", "inherit"] });
-    children.push(run);
-    let out = "";
-    run.stdout!.on("data", chunk => { out += chunk; });
-    expect(await new Promise(resolve => run.once("exit", resolve))).toBe(0);
-    const { held, perCommand } = JSON.parse(out) as { held: number; perCommand: number };
-    expect(held).toBe(N);
-    expect(perCommand).toBeGreaterThan(8);
-    if (process.env.ANTWAR_REPORT_PEAK) console.log(`held command floor ${perCommand.toFixed(1)} B`);
-    const heap = Number(/--max-old-space-size=(\d+)/.exec(CHILD_FLAGS.join(" "))![1]) * MIB;
-    // packFindings reads only each seat's command count.
-    const { bits } = packFindings([{ seat: 0, commands: { length: Math.ceil(heap / perCommand) } as unknown as readonly unknown[] }], []);
-    expect(bits.byteLength).toBeLessThanOrEqual(4 * MIB);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-}, 120_000);
+describe("the re-run's bit limit", () => {
+  // Credible regression: the limit lowered (or raised) away from the fixed 2 MiB findings budget it follows from.
+  it("is 2^24 command bits, each seat element's commands padded to whole bytes", () => {
+    expect(MAX_RERUN_BITS).toBe(2 ** 24);
+    expect(MAX_RERUN_BITS / 8).toBe(2 * MIB);
+    expect(paddedBits([1, 8, 9, 0])).toBe(8 + 8 + 16 + 0);
+  });
+
+  // Credible regression: an answer over the limit, or of the wrong length, cached as findings.
+  it("takes findings over the limit, or of the wrong length, as a failure to try again later", async () => {
+    for (const [counts, bytes, maxBits] of [[[[0, 9]], 2, 8], [[[0, 9]], 1, 64], [[[0, 9]], 3, 64]] as const) {
+      const child = fakeChild();
+      const jobs = createJobs({ ...quiet, meter: ROOMY, forkChild: () => child as unknown as ChildProcess });
+      const outcome = jobs.rerun("m", VERSION, OPEN, maxBits).outcome!;
+      await vi.waitFor(() => expect(child.sent).toEqual([{ version: VERSION, maxBits }]));
+      child.emit("message", { kind: "done", tested: 1, counts, bits: new Uint8Array(bytes), undecided: [] });
+      child.emit("exit", 0, null);
+      expect(await outcome, JSON.stringify({ counts, bytes, maxBits })).toEqual({ kind: "stopped", cause: "crashed" });
+    }
+    expect(validFindings({ counts: [[0, 9]], bits: new Uint8Array(2) }, 16)).toBe(true);
+  });
+
+  // Credible regression: a record over the limit re-run anyway by the child.
+  it("has the real child answer too large, without re-running, for a record over the request's limit", async () => {
+    const record = JSON.stringify({ codeVersion: VERSION, seats: [{ seat: 0, colony: 0, commands: [{ tick: 0, type: "observe", accepted: true }] },
+      { seat: 1, colony: 1, commands: [{ tick: 0, type: "observe", accepted: true }] }] });
+    const forkChild = vi.fn(() => { const child = forkRerunChild(); children.push(child); return child; });
+    const jobs = createJobs({ ...quiet, meter: ROOMY, forkChild });
+    expect(await jobs.rerun("over", VERSION, async () => Readable.from([Buffer.from(record)]), 8).outcome).toEqual({ kind: "too_large" });
+    expect(forkChild).toHaveBeenCalledTimes(1);
+  }, 60_000);
+});
 
 describe("stall detection at the default limit", () => {
   // Credible regression: a child reading a long record killed as stalled because it reports progress only once re-running.

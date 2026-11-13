@@ -3,6 +3,8 @@
 // registry over one in-memory store, records generated here by the real simulation and record builder, and re-runs in
 // the real forked child. Ownership is by the lobby's seat identity ids only.
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer, get as httpGet, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +16,7 @@ import {
   TOO_LARGE, undecidedSentence,
 } from "../../src/accounts/postMortem.ts";
 import { packFindings, rerunRecord, sameState, unpackFindings, type RerunAnswer } from "../../src/accounts/postMortemChild.ts";
-import { createJobs, type PostMortemJobs, type RerunOutcome } from "../../src/accounts/postMortemJobs.ts";
+import { createJobs, type PostMortemJobs, type RecordOpener, type RerunOutcome } from "../../src/accounts/postMortemJobs.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
 import type { VersionAnswer, VersionSource } from "../../src/accounts/postMortemVersion.ts";
 import { encodePublicMessage } from "../../src/live/format.ts";
@@ -23,6 +25,9 @@ import { packMessages } from "../../src/live/snapshot.ts";
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { createLobbies } from "../../src/lobby/lobbies.ts";
 import { matchRecord, REPLIES_NOT_RETAINED } from "../../src/replays/history.ts";
+import type { ReplayGet } from "../../src/replays/access.ts";
+import { CORRECTED_REPLAY_IDS } from "../../src/replays/correctedRecordings.ts";
+import { createGcsHistorySource, type HistorySource } from "../../src/replays/history-source.ts";
 import { createPrivateArchive } from "../../src/replays/private-archive.ts";
 import { privateMediaName, sealPrivateMedia } from "../../src/replays/private-media.ts";
 import type { ReplayObject } from "../../src/replays/store.ts";
@@ -142,7 +147,7 @@ const versionsAnswering = (answer: VersionAnswer): VersionSource & { asked: stri
 };
 
 /** One world: accounts, a lobby per match, its registry row and stored record. */
-function world(options: { versions?: VersionSource; jobs?: PostMortemJobs; cacheBytes?: number } = {}) {
+function world(options: { versions?: VersionSource; jobs?: PostMortemJobs; cacheBytes?: number; storedHistory?: Pick<HistorySource, "open">; pageScanBytes?: number; maxRerunBits?: number; readGuardMs?: number; scanWaitMs?: number } = {}) {
   const w = retentionWorld(Date.parse("2026-10-20T00:00:00.000Z"));
   const records = new Map<string, Buffer>();
   const objects = new Map<string, ReplayObject>();
@@ -155,14 +160,16 @@ function world(options: { versions?: VersionSource; jobs?: PostMortemJobs; cache
   const jobs = options.jobs ?? createJobs({ log: () => {}, meter: () => ({ headroomMiB: 4096, source: "numeric" as const }) });
   const registry = createWatchRegistry(w.store);
   const lobbies = createLobbies(w.store, w.ids);
-  const postMortem = createPostMortem({ identities: w.ids, lobbies, registry, history, archive, versions, jobs, now: w.now, cacheBytes: options.cacheBytes });
+  const postMortem = createPostMortem({ identities: w.ids, lobbies, registry, history, archive, versions, jobs, now: w.now, cacheBytes: options.cacheBytes,
+    storedHistory: options.storedHistory, pageScanBytes: options.pageScanBytes, maxRerunBits: options.maxRerunBits,
+    readGuardMs: options.readGuardMs, scanWaitMs: options.scanWaitMs });
   let lobbyCount = 0;
   /** A lobby of `seats` [identity, colony], its registry row and its stored record under id. */
   function match(n: number, seats: readonly (readonly [{ id: string; name: string }, 0 | 1])[], options: {
-    visibility?: "public" | "private"; playbackFinished?: boolean; lobbyState?: string; record?: unknown; row?: boolean;
+    visibility?: "public" | "private"; playbackFinished?: boolean; lobbyState?: string; record?: unknown; row?: boolean; id?: string;
   } = {}) {
     const lobbyId = `00000000-0000-4000-8000-${String(++lobbyCount).padStart(12, "0")}`;
-    const id = replayId(n);
+    const id = options.id ?? replayId(n);
     w.docs.set(`lobbies/${lobbyId}`, { kind: options.visibility ?? "public", size: "1", state: options.lobbyState ?? "ended", rated: "false", slot: "",
       seats: JSON.stringify(seats.map(([who, colony]) => ({ id: who.id, displayName: who.name, colony }))), creatorId: seats[0]?.[0].id ?? "",
       createdAt: String(w.now()), inviteVerifier: "", startsAt: "", matchRunId: "run-1", outcome: "colony_0_won", mode: "" });
@@ -183,7 +190,7 @@ function world(options: { versions?: VersionSource; jobs?: PostMortemJobs; cache
       objects.set(privateMediaName(identity), { name: privateMediaName(identity), body: sealPrivateMedia(identity, body, KEY), contentType: "application/octet-stream", ifGenerationMatch: 0 });
     }
   }
-  return { w, postMortem, match, store, records, objects, history, versions, jobs, archive };
+  return { w, postMortem, match, store, records, objects, history, versions, jobs, archive, registry, lobbies };
 }
 
 /** Asks until no-effect has an answer, as a builder would: the first reply never waits for the re-run. */
@@ -763,40 +770,45 @@ describe("a long list, in pages", () => {
     const first = await f.postMortem.query({ key: alice.key, lobbyId });
     expect(first.ok).toBe(true);
     expect(refusedOf(first)).toHaveLength(2000);
-    expect(bodyOf(first).refusedPage).toMatchObject({ total: 120_002, offset: 0, shown: 2000, remaining: 118_002, nextOffset: 2000 });
-    expect(bodyOf(first).refusedPage.more).toBe("118002 more refused calls: ask again with refusedOffset 2000.");
-    // Every page, in turn, from the offsets the replies give.
+    expect(bodyOf(first).refusedPage).toMatchObject({ total: 120_002, first: 0, shown: 2000, remaining: 118_002 });
+    expect(bodyOf(first).refusedPage.more).toBe("118002 more refused calls: ask again with refusedContinuation set to this page's continuation.");
+    expect(bodyOf(first).refusedPage.scannedBytes).toBeLessThan(bodyOf(first).refusedPage.recordBytes);
+    // Every page, in turn, from the continuations the replies give.
     const seen = new Set<string>();
-    let offset: number | undefined = 0, pages = 0;
-    while (offset !== undefined) {
-      const reply = await f.postMortem.query({ key: alice.key, lobbyId, refusedOffset: offset });
+    let continuation: string | undefined, pages = 0, scanned = 0;
+    do {
+      const reply = await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation });
+      expect(reply.ok, JSON.stringify(reply.body).slice(0, 200)).toBe(true);
       expect(Buffer.byteLength(JSON.stringify(reply.body))).toBeLessThanOrEqual(REPLY_BYTES);
-      for (const r of refusedOf(reply)) seen.add(`${r.at}`);
-      offset = bodyOf(reply).refusedPage.nextOffset as number | undefined;
+      for (const r of refusedOf(reply)) { expect(seen.has(r.at)).toBe(false); seen.add(`${r.at}`); }
+      expect(bodyOf(reply).refusedPage.first).toBe(pages === 0 ? 0 : seen.size - refusedOf(reply).length);
+      expect(bodyOf(reply).refusedPage.scannedBytes).toBeGreaterThan(scanned);
+      scanned = bodyOf(reply).refusedPage.scannedBytes;
+      continuation = bodyOf(reply).refusedPage.continuation as string | undefined;
       pages++;
-    }
+    } while (continuation !== undefined);
     expect(pages).toBe(61);
     expect(seen.size).toBe(120_002);
-    // Past the end: an empty page.
-    const past = await f.postMortem.query({ key: alice.key, lobbyId, refusedOffset: 500_000 });
-    expect(refusedOf(past)).toEqual([]);
-    expect(bodyOf(past).refusedPage).toMatchObject({ total: 120_002, shown: 0, remaining: 0 });
     const done = await settled(() => f.postMortem.query({ key: alice.key, lobbyId }));
     expect(bodyOf(done).noEffect).toMatchObject({ status: "shown", commands: [{ seat: 0, tick: 2, type: "set_brood" }] });
     expect(bodyOf(done).noEffectPage).toMatchObject({ total: 1, shown: 1, remaining: 0 });
+    expect(bodyOf(done).noEffectPage).not.toHaveProperty("continuation");
     expect(refusedOf(done)).toHaveLength(2000);
   }, 120_000);
 
-  it("refuses a negative, fractional or unsafe offset before reading anything", async () => {
+  it("refuses an empty or over-long continuation before reading anything, and one it did not issue as start again", async () => {
     const f = world();
     const alice = f.w.played("alice");
     const { lobbyId } = f.match(83, [[alice, 0]]);
     f.w.reads.length = 0;
-    for (const bad of [-1, 1.5, Number.MAX_SAFE_INTEGER + 2, Number.NaN]) {
-      expect((await f.postMortem.query({ key: alice.key, lobbyId, refusedOffset: bad })).body.error).toBe("bad_arguments");
-      expect((await f.postMortem.query({ key: alice.key, lobbyId, noEffectOffset: bad })).body.error).toBe("bad_arguments");
+    for (const bad of ["", "x".repeat(16 * 1024 + 1)]) {
+      expect((await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: bad })).body.error).toBe("bad_arguments");
+      expect((await f.postMortem.query({ key: alice.key, lobbyId, noEffectContinuation: bad })).body.error).toBe("bad_arguments");
     }
     expect(f.w.reads).toEqual([]);
+    for (const forged of ["not-a-continuation", Buffer.alloc(64, 7).toString("base64url")]) {
+      expect(await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: forged })).toEqual({ ok: false, body: { error: "start_again", message: REFUSALS.start_again } });
+    }
     expect(f.history.open).not.toHaveBeenCalled();
   });
 
@@ -827,8 +839,9 @@ describe("a long list, in pages", () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     for (let round = 0; round < 3; round++) for (const m of [a, b]) expect(await ask(m.lobbyId)).toMatchObject({ status: "shown", commands: [{ seat: 0, tick: 2 }] });
     expect(held.started).toEqual([a.id, b.id]);
-    // Every ask read its record again: no summary was kept.
-    for (const m of [a, b]) expect(f.history.open.mock.calls.filter(([id]) => id === m.id)).toHaveLength(6);
+    // Every ask read its record again, nothing but the two no-effect answers being kept: its first pass and refused page
+    // (three asks while being worked out), then those and its no-effect page (three asks once shown).
+    for (const m of [a, b]) expect(f.history.open.mock.calls.filter(([id]) => id === m.id)).toHaveLength(3 * 2 + 3 * 3);
   });
 });
 
@@ -1029,7 +1042,7 @@ describe("ownership proven before anything is read", () => {
       expect((await f.postMortem.query({ key: bob.key, lobbyId })).ok).toBe(true);
       const reads = { scans: scan.mock.calls.length, opens: f.history.open.mock.calls.length, consumes: consume.mock.calls.length };
       for (const reply of [await f.postMortem.query({ key: alice.key, lobbyId }), await f.postMortem.query({ key: carol.key, matchId: id }),
-        await f.postMortem.query({ key: alice.key, lobbyId, refusedOffset: 2000 })]) expect(reply).toEqual(UNCONFIRMED);
+        await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: "anything" })]) expect(reply).toEqual(UNCONFIRMED);
       expect({ scans: scan.mock.calls.length, opens: f.history.open.mock.calls.length, consumes: consume.mock.calls.length }).toEqual(reads);
     });
   }
@@ -1053,6 +1066,37 @@ describe("no-effect answers that settle nothing now, or for good", () => {
       expect((bodyOf(reply).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(2);
     }
     expect(held.started).toEqual([id]);
+  });
+
+  // Credible regression: a record over the bit limit forked anyway, or its version looked up, before it is settled.
+  it("settles a record over the bit limit as too large for good, with no version lookup and no re-run", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, maxRerunBits: 15 });
+    const alice = f.w.played("alice");
+    // Seat 0's 4 commands and seat 1's 2 pad to 16 bits: one over this limit.
+    const { lobbyId } = f.match(315, [[alice, 0]]);
+    for (let i = 0; i < 3; i++) {
+      const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+      expect(bodyOf(reply).noEffect).toEqual({ status: "not_available", reason: TOO_LARGE });
+      expect((bodyOf(reply).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(2);
+    }
+    expect(held.started).toEqual([]);
+    expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toEqual([]);
+    // At 16 bits it is re-run.
+    const g = world({ jobs: held.jobs, maxRerunBits: 16 });
+    const bob = g.w.played("bob");
+    const at = g.match(316, [[bob, 0]]);
+    await g.postMortem.query({ key: bob.key, lobbyId: at.lobbyId });
+    await vi.waitFor(() => expect(held.started).toEqual([at.id]));
+  });
+
+  // Credible regression: every temporary answer worded as short of memory, which only memory causes are.
+  it("words a stalled or failed re-run as not computed now, try later, and only memory causes as short of memory", () => {
+    expect(noEffectOf({ kind: "stopped", cause: "stalled" })).toEqual({ status: "not_computed_now", reason: "No-effect commands are not computed now (the re-run stalled). Try later." });
+    expect(noEffectOf({ kind: "stopped", cause: "crashed" })).toEqual({ status: "not_computed_now", reason: "No-effect commands are not computed now (the re-run failed). Try later." });
+    for (const cause of ["admission", "memory", "meter"] as const) {
+      expect(noEffectOf({ kind: "stopped", cause })).toEqual({ status: "not_computed_now", reason: "No-effect commands are not available right now (the server is short of memory). Ask again later." });
+    }
   });
 
   // Credible regression: memory pressure or an unreadable meter answered as a permanent "not available".
@@ -1107,13 +1151,13 @@ describe("where refused calls are read from, in any stored order", () => {
       expect(expected.refusedFrom).toBe("calls");
       expect((expected.seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(2);
       const variants = [reordered(base(331), ["replies"]), reordered(base(332), [], ["replies", "seats"]), reordered(base(333), [], ["agentSeats"])];
-      // Replies before seats, or (private) before the agent map, are read once more with what the first read learnt.
-      const extra = visibility === "private" ? [2, 2, 2] : [2, 2, 1];
+      // Every order is read the same: one first pass, then one page.
       for (const [i, record] of variants.entries()) {
         const before = reads();
         const { lobbyId } = f.match(331 + i, [[alice, 0]], { visibility, record });
-        expect(view(await f.postMortem.query({ key: alice.key, lobbyId })), `variant ${i}`).toEqual(expected);
-        expect(reads() - before, `variant ${i}`).toBe(extra[i]);
+        expect(view(await f.postMortem.query({ key: alice.key, lobbyId })), `variant ${i}`).toEqual({ ...expected,
+          refusedPage: { ...expected.refusedPage, scannedBytes: expect.any(Number), recordBytes: expect.any(Number) } });
+        expect(reads() - before, `variant ${i}`).toBe(2);
       }
     });
   }
@@ -1137,8 +1181,8 @@ describe("where refused calls are read from, in any stored order", () => {
     ]);
   });
 
-  // Credible regression: a second read trusted where the first failed authentication, or a failed read kept.
-  it("refuses a private record that fails authentication on either read, and keeps nothing", async () => {
+  // Credible regression: a page or first pass trusted where its read failed authentication, or a failed read kept.
+  it("refuses a private record that fails authentication on either read, and keeps nothing it read", async () => {
     for (const failing of [1, 2]) {
       const f = world({ jobs: heldJobs().jobs });
       const real = f.archive.consume!.bind(f.archive);
@@ -1152,8 +1196,304 @@ describe("where refused calls are read from, in any stored order", () => {
       expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "record_unreadable", message: REFUSALS.record_unreadable } });
       const after = calls;
       expect((await f.postMortem.query({ key: alice.key, lobbyId })).ok).toBe(true);
-      // Nothing was kept from the failed request: the next one read the record afresh.
-      expect(calls - after).toBe(2);
+      // Nothing the failed read gave was kept: a failed first pass is read again with the page; after a failed page, the
+      // first pass that authenticated stands and only the page is read again.
+      expect(calls - after).toBe(failing === 1 ? 2 : 1);
     }
+  });
+});
+
+const servers: Server[] = [];
+afterAll(async () => { for (const server of servers) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); } });
+/**
+ * Public records as the bucket stores them, behind the real history source: each object's stored bytes (gzip or plain,
+ * with or without a gzip label), its generation and stored length on every reply, a pinned generation answered only while
+ * it is the object's own. Every read is logged with the generation and Range it asked for.
+ */
+async function bucket() {
+  const objects = new Map<string, { body: Buffer; generation: string; label: boolean; replyGeneration?: string }>();
+  const asked: { id: string; generation: string | null; range: string | undefined }[] = [];
+  const server = createServer((req, res) => {
+    const url = new URL(req.url!, "http://localhost");
+    const id = decodeURIComponent(url.pathname.split("/").at(-1)!).slice(0, -".json".length);
+    const generation = url.searchParams.get("generation");
+    asked.push({ id, generation, range: req.headers.range });
+    const object = objects.get(id);
+    if (object === undefined || (generation !== null && generation !== object.generation)) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { ...(object.label ? { "content-encoding": "gzip" } : {}), "x-goog-generation": object.replyGeneration ?? object.generation,
+      "x-goog-stored-content-length": String(object.body.length) }).end(object.body);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  servers.push(server);
+  const port = (server.address() as AddressInfo).port;
+  const request: typeof fetch = async () => Response.json({ access_token: "fake-history-token", expires_in: 3600 });
+  const get: ReplayGet = (url, options, response) => httpGet(`http://127.0.0.1:${port}${url.pathname}${url.search}`, options, response);
+  return {
+    source: createGcsHistorySource("fake-history", request, get), objects, asked,
+    put(id: string, record: unknown, options: { gzip?: boolean; label?: boolean; generation?: string } = {}) {
+      const json = Buffer.from(JSON.stringify(record));
+      objects.set(id, { body: options.gzip ? gzipSync(json) : json, generation: options.generation ?? "1700000000000001", label: options.label ?? false });
+    },
+  };
+}
+
+/** A record of seat 0 with `n` more refused calls than generatedRecord's two, each with its own receive time. */
+function manyRefusals(id: string, n: number) {
+  const record = generatedRecord(id);
+  for (let i = 0; i < n; i++) record.replies.push({ type: "stub", seat: 0, tick: null, tool: "observe", receivedAt: RECEIVED + 1000 + i, answeredAt: RECEIVED + 1001 + i, code: "call_rate" });
+  return record;
+}
+/** Every page of one owner's refused calls, by continuation, with each reply's read count. */
+async function everyPage(f: ReturnType<typeof world>, key: string, lobbyId: string, reads: () => number) {
+  const at: string[] = [];
+  const opens: number[] = [];
+  let continuation: string | undefined, pages = 0;
+  do {
+    const before = reads();
+    const reply = await f.postMortem.query({ key, lobbyId, refusedContinuation: continuation });
+    if (!reply.ok) return { at, opens, pages, refusal: reply.body.error };
+    opens.push(reads() - before);
+    at.push(...(bodyOf(reply).seats as { refused: { at: string }[] }[])[0]!.refused.map(r => r.at));
+    continuation = bodyOf(reply).refusedPage.continuation as string | undefined;
+    if (++pages > 5000) throw new Error("pages did not progress");
+  } while (continuation !== undefined);
+  return { at, opens, pages, refusal: null };
+}
+const allAt = (n: number) => [RECEIVED - 50, RECEIVED + 300, ...Array.from({ length: n }, (_, i) => RECEIVED + 1000 + i)].map(t => new Date(t).toISOString());
+
+describe("records that cannot be range-read, paged exactly once", () => {
+  const BUDGETS = [1, 7, 4096, 64 * 1024, 1024 * 1024, undefined] as const;
+  // Credible regression: a gzip-stored record (whose byte ranges are compressed bytes), a mislabelled one, a sealed
+  // private one or a rebuilt corrected one losing, repeating or reordering a refused call between pages, a page read
+  // twice, or any read asking for a byte range.
+  for (const mode of ["gzip, labelled", "gzip, unlabelled", "plain, labelled gzip", "plain", "private", "corrected"] as const) {
+    it(`gives every refused call exactly once, in record order, at every page budget: ${mode}`, async () => {
+      for (const budget of BUDGETS) {
+        const store = await bucket();
+        const f = world({ jobs: heldJobs().jobs, storedHistory: store.source, pageScanBytes: budget });
+        const consume = vi.spyOn(f.archive, "consume");
+        const alice = f.w.played("alice");
+        const id = mode === "corrected" ? [...CORRECTED_REPLAY_IDS][0]! : replayId(400);
+        const record = mode === "private" ? privateRecord(id) : generatedRecord(id);
+        for (let i = 0; i < 2500; i++) record.replies.push({ type: "stub", ...(mode === "private" ? { agentId: "agent-0" } : { seat: 0 }), tick: null, tool: "observe",
+          receivedAt: RECEIVED + 1000 + i, answeredAt: RECEIVED + 1001 + i, code: "call_rate" } as never);
+        const { lobbyId } = f.match(400, [[alice, 0]], { record, id, visibility: mode === "private" ? "private" : "public" });
+        if (mode !== "private" && mode !== "corrected") store.put(id, record, { gzip: mode.startsWith("gzip"), label: mode.includes("labelled") && !mode.includes("unlabelled") });
+        const reads = () => mode === "private" ? consume.mock.calls.length : mode === "corrected" ? f.history.open.mock.calls.length : store.asked.length;
+        const all = await everyPage(f, alice.key, lobbyId, reads);
+        expect(all.refusal, `budget ${budget}`).toBeNull();
+        expect(all.at, `budget ${budget}`).toEqual(allAt(2500));
+        // A fresh start reads the first pass and one page; each continuation, one page.
+        expect(all.opens, `budget ${budget}`).toEqual(all.opens.map((_, i) => i === 0 ? 2 : 1));
+        if (budget === undefined) expect(all.pages).toBe(2);
+        if (mode === "corrected") expect(store.asked).toEqual([]);
+        expect(store.asked.every(r => r.range === undefined)).toBe(true);
+      }
+    }, 120_000);
+  }
+
+  // Credible regression: no-effect findings lost or repeated between pages of a gzip-stored record.
+  it("gives every no-effect command of a gzip-stored record exactly once across pages", async () => {
+    const held = heldJobs();
+    const store = await bucket();
+    const f = world({ jobs: held.jobs, storedHistory: store.source, pageScanBytes: 1 });
+    const alice = f.w.played("alice");
+    const record = generatedRecord(replayId(401));
+    const { lobbyId, id } = f.match(401, [[alice, 0]], { record });
+    store.put(id, record, { gzip: true });
+    await f.postMortem.query({ key: alice.key, lobbyId });
+    await vi.waitFor(() => expect(held.started).toEqual([id]));
+    // Seat 0's join, first set_brood and repeat (indices 0 to 2) had no effect; its refused set_brood is never listed.
+    held.finish(id, { kind: "findings", tested: 3, counts: [[0, 4], [1, 2]], bits: new Uint8Array([0b1111, 0]), undecided: [] });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const indices: number[] = [];
+    let continuation: string | undefined;
+    do {
+      const reply = await f.postMortem.query({ key: alice.key, lobbyId, noEffectContinuation: continuation });
+      indices.push(...(bodyOf(reply).noEffect.commands as { commandIndex: number }[]).map(c => c.commandIndex));
+      continuation = bodyOf(reply).noEffectPage.continuation as string | undefined;
+    } while (continuation !== undefined);
+    expect(indices).toEqual([0, 1, 2]);
+  });
+});
+
+describe("pinned to the stored generation its first pass read", () => {
+  // Credible regression: a later page read unpinned, a replaced record's bytes shown under an older continuation, a
+  // missing pinned generation answered as no record, or a stale first pass kept so a fresh start cannot progress.
+  it("pins every later read to the first pass's reply, and starts again, then progresses, once the record is replaced", async () => {
+    const store = await bucket();
+    const f = world({ jobs: heldJobs().jobs, storedHistory: store.source });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(410, [[alice, 0]], { record: manyRefusals(replayId(410), 4000) });
+    store.put(id, manyRefusals(id, 4000), { generation: "1700000000000005" });
+    const first = await f.postMortem.query({ key: alice.key, lobbyId });
+    const continuation = bodyOf(first).refusedPage.continuation as string;
+    expect(store.asked.map(r => r.generation)).toEqual([null, "1700000000000005"]);
+    const second = await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation });
+    expect(store.asked.at(-1)!.generation).toBe("1700000000000005");
+    // Replaced: the pinned generation is gone. (A page already read stays kept under its own continuation.)
+    store.put(id, manyRefusals(id, 4001), { generation: "1700000000000009" });
+    const stale = await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: bodyOf(second).refusedPage.continuation as string });
+    expect(stale).toEqual({ ok: false, body: { error: "start_again", message: REFUSALS.start_again } });
+    // A fresh start reads the replaced record afresh: its first pass was not kept.
+    const fresh = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(bodyOf(fresh).refusedPage.total).toBe(4003);
+    expect(store.asked.slice(-2).map(r => r.generation)).toEqual([null, "1700000000000009"]);
+    const all = await everyPage(f, alice.key, lobbyId, () => store.asked.length);
+    expect(all.at).toEqual(allAt(4001));
+  });
+
+  it("starts again when a pinned read's reply names another generation", async () => {
+    const store = await bucket();
+    const f = world({ jobs: heldJobs().jobs, storedHistory: store.source });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(411, [[alice, 0]], { record: manyRefusals(replayId(411), 4000) });
+    store.put(id, manyRefusals(id, 4000));
+    const continuation = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId })).refusedPage.continuation as string;
+    store.objects.get(id)!.replyGeneration = "1700000000000077";
+    expect((await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation })).body.error).toBe("start_again");
+  });
+
+  // Credible regression: a corrected recording's rebuilt bytes changing between pages under one continuation.
+  it("starts again when a corrected recording changes between pages, though its rebuilt bytes carry no generation", async () => {
+    const store = await bucket();
+    const f = world({ jobs: heldJobs().jobs, storedHistory: store.source });
+    const alice = f.w.played("alice");
+    const id = [...CORRECTED_REPLAY_IDS][0]!;
+    const { lobbyId } = f.match(412, [[alice, 0]], { id, record: manyRefusals(id, 4000) });
+    const continuation = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId })).refusedPage.continuation as string;
+    f.records.set(id, Buffer.from(JSON.stringify({ ...manyRefusals(id, 4000), setup: { ...manyRefusals(id, 0).setup, rated: false, corrected: true } })));
+    expect((await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation })).body.error).toBe("start_again");
+    expect(store.asked).toEqual([]);
+  });
+});
+
+describe("a record that is unavailable, then completed", () => {
+  // Credible regression: an unavailable record's lack of re-run data kept as a lasting "not available", so its completed
+  // replacement is never re-run.
+  it("keeps no count or status for an unavailable record, and re-runs its completed replacement", async () => {
+    const held = heldJobs();
+    const store = await bucket();
+    const f = world({ jobs: held.jobs, storedHistory: store.source });
+    const alice = f.w.played("alice");
+    const unavailable = { id: replayId(420), status: "unavailable", source: "unavailable" };
+    const { lobbyId, id } = f.match(420, [[alice, 0]], { record: unavailable });
+    store.put(id, unavailable, { generation: "1700000000000001" });
+    expect((await f.postMortem.query({ key: alice.key, lobbyId })).body.error).toBe("record_unavailable");
+    expect(held.started).toEqual([]);
+    store.put(id, generatedRecord(id), { generation: "1700000000000002" });
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(bodyOf(reply).noEffect.status).toBe("being_worked_out");
+    await vi.waitFor(() => expect(held.started).toEqual([id]));
+    held.finish(id, { kind: "findings", tested: 1, counts: [[0, 4], [1, 2]], bits: new Uint8Array([4, 0]), undecided: [] });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(bodyOf(await f.postMortem.query({ key: alice.key, lobbyId })).noEffect).toMatchObject({ status: "shown", commands: [{ seat: 0, commandIndex: 2 }] });
+  });
+
+  // Credible regression: a re-run fed a replaced record's bytes under the first pass's identity.
+  it("gives a re-run only the bytes its first pass read, and drops that first pass once they are gone", async () => {
+    const store = await bucket();
+    const openers: RecordOpener[] = [];
+    const held = heldJobs();
+    const jobs: PostMortemJobs = { ...held.jobs, rerun(id, version, open, maxBits) { openers.push(open); return held.jobs.rerun(id, version, open, maxBits); } };
+    const f = world({ jobs, storedHistory: store.source });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(421, [[alice, 0]]);
+    store.put(id, generatedRecord(id), { generation: "1700000000000001" });
+    await f.postMortem.query({ key: alice.key, lobbyId });
+    await vi.waitFor(() => expect(openers).toHaveLength(1));
+    const same = await openers[0]!(AbortSignal.timeout(5000));
+    expect(same).not.toBeNull();
+    same!.destroy();
+    expect(store.asked.at(-1)!.generation).toBe("1700000000000001");
+    store.put(id, generatedRecord(id), { generation: "1700000000000003" });
+    expect(await openers[0]!(AbortSignal.timeout(5000))).toBeNull();
+    // The next fresh start reads a new first pass, unpinned.
+    const before = store.asked.length;
+    await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(store.asked.slice(before).map(r => r.generation)).toEqual([null, "1700000000000003"]);
+  });
+});
+
+describe("a private record's pages", () => {
+  // Credible regression: a page that stops reading at its budget, so entries are released before the tag at the end
+  // has verified; or a failed page kept or logged.
+  it("releases nothing of a record whose ciphertext fails after the page's budget, keeps nothing of it, and logs nothing", async () => {
+    const f = world({ jobs: heldJobs().jobs, pageScanBytes: 1 });
+    const logs = (["log", "info", "warn", "error"] as const).map(level => vi.spyOn(console, level).mockImplementation(() => {}));
+    const consume = vi.spyOn(f.archive, "consume");
+    const alice = f.w.played("alice");
+    const record = privateRecord(replayId(430));
+    for (let i = 0; i < 50; i++) record.replies.push({ type: "stub", agentId: "agent-0", tick: null, tool: "observe", receivedAt: RECEIVED + 1000 + i, answeredAt: RECEIVED + 1001 + i, code: "call_rate" } as never);
+    const { lobbyId, id } = f.match(430, [[alice, 0]], { visibility: "private", record });
+    const first = await f.postMortem.query({ key: alice.key, lobbyId });
+    const continuation = bodyOf(first).refusedPage.continuation as string;
+    expect(bodyOf(first).refusedPage.shown).toBeLessThan(5);
+    const name = privateMediaName({ lobbyId, replayId: id, kind: "match-record" });
+    const object = f.objects.get(name)!;
+    const flipped = Buffer.from(object.body);
+    flipped[flipped.length - 1] ^= 1;
+    f.objects.set(name, { ...object, body: flipped });
+    expect(await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation })).toEqual({ ok: false, body: { error: "record_unreadable", message: REFUSALS.record_unreadable } });
+    f.objects.set(name, object);
+    const before = consume.mock.calls.length;
+    const again = await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation });
+    expect(again.ok).toBe(true);
+    expect(consume.mock.calls.length - before).toBe(1);
+    for (const log of logs) expect(log).not.toHaveBeenCalled();
+  });
+});
+
+describe("continuations", () => {
+  // Credible regression: a continuation opened, or a record read, before ownership is proven.
+  it("refuses a non-owner holding an owner's valid continuation exactly as without one, reading nothing", async () => {
+    const scan = vi.fn((run: () => Promise<unknown>) => run());
+    const f = world({ jobs: { ...heldJobs().jobs, scan: scan as PostMortemJobs["scan"] } });
+    const alice = f.w.played("alice"), mallory = f.w.played("mallory");
+    const { lobbyId, id } = f.match(440, [[alice, 0]], { record: manyRefusals(replayId(440), 3000) });
+    const continuation = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId })).refusedPage.continuation as string;
+    const reads = { scans: scan.mock.calls.length, opens: f.history.open.mock.calls.length };
+    expect(JSON.stringify(await f.postMortem.query({ key: mallory.key, lobbyId, refusedContinuation: continuation })))
+      .toBe(JSON.stringify(await f.postMortem.query({ key: mallory.key, lobbyId })));
+    expect(JSON.stringify(await f.postMortem.query({ key: mallory.key, matchId: id, refusedContinuation: continuation })))
+      .toBe(JSON.stringify({ ok: false, body: { error: "not_found", message: REFUSALS.not_found } }));
+    expect({ scans: scan.mock.calls.length, opens: f.history.open.mock.calls.length }).toEqual(reads);
+  });
+
+  // Credible regression: a continuation accepted after tampering, for another match, owner or list, or after a restart.
+  it("starts again on a tampered continuation, one of another match, owner or list, and one from before a restart", async () => {
+    const f = world({ jobs: heldJobs().jobs });
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const a = f.match(441, [[alice, 0], [bob, 1]], { record: manyRefusals(replayId(441), 3000) });
+    const b = f.match(442, [[alice, 0]], { record: manyRefusals(replayId(442), 3000) });
+    const mine = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId })).refusedPage.continuation as string;
+    const theirs = bodyOf(await f.postMortem.query({ key: bob.key, lobbyId: a.lobbyId })).refusedPage;
+    expect(theirs.continuation).toBeUndefined();
+    const START = { ok: false, body: { error: "start_again", message: REFUSALS.start_again } };
+    // One bit of the sealed text flipped where nothing else checks it: "public" read as "qublic" if the tag were not checked.
+    const raw = Buffer.from(mine, "base64url");
+    raw[28 + `{"v":1,"list":"refused","base":{"replayId":"${a.id}","visibility":"`.length]! ^= 1;
+    const tampered = raw.toString("base64url");
+    expect(await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: tampered })).toEqual(START);
+    expect(await f.postMortem.query({ key: alice.key, lobbyId: b.lobbyId, refusedContinuation: mine })).toEqual(START);
+    expect(await f.postMortem.query({ key: bob.key, lobbyId: a.lobbyId, refusedContinuation: mine })).toEqual(START);
+    expect(await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, noEffectContinuation: mine })).toEqual(START);
+    const restarted = createPostMortem({ identities: f.w.ids, lobbies: f.lobbies, registry: f.registry, history: f.history, archive: f.archive, versions: f.versions, jobs: f.jobs, now: f.w.now });
+    expect(await restarted.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: mine })).toEqual(START);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: mine })).ok).toBe(true);
+  });
+});
+
+describe("a read that takes too long", () => {
+  // Credible regression: a stalled read answered as an unreadable record, for good, instead of asking again later.
+  it("answers a read stopped by its guard as one to ask again later, and keeps nothing of it", async () => {
+    const f = world({ jobs: heldJobs().jobs, readGuardMs: 50 });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(450, [[alice, 0]]);
+    const body = f.records.get(id)!;
+    let sent = false;
+    f.history.open.mockImplementationOnce(async () => new Readable({ read() { if (!sent) { sent = true; this.push(body.subarray(0, 10)); } } }));
+    expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "read_timed_out", message: REFUSALS.read_timed_out } });
+    expect((await f.postMortem.query({ key: alice.key, lobbyId })).ok).toBe(true);
   });
 });

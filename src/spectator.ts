@@ -67,6 +67,8 @@ export interface SpectatedServerOptions extends ServerOptions {
   readonly replayStore?: ReplayStore;
   readonly replaySource?: ReplaySource;
   readonly historySource?: HistorySource;
+  /** The stored records under historySource's corrections: the post-mortem reads every record it does not correct here. */
+  readonly storedHistorySource?: HistorySource;
   readonly privateArchive?: PrivateArchive;
   /** Hands recorded matches to the record service, which builds their readable records. */
   readonly recordHandoff?: RecordHandoff;
@@ -117,7 +119,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   };
   // The entry server serves match_post_mortem over the stored records; a slot never does.
   const postMortem = entryPoint && options.accounts && options.watchRegistry ? createPostMortem({ identities: options.accounts.identities,
-    lobbies: options.accounts.lobbies, registry: options.watchRegistry, history: options.historySource, archive: options.privateArchive,
+    lobbies: options.accounts.lobbies, registry: options.watchRegistry, history: options.historySource, storedHistory: options.storedHistorySource, archive: options.privateArchive,
     versions: options.postMortemVersions, jobs: createJobs() }) : undefined;
   const server = await startServer({ ...options, feed: entryPoint ? undefined : feed, postMortem });
   if (!entryPoint) server.mount("/live", (req, res) => hub.handle(req, res));

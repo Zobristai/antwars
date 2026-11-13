@@ -704,8 +704,8 @@ describe("existing deploy paths are unchanged", () => {
       ["run", "deploy", "antwar", "--image", `${SERVER_REPO}:${SHA}`,
         // The record handoff settings; the slot allocator's 8 public and 8 private
         // live slots and the address it wakes them at; the load balancer's addresses.
-        // Variables set outside the script are kept.
-        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV}`,
+        // Variables set outside the script are kept. ANTWAR_MEMORY_LIMIT is --memory's own value.
+        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
         "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
         "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",
         "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION],
@@ -1212,8 +1212,8 @@ describe("load balancer addresses", () => {
   const ADDRESSES = ["192.0.2.10", "2001:db8::a", "198.51.100.7", "203.0.113.", "fe80::1"];
   const printed = (r: { stdout: string; stderr: string }) => ADDRESSES.filter((a) => (r.stdout + r.stderr).includes(a));
   // antwar's variables before ANTWAR_LOAD_BALANCER_ADDRESS, as the live path and `all` gave them, with the client-source
-  // claim rule.
-  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV}`]);
+  // claim rule and the memory limit.
+  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV},ANTWAR_MEMORY_LIMIT=2Gi`]);
   const gameDeploy = (r: { gcloud: string[][] }) => deploys(r.gcloud).find((c) => c[2] === "antwar")!;
 
   it("the live path adds only ANTWAR_LOAD_BALANCER_ADDRESS to antwar's variables, read before the build, and prints no address", () => {
@@ -1364,7 +1364,7 @@ describe.concurrent("all", () => {
     expect(r.gcloud.findIndex((c) => c[0] === "compute")).toBeLessThan(r.gcloud.findIndex((c) => c[0] === "artifacts"));
     for (const address of ["192.0.2.10", "2001:db8::a"]) expect(r.stdout + r.stderr).not.toContain(address);
     expect(deploys(r.gcloud)[17]).toEqual(["run", "deploy", "antwar", "--image", IMAGE,
-      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV}`,
+      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
       "--update-secrets", KEY,
       "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
       "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",

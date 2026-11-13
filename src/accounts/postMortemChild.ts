@@ -18,7 +18,7 @@ import { step, type ServerTerminal } from "../sim/step.js";
 import type { SimConfig } from "../sim/config.js";
 import type { SimInput, SimState } from "../sim/types.js";
 import {
-  BLOCK_TICKS, canonicalJson, comparableEvent, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, RecordReadError, scanRecord,
+  BLOCK_TICKS, canonicalJson, comparableEvent, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, paddedBits, RecordReadError, scanRecord,
   type CallFact, type ReducedRecord, type ReplyLines,
 } from "./postMortemRecord.js";
 
@@ -50,8 +50,10 @@ export type ChildMessage =
   | { readonly kind: "done"; readonly tested: number; readonly counts: [number, number][]; readonly bits: Uint8Array; readonly undecided: [number, number][] }
   /** The child could not allocate memory it asked for: nothing is settled about the match now. */
   | { readonly kind: "allocation_failed" }
+  /** The record's command bits exceed the request's bit limit: it is not re-run. */
+  | { readonly kind: "too_large" }
   | Exclude<RerunAnswer, { kind: "done" }>;
-export interface ChildRequest { readonly version: string }
+export interface ChildRequest { readonly version: string; readonly maxBits: number }
 
 /** Packs findings as each seat's command count and a bitset of its commands. */
 export function packFindings(seats: readonly { seat: number; commands: readonly unknown[] }[], findings: readonly NoEffect[]): { counts: [number, number][]; bits: Uint8Array } {
@@ -293,6 +295,7 @@ if (process.send !== undefined && process.env.ANTWAR_POST_MORTEM_CHILD === "1") 
       try {
         const scan = await scanRecord(process.stdin, undefined, "rerun", () => process.send!({ kind: "progress", tick: null } satisfies ChildMessage));
         if (scan.reduced.codeVersion !== request.version) return { kind: "changed" };
+        if (paddedBits(scan.survey.elements.map(e => e.commands)) > request.maxBits) return { kind: "too_large" };
         const answer = rerunRecord(scan.reduced, tick => process.send!({ kind: "progress", tick } satisfies ChildMessage));
         if (answer.kind !== "done") return answer;
         return { kind: "done", tested: answer.tested, ...packFindings(scan.reduced.seats, answer.findings), undecided: answer.undecided };

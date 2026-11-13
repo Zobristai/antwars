@@ -7,7 +7,7 @@ import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { Worker } from "node:worker_threads";
 import { once } from "node:events";
 import { afterEach, expect, it, vi } from "vitest";
-import { createGcsHistorySource, createHistorySummaryCache, historySourceFromEnv, type HistorySummary } from "../../src/replays/history-source.ts";
+import { createGcsHistorySource, createHistorySummaryCache, historySourceFromEnv, storedIdentity, type HistorySummary } from "../../src/replays/history-source.ts";
 import type { ReplayGet } from "../../src/replays/access.ts";
 import { parseSummary } from "../../src/replays/history-summary-worker.ts";
 
@@ -63,6 +63,49 @@ it.each(["gzip", "raw", "raw-mislabeled-gzip"])("reads %s JSON by exact id with 
   expect(await collect(body!)).toEqual(json);
   expect(f.objects).toEqual([`https://storage.googleapis.com/storage/v1/b/fake-history/o/${id}.json?alt=media`]);
   expect(f.calls).toHaveLength(1);
+});
+
+// Credible regression: a stream's identity taken from another call than the reply carrying its bytes, a pinned
+// generation not sent, or a Range read of compressed bytes.
+it("gives each opened stream its own reply's generation and stored length, and sends a pinned generation, never a Range", async () => {
+  const json = Buffer.from(JSON.stringify(record())), stored = gzipSync(json);
+  let generation = "1700000000000001";
+  const seen: { generation: string | null; range: string | undefined }[] = [];
+  const f = await fixture((req, res) => {
+    const asked = new URL(req.url!, "http://localhost").searchParams.get("generation");
+    seen.push({ generation: asked, range: req.headers.range });
+    if (asked !== null && asked !== generation) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { "content-encoding": "gzip", "x-goog-generation": generation, "x-goog-stored-content-length": String(stored.length) }).end(stored);
+  });
+  const signal = new AbortController().signal;
+  const first = await f.source.open(id, signal);
+  expect(storedIdentity(first!)).toEqual({ generation: "1700000000000001", storedLength: stored.length });
+  expect(await collect(first!)).toEqual(json);
+  const pinned = await f.source.open(id, signal, "1700000000000001");
+  expect(storedIdentity(pinned!)).toEqual({ generation: "1700000000000001", storedLength: stored.length });
+  pinned!.destroy();
+  // Replaced: the pinned generation is gone, and an unpinned read names the new one.
+  generation = "1700000000000002";
+  expect(await f.source.open(id, signal, "1700000000000001")).toBeNull();
+  const fresh = await f.source.open(id, signal);
+  expect(storedIdentity(fresh!)?.generation).toBe("1700000000000002");
+  fresh!.destroy();
+  expect(seen).toEqual([{ generation: null, range: undefined }, { generation: "1700000000000001", range: undefined },
+    { generation: "1700000000000001", range: undefined }, { generation: null, range: undefined }]);
+  await expect(f.source.open(id, signal, "0x1")).rejects.toThrow("invalid generation");
+  // A stream this source did not open from a reply, a rebuilt one say, has no identity.
+  expect(storedIdentity(Readable.from([json]))).toBeUndefined();
+});
+
+it.each([
+  ["no headers", {}],
+  ["a generation that is not digits", { "x-goog-generation": "abc", "x-goog-stored-content-length": "5" }],
+  ["no stored length", { "x-goog-generation": "17" }],
+])("gives no identity to a reply with %s", async (_name, headers) => {
+  const f = await fixture((_req, res) => { res.writeHead(200, headers).end(JSON.stringify(record())); });
+  const body = await f.source.open(id, new AbortController().signal);
+  expect(storedIdentity(body!)).toBeUndefined();
+  body!.destroy();
 });
 
 it("follows empty metadata continuations before selecting newest records and returns only summary fields", async () => {
