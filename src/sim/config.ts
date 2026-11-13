@@ -593,7 +593,7 @@ export function rulesConfig(value: string | undefined): SimConfig {
         localAnts: { ...BALANCED_LOCAL_ANT_RULES, workerGuardSettle: true, everyColony: true }, queenHp: QUEEN_HP_RULES,
         earlyWin: EARLY_WIN_RULES, commandIdleTicks: 180 * PUBLIC_CONFIG.ticksPerSecond };
     default:
-      throw new Error(`ANTWAR_RULES must be unset or one of ${RULES_NAMES.join(", ")}; got ${JSON.stringify(value)}`);
+      throw new Error(`ANTWAR_RULES must be unset or redesign; got ${JSON.stringify(value)}`);
   }
 }
 
