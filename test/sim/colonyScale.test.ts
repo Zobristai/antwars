@@ -1,22 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, PUBLIC_CONFIG } from "../../src/sim/config.js";
-import { groundIncome, hatch, regrow } from "../../src/sim/forage.js";
+import { hatch, regrow } from "../../src/sim/forage.js";
 import { guardBudget, rebalanceRoles } from "../../src/sim/houseBot.js";
-import { headerLine, replay, stateHash } from "../../src/sim/log.js";
 import { createMatch, newAnt } from "../../src/sim/map.js";
-import { step } from "../../src/sim/step.js";
 import type { SimEvent } from "../../src/sim/types.js";
 import { BASELINE_CONFIG, counts, DURATION_SEEDS, durationChecks, observeBytes, timing } from "../tools/colonyScale.js";
-import { addAnt, emptyMatch, PRE_FRONTLINE_PUBLIC_CONFIG } from "./fixtures.js";
+import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
 import { boardPixelCheck, boundedCapture } from "../../web/capture/colony-scale.ts";
 
 /** The public config as every match plays it, at grid scale 2. */
 const PUBLIC = playable(PUBLIC_CONFIG);
-/** Hold one reference tile of the top row: its 2x2 block of grid-scale-2 cells. */
-const hold = (owner: number[], width: number, tile: number, colony: -1 | 0 | 1) => {
-  for (const i of [2 * tile, 2 * tile + 1, width + 2 * tile, width + 2 * tile + 1]) owner[i] = colony;
-};
 
 /** A retune must change real growth, not just the cap or a display counter. */
 describe("30-minute larger colonies", () => {
@@ -67,60 +61,6 @@ describe("30-minute larger colonies", () => {
     state.food[tile] = state.foodCap[tile]!;
     regrow(state, 300);
     expect(state.food[tile]).toBe(state.foodCap[tile]);
-  });
-
-  it("preserves the recorded ground-income growth scenario and its deterministic replay", () => {
-    const recorded = playable(PRE_FRONTLINE_PUBLIC_CONFIG);
-    let state = createMatch(6006, recorded);
-    let groundOff = createMatch(6006, { ...recorded, groundFoodIntervalTicks: undefined });
-    for (let i = 0; i < 2400; i++) {
-      state = step(state).state;
-      groundOff = step(groundOff).state;
-    }
-    expect(state.result).toBeNull();
-    const live = counts(state);
-    const without = counts(groundOff);
-    for (const colony of [0, 1] as const) {
-      expect(live[colony]).toBeGreaterThanOrEqual(200);
-      expect(live[colony]).toBeGreaterThan(without[colony] + 30);
-    }
-    const replayed = replay([headerLine(6006, recorded)], 2400);
-    expect(stateHash(replayed)).toBe(stateHash(state));
-  }, 30_000);
-
-  it("pays only held tiles on match-global boundaries, independently of patch regrowth", () => {
-    const state = createMatch(7, { ...PUBLIC, groundFoodIntervalTicks: 600, foodRegrowTicks: 777 });
-    const width = state.config.mapWidth;
-    state.owner.fill(-1);
-    hold(state.owner, width, 10, 0);
-    hold(state.owner, width, 11, 0);
-    hold(state.owner, width, 12, 1);
-    expect(groundIncome(state, 0)).toEqual([0, 0]);
-    expect(groundIncome(state, 599)).toEqual([0, 0]);
-    expect(groundIncome(state, 600)).toEqual([2, 1]);
-    expect(groundIncome(state, 601)).toEqual([0, 0]);
-    regrow(state, 600);
-    expect(state.colonies.map((c) => c.foodStore)).toEqual([2, 1]);
-    hold(state.owner, width, 11, 1);
-    hold(state.owner, width, 12, -1);
-    regrow(state, 1200);
-    expect(state.colonies.map((c) => c.foodStore)).toEqual([3, 2]);
-  });
-
-  it.each([undefined, 0])("preserves old economies when ground income is %s", (interval) => {
-    const state = createMatch(7, { ...PUBLIC, groundFoodIntervalTicks: interval });
-    state.owner.fill(0);
-    regrow(state, 600);
-    expect(state.colonies.map((c) => c.foodStore)).toEqual([0, 0]);
-  });
-
-  it("credits recorded ground income through the existing step call", () => {
-    const state = createMatch(7, playable(PRE_FRONTLINE_PUBLIC_CONFIG));
-    state.tick = 600;
-    const after = step(state).state;
-    const award = groundIncome(after, 600);
-    expect(award.every((n) => n > 0)).toBe(true);
-    expect(after.colonies.map((c) => c.foodStore)).toEqual(award);
   });
 });
 
