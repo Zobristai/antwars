@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, rulesConfig, SUB, type SimConfig } from "../../src/sim/config.js";
 import { tileCentre } from "../../src/sim/geometry.js";
 import { gridScaleOf } from "../../src/sim/gridScale.js";
-import { chooseJoinColony, defaultAllocator, fillSquads } from "../../src/sim/agents.js";
+import { chooseJoinColony, defaultAllocator, fillSquads, trimSquads } from "../../src/sim/agents.js";
 import { adjacentEnemyQueen, resolveCombat } from "../../src/sim/combat.js";
 import { pickupAndDeliver } from "../../src/sim/forage.js";
 import { houseDirection, nearestIntruder, sightScan } from "../../src/sim/houseBot.js";
 import { beginLocalGoals, noteContact, readLocalGoal } from "../../src/sim/localArrival.js";
 import { buildGrid, cloneState, createMatch, GridTracker, hasAdjacentEnemy, newColony, newStats, noEnemyNear, tileIndex, type Grid } from "../../src/sim/map.js";
 import { claimCountMarks } from "../../src/sim/marks.js";
+import { applySoftSeparation } from "../../src/sim/softSeparation.js";
 import { isBlockedTile } from "../../src/sim/terrain.js";
 import { updateTerritory } from "../../src/sim/territory.js";
 import type { Agent, Ant, ColonyId, Mark, QueenState, SimEvent, SimState } from "../../src/sim/types.js";
@@ -219,6 +220,7 @@ describe("queens", () => {
   it("drops a held target naming the ant's own colony, though that queen lives", () => {
     const state = fourColonyMatch();
     const held = heldFighter(state, { targetId: 0, targetColony: 2 });
+    expect(held.intent).toHaveProperty("targetColony");
     expect(held.intent.targetColony).not.toBe(2);
     expect(held.selectedTick).toBe(state.tick);
   });
@@ -227,6 +229,7 @@ describe("queens", () => {
     const state = fourColonyMatch();
     queenOf(state, 3).lostTick = 1;
     const held = heldFighter(state, { targetId: 0, targetColony: 3 });
+    expect(held.intent).toHaveProperty("targetColony");
     expect(held.intent.targetColony).not.toBe(3);
     expect(held.selectedTick).toBe(state.tick);
   });
@@ -308,7 +311,7 @@ describe("joins, squads and delivery", () => {
     expect(defaultAllocator.chooseColony(state, { type: "join", agentId: "d" })).toBe(2);
   });
 
-  it("fills squads for colonies 2 and 3", () => {
+  it("fills squads for colonies 2 and 3, and trims them when deaths leave them above half the colony", () => {
     const state = fourColonyMatch();
     const { tx, ty } = openArea(state, 4);
     for (let i = 0; i < 4; i += 1) { addAnt(state, 2, tx + i, ty); addAnt(state, 3, tx + i, ty + 3); }
@@ -321,6 +324,20 @@ describe("joins, squads and delivery", () => {
       expect(agent.squad.length).toBeGreaterThan(0);
       for (const id of agent.squad) expect(state.ants.find((ant) => ant.id === id)!.colony).toBe(agent.colony);
     }
+    // Each colony loses its two non-squad ants: half of the two left is one squad ant.
+    const squads = new Set(state.agents.flatMap((agent) => agent.squad));
+    state.ants = state.ants.filter((ant) => squads.has(ant.id));
+    trimSquads(state, state.tick, []);
+    for (const agent of state.agents) expect(agent.squad).toHaveLength(1);
+  });
+
+  it("measures soft separation for every colony", () => {
+    const state = fourColonyMatch();
+    const { tx, ty } = openArea(state, 2);
+    const ant = addAnt(state, 3, tx, ty);
+    const observation = applySoftSeparation(state, [{ x: ant.x, y: ant.y }]);
+    expect(observation.colonies).toHaveLength(4);
+    expect(observation.colonies[3]!.antTicks).toBe(1);
   });
 
   it("delivers a colony-3 carrier's food to colony 3", () => {
