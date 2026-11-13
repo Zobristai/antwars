@@ -6,7 +6,7 @@ import { chooseJoinColony, defaultAllocator, fillSquads, trimSquads } from "../.
 import { adjacentEnemyQueen, resolveCombat } from "../../src/sim/combat.js";
 import { pickupAndDeliver } from "../../src/sim/forage.js";
 import { houseDirection, nearestIntruder, sightScan } from "../../src/sim/houseBot.js";
-import { beginLocalGoals, noteContact, readLocalGoal } from "../../src/sim/localArrival.js";
+import { beginLocalGoals, noteContact, readLocalGoal, takeLocalGoals } from "../../src/sim/localArrival.js";
 import { buildGrid, cloneState, createMatch, GridTracker, hasAdjacentEnemy, newColony, newStats, noEnemyNear, tileIndex, type Grid } from "../../src/sim/map.js";
 import { claimCountMarks } from "../../src/sim/marks.js";
 import { applySoftSeparation } from "../../src/sim/softSeparation.js";
@@ -194,44 +194,67 @@ describe("queens", () => {
   });
 
   /**
-   * A colony-2 house fighter in sight of colony 0's queens and of no enemy ant, holding a queen intent selected
-   * one tick ago.
+   * A colony-2 house fighter in sight of colony 0's queens and of no enemy ant or adjacent queen, holding a queen
+   * intent selected one tick ago and aimed at the held queen's position. With nearerQueen, colony 0 also has a
+   * live queen 1 three tiles from the fighter (not adjacent), so the fighter's fresh pick is that queen: a
+   * different target from any queen-0 hold, so the hold is always validated rather than taken as the same intent.
+   * Returns the hold afterwards and the point the fighter headed for (undefined if it never chose an intent).
    */
-  function heldFighter(state: SimState, hold: { targetId: number; targetColony: ColonyId }) {
+  function heldFighter(state: SimState, hold: { targetId: number; targetColony: ColonyId }, nearerQueen = false) {
     const queen = queenOf(state, 0);
     const { tx, ty } = openArea(state, 1, Math.floor(queen.queenX / SUB) + 6, Math.floor(queen.queenY / SUB) - 2);
     expect(Math.abs(tx - Math.floor(queen.queenX / SUB)) + Math.abs(ty - Math.floor(queen.queenY / SUB))).toBeLessThan(state.config.sightTiles);
+    if (nearerQueen) state.colonies[0]!.queens!.push({ ...queen, id: 1, starting: undefined, queenX: tileCentre(tx - 3), queenY: tileCentre(ty) });
     const ant = addAnt(state, 2, tx, ty, { role: "fighter" });
-    const intent = { kind: "queen" as const, targetId: hold.targetId, x: ant.x, y: ant.y, targetColony: hold.targetColony };
+    const target = queenOf(state, hold.targetColony, hold.targetId);
+    const intent = { kind: "queen" as const, targetId: hold.targetId, x: target.queenX, y: target.queenY, targetColony: hold.targetColony };
     (ant as Ant & { houseIntentHold?: unknown }).houseIntentHold = { intent, role: "fighter", selectedTick: state.tick - 1 };
+    beginLocalGoals(state);
     houseDirection(state, buildGrid(state), [], ant);
-    return (ant as Ant & { houseIntentHold: { intent: { targetId: number; targetColony?: ColonyId }; selectedTick: number } }).houseIntentHold;
+    const goal = readLocalGoal(state, ant);
+    takeLocalGoals(state);
+    const after = (ant as Ant & { houseIntentHold: { intent: { kind: string; targetId: number; targetColony?: ColonyId }; selectedTick: number } }).houseIntentHold;
+    return { intent: after.intent, selectedTick: after.selectedTick, heading: goal === undefined ? undefined : { x: goal.x, y: goal.y } };
   }
+
+  const at = (q: QueenState) => ({ x: q.queenX, y: q.queenY });
 
   it("keeps a held colony-3 queen target while she lives, with colony 0's first queen lost", () => {
     const state = fourColonyMatch();
     const zero = state.colonies[0]!;
     zero.queens = [{ ...zero.queens![0]!, lostTick: 1 }, { ...zero.queens![0]!, id: 1, starting: undefined }];
+    // The fresh pick is colony 0's queen 1: a different target, so the colony-3 hold is validated and kept.
     const held = heldFighter(state, { targetId: 0, targetColony: 3 });
-    expect(held.intent).toMatchObject({ targetId: 0, targetColony: 3 });
+    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 0, targetColony: 3 }));
     expect(held.selectedTick).toBe(state.tick - 1);
+    expect(held.heading).toEqual(at(queenOf(state, 3)));
   });
 
   it("drops a held target naming the ant's own colony, though that queen lives", () => {
     const state = fourColonyMatch();
-    const held = heldFighter(state, { targetId: 0, targetColony: 2 });
-    expect(held.intent).toHaveProperty("targetColony");
-    expect(held.intent.targetColony).not.toBe(2);
+    const held = heldFighter(state, { targetId: 0, targetColony: 2 }, true);
+    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 1, targetColony: 0 }));
     expect(held.selectedTick).toBe(state.tick);
+    expect(held.heading).toEqual(at(queenOf(state, 0, 1)));
   });
 
   it("drops a held colony-3 queen target once she is lost, while colony 0's first queen lives", () => {
     const state = fourColonyMatch();
     queenOf(state, 3).lostTick = 1;
-    const held = heldFighter(state, { targetId: 0, targetColony: 3 });
-    expect(held.intent).toHaveProperty("targetColony");
-    expect(held.intent.targetColony).not.toBe(3);
+    const held = heldFighter(state, { targetId: 0, targetColony: 3 }, true);
+    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 1, targetColony: 0 }));
     expect(held.selectedTick).toBe(state.tick);
+    expect(held.heading).toEqual(at(queenOf(state, 0, 1)));
+  });
+
+  it("treats a fresh pick of another colony's queen with the held id as a new target", () => {
+    const state = fourColonyMatch();
+    queenOf(state, 3).lostTick = 1;
+    // The fresh pick is colony 0's queen 0: the held id, another colony. It replaces the lost colony-3 target now.
+    const held = heldFighter(state, { targetId: 0, targetColony: 3 });
+    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 0, targetColony: 0 }));
+    expect(held.selectedTick).toBe(state.tick);
+    expect(held.heading).toEqual(at(queenOf(state, 0)));
   });
 });
 
