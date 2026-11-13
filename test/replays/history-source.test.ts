@@ -198,6 +198,11 @@ it("checks the summary boundary in the parser entry: code-point limits, old miss
   expect(parse(value => { value.setup = { modelIndex: true }; })).toMatchObject({ rated: false, modelIndex: true });
   expect(parse(value => { value.setup = { rated: true }; })).toMatchObject({ rated: true, modelIndex: false });
   expect(Object.keys(parse(() => {}).seats[0]!)).not.toContain("commands");
+  // An unrated match's drawn colony names; a record without them, or with anything but two names, lists the rated names.
+  expect(parse(value => { value.setup = { rated: false, colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] }; }).colonyNames).toEqual(["Sweetwater Colony", "Lake Skinner Colony"]);
+  for (const colonyNames of [undefined, null, [], ["Sweetwater Colony"], ["Sweetwater Colony", ""], [1, 2]]) {
+    expect(parse(value => { value.setup = { rated: false, colonyNames }; }), JSON.stringify(colonyNames)).not.toHaveProperty("colonyNames");
+  }
   const rejected: [string, (value: any) => void][] = [
     ["65 code points", value => { value.startedAt = "😀".repeat(65); }],
     ["a wrong format", value => { value.format = "other"; }],
