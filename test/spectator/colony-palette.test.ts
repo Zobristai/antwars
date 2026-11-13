@@ -54,4 +54,20 @@ describe("the page's colony colours", () => {
     expect([colonyTint(0), colonyTint(1)]).toEqual([0xffb000, LAKE_SKINNER]);
     expect(colonyShades(1)).toEqual([LAKE_SKINNER]);
   });
+
+  it("keep the classic colours, wash and steppe shaders for a name that is an inherited member, such as constructor", () => {
+    const classic = { tint: [colonyTint(0), colonyTint(1)], wash: [colonyWash(0), colonyWash(1)], fill: STEPPE_LOOK.board2d.fill(""),
+      front: STEPPE_LOOK.board2d.front(""), ground: STEPPE_LOOK.board3d.ground("definitions", "") };
+    setMatchColonies(["constructor", "toString"]);
+    expect([colonyTint(0), colonyTint(1)]).toEqual(classic.tint);
+    expect([colonyWash(0), colonyWash(1)]).toEqual(classic.wash);
+    for (const colony of [0, 1]) {
+      const { hue, depth } = colonyWash(colony);
+      expect(hue.every(c => Number.isFinite(c))).toBe(true);
+      expect(Number.isFinite(depth)).toBe(true);
+    }
+    expect(STEPPE_LOOK.board2d.fill("")).toBe(classic.fill);
+    expect(STEPPE_LOOK.board2d.front("")).toBe(classic.front);
+    expect(STEPPE_LOOK.board3d.ground("definitions", "")).toBe(classic.ground);
+  });
 });

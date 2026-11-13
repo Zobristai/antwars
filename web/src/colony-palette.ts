@@ -4,7 +4,7 @@
  * match's setup before they draw; until then, and for a match that carries no names, it is the rated names' colours.
  */
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyAgentShades, colonyColours, colourCss, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyAgentShades, colonyColours, colourCss, supercolony, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import type { Rgb } from "./board-look.ts";
 
 /**
@@ -52,7 +52,11 @@ export function colonyShades(colony: number): readonly number[] {
 
 /** A colony's territory wash on the steppe look. */
 export function colonyWash(colony: number): { readonly hue: Rgb; readonly depth: number } {
-  const own = WASH[names[colony === 1 ? 1 : 0]];
+  const id = colony === 1 ? 1 : 0;
+  // Own entries only, so a name such as "constructor" never reads an inherited member; a name outside the table keeps
+  // its colony's classic wash, as colonyColours keeps its classic colour.
+  const name = supercolony(names[id]) ? names[id] : COLONY_NAMES[id];
+  const own = Object.hasOwn(WASH, name) ? WASH[name] : undefined;
   if (own) return own;
   const [r, g, b] = colonyRgb(colony);
   return { hue: [r * WASH_SHADE, g * WASH_SHADE, b * WASH_SHADE], depth: WASH_DEPTH };
