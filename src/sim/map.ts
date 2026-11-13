@@ -4,7 +4,8 @@ import { addRocks, createTerrain, isBlockedTile, isWaterTile, landBirthPosition,
 import { startBoxes } from "./startPlacement.js";
 import { generateFoodLayout, referenceFoodConfig } from "./foodLayout.js";
 import { gridScaleOf, scaledFoodPatch, scaledTileCentre, withGridScale } from "./gridScale.js";
-import { validateMapBoards } from "./mapBoard.js";
+import { isQuadrantRotation, validateMapBoards } from "./mapBoard.js";
+import { createQuadrantMatch, quadrantConfigForMap } from "./quadrantMatch.js";
 import { nextUint32 } from "./rng.js";
 import type { Ant, Caste, ColonyId, ColonyState, MatchStats, QueenState, SimState, Terrain, TileOwner } from "./types.js";
 
@@ -169,6 +170,8 @@ export function newAnt(
  */
 export function matchConfigForMap(seed: number, config: SimConfig): SimConfig {
   if (config.terrain === undefined) return config;
+  // A four-colony rotation draws its quadrant board (src/sim/quadrantMatch.ts).
+  if (isQuadrantRotation(config)) return quadrantConfigForMap(seed, config);
   // Every map in the rotation must play at this grid scale and fit its own board.
   validateMapBoards(config);
   const map = selectMap(seed, config.terrain);
@@ -214,6 +217,7 @@ export function newStats(colonyCount: number): MatchStats {
 
 /** Create a match at tick 0. Queued agents join through inputs on the first step. */
 export function createMatch(seed: number, config: SimConfig = withGridScale(DEFAULT_CONFIG)): SimState {
+  if (isQuadrantRotation(config)) return createQuadrantMatch(seed, config);
   config = matchConfigForMap(seed, config);
   let terrain = createTerrain(seed, config);
   if (config.foodLayout !== undefined) config = { ...config,

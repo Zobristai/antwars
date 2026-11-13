@@ -751,7 +751,8 @@ export function houseFoundingReserve(state: SimState): number {
 /** House-only colonies spend through the same validator as found_queen, never for a seated agent. */
 export function houseFounding(state: SimState, tick: number, events: SimEvent[], observe?: HouseFoundingObserver): void {
   const rules = state.config.queenFounding;
-  if (!rules) return;
+  // A four-colony match has no house player: no colony founds a queen it was not told to.
+  if (!rules || state.colonies.length > 2) return;
   for (const colony of state.colonies) {
     const foodStore = colony.foodStore, price = queenFoundingCost(colony, rules), reserve = houseFoundingReserve(state);
     const threshold = price + reserve, nextFoundTick = nextQueenFoundingTick(colony, rules), live = activeQueens(colony).length;

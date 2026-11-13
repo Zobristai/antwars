@@ -25,8 +25,9 @@ import { claimCountMarks, expireMarks, localRulesSide, type StepObservers } from
 import { assignQueenOwners } from "./queenOwners.js";
 import { clearReleasedPatrolWaypoints, nextPatrolWaypoint, patrolChains, type PatrolChains } from "./patrol.js";
 import { spawnWalkDirection } from "./spawnWalk.js";
+import { fourColonyEnd } from "./elimination.js";
 import { decideTimeUp, queensKilled, sustainedTerritoryWin, updateOverrun, updateTerritory } from "./territory.js";
-import type { ColonyId, InputResult, SimEvent, SimInput, SimState, StepOutput } from "./types.js";
+import type { ColonyId, InputResult, MatchResult, SimEvent, SimInput, SimState, StepOutput } from "./types.js";
 import { createVisibility, recordSeenFood, recordSightings, takeView } from "./view.js";
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -363,17 +364,23 @@ function tickInPlace(
   if (config.patrolLinkTiles !== undefined) clearReleasedPatrolWaypoints(state);
 
   // 10. Win conditions.
-  // Overrun counts the ants alive now, including any hatched this tick.
-  let result = config.queenHp !== undefined ? queensKilled(state, tick) : updateOverrun(state, liveGrid(state), tick, events);
-  if (result === null) result = sustainedTerritoryWin(state, tick);
-  if (result === null && (stopNow || tick + 1 >= config.matchTicks)) result = decideTimeUp(state, tick, "time_up");
-  // A server abandonment has no winner, even if a natural win coincides with
-  // its terminal tick. Historical ticks (including operator stop) are unchanged.
-  if (stopNow === "abandoned") result = { winner: null, reason: "abandoned", decidedBy: "draw", tick };
-  // A server idle end likewise decides its terminal tick: the idle colony loses; both idle is a draw.
-  if (typeof stopNow === "object") result = stopNow.idle.length === 1
-    ? { winner: stopNow.idle[0] === 0 ? 1 : 0, reason: "idle", decidedBy: "idle", tick }
-    : { winner: null, reason: "idle", decidedBy: "draw", tick };
+  let result: MatchResult | null;
+  if (state.colonies.length > 2) {
+    // Four colonies: eliminations, the last colony standing, the majority hold and the time-up ranking.
+    result = fourColonyEnd(state, tick, stopNow);
+  } else {
+    // Overrun counts the ants alive now, including any hatched this tick.
+    result = config.queenHp !== undefined ? queensKilled(state, tick) : updateOverrun(state, liveGrid(state), tick, events);
+    if (result === null) result = sustainedTerritoryWin(state, tick);
+    if (result === null && (stopNow || tick + 1 >= config.matchTicks)) result = decideTimeUp(state, tick, "time_up");
+    // A server abandonment has no winner, even if a natural win coincides with
+    // its terminal tick. Historical ticks (including operator stop) are unchanged.
+    if (stopNow === "abandoned") result = { winner: null, reason: "abandoned", decidedBy: "draw", tick };
+    // A server idle end likewise decides its terminal tick: the idle colony loses; both idle is a draw.
+    if (typeof stopNow === "object") result = stopNow.idle.length === 1
+      ? { winner: stopNow.idle[0] === 0 ? 1 : 0, reason: "idle", decidedBy: "idle", tick }
+      : { winner: null, reason: "idle", decidedBy: "draw", tick };
+  }
   enforceQueenGuardCap(state);
   state.tick = tick + 1;
   if (result !== null) {

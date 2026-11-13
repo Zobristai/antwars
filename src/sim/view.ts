@@ -50,7 +50,8 @@ export interface AgentView {
   readonly tick: number;
   readonly agentId: string;
   readonly colony: ColonyId;
-  readonly colonyName: string;
+  /** Absent for a colony without a name (colonies 2 and 3 of a four-colony match). */
+  readonly colonyName?: string;
   readonly idle: boolean;
   readonly ticksLeft: number;
   readonly secondsLeft: number;
@@ -131,7 +132,7 @@ export interface VisibilityContext {
 export function createVisibility(state: SimState): VisibilityContext {
   const { config } = state;
   // Each colony's occupied tiles, once each in first-seen order (the order a Set of them iterates in).
-  const origins: [number[], number[]] = [[], []];
+  const origins: number[][] = state.colonies.map(() => []);
   const seenBy = new Uint8Array(config.mapWidth * config.mapHeight);
   for (const ant of state.ants) if (ant.hp > 0) {
     const tile = tileIndex(config, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB)), bit = 1 << ant.colony;
@@ -358,7 +359,7 @@ export function takeView(state: SimState, grid: Grid, agent: Agent, visibility =
     tick: state.tick,
     agentId: agent.id,
     colony: agent.colony,
-    colonyName: COLONY_NAMES[agent.colony],
+    ...(COLONY_NAMES[agent.colony] === undefined ? {} : { colonyName: COLONY_NAMES[agent.colony] }),
     idle: agent.idle,
     ticksLeft,
     secondsLeft: Math.ceil(ticksLeft / config.ticksPerSecond),
@@ -415,17 +416,23 @@ export interface DenseCells {
   readonly height: number;
   readonly encoding: string;
   readonly foodRadix: number;
+  /** Four-colony matches only: the colony count n of the ant kind encoding. */
+  readonly colonies?: number;
   readonly data: string;
 }
 
 export const CELL_ENCODING = "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.";
+
+/** The four-colony legend: ant kind k packs colony and caste over n colonies. */
+export const FOUR_COLONY_CELL_ENCODING = "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony id 0 to colonies-1 (own=view.colony), not queenId. Ants=antId.k separated by /; n=colonies; hp=floor(k/(3n)), r=k%(3n); colony=r%n; caste=floor(r/n): 0=no caste, 1=worker, 2=soldier. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.";
 
 function base36(value: number): string {
   if (!Number.isSafeInteger(value)) throw new RangeError("Cell integer exceeds the safe integer range");
   return value.toString(36);
 }
 
-export function denseCells(cells: readonly ViewCell[], width: number, height: number): DenseCells {
+/** colonies: the match's colony count; two colonies give today's bytes (k = hp*6 + colony + 2*caste). */
+export function denseCells(cells: readonly ViewCell[], width: number, height: number, colonies = 2): DenseCells {
   const foodRadix = cells.reduce((max, cell) => Math.max(max, cell.food + 1), 1);
   const runs: { token: string; count: number; foodOnly: boolean }[] = [];
   let previousIndex = 0;
@@ -434,15 +441,15 @@ export function denseCells(cells: readonly ViewCell[], width: number, height: nu
     const header = [base36((index - previousIndex) * foodRadix + cell.food),
       ...(cell.queen === undefined ? [] : [base36(cell.queen), ...(cell.queenHp === undefined ? [] : [base36(cell.queenHp)])])].join(",");
     previousIndex = index;
-    const ants = cell.ants.map(ant => [ant.antId, ant.hp * 6 +
-      ant.colony + (ant.caste === undefined ? 0 : ant.caste === "worker" ? 2 : 4)].map(base36).join(".")).join("/");
+    const ants = cell.ants.map(ant => [ant.antId, ant.hp * 3 * colonies +
+      ant.colony + colonies * (ant.caste === undefined ? 0 : ant.caste === "worker" ? 1 : 2)].map(base36).join(".")).join("/");
     const token = ants === "" ? header : `${header}:${ants}`;
     const foodOnly = cell.queen === undefined && ants === "";
     const last = runs.at(-1);
     if (foodOnly && last?.foodOnly && last.token === token) last.count += 1;
     else runs.push({ token, count: 1, foodOnly });
   }
-  return { width, height, encoding: CELL_ENCODING, foodRadix,
+  return { width, height, encoding: colonies === 2 ? CELL_ENCODING : FOUR_COLONY_CELL_ENCODING, foodRadix, ...(colonies === 2 ? {} : { colonies }),
     data: runs.map(run => run.count === 1 ? run.token : `${run.token}*${base36(run.count)}`).join(";") };
 }
 
@@ -456,6 +463,7 @@ export function expandCells(table: DenseCells): ViewCell[] {
     return parsed;
   };
   if (!Number.isSafeInteger(table.foodRadix) || table.foodRadix < 1) throw new RangeError("Invalid food radix");
+  const colonies = table.colonies ?? 2, kinds = 3 * colonies;
   const cells: ViewCell[] = [];
   let previousIndex = 0;
   for (const row of table.data.split(";")) {
@@ -467,9 +475,9 @@ export function expandCells(table: DenseCells): ViewCell[] {
     const delta = Math.floor(packedTile / table.foodRadix), food = packedTile - delta * table.foodRadix;
     const ants = body === "" ? [] : body.split("/").map(record => {
       const [antId, packed] = record.split(".").map(n) as [number, number];
-      const hp = Math.floor(packed / 6), kind = packed % 6;
-      return { antId, hp, colony: (kind % 2) as ColonyId,
-        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") as Caste }) };
+      const hp = Math.floor(packed / kinds), kind = packed % kinds, caste = Math.floor(kind / colonies);
+      return { antId, hp, colony: (kind % colonies) as ColonyId,
+        ...(caste === 0 ? {} : { caste: (caste === 1 ? "worker" : "soldier") as Caste }) };
     });
     for (let i = 0; i < count; i++) {
       const index = previousIndex + delta;

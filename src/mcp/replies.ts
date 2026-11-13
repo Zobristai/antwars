@@ -3,6 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { SimConfig } from "../sim/config.js";
 import type { AgentView, ViewCell } from "../sim/view.js";
 import { VISIBLE_EVENT_KINDS, denseCells } from "../sim/view.js";
+import { colonyCountOf } from "../sim/mapBoard.js";
 import type { Game, ObserveEvent } from "./game.js";
 import { packTerritory } from "./territory.js";
 import { packMarks } from "./markTable.js";
@@ -76,10 +77,12 @@ export function currentEvent(event: ObserveEvent, index: number): CurrentEvent {
 }
 
 /** Enemy queens restated from exactly the cells this reply encodes: same page,
- * same cellsTick, same sight and the same milli-HP; nothing the cells omit. */
-function enemyQueensOf(cells: readonly ViewCell[], colony: AgentView["colony"]): { tileX: number; tileY: number; hp?: number }[] {
+ * same cellsTick, same sight and the same milli-HP; nothing the cells omit.
+ * With more than two colonies each also names its colony. */
+function enemyQueensOf(cells: readonly ViewCell[], colony: AgentView["colony"], colonies: number): { tileX: number; tileY: number; hp?: number; colony?: number }[] {
   return cells.filter(cell => cell.queen !== undefined && cell.queen !== colony)
-    .map(cell => ({ tileX: cell.tileX, tileY: cell.tileY, ...(cell.queenHp === undefined ? {} : { hp: cell.queenHp }) }));
+    .map(cell => ({ tileX: cell.tileX, tileY: cell.tileY, ...(cell.queenHp === undefined ? {} : { hp: cell.queenHp }),
+      ...(colonies === 2 ? {} : { colony: cell.queen! }) }));
 }
 
 /** Full current view; default events are a live sample, explicit since is lossless replay. */
@@ -103,9 +106,10 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
   let markTables: { marks: ReturnType<typeof packMarks>; myMarks: ReturnType<typeof packMarks> } | undefined;
   // Built inside result() so the page-fit search measures the list with its cells.
   const listsEnemyQueens = usesCompactAgentText(config);
+  const colonies = colonyCountOf(config);
   const result = () => cellPage(payload({ ...extra, view: { ...compact, ...markTables,
-    cells: denseCells(snapshot.cells.slice(offset, end), config.mapWidth, config.mapHeight), ...cellContinuation(snapshot, end),
-    ...(listsEnemyQueens ? { enemyQueens: enemyQueensOf(snapshot.cells.slice(offset, end), view.colony) } : {}),
+    cells: denseCells(snapshot.cells.slice(offset, end), config.mapWidth, config.mapHeight, colonies), ...cellContinuation(snapshot, end),
+    ...(listsEnemyQueens ? { enemyQueens: enemyQueensOf(snapshot.cells.slice(offset, end), view.colony, colonies) } : {}),
     events: indices.toSorted((a, b) => a - b).map(i => since === undefined ? currentEvent(history[i]!, i) : publicEvent(history[i]!)),
     eventsMode: since === undefined ? "current" : "history",
     eventCursor: cursor, eventsMore: cursor < history.length,
