@@ -570,7 +570,9 @@ export const PUBLIC_CONFIG: SimConfig = { ...UNCAPPED_PUBLIC_BASE, adjudication:
 /**
  * The config an ANTWAR_RULES value plays. Unset is today's public
  * config, unchanged; v4 is the same rules marked as an explicit comparison run;
- * any other value throws, so the server refuses to start.
+ * any other value throws, so the server refuses to start. No new match starts on v4 or
+ * count-marks (src/server.ts comparisonOptions refuses them); their configs remain for the
+ * simulation paths their recordings re-simulate on.
  */
 export function rulesConfig(value: string | undefined): SimConfig {
   switch (value) {

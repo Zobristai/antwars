@@ -70,7 +70,7 @@ it.each([false, true])("uses only explicit comparison opt-in (%s), keeping label
   expect(stored).toEqual(early.messages);
 });
 
-it.each([undefined, "v4", "count-marks", "redesign"])("passes the environment-derived metadata policy through the server composition for %s", async (rules) => {
+it.each([undefined, "redesign"])("passes the environment-derived metadata policy through the server composition for %s", async (rules) => {
   vi.spyOn(console, "log").mockImplementation(() => {});
   // Avoid comparison log output; this does not control spectator disclosure.
   const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
