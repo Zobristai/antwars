@@ -216,7 +216,10 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // "Matched: 2 min to pick a nest;" restores d540dc30… and ed113dd0…, so nothing else changed.
   // Join briefing repinned for its same-tick ending reading "(queens killed)" under queen HP, where overrun never
   // happens; "(double overrun/queens killed)" restores 90f117d0…. The briefing pin is unchanged.
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("125a603619c2a9a679daa482f4ee14d0aa4711e185a3a225d16c4cb86171e7c4");
+  // Briefing repinned for the local-ant line "No house bot plans any colony, seated or not." on a config with
+  // localAnts.everyColony; "Active (not idle) colony seat: house bot off; none: on." restores 125a6036…. The join
+  // briefing pin is unchanged.
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("9fa3d73a016db210c706025f161f55d6fca13b4352facc6e4954460765da251e");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
   expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("3cc5518fa86bd614b81d8899cac1347710961e8463a1ad51a16e34b9aa840eec");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
