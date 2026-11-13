@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
+import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
 import type { LiveMatch, MatchesView, Recording } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
@@ -133,6 +134,30 @@ describe("one six-column layout in every list", () => {
     }
     // Every row has the six cells, none spanning another's column.
     for (const { table } of [waiting, liveList, recordings]) expect(bodyRows(table).every(row => row.children.length === 6 && row.children.every(cell => cell.colSpan === 1))).toBe(true);
+    p.mounted.destroy();
+  });
+
+  it("heads a list whose rows name their colonies differently with neutral colony heads, each cell naming its own, with its source", () => {
+    const drawn: LiveMatch = { ...liveIndex, lobbyId: "lobby-u", rated: false, matchType: { kind: "unranked", size: 1 }, colonyNames: ["Lake Skinner Colony", "Sweetwater Colony"] };
+    const { p, live: liveList, recordings } = show({ waiting: { status: "ready", rows: [waitingRow] }, live: { status: "ready", rows: [liveIndex, drawn] },
+      recordings: { status: "ready", rows: [recording] } });
+    const heads = (table: ElementPort) => table.querySelector("thead")!.byClass("c-model").map(node => node.textContent);
+    expect(heads(liveList.table)).toEqual(["First colony", "Second colony"]);
+    expect(heads(recordings.table)).toEqual(["Very Large Colony", "Lake Hodges Colony"]);
+    const named = bodyRows(liveList.table).map(row => row.byClass("c-model").map(cell => cell.byClass("d1p-colony")[0]!));
+    expect(named.map(row => row.map(node => node.textContent))).toEqual([["Very Large Colony", "Lake Hodges Colony"], ["Lake Skinner Colony", "Sweetwater Colony"]]);
+    expect(named[1]!.map(node => node.title)).toEqual(["Southern California, under 1 km² (Thomas et al. 2006, Molecular Ecology)", "Southern California (Thomas et al. 2006, Molecular Ecology)"]);
+    expect(named[0]!.map(node => node.title)).toEqual(["", ""]);
+    const [, stacked] = liveList.list.querySelectorAll("li");
+    expect(colonies(stacked!).map(([name]) => name)).toEqual(["Lake Skinner Colony", "Sweetwater Colony"]);
+    // Each drawn name in its own colour, through its row's colony inks; the rated row and the general heads set none.
+    const ink = (node: ElementPort) => ["--aw-k0", "--aw-k1"].map(key => node.style.getPropertyValue(key));
+    const [ratedRow, drawnRow] = bodyRows(liveList.table);
+    const drawnInk = colonyColours(drawn.colonyNames!).map(colourCss);
+    expect(ink(drawnRow!)).toEqual(drawnInk);
+    expect(ink(stacked!)).toEqual(drawnInk);
+    expect(ink(ratedRow!)).toEqual(["", ""]);
+    expect(liveList.table.querySelector("thead")!.byClass("c-model").map(node => node.classes())).toEqual([["c-model"], ["c-model"]]);
     p.mounted.destroy();
   });
 

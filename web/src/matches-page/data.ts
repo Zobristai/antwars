@@ -18,10 +18,14 @@ const matchType = z.object({
   kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated"]),
   size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
 }).nullable().optional().catch(null);
+// An unrated match's own colony names, index = colony id; absent or null where it uses the rated names. Display only:
+// a malformed pair reads null.
+const colonyNames = z.tuple([z.string().min(1), z.string().min(1)]).nullable().optional().catch(null);
 const liveRow = z.object({
   lobbyId: z.string().min(1), startedAt: z.number().finite(), rated: z.boolean(), delaySeconds: z.union([z.literal(0), z.literal(60), z.literal(300)]),
   colonies: z.tuple([z.array(liveSeat), z.array(liveSeat)]),
   matchType,
+  colonyNames,
 });
 // A rating as a list row shows it: the figure, its RD and rated-match count. A malformed one reads null (no badge).
 const shownRating = z.object({ rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() })
@@ -41,6 +45,7 @@ const recordingRow = z.object({
     startRating: shownRating })),
   status: z.enum(["complete", "partial", "unavailable"]), unavailable: z.array(z.string()),
   matchType,
+  colonyNames,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
 // An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode, whole seconds waited
@@ -70,6 +75,7 @@ const waitingLobby = z.object({
   since: z.number().finite().optional(),
   // Present only on an unrated house challenge, which the Waiting card labels.
   challenge: z.literal("house").optional(),
+  colonyNames,
 });
 export type LiveMatch = z.infer<typeof liveRow>;
 export type Recording = z.infer<typeof recordingRow>;
