@@ -179,7 +179,8 @@ describe("shared rules", () => {
   it("describes redesign count marks, autonomous ants and queen HP from the live config", () => {
     const rules = rulesConfig("redesign");
     const text = ruleSections(rules).flatMap((section) => section.lines).join(" ");
-    expect(text).toContain("free ants act locally");
+    expect(text).toContain("Every colony's free ants act this way from the first tick, whether or not its player has joined; no bot moves ants for a player.");
+    expect(text).not.toContain("keeps the house bot");
     expect(text).toContain("count_mark with verb DEFEND, FORAGE, ATTACK, GATHER");
     expect(text).toContain("order, count_mark and found_queen share one allowance");
     expect(text).toContain("Each queen has 40 HP");

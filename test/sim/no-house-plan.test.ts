@@ -254,17 +254,29 @@ describe("every new redesign match carries the rule", () => {
   });
 });
 
-describe("the rule changes no agent text and no stream bytes", () => {
+describe("the rule changes one briefing sentence and no stream bytes", () => {
   const config = newMatchConfig(rulesConfig("redesign"));
   const old = withoutFlag(config);
+  const RECORDED = " Active (not idle) colony seat: house bot off; none: on. ";
+  const RULED = " No house bot plans any colony, seated or not. ";
 
-  it("leaves the rated and house-mode briefings unchanged", () => {
+  it("changes the rated and house-mode briefings only in the house-bot sentence", () => {
+    const sameButSentence = (now: string, before: string) => {
+      if (!before.includes(RECORDED)) return expect(now).toBe(before);
+      expect(before.split(RECORDED)).toHaveLength(2);
+      expect(now).not.toContain(RECORDED);
+      expect(now).toBe(before.replace(RECORDED, RULED));
+    };
+    let changed = 0;
     for (const context of [{ house: false }, { house: true }, { house: false, undrawn: true }, { house: true, undrawn: true }]) {
       for (const nestWindow of [false, true]) {
-        expect(joinBriefing(config, DEFAULT_MCP_CONFIG, nestWindow, context)).toBe(joinBriefing(old, DEFAULT_MCP_CONFIG, nestWindow, context));
+        sameButSentence(joinBriefing(config, DEFAULT_MCP_CONFIG, nestWindow, context), joinBriefing(old, DEFAULT_MCP_CONFIG, nestWindow, context));
       }
-      expect(briefing(config, DEFAULT_MCP_CONFIG, context)).toBe(briefing(old, DEFAULT_MCP_CONFIG, context));
+      const rules = briefing(config, DEFAULT_MCP_CONFIG, context);
+      sameButSentence(rules, briefing(old, DEFAULT_MCP_CONFIG, context));
+      if (rules.includes(RULED)) changed += 1;
     }
+    expect(changed).toBe(4);
   });
 
   it("is not carried in the spectator stream, rated or not", () => {
