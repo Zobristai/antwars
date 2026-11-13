@@ -7,6 +7,9 @@ import { stateHash } from "../../src/sim/log.js";
 import { buildGrid, cloneState, forEachNear, newAnt, type Grid } from "../../src/sim/map.js";
 import type { Ant, SimState } from "../../src/sim/types.js";
 import { emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // The neighbour-search speed-ups must choose exactly what the code at
 // a967cef404365381d91ed800426ac83cf7dc263f chose. The oracles below are verbatim
@@ -55,7 +58,7 @@ function lcg(seed: number): () => number {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0x100000000; };
 }
 
-const config: SimConfig = { ...newMatchConfig(rulesConfig("redesign")), startAnts: 0, terrain: undefined, foodLayout: undefined, foodPatches: [] };
+const config: SimConfig = { ...newMatchConfig(recordedHousePlan(rulesConfig("redesign"))), startAnts: 0, terrain: undefined, foodLayout: undefined, foodPatches: [] };
 
 /** Both colonies crowded around colony 0's queen, with exact-position duplicates for distance ties. */
 function crowdedState(): SimState {

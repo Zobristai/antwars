@@ -10,13 +10,16 @@ import { step } from "../../src/sim/step.js";
 import type { Ant, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Every match plays at grid scale 2: rules is the reference-grid template that emptyMatch builds
 // at grid scale 2. An ant at reference tile (tx, ty) stands at that tile's centre (fine 2t + 0.5), and
 // every subunit position doubles.
 const put = (s: SimState, colony: 0 | 1, tx: number, ty: number, patch: Partial<Ant> = {}) => addAnt(s, colony, 2 * tx + 0.5, 2 * ty + 0.5, patch);
 
-const rules: SimConfig = { ...rulesConfig("redesign"), foodLayout: undefined, foodPatches: [],
+const rules: SimConfig = { ...recordedHousePlan(rulesConfig("redesign")), foodLayout: undefined, foodPatches: [],
   startAnts: 0, squadSize: 0, hatchIntervalTicks: Number.MAX_SAFE_INTEGER,
   rallyStartPermille: 800, rallyEndPermille: 800 };
 function scenario(config = rules) {
@@ -248,7 +251,7 @@ describe("house assignment minimum holds", () => {
   });
 
   it("replays unseated house assignments deterministically", () => {
-    const run = playScripted({ seed: 6006, config: playable(rulesConfig("redesign")), agents: 0, ticks: 120 });
+    const run = playScripted({ seed: 6006, config: playable(recordedHousePlan(rulesConfig("redesign"))), agents: 0, ticks: 120 });
     expect(stateHash(replay(run.lines, run.state.tick))).toBe(stateHash(run.state));
   });
 });

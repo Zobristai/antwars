@@ -12,12 +12,15 @@ import { resolveCombat } from "../../src/sim/combat.js";
 import { segmentOnLand } from "../../src/sim/terrain.js";
 import type { Ant, Caste, ColonyId, CountVerb, Mark, SimEvent, SimState } from "../../src/sim/types.js";
 import { playable } from "../playable.ts";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // These fixtures are the frozen spread/fixed-check inputs, now exercising production modules.
 // Every match plays at grid scale 2: reference tile t is fine tiles 2t and 2t+1, and every length doubles.
 // Reference tile 20's centre (20500) is placed at fine tile 40's centre (40500); offsets between ants double.
-const { soldierRadius: _soldierRadius, guardSettle: _guardSettle, restPass: _restPass, ...frozenSoft } = rulesConfig("redesign").softSeparation!;
-const config = playable({ ...rulesConfig("redesign"), pointArrival: undefined, softSeparation: frozenSoft, startAnts: 0, terrain: undefined, foodLayout: undefined, foodPatches: [] });
+const { soldierRadius: _soldierRadius, guardSettle: _guardSettle, restPass: _restPass, ...frozenSoft } = recordedHousePlan(rulesConfig("redesign")).softSeparation!;
+const config = playable({ ...recordedHousePlan(rulesConfig("redesign")), pointArrival: undefined, softSeparation: frozenSoft, startAnts: 0, terrain: undefined, foodLayout: undefined, foodPatches: [] });
 function scene(): SimState {
   const state = createMatch(10, config);
   state.ants = [];
@@ -245,7 +248,7 @@ describe("frozen autonomous soft movement", () => {
   });
 
   it("the actual step wires soft motion for a newly hatched native state", () => {
-    const state = createMatch(10, playable({ ...rulesConfig("redesign"), terrain: undefined, foodLayout: undefined }));
+    const state = createMatch(10, playable({ ...recordedHousePlan(rulesConfig("redesign")), terrain: undefined, foodLayout: undefined }));
     const before = new Map(state.ants.map(a => [a.id, { x: a.x, y: a.y }]));
     const result = step(state);
     for (const a of result.state.ants) {
@@ -253,6 +256,6 @@ describe("frozen autonomous soft movement", () => {
       if (origin) assert.ok((a.x - origin.x) ** 2 + (a.y - origin.y) ** 2 <= 400 ** 2);
     }
     expect(result.state.tick).toBe(state.tick + 1);
-    expect(result.state.config.softSeparation).toEqual(playable(rulesConfig("redesign")).softSeparation);
+    expect(result.state.config.softSeparation).toEqual(playable(recordedHousePlan(rulesConfig("redesign"))).softSeparation);
   });
 });

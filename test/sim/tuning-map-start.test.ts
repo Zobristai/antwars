@@ -7,6 +7,7 @@ import { advance } from "../../src/sim/step.js";
 import { isBlockedTile } from "../../src/sim/terrain.js";
 import { TUNING_MAP_ID, tuningMapConfig } from "../../src/sim/tuningMap.js";
 import type { SimState } from "../../src/sim/types.js";
+import { recordedHousePlan } from "../house-plan.ts";
 
 const SEEDS = [1, 7, 6006];
 
@@ -54,9 +55,12 @@ describe("tuning map start population", () => {
     expect(() => createMatch(1, { ...tuningMapConfig(10_000), startAnts: 64 * 184 + 1 })).toThrow(RangeError);
   });
 
+  // Pinned to the house-planned config of matches recorded before the no-bot-moves rule: on a new match the first
+  // tick already runs the local rules for all 20,000 ants at 10,000 per side, which takes minutes (as every later
+  // seated tick already did), so this seating check keeps the house-planned first tick it was written against.
   it("seats one agent per colony on the first tick under server policy at the chosen count", () => {
     for (const perSide of [1, 1_024, 10_000]) {
-      const state = createMatch(6006, tuningMapConfig(perSide));
+      const state = createMatch(6006, recordedHousePlan(tuningMapConfig(perSide)));
       const { state: next } = advance(state, [{ type: "join", agentId: "a", colony: 0 }, { type: "join", agentId: "b", colony: 1 }],
         undefined, undefined, undefined, false, true);
       expect(next.tick).toBe(1);
