@@ -9,6 +9,7 @@ import type { ModeCopy } from "./replay.ts";
  * hover and pointed order for the board, with the board's area and what the board labels keep clear of.
  */
 import { COLONY_NAMES, RULES_NAMES, rulesConfig } from "../../src/sim/config.ts";
+import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import { SUB_TILE, streamQueens, type StreamQueen, type StreamAgent, type StreamHatch, type StreamMark, type StreamStore } from "../../src/live/format.ts";
 import type { Board, Frame, StoryEntry } from "./buffer.ts";
 import { MODEL_LABEL, agentShade } from "./squads.ts";
@@ -68,7 +69,7 @@ export interface OrderTarget {
 export function orderTarget(x: number, y: number, b: Pick<Board, "queens" | "setup">): OrderTarget | null {
   for (const q of streamQueens(b)) {
     if (Math.floor(q.x / SUB_TILE) !== x || Math.floor(q.y / SUB_TILE) !== y) continue;
-    return { label: `${COLONY_NAMES[q.colony]}'s ${q.lostTick === null ? `Queen ${q.id + 1}` : "nest"}`, colony: q.colony, liveQueen: q.lostTick === null };
+    return { label: `${colonyNamesOf(b.setup)[q.colony]}'s ${q.lostTick === null ? `Queen ${q.id + 1}` : "nest"}`, colony: q.colony, liveQueen: q.lostTick === null };
   }
   return null;
 }
@@ -99,7 +100,7 @@ function territoryWin(b: Pick<Board, "territoryWin" | "result" | "setup">, tick:
 
 export function territoryWinText(b: Pick<Board, "territoryWin" | "result" | "setup">, tick: number): string | null {
   const win = territoryWin(b, tick);
-  return win === null ? null : `${COLONY_NAMES[win.leader]} · ${win.label} ${win.figure}`;
+  return win === null ? null : `${colonyNamesOf(b.setup)[win.leader]} · ${win.label} ${win.figure}`;
 }
 
 /**
@@ -158,8 +159,9 @@ export function storyWhen(e: Pick<StoryEntry, "kind" | "tick" | "endTick" | "out
  * "Takes the territory lead" as the lower third tells it, and as past (`past`) in the timeline
  * and the result card, where it is history.
  */
-export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: number, queens: readonly StreamQueen[] = [], past = false): { what: string; who: string } {
-  const colony = COLONY_NAMES[e.colony];
+export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: number, queens: readonly StreamQueen[] = [], past = false,
+  names: ColonyNamePair = COLONY_NAMES): { what: string; who: string } {
+  const colony = names[e.colony];
   const squad = e.agent >= 0 ? ` — squad ${agentHandle(e.agent)}` : "";
   const who = `${colony}${squad}`;
   switch (e.kind) {
@@ -183,7 +185,7 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
       return { what: `${queen} — repelled at ${hpText(e.lowHp ?? 0)}`, who: colony };
     }
     case "overrun": {
-      const target = COLONY_NAMES[(1 - e.colony) as 0 | 1];
+      const target = names[(1 - e.colony) as 0 | 1];
       if (e.endTick === undefined || e.endTick > now) return { what: `Overrun attempt on the ${target} queen — under way`, who };
       const pct = Math.round((100 * (e.peak ?? 0)) / Math.max(1, e.required ?? 1));
       if (e.outcome === "took") return { what: `Overrun attempt on the ${target} queen — took the queen`, who };
@@ -199,10 +201,11 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
  * detail here rather than on the roster. No tile
  * coordinates: the board lights the order's tile while the card is pointed at.
  */
-export function agentCard(agent: number, a: StreamAgent, marks: readonly StreamMark[], now: number, tps: number, target: OrderTarget | null = null): string[] {
+export function agentCard(agent: number, a: StreamAgent, marks: readonly StreamMark[], now: number, tps: number, target: OrderTarget | null = null,
+  names: ColonyNamePair = COLONY_NAMES): string[] {
   const last = marks.filter((m) => m.agent === agent).sort((x, y) => y.laidTick - x.laidTick)[0];
   return [
-    `${playerLabel(agent, a)} · ${COLONY_NAMES[a.colony]}`,
+    `${playerLabel(agent, a)} · ${names[a.colony]}`,
     ...(a.modelLabel ? [modelLine(a, MODEL_LABEL)] : []),
     `Squad order: ${orderText(a, target)}`,
     ...(a.intent ? [`${THOUGHT_LABEL}: “${a.intent}”`] : []),
@@ -254,7 +257,7 @@ export function nextHatchCaste(b: Pick<Board, "setup" | "queens" | "hatch">, cos
 
 /** Soonest eligibility from delayed playback, never a promise of a future birth. */
 export function scoreHatchStatus(b: Pick<Board, "setup" | "queens" | "hatch" | "stores" | "result" | "overrun" | "overrunRequired">, colony: 0 | 1, living: number, tick: number): { text: string; description: string } {
-  const label = (text: string, detail = text) => ({ text, description: `${COLONY_NAMES[colony]}: ${detail}` });
+  const label = (text: string, detail = text) => ({ text, description: `${colonyNamesOf(b.setup)[colony]}: ${detail}` });
   if (b.result !== null || tick >= b.setup.matchTicks) return label("Ended", "Match ended; no upcoming hatch");
   if (!streamQueens(b).some(q => q.colony === colony && q.lostTick === null && !(boardQueenHp(b) === undefined && b.overrunRequired > 0 && q.overrun >= b.overrunRequired))) return label("No queens", "No live queens; no upcoming hatch");
   const store = b.stores[colony], hatch = b.hatch;

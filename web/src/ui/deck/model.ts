@@ -4,6 +4,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
+import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
 import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
 import { fallWindow, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
@@ -272,7 +273,7 @@ function lamp(q: StreamQueen, frame: Frame, b: Board, fullHp: number | undefined
   const state = lost ? SCORE_COPY.queenLost : hpMode ? `${hp} HP` : overrun > 0 ? `overrun ${Math.round(100 * overrun)}%` : "safe";
   return {
     key: `${q.colony}:${q.id}`, lost, hp, fill, attacked, inferred: hpMode,
-    label: `${COLONY_NAMES[q.colony]} Queen ${q.id + 1}: ${state}${attacked ? `, ${OPEN_COPY.underAttack}` : ""}`,
+    label: `${colonyNamesOf(b.setup)[q.colony]} Queen ${q.id + 1}: ${state}${attacked ? `, ${OPEN_COPY.underAttack}` : ""}`,
   };
 }
 
@@ -363,13 +364,13 @@ export function caption(frame: Frame | null): Caption | null {
   if (fallen.some(Boolean)) {
     const q = fallenQueen(b);
     const colony = fallen.indexOf(true) as Colony;
-    return { kind: "fall", colony, when: "", what: `Queen ${(q?.id ?? 0) + 1} lost`, who: `${COLONY_NAMES[colony]} · ${matchTime(q?.lostTick ?? frame.tick, rate)}` };
+    return { kind: "fall", colony, when: "", what: `Queen ${(q?.id ?? 0) + 1} lost`, who: `${colonyNamesOf(b.setup)[colony]} · ${matchTime(q?.lostTick ?? frame.tick, rate)}` };
   }
   const e = significant(frame.story, frame.tick, rate);
   if (!e) return null;
   return {
     kind: "event", colony: e.colony, when: matchTime(storyWhen(e, frame.tick), rate),
-    what: storyText(e, b.agents, frame.tick, b.queens).what.replace(HP_TAIL, ""), who: COLONY_NAMES[e.colony],
+    what: storyText(e, b.agents, frame.tick, b.queens, false, colonyNamesOf(b.setup)).what.replace(HP_TAIL, ""), who: colonyNamesOf(b.setup)[e.colony],
   };
 }
 
@@ -438,17 +439,17 @@ function commandRow(c: CommandEntry, b: Board, rate: number): HistoryRow {
     what = markReading(c.mark) || what;
   } else if (c.call === "found_queen" && c.accepted) glyph = { kind: "queen" };
   const who = actor(b, c.agent);
-  const reading = `${when}, ${who?.name ?? COLONY_NAMES[c.colony]}: ${what}${intent ? ` ${intent}` : ""}${c.accepted ? "" : `, ${D1_COPY.refused}`}`;
+  const reading = `${when}, ${who?.name ?? colonyNamesOf(b.setup)[c.colony]}: ${what}${intent ? ` ${intent}` : ""}${c.accepted ? "" : `, ${D1_COPY.refused}`}`;
   return { key: `c${c.id}`, tick: c.tick, when, member: who, glyph, what, intent, refused: !c.accepted, arrival: false, mark: null, reading };
 }
 
 function eventRow(e: StoryEntry, b: Board, now: number, rate: number): HistoryRow {
   const when = matchTime(storyWhen(e, now), rate);
-  const what = storyText(e, b.agents, now, b.queens, true).what.replace(HP_TAIL, "");
+  const what = storyText(e, b.agents, now, b.queens, true, colonyNamesOf(b.setup)).what.replace(HP_TAIL, "");
   const who = e.agent >= 0 ? actor(b, e.agent) : null;
   return {
     key: `s${e.id}`, tick: e.tick, when, member: who, glyph: null, what, intent: "", refused: false, arrival: false, mark: null,
-    reading: `${when}, ${who?.name ?? COLONY_NAMES[e.colony]}: ${what}`,
+    reading: `${when}, ${who?.name ?? colonyNamesOf(b.setup)[e.colony]}: ${what}`,
   };
 }
 
@@ -564,10 +565,10 @@ export function resultView(frame: Frame | null): ResultView | null {
   if (!frame || !b || r === null) return null;
   const rate = tps(b);
   return {
-    headline: resultHeadline(r), winner: r.winner, how: resultHow(r, b.queens !== undefined),
+    headline: resultHeadline(r, colonyNamesOf(b.setup)), winner: r.winner, how: resultHow(r, b.queens !== undefined),
     ratings: ratingResultRows(b.setup.rated, b.agents, r),
     moments: decisive(frame.story, r.reason, r.winner).map(m => ({
-      when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true).what, who: COLONY_NAMES[m.colony], colony: m.colony,
+      when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true, colonyNamesOf(b.setup)).what, who: colonyNamesOf(b.setup)[m.colony], colony: m.colony,
     })),
     next: r.nextStartMs === null ? "Next match · not announced"
       : `Next match · ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(r.nextStartMs)}`,
@@ -580,7 +581,8 @@ export function resultView(frame: Frame | null): ResultView | null {
  * One side's player(s) as the post names them: each distinct shown name in seat order (a seat's "#n" dropped, so one
  * player holding every seat is named once), a Benchmark's level and Fast in brackets after its name, joined with "&".
  */
-export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony): string {
+export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony,
+  colonyNames: ColonyNamePair = COLONY_NAMES): string {
   const names: string[] = [];
   agents.forEach((a, index) => {
     if (a.colony !== colony) return;
@@ -596,7 +598,7 @@ export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colon
     }
     if (!names.includes(name)) names.push(name);
   });
-  return names.length > 0 ? names.join(" & ") : COLONY_NAMES[colony];
+  return names.length > 0 ? names.join(" & ") : colonyNames[colony];
 }
 
 /**
@@ -606,9 +608,9 @@ export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colon
 export function shareText(frame: Frame | null, url: string | null): string | null {
   const shown = resultView(frame);
   if (shown === null || url === null) return null;
-  const agents = frame!.board!.agents;
+  const agents = frame!.board!.agents, names = colonyNamesOf(frame!.board!.setup);
   const [a, b] = shown.winner === null ? [0, 1] as const : [shown.winner, (1 - shown.winner) as Colony];
-  const players = shown.winner === null ? `${sideNames(agents, a)} and ${sideNames(agents, b)} drew` : `${sideNames(agents, a)} beat ${sideNames(agents, b)}`;
+  const players = shown.winner === null ? `${sideNames(agents, a, names)} and ${sideNames(agents, b, names)} drew` : `${sideNames(agents, a, names)} beat ${sideNames(agents, b, names)}`;
   return `${players} on Antwars — ${shown.how}. Watch: ${url}`;
 }
 
@@ -790,11 +792,11 @@ export function roster(frame: Frame): Roster {
       const rd = rdShown(a.identity);
       // The accessible name leads with the shown name in full, then its badges.
       const shown = named ? [named.name, ...badges].join(" ") : title ? [title, ...badges].join(" ") : handle;
-      const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", COLONY_NAMES[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
+      const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
         result ?? "", e.name || e.model ? `badge ${handle}` : ""].filter(Boolean).join(" · ");
       return { index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
     });
-    groups.push({ colony, heading: `${COLONY_NAMES[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
+    groups.push({ colony, heading: `${colonyNamesOf(b.setup)[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
   }
   return { groups, count: groups.reduce((n, g) => n + g.rows.length, 0) };
 }
@@ -849,10 +851,14 @@ export function selected(frame: Frame | null, picked: AntInfo | null, pickedAgen
   }
   if (ant && ant.agent < 0) {
     const colony = ant.colony as Colony;
-    return { kind: "ant", key: `ant:${ant.antId}`, colony, title: `Ant ${ant.antId} · ${COLONY_NAMES[colony]}`, line: PAGE_WORDS.noSquad };
+    return { kind: "ant", key: `ant:${ant.antId}`, colony, title: `Ant ${ant.antId} · ${colonyNamesOf(b.setup)[colony]}`, line: PAGE_WORDS.noSquad };
   }
   return NOTHING;
 }
 
-/** The line's colony name, to say before a figure a screen reader hears without its column. */
-export const colonyName = (colony: Colony): string => COLONY_NAMES[colony];
+/** The line's colony name, to say before a figure a screen reader hears without its column: the match's own (setup), else the rated names. */
+export const colonyName = (colony: Colony, setup?: Pick<Board["setup"], "colonyNames"> | null): string => colonyNamesOf(setup)[colony];
+
+/** A drawn colony name's one-line source note, shown as its tooltip; empty for the rated names, which are shown as they were. */
+export const colonyNote = (colony: Colony, setup?: Pick<Board["setup"], "colonyNames"> | null): string =>
+  setup?.colonyNames ? colonyNameNote(colonyName(colony, setup)) ?? "" : "";

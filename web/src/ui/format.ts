@@ -1,5 +1,6 @@
 // The broadcast HUD: pure rules shared by its three pages. No DOM, no requests, no clock.
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
+import { colonyNamesOf, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
 import type { StreamResult } from "../../../src/live/format.ts";
 import { resultHow } from "../story.ts";
 import { replayDate } from "../replay.ts";
@@ -119,9 +120,9 @@ export function boardHref(board: "2d" | "3d", href: string): string {
 }
 
 /** The visible live/replay HUD headline, separate from its reason and rating lines. */
-export function resultHeadline(result: Pick<StreamResult, "winner" | "reason">): string {
+export function resultHeadline(result: Pick<StreamResult, "winner" | "reason">, names: ColonyNamePair = COLONY_NAMES): string {
   if (result.reason === "abandoned") return "Abandoned";
-  return result.winner === null ? "Draw" : `${COLONY_NAMES[result.winner]} wins`;
+  return result.winner === null ? "Draw" : `${names[result.winner]} wins`;
 }
 
 // ---------------------------------------------------------------- the matches page
@@ -151,20 +152,20 @@ export interface RecordingRow {
 }
 
 /** Known only from the record; null stays unknown, and a null winner is a draw only where the record says so. */
-export function recordingResult(r: Pick<Recording, "winner" | "reason" | "decidedBy">): { result: string; how: string | null } {
+export function recordingResult(r: Pick<Recording, "winner" | "reason" | "decidedBy"> & Partial<Pick<Recording, "colonyNames">>): { result: string; how: string | null } {
   const how = r.reason !== null && r.decidedBy !== null ? resultHow({ reason: r.reason, decidedBy: r.decidedBy }, true) : null;
   if (r.reason === "abandoned") return { result: "Abandoned", how };
-  if (r.winner !== null) return { result: `${COLONY_NAMES[r.winner]} won`, how };
+  if (r.winner !== null) return { result: `${colonyNamesOf(r)[r.winner]} won`, how };
   if (r.decidedBy === "draw") return { result: "Draw", how };
   return { result: "Result unknown", how: null };
 }
 
 /** Recorded model labels by colony; an empty seat list is unrecorded seats, never a match without agents. */
-export function recordingModels(seats: Recording["seats"]): string {
+export function recordingModels(seats: Recording["seats"], names: ColonyNamePair = COLONY_NAMES): string {
   if (seats.length === 0) return "Seats not recorded";
   return ([0, 1] as const).flatMap(colony => {
     const labels = seats.filter(s => s.colony === colony).sort((a, b) => a.seat - b.seat).map(s => s.modelLabel ?? "model unknown");
-    return labels.length ? [`${COLONY_NAMES[colony]}: ${labels.join(", ")}`] : [];
+    return labels.length ? [`${names[colony]}: ${labels.join(", ")}`] : [];
   }).join(" · ");
 }
 
@@ -187,7 +188,7 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
   return {
     id: r.id, href: keep(`/?replay=${encodeURIComponent(r.id)}`, search),
     when: utcStamp(r.startedAt) ?? utcStamp(replayDate(r.id) ?? "") ?? "Start unknown",
-    result, how, models: recordingModels(r.seats), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
+    result, how, models: recordingModels(r.seats, colonyNamesOf(r)), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
   };
 }
 

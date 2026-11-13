@@ -137,8 +137,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-team:focus { outline: none; }
 .d1-team-head { flex: none; display: flex; align-items: baseline; gap: 0 10px; min-width: 0; }
 .d1-name { flex: 0 1 auto; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.d1-name.c0 { color: var(--aw-c0); }
-.d1-name.c1 { color: var(--aw-c1); }
+/* A colony's colour: its name's (--aw-k0, --aw-k1, colony-palette.ts), else the rated names'; the site's cyan buttons keep --aw-c1. */
+.d1-name.c0 { color: var(--aw-k0, var(--aw-c0)); }
+.d1-name.c1 { color: var(--aw-k1, var(--aw-c1)); }
 /* One icon per member, centred on the name; its tip shows the member's handle, model and Elo. */
 .d1-team-members { flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; align-self: center; gap: 4px; min-width: 0; }
 .d1-member { display: inline-grid; place-items: center; padding: 2px; margin: -2px; border-radius: 5px; line-height: 0; cursor: help; }
@@ -161,8 +162,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-cell { display: grid; grid-template-rows: 14px 20px; row-gap: 1px; min-width: 0; }
 .d1-ml { min-width: 0; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1-mv { display: flex; align-items: center; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.d1-mv.c0 { color: var(--aw-c0); }
-.d1-mv.c1 { color: var(--aw-c1); }
+.d1-mv.c0 { color: var(--aw-k0, var(--aw-c0)); }
+.d1-mv.c1 { color: var(--aw-k1, var(--aw-c1)); }
 /* The next spawn: the coming unit's icon inside its ring, both in the colony's colour, no seconds; full, the
    grey full ring; short of food, the empty ring alone. */
 .d1-next { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
@@ -191,13 +192,13 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-gauge, .d1-queens, .d1-hold { display: grid; grid-template-columns: 50px 84px minmax(0, 1fr) 84px 50px; grid-template-rows: 26px; align-items: center; min-width: 0; }
 .d1-glabel { grid-row: 1; grid-column: 3; justify-self: center; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
 .d1-fig { grid-row: 1; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.d1-fig.c0 { grid-column: 1; justify-self: end; padding-right: 10px; color: var(--aw-c0); }
-.d1-fig.c1 { grid-column: 5; justify-self: start; padding-left: 10px; color: var(--aw-c1); }
+.d1-fig.c0 { grid-column: 1; justify-self: end; padding-right: 10px; color: var(--aw-k0, var(--aw-c0)); }
+.d1-fig.c1 { grid-column: 5; justify-self: start; padding-left: 10px; color: var(--aw-k1, var(--aw-c1)); }
 .d1-track { grid-row: 1; position: relative; height: 12px; border-radius: 3px; background: var(--d1-ground); }
 .d1-track.c0 { grid-column: 2; }
 .d1-track.c1 { grid-column: 4; }
-.d1-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 3px; background: var(--aw-c0); }
-.d1-track.c1 .d1-fill { left: auto; right: 0; background: var(--aw-c1); }
+.d1-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 3px; background: var(--aw-k0, var(--aw-c0)); }
+.d1-track.c1 .d1-fill { left: auto; right: 0; background: var(--aw-k1, var(--aw-c1)); }
 /* Dotted: the 6:1 line, explained in plain words by its row's tooltip (model.ts D1_COPY.leadLine). */
 .d1-lead { position: absolute; top: -4px; bottom: -4px; left: var(--d1-lead, 85.71%); width: 0; margin-left: -1px; border-left: 2px dotted var(--aw-ink-bright); }
 .d1-track.c1 .d1-lead { left: auto; right: var(--d1-lead, 85.71%); margin: 0 -1px 0 0; border-left: 0; border-right: 2px dotted var(--aw-ink-bright); }
@@ -208,11 +209,11 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-lamps.c1 { grid-column: 4; flex-direction: row-reverse; }
 .d1-lamp { position: relative; flex: 1 1 0; min-width: 0; height: 12px; border-radius: 3px; background: var(--d1-ground); overflow: hidden; font-size: 10px; font-weight: 700; line-height: 12px; text-align: center; font-variant-numeric: tabular-nums; }
 .d1-lamp-fill, .d1-lamp-hp { position: absolute; inset: 0; }
-.d1-lamp-fill { background: var(--aw-c0); clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
+.d1-lamp-fill { background: var(--aw-k0, var(--aw-c0)); clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
 .d1-lamp-hp { color: var(--aw-ink-bright); }
 /* The figure reads dark over the fill and light over the empty housing. */
 .d1-lamp-hp.is-on { color: #0e1214; clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
-.d1-lamps.c1 .d1-lamp-fill { background: var(--aw-c1); }
+.d1-lamps.c1 .d1-lamp-fill { background: var(--aw-k1, var(--aw-c1)); }
 .d1-lamps.c1 :is(.d1-lamp-fill, .d1-lamp-hp.is-on) { clip-path: inset(0 0 0 calc(100% - var(--d1-f, 100%))); }
 .d1-lamp.is-inferred::after { content: ""; position: absolute; inset: 0; border: 1px dashed rgba(248, 252, 252, 0.55); border-radius: 3px; }
 .d1-lamp.is-attacked { box-shadow: 0 0 0 1.5px var(--aw-surface), 0 0 0 3.5px var(--aw-ink-bright); }
@@ -226,8 +227,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-hold-dash.c0 { grid-column: 1; justify-self: end; padding-right: 10px; }
 .d1-hold-dash.c1 { grid-column: 5; justify-self: start; padding-left: 10px; }
 .d1-hold-win { grid-row: 1; display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.d1-hold-win.c0 { grid-column: 1 / 3; justify-self: end; margin-right: 18px; color: var(--aw-c0); }
-.d1-hold-win.c1 { grid-column: 4 / 6; justify-self: start; margin-left: 18px; color: var(--aw-c1); }
+.d1-hold-win.c0 { grid-column: 1 / 3; justify-self: end; margin-right: 18px; color: var(--aw-k0, var(--aw-c0)); }
+.d1-hold-win.c1 { grid-column: 4 / 6; justify-self: start; margin-left: 18px; color: var(--aw-k1, var(--aw-c1)); }
 /* The map, under Territory hold on the rows' label axis: its label, then its name. */
 .d1-map { display: flex; justify-content: center; align-items: baseline; gap: 8px; min-width: 0; min-height: 26px; margin: 0; padding-top: 4px; }
 .d1-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); }
@@ -237,8 +238,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
    colony name, its badge, its Leaderboard-style name, its model and its rating, scrolling in place past four rows.
    Pointing at a row lights its squad; choosing it opens its card. */
 .d1-agents { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; max-height: 88px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
-.d1-agent-item { --d1-side: var(--aw-c0); min-width: 0; }
-.d1-agent-item.c1 { --d1-side: var(--aw-c1); }
+.d1-agent-item { --d1-side: var(--aw-k0, var(--aw-c0)); min-width: 0; }
+.d1-agent-item.c1 { --d1-side: var(--aw-k1, var(--aw-c1)); }
 .d1-agent {
   display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; align-items: center; width: 100%; min-height: 22px; margin: 0; padding: 0 6px 0 9px;
   border: 0; border-radius: 6px; background: none; box-shadow: inset 3px 0 0 var(--d1-side); font-size: 11.5px; line-height: 16px; text-align: left; cursor: pointer;
@@ -267,8 +268,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: 12px; font-weight: 400; color: var(--aw-ink); }
 /* The colony's result once the match has ended, WINNER, DRAW or ABANDONED in the colony's ink (archive.css .d1p-result-tag). */
 .d1-outcome { flex: none; align-self: center; }
-.d1-outcome.c0 { color: var(--aw-c0); }
-.d1-outcome.c1 { color: var(--aw-c1); }
+.d1-outcome.c0 { color: var(--aw-k0, var(--aw-c0)); }
+.d1-outcome.c1 { color: var(--aw-k1, var(--aw-c1)); }
 .d1-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.35; color: var(--aw-ink); pointer-events: auto; }
 .d1-tip-line { display: block; overflow-wrap: anywhere; }
 .d1-said-icon { flex: none; display: inline-flex; width: 14px; height: 14px; }
