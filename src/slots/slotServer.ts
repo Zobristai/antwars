@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { InstanceClaim, Lobbies, MatchOutcome, SlotHolder } from "../lobby/lobbies.js";
 import type { LobbySeat } from "../mcp/game.js";
 import type { ModelLabels, ServiceTiers, ThinkingLevels } from "../rating/ratings.js";
+import type { ColonyNamePair } from "../sim/colonyNames.js";
 import type { ColonyId } from "../sim/types.js";
 import { slotActivity } from "./activity.js";
 
@@ -107,6 +108,8 @@ export interface SlotHost<S extends SaveIdentity = SaveIdentity> {
   abandon(): void;
   /** A lobby's match was not played; its seated identities are told so when they join or call. */
   notPlayed(lobbyId: string, identityIds: readonly string[]): void;
+  /** The names the seated or restored match plays under, recorded on its lobby when it begins or is adopted; omitted, none are recorded. */
+  colonyNames?(): ColonyNamePair;
 }
 
 export interface SlotRunnerOptions<S extends SaveIdentity = SaveIdentity> {
@@ -282,7 +285,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
 
   /** Adopts the restored match, retried each poll until refused or committed; only then is it resumed. */
   async function adopt(save: NonNullable<typeof restored>): Promise<void> {
-    const adopted = await lobbies.adoptMatch(save.lobbyId, slot, runId, save.fromRunId);
+    const adopted = await lobbies.adoptMatch(save.lobbyId, slot, runId, save.fromRunId, host.colonyNames?.());
     if (closed || superseded) return;
     restored = null;
     if (!adopted.ok) {
@@ -338,7 +341,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
     }
     if (holder.matchRunId === null) {
       if (now() < beginsAt(holder)) return;
-      const begun = await lobbies.beginMatch(holder.lobbyId, slot, runId);
+      const begun = await lobbies.beginMatch(holder.lobbyId, slot, runId, host.colonyNames?.());
       if (!begun.ok) {
         if (begun.reason === "superseded") supersede();
         return;

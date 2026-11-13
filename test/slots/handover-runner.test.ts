@@ -5,6 +5,8 @@ import { GAME_SAVE_FORMAT, type GameSave } from "../../src/handover/matchSave.ts
 import { createMatchSaves, type MatchSave } from "../../src/handover/saveStore.ts";
 import { createLobbies, type InstanceClaim, type Lobbies, type MatchOutcome } from "../../src/lobby/lobbies.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
+import type { ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { COLONY_NAMES } from "../../src/sim/config.ts";
 import type { SimState } from "../../src/sim/types.ts";
 import { HANDOVER_SAVE_WAIT_MS, startSlotRunner, type SlotHost, type SlotRunner } from "../../src/slots/slotServer.ts";
 import type { Store } from "../../src/store/firestore.ts";
@@ -113,6 +115,8 @@ interface ServerOptions {
   readonly loadGate?: Promise<void>;
   /** resume reports a failed restore. */
   readonly failRestore?: boolean;
+  /** The names the host's match plays under; omitted, the host reports none. */
+  readonly colonyNames?: ColonyNamePair;
 }
 
 /**
@@ -178,6 +182,7 @@ async function server(world: World, name: string, options: ServerOptions = {}): 
     startResumed() { events.push("startResumed"); running = true; },
     abandon() { events.push("abandon"); running = false; },
     notPlayed() { events.push("notPlayed"); running = false; },
+    ...(options.colonyNames === undefined ? {} : { colonyNames: () => options.colonyNames! }),
   };
   runner = await startSlotRunner<MatchSave>({
     slot: "public-0", lobbies: world.lobbies, host, saves: world.saves, revision, now: world.w.now, pollMs: 5,
@@ -366,6 +371,21 @@ describe("handover between slot runners", { timeout: 30_000 }, () => {
     expect(n1.events).toEqual(["abandon"]);
     expect(n2.events).toEqual([`resume ${o.runner.runId}@12`, "startResumed"]);
     await endsOnceRated(world_, n2, "colony_0_won");
+  });
+});
+
+describe("the names a slot's match plays under", { timeout: 30_000 }, () => {
+  it("are recorded on its lobby from the host when the match begins, and again from the successor's host when it adopts the match", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const world_ = await world();
+    const stored = () => world_.w.docs.get(`lobbies/${world_.lobby.id}`)?.colonyNames;
+    const drawn: ColonyNamePair = ["Sweetwater Colony", "Lake Skinner Colony"];
+    const o = await owner(world_, "O", { colonyNames: drawn });
+    expect(stored()).toBe(JSON.stringify(drawn));
+    o.advance(10);
+    const n = await successor(world_, "N", { colonyNames: COLONY_NAMES });
+    await resumedHere(n);
+    expect(stored()).toBe("");
   });
 });
 
