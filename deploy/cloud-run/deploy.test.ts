@@ -1073,7 +1073,7 @@ describe("private deploy config", () => {
   });
 
   it("gives every slot, preview and game service the config file's project for its shared store", async () => {
-    const cases: [string[], string][] = [[["slots", "preview", SHA], "preview"], [["slots", "live", SHA], "live"], [["preview", SHA, "dir"], "preview"], [["preview", SHA, "dir", "v4", "2"], "preview"], [[SHA], "live"]];
+    const cases: [string[], string][] = [[["slots", "preview", SHA], "preview"], [["slots", "live", SHA], "live"], [["preview", SHA, "dir"], "preview"], [["preview", SHA, "dir", "redesign", "2"], "preview"], [[SHA], "live"]];
     for (const [args, namespace] of cases) {
       const r = run(args, { config: { PROJECT: "another-project" } });
       expect(r.status, r.stderr).toBe(0);
