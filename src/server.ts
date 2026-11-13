@@ -9,6 +9,7 @@ import { createAccountApi } from "./accounts/httpApi.js";
 import { waitStreamRoutes } from "./accounts/waitStream.js";
 import { startWaitSweep } from "./lobby/waits.js";
 import { registerAccountTools } from "./accounts/mcpTools.js";
+import { registerPostMortemTool, type createPostMortem } from "./accounts/postMortem.js";
 import type { AccountStores } from "./accounts/service.js";
 import type { MatchSaves } from "./handover/saveStore.js";
 import type { Identities } from "./identity/identities.js";
@@ -132,6 +133,8 @@ export interface ServerOptions {
    * and waiting tokens' streams on GET /wait/<token>.
    */
   readonly accounts?: AccountStores;
+  /** The entry server's match_post_mortem (src/accounts/postMortem.ts); never served by a slot. */
+  readonly postMortem?: ReturnType<typeof createPostMortem>;
 }
 
 export interface SlotWiring {
@@ -307,6 +310,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
       const located = await accounts.lobbies.locate(lobbyId);
       return located.ok ? located.value : undefined;
     }, { seatClientAdmission: true });
+    if (mode.kind !== "slot" && options.postMortem !== undefined) registerPostMortemTool(server, options.postMortem, { seatClientAdmission: true });
   } }) });
   const mounts: { prefix: string; handler: MountHandler }[] = [];
   // /api bodies: MCP's read deadline and body-read cap values, counted in a pool of their own.

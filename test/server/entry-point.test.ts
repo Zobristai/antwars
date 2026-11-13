@@ -10,7 +10,8 @@ import { createRatings } from "../../src/rating/ratings.js";
 import { createWatchRegistry } from "../../src/live/watch-registry.js";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
-import { tempDir } from "./helpers.js";
+import { memorySlot, tempDir } from "./helpers.js";
+import { POST_MORTEM_TOOL } from "../../src/accounts/postMortem.js";
 
 const servers: SpectatedServer[] = [];
 const clients: { client: Client; transport: StreamableHTTPClientTransport }[] = [];
@@ -80,7 +81,7 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   });
   servers.push(server);
   const client = await connect(server);
-  expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual(["rules", "locate_match", "recover_key", ...ACCOUNT_OPERATIONS.map(op => op.name)].sort());
+  expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual(["rules", "locate_match", POST_MORTEM_TOOL, "recover_key", ...ACCOUNT_OPERATIONS.map(op => op.name)].sort());
   const call = async (name: string, args: Record<string, unknown>) => {
     const result = await client.callTool({ name, arguments: args });
     expect(result.isError, JSON.stringify(result)).not.toBe(true);
@@ -97,6 +98,16 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   expect(made.inviteLink).toEqual(expect.stringContaining(`#invite=${made.inviteToken}`));
   await call("join_lobby", { key, lobbyId, inviteToken: made.inviteToken });
   expect(await call("locate_match", { lobbyId })).toEqual({ slot: null, mcpUrl: null, spectatorUrl: null });
+  // The post-mortem tool answers within a seat client's 30 s: an unplayed lobby of the caller's, and a lobby that is not.
+  const postMortem = async (args: Record<string, unknown>) => {
+    const started = performance.now();
+    const result = await client.callTool({ name: POST_MORTEM_TOOL, arguments: args });
+    expect(performance.now() - started).toBeLessThan(30_000);
+    expect(result.isError).toBe(true);
+    return (result.structuredContent as { error: string }).error;
+  };
+  expect(await postMortem({ key, lobbyId })).toBe("not_ended");
+  expect(await postMortem({ key, lobbyId: "00000000-0000-4000-8000-000000000000" })).toBe("not_found");
   await call("rating", { displayName: "EntryPlayer" });
   await call("leaderboard", {});
   const origin = `http://127.0.0.1:${server.port}`;
@@ -119,4 +130,16 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   expect(server.game.match).toBeNull();
   expect(server.game.nextStart).toBeNull();
   expect(readdirSync(dir)).toEqual([]);
+});
+
+it("serves match_post_mortem on the entry server only, never on a match slot", async () => {
+  const slot = memorySlot();
+  const dir = tempDir(); dirs.push(dir);
+  const server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, slot: slot.slot, accounts: slot.accounts, watchRegistry: slot.watchRegistry,
+    historySource: { list: async () => ({ matches: [], nextPageToken: null }), open: async () => null } });
+  servers.push(server);
+  const client = await connect(server);
+  const names = (await client.listTools()).tools.map(tool => tool.name);
+  expect(names).toContain("locate_match");
+  expect(names).not.toContain(POST_MORTEM_TOOL);
 });

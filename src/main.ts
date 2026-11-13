@@ -21,6 +21,7 @@ import { slotWakerFromEnv, wakingStore } from "./slots/wake.js";
 import { matchSavesFromEnv } from "./handover/saveStore.js";
 import { privateMediaKey } from "./replays/private-media.js";
 import { relayKey as deriveRelayKey } from "./live/relay-signature.js";
+import { createVersionSource, httpUploadPack } from "./accounts/postMortemVersion.js";
 
 /**
  * `npm start`: operator configuration is PORT and DATA_DIR,
@@ -100,7 +101,12 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   const historySource = storedHistory && store ? correctedHistorySource(storedHistory, store) : storedHistory;
   const privateArchive = comparison.match === undefined ? privateArchiveFromEnv(process.env) : undefined;
   const watchRegistry = store === undefined ? undefined : createWatchRegistry(store);
-  const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, privateArchive, recordHandoff, watchRegistry, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
+  // The entry server's post-mortem checks a record's game version against the repository's main history; its own
+  // build (ANTWAR_CODE_VERSION) must be in that history for any answer to be trusted.
+  const ownVersion = process.env.ANTWAR_CODE_VERSION;
+  const postMortemVersions = slotSettings === undefined && comparison.match === undefined && ownVersion
+    ? createVersionSource({ post: httpUploadPack(), ownVersion, log: (line) => console.log(line) }) : undefined;
+  const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, privateArchive, recordHandoff, watchRegistry, postMortemVersions, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
     // Every match a deployed server plays reports its tick times to Cloud Run logs.
     tickReport: { log: (line) => console.log(line) } });
   console.log(`antwar listening on port ${server.port} (spectator at /, agents at /mcp)${slot !== undefined || comparison.match !== undefined ? `; match logs in ${dataDir}` : "; entry point does not host matches"}`);
