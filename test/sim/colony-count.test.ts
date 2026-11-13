@@ -10,6 +10,7 @@ import { beginLocalGoals, noteContact, readLocalGoal, takeLocalGoals } from "../
 import { buildGrid, cloneState, createMatch, GridTracker, hasAdjacentEnemy, newColony, newStats, noEnemyNear, tileIndex, type Grid } from "../../src/sim/map.js";
 import { claimCountMarks } from "../../src/sim/marks.js";
 import { applySoftSeparation } from "../../src/sim/softSeparation.js";
+import { prepareInitialPointRests } from "../../src/sim/step.js";
 import { isBlockedTile } from "../../src/sim/terrain.js";
 import { updateTerritory } from "../../src/sim/territory.js";
 import type { Agent, Ant, ColonyId, Mark, QueenState, SimEvent, SimState } from "../../src/sim/types.js";
@@ -371,5 +372,28 @@ describe("joins, squads and delivery", () => {
     expect(carrier.carrying).toBe(false);
     expect(state.colonies[3]!.foodStore).toBe(1);
     expect(state.stats.delivered).toEqual([0, 0, 0, 1]);
+  });
+});
+
+describe("local rules", () => {
+  it("plans a seated colony 2's soldier by local rules and an unseated colony 3's soldier by the house bot", () => {
+    const state = fourColonyMatch(0);
+    const near = openArea(state, 1, 40, 40), far = openArea(state, 1, 90, 60);
+    const seated = addAnt(state, 2, near.tx, near.ty, { caste: "soldier", role: "fighter" });
+    const unseated = addAnt(state, 3, far.tx, far.ty, { caste: "soldier", role: "fighter" });
+    state.agents.push({ id: "two", colony: 2, joinSeq: 0, modelLabel: null, parentAgentId: null, squad: [], order: { kind: "hold" }, lastCallTick: 0, lastCommandTick: null, idle: false, pendingEvents: [] });
+    // The match-start planning pass runs the house phase on a copy, short of the view step a full four-colony tick
+    // would reach. Its planned goals are only on the preparation's private payload, so this reads that payload and
+    // checks its shape first: a reshaped payload fails here rather than passing.
+    const prepared = prepareInitialPointRests(state);
+    expect(prepared).toBeDefined();
+    const keys = Object.getOwnPropertySymbols(prepared);
+    expect(keys.map((key) => key.description)).toEqual(["point-rest-preparation"]);
+    const goals = (prepared as unknown as Record<symbol, { inputs: { goals: unknown } }>)[keys[0]!]!.inputs.goals;
+    expect(goals).toBeInstanceOf(Map);
+    const planned = goals as ReadonlyMap<number, { key: string; kind: string }>;
+    expect(planned.get(seated.id)).toMatchObject({ key: `2/hold/${near.tx},${near.ty}`, kind: "guard" });
+    expect(planned.get(unseated.id)?.key).toMatch(/^3\//);
+    expect(planned.get(unseated.id)?.key).not.toContain("/hold/");
   });
 });
