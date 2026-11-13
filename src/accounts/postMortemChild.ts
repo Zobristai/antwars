@@ -6,7 +6,7 @@
  * acceptance and error code, every 100-tick block of stored events, and the whole stored result (less its rating changes).
  *
  * An accepted command has no effect when stepping its tick without it leaves the whole state the same, ignoring only its
- * own seat's lastCommandTick and lastCallTick (Coordinator rulings: at most restarting this seat's own timers). Where the
+ * own seat's lastCommandTick and lastCallTick: at most restarting this seat's own timers. Where the
  * record's house-idle clock puts the seat at its deadline on that tick, whether the command kept the seat from going idle
  * turns on the seat's same-tick observes, classified from the record's reply lines; one the record cannot settle is not
  * listed but counted for its seat. Imports only the simulation, the spectator recorder and the record scan.
@@ -29,9 +29,8 @@ export interface NoEffect {
   readonly tick: number;
   readonly type: string;
 }
-export type ChildMessage =
-  /** Still working: the re-run's tick, or null while the record is being scanned. */
-  | { readonly kind: "progress"; readonly tick: number | null }
+/** A re-run's answer in this process; the child sends a "done" one as ChildMessage's counts and bitset. */
+export type RerunAnswer =
   /** undecided: [seat, accepted commands the record cannot settle], seats with none left out. */
   | { readonly kind: "done"; readonly tested: number; readonly findings: NoEffect[]; readonly undecided: [number, number][] }
   | { readonly kind: "mismatch"; readonly tick: number | null }
@@ -41,7 +40,40 @@ export type ChildMessage =
   | { readonly kind: "changed" }
   | { readonly kind: "unreadable" }
   | { readonly kind: "threw"; readonly message: string };
+export type ChildMessage =
+  /** Still working: the re-run's tick, or null while the record is being scanned. */
+  | { readonly kind: "progress"; readonly tick: number | null }
+  /**
+   * counts: [seat, its recorded commands], ascending by seat; bits: one bit per command (bit i % 8 of byte i >> 3 within
+   * the seat's own ceil(count / 8) bytes), set where the command had no effect, the seats' bytes in counts' order.
+   */
+  | { readonly kind: "done"; readonly tested: number; readonly counts: [number, number][]; readonly bits: Uint8Array; readonly undecided: [number, number][] }
+  /** The child could not allocate memory it asked for: nothing is settled about the match now. */
+  | { readonly kind: "allocation_failed" }
+  | Exclude<RerunAnswer, { kind: "done" }>;
 export interface ChildRequest { readonly version: string }
+
+/** Packs findings as each seat's command count and a bitset of its commands. */
+export function packFindings(seats: readonly { seat: number; commands: readonly unknown[] }[], findings: readonly NoEffect[]): { counts: [number, number][]; bits: Uint8Array } {
+  const counts = [...seats].sort((a, b) => a.seat - b.seat).map(s => [s.seat, s.commands.length] as [number, number]);
+  const offsets = new Map<number, number>();
+  let bytes = 0;
+  for (const [seat, count] of counts) { offsets.set(seat, bytes); bytes += Math.ceil(count / 8); }
+  const bits = new Uint8Array(bytes);
+  for (const { seat, index } of findings) { const at = offsets.get(seat)! + (index >> 3); bits[at] = bits[at]! | (1 << (index & 7)); }
+  return { counts, bits };
+}
+
+/** The findings a counts-and-bitset answer names, as [seat, command index], ascending. */
+export function unpackFindings(counts: readonly [number, number][], bits: Uint8Array): [number, number][] {
+  const out: [number, number][] = [];
+  let offset = 0;
+  for (const [seat, count] of counts) {
+    for (let i = 0; i < count; i++) if ((bits[offset + (i >> 3)]! & (1 << (i & 7))) !== 0) out.push([seat, i]);
+    offset += Math.ceil(count / 8);
+  }
+  return out;
+}
 
 /** Commands that are never tested: they read, or seat, and change nothing a player directs. */
 const UNTESTED = new Set(["observe", "join", "rejoin"]);
@@ -148,7 +180,7 @@ function seatActivity(lines: ReplyLines | null, byLine: Map<string, number[]>, o
 }
 
 /** Re-runs the record; returns its answer. `progress` is told each PROGRESS_TICKS ticks. */
-export function rerunRecord(record: ReducedRecord, progress: (tick: number) => void = () => {}): ChildMessage {
+export function rerunRecord(record: ReducedRecord, progress: (tick: number) => void = () => {}): RerunAnswer {
   const rerun = record.rerun;
   if (rerun === null || record.result === null) return { kind: "no_rerun_data" };
   const idleTicks = record.houseIdleTicks;
@@ -261,9 +293,12 @@ if (process.send !== undefined && process.env.ANTWAR_POST_MORTEM_CHILD === "1") 
       try {
         const scan = await scanRecord(process.stdin, undefined, "rerun", () => process.send!({ kind: "progress", tick: null } satisfies ChildMessage));
         if (scan.reduced.codeVersion !== request.version) return { kind: "changed" };
-        return rerunRecord(scan.reduced, tick => process.send!({ kind: "progress", tick } satisfies ChildMessage));
+        const answer = rerunRecord(scan.reduced, tick => process.send!({ kind: "progress", tick } satisfies ChildMessage));
+        if (answer.kind !== "done") return answer;
+        return { kind: "done", tested: answer.tested, ...packFindings(scan.reduced.seats, answer.findings), undecided: answer.undecided };
       } catch (error) {
         if (error instanceof RecordReadError) return { kind: "unreadable" };
+        if (error instanceof RangeError && /allocation failed|out of memory/i.test(error.message)) return { kind: "allocation_failed" };
         return { kind: "threw", message: error instanceof Error ? error.message.slice(0, 200) : "non-error thrown" };
       }
     })().then(answer => process.send!(answer, () => process.exit(0)));

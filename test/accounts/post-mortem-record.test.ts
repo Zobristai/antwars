@@ -6,9 +6,11 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
-  BLOCK_TICKS, comparableEvent, ELEMENT_CAP_BYTES, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, OTHER_CAP_BYTES, PROGRESS_BYTES, RecordReadError, recordScanner,
-  scanRecord, type RecordScan, type ReplyLines,
+  BLOCK_TICKS, comparableEvent, ELEMENT_CAP_BYTES, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, OTHER_CAP_BYTES, PAGE_ENTRIES, PROGRESS_BYTES,
+  RecordReadError, recordScanner, scanRecord, type NoEffectEntry, type RecordScan, type RefusedEntry, type ReplyLines, type Window,
+
 } from "../../src/accounts/postMortemRecord.ts";
+import { packFindings } from "../../src/accounts/postMortemChild.ts";
 import { entryCode } from "../../src/replays/recording.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
@@ -218,4 +220,155 @@ describe("match record scan", () => {
       expect(JSON.parse(run.stdout.trim().split("\n").at(-1)!)).toEqual(mode === "plain" ? { ok: true, calls: 2 } : { ok: false, error: "RecordReadError" });
     }
   }, 180_000);
+});
+
+/** A record with its members in another order: `first` leads, `last` ends, the rest keep their stored order. */
+function reorder(value: Record<string, unknown>, first: readonly string[], last: readonly string[] = []): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of first) if (k in value) out[k] = value[k];
+  for (const k of Object.keys(value)) if (!first.includes(k) && !last.includes(k)) out[k] = value[k];
+  for (const k of last) if (k in value) out[k] = value[k];
+  return out;
+}
+
+/** A record of four seats, two per colony, with refused calls and refused and accepted commands for each. */
+function windowRecord(options: { agents?: boolean; replies?: "array" | "null" | "absent"; declaresNone?: boolean } = {}) {
+  const seat = (n: number) => ({ seat: n, colony: n % 2, handle: null, joinedTick: 0, commands: Array.from({ length: 6 }, (_, i) => ({
+    tick: i, type: i % 3 === 2 ? "order" : "set_brood", accepted: i % 3 !== 2, request: { type: "set_brood" }, error: i % 3 === 2 ? { code: `floor_${n}_${i}` } : null })) });
+  const lines = Array.from({ length: 12 }, (_, i) => {
+    const n = i % 4;
+    return { type: i % 2 ? "stub" : "reply", ...(options.agents ? { agentId: `agent-${n}` } : { seat: n }), tick: i, tool: "order",
+      receivedAt: 1000 + i, answeredAt: 1001 + i, ...(i % 2 ? { code: `rate_${i}` } : { isError: true, reply: { error: { code: `bad_${i}` } } }) };
+  });
+  return {
+    format: "antwar.match", version: 1, id: "w", status: "complete", unavailable: options.declaresNone ? ["Call replies were not retained."] : [],
+    rules: { config: { ticksPerSecond: 10 } }, seats: [0, 1, 2, 3].map(seat), events: [],
+    rerun: { seed: 1, stops: [], abandonments: [], idle: [], houseActive: [] }, codeVersion: "c".repeat(40),
+    ...(options.agents ? { agentSeats: { "agent-0": 0, "agent-1": 1, "agent-2": 2, "agent-3": 3 } } : {}),
+    ...(options.replies === "absent" ? {} : { replies: options.replies === "null" ? null : lines }),
+  };
+}
+
+/** The pages a full parse gives: refused calls from a replies array where there is one, else refused commands. */
+function windowReference(value: ReturnType<typeof windowRecord>, colonies: ReadonlySet<number>, refusedOffset: number, noEffectOffset: number, findings: Window["findings"]) {
+  const colonyOf = new Map(value.seats.map(s => [s.seat, s.colony]));
+  const agentSeats = (value as { agentSeats?: Record<string, number> }).agentSeats ?? {};
+  const owned = (seat: number | null | undefined) => seat !== null && seat !== undefined && colonies.has(colonyOf.get(seat) ?? -1);
+  let refused: RefusedEntry[];
+  if (Array.isArray(value.replies)) {
+    refused = (value.replies as Record<string, any>[]).flatMap(l => {
+      const seat = l.agentId !== undefined ? agentSeats[l.agentId] : l.seat;
+      const code = l.type === "stub" ? l.code : entryCode(l);
+      return owned(seat) && code !== null ? [{ seat, tick: l.tick, at: l.receivedAt, tool: l.tool, code }] : [];
+    });
+  } else {
+    refused = value.seats.flatMap(s => owned(s.seat) ? s.commands.filter(c => !c.accepted).map(c => ({ seat: s.seat, tick: c.tick, at: null, tool: c.type, code: c.error!.code })) : []);
+  }
+  const noEffect: NoEffectEntry[] = [];
+  if (findings) {
+    let offset = 0;
+    for (const [seat, count] of findings.counts) {
+      for (let i = 0; i < count; i++) {
+        const command = value.seats.find(s => s.seat === seat)!.commands[i]!;
+        if (owned(seat) && command.accepted && (findings.bits[offset + (i >> 3)]! & (1 << (i & 7))) !== 0) noEffect.push({ seat, index: i, tick: command.tick, type: command.type });
+      }
+      offset += Math.ceil(count / 8);
+    }
+  }
+  return { refused: { total: refused.length, entries: refused.slice(refusedOffset, refusedOffset + PAGE_ENTRIES) },
+    noEffect: { total: noEffect.length, entries: noEffect.slice(noEffectOffset, noEffectOffset + PAGE_ENTRIES) } };
+}
+
+/** A scan with a window, read once more with what the first read learnt when it met entries before what places them. */
+async function windowScan(text: string, size: number, window: Window) {
+  const first = await scanRecord(chunks(Buffer.from(text), size), undefined, "refused", undefined, window);
+  const scan = first.window!.undecided ? await scanRecord(chunks(Buffer.from(text), size), undefined, "refused", undefined, { ...window, known: first.window!.known }) : first;
+  return { scan, reads: first.window!.undecided ? 2 : 1 };
+}
+
+describe("one owner's pages of a record", () => {
+  const measure = () => 10;
+  // Seat 0 and seat 2 (colony 0): commands 0, 1 and 3 had no effect; seats 1 and 3 none.
+  const seatsOf = (value: ReturnType<typeof windowRecord>) => value.seats;
+  const findingsFor = (value: ReturnType<typeof windowRecord>) => packFindings(seatsOf(value), [0, 2].flatMap(seat => [0, 1, 3].map(index => ({ seat, index, tick: index, type: "set_brood" }))));
+
+  // Credible regression: refused calls placed by what was read so far (replies before seats, agent lines before the agent
+  // map), a source chosen by the record's statement instead of what it holds, or a page cut wrongly at a chunk boundary.
+  for (const [name, options, first, last, reads] of [
+    ["stored order", {}, [], [], 1],
+    ["replies before seats", {}, ["replies"], [], 2],
+    ["seats after replies", {}, [], ["seats"], 2],
+    ["agent lines, stored order", { agents: true }, [], [], 1],
+    ["agent lines before the agent map", { agents: true }, [], ["agentSeats"], 2],
+    ["replies null", { replies: "null" }, [], [], 1],
+    ["replies absent", { replies: "absent" }, [], [], 1],
+    ["a replies array the record declares not retained", { declaresNone: true }, [], [], 1],
+  ] as const) {
+    it(`pages equal a full parse's at every chunk size: ${name}`, async () => {
+      const value = windowRecord(options);
+      const text = JSON.stringify(reorder(value, first, last));
+      const findings = findingsFor(value);
+      for (const [refusedOffset, noEffectOffset] of [[0, 0], [1, 2], [5, 5], [40, 40]]) {
+        const window: Window = { colonies: new Set([0]), refusedOffset, noEffectOffset, findings, measureRefused: measure, measureNoEffect: measure };
+        const want = windowReference(value, window.colonies, refusedOffset, noEffectOffset, findings);
+        for (let size = 1; size <= 64; size++) {
+          const { scan, reads: n } = await windowScan(text, size, window);
+          expect(n, `size ${size}`).toBe(reads);
+          expect({ refused: scan.window!.refused, noEffect: scan.window!.noEffect }, `size ${size} offsets ${refusedOffset},${noEffectOffset}`).toEqual(want);
+          expect(scan.refusedFrom).toBe(Array.isArray(value.replies) ? "calls" : "commands");
+          expect(scan.window!.findingsMismatch).toBe(false);
+          // Nothing of any command is kept besides the pages.
+          expect(scan.reduced.seats.every(s => s.commands.length === 0)).toBe(true);
+        }
+      }
+    });
+  }
+
+  it("holds at most one page of each list, however many entries the owner has", async () => {
+    const value = windowRecord();
+    const replies = value.replies as Record<string, unknown>[];
+    for (let i = 0; i < 5000; i++) replies.push({ type: "stub", seat: 0, tick: i, tool: "observe", receivedAt: i, answeredAt: i, code: "call_rate" });
+    const window: Window = { colonies: new Set([0]), refusedOffset: 3000, noEffectOffset: 0, findings: null, measureRefused: () => 10, measureNoEffect: () => 10 };
+    const { scan } = await windowScan(JSON.stringify(value), 65536, window);
+    expect(scan.window!.refused.total).toBe(5006);
+    expect(scan.window!.refused.entries).toHaveLength(PAGE_ENTRIES);
+    expect(scan.window!.refused.entries[0]).toMatchObject({ seat: 0, tick: 2994 });
+    // A byte cap that stops the page short of PAGE_ENTRIES.
+    const bytes = await windowScan(JSON.stringify(value), 65536, { ...window, measureRefused: () => 1023 });
+    expect(bytes.scan.window!.refused.entries).toHaveLength(256);
+  });
+
+  it("shows no findings where a seat's command count disagrees with the re-run's", async () => {
+    const value = windowRecord();
+    const window: Window = { colonies: new Set([0]), refusedOffset: 0, noEffectOffset: 0, findings: { counts: [[0, 5], [1, 6], [2, 6], [3, 6]], bits: new Uint8Array(4) },
+      measureRefused: () => 10, measureNoEffect: () => 10 };
+    const { scan } = await windowScan(JSON.stringify(value), 4096, window);
+    expect(scan.window!.findingsMismatch).toBe(true);
+  });
+
+  // Credible regression: a scan that keeps every refused call, which a large record's refusals overflow.
+  it("counts a million refused calls under a 64 MiB heap, keeping one page", () => {
+    const script = `
+      import { scanRecord } from ${JSON.stringify(new URL("../../src/accounts/postMortemRecord.ts", import.meta.url).href)};
+      async function* source() {
+        yield Buffer.from('{"id":"x","seats":[{"seat":0,"colony":0,"commands":[]}],"replies":[');
+        for (let block = 0; block < 1000; block++) {
+          const lines = [];
+          for (let i = 0; i < 1000; i++) {
+            const n = block * 1000 + i;
+            lines.push((n ? "," : "") + JSON.stringify({ type: "stub", seat: 0, tick: n, tool: "observe", receivedAt: 1e12 + n, answeredAt: 1e12 + n, code: "call_rate" }));
+          }
+          yield Buffer.from(lines.join(""));
+        }
+        yield Buffer.from("]}");
+      }
+      const scan = await scanRecord(source(), undefined, "refused", undefined,
+        { colonies: new Set([0]), refusedOffset: 0, noEffectOffset: 0, findings: null, measureRefused: () => 100, measureNoEffect: () => 100 });
+      console.log(JSON.stringify({ total: scan.window.refused.total, kept: scan.window.refused.entries.length }));
+    `;
+    const run = spawnSync(process.execPath, ["--max-old-space-size=64", "--import", `${ROOT}src/ts-resolve.mjs`, "--input-type=module", "-e", script],
+      { encoding: "utf8", timeout: 240_000 });
+    expect(run.status, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1)!)).toEqual({ total: 1_000_000, kept: PAGE_ENTRIES });
+  }, 300_000);
 });

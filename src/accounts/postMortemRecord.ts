@@ -4,8 +4,11 @@
  * one total cap, so a corrupted record (an inverted quote, say) fails instead of buffering without bound. A record that
  * cannot be read whole fails as RecordReadError, with no detail of its content.
  *
- * Two modes. "refused" (the entry server, public and private records): each seat's refused calls from replies, its
- * refused commands, and the record's re-run data and game version; no accepted command or event is kept. "rerun" (the
+ * Two modes. "refused" (the entry server, public and private records): the record's re-run data and game version and,
+ * given a window, one page of the owner's refused calls and one page of its no-effect commands, each with its total; no
+ * other command or event is kept. Without a window it keeps every refused call and command, as a full-parse reference for
+ * tests. Refused calls come from the record's replies where it holds a replies array, else from its seats' refused
+ * commands, by which the record holds, whatever it declares. "rerun" (the
  * re-run child, public records only): what a re-run needs and no more: every command, each call event's facts in
  * record order (the re-run's call order, as test/replays/history.test.ts rebuild), one digest per 100-tick block of the
  * stored events, and each reply line's seat, tick, tool, code and argument flags in typed columns.
@@ -25,6 +28,62 @@ const KEY_CAP_BYTES = 1024;
 export const BLOCK_TICKS = 100;
 
 export type ScanMode = "refused" | "rerun";
+
+/** A page holds at most this many entries, and at most PAGE_BYTES of them as replies show them. */
+export const PAGE_ENTRIES = 2000;
+export const PAGE_BYTES = 256 * 1024;
+
+export interface RefusedEntry { readonly seat: number; readonly tick: number | null; readonly at: number | null; readonly tool: string; readonly code: string }
+export interface NoEffectEntry { readonly seat: number; readonly index: number; readonly tick: number; readonly type: string }
+
+/** What one pass learnt of who holds which seat: by seat element position, and the record's agent map. */
+export interface SeatMap { readonly positions: readonly ({ seat: number; colony: 0 | 1 } | null)[]; readonly agentSeats: Readonly<Record<string, unknown>> }
+
+/** The pages one owner's request reads. */
+export interface Window {
+  /** The colonies whose seats are the owner's. */
+  readonly colonies: ReadonlySet<number>;
+  readonly refusedOffset: number;
+  readonly noEffectOffset: number;
+  /** A reproduced re-run's findings, or null where there are none to show. */
+  readonly findings: { readonly counts: readonly (readonly [number, number])[]; readonly bits: Uint8Array } | null;
+  /** An entry's bytes as a reply shows it. */
+  readonly measureRefused: (entry: RefusedEntry) => number;
+  readonly measureNoEffect: (entry: NoEffectEntry) => number;
+  /** A first pass's seat map: given, everything this pass cannot place is not the owner's. */
+  readonly known?: SeatMap;
+}
+
+export interface Page<T> { readonly total: number; readonly entries: readonly T[] }
+export interface WindowResult {
+  readonly refused: Page<RefusedEntry>;
+  readonly noEffect: Page<NoEffectEntry>;
+  /** A seat's command count disagreed with the re-run's: its findings are not shown. */
+  readonly findingsMismatch: boolean;
+  /** Something came before what places it (replies before seats, agent lines before agentSeats): read again with `known`. */
+  readonly undecided: boolean;
+  readonly known: SeatMap;
+}
+
+/** Counts every entry from the first; keeps those from offset until a cap is reached. */
+class Pager<T> {
+  total = 0;
+  readonly entries: T[] = [];
+  private bytes = 0;
+  private full = false;
+  private readonly offset: number;
+  private readonly measure: (entry: T) => number;
+  constructor(offset: number, measure: (entry: T) => number) { this.offset = offset; this.measure = measure; }
+  add(entry: T): void {
+    const ordinal = this.total++;
+    if (ordinal < this.offset || this.full) return;
+    const n = this.measure(entry) + 1;
+    if (this.entries.length >= PAGE_ENTRIES || this.bytes + n > PAGE_BYTES) { this.full = true; return; }
+    this.entries.push(entry);
+    this.bytes += n;
+  }
+  page(): Page<T> { return { total: this.total, entries: this.entries }; }
+}
 
 export class RecordReadError extends Error {
   constructor() { super("match record could not be read"); }
@@ -137,8 +196,11 @@ export interface RecordScan {
   readonly status: string | null;
   readonly ticksPerSecond: number | null;
   readonly reduced: ReducedRecord;
-  /** The calls refused, from replies; null when the record retained no replies. */
+  /** Without a window: the calls refused, from replies; null when the record retained no replies. */
   readonly refusals: Refusal[] | null;
+  /** With a window: its pages; refusedFrom says where the refused page was read from. */
+  readonly window: WindowResult | null;
+  readonly refusedFrom: "calls" | "commands";
   /** Calls a seat-budget stub left out, by seat. */
   readonly omitted: ReadonlyMap<number, number>;
 }
@@ -150,7 +212,7 @@ interface Frame {
   /** obj: expecting a key, a colon, a value or a comma/close. arr: a value or a comma/close. */
   state: "firstKey" | "key" | "colon" | "value" | "next" | "first";
   key: string | null;
-  seat?: Record<string, unknown> & { commands: ReducedCommand[] };
+  seat?: Record<string, unknown> & { commands: ReducedCommand[]; position: number; count: number };
 }
 type Sink = "events" | "replies" | "commands" | "member";
 interface Capture {
@@ -190,7 +252,7 @@ export function comparableEvent(tick: number, event: Readonly<Record<string, unk
 }
 
 /** The streaming scanner: push decoded JSON bytes, then end(). */
-export function recordScanner(mode: ScanMode = "refused") {
+export function recordScanner(mode: ScanMode = "refused", window?: Window) {
   const stack: Frame[] = [];
   let started = false, finished = false, other = 0;
   let capture: Capture | null = null;
@@ -203,6 +265,54 @@ export function recordScanner(mode: ScanMode = "refused") {
   const refusals: (Refusal & { agentId?: string })[] = [];
   const omitted = new Map<number | string, number>();
   let repliesSeen = false;
+  let positions = 0;
+  const seatColony = new Map<number, 0 | 1>();
+  const seen: ({ seat: number; colony: 0 | 1 } | null)[] = [];
+  let undecided = false, findingsMismatch = false;
+  // The window's refused page holds command refusals until a replies array is met, then reply refusals only.
+  let refusedPager = window && new Pager<RefusedEntry>(window.refusedOffset, window.measureRefused);
+  const noEffectPager = window && new Pager<NoEffectEntry>(window.noEffectOffset, window.measureNoEffect);
+  const findingOffsets = new Map<number, { offset: number; count: number }>();
+  if (window?.findings) {
+    let offset = 0;
+    for (const [seat, count] of window.findings.counts) { findingOffsets.set(seat, { offset, count }); offset += Math.ceil(count / 8); }
+  }
+
+  /** Whether a seat is the owner's: true, false, or null where this pass cannot yet tell. */
+  function ownsSeat(seat: number | null): boolean | null {
+    if (seat === null) return false;
+    const colony = seatColony.get(seat) ?? window!.known?.positions.find(p => p?.seat === seat)?.colony;
+    if (colony !== undefined) return window!.colonies.has(colony);
+    return window!.known ? false : null;
+  }
+  /** The seat a reply's agent id names, or undefined where this pass cannot yet tell. */
+  function agentSeat(agentId: string): number | null | undefined {
+    const map = isRecord(root.agentSeats) ? root.agentSeats : window!.known?.agentSeats;
+    if (map === undefined) return undefined;
+    const seat = Object.hasOwn(map, agentId) ? map[agentId] : null;
+    return Number.isSafeInteger(seat) ? seat as number : null;
+  }
+  /** A seat element's number and colony, from itself so far or the first pass's map at its position. */
+  function seatOfFrame(s: NonNullable<Frame["seat"]>): { seat: number; colony: 0 | 1 } | null {
+    if (Number.isSafeInteger(s.seat) && (s.colony === 0 || s.colony === 1)) return { seat: s.seat as number, colony: s.colony };
+    return window!.known?.positions[s.position] ?? null;
+  }
+
+  /** Refused mode with a window: one command of a seat, counted toward its position, paged when it is the owner's. */
+  function pageCommand(s: NonNullable<Frame["seat"]>, v: Record<string, unknown>): void {
+    const index = s.count++;
+    const placed = seatOfFrame(s);
+    if (placed === null) { if (!window!.known) undecided = true; return; }
+    if (!window!.colonies.has(placed.colony)) return;
+    if (v.accepted !== true && !repliesSeen) {
+      const error = isRecord(v.error) && typeof v.error.code === "string" ? v.error.code : null;
+      refusedPager!.add({ seat: placed.seat, tick: v.tick as number, at: null, tool: v.type as string, code: error ?? "refused" });
+    }
+    const bits = window!.findings?.bits, at = findingOffsets.get(placed.seat);
+    if (v.accepted === true && bits && at && index < at.count && (bits[at.offset + (index >> 3)]! & (1 << (index & 7))) !== 0) {
+      noEffectPager!.add({ seat: placed.seat, index, tick: v.tick as number, type: v.type as string });
+    }
+  }
 
   const countOther = (n: number) => { other += n; if (other > OTHER_CAP_BYTES) fail(); };
 
@@ -229,6 +339,7 @@ export function recordScanner(mode: ScanMode = "refused") {
     } else if (sink === "commands") {
       if (!isRecord(value) || !Number.isSafeInteger(value.tick) || typeof value.type !== "string" || typeof value.accepted !== "boolean") fail();
       const v = value as Record<string, unknown>;
+      if (window !== undefined) { pageCommand(owner.seat!, v); return; }
       if (mode === "refused" && v.accepted === true) return;
       const error = isRecord(v.error) && typeof v.error.code === "string" ? v.error.code : null;
       owner.seat!.commands.push({ tick: v.tick as number, type: v.type as string, accepted: v.accepted as boolean,
@@ -252,6 +363,14 @@ export function recordScanner(mode: ScanMode = "refused") {
     }
     const code = line.type === "stub" ? (typeof line.code === "string" ? line.code : null) : entryCode(line);
     if (code === null) return;
+    if (window !== undefined) {
+      const placed = agentId === null ? seat : agentSeat(agentId);
+      const owns = placed === undefined ? (window.known ? false : null) : ownsSeat(placed);
+      if (owns === null) { undecided = true; return; }
+      if (owns) refusedPager!.add({ seat: placed!, tick: Number.isSafeInteger(line.tick) ? line.tick as number : null,
+        tool: typeof line.tool === "string" ? line.tool : "", at: typeof line.receivedAt === "number" ? line.receivedAt : null, code });
+      return;
+    }
     refusals.push({ seat, ...(agentId === null ? {} : { agentId }),
       tick: Number.isSafeInteger(line.tick) ? line.tick as number : null, tool: typeof line.tool === "string" ? line.tool : "",
       receivedAt: typeof line.receivedAt === "number" ? line.receivedAt : null, code });
@@ -290,7 +409,11 @@ export function recordScanner(mode: ScanMode = "refused") {
     if (frame.role === "root") {
       const key = frame.key;
       if (byte === 0x5b && (key === "events" || key === "replies" || key === "seats")) {
-        if (key === "replies") repliesSeen = true;
+        if (key === "replies" && !repliesSeen) {
+          repliesSeen = true;
+          // A replies array is where refused calls are read from: what the commands gave is dropped.
+          if (window !== undefined) refusedPager = new Pager<RefusedEntry>(window.refusedOffset, window.measureRefused);
+        }
         return { descend: key, kind: "arr" };
       }
       return { sink: "member" };
@@ -305,7 +428,7 @@ export function recordScanner(mode: ScanMode = "refused") {
     if ("descend" in target) {
       countOther(1);
       const child: Frame = { kind: target.kind, role: target.descend, state: target.kind === "obj" ? "firstKey" : "first", key: null };
-      if (target.descend === "seat") child.seat = { commands: [] };
+      if (target.descend === "seat") child.seat = { commands: [], position: positions++, count: 0 };
       if (target.descend === "commands") child.seat = frame.seat;
       stack.push(child);
       return;
@@ -320,6 +443,10 @@ export function recordScanner(mode: ScanMode = "refused") {
     if (frame.role === "seat") {
       const s = frame.seat!;
       if (!Number.isSafeInteger(s.seat) || (s.colony !== 0 && s.colony !== 1)) fail();
+      seatColony.set(s.seat as number, s.colony as 0 | 1);
+      seen[s.position] = { seat: s.seat as number, colony: s.colony as 0 | 1 };
+      const at = findingOffsets.get(s.seat as number);
+      if (at !== undefined && at.count !== s.count) findingsMismatch = true;
       seats.push({ seat: s.seat as number, colony: s.colony as 0 | 1, handle: typeof s.handle === "string" ? s.handle : null,
         joinedTick: mode === "rerun" && Number.isSafeInteger(s.joinedTick) ? s.joinedTick as number : null, commands: s.commands });
     }
@@ -483,8 +610,13 @@ export function recordScanner(mode: ScanMode = "refused") {
       reduced: { config, result, rerun: rerunData(root.rerun), codeVersion: typeof root.codeVersion === "string" ? root.codeVersion : null,
         seats: [...seats].sort((a, b) => a.seat - b.seat), calls, blocks: [...blocks].sort(([a], [b]) => a - b).map(([index, { count, hash }]) => [index, count, hash.digest("hex")] as const),
         houseIdleTicks, modelIndex: setup?.modelIndex === true, lines: mode === "rerun" && repliesSeen ? lines : null },
-      refusals: mode === "refused" && repliesSeen ? refusals.map(({ agentId, ...r }) => agentId === undefined ? r : { ...r, seat: seatOf(agentId) }) : null,
+      refusals: mode === "refused" && repliesSeen && window === undefined ? refusals.map(({ agentId, ...r }) => agentId === undefined ? r : { ...r, seat: seatOf(agentId) }) : null,
       omitted: omittedBySeat,
+      refusedFrom: repliesSeen ? "calls" : "commands",
+      window: window === undefined ? null : {
+        refused: refusedPager!.page(), noEffect: noEffectPager!.page(), findingsMismatch, undecided,
+        known: { positions: [...seen].map(p => p ?? null), agentSeats: isRecord(root.agentSeats) ? root.agentSeats : {} },
+      },
     };
   }
 
@@ -508,8 +640,8 @@ export const PROGRESS_BYTES = 1024 * 1024;
  * Scans a record's bytes, gzip or plain JSON; throws RecordReadError when it cannot be read whole. `progress` is called
  * each time about PROGRESS_BYTES more decoded bytes have been scanned.
  */
-export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: AbortSignal, mode: ScanMode = "refused", progress?: () => void): Promise<RecordScan> {
-  const scanner = recordScanner(mode);
+export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: AbortSignal, mode: ScanMode = "refused", progress?: () => void, window?: Window): Promise<RecordScan> {
+  const scanner = recordScanner(mode, window);
   const iterator = source[Symbol.asyncIterator]();
   const bytes = (value: Uint8Array) => Buffer.from(value.buffer, value.byteOffset, value.byteLength);
   let gunzip: Gunzip | undefined;
