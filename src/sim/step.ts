@@ -355,7 +355,8 @@ function tickInPlace(
   // Rules 27: a queen the house founded for an all-idle seated colony is drawn an owner too.
   assignQueenOwners(state);
   pickupAndDeliver(state, foraging);
-  hatch(state, tick, events, observers?.hatchBlocked);
+  // A four-colony colony the server ends idle this tick leaves in phase 10 and hatches nothing on it.
+  hatch(state, tick, events, observers?.hatchBlocked, state.colonies.length > 2 && typeof stopNow === "object" ? stopNow.idle : undefined);
   regrow(state, tick);
 
   // 9. Squads stay within half the colony; marks fade.

@@ -272,6 +272,32 @@ describe("elimination", () => {
     expect(out.state.ants.some(a => a.colony === 2)).toBe(false);
     expect(eliminationsAt(out.state, tick)).toEqual([{ colony: 2, reason: "idle" }]);
   });
+
+  it("hatches nothing for a colony the server ends idle on a tick its queen would hatch, and snapshots it before removal", () => {
+    const state = playedMatch();
+    const tick = state.tick;
+    // Colony 2's queen is due and its store covers any caste.
+    state.colonies[2]!.foodStore = 1000;
+    queenOf(state, 2).lastHatchTick = -1_000_000;
+    const hatchesOf2 = (events: readonly SimEvent[]) => events.filter(e => e.type === "hatch" && e.colony === 2);
+    const control = advance(cloneState(state), [], undefined, undefined, undefined, false, true);
+    expect(hatchesOf2(control.events)).toHaveLength(1);
+    expect(control.state.stats.hatched[2]).toBe(state.stats.hatched[2]! + 1);
+    const spent = 1000 - control.state.colonies[2]!.foodStore;
+    expect(spent).toBeGreaterThan(0);
+
+    const out = advance(cloneState(state), [], undefined, undefined, undefined, { idle: [2] }, true);
+    expect(hatchesOf2(out.events)).toEqual([]);
+    expect(out.state.stats.hatched[2]).toBe(state.stats.hatched[2]);
+    expect(out.state.colonies[2]!.foodStore).toBe(1000);
+    // The snapshot is taken before removal and holds every ant but the one the control run hatched.
+    const controlAnts = control.state.ants.filter(a => a.colony === 2).length;
+    expect(out.state.colonies[2]!.eliminated).toMatchObject({ tick, reason: "idle", scores: { ants: controlAnts - 1 } });
+    expect(out.state.ants.some(a => a.colony === 2)).toBe(false);
+    // The other colonies hatch exactly as in the control run.
+    const others = (events: readonly SimEvent[]) => events.flatMap(e => e.type === "hatch" && e.colony !== 2 ? [{ ...e, antId: 0 }] : []);
+    expect(others(out.events)).toEqual(others(control.events));
+  });
 });
 
 describe("the end of a four-colony match", () => {

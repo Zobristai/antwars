@@ -212,10 +212,13 @@ export function queenNextCaste(state: SimState, colony: ColonyState, queen: Quee
  * soldierCost, and the hatch waits until the store covers the next caste.
  * Rules 27: in a colony with an agent each queen follows her own brood instead.
  * Stored hatch timing charges the next caste's full interval at its own nest.
+ * A colony in `leaving` (a four-colony colony the server ends idle this tick) hatches nothing.
  */
-export function hatch(state: SimState, tick: number, events: SimEvent[], observeShortfall?: (record: HatchBlockedRecord) => void): void {
+export function hatch(state: SimState, tick: number, events: SimEvent[], observeShortfall?: (record: HatchBlockedRecord) => void,
+  leaving: readonly ColonyId[] = []): void {
   const { config } = state;
   for (const colony of state.colonies) {
+    if (leaving.includes(colony.id)) continue;
     // Historical states use the colony's original timer; new rules have one timer per live nest.
     const nests = colony.queens === undefined ? [colony] : activeQueens(colony);
     // Rules 27: the same condition queenNextCaste tests; agents never leave the state mid-hatch.
