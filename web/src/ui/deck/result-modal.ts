@@ -7,11 +7,12 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports both HUDs, which import this module.
 import type { Frame } from "../../buffer.ts";
-import { h, setHidden, setText } from "../dom.ts";
+import { colonyNameNote, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
+import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
 import { D1_ICON } from "./icons.ts";
 import { PAGE_WORDS, resultView, shareHref, type ResultView } from "./model.ts";
 
-const COLONY_CSS = ["var(--aw-c0)", "var(--aw-c1)"] as const;
+const COLONY_CSS = COLONY_INK;
 
 export interface ResultModal {
   /** The dialog, for the page to place at its root. */
@@ -73,8 +74,12 @@ export function mountResultModal(doc: Document): ResultModal {
   listen(dialog, "click", e => { if (e.target === dialog) dismiss(); });
 
   let bodyKey = "";
-  const writeBody = (r: ResultView | null) => {
-    const keyNow = r ? JSON.stringify(r) : "";
+  /**
+   * drawn: the match's drawn colony names (unrated), else undefined. A drawn name is shown in its colony's colour with
+   * its one-line source as its tooltip wherever the result names it; the rated names are shown as they always were.
+   */
+  const writeBody = (r: ResultView | null, drawn: ColonyNamePair | undefined) => {
+    const keyNow = r ? JSON.stringify([r, drawn ?? null]) : "";
     if (keyNow === bodyKey) return;
     bodyKey = keyNow;
     setHidden(result, r === null);
@@ -82,6 +87,7 @@ export function mountResultModal(doc: Document): ResultModal {
     result.style.setProperty("--d1-side", r.winner === null ? "var(--aw-ink-3)" : COLONY_CSS[r.winner]);
     setText(head, r.headline);
     head.style.color = r.winner === null ? "" : COLONY_CSS[r.winner];
+    setAttr(head, "title", drawn && r.winner !== null ? colonyNameNote(drawn[r.winner]) : null);
     setText(how, r.how);
     // Each player's shown name, its level and Fast badges as the Leaderboard shows them, then the change.
     ratings.replaceChildren(...r.ratings.map(row => {
@@ -100,9 +106,13 @@ export function mountResultModal(doc: Document): ResultModal {
     setHidden(ratings, r.ratings.length === 0);
     moments.replaceChildren(...r.moments.map(m => {
       const li = h(doc, "li", "d1-moment");
-      const what = h(doc, "span", "d1-moment-what", m.what);
+      // The moment in its colony's colour; another colony it names (the queen overrun) in that colony's own.
+      const what = h(doc, "span", "d1-moment-what");
+      setColonyText(doc, what, m.what, drawn);
       what.style.color = COLONY_CSS[m.colony];
-      li.append(h(doc, "span", "d1-when", m.when), what, h(doc, "span", "d1-moment-who", `· ${m.who}`));
+      const who = h(doc, "span", "d1-moment-who");
+      setColonyText(doc, who, `· ${m.who}`, drawn);
+      li.append(h(doc, "span", "d1-when", m.when), what, who);
       return li;
     }));
     setHidden(moments, r.moments.length === 0);
@@ -121,7 +131,7 @@ export function mountResultModal(doc: Document): ResultModal {
       shownEnd = shown ? end : "";
       const open = shown !== null && end !== closedEnd;
       if (!open && dialog.open) dialog.close();
-      writeBody(shown);
+      writeBody(shown, frame?.board?.setup.colonyNames);
       if (open && !dialog.open && dialog.isConnected) dialog.showModal();
     },
     destroy() {
