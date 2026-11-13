@@ -40,6 +40,7 @@ import { openSource } from "./source.ts";
 import { TeamView, teamViewControl } from "./team-view.ts";
 import { Fog2D } from "./fog2d.ts";
 import { mountReplayControls } from "./replay-controls.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import type { RecordingStats } from "./recording.ts";
 import { Waiting } from "./waiting.ts";
 import { TOUCH_RADIUS_PX, linkLine, tiltOn as tiltParam } from "./compose.ts";
@@ -238,7 +239,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   const mode = replay ? "replay" : "live";
   overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
   const controls = params.has("replay") && input.recording
-    ? mountReplayControls(document, input.recording) : null;
+    ? mountReplayControls(document, input.recording, colonyNamesOf(head.full!.setup)) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
   // The needs-WebGL message stands in the HUD's window, where the board would be; its join panel is the HUD's.
   message?.querySelector(".aw-byoa")?.remove();
@@ -351,7 +352,7 @@ async function start(): Promise<void> {
   const mode = replay ? "replay" : "live";
   overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
   const controls = params.has("replay") && input.recording
-    ? mountReplayControls(document, input.recording) : null;
+    ? mountReplayControls(document, input.recording, colonyNamesOf(head.full!.setup)) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
   const envelope = foundingEnvelope(head.full!.setup);
   overlays.setBoardAspect((envelope.x1 - envelope.x0) / (envelope.y1 - envelope.y0));

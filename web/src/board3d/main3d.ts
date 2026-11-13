@@ -48,6 +48,7 @@ import { Overlays } from "../overlays.ts";
 import { openSource } from "../source.ts";
 import { TeamView, teamViewControl } from "../team-view.ts";
 import { mountReplayControls } from "../replay-controls.ts";
+import { colonyNamesOf } from "../../../src/sim/colonyNames.ts";
 import { Waiting } from "../waiting.ts";
 import { TOUCH_RADIUS_PX, linkLine } from "../compose.ts";
 import { excerptEnded, modeCopy } from "../replay.ts";
@@ -188,7 +189,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
   overlays.setShare(input.share);
   const controls = params.has("replay") && input.recording
-    ? mountReplayControls(document, input.recording) : null;
+    ? mountReplayControls(document, input.recording, colonyNamesOf(head.full!.setup)) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
   const queens = queensBox(setup);
   const fitCam = new Camera(W, H, w, h, overlays.boardArea(w, h), lane, queens, scale);

@@ -1,4 +1,5 @@
 import { COLONY_NAMES } from "../../src/sim/config.ts";
+import type { ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import { PLAYBACK_RATES, type PlaybackRate, type Recording } from "./recording.ts";
 import type { ReplayEvent } from "./replay-events.ts";
 import "./replay-marks.css";
@@ -29,9 +30,9 @@ const GLYPHS = {
 const glyphMarkup = (kind: ReplayEvent["kind"]) =>
   `<svg class="aw-mark-glyph" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false">${GLYPHS[kind]}</svg>`;
 
-/** The words a mark is read by: its kind, its colony where it has one, and its match time. */
-export function markWords(e: ReplayEvent): string[] {
-  return [KIND_NAMES[e.kind], ...(e.colony === null ? [] : [COLONY_NAMES[e.colony]]), replayTime(e.ms)];
+/** The words a mark is read by: its kind, its colony by the match's own name where it has one, and its match time. */
+export function markWords(e: ReplayEvent, names: ColonyNamePair = COLONY_NAMES): string[] {
+  return [KIND_NAMES[e.kind], ...(e.colony === null ? [] : [names[e.colony]]), replayTime(e.ms)];
 }
 
 /** Where a moment stands along a track of `width` px: the thumb's centre at that position. */
@@ -54,8 +55,9 @@ export function groupMarks(events: readonly ReplayEvent[], duration: number, wid
 /** Native range/select controls provide keyboard, pointer and touch behavior without a custom drag handler.
  * The caller mounts only for explicit replays, never the live page's stand-in recording; the HUD places `el` (HudHost.replay).
  * Once the recording's marks are read (Recording.events), they stand on the slider's track as buttons: a click or tap
- * jumps there, marks too close to tell apart join a counted group that opens a list (replay-marks.css). */
-export function mountReplayControls(doc: Document, recording: Recording): { el: HTMLDivElement; update(): void; close(): void } {
+ * jumps there, marks too close to tell apart join a counted group that opens a list (replay-marks.css). Marks name
+ * colonies by `names`, the match's own colony names. */
+export function mountReplayControls(doc: Document, recording: Recording, names: ColonyNamePair = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
   const el = doc.createElement("div");
   el.className = "aw-replay-controls";
   el.setAttribute("role", "group");
@@ -162,7 +164,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
     glyph.innerHTML = glyphMarkup(e.kind);
     const text = doc.createElement("span");
     text.className = "aw-mark-words";
-    const [kind, ...rest] = markWords(e);
+    const [kind, ...rest] = markWords(e, names);
     const at = rest.pop()!;
     text.append(doc.createTextNode(`${kind} · `));
     if (rest.length) {
@@ -215,7 +217,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       row.type = "button";
       row.className = "aw-mark-row";
       row.setAttribute("role", "menuitem");
-      row.setAttribute("aria-label", markWords(e).join(", "));
+      row.setAttribute("aria-label", markWords(e, names).join(", "));
       words(row, e);
       // The group as now laid out: a new layout may have moved it since its list opened.
       row.onclick = () => { const at = openItem ?? item; closeList(); at.button.focus(); jump(e, at.x); };
@@ -270,7 +272,7 @@ export function mountReplayControls(doc: Document, recording: Recording): { el: 
       const first = group.events[0]!;
       if (group.events.length === 1) {
         button.className = `aw-mark ${first.kind}${first.colony === null ? "" : ` c${first.colony}`}`;
-        button.setAttribute("aria-label", markWords(first).join(", "));
+        button.setAttribute("aria-label", markWords(first, names).join(", "));
         button.innerHTML = glyphMarkup(first.kind);
       } else {
         button.className = "aw-mark group";
