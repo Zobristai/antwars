@@ -82,6 +82,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     .map(mark => [mark.id, mark])) : undefined;
   const sources = marks !== undefined && marks.size > 0 ? new Map<number, DamageSource>() : undefined;
   // Ants of one colony on one tile have the same adjacent enemies, and no HP changes until all have chosen.
+  // The key leaves room for four colonies per tile.
   const targets = new Map<number, Ant | null>(), width = config.mapWidth;
   for (const ant of state.ants) {
     // Rules 25 carriers deliver instead of biting, even under a squad or mark.
@@ -89,7 +90,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
       ant.lastTargetId = -1;
       continue;
     }
-    const key = (Math.floor(ant.y / SUB) * width + Math.floor(ant.x / SUB)) * 2 + ant.colony;
+    const key = (Math.floor(ant.y / SUB) * width + Math.floor(ant.x / SUB)) * 4 + ant.colony;
     let target = targets.get(key);
     if (target === undefined) { target = pickTarget(state, grid, ant); targets.set(key, target); }
     if (target === null) {
@@ -147,13 +148,18 @@ export function adjacentEnemyQueen(state: SimState, ant: Ant): QueenState | null
   const tx = Math.floor(ant.x / SUB);
   const ty = Math.floor(ant.y / SUB);
   let best: QueenState | null = null;
-  const enemy = state.colonies[ant.colony === 0 ? 1 : 0];
-  // The live queens in activeQueens order, read in place rather than through a filtered copy.
-  for (const q of enemy.queens ?? activeQueens(enemy)) {
-    if (q.lostTick !== null) continue;
-    const reach = gridScaleOf(state.config);
-    if (Math.abs(Math.floor(q.queenX / SUB) - tx) > reach || Math.abs(Math.floor(q.queenY / SUB) - ty) > reach) continue;
-    if (best === null || (q.hp ?? 0) < (best.hp ?? 0) || ((q.hp ?? 0) === (best.hp ?? 0) && q.id < best.id)) best = q;
+  const reach = gridScaleOf(state.config);
+  // Every other colony, in colony order, so an equal-HP queen of a lower colony stays ahead.
+  for (const enemy of state.colonies) {
+    if (enemy.id === ant.colony) continue;
+    let colonyBest: QueenState | null = null;
+    // The live queens in activeQueens order, read in place rather than through a filtered copy.
+    for (const q of enemy.queens ?? activeQueens(enemy)) {
+      if (q.lostTick !== null) continue;
+      if (Math.abs(Math.floor(q.queenX / SUB) - tx) > reach || Math.abs(Math.floor(q.queenY / SUB) - ty) > reach) continue;
+      if (colonyBest === null || (q.hp ?? 0) < (colonyBest.hp ?? 0) || ((q.hp ?? 0) === (colonyBest.hp ?? 0) && q.id < colonyBest.id)) colonyBest = q;
+    }
+    if (colonyBest !== null && (best === null || (colonyBest.hp ?? 0) < (best.hp ?? 0))) best = colonyBest;
   }
   return best;
 }

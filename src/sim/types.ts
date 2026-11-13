@@ -1,8 +1,23 @@
 import type { SimConfig, WaterRect } from "./config.js";
 import type { AgentView } from "./view.js";
 
-/** Colony index: 0 = Very Large Colony, 1 = Lake Hodges Colony. */
-export type ColonyId = 0 | 1;
+/**
+ * Colony index, 0 to 3: 0 = Very Large Colony, 1 = Lake Hodges Colony. A
+ * two-colony match uses 0 and 1 only; a four-colony match also uses 2 and 3.
+ */
+export type ColonyId = number;
+
+/** A colony index in a two-colony match. */
+export type TwoColonyId = 0 | 1;
+
+/**
+ * Narrows a colony to a two-colony match's 0 or 1, for code that still
+ * supports two colonies only. Throws on any other colony.
+ */
+export function asTwoColony(colony: ColonyId): TwoColonyId {
+  if (colony !== 0 && colony !== 1) throw new Error(`colony ${colony} is outside a two-colony match`);
+  return colony;
+}
 
 /** Tile owner: a colony, or -1 for neutral. */
 export type TileOwner = ColonyId | -1;
@@ -294,15 +309,16 @@ export interface ColonyState {
 }
 
 export interface MatchStats {
-  delivered: [number, number];
-  hatched: [number, number];
-  deaths: [number, number];
+  /** One entry per colony, in colony order. */
+  delivered: number[];
+  hatched: number[];
+  deaths: number[];
   /** Fight starts (an ant attacking a new target). */
   fights: number;
   /** Tiles that went straight from one colony to the other. */
   ownerChanges: number;
   /** Hits that carried the defender bonus, per attacking colony. */
-  bonusHits: [number, number];
+  bonusHits: number[];
 }
 
 export type WinReason = "overrun" | "time_up" | "double_overrun" | "queens_killed" | "sustained_territory" | "abandoned" | "idle";
@@ -338,7 +354,8 @@ export interface SimState {
   rngState: number;
   nextAntId: number;
   ants: Ant[];
-  colonies: [ColonyState, ColonyState];
+  /** One entry per colony, indexed by colony id. */
+  colonies: ColonyState[];
   /** Food per tile, row-major. */
   food: number[];
   /** Per-tile regrowth ceiling, row-major. Never mutated. */

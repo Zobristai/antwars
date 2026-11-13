@@ -6,7 +6,7 @@ import { generateFoodLayout, referenceFoodConfig } from "./foodLayout.js";
 import { gridScaleOf, scaledFoodPatch, scaledTileCentre, withGridScale } from "./gridScale.js";
 import { validateMapBoards } from "./mapBoard.js";
 import { nextUint32 } from "./rng.js";
-import type { Ant, Caste, ColonyId, ColonyState, QueenState, SimState, Terrain, TileOwner } from "./types.js";
+import type { Ant, Caste, ColonyId, ColonyState, MatchStats, QueenState, SimState, Terrain, TileOwner } from "./types.js";
 
 /** Row-major tile index. */
 export function tileIndex(config: SimConfig, tx: number, ty: number): number {
@@ -186,6 +186,32 @@ export function matchConfigForMap(seed: number, config: SimConfig): SimConfig {
     foodPatches: patches, ...(config.foodLayout === undefined ? {} : { foodLayout: { ...config.foodLayout, patches } }) };
 }
 
+/** A colony at match start with its first nest at (queenX, queenY), in sub-tile units. */
+export function newColony(config: SimConfig, id: ColonyId, queenX: number, queenY: number): ColonyState {
+  return {
+    id,
+    queenX,
+    queenY,
+    foodStore: 0,
+    lastHatchTick: -config.hatchIntervalTicks,
+    overrunTicks: 0,
+    ...(config.castes === undefined ? {} : { mixedNext: "worker" as const }),
+    ...(config.queenFounding === undefined ? {} : {
+      queens: [{ id: 0, ...(config.queenFounding.costBasis === "founded-live" ? { starting: true as const } : {}), queenX, queenY, foundedTick: 0,
+        lastHatchTick: -config.hatchIntervalTicks, overrunTicks: 0, lostTick: null,
+        ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, lastBiteTick: -config.queenHp.biteIntervalTicks, regenFromTick: 0 }) }],
+      lastQueenFoundedTick: -config.queenFounding.cooldownTicks,
+    }),
+    ...(config.localAnts === undefined ? {} : { seenFood: [] as number[] }),
+  };
+}
+
+/** Match statistics at match start for this many colonies. */
+export function newStats(colonyCount: number): MatchStats {
+  const zeros = (): number[] => Array.from({ length: colonyCount }, () => 0);
+  return { delivered: zeros(), hatched: zeros(), deaths: zeros(), fights: 0, ownerChanges: 0, bonusHits: zeros() };
+}
+
 /** Create a match at tick 0. Queued agents join through inputs on the first step. */
 export function createMatch(seed: number, config: SimConfig = withGridScale(DEFAULT_CONFIG)): SimState {
   config = matchConfigForMap(seed, config);
@@ -193,25 +219,10 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
   if (config.foodLayout !== undefined) config = { ...config,
     foodPatches: generateFoodLayout(config, seed, terrain === undefined ? undefined : passableMask(config, terrain)) };
   const tiles = config.mapWidth * config.mapHeight;
-  const colonies = ([0, 1] as const).map((id): ColonyState => {
+  const colonies = [0, 1].map((id): ColonyState => {
     const { tx, ty } = nestTile(config, id);
-    return {
-      id,
-      queenX: startX(config, id, tx),
-      queenY: tileCentre(ty),
-      foodStore: 0,
-      lastHatchTick: -config.hatchIntervalTicks,
-      overrunTicks: 0,
-      ...(config.castes === undefined ? {} : { mixedNext: "worker" as const }),
-      ...(config.queenFounding === undefined ? {} : {
-        queens: [{ id: 0, ...(config.queenFounding.costBasis === "founded-live" ? { starting: true as const } : {}), queenX: startX(config, id, tx), queenY: tileCentre(ty), foundedTick: 0,
-          lastHatchTick: -config.hatchIntervalTicks, overrunTicks: 0, lostTick: null,
-          ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, lastBiteTick: -config.queenHp.biteIntervalTicks, regenFromTick: 0 }) }],
-        lastQueenFoundedTick: -config.queenFounding.cooldownTicks,
-      }),
-      ...(config.localAnts === undefined ? {} : { seenFood: [] as number[] }),
-    };
-  }) as [ColonyState, ColonyState];
+    return newColony(config, id, startX(config, id, tx), tileCentre(ty));
+  });
 
   const ants: Ant[] = [];
   let nextAntId = 1;
@@ -253,14 +264,7 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
     foodCap: laid.food.slice(),
     owner: new Array<TileOwner>(tiles).fill(-1),
     lastVisit: new Array<number>(tiles).fill(0),
-    stats: {
-      delivered: [0, 0],
-      hatched: [0, 0],
-      deaths: [0, 0],
-      fights: 0,
-      ownerChanges: 0,
-      bonusHits: [0, 0],
-    },
+    stats: newStats(2),
     result: null,
     agents: [],
     marks: [],
@@ -517,8 +521,11 @@ const bucketCounts = new WeakMap<Grid, readonly [Int32Array, Int32Array]>();
 /**
  * Each colony's ant count per tile (colony 0, colony 1) on this grid's buckets: kept by the tracker for a
  * TrackedGrid, counted once for a buildGrid grid; undefined for any other Map. Valid while the buckets are.
+ * The counts cover two colonies only, so a match with any other number of colonies gets undefined and its
+ * callers take their per-ant paths.
  */
-export function gridColonyCounts(grid: Grid): readonly [Int32Array, Int32Array] | undefined {
+export function gridColonyCounts(grid: Grid, state: SimState): readonly [Int32Array, Int32Array] | undefined {
+  if (state.colonies.length !== 2) return undefined;
   if (grid instanceof TrackedGrid) return grid.colonyCounts();
   const dense = denseBuckets.get(grid);
   if (dense === undefined) return undefined;
@@ -543,7 +550,7 @@ export function gridColonyCounts(grid: Grid): readonly [Int32Array, Int32Array] 
 const colonyAreas = new WeakMap<Grid, readonly [Int32Array, Int32Array]>();
 
 export function colonyAreaCounts(state: SimState, grid: Grid): readonly [Int32Array, Int32Array] | undefined {
-  const tiles = gridColonyCounts(grid);
+  const tiles = gridColonyCounts(grid, state);
   if (tiles === undefined) return undefined;
   const cached = colonyAreas.get(grid);
   if (cached !== undefined) return cached;
@@ -581,7 +588,7 @@ function noneNear(state: SimState, tiles: Int32Array, tx: number, ty: number, r:
 
 /** Whether no ant of the other colony stands within Chebyshev distance r of tile (tx, ty); false when unknown. */
 export function noEnemyNear(state: SimState, grid: Grid, colony: ColonyId, tx: number, ty: number, r: number): boolean {
-  const counts = gridColonyCounts(grid);
+  const counts = gridColonyCounts(grid, state);
   return counts !== undefined && Number.isInteger(r) && noneNear(state, counts[colony === 0 ? 1 : 0], tx, ty, r);
 }
 
@@ -621,7 +628,7 @@ export function forEachNear(
 
 /** Whether any enemy of this ant stands within combat reach (adjacent or same tile). */
 export function hasAdjacentEnemy(state: SimState, grid: Grid, ant: Ant): boolean {
-  const counts = gridColonyCounts(grid);
+  const counts = gridColonyCounts(grid, state);
   if (counts !== undefined) return !noneNear(state, counts[ant.colony === 0 ? 1 : 0], Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config));
   let found = false;
   forEachNear(state, grid, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config), (other) => {
@@ -636,7 +643,7 @@ export function cloneState(state: SimState): SimState {
     ...state,
     ...(state.earlyWinProgress === undefined ? {} : { earlyWinProgress: { ...state.earlyWinProgress } }),
     ants: state.ants.map((ant) => ({ ...ant })),
-    colonies: state.colonies.map((c) => ({ ...c, ...(c.queens === undefined ? {} : { queens: c.queens.map((q) => ({ ...q })) }), ...(c.seenFood === undefined ? {} : { seenFood: c.seenFood.slice() }) })) as [ColonyState, ColonyState],
+    colonies: state.colonies.map((c) => ({ ...c, ...(c.queens === undefined ? {} : { queens: c.queens.map((q) => ({ ...q })) }), ...(c.seenFood === undefined ? {} : { seenFood: c.seenFood.slice() }) })),
     food: state.food.slice(),
     owner: state.owner.slice(),
     lastVisit: state.lastVisit.slice(),

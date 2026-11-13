@@ -143,11 +143,13 @@ export interface SightScan { readonly own: number; readonly enemy: number; reado
  */
 export function sightScan(state: SimState, grid: Grid, ant: Ant, tx: number, ty: number, r: number): SightScan {
   const dense = gridBuckets(grid);
-  if (dense === undefined || !Number.isInteger(r) || r < 0) return scanNear(state, grid, ant, tx, ty, r);
+  // Area counts exist for two-colony matches only; any other count takes the per-ant scan.
+  const counts = dense === undefined || !Number.isInteger(r) || r < 0 ? undefined : colonyAreaCounts(state, grid);
+  if (dense === undefined || counts === undefined) return scanNear(state, grid, ant, tx, ty, r);
   // The same circle of tiles, row by row: counts from each colony's per-row prefix sums, and the nearest
   // enemy (nearer, then lowest id, which no visiting order changes) from the buckets of rows holding enemies.
   const { mapWidth: width, mapHeight: height } = state.config;
-  const counts = colonyAreaCounts(state, grid)!, half = circleHalfWidths(r);
+  const half = circleHalfWidths(r);
   const mine = counts[ant.colony], theirs = counts[ant.colony === 0 ? 1 : 0];
   const y0 = Math.max(0, ty - r), y1 = Math.min(height - 1, ty + r);
   let own = 0;
@@ -245,7 +247,8 @@ function queenIntruders(state: SimState, grid: Grid, colony: ColonyId, qx: numbe
     intruderCandidates.set(grid, byQueen);
   }
   const { mapWidth, mapHeight } = state.config;
-  const key = (r * mapWidth * mapHeight + qy * mapWidth + qx) * 2 + colony;
+  // The key leaves room for four colonies per queen tile.
+  const key = (r * mapWidth * mapHeight + qy * mapWidth + qx) * 4 + colony;
   let found = byQueen.get(key);
   if (found === undefined) {
     const list: Ant[] = [];

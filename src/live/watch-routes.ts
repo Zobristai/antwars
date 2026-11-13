@@ -21,6 +21,7 @@ import { createAdmissionCap, type CapLimits } from "../net/admission.js";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
 import { clientSource } from "../server/clientSource.js";
 import { RELAY_HEADER, signRelay } from "./relay-signature.js";
+import { asTwoColony } from "../sim/types.js";
 
 function reply(res: ServerResponse, status: number, value?: unknown): void {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", "referrer-policy": "no-referrer", vary: "x-antwar-invite" });
@@ -242,7 +243,7 @@ async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<W
     if (!reads.has(key)) reads.set(key, seatRating((id, mode) => accounts.ratings.readRating(id, mode), identityId, match.mode ?? null, held(colony)));
     return reads.get(key)!;
   };
-  const ratings = await Promise.all(seats.map(seat => ratingOf(seat.identityId, seat.colony)));
+  const ratings = await Promise.all(seats.map(seat => ratingOf(seat.identityId, asTwoColony(seat.colony))));
   const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
   seats.forEach((seat, index) => {
     const rating = ratings[index]!, displayName = names[index]!;
@@ -268,7 +269,7 @@ async function storedRatings(accounts: AccountStores, lobby: Lobby): Promise<{ c
   const seats = lobbySeats(lobby.colonies), names = seatDisplayNames(seats);
   const rows = seats.map((seat, index) => {
     const change = changes.find(row => row.identityId === seat.identityId);
-    return change && { colony: seat.colony, displayName: names[index]!, before: change.before, after: change.after };
+    return change && { colony: asTwoColony(seat.colony), displayName: names[index]!, before: change.before, after: change.after };
   });
   return rows.every(row => row !== undefined) ? rows : [];
 }

@@ -45,9 +45,10 @@ export function updateTerritory(state: SimState, grid: Grid | undefined, tick: n
     cellTail[index] = i;
     present[Math.floor(ant.y / SUB) * width + Math.floor(ant.x / SUB)]! |= 1 << ant.colony;
   }
-  // hasAdjacentEnemy on the synced grid: an enemy on a tile within Chebyshev reach.
+  // hasAdjacentEnemy on the synced grid: an enemy on a tile within Chebyshev reach. enemy: every
+  // colony bit but the ant's own (colonies 0 to 3).
   const adjacentEnemy = (ant: Ant): boolean => {
-    const tx = Math.floor(ant.x / SUB), ty = Math.floor(ant.y / SUB), enemy = ant.colony === 0 ? 2 : 1;
+    const tx = Math.floor(ant.x / SUB), ty = Math.floor(ant.y / SUB), enemy = 0b1111 & ~(1 << ant.colony);
     const x0 = Math.max(0, tx - scale), x1 = Math.min(width - 1, tx + scale);
     const y1 = Math.min(height - 1, ty + scale);
     for (let y = Math.max(0, ty - scale); y <= y1; y++) {
@@ -67,9 +68,9 @@ export function updateTerritory(state: SimState, grid: Grid | undefined, tick: n
       const index = origin + y * width + x;
       if (land !== undefined && !land[index]) continue;
       occupied[index] = 1;
-      // Two colonies in one original cell are within combat reach of each other.
+      // Two or more colonies in one original cell are within combat reach of each other.
       if (locked === undefined) {
-        locked = colonies === 3;
+        locked = (colonies & (colonies - 1)) !== 0;
         for (let i = head; !locked && i !== -1; i = antNext[i]!) locked = adjacentEnemy(ants[i]!);
       }
       if (locked) {
@@ -122,7 +123,7 @@ export function decideTimeUp(state: SimState, tick: number, reason: "time_up" | 
   if (byTiles !== null) return { winner: byTiles, reason, decidedBy: "territory", tick };
   const byAnts = compare(antsAlive(state));
   if (byAnts !== null) return { winner: byAnts, reason, decidedBy: "ants_alive", tick };
-  const byFood = compare(state.stats.delivered);
+  const byFood = compare([state.stats.delivered[0], state.stats.delivered[1]]);
   if (byFood !== null) return { winner: byFood, reason, decidedBy: "food_delivered", tick };
   return { winner: null, reason, decidedBy: "draw", tick };
 }

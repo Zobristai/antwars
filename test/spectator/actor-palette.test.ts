@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { actorPaletteFixture, PALETTE_BACKGROUNDS, PALETTE_POOL, contrast, inQuad, rgb } from "./actor-palette-fixture.ts";
 import { agentShade } from "../../web/src/squads.ts";
+import { asTwoColony } from "../../src/sim/types.ts";
 import { COLONY_TINT } from "../../web/src/ants.ts";
 import { COLONY_RGB } from "../../web/src/territory.ts";
 import { COLONY_RGB as COLONY_3D } from "../../web/src/board3d/ground.ts";
@@ -14,7 +15,7 @@ describe("actor palette background coverage", () => {
     expect(state.marks).toHaveLength(8);
     expect(state.ants).toHaveLength(background === "water" ? 0 : 10);
     expect(state.ants.filter(a => a.squad === null).map(a => a.colony)).toEqual(background === "water" ? [] : [0, 1]);
-    expect(new Set(state.agents.map((a, i) => agentShade(a.colony, i, state.agents))).size).toBe(8);
+    expect(new Set(state.agents.map((a, i) => agentShade(a.colony, i, state.agents.map((agent) => ({ colony: asTwoColony(agent.colony) }))))).size).toBe(8);
     expect(new Set(state.owner)).toEqual(new Set([background === "colony-0" ? 0 : background === "colony-1" ? 1 : -1]));
     if (background === "water") {
       const p = PALETTE_POOL;

@@ -43,7 +43,7 @@ function housePhase(state: SimState, gridOf: (state: SimState) => Grid = buildGr
   const food = foodTiles(state);
   const house = new Map<number, Vec>();
   const foraging = new Set<number>();
-  const local = [localRulesSide(state, 0), localRulesSide(state, 1)];
+  const local = state.colonies.map((colony) => localRulesSide(state, colony.id));
   const soldiers = local.some(Boolean) ? localSoldierAssignments(state) : null;
   rememberWorkerGuards(state, soldiers);
   for (const ant of state.ants) {
