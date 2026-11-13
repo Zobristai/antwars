@@ -34,7 +34,6 @@
       }
     ],
     "foodRegrowTicks": 150,
-    "groundFoodIntervalTicks": 600,
     "foodJitter": 1,
     "antSpeedTilesPerSecond": 2,
     "startAnts": 30,
@@ -235,7 +234,6 @@
       }
     ],
     "foodRegrowTicks": 150,
-    "groundFoodIntervalTicks": 600,
     "foodJitter": 1,
     "antSpeedTilesPerSecond": 2,
     "startAnts": 30,
@@ -444,7 +442,6 @@
       }
     ],
     "foodRegrowTicks": 150,
-    "groundFoodIntervalTicks": 600,
     "foodJitter": 1,
     "antSpeedTilesPerSecond": 2,
     "startAnts": 30,
@@ -654,7 +651,6 @@
       "regenClearTiles": 3,
       "shieldTicks": 3000
     },
-    "groundIncomeExcessPermille": 250,
     "earlyWin": {
       "minTick": 6000,
       "holdTicks": 3000,
