@@ -17,6 +17,13 @@ export const MAIN_REF = "refs/heads/main";
 export const FETCH_INTERVAL_MS = 60_000;
 const FETCH_TIMEOUT_MS = 20_000;
 const RESPONSE_CAP_BYTES = 64 * 1024 * 1024;
+/**
+ * Fixed allocation limits while unpacking, whatever sizes the response declares: each object, inflated or rebuilt from
+ * a delta, and all of them together. Exceeding one is a read that failed (try later), never an absent version. main's
+ * commits are a few KiB each and a few hundred KiB in all (2026-11).
+ */
+export const OBJECT_CAP_BYTES = 1024 * 1024;
+export const TOTAL_CAP_BYTES = 64 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/;
 
 export type VersionAnswer = "found" | "absent" | "unavailable";
@@ -101,7 +108,17 @@ export function packfileOf(response: Buffer): Buffer {
 const TYPES: Record<number, string> = { 1: "commit", 2: "tree", 3: "blob", 4: "tag" };
 const objectId = (type: string, body: Buffer) => createHash("sha1").update(`${type} ${body.length}\0`).update(body).digest("hex");
 
-function applyDelta(base: Buffer, delta: Buffer): Buffer {
+/** Counts bytes about to be allocated against the per-object and total caps, refusing before allocating. */
+function allocation(): (bytes: number) => void {
+  let total = 0;
+  return bytes => {
+    if (bytes > OBJECT_CAP_BYTES) bad("object too large");
+    total += bytes;
+    if (total > TOTAL_CAP_BYTES) bad("pack too large");
+  };
+}
+
+function applyDelta(base: Buffer, delta: Buffer, allocate: (bytes: number) => void): Buffer {
   let i = 0;
   const varint = () => {
     let value = 0, shift = 0, byte: number;
@@ -109,7 +126,9 @@ function applyDelta(base: Buffer, delta: Buffer): Buffer {
     return value;
   };
   if (varint() !== base.length) bad("delta base size");
-  const out = Buffer.alloc(varint());
+  const size = varint();
+  allocate(size);
+  const out = Buffer.alloc(size);
   let written = 0;
   while (i < delta.length) {
     const op = delta[i++]!;
@@ -138,6 +157,7 @@ export function packObjects(pack: Buffer): Map<string, { type: string; body: Buf
   const count = pack.readUInt32BE(8);
   const objects = new Map<string, { type: string; body: Buffer }>();
   const deltas: { base: string; delta: Buffer }[] = [];
+  const allocate = allocation();
   let o = 12;
   for (let k = 0; k < count; k++) {
     if (o >= pack.length - 20) bad("truncated pack");
@@ -148,8 +168,11 @@ export function packObjects(pack: Buffer): Map<string, { type: string; body: Buf
     let base: string | undefined;
     if (type === 7) { base = pack.subarray(o, o + 20).toString("hex"); o += 20; }
     else if (TYPES[type] === undefined) bad("unsupported pack entry");
+    // The declared size is checked against the caps first, and inflating cannot write more than it.
+    allocate(size);
     let inflated: { buffer: Buffer; engine: { bytesWritten: number } };
-    try { inflated = inflateSync(pack.subarray(o, pack.length - 20), { info: true }) as unknown as typeof inflated; } catch { return bad("bad compressed entry"); }
+    try { inflated = inflateSync(pack.subarray(o, pack.length - 20), { info: true, maxOutputLength: Math.max(1, size) }) as unknown as typeof inflated; }
+    catch { return bad("bad compressed entry"); }
     o += inflated.engine.bytesWritten;
     if (inflated.buffer.length !== size) bad("entry size");
     if (base !== undefined) deltas.push({ base, delta: inflated.buffer });
@@ -163,7 +186,7 @@ export function packObjects(pack: Buffer): Map<string, { type: string; body: Buf
     const next = pending.filter(({ base, delta }) => {
       const found = objects.get(base);
       if (found === undefined) return true;
-      const body = applyDelta(found.body, delta);
+      const body = applyDelta(found.body, delta, allocate);
       objects.set(objectId(found.type, body), { type: found.type, body });
       return false;
     });

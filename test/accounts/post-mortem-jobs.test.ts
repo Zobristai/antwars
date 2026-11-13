@@ -3,14 +3,14 @@
 // and the watchdog, the scan pool and the re-run queue. Figures are test figures, not production measurements.
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, openSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   admits, CHILD_ENV, CHILD_FLAGS, createJobs, forkRerunChild, JobsBusy, limitOf, MEMORY_POLICY, meminfoMeter, overLimit, RERUN_QUEUE, SAMPLE_MS,
-  SCAN_CONCURRENCY, SCAN_QUEUE, type RerunOutcome,
+  SCAN_CONCURRENCY, SCAN_QUEUE, STALL_MS, type RerunOutcome,
 } from "../../src/accounts/postMortemJobs.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
 
@@ -387,3 +387,75 @@ it("a heap flood under the child's flags dies at the V8 limit within the child r
   expect(peak).toBeGreaterThan(500);
   expect(peak).toBeLessThanOrEqual(MEMORY_POLICY.childReserveMiB);
 }, 120_000);
+
+// Credible regression: a scan that buffers the record, or a scan reserve below what two concurrent scans use. Only the
+// scans are charged: the fixture is written by its own process, which exits first (the storage it leaves is logged
+// apart), and the base is read inside the scanning process after its imports have loaded, under the entry server's
+// flag, so neither node's start nor the fixture counts against the reserve.
+it("two concurrent worst-case refused-call scans stay within the scan reserve, whole container", async () => {
+  const meter = meminfoMeter();
+  const used = () => meter()!.usedMiB;
+  const dir = mkdtempSync(join(tmpdir(), "antwar-pm-scans-"));
+  const fixture = join(dir, "worst.json");
+  try {
+    const before = used();
+    await new Promise<void>((resolve, reject) => {
+      const gen = spawn(process.execPath, ["-e", WORST_GENERATOR], { stdio: ["ignore", openSync(fixture, "w"), "inherit"] });
+      children.push(gen);
+      gen.once("exit", code => code === 0 ? resolve() : reject(new Error(`generator exited ${code}`)));
+    });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const fixtureMiB = used() - before;
+    const root = new URL("../..", import.meta.url);
+    const script = `
+      const { createReadStream } = await import("node:fs");
+      const { scanRecord } = await import(${JSON.stringify(new URL("src/accounts/postMortemRecord.ts", root).href)});
+      const { meminfoMeter, SAMPLE_MS } = await import(${JSON.stringify(new URL("src/accounts/postMortemJobs.ts", root).href)});
+      const meter = meminfoMeter(), used = () => meter().usedMiB;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const base = used();
+      let peak = 0;
+      const sampler = setInterval(() => { peak = Math.max(peak, used() - base); }, SAMPLE_MS);
+      const scans = await Promise.all([0, 1].map(() => scanRecord(createReadStream(${JSON.stringify(fixture)}, { highWaterMark: 64 * 1024 }))));
+      clearInterval(sampler);
+      peak = Math.max(peak, used() - base);
+      process.stdout.write(JSON.stringify({ peak, refusals: scans.map(scan => scan.refusals.length) }));`;
+    const scanner = spawn(process.execPath, ["--max-semi-space-size=8", "--import", new URL("src/ts-resolve.mjs", root).href, "--input-type=module", "-e", script],
+      { stdio: ["ignore", "pipe", "inherit"] });
+    children.push(scanner);
+    let out = "";
+    scanner.stdout!.on("data", chunk => { out += chunk; });
+    const code = await new Promise(resolve => scanner.once("exit", resolve));
+    expect(code).toBe(0);
+    const { peak, refusals } = JSON.parse(out) as { peak: number; refusals: number[] };
+    if (process.env.ANTWAR_REPORT_PEAK) console.log(`two scans: peak rise ${Math.round(peak)} MiB over the scanning process's own base; fixture storage ${Math.round(fixtureMiB)} MiB, not charged`);
+    expect(refusals).toEqual([2 * 7200 * 8, 2 * 7200 * 8]);
+    expect(peak).toBeLessThanOrEqual(MEMORY_POLICY.scanReserveMiB);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}, 300_000);
+
+describe("stall detection at the default limit", () => {
+  const reading = (usedMiB: number) => ({ usedMiB, totalMiB: 4096 });
+  // Credible regression: a child reading a long record killed as stalled because it reports progress only once re-running.
+  it("keeps a child that reports scan progress past STALL_MS, and stops one silent for longer than STALL_MS", async () => {
+    vi.useFakeTimers();
+    const scanning = fakeChild();
+    const jobs = createJobs({ meter: () => reading(100), forkChild: () => scanning as unknown as ChildProcess, log: () => {} });
+    const outcome = jobs.rerun("slow", VERSION, OPEN).outcome!;
+    for (let elapsed = 0; elapsed < 5 * STALL_MS; elapsed += STALL_MS / 2) {
+      await vi.advanceTimersByTimeAsync(STALL_MS / 2);
+      scanning.emit("message", { kind: "progress", tick: null });
+    }
+    expect(scanning.killed).toEqual([]);
+    scanning.emit("message", { kind: "done", tested: 0, findings: [], undecided: [] });
+    scanning.emit("exit", 0, null);
+    expect(await outcome).toEqual({ kind: "findings", tested: 0, findings: [], undecided: [] });
+    const silent = fakeChild();
+    const stuck = createJobs({ meter: () => reading(100), forkChild: () => silent as unknown as ChildProcess, log: () => {} });
+    const stopped = stuck.rerun("stuck", VERSION, OPEN).outcome!;
+    await vi.advanceTimersByTimeAsync(STALL_MS);
+    expect(silent.killed).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2 * SAMPLE_MS);
+    expect(await stopped).toEqual({ kind: "stopped", cause: "stalled" });
+  });
+});

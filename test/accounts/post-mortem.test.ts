@@ -9,9 +9,9 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { CALL_IDLE_NOTE, createPostMortem, NO_EFFECT_NOTE, noEffectOf, ownedSeats, ownNoEffect, REFUSALS, undecidedSentence } from "../../src/accounts/postMortem.ts";
+import { CALL_IDLE_NOTE, createPostMortem, NO_EFFECT_NOTE, noEffectOf, ownedSeats, ownNoEffect, REFUSALS, TICKS_ONLY_NOTE, TIME_NOT_RECORDED, timeOf, undecidedSentence } from "../../src/accounts/postMortem.ts";
 import { rerunRecord, sameState, type ChildMessage } from "../../src/accounts/postMortemChild.ts";
-import { createJobs, type PostMortemJobs } from "../../src/accounts/postMortemJobs.ts";
+import { createJobs, type PostMortemJobs, type RerunOutcome } from "../../src/accounts/postMortemJobs.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
 import type { VersionAnswer, VersionSource } from "../../src/accounts/postMortemVersion.ts";
 import { encodePublicMessage } from "../../src/live/format.ts";
@@ -23,13 +23,14 @@ import { matchRecord } from "../../src/replays/history.ts";
 import { createPrivateArchive } from "../../src/replays/private-archive.ts";
 import { privateMediaName, sealPrivateMedia } from "../../src/replays/private-media.ts";
 import type { ReplayObject } from "../../src/replays/store.ts";
-import { rulesConfig } from "../../src/sim/config.ts";
+import { rulesConfig, type SimConfig } from "../../src/sim/config.ts";
 import { headerLine, tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
 import type { ServerTerminal } from "../../src/sim/step.ts";
 import type { SimInput, SimState } from "../../src/sim/types.ts";
 import { retentionWorld } from "../identity/retentionStore.ts";
+import { startHarness } from "../mcp/harness.ts";
 import { playable } from "../playable.ts";
 
 const CODE = "c".repeat(40);
@@ -51,10 +52,13 @@ const observe = (seat: number): SimInput => ({ type: "observe", agentId: `seat-p
  */
 function houseMatch(id: string, options: {
   names?: readonly [string, string]; idleTicks: number; stopAt: number; modelIndex?: boolean;
+  /** The match's rules give no command idle allowance: any call keeps a seat awake (historical configs). */
+  callIdle?: boolean;
   calls: Record<number, readonly (SimInput | { input: SimInput; counts: false })[]>;
 }) {
   const names = options.names ?? ["alice", "bob"];
-  const config = { ...playable(rulesConfig("redesign")), matchTicks: 40, commandFloorTicks: 100, startAnts: 16, commandIdleTicks: 1 };
+  const { commandIdleTicks: _historical, ...rules } = playable(rulesConfig("redesign"));
+  const config: SimConfig = { ...rules, matchTicks: 40, commandFloorTicks: 100, startAnts: 16, ...(options.callIdle ? {} : { commandIdleTicks: 1 }) };
   let state: SimState = createMatch(6006, config);
   const activity = new Map<string, number>();
   const recorder = new SpectatorRecorder(state, { identity: agentId => ({ displayName: names[Number(agentId.replace("seat-private-", ""))]! }),
@@ -85,10 +89,10 @@ function houseMatch(id: string, options: {
  * A finished 2-seat public match stopped at tick 4: seat 0 (colony 0) sets its brood at tick 1, sets the same
  * brood again at tick 2 (a command with no effect) and sends a refused set_brood at tick 3; seat 1 sets its brood at
  * tick 2. Its stored record carries re-run data with a house-idle clock far from any deadline, the game version and
- * two refused calls of seat 0.
+ * two refused calls of seat 0. As in the real game, a call is answered at the tick after the step that ran it.
  */
-function generatedRecord(id: string, names: readonly [string, string] = ["alice", "bob"]) {
-  const built = houseMatch(id, { names, idleTicks: 1000, stopAt: 4, calls: {
+function generatedRecord(id: string, names: readonly [string, string] = ["alice", "bob"], options: { callIdle?: boolean } = {}) {
+  const built = houseMatch(id, { names, idleTicks: 1000, stopAt: 4, callIdle: options.callIdle, calls: {
     0: [0, 1].map(seat => ({ type: "join", agentId: `seat-private-${seat}`, modelLabel: `model-${seat}` }) as SimInput),
     1: [brood(0)], 2: [brood(0), brood(1)], 3: [brood(0, "nope")],
   } });
@@ -96,9 +100,9 @@ function generatedRecord(id: string, names: readonly [string, string] = ["alice"
     ...built,
     replies: [
       { type: "stub", seat: 0, tick: null, tool: "join", receivedAt: RECEIVED - 50, answeredAt: RECEIVED - 49, code: "call_rate" },
-      { type: "reply", seat: 0, tick: 3, tool: "set_brood", receivedAt: RECEIVED + 300, answeredAt: RECEIVED + 301, isError: true,
+      { type: "reply", seat: 0, tick: 4, tool: "set_brood", receivedAt: RECEIVED + 300, answeredAt: RECEIVED + 301, isError: true,
         reply: { error: { code: "bad_brood", message: "brood is one of workers, soldiers, mixed." } } },
-      { type: "reply", seat: 1, tick: 2, tool: "set_brood", receivedAt: RECEIVED + 200, answeredAt: RECEIVED + 201, reply: { ok: true } },
+      { type: "reply", seat: 1, tick: 3, tool: "set_brood", receivedAt: RECEIVED + 200, answeredAt: RECEIVED + 201, reply: { ok: true } },
       { type: "stub", seat: 1, tick: null, tool: "observe", receivedAt: RECEIVED - 40, answeredAt: RECEIVED - 39, code: "sdk_error" },
     ],
   };
@@ -113,7 +117,7 @@ const versionsAnswering = (answer: VersionAnswer): VersionSource & { asked: stri
 };
 
 /** One world: accounts, a lobby per match, its registry row and stored record. */
-function world(options: { versions?: VersionSource; jobs?: PostMortemJobs } = {}) {
+function world(options: { versions?: VersionSource; jobs?: PostMortemJobs; cacheBytes?: number } = {}) {
   const w = retentionWorld(Date.parse("2026-10-20T00:00:00.000Z"));
   const records = new Map<string, Buffer>();
   const objects = new Map<string, ReplayObject>();
@@ -126,7 +130,7 @@ function world(options: { versions?: VersionSource; jobs?: PostMortemJobs } = {}
   const jobs = options.jobs ?? createJobs({ log: () => {}, meter: () => ({ usedMiB: 100, totalMiB: 4096 }) });
   const registry = createWatchRegistry(w.store);
   const lobbies = createLobbies(w.store, w.ids);
-  const postMortem = createPostMortem({ identities: w.ids, lobbies, registry, history, archive, versions, jobs, now: w.now });
+  const postMortem = createPostMortem({ identities: w.ids, lobbies, registry, history, archive, versions, jobs, now: w.now, cacheBytes: options.cacheBytes });
   let lobbyCount = 0;
   /** A lobby of `seats` [identity, colony], its registry row and its stored record under id. */
   function match(n: number, seats: readonly (readonly [{ id: string; name: string }, 0 | 1])[], options: {
@@ -135,22 +139,26 @@ function world(options: { versions?: VersionSource; jobs?: PostMortemJobs } = {}
     const lobbyId = `00000000-0000-4000-8000-${String(++lobbyCount).padStart(12, "0")}`;
     const id = replayId(n);
     w.docs.set(`lobbies/${lobbyId}`, { kind: options.visibility ?? "public", size: "1", state: options.lobbyState ?? "ended", rated: "false", slot: "",
-      seats: JSON.stringify(seats.map(([who, colony]) => ({ id: who.id, displayName: who.name, colony }))), creatorId: seats[0]![0].id,
+      seats: JSON.stringify(seats.map(([who, colony]) => ({ id: who.id, displayName: who.name, colony }))), creatorId: seats[0]?.[0].id ?? "",
       createdAt: String(w.now()), inviteVerifier: "", startsAt: "", matchRunId: "run-1", outcome: "colony_0_won", mode: "" });
     if (options.row !== false) {
       w.docs.set(`watchMatches/${lobbyId}`, { visibility: options.visibility ?? "public", rated: "false", mode: "",
         startedAt: String(RECEIVED).padStart(16, "0"), origin: "https://slot.example", slot: "public-0", runId: "run-1",
         playbackFinished: String(options.playbackFinished ?? true), replayId: id });
     }
-    const body = Buffer.from(JSON.stringify(options.record ?? generatedRecord(id)));
-    if ((options.visibility ?? "public") === "public") records.set(id, body);
+    store(lobbyId, id, options.visibility ?? "public", options.record ?? generatedRecord(id));
+    return { lobbyId, id };
+  }
+  /** Stores (or replaces, as the record service does) a match's record. */
+  function store(lobbyId: string, id: string, visibility: "public" | "private", record: unknown) {
+    const body = Buffer.from(JSON.stringify(record));
+    if (visibility === "public") records.set(id, body);
     else {
       const identity = { lobbyId, replayId: id, kind: "match-record" } as const;
       objects.set(privateMediaName(identity), { name: privateMediaName(identity), body: sealPrivateMedia(identity, body, KEY), contentType: "application/octet-stream", ifGenerationMatch: 0 });
     }
-    return { lobbyId, id };
   }
-  return { w, postMortem, match, records, history, versions, jobs };
+  return { w, postMortem, match, store, records, objects, history, versions, jobs };
 }
 
 /** Asks until no-effect has an answer, as a builder would: the first reply never waits for the re-run. */
@@ -173,10 +181,12 @@ describe("match_post_mortem", () => {
     expect(first.body).toMatchObject({ matchId: id, lobbyId, refusedFrom: "calls", noEffect: { status: "being_worked_out" } });
     expect(bodyOf(first).seats).toEqual([{ seat: 0, colony: 0, refusedNotRetained: 0, refused: [
       { tick: null, at: new Date(RECEIVED - 50).toISOString(), tool: "join", code: "call_rate" },
-      { tick: 3, at: new Date(RECEIVED + 300).toISOString(), tool: "set_brood", code: "bad_brood" },
+      { tick: 4, tickBasis: "answered at tick", viewerTick: 4, viewerSeconds: 0.4, at: new Date(RECEIVED + 300).toISOString(), tool: "set_brood", code: "bad_brood" },
     ] }]);
+    expect(first.body).not.toHaveProperty("timeNote");
     const done = await settled(() => f.postMortem.query({ key: alice.key, matchId: id }));
-    expect(bodyOf(done).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE, commands: [{ seat: 0, tick: 2, type: "set_brood", matchSeconds: 0.2 }] });
+    expect(bodyOf(done).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE,
+      commands: [{ seat: 0, type: "set_brood", tick: 2, tickBasis: "simulation step", viewerTick: 3, viewerSeconds: 0.3 }] });
     expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toEqual([CODE]);
     // The same cached record, filtered to bob's own seat: none of alice's calls or findings.
     const other = await f.postMortem.query({ key: bob.key, lobbyId });
@@ -185,17 +195,45 @@ describe("match_post_mortem", () => {
     expect(bodyOf(other).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE, commands: [] });
   }, 60_000);
 
-  it("refuses a non-owner exactly as an unknown lobby or match, before reading any record", async () => {
+  it("refuses a non-owner by match id exactly as an unknown match, before reading any record", async () => {
     const f = world();
     const alice = f.w.played("alice"), mallory = f.w.played("mallory");
-    const { lobbyId, id } = f.match(18, [[alice, 0]]);
+    const { id } = f.match(18, [[alice, 0]]);
     const refusals = await Promise.all([
-      f.postMortem.query({ key: mallory.key, lobbyId }), f.postMortem.query({ key: mallory.key, matchId: id }),
-      f.postMortem.query({ key: mallory.key, lobbyId: "00000000-0000-4000-8000-999999999999" }),
+      f.postMortem.query({ key: mallory.key, matchId: id }),
       f.postMortem.query({ key: mallory.key, matchId: replayId(99) }), f.postMortem.query({ key: mallory.key, matchId: "not-an-id" }),
     ]);
     for (const refusal of refusals) expect(JSON.stringify(refusal)).toBe(JSON.stringify({ ok: false, body: { error: "not_found", message: REFUSALS.not_found } }));
     expect(f.history.open).not.toHaveBeenCalledWith(id, expect.anything());
+  });
+
+  // Credible regression: a lobby-id refusal that tells an unknown, empty, live or someone else's lobby apart, or says
+  // "not ended" before ownership is proven.
+  it("refuses by lobby id, byte for byte the same, every lobby whose ownership is not proven, before saying whether it ended", async () => {
+    const f = world();
+    const alice = f.w.played("alice"), mallory = f.w.played("mallory");
+    const ended = f.match(18, [[alice, 0]]);
+    const live = f.match(19, [[alice, 0]], { lobbyState: "holding", row: false });
+    const empty = f.match(20, []);
+    const unreadable = f.match(21, [[alice, 0]]);
+    f.w.docs.set(`lobbies/${unreadable.lobbyId}`, { ...f.w.docs.get(`lobbies/${unreadable.lobbyId}`)!, seats: "not json" });
+    const refusals = await Promise.all([
+      f.postMortem.query({ key: mallory.key, lobbyId: ended.lobbyId }), f.postMortem.query({ key: mallory.key, lobbyId: live.lobbyId }),
+      f.postMortem.query({ key: alice.key, lobbyId: empty.lobbyId }), f.postMortem.query({ key: alice.key, lobbyId: unreadable.lobbyId }),
+      f.postMortem.query({ key: mallory.key, lobbyId: "00000000-0000-4000-8000-999999999999" }),
+    ]);
+    for (const refusal of refusals) expect(JSON.stringify(refusal)).toBe(JSON.stringify({ ok: false, body: { error: "ownership_unconfirmed", message: REFUSALS.ownership_unconfirmed } }));
+    // The owner of the live lobby still hears that it has not ended.
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: live.lobbyId })).body.error).toBe("not_ended");
+    expect(f.history.open).not.toHaveBeenCalled();
+  });
+
+  // Credible regression: a linked lobby with no recorded seats answered as not found instead of unconfirmed.
+  it("cannot confirm ownership by match id when the linked lobby recorded no seats", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const { id } = f.match(22, []);
+    expect(await f.postMortem.query({ key: alice.key, matchId: id })).toEqual({ ok: false, body: { error: "ownership_unconfirmed", message: REFUSALS.ownership_unconfirmed } });
   });
 
   it("reads no lobby, registry row or record for a key that is not valid", async () => {
@@ -228,7 +266,8 @@ describe("match_post_mortem", () => {
     if (!claimed.ok) throw new Error(claimed.reason);
     expect(claimed.value.identity.displayName).toBe("alice");
     expect(claimed.value.identity.id).not.toBe(original.id);
-    expect((await f.postMortem.query({ key: claimed.value.key, lobbyId })).body.error).toBe("not_found");
+    expect((await f.postMortem.query({ key: claimed.value.key, lobbyId })).body.error).toBe("ownership_unconfirmed");
+    expect((await f.postMortem.query({ key: claimed.value.key, matchId: replayId(18) })).body.error).toBe("not_found");
     // The seat's own identity still reads it.
     expect((await f.postMortem.query({ key: original.key, lobbyId })).ok).toBe(true);
   });
@@ -328,18 +367,18 @@ describe("which record seats a caller owns", () => {
   const lobby = (seats: [string, string, 0 | 1][]) => ({ colonies: [0, 1].map(colony => seats.filter(s => s[2] === colony).map(([id, displayName]) => ({ id, displayName }))) as never });
   const seat = (n: number, colony: 0 | 1, handle: string | null) => ({ seat: n, colony, handle });
 
-  it("gives one identity every seat it held in its colony", () => {
-    expect(ownedSeats(lobby([["a", "alice", 0], ["a", "alice", 0], ["b", "bob", 1]]), "a", [seat(0, 0, "alice"), seat(1, 0, "alice"), seat(2, 1, "bob")])).toEqual([0, 1]);
+  it("gives the one identity of a colony every record seat of that colony, whatever their handles", () => {
+    expect(ownedSeats(lobby([["a", "alice", 0], ["a", "alice", 0], ["b", "bob", 1], ["b", "bob", 1]]), "a",
+      [seat(0, 0, "alice"), seat(1, 0, null), seat(2, 1, "bob"), seat(3, 1, "bob")])).toEqual([0, 1]);
+    expect(ownedSeats(lobby([["a", "alice", 0], ["b", "bob", 1]]), "a", [seat(0, 0, "someone else"), seat(1, 1, null)])).toEqual([0]);
   });
-  it("cannot confirm when two identities in the colony share the name", () => {
-    expect(() => ownedSeats(lobby([["a", "alice", 0], ["c", "alice", 0]]), "a", [seat(0, 0, "alice"), seat(1, 0, "alice")])).toThrow();
+  // Credible regression: binding seats by name or position in a colony of several identities.
+  it("serves no seat of a colony of several identities, even one named after the caller", () => {
+    expect(() => ownedSeats(lobby([["a", "alice", 0], ["c", "carol", 0]]), "a", [seat(0, 0, "alice"), seat(1, 0, "carol")])).toThrow();
+    expect(ownedSeats(lobby([["a", "alice", 0], ["a", "alice", 1], ["c", "carol", 1]]), "a", [seat(0, 0, "alice"), seat(1, 1, "alice"), seat(2, 1, "carol")])).toEqual([0]);
   });
-  it("serves a seat with no recorded handle only when the colony held the caller alone", () => {
-    expect(ownedSeats(lobby([["a", "alice", 0], ["b", "bob", 1]]), "a", [seat(0, 0, null), seat(1, 1, null)])).toEqual([0]);
-    expect(() => ownedSeats(lobby([["a", "alice", 0], ["c", "carol", 0]]), "a", [seat(0, 0, null), seat(1, 0, "carol")])).toThrow();
-  });
-  it("cannot confirm when the record holds no seat matching the caller", () => {
-    expect(() => ownedSeats(lobby([["a", "alice", 0]]), "a", [seat(0, 0, "someone")])).toThrow();
+  it("cannot confirm when the caller's colony has no record seat", () => {
+    expect(() => ownedSeats(lobby([["a", "alice", 0], ["b", "bob", 1]]), "a", [seat(0, 1, "bob")])).toThrow();
   });
 });
 
@@ -348,13 +387,13 @@ describe("which record seats a caller owns", () => {
  * brood again, which changes nothing in the game, beside `observes` observes of its own; seat 1 observes every tick and
  * stays awake. `lines` are seat 0's observe reply and stub lines, answered at at + 1 beside its set_brood reply.
  */
-function deadlineRecord(id: string, lines: readonly Record<string, unknown>[], options: { at?: number; observes?: number; modelIndex?: boolean; names?: readonly [string, string] } = {}) {
+function deadlineRecord(id: string, lines: readonly Record<string, unknown>[], options: { at?: number; observes?: number; modelIndex?: boolean; names?: readonly [string, string]; callIdle?: boolean } = {}) {
   const at = options.at ?? 6, observes = options.observes ?? lines.filter(l => l.tool !== "set_brood" && l.code !== "call_rate").length;
   const calls: Record<number, SimInput[]> = { 0: [0, 1].map(seat => ({ type: "join", agentId: `seat-private-${seat}`, modelLabel: `model-${seat}` }) as SimInput) };
   for (let tick = 1; tick <= 9; tick++) calls[tick] = [observe(1)];
   calls[1] = [brood(0), observe(1)];
   calls[at] = [brood(0), ...Array.from({ length: observes }, () => observe(0)), observe(1)];
-  const built = houseMatch(id, { idleTicks: 5, stopAt: 9, calls, modelIndex: options.modelIndex, names: options.names });
+  const built = houseMatch(id, { idleTicks: 5, stopAt: 9, calls, modelIndex: options.modelIndex, names: options.names, callIdle: options.callIdle });
   const answered = { seat: 0, tick: at + 1, receivedAt: RECEIVED + at * 100, answeredAt: RECEIVED + at * 100 + 1 };
   return { ...built, replies: [{ type: "reply", ...answered, tool: "set_brood", arguments: { brood: "workers" }, reply: { ok: true } },
     ...lines.map(line => ({ ...answered, ...line }))] };
@@ -369,7 +408,7 @@ async function seatAnswer(record: Record<string, unknown>, at = 6, owned: readon
   const scan = await scanRecord(Readable.from([Buffer.from(JSON.stringify(record))]), undefined, "rerun");
   const answer: ChildMessage = rerunRecord(scan.reduced);
   if (answer.kind !== "done") return { answer: answer.kind };
-  const shown = ownNoEffect(noEffectOf({ kind: "findings", tested: answer.tested, findings: answer.findings, undecided: answer.undecided }, 10), new Set(owned), false) as
+  const shown = ownNoEffect(noEffectOf({ kind: "findings", tested: answer.tested, findings: answer.findings, undecided: answer.undecided }), new Set(owned), false, 10) as
     { commands: { seat: number; tick: number }[]; notListed?: string };
   return { listed: shown.commands.some(c => c.seat === 0 && c.tick === at), notListed: shown.notListed ?? null };
 }
@@ -451,6 +490,32 @@ describe("a command on its seat's idle deadline (report-0266d09b, report-9f07609
   }, 60_000);
 });
 
+/** An independent re-run over the fully parsed record: each tick from the seats' commands, without the reduced record. */
+function fullRecordFindings(record: Record<string, any>) {
+  const commands = new Map<number, { seat: number; c: any; index: number }[]>();
+  for (const seat of record.seats) seat.commands.forEach((c: any, index: number) => commands.set(c.tick, [...(commands.get(c.tick) ?? []), { seat: seat.seat, c, index }]));
+  const order = record.events.filter((e: any) => e.event.kind === "call").map((e: any) => [e.tick, e.event.agent]);
+  let state: SimState = createMatch(record.rerun.seed, record.rules.config);
+  const found: { seat: number; tick: number; type: string }[] = [];
+  while (state.result === null) {
+    const tick = state.tick, pool = [...(commands.get(tick) ?? [])];
+    const calls: { seat: number; c: any; index: number }[] = order.filter(([t]: number[]) => t === tick)
+      .map(([, seat]: number[]) => pool.splice(pool.findIndex(x => x.seat === seat), 1)[0]!);
+    const inputs = calls.map(x => ({ ...x.c.request, agentId: `seat-${x.seat}` }) as SimInput);
+    const idle = record.rerun.idle.find((x: any) => x.tick === tick);
+    const terminal = (idle ? { idle: idle.colonies } : record.rerun.abandonments.includes(tick) ? "abandoned" : record.rerun.stops.includes(tick)) as ServerTerminal;
+    const out = step(state, inputs, undefined, undefined, undefined, terminal, true);
+    calls.forEach((x, i) => {
+      if (!x.c.accepted || ["observe", "join", "rejoin"].includes(x.c.type)) return;
+      const without = step(state, inputs.filter((_, j) => j !== i), undefined, undefined, undefined, terminal, true);
+      if (sameState(out.state, without.state, `seat-${x.seat}`)) found.push({ seat: x.seat, tick, type: x.c.type });
+    });
+    state = out.state;
+  }
+  return found;
+}
+
+
 describe("the reproduction gate and the idle data", () => {
   const answerOf = async (record: Record<string, any>, size = 4096) => {
     const bytes = Buffer.from(JSON.stringify(record));
@@ -500,31 +565,6 @@ describe("the reproduction gate and the idle data", () => {
     expect(reply.seats[0].refused).toHaveLength(2);
   }, 60_000);
 
-  /** An independent re-run over the fully parsed record: each tick from the seats' commands, without the reduced record. */
-  function fullRecordFindings(record: Record<string, any>) {
-    const commands = new Map<number, { seat: number; c: any; index: number }[]>();
-    for (const seat of record.seats) seat.commands.forEach((c: any, index: number) => commands.set(c.tick, [...(commands.get(c.tick) ?? []), { seat: seat.seat, c, index }]));
-    const order = record.events.filter((e: any) => e.event.kind === "call").map((e: any) => [e.tick, e.event.agent]);
-    let state: SimState = createMatch(record.rerun.seed, record.rules.config);
-    const found: { seat: number; tick: number; type: string }[] = [];
-    while (state.result === null) {
-      const tick = state.tick, pool = [...(commands.get(tick) ?? [])];
-      const calls: { seat: number; c: any; index: number }[] = order.filter(([t]: number[]) => t === tick)
-        .map(([, seat]: number[]) => pool.splice(pool.findIndex(x => x.seat === seat), 1)[0]!);
-      const inputs = calls.map(x => ({ ...x.c.request, agentId: `seat-${x.seat}` }) as SimInput);
-      const idle = record.rerun.idle.find((x: any) => x.tick === tick);
-      const terminal = (idle ? { idle: idle.colonies } : record.rerun.abandonments.includes(tick) ? "abandoned" : record.rerun.stops.includes(tick)) as ServerTerminal;
-      const out = step(state, inputs, undefined, undefined, undefined, terminal, true);
-      calls.forEach((x, i) => {
-        if (!x.c.accepted || ["observe", "join", "rejoin"].includes(x.c.type)) return;
-        const without = step(state, inputs.filter((_, j) => j !== i), undefined, undefined, undefined, terminal, true);
-        if (sameState(out.state, without.state, `seat-${x.seat}`)) found.push({ seat: x.seat, tick, type: x.c.type });
-      });
-      state = out.state;
-    }
-    return found;
-  }
-
   // Credible regression: the reduced record dropping or misordering a command the full record holds.
   it("finds from the reduced record exactly what a re-run of the full record finds", async () => {
     for (const record of [generatedRecord(replayId(215)), deadlineRecord(replayId(216), [obs(undefined)], { at: 5 })]) {
@@ -542,12 +582,346 @@ it("refuses as ownership unconfirmed a match whose stored link names a lobby tha
   const { lobbyId, id } = f.match(220, [[alice, 0]]);
   f.w.docs.delete(`lobbies/${lobbyId}`);
   expect(await f.postMortem.query({ key: alice.key, matchId: id })).toEqual({ ok: false, body: { error: "ownership_unconfirmed", message: REFUSALS.ownership_unconfirmed } });
-  expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "not_found", message: REFUSALS.not_found } });
+  expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "ownership_unconfirmed", message: REFUSALS.ownership_unconfirmed } });
   expect(f.history.open).not.toHaveBeenCalled();
 });
 
 it("adds the call-idle sentence where any call keeps a seat awake", () => {
   const shown = { status: "shown", commands: [], undecided: [] } as const;
-  expect(ownNoEffect(shown, new Set([0]), true)).toEqual({ status: "shown", note: `${NO_EFFECT_NOTE} ${CALL_IDLE_NOTE}`, commands: [] });
-  expect(ownNoEffect(shown, new Set([0]), false)).toEqual({ status: "shown", note: NO_EFFECT_NOTE, commands: [] });
+  expect(ownNoEffect(shown, new Set([0]), true, 10)).toEqual({ status: "shown", note: `${NO_EFFECT_NOTE} ${CALL_IDLE_NOTE}`, commands: [] });
+  expect(ownNoEffect(shown, new Set([0]), false, 10)).toEqual({ status: "shown", note: NO_EFFECT_NOTE, commands: [] });
+});
+
+const UNCONFIRMED = { ok: false, body: { error: "ownership_unconfirmed", message: REFUSALS.ownership_unconfirmed } };
+const seatsOf = (reply: { body: unknown }) => (bodyOf(reply).seats as { seat: number }[]).map(s => s.seat);
+
+describe("ownership by the lobby's seat identities alone (report-ee0b8157)", () => {
+  for (const visibility of ["public", "private"] as const) {
+    // Credible regression: binding a seat by its recorded handle or position when its colony held several identities.
+    it(`refuses every identity of a colony of several, byte for byte, and serves a colony of one (${visibility})`, async () => {
+      const f = world();
+      const alice = f.w.played("alice"), bob = f.w.played("bob"), carol = f.w.played("carol");
+      const mixed = f.match(60, [[alice, 0], [carol, 0], [bob, 1]], { visibility });
+      for (const key of [alice.key, carol.key]) {
+        for (const ask of [{ lobbyId: mixed.lobbyId }, { matchId: mixed.id }]) {
+          expect(JSON.stringify(await f.postMortem.query({ key, ...ask }))).toBe(JSON.stringify(UNCONFIRMED));
+        }
+      }
+      // The control: bob alone in his colony of the same match is served his seat.
+      expect(seatsOf(await f.postMortem.query({ key: bob.key, lobbyId: mixed.lobbyId }))).toEqual([1]);
+      const single = f.match(61, [[alice, 0], [bob, 1]], { visibility });
+      expect(seatsOf(await f.postMortem.query({ key: alice.key, lobbyId: single.lobbyId }))).toEqual([0]);
+    }, 60_000);
+  }
+
+  it("serves a colony of one identity whatever handles the record holds, named or none, and never by name", async () => {
+    const f = world();
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const named = f.match(62, [[alice, 0], [bob, 1]], { record: generatedRecord(replayId(62), ["someone", "else"]) });
+    const unnamed = generatedRecord(replayId(63));
+    for (const seat of unnamed.seats) seat.handle = null;
+    const none = f.match(63, [[alice, 0], [bob, 1]], { record: unnamed });
+    for (const { lobbyId } of [named, none]) expect(seatsOf(await f.postMortem.query({ key: alice.key, lobbyId }))).toEqual([0]);
+  });
+
+  it("serves a queue match's colony of one identity holding two seats, and a caller split across colonies only its colony of one", async () => {
+    const f = world();
+    const alice = f.w.played("alice"), bob = f.w.played("bob"), carol = f.w.played("carol");
+    const queue = f.match(64, [[alice, 0], [alice, 0], [bob, 1], [bob, 1]]);
+    expect(seatsOf(await f.postMortem.query({ key: alice.key, lobbyId: queue.lobbyId }))).toEqual([0]);
+    expect(seatsOf(await f.postMortem.query({ key: bob.key, matchId: queue.id }))).toEqual([1]);
+    const split = f.match(65, [[alice, 0], [alice, 1], [carol, 1]]);
+    expect(seatsOf(await f.postMortem.query({ key: alice.key, lobbyId: split.lobbyId }))).toEqual([0]);
+  });
+
+  it("cannot confirm ownership by match id when the lobby's seat entries can't be read", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(66, [[alice, 0]]);
+    f.w.docs.set(`lobbies/${lobbyId}`, { ...f.w.docs.get(`lobbies/${lobbyId}`)!, seats: "not json" });
+    expect(await f.postMortem.query({ key: alice.key, matchId: id })).toEqual(UNCONFIRMED);
+  });
+});
+
+describe("records that are unavailable, replaced, or fail authentication", () => {
+  const unavailable = (id: string) => ({ id, status: "unavailable", source: "unavailable" });
+
+  // Credible regression: an unavailable record kept as an empty summary, or its refusal turned into unreadable by the
+  // private read's wrapper.
+  it.each(["public", "private"] as const)("refuses an unavailable %s record as unavailable, keeps nothing, and serves it once a complete record replaces it", async visibility => {
+    const f = world();
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const { lobbyId, id } = f.match(70, [[alice, 0], [bob, 1]], { visibility, record: unavailable(replayId(70)) });
+    expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "record_unavailable", message: REFUSALS.record_unavailable } });
+    f.store(lobbyId, id, visibility, generatedRecord(id));
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(reply.ok).toBe(true);
+    expect((bodyOf(reply).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(2);
+  });
+
+  // Credible regression: reading what an unauthenticated private record says before its tag has verified.
+  it("keeps a private record that fails authentication unreadable, even when its content says unavailable", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(71, [[alice, 0]], { visibility: "private", record: unavailable(replayId(71)) });
+    const name = privateMediaName({ lobbyId, replayId: id, kind: "match-record" });
+    const object = f.objects.get(name)!;
+    const body = Buffer.from(object.body);
+    body[body.length - 1] ^= 1;
+    f.objects.set(name, { ...object, body });
+    expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "record_unreadable", message: REFUSALS.record_unreadable } });
+  });
+
+  it("says no-effect commands are not available, still showing refused calls, for a record with no game version", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const record: Record<string, unknown> = generatedRecord(replayId(72));
+    delete record.codeVersion;
+    const { lobbyId } = f.match(72, [[alice, 0]], { record });
+    const reply = bodyOf(await settled(() => f.postMortem.query({ key: alice.key, lobbyId })));
+    expect(reply.noEffect).toEqual({ status: "not_available", reason: "This match's game version is unknown." });
+    expect(reply.seats[0].refused).toHaveLength(2);
+  });
+});
+
+/** Jobs whose re-runs the test settles: each re-run queued is recorded, and runs until finished. */
+function heldJobs() {
+  const runs = new Map<string, { outcome: Promise<RerunOutcome>; settle: (o: RerunOutcome) => void; done: boolean }>();
+  const started: string[] = [];
+  const jobs: PostMortemJobs = {
+    scan: run => run(),
+    rerun(id) {
+      const live = runs.get(id);
+      if (live && !live.done) return { state: "running", outcome: live.outcome };
+      started.push(id);
+      let settle!: (o: RerunOutcome) => void;
+      const run = { outcome: new Promise<RerunOutcome>(resolve => { settle = resolve; }), settle: (o: RerunOutcome) => { run.done = true; settle(o); }, done: false };
+      runs.set(id, run);
+      return { state: "running", outcome: run.outcome };
+    },
+    pending: id => { const run = runs.get(id); return run && !run.done ? run.outcome : undefined; },
+  };
+  return { jobs, started, finish: (id: string, outcome: RerunOutcome) => runs.get(id)!.settle(outcome) };
+}
+
+describe("a summary too large to keep", () => {
+  // Credible regression: a reply that depends on its summary being kept, which an oversized summary never is.
+  it("still answers its refused calls at once, and its re-run's no-effect answer across later asks", async () => {
+    const f = world();
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const record = generatedRecord(replayId(80));
+    // About 10 MiB of seat 0's refused calls: more than the 8 MiB the post-mortem keeps.
+    for (let i = 0; i < 120_000; i++) record.replies.push({ type: "stub", seat: 0, tick: null, tool: "observe", receivedAt: RECEIVED + 1000 + i, answeredAt: RECEIVED + 1001 + i, code: "call_rate" });
+    const { lobbyId } = f.match(80, [[alice, 0], [bob, 1]], { record });
+    const first = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(first.ok).toBe(true);
+    expect((bodyOf(first).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(120_002);
+    const done = await settled(() => f.postMortem.query({ key: alice.key, lobbyId }));
+    expect(bodyOf(done).noEffect).toMatchObject({ status: "shown", commands: [{ seat: 0, tick: 2, type: "set_brood" }] });
+    expect((bodyOf(done).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(120_002);
+  }, 120_000);
+
+  // Credible regression: a no-effect answer lost with its dropped summary, so each ask re-runs the match again.
+  it("re-runs each of two such matches once, asked in turn, and keeps both answers", async () => {
+    const held = heldJobs();
+    // Room for both matches' no-effect answers, never for a summary.
+    const f = world({ jobs: held.jobs, cacheBytes: 1000 });
+    const alice = f.w.played("alice");
+    const big = (n: number) => {
+      const record = generatedRecord(replayId(n));
+      for (let i = 0; i < 20; i++) record.replies.push({ type: "stub", seat: 0, tick: null, tool: "observe", receivedAt: RECEIVED + 1000 + i, answeredAt: RECEIVED + 1001 + i, code: "call_rate" });
+      return f.match(n, [[alice, 0]], { record });
+    };
+    const a = big(81), b = big(82);
+    const ask = async (lobbyId: string) => {
+      const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+      expect((bodyOf(reply).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(22);
+      return bodyOf(reply).noEffect as { status: string };
+    };
+    for (let round = 0; round < 3; round++) for (const m of [a, b]) {
+      expect((await ask(m.lobbyId)).status).toBe("being_worked_out");
+      await vi.waitFor(() => expect(held.started).toContain(m.id));
+    }
+    expect(held.started).toEqual([a.id, b.id]);
+    for (const m of [a, b]) held.finish(m.id, { kind: "findings", tested: 1, findings: [{ seat: 0, index: 1, tick: 2, type: "set_brood" }], undecided: [] });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    for (let round = 0; round < 3; round++) for (const m of [a, b]) expect(await ask(m.lobbyId)).toMatchObject({ status: "shown", commands: [{ seat: 0, tick: 2 }] });
+    expect(held.started).toEqual([a.id, b.id]);
+    // Every ask read its record again: no summary was kept.
+    for (const m of [a, b]) expect(f.history.open.mock.calls.filter(([id]) => id === m.id)).toHaveLength(6);
+  });
+});
+
+describe("times (report-73ab372b)", () => {
+  const refusedOf = (reply: { body: unknown }) => (bodyOf(reply).seats as { refused: Record<string, unknown>[] }[])[0]!.refused;
+
+  it("takes the tick rate from the rules, else the match setup, and never assumes one: ticks only then, with a note", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const fromSetup = generatedRecord(replayId(90));
+    delete (fromSetup.rules.config as { ticksPerSecond?: number }).ticksPerSecond;
+    fromSetup.setup.ticksPerSecond = 4;
+    const none = generatedRecord(replayId(91));
+    delete (none.rules.config as { ticksPerSecond?: number }).ticksPerSecond;
+    delete (none.setup as { ticksPerSecond?: number }).ticksPerSecond;
+    const setupReply = await f.postMortem.query({ key: alice.key, lobbyId: f.match(90, [[alice, 0]], { record: fromSetup }).lobbyId });
+    expect(refusedOf(setupReply)[1]).toMatchObject({ tick: 4, tickBasis: "answered at tick", viewerTick: 4, viewerSeconds: 1 });
+    expect(setupReply.body).not.toHaveProperty("timeNote");
+    const noneReply = await f.postMortem.query({ key: alice.key, lobbyId: f.match(91, [[alice, 0]], { record: none }).lobbyId });
+    expect(bodyOf(noneReply).timeNote).toBe(TICKS_ONLY_NOTE);
+    // Nothing dropped, the recorded tick still shown.
+    expect(refusedOf(noneReply)).toEqual([
+      { tick: null, at: new Date(RECEIVED - 50).toISOString(), tool: "join", code: "call_rate" },
+      { tick: 4, tickBasis: "answered at tick", viewerTick: 4, at: new Date(RECEIVED + 300).toISOString(), tool: "set_brood", code: "bad_brood" },
+    ]);
+  });
+
+  it("lists a refusal with neither a tick nor a receive time as time not recorded", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const record = generatedRecord(replayId(92));
+    delete (record.replies[0] as { receivedAt?: number }).receivedAt;
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId: f.match(92, [[alice, 0]], { record }).lobbyId });
+    expect(refusedOf(reply)[0]).toEqual({ tick: null, at: null, time: TIME_NOT_RECORDED, tool: "join", code: "call_rate" });
+    expect(refusedOf(reply)[1]).not.toHaveProperty("time");
+  });
+
+  it("times a record's refused commands by their simulation step, where it kept no call replies", async () => {
+    const f = world();
+    const alice = f.w.played("alice");
+    const record = { ...generatedRecord(replayId(93)), replies: null };
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId: f.match(93, [[alice, 0]], { record }).lobbyId });
+    expect(bodyOf(reply).refusedFrom).toBe("commands");
+    expect(refusedOf(reply)).toEqual([{ tick: 3, tickBasis: "simulation step", viewerTick: 4, viewerSeconds: 0.4, at: null, tool: "set_brood", code: "bad_brood" }]);
+  });
+
+  // The cross-path premise, on the real game: a call's reply line carries the tick after the step that ran it, so the
+  // two ways a refusal is timed give the same viewer tick.
+  it("gives a call answered by the real game the same viewer tick from its reply line as from its simulation step", async () => {
+    const h = await startHarness();
+    try {
+      const agent = await h.connect();
+      expect((await agent.call("join", { modelLabel: "timing" })).isError).toBe(false);
+      const accepted = await agent.call("order", { kind: "hold" });
+      const refused = await agent.call("order", { kind: "hold" });
+      expect(accepted.isError).toBe(false);
+      expect(refused.isError).toBe(true);
+      const steps = h.log.slice(1).map(line => JSON.parse(line) as { tick: number; inputs?: { type: string }[] })
+        .filter(entry => (entry.inputs ?? []).some(input => input.type === "order")).map(entry => entry.tick);
+      const replies = h.replies.map(r => JSON.parse(r.line) as { tool: string; tick: number }).filter(line => line.tool === "order").map(line => line.tick);
+      expect(steps).toHaveLength(2);
+      expect(replies).toHaveLength(2);
+      for (const [i, step] of steps.entries()) {
+        expect(replies[i]).toBe(step + 1);
+        expect(timeOf(replies[i]!, "calls", 10)).toEqual({ ...timeOf(step, "step", 10), tick: replies[i], tickBasis: "answered at tick" });
+      }
+    } finally { await h.close(); }
+  });
+});
+
+describe("the command-idle timer with no join tick (report-3533dee2)", () => {
+  const IDLE_TICKS = 5;
+  const id = (n: number) => `seat-private-${n}`;
+  const run = (state: SimState, inputs: SimInput[]) => step(state, inputs, undefined, undefined, undefined, false, false);
+  /** Command-idle rules, no squads (so waking moves no ant), and the state of the tick seat 0 lapses idle on. */
+  function lapseTick() {
+    const config: SimConfig = { ...playable(rulesConfig("redesign")), matchTicks: 60, commandFloorTicks: 100, startAnts: 16, commandIdleTicks: IDLE_TICKS, squadSize: 0 };
+    let state = run(createMatch(6006, config), [0, 1].map(n => ({ type: "join", agentId: id(n), modelLabel: "m" }) as SimInput)).state;
+    // A historical state: no join tick, so the deadline falls back to the last call.
+    for (const agent of state.agents) delete (agent as { joinedTick?: number }).joinedTick;
+    state = run(state, [brood(0)]).state;
+    expect(state.agents[0]!.lastCommandTick).toBeNull();
+    const states = [state];
+    while (!state.agents[0]!.idle) { state = run(state, []).state; states.push(state); }
+    return { before: states.at(-3)!, lapse: states.at(-2)! };
+  }
+
+  // Fails if the issuing seat's own lastCallTick is compared: its only difference here is a later deadline.
+  it("lists a command whose only difference is the call timer, a later idle deadline, as no effect", () => {
+    const { before } = lapseTick();
+    const withIt = run(before, [brood(0)]), without = run(before, []);
+    expect(withIt.results[0]!.ok).toBe(true);
+    expect(withIt.state.agents[0]!.lastCallTick).not.toBe(without.state.agents[0]!.lastCallTick);
+    expect(sameState(withIt.state, without.state, id(0))).toBe(true);
+    // The deadline did move: one step later, only the run without it has gone idle.
+    expect([run(withIt.state, []).state.agents[0]!.idle, run(without.state, []).state.agents[0]!.idle]).toEqual([false, true]);
+  });
+
+  // Fails if the idle flag stops being compared: it is the only difference beyond the seat's own timers.
+  it("does not list a command that wakes its seat on the tick it lapses idle", () => {
+    const { lapse } = lapseTick();
+    const withIt = run(lapse, [{ type: "order", agentId: id(0), order: structuredClone(lapse.agents[0]!.order) } as SimInput]), without = run(lapse, []);
+    expect(withIt.results[0]!.ok).toBe(true);
+    expect([withIt.state.agents[0]!.idle, without.state.agents[0]!.idle]).toEqual([false, true]);
+    expect(sameState(withIt.state, without.state, id(0))).toBe(false);
+    const idleAlike = structuredClone(without.state);
+    idleAlike.agents[0]!.idle = false;
+    expect(sameState(withIt.state, idleAlike, id(0))).toBe(true);
+  });
+});
+
+/** The real forked re-run child's answer for a record. */
+async function childAnswer(record: unknown, options: { stallMs?: number; open?: () => Promise<Readable> } = {}) {
+  const jobs = createJobs({ log: () => {}, meter: () => ({ usedMiB: 100, totalMiB: 4096 }), ...(options.stallMs === undefined ? {} : { stallMs: options.stallMs }) });
+  const body = Buffer.from(JSON.stringify(record));
+  return jobs.rerun("child", CODE, options.open ?? (async () => Readable.from([body]))).outcome!;
+}
+
+/** A match with a count mark, set_brood repeats and observes in both modes, its house-idle clock far from any deadline. */
+function parityRecord(id: string, callIdle: boolean) {
+  const mark = { type: "count_mark", agentId: "seat-private-0", verb: "ATTACK", count: 2, tileX: 13, tileY: 43 } as SimInput;
+  return houseMatch(id, { idleTicks: 1000, stopAt: 6, callIdle, calls: {
+    0: [0, 1].map(seat => ({ type: "join", agentId: `seat-private-${seat}`, modelLabel: `model-${seat}` }) as SimInput),
+    1: [mark, brood(1)], 2: [brood(0), observe(1)], 3: [brood(0), observe(0)], 4: [brood(1), observe(0), observe(1)],
+  } });
+}
+
+describe("the real re-run child in both idle modes", () => {
+  for (const callIdle of [false, true]) {
+    const mode = callIdle ? "call-idle" : "command-idle";
+    // Credible regression: the child's reduced record or its idle classification diverging from a full re-run in one mode.
+    it(`finds what a full re-run finds, a count mark and observes included (${mode})`, async () => {
+      const record = parityRecord(replayId(callIdle ? 101 : 100), callIdle);
+      expect(record.rules.config.commandIdleTicks).toBe(callIdle ? undefined : 1);
+      expect(record.seats[0].commands.find((c: { type: string }) => c.type === "count_mark")).toMatchObject({ accepted: true });
+      const outcome = await childAnswer(record);
+      expect(outcome.kind).toBe("findings");
+      const found = (outcome as { findings: { seat: number; tick: number; type: string }[] }).findings.map(({ seat, tick, type }) => ({ seat, tick, type }));
+      expect(found).toEqual(fullRecordFindings(record));
+      expect(found).toContainEqual({ seat: 0, tick: 3, type: "set_brood" });
+    }, 60_000);
+
+    it(`settles a deadline-tick command as no effect, an effect, or undecided (${mode})`, async () => {
+      const cases = [
+        [deadlineRecord(replayId(110), [obs({ since: 3 })], { at: 5, callIdle }), 5, "listed"],
+        [deadlineRecord(replayId(111), [obs({ cellsCursor: "s:1" }, "bad_cells_cursor")], { callIdle }), 6, "effect"],
+        [deadlineRecord(replayId(112), [obs({ since: 3 })], { callIdle }), 6, "undecided"],
+      ] as const;
+      for (const [record, at, expected] of cases) {
+        const outcome = await childAnswer(record) as { kind: string; findings: { seat: number; tick: number }[]; undecided: [number, number][] };
+        expect(outcome.kind).toBe("findings");
+        const listed = outcome.findings.some(f => f.seat === 0 && f.tick === at);
+        const undecided = outcome.undecided.find(([seat]) => seat === 0)?.[1] ?? 0;
+        expect({ listed, undecided }).toEqual(expected === "listed" ? { listed: true, undecided: 0 } : expected === "effect" ? { listed: false, undecided: 0 } : { listed: false, undecided: 1 });
+      }
+    }, 120_000);
+  }
+
+  // Credible regression: a child that reports progress only once its re-run starts, so a slow record read is killed as stalled.
+  it("keeps a child that is still scanning a slowly arriving record alive, and stops one whose record stops arriving", async () => {
+    const record = generatedRecord(replayId(120));
+    // About 6 MiB of text lines, which the scan skips, arriving 256 KiB every 250 ms: some 6 s of scanning.
+    const text = { type: "text", seat: 0, tick: null, text: "t".repeat(64 * 1024) };
+    record.replies.push(...Array.from({ length: 96 }, () => text));
+    const body = Buffer.from(JSON.stringify(record));
+    const slow = (stopAfter = Infinity) => async () => Readable.from((async function* () {
+      for (let i = 0, n = 0; i < body.length; i += 256 * 1024, n++) {
+        if (n >= stopAfter) await new Promise(() => {});
+        yield body.subarray(i, i + 256 * 1024);
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    })());
+    expect(await childAnswer(record, { stallMs: 2000, open: slow() })).toMatchObject({ kind: "findings" });
+    expect(await childAnswer(record, { stallMs: 2000, open: slow(4) })).toEqual({ kind: "stopped", cause: "stalled" });
+  }, 120_000);
 });

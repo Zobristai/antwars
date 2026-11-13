@@ -30,7 +30,8 @@ export interface NoEffect {
   readonly type: string;
 }
 export type ChildMessage =
-  | { readonly kind: "progress"; readonly tick: number }
+  /** Still working: the re-run's tick, or null while the record is being scanned. */
+  | { readonly kind: "progress"; readonly tick: number | null }
   /** undecided: [seat, accepted commands the record cannot settle], seats with none left out. */
   | { readonly kind: "done"; readonly tested: number; readonly findings: NoEffect[]; readonly undecided: [number, number][] }
   | { readonly kind: "mismatch"; readonly tick: number | null }
@@ -258,7 +259,7 @@ if (process.send !== undefined && process.env.ANTWAR_POST_MORTEM_CHILD === "1") 
   process.once("message", (request: ChildRequest) => {
     void (async (): Promise<ChildMessage> => {
       try {
-        const scan = await scanRecord(process.stdin, undefined, "rerun");
+        const scan = await scanRecord(process.stdin, undefined, "rerun", () => process.send!({ kind: "progress", tick: null } satisfies ChildMessage));
         if (scan.reduced.codeVersion !== request.version) return { kind: "changed" };
         return rerunRecord(scan.reduced, tick => process.send!({ kind: "progress", tick } satisfies ChildMessage));
       } catch (error) {

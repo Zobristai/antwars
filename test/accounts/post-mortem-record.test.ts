@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
-  BLOCK_TICKS, comparableEvent, ELEMENT_CAP_BYTES, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, OTHER_CAP_BYTES, RecordReadError, recordScanner,
+  BLOCK_TICKS, comparableEvent, ELEMENT_CAP_BYTES, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, OTHER_CAP_BYTES, PROGRESS_BYTES, RecordReadError, recordScanner,
   scanRecord, type RecordScan, type ReplyLines,
 } from "../../src/accounts/postMortemRecord.ts";
 import { entryCode } from "../../src/replays/recording.ts";
@@ -129,6 +129,28 @@ describe("match record scan", () => {
     // The server-only join identity is not part of the comparison.
     expect(comparableEvent(101, { kind: "join", agent: 1, identity: { displayName: "x" } })).toBe(comparableEvent(101, { kind: "join", agent: 1 }));
     expect((await scanRecord(chunks(Buffer.from(JSON.stringify(record({ replies: null }))), 50), undefined, "rerun")).reduced.lines).toBeNull();
+  });
+
+  // Credible regression: a defaulted tick rate, or one taken from the setup over the rules.
+  it("takes the tick rate from the rules' config, else the match setup, and never assumes one", async () => {
+    const rateOf = async (value: unknown) => (await scanRecord(chunks(Buffer.from(JSON.stringify(value)), 9))).ticksPerSecond;
+    const base = record();
+    expect(await rateOf({ ...base, setup: { ...base.setup, ticksPerSecond: 4 } })).toBe(10);
+    expect(await rateOf({ ...base, rules: { ...base.rules, config: {} }, setup: { ...base.setup, ticksPerSecond: 4 } })).toBe(4);
+    expect(await rateOf({ ...base, rules: { ...base.rules, config: {} } })).toBeNull();
+    expect(await rateOf({ ...base, rules: null, setup: { ...base.setup, ticksPerSecond: 0 } })).toBeNull();
+  });
+
+  // Credible regression: a scan that reports no progress until it ends, so a slow record read looks stalled.
+  it("reports progress about every MiB of decoded bytes while it scans", async () => {
+    const value = record({ replies: [...record().replies as unknown[], ...Array.from({ length: 50 }, () => ({ type: "text", text: "t".repeat(100 * 1024) }))] });
+    const bytes = Buffer.from(JSON.stringify(value));
+    let calls = 0;
+    await scanRecord(chunks(bytes, 64 * 1024), undefined, "refused", () => calls++);
+    expect(calls).toBe(Math.floor(bytes.length / PROGRESS_BYTES));
+    let gzCalls = 0;
+    await scanRecord(chunks(gzipSync(bytes), 64 * 1024), undefined, "rerun", () => gzCalls++);
+    expect(gzCalls).toBeGreaterThanOrEqual(Math.floor(bytes.length / PROGRESS_BYTES) - 1);
   });
 
   it("reads gzip the same, and treats replies null as no retained calls", async () => {

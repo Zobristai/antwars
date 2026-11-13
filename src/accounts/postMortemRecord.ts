@@ -458,9 +458,11 @@ export function recordScanner(mode: ScanMode = "refused") {
     };
     const rules = isRecord(root.rules) ? root.rules : null;
     const config = rules?.config ?? null;
-    const tps = isRecord(config) && typeof config.ticksPerSecond === "number" && config.ticksPerSecond > 0 ? config.ticksPerSecond : null;
-    const result = isRecord(root.result) ? (({ ratingChanges: _r, ...rest }) => rest)(root.result) : null;
     const setup = isRecord(root.setup) ? root.setup : null;
+    // The match's tick rate: its rules' config, else its setup; never a default.
+    const rate = (o: Record<string, unknown> | null) => o !== null && typeof o.ticksPerSecond === "number" && Number.isFinite(o.ticksPerSecond) && o.ticksPerSecond > 0 ? o.ticksPerSecond : null;
+    const tps = rate(isRecord(config) ? config : null) ?? rate(setup);
+    const result = isRecord(root.result) ? (({ ratingChanges: _r, ...rest }) => rest)(root.result) : null;
     const houseIdleTicks = setup !== null && typeof setup.houseIdleTicks === "number" && Number.isFinite(setup.houseIdleTicks) && setup.houseIdleTicks > 0
       ? setup.houseIdleTicks : null;
     if (mode === "rerun") {
@@ -499,8 +501,14 @@ function rerunData(value: unknown): RerunData | null {
   return { seed: seed as number, stops, abandonments, idle: idle as RerunData["idle"], houseActive: houseActive as [number, number][] };
 }
 
-/** Scans a record's bytes, gzip or plain JSON; throws RecordReadError when it cannot be read whole. */
-export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: AbortSignal, mode: ScanMode = "refused"): Promise<RecordScan> {
+/** Decoded record bytes between two progress calls. */
+export const PROGRESS_BYTES = 1024 * 1024;
+
+/**
+ * Scans a record's bytes, gzip or plain JSON; throws RecordReadError when it cannot be read whole. `progress` is called
+ * each time about PROGRESS_BYTES more decoded bytes have been scanned.
+ */
+export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: AbortSignal, mode: ScanMode = "refused", progress?: () => void): Promise<RecordScan> {
   const scanner = recordScanner(mode);
   const iterator = source[Symbol.asyncIterator]();
   const bytes = (value: Uint8Array) => Buffer.from(value.buffer, value.byteOffset, value.byteLength);
@@ -526,9 +534,12 @@ export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: Abo
       void pipeline(Readable.from(all(), { objectMode: false }), gunzip).catch(() => {});
       body = gunzip;
     }
+    let sinceProgress = 0;
     for await (const chunk of body) {
       signal?.throwIfAborted();
       scanner.push(chunk);
+      sinceProgress += chunk.length;
+      if (progress !== undefined && sinceProgress >= PROGRESS_BYTES) { sinceProgress = 0; progress(); }
     }
     return scanner.end();
   } catch (error) {

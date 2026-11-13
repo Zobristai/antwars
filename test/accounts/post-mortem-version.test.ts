@@ -11,7 +11,8 @@ import { join } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  createVersionSource, fetchRequest, FETCH_INTERVAL_MS, historyFrom, lsRefsRequest, packfileOf, packObjects, readMainHistory, type UploadPackPost,
+  createVersionSource, fetchRequest, FETCH_INTERVAL_MS, HistoryReadError, historyFrom, lsRefsRequest, OBJECT_CAP_BYTES, packfileOf, packObjects, readMainHistory,
+  TOTAL_CAP_BYTES, type UploadPackPost,
 } from "../../src/accounts/postMortemVersion.ts";
 
 const AUTHOR = "Fixture Author <fixture@example.invalid> 1700000000 +0000";
@@ -246,5 +247,56 @@ describe("game version answers", () => {
     const s = source([good]);
     expect(await s.versions.lookup("not-a-commit", s.now())).toBe("absent");
     expect(s.requests).toHaveLength(0);
+  });
+});
+
+describe("fixed unpacking limits, whatever sizes a response declares", () => {
+  /** A version 2 pack of raw entries: [type, declared size, deflated body, REF_DELTA base id]. */
+  function rawPack(entries: [number, number, Buffer, string?][]): Buffer {
+    const parts: Buffer[] = [Buffer.from("PACK"), Buffer.from([0, 0, 0, 2]), Buffer.alloc(4)];
+    parts[2]!.writeUInt32BE(entries.length);
+    for (const [type, size, body, base] of entries) parts.push(entryHeader(type, size), ...(base === undefined ? [] : [Buffer.from(base, "hex")]), body);
+    const bytes = Buffer.concat(parts);
+    return Buffer.concat([bytes, createHash("sha1").update(bytes).digest()]);
+  }
+  const failure = (bytes: Buffer) => { try { packObjects(bytes); return null; } catch (error) { return error instanceof HistoryReadError ? error.message : "other"; } };
+  const root = Buffer.from(TEXTS[ROOT]!);
+
+  // Credible regression: allocating whatever the response declares, or inflating past what it declared.
+  it("refuses an object declared over the per-object limit, and one inflating past its declared size, before allocating it", () => {
+    expect(failure(rawPack([[1, OBJECT_CAP_BYTES + 1, deflateSync(root)]]))).toBe("object too large");
+    // 50 MiB of zeros declared as 10 bytes: inflating stops at the declared size.
+    expect(failure(rawPack([[1, 10, deflateSync(Buffer.alloc(50 * 2 ** 20))]]))).toBe("bad compressed entry");
+    expect(failure(rawPack([[1, root.length, deflateSync(root)]]))).toBeNull();
+  });
+
+  it("refuses a delta whose result is declared over the per-object limit", () => {
+    const delta = Buffer.concat([varint(root.length), varint(OBJECT_CAP_BYTES + 1), Buffer.from([0x80 | 0x10, 1])]);
+    expect(failure(rawPack([[1, root.length, deflateSync(root)], [7, delta.length, deflateSync(delta), ROOT]]))).toBe("object too large");
+  });
+
+  it("refuses a pack whose objects together pass the total limit", () => {
+    const object = Buffer.alloc(OBJECT_CAP_BYTES, 0x61);
+    const body = deflateSync(object);
+    const n = Math.floor(TOTAL_CAP_BYTES / OBJECT_CAP_BYTES);
+    expect(failure(rawPack(Array.from({ length: n + 1 }, () => [3, object.length, body] as [number, number, Buffer])))).toBe("pack too large");
+    expect(failure(rawPack(Array.from({ length: n }, () => [3, object.length, body] as [number, number, Buffer])))).toBeNull();
+  });
+
+  // Credible regression: a limit reached taken as proof that a version is absent, or cached as an answer.
+  it("answers a version check whose response passes a limit as try later, never absent, and checks afresh later", async () => {
+    let clock = 1_000_000, fetches = 0;
+    const oversized = rawPack([[1, OBJECT_CAP_BYTES + 1, deflateSync(root)]]);
+    const post: UploadPackPost = async body => {
+      const fetch = body.toString("latin1").includes("command=fetch");
+      if (fetch) fetches++;
+      return { status: 200, contentType: "application/x-git-upload-pack-result",
+        body: !fetch ? lsRefs(MERGE) : fetchReply(fetches === 1 ? oversized : pack(ALL_WHOLE)) };
+    };
+    const versions = createVersionSource({ post, ownVersion: MERGE, now: () => clock, log: () => {} });
+    expect(await versions.lookup("4".repeat(40), clock)).toBe("unavailable");
+    clock += FETCH_INTERVAL_MS;
+    expect(await versions.lookup("4".repeat(40), clock)).toBe("absent");
+    expect(await versions.lookup(SIDE, clock)).toBe("found");
   });
 });

@@ -98,7 +98,8 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   expect(made.inviteLink).toEqual(expect.stringContaining(`#invite=${made.inviteToken}`));
   await call("join_lobby", { key, lobbyId, inviteToken: made.inviteToken });
   expect(await call("locate_match", { lobbyId })).toEqual({ slot: null, mcpUrl: null, spectatorUrl: null });
-  // The post-mortem tool answers within a seat client's 30 s: an unplayed lobby of the caller's, and a lobby that is not.
+  // The post-mortem tool answers within a seat client's 30 s: an unplayed lobby of the caller's, and a lobby that is not
+  // (by lobby id, one whose ownership can't be confirmed).
   const postMortem = async (args: Record<string, unknown>) => {
     const started = performance.now();
     const result = await client.callTool({ name: POST_MORTEM_TOOL, arguments: args });
@@ -107,7 +108,7 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
     return (result.structuredContent as { error: string }).error;
   };
   expect(await postMortem({ key, lobbyId })).toBe("not_ended");
-  expect(await postMortem({ key, lobbyId: "00000000-0000-4000-8000-000000000000" })).toBe("not_found");
+  expect(await postMortem({ key, lobbyId: "00000000-0000-4000-8000-000000000000" })).toBe("ownership_unconfirmed");
   await call("rating", { displayName: "EntryPlayer" });
   await call("leaderboard", {});
   const origin = `http://127.0.0.1:${server.port}`;
