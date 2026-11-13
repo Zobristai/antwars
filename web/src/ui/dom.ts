@@ -1,4 +1,5 @@
 // Small DOM helpers for the spectator HUD's agent panel.
+import { colonyNameNote, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
 
 export function h<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = doc.createElement(tag);
@@ -28,4 +29,36 @@ export function setMarkup(node: Element, html: string): void {
   if (markup.get(node) === html) return;
   markup.set(node, html);
   node.innerHTML = html;
+}
+
+/** Each colony's ink: its name's colour, set for the page from the match (web/src/colony-palette.ts), else the classic colour. */
+export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
+
+/**
+ * Writes text into node. Where the match drew its colony names (unrated), each of those names in the text is shown in
+ * its colony's colour with its one-line source as its tooltip; for any other match the text is written as it always was.
+ */
+export function setColonyText(doc: Document, node: HTMLElement, text: string, drawn: ColonyNamePair | undefined): void {
+  if (!drawn) {
+    // A name shown earlier in its colour (another match on this page) gives way to plain text.
+    if (node.children.length > 0) node.textContent = text;
+    else setText(node, text);
+    return;
+  }
+  const parts: (Node | string)[] = [];
+  let rest = text;
+  for (;;) {
+    let at = -1, colony = 0;
+    drawn.forEach((name, c) => { const i = rest.indexOf(name); if (i >= 0 && (at < 0 || i < at)) { at = i; colony = c; } });
+    if (at < 0) break;
+    if (at > 0) parts.push(rest.slice(0, at));
+    const name = h(doc, "span", undefined, drawn[colony]);
+    name.style.color = COLONY_INK[colony]!;
+    const note = colonyNameNote(drawn[colony]!);
+    if (note) name.setAttribute("title", note);
+    parts.push(name);
+    rest = rest.slice(at + drawn[colony]!.length);
+  }
+  if (rest) parts.push(rest);
+  node.replaceChildren(...parts);
 }

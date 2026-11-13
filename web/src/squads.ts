@@ -24,29 +24,20 @@ import type { StreamAgent } from "../../src/live/format.ts";
 import type { Frame } from "./buffer.ts";
 import type { Rect, TipContent } from "./words.ts";
 import { modelLine, playerLabel, badgeAnchors, badgeRadiusPx, glyphPolygon } from "./compose.ts";
+import { colonyShades } from "./colony-palette.ts";
 
 /**
- * The agent hues: each colony's
- * colour family, warm against cool, says which colony; the hue inside it says which agent; the glyph stays as the
- * second cue. Listed in the order agents take them: the base hue, the most distant, then the rest. All eight sit at
- * near-equal OKLCH lightness, so hue carries the difference.
- */
-const AGENT_HUES = [
-  // Very Large Colony: amber, coral, gold, orange.
-  [0xf4af38, 0xed7668, 0xebd14d, 0xf38c48],
-  // Lake Hodges Colony: cyan, violet, teal, azure.
-  [0x4bc6fa, 0x9f85e5, 0x47d6cf, 0x77a4f6],
-] as const;
-
-/**
- * An agent's hue: its colony's list, by the agent's place in join order among that colony's agents. `agents` is the
- * board's list, whose index is join order and which only grows, so every agent keeps its hue for the whole match.
- * A colony with more agents than hues starts its list again.
+ * The agent hues: each colony's colour family says which colony and the hue inside it which agent, the glyph staying as
+ * the second cue. The families come from the colony's name (colony-palette.ts, src/sim/colonyNames.ts): Very Large's
+ * amber, coral, gold and orange and Lake Hodges' cyan, violet, teal and azure, in the order agents take them, all at
+ * near-equal OKLCH lightness so hue carries the difference; Sweetwater's and Lake Skinner's agents share their colony's
+ * one colour and are told apart by their glyph alone. An agent takes its colony's list by its place in join order
+ * among that colony's agents (`agents` only grows, so every agent keeps its hue all match); past the list's end it starts again.
  */
 export function agentShade(colony: number, agent: number, agents: readonly Pick<StreamAgent, "colony">[]): number {
   let seat = 0;
   for (let j = 0; j < agent && j < agents.length; j++) if (agents[j]?.colony === colony) seat++;
-  const hues = AGENT_HUES[colony === 1 ? 1 : 0];
+  const hues = colonyShades(colony);
   return hues[seat % hues.length]!;
 }
 

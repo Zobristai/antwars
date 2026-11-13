@@ -52,7 +52,9 @@ import { Waiting } from "../waiting.ts";
 import { TOUCH_RADIUS_PX, linkLine } from "../compose.ts";
 import { excerptEnded, modeCopy } from "../replay.ts";
 import type { AntwarApi, ClientInfo, FrameResult } from "../main.ts";
-import { CLEAR_RGB, COLONY_RGB, Ground } from "./ground.ts";
+import { CLEAR_RGB, Ground } from "./ground.ts";
+import { colonyRgbs, setMatchColonies } from "../colony-palette.ts";
+import { colonyNamesOf } from "../../../src/sim/colonyNames.ts";
 import { boardLook, type BoardLook } from "../board-look.ts";
 import { Ants3D } from "./ants3d.ts";
 import { Battles3D } from "./effects3d.ts";
@@ -137,6 +139,8 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   let playback = new Playback({ live: !input.recorded });
   let replayGeneration = input.recording?.generation ?? 0;
   const setup = head.full!.setup;
+  // The page's one match: its colonies' colours, before anything draws them.
+  setMatchColonies(colonyNamesOf(setup), document);
   const W = setup.mapW;
   const H = setup.mapH;
   // The initial view frames the fight lane between the nests, as the 2D board's does.
@@ -241,12 +245,12 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     const bounds = openingBoard ? openingBounds(openingBoard, extent) : null;
     return bounds ? fitOpeningPose(base, bounds, H, w, h, overlays.boardArea(w, h), scale, extent) : base;
   };
-  const ants = new Ants3D(scene, ground, antScale(), COLONY_RGB);
+  const ants = new Ants3D(scene, ground, antScale(), colonyRgbs());
   const battles = new Battles3D(scene, ground);
   const food = new Food3D(scene, ground);
   const rocks = new Rocks3D(scene, ground);
-  const startBoxes = new StartBoxes3D(scene, ground, COLONY_RGB);
-  const nests = new Nests(scene, ground, setup, ants.lengthTiles, COLONY_RGB);
+  const startBoxes = new StartBoxes3D(scene, ground, colonyRgbs());
+  const nests = new Nests(scene, ground, setup, ants.lengthTiles, colonyRgbs());
   nests.update(streamQueens(head.full!));
 
   // Light: a warm low key from the west-north-west (upper left on screen) with a shadow map, and a cool sky fill.
