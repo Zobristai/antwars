@@ -87,6 +87,8 @@ export function mountResultModal(doc: Document): ResultModal {
     result.style.setProperty("--d1-side", r.winner === null ? "var(--aw-ink-3)" : COLONY_CSS[r.winner]);
     setText(head, r.headline);
     head.style.color = r.winner === null ? "" : COLONY_CSS[r.winner];
+    // A drawn winner's colony class, for its ground where its colour needs one (colony-ground.css).
+    head.className = drawn && r.winner !== null ? `d1-result-head c${r.winner}` : "d1-result-head";
     setAttr(head, "title", drawn && r.winner !== null ? colonyNameNote(drawn[r.winner]) : null);
     setText(how, r.how);
     // Each player's shown name, its level and Fast badges as the Leaderboard shows them, then the change.
@@ -107,7 +109,7 @@ export function mountResultModal(doc: Document): ResultModal {
     moments.replaceChildren(...r.moments.map(m => {
       const li = h(doc, "li", "d1-moment");
       // The moment in its colony's colour; another colony it names (the queen overrun) in that colony's own.
-      const what = h(doc, "span", "d1-moment-what");
+      const what = h(doc, "span", drawn ? `d1-moment-what c${m.colony}` : "d1-moment-what");
       setColonyText(doc, what, m.what, drawn);
       what.style.color = COLONY_CSS[m.colony];
       const who = h(doc, "span", "d1-moment-who");

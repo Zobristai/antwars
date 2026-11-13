@@ -6,6 +6,7 @@
 import { COLONY_NAMES } from "../../src/sim/config.ts";
 import { colonyColours, colourCss, supercolony, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import type { Rgb } from "./board-look.ts";
+import "./colony-ground.css";
 
 /**
  * The rated names' territory washes on the steppe look, as they have always been: amber toward orange and cyan toward
@@ -20,13 +21,50 @@ const WASH_SHADE = 0.92, WASH_DEPTH = 1.2;
 
 let names: ColonyNamePair = COLONY_NAMES;
 
-/** Sets the page's match; with a document, also its colony CSS colours (--aw-k0, --aw-k1). */
+/**
+ * The lightest panel colour a colony's coloured text sits on: --aw-raise (web/index.html), a list row under the pointer
+ * or keyboard focus. The page's surface and background are darker.
+ */
+export const TEXT_PANEL_MAX = 0x293337;
+/** The dark ground behind a colony's coloured text where its colour needs one (colony-ground.css). */
+export const TEXT_GROUND = 0x0b0f10;
+
+const channel = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const luminance = (rgb: number) => 0.2126 * channel((rgb >> 16) & 255) + 0.7152 * channel((rgb >> 8) & 255) + 0.0722 * channel(rgb & 255);
+/** WCAG contrast ratio of two colours, 0xRRGGBB. */
+export function contrastRatio(a: number, b: number): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * Whether a colony colour's text needs a dark ground to keep 4.5:1: it does when the colour falls short of 4.5:1 on the
+ * lightest panel it sits on. The rated colours never do, so a rated match's text is drawn exactly as before.
+ */
+export function needsTextGround(rgb: number): boolean {
+  return contrastRatio(rgb, TEXT_PANEL_MAX) < 4.5;
+}
+
+/**
+ * Sets the page's match; with a document, also its colony CSS colours (--aw-k0, --aw-k1) and, for each colony whose
+ * colour needs one, the dark ground under its coloured text: the root's data-aw-ground lists those colonies ("0", "1")
+ * and --aw-ink-ground is the ground's colour (colony-ground.css). A match that needs none carries neither.
+ */
 export function setMatchColonies(pair: ColonyNamePair, doc?: Document): void {
   names = pair;
   if (!doc) return;
-  const [c0, c1] = colonyColours(pair);
-  doc.documentElement.style.setProperty("--aw-k0", colourCss(c0));
-  doc.documentElement.style.setProperty("--aw-k1", colourCss(c1));
+  const root = doc.documentElement;
+  const colours = colonyColours(pair);
+  root.style.setProperty("--aw-k0", colourCss(colours[0]));
+  root.style.setProperty("--aw-k1", colourCss(colours[1]));
+  const grounded = ([0, 1] as const).filter(c => needsTextGround(colours[c]));
+  if (grounded.length > 0) {
+    root.setAttribute("data-aw-ground", grounded.join(" "));
+    root.style.setProperty("--aw-ink-ground", colourCss(TEXT_GROUND));
+  } else {
+    root.removeAttribute("data-aw-ground");
+    root.style.removeProperty("--aw-ink-ground");
+  }
 }
 
 /** A colony's colour as 0xRRGGBB. */

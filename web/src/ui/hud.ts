@@ -671,6 +671,9 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     if (!lines) return;
     toast.dataset.kind = lines.kind;
     toast.style.color = lines.colony === 0 ? "var(--aw-k0, var(--aw-c0))" : "var(--aw-k1, var(--aw-c1))";
+    // A drawn colony's id, for the fall headline's ground where its colour needs one (colony-ground.css).
+    if (drawn) toast.dataset.colony = String(lines.colony);
+    else delete toast.dataset.colony;
     toastWhen.textContent = lines.when;
     setColonyText(doc, toastWhat, lines.what, drawn);
     setColonyText(doc, toastWho, lines.who, drawn);

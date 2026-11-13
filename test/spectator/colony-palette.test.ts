@@ -7,15 +7,19 @@ import { COLONY_NAMES } from "../../src/sim/config.ts";
 import { SUPERCOLONY_NAMES, colourCss } from "../../src/sim/colonyNames.ts";
 import { COLONY_TINT } from "../../web/src/ants.ts";
 import { COLONY_RGB } from "../../web/src/territory.ts";
-import { colonyRgb, colonyTint, colonyWash, setMatchColonies } from "../../web/src/colony-palette.ts";
+import { TEXT_GROUND, colonyRgb, colonyTint, colonyWash, setMatchColonies } from "../../web/src/colony-palette.ts";
 import { agentShade } from "../../web/src/squads.ts";
 import { STEPPE_LOOK } from "../../web/src/ui/steppe-look.ts";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
-/** A document's root style, as far as the palette writes it. */
+/** A document's root style and attributes, as far as the palette writes them. */
 const fakeDocument = () => {
-  const props = new Map<string, string>();
-  return { props, doc: { documentElement: { style: { setProperty: (name: string, value: string) => props.set(name, value) } } } as unknown as Document };
+  const props = new Map<string, string>(), attrs = new Map<string, string>();
+  const documentElement = {
+    style: { setProperty: (name: string, value: string) => props.set(name, value), removeProperty: (name: string) => props.delete(name) },
+    setAttribute: (name: string, value: string) => attrs.set(name, value), removeAttribute: (name: string) => attrs.delete(name),
+  };
+  return { props, attrs, doc: { documentElement } as unknown as Document };
 };
 
 afterEach(() => setMatchColonies(COLONY_NAMES));
@@ -37,17 +41,23 @@ describe("the page's colony colours", () => {
   });
 
   it("follow a drawn pair: each colony its name's colour for every one of its agents, its wash, and the page's colony CSS colours", () => {
-    const { props, doc } = fakeDocument();
+    const { props, attrs, doc } = fakeDocument();
     setMatchColonies(["Sweetwater Colony", "Very Large Colony"], doc);
     expect([colonyTint(0), colonyTint(1)]).toEqual([SWEETWATER, 0xffb000]);
     expect(colonyRgb(0)).toEqual(channels(SWEETWATER));
-    expect(props).toEqual(new Map([["--aw-k0", colourCss(SWEETWATER)], ["--aw-k1", "#ffb000"]]));
+    // Sweetwater's text needs a dark ground for 4.5:1 on a raised row; Very Large's does not (colony-ground.css).
+    expect(props).toEqual(new Map([["--aw-k0", colourCss(SWEETWATER)], ["--aw-k1", "#ffb000"], ["--aw-ink-ground", colourCss(TEXT_GROUND)]]));
+    expect(attrs).toEqual(new Map([["data-aw-ground", "0"]]));
     expect(colonyWash(0).hue).not.toEqual(colonyWash(1).hue);
     // Its wash is its own colour, slightly darkened.
     expect(STEPPE_LOOK.board2d.fill("")).toContain(`vec3(${channels(SWEETWATER).map(c => (c * 0.92).toFixed(4)).join(", ")})`);
     // Every agent shows its colony's one colour: Sweetwater's on colony 0, Very Large's on colony 1.
     const agents = [{ colony: 0 }, { colony: 1 }, { colony: 0 }, { colony: 1 }] as const;
     expect(agents.map((a, i) => agentShade(a.colony, i, agents))).toEqual([SWEETWATER, 0xffb000, SWEETWATER, 0xffb000]);
+    // Back to a match with no names: the rated colours, and no ground.
+    setMatchColonies(COLONY_NAMES, doc);
+    expect(props).toEqual(new Map([["--aw-k0", "#ffb000"], ["--aw-k1", "#00c2ff"]]));
+    expect(attrs.size).toBe(0);
   });
 
   it("keep a colony's own colour for a name outside the table", () => {

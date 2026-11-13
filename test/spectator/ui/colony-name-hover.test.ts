@@ -13,6 +13,7 @@ import { mountDeckHud } from "../../../web/src/ui/deck/hud.ts";
 import { mountResultModal } from "../../../web/src/ui/deck/result-modal.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
+import { markup } from "./port-markup.ts";
 
 const STYLES = ["../../../web/src/ui/ui.css", "../../../web/src/ui/deck/deck.css"].map(path => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 const DRAWN = ["Sweetwater Colony", "Lake Skinner Colony"] as const;
@@ -59,26 +60,6 @@ function mounted(what: "2d" | "3d" | "result"): ElementPort {
   return host;
 }
 
-const escape = (text: string) => text.replace(/[&<>"]/g, c => `&${{ "&": "amp", "<": "lt", ">": "gt", '"': "quot" }[c]};`);
-const kebab = (name: string) => name.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`);
-/** The port's tree as markup: tags, classes, attributes, data, inline styles, text and the icons' own markup. */
-function markup(node: ElementPort): string {
-  if (node.tag === "#text") return escape(node.textContent);
-  const attrs: [string, string][] = [];
-  if (node.className) attrs.push(["class", node.className]);
-  if (node.id) attrs.push(["id", node.id]);
-  if (node.title && node.getAttribute("title") === null) attrs.push(["title", node.title]);
-  if (node.hidden) attrs.push(["hidden", ""]);
-  if (node.open) attrs.push(["open", ""]);
-  attrs.push(...Object.entries(node.attrs));
-  attrs.push(...Object.entries(node.dataset).map(([key, value]) => [`data-${kebab(key)}`, value] as [string, string]));
-  const style = node.style as unknown as Record<string, unknown> & { properties: Map<string, [string, string]> };
-  const inline = [...Object.entries(style).filter(([key, value]) => key !== "properties" && typeof value === "string" && value !== "").map(([key, value]) => `${kebab(key)}: ${value as string}`),
-    ...[...style.properties].map(([key, [value]]) => `${key}: ${value}`)];
-  if (inline.length > 0) attrs.push(["style", inline.join("; ")]);
-  const inner = node.children.length > 0 ? node.children.map(markup).join("") : node.html || escape(node.textContent);
-  return `<${node.tag}${attrs.map(([key, value]) => ` ${key}="${escape(value)}"`).join("")}>${inner}</${node.tag}>`;
-}
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
