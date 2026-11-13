@@ -1,6 +1,8 @@
 /**
- * The post-mortem's work, bounded: record scans in this process (two at a time, a queue of 16), and re-runs in one
- * forked child at a time (a queue of 8 matches). A reply never waits for a re-run.
+ * The post-mortem's work, bounded: refused-call record scans in this process (two at a time, a queue of 16), and re-runs
+ * in one forked child at a time (a queue of 8 matches, each held as its match id and proven game version only). A reply
+ * never waits for a re-run. Each child attempt opens the record afresh and streams its bytes to the child's stdin
+ * through stream/promises pipeline, so a child that exits or is killed mid-stream fails that attempt, never this server.
  *
  * Memory. The entry server's container has 2 GiB (deploy/cloud-run/deploy.sh MEMORY). The meter is the whole
  * container's memory in use as the kernel reports it, MemTotal minus MemAvailable from /proc/meminfo, so it counts
@@ -12,13 +14,14 @@
  */
 import { fork, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
-import type { ChildMessage, NoEffect } from "./postMortemChild.js";
-import type { ReducedRecord } from "./postMortemRecord.js";
+import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ChildMessage, ChildRequest, NoEffect } from "./postMortemChild.js";
 
 export const CONTAINER_LIMIT_MIB = 2048;
 /** The child's peak under CHILD_FLAGS: a heap flood dies at the V8 limit with peaks of 1,065-1,076 MiB (tests). */
 export const CHILD_RESERVE_MIB = 1100;
-/** Two concurrent worst-case scans (tests: 188 MiB). */
+/** Two concurrent worst-case refused-call scans (tests: post-mortem-jobs.test.ts, whole container). */
 export const SCAN_RESERVE_MIB = 200;
 /** Above a real re-run's growth between two samples (tests: 114 MiB per 50 ms). */
 export const HEADROOM_MIB = 198;
@@ -57,8 +60,10 @@ export const overLimit = (reading: MemoryReading, policy = MEMORY_POLICY) => rea
 /** Why a re-run gave no answer now; never cached. */
 export type StopCause = "memory" | "meter" | "stalled" | "crashed" | "admission";
 export type RerunOutcome =
-  | { readonly kind: "findings"; readonly tested: number; readonly findings: NoEffect[] }
+  | { readonly kind: "findings"; readonly tested: number; readonly findings: NoEffect[]; readonly undecided: [number, number][] }
   | { readonly kind: "not_reproduced" }
+  | { readonly kind: "no_rerun_data" }
+  | { readonly kind: "no_idle_data" }
   | { readonly kind: "engine_error" }
   | { readonly kind: "stopped"; readonly cause: StopCause };
 
@@ -79,18 +84,26 @@ export interface JobsOptions {
 export interface PostMortemJobs {
   /** Runs a scan in the pool; rejects JobsBusy at once when the queue is full. */
   scan<T>(run: () => Promise<T>): Promise<T>;
-  /** Queues a re-run of match id unless it is already queued or running; "busy" when the queue is full. */
-  rerun(id: string, record: ReducedRecord): { readonly state: "queued" | "running" | "busy"; readonly outcome?: Promise<RerunOutcome> };
+  /**
+   * Queues a re-run of match id, proven of game version, unless it is already queued or running; "busy" when the
+   * queue is full. `open` opens the record's bytes afresh for each attempt (null: no such record).
+   */
+  rerun(id: string, version: string, open: RecordOpener): { readonly state: "queued" | "running" | "busy"; readonly outcome?: Promise<RerunOutcome> };
   /** The re-run of id now in flight or queued, if any. */
   pending(id: string): Promise<RerunOutcome> | undefined;
 }
 
+export type RecordOpener = (signal: AbortSignal) => Promise<Readable | null>;
+
+/** The child's whole environment: nothing of this server's configuration or secrets reaches it. */
+export const CHILD_ENV = { ANTWAR_POST_MORTEM_CHILD: "1" } as const;
+
 export function forkRerunChild(): ChildProcess {
   return fork(new URL("./postMortemChild.ts", import.meta.url), [], {
     execArgv: ["--import", new URL("../ts-resolve.mjs", import.meta.url).href, ...CHILD_FLAGS],
-    env: { ...process.env, ANTWAR_POST_MORTEM_CHILD: "1" },
+    env: { ...CHILD_ENV },
     serialization: "advanced",
-    stdio: ["ignore", "ignore", "inherit", "ipc"],
+    stdio: ["pipe", "ignore", "inherit", "ipc"],
   });
 }
 
@@ -116,7 +129,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
     }
   }
 
-  interface Job { readonly id: string; readonly record: ReducedRecord; readonly outcome: Promise<RerunOutcome>; settle(outcome: RerunOutcome): void }
+  interface Job { readonly id: string; readonly version: string; readonly open: RecordOpener; readonly outcome: Promise<RerunOutcome>; settle(outcome: RerunOutcome): void }
   const queue: Job[] = [];
   let running: Job | null = null;
   let lastRefusalLog = -Infinity;
@@ -127,11 +140,12 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
     log(line);
   }
 
-  /** One child run: its answer, or why it stopped. */
-  function runChild(record: ReducedRecord): Promise<ChildMessage | { kind: "stopped"; cause: StopCause }> {
+  /** One child run on a freshly opened record: its answer, or why it stopped. */
+  function runChild(job: Job): Promise<ChildMessage | { kind: "stopped"; cause: StopCause }> {
     return new Promise(resolve => {
       let child: ChildProcess;
       try { child = forkChild(); } catch { resolve({ kind: "stopped", cause: "crashed" }); return; }
+      const abort = new AbortController();
       let answer: ChildMessage | null = null, cause: StopCause | null = null, lastProgress = now();
       const stop = (why: StopCause) => { if (cause === null && answer === null) { cause = why; child.kill("SIGKILL"); } };
       const watchdog = setInterval(() => {
@@ -147,11 +161,21 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
       child.once("error", () => stop("crashed"));
       child.once("exit", (_code, signal) => {
         clearInterval(watchdog);
+        abort.abort();
         if (answer !== null) resolve(answer);
         // A V8 heap-limit abort is the child's memory cap doing its work.
         else resolve({ kind: "stopped", cause: cause ?? (signal === "SIGABRT" ? "memory" : "crashed") });
       });
-      child.send(record, error => { if (error) stop("crashed"); });
+      child.send({ version: job.version } satisfies ChildRequest, error => { if (error) stop("crashed"); });
+      // Never .pipe: a child gone mid-stream would raise an unhandled EPIPE in this server. pipeline rejects instead,
+      // and destroys the record stream.
+      void (async () => {
+        const source = await job.open(abort.signal);
+        if (source === null) { stop("crashed"); return; }
+        if (abort.signal.aborted) { source.destroy(); return; }
+        if (child.stdin === null) { source.destroy(); stop("crashed"); return; }
+        await pipeline(source, child.stdin, { signal: abort.signal });
+      })().catch(() => stop("crashed"));
     });
   }
 
@@ -161,10 +185,10 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
       refusalLog(`antwar post-mortem: re-run not started; memory in use ${reading === null ? "unreadable" : `${Math.round(reading.usedMiB)} MiB of ${Math.round(limitOf(reading, policy))} MiB`}`);
       return { kind: "stopped", cause: reading === null ? "meter" : "admission" };
     }
-    const first = await runChild(job.record);
+    const first = await runChild(job);
     if (first.kind === "threw") {
-      // An engine error is an answer only when a fresh child repeats it exactly.
-      const again = await runChild(job.record);
+      // An engine error is an answer only when a fresh child, reading the record afresh, repeats it exactly.
+      const again = await runChild(job);
       if (again.kind === "threw" && again.message === first.message) return { kind: "engine_error" };
       return again.kind === "stopped" ? again : { kind: "stopped", cause: "crashed" };
     }
@@ -173,7 +197,9 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
       return first;
     }
     if (first.kind === "mismatch") return { kind: "not_reproduced" };
-    if (first.kind === "done") return { kind: "findings", tested: first.tested, findings: first.findings };
+    if (first.kind === "no_rerun_data" || first.kind === "no_idle_data") return { kind: first.kind };
+    if (first.kind === "done") return { kind: "findings", tested: first.tested, findings: first.findings, undecided: first.undecided };
+    // "changed", "unreadable": nothing is settled about this match now.
     return { kind: "stopped", cause: "crashed" };
   }
 
@@ -191,14 +217,14 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
 
   return {
     scan,
-    rerun(id, record) {
+    rerun(id, version, open) {
       if (running?.id === id) return { state: "running", outcome: running.outcome };
       const waiting = queue.find(job => job.id === id);
       if (waiting) return { state: "queued", outcome: waiting.outcome };
       if (queue.length >= RERUN_QUEUE) return { state: "busy" };
       let settle!: (outcome: RerunOutcome) => void;
       const outcome = new Promise<RerunOutcome>(resolve => { settle = resolve; });
-      const job: Job = { id, record, outcome, settle };
+      const job: Job = { id, version, open, outcome, settle };
       queue.push(job);
       drain();
       return { state: running === job ? "running" : "queued", outcome };

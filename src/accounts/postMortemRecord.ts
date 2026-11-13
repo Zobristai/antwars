@@ -1,11 +1,16 @@
 /**
- * One streaming pass over a stored match record (src/replays/history.ts MatchRecord) for the post-mortem: the refused
- * calls of every seat and the reduced record a re-run needs, with no record-size cap. Large arrays are parsed one element
- * at a time and never held whole: events keep only each call's [tick, seat] (the re-run's call order, as
- * test/replays/history.test.ts rebuild), replies keep only their refusals, and each seat's commands are kept element by
- * element. Every other byte counts against one total cap, so a corrupted record (an inverted quote, say) fails instead
- * of buffering without bound. A record that cannot be read whole fails as RecordReadError, with no detail of its content.
+ * One streaming pass over a stored match record (src/replays/history.ts MatchRecord) for the post-mortem, with no
+ * record-size cap. Large arrays are parsed one element at a time and never held whole. Every other byte counts against
+ * one total cap, so a corrupted record (an inverted quote, say) fails instead of buffering without bound. A record that
+ * cannot be read whole fails as RecordReadError, with no detail of its content.
+ *
+ * Two modes. "refused" (the entry server, public and private records): each seat's refused calls from replies, its
+ * refused commands, and the record's re-run data and game version; no accepted command or event is kept. "rerun" (the
+ * re-run child, public records only): what a re-run needs and no more: every command, each call event's facts in
+ * record order (the re-run's call order, as test/replays/history.test.ts rebuild), one digest per 100-tick block of the
+ * stored events, and each reply line's seat, tick, tool, code and argument flags in typed columns.
  */
+import { createHash, type Hash } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, type Gunzip } from "node:zlib";
@@ -16,6 +21,10 @@ export const ELEMENT_CAP_BYTES = 256 * 1024;
 /** All bytes outside those elements (every other member, kept or not) together. */
 export const OTHER_CAP_BYTES = 8 * 1024 * 1024;
 const KEY_CAP_BYTES = 1024;
+/** Stored events are compared with the re-run's in blocks of this many ticks. */
+export const BLOCK_TICKS = 100;
+
+export type ScanMode = "refused" | "rerun";
 
 export class RecordReadError extends Error {
   constructor() { super("match record could not be read"); }
@@ -44,7 +53,56 @@ export interface ReducedSeat {
   readonly seat: number;
   readonly colony: 0 | 1;
   readonly handle: string | null;
+  /** Rerun mode only; null otherwise or where the record has none. */
+  readonly joinedTick: number | null;
   readonly commands: ReducedCommand[];
+}
+
+/** A call event as the record stores it (src/live/format.ts call event). */
+export interface CallFact {
+  readonly tick: number;
+  readonly seat: number;
+  readonly call: string;
+  readonly accepted: boolean;
+  /** The server's house-idle activity tick after this call's tick; null where the event carries none. */
+  readonly activity: number | null;
+}
+
+/** One block of stored events: [block index, event count, SHA-256 of their comparable form]. */
+export type EventBlock = readonly [number, number, string];
+
+/** A growable Int32 column. */
+class Column {
+  data = new Int32Array(256);
+  length = 0;
+  push(value: number): void {
+    if (this.length === this.data.length) { const next = new Int32Array(this.data.length * 2); next.set(this.data); this.data = next; }
+    this.data[this.length++] = value;
+  }
+  at(i: number): number { return this.data[i]!; }
+}
+
+export const LINE_ARGS_KNOWN = 1, LINE_SINCE = 2, LINE_CELLS_CURSOR = 4, LINE_STUB = 8;
+
+/** Every reply and stub line of the record, compactly: strings are interned, ticks of -1 are null. */
+export class ReplyLines {
+  readonly strings: string[] = [""];
+  private readonly ids = new Map<string, number>([["", 0]]);
+  /** Seat, or -1 - (interned agent id) until end() resolves it. */
+  readonly seat = new Column();
+  readonly tick = new Column();
+  readonly tool = new Column();
+  /** Interned code; 0 is a call that succeeded. */
+  readonly code = new Column();
+  readonly flags = new Column();
+  readonly omitted = new Column();
+  get length(): number { return this.seat.length; }
+  intern(value: string): number {
+    let id = this.ids.get(value);
+    if (id === undefined) { id = this.strings.length; this.strings.push(value); this.ids.set(value, id); }
+    return id;
+  }
+  string(id: number): string { return this.strings[id]!; }
 }
 
 export interface RerunData {
@@ -55,15 +113,23 @@ export interface RerunData {
   readonly houseActive: [number, number][];
 }
 
-/** What a re-run needs from the record, and no more. */
+/** What the post-mortem needs from the record, and no more. */
 export interface ReducedRecord {
   readonly config: unknown;
-  readonly result: { readonly winner: unknown; readonly reason: unknown } | null;
+  /** The stored result less its ratingChanges, which the simulation never produces. */
+  readonly result: Readonly<Record<string, unknown>> | null;
   readonly rerun: RerunData | null;
   readonly codeVersion: string | null;
   readonly seats: ReducedSeat[];
-  /** Each call event's [tick, seat], in record order. */
-  readonly calls: [number, number][];
+  /** Rerun mode: each call event, in record order; empty in refused mode. */
+  readonly calls: CallFact[];
+  /** Rerun mode: the stored events' blocks, ascending; empty in refused mode. */
+  readonly blocks: EventBlock[];
+  /** setup.houseIdleTicks, or null where the record carries none. */
+  readonly houseIdleTicks: number | null;
+  readonly modelIndex: boolean;
+  /** Rerun mode: every reply and stub line, with seats resolved; null when the record retained no replies. */
+  readonly lines: ReplyLines | null;
 }
 
 export interface RecordScan {
@@ -100,22 +166,40 @@ interface Capture {
   escaped: boolean;
 }
 
-const ROOT_KEPT = new Set(["id", "status", "rules", "result", "rerun", "codeVersion", "agentSeats"]);
-const SEAT_KEPT = new Set(["seat", "colony", "handle"]);
+const ROOT_KEPT = new Set(["id", "status", "rules", "result", "rerun", "codeVersion", "agentSeats", "setup"]);
+const SEAT_KEPT = new Set(["seat", "colony", "handle", "joinedTick"]);
 const WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d]);
 const TEXT_PREFIX = Buffer.from('{"type":"text"');
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const fail = (): never => { throw new RecordReadError(); };
 
+/** Key-sorted plain JSON, undefined members left out. */
+const canon = (value: unknown): unknown => Array.isArray(value) ? value.map(canon)
+  : isRecord(value) ? Object.fromEntries(Object.keys(value).filter(k => value[k] !== undefined).sort().map(k => [k, canon(value[k])])) : value;
+
+/** Key-sorted JSON of a plain value, undefined members left out. */
+export const canonicalJson = (value: unknown): string => JSON.stringify(canon(value));
+
+/** An event as the re-run can produce it: fields only the server sets (a join's identity, a call's house activity) and a result's ratingChanges and nextStartMs left out. */
+export function comparableEvent(tick: number, event: Readonly<Record<string, unknown>>): string {
+  let e: Record<string, unknown> = { ...event };
+  if (e.kind === "join") delete e.identity;
+  if (e.kind === "call") delete e.houseActivityTick;
+  if (e.kind === "end" && isRecord(e.result)) { const { ratingChanges: _r, nextStartMs: _n, ...result } = e.result; e = { ...e, result }; }
+  return canonicalJson({ tick, event: e });
+}
+
 /** The streaming scanner: push decoded JSON bytes, then end(). */
-export function recordScanner() {
+export function recordScanner(mode: ScanMode = "refused") {
   const stack: Frame[] = [];
   let started = false, finished = false, other = 0;
   let capture: Capture | null = null;
   let keyBytes: number[] | null = null, keyEscaped = false, keyEscape = false;
   const root: Record<string, unknown> = {};
   const seats: ReducedSeat[] = [];
-  const calls: [number, number][] = [];
+  const calls: CallFact[] = [];
+  const blocks = new Map<number, { count: number; hash: Hash }>();
+  const lines = new ReplyLines();
   const refusals: (Refusal & { agentId?: string })[] = [];
   const omitted = new Map<number | string, number>();
   let repliesSeen = false;
@@ -128,17 +212,27 @@ export function recordScanner() {
     if (sink === "events") {
       if (!isRecord(value) || !isRecord(value.event)) fail();
       const { tick, event } = value as { tick: unknown; event: Record<string, unknown> };
+      if (!Number.isSafeInteger(tick) || (tick as number) < 0) fail();
+      if (event.kind === "call" && !Number.isSafeInteger(event.agent)) fail();
+      if (mode === "refused") return;
+      const index = Math.floor((tick as number) / BLOCK_TICKS);
+      let block = blocks.get(index);
+      if (block === undefined) { block = { count: 0, hash: createHash("sha256") }; blocks.set(index, block); }
+      block.count++;
+      block.hash.update(comparableEvent(tick as number, event) + "\n");
       if (event.kind === "call") {
-        if (!Number.isSafeInteger(tick) || !Number.isSafeInteger(event.agent)) fail();
-        calls.push([tick as number, event.agent as number]);
+        calls.push({ tick: tick as number, seat: event.agent as number, call: typeof event.call === "string" ? event.call : "",
+          accepted: event.accepted === true, activity: Number.isSafeInteger(event.houseActivityTick) ? event.houseActivityTick as number : null });
       }
-    } else if (sink === "replies") reply(value);
-    else if (sink === "commands") {
+    } else if (sink === "replies") {
+      if (mode === "refused") reply(value); else line(value);
+    } else if (sink === "commands") {
       if (!isRecord(value) || !Number.isSafeInteger(value.tick) || typeof value.type !== "string" || typeof value.accepted !== "boolean") fail();
       const v = value as Record<string, unknown>;
+      if (mode === "refused" && v.accepted === true) return;
       const error = isRecord(v.error) && typeof v.error.code === "string" ? v.error.code : null;
       owner.seat!.commands.push({ tick: v.tick as number, type: v.type as string, accepted: v.accepted as boolean,
-        request: isRecord(v.request) ? v.request : null, errorCode: error });
+        request: mode === "rerun" && isRecord(v.request) ? v.request : null, errorCode: error });
     } else if (owner.role === "root") {
       if (key !== null && ROOT_KEPT.has(key)) root[key] = value;
       if (key === "replies" && value === null) repliesSeen = false;
@@ -161,6 +255,34 @@ export function recordScanner() {
     refusals.push({ seat, ...(agentId === null ? {} : { agentId }),
       tick: Number.isSafeInteger(line.tick) ? line.tick as number : null, tool: typeof line.tool === "string" ? line.tool : "",
       receivedAt: typeof line.receivedAt === "number" ? line.receivedAt : null, code });
+  }
+
+  /** Rerun mode: one reply or stub line, kept as its seat, tick, tool, code and argument flags. */
+  function line(value: unknown): void {
+    if (!isRecord(value)) fail();
+    const l = value as Record<string, unknown>;
+    if (l.type === "text") return;
+    if (l.type !== "reply" && l.type !== "stub") fail();
+    const seat = typeof l.agentId === "string" ? -1 - lines.intern(l.agentId) : Number.isSafeInteger(l.seat) && (l.seat as number) >= 0 ? l.seat as number : -1 - lines.intern("");
+    const code = l.type === "stub" ? (typeof l.code === "string" ? l.code : null) : entryCode(l);
+    let flags = l.type === "stub" ? LINE_STUB : 0;
+    if (l.type === "reply") {
+      // Arguments are known unless the record dropped, trimmed or redacted any of them, or could not name all it did.
+      const touched = (names: unknown, more: unknown) => (Number.isSafeInteger(more) && (more as number) > 0)
+        || (Array.isArray(names) && names.some(name => typeof name !== "string" || name === "arguments" || name.startsWith("arguments.")));
+      const args = l.arguments;
+      if (!touched(l.trimmed, l.trimmedMore) && !touched(l.redacted, l.redactedMore) && (args === undefined || isRecord(args))) {
+        flags |= LINE_ARGS_KNOWN;
+        if (isRecord(args) && args.since !== undefined && args.since !== null) flags |= LINE_SINCE;
+        if (isRecord(args) && args.cellsCursor !== undefined && args.cellsCursor !== null) flags |= LINE_CELLS_CURSOR;
+      }
+    }
+    lines.seat.push(seat);
+    lines.tick.push(Number.isSafeInteger(l.tick) && (l.tick as number) >= 0 ? l.tick as number : -1);
+    lines.tool.push(lines.intern(typeof l.tool === "string" ? l.tool : ""));
+    lines.code.push(code === null ? 0 : lines.intern(code));
+    lines.flags.push(flags);
+    lines.omitted.push(l.type === "stub" && Number.isSafeInteger(l.omitted) && (l.omitted as number) > 0 ? l.omitted as number : 0);
   }
 
   /** The sink a value at the top frame's position goes to, or a frame role to descend into. */
@@ -198,7 +320,8 @@ export function recordScanner() {
     if (frame.role === "seat") {
       const s = frame.seat!;
       if (!Number.isSafeInteger(s.seat) || (s.colony !== 0 && s.colony !== 1)) fail();
-      seats.push({ seat: s.seat as number, colony: s.colony as 0 | 1, handle: typeof s.handle === "string" ? s.handle : null, commands: s.commands });
+      seats.push({ seat: s.seat as number, colony: s.colony as 0 | 1, handle: typeof s.handle === "string" ? s.handle : null,
+        joinedTick: mode === "rerun" && Number.isSafeInteger(s.joinedTick) ? s.joinedTick as number : null, commands: s.commands });
     }
     if (stack.length === 0) finished = true;
     else afterValue(stack.at(-1)!);
@@ -336,7 +459,16 @@ export function recordScanner() {
     const rules = isRecord(root.rules) ? root.rules : null;
     const config = rules?.config ?? null;
     const tps = isRecord(config) && typeof config.ticksPerSecond === "number" && config.ticksPerSecond > 0 ? config.ticksPerSecond : null;
-    const result = isRecord(root.result) ? { winner: root.result.winner, reason: root.result.reason } : null;
+    const result = isRecord(root.result) ? (({ ratingChanges: _r, ...rest }) => rest)(root.result) : null;
+    const setup = isRecord(root.setup) ? root.setup : null;
+    const houseIdleTicks = setup !== null && typeof setup.houseIdleTicks === "number" && Number.isFinite(setup.houseIdleTicks) && setup.houseIdleTicks > 0
+      ? setup.houseIdleTicks : null;
+    if (mode === "rerun") {
+      for (let i = 0; i < lines.length; i++) {
+        const seat = lines.seat.at(i);
+        if (seat < 0) { const agent = lines.string(-1 - seat); lines.seat.data[i] = agent === "" ? -1 : seatOf(agent) ?? -1; }
+      }
+    }
     const omittedBySeat = new Map<number, number>();
     for (const [caller, n] of omitted) {
       const seat = typeof caller === "string" ? seatOf(caller) : caller;
@@ -347,8 +479,9 @@ export function recordScanner() {
       status: typeof root.status === "string" ? root.status : null,
       ticksPerSecond: tps,
       reduced: { config, result, rerun: rerunData(root.rerun), codeVersion: typeof root.codeVersion === "string" ? root.codeVersion : null,
-        seats: [...seats].sort((a, b) => a.seat - b.seat), calls },
-      refusals: repliesSeen ? refusals.map(({ agentId, ...r }) => agentId === undefined ? r : { ...r, seat: seatOf(agentId) }) : null,
+        seats: [...seats].sort((a, b) => a.seat - b.seat), calls, blocks: [...blocks].sort(([a], [b]) => a - b).map(([index, { count, hash }]) => [index, count, hash.digest("hex")] as const),
+        houseIdleTicks, modelIndex: setup?.modelIndex === true, lines: mode === "rerun" && repliesSeen ? lines : null },
+      refusals: mode === "refused" && repliesSeen ? refusals.map(({ agentId, ...r }) => agentId === undefined ? r : { ...r, seat: seatOf(agentId) }) : null,
       omitted: omittedBySeat,
     };
   }
@@ -367,8 +500,8 @@ function rerunData(value: unknown): RerunData | null {
 }
 
 /** Scans a record's bytes, gzip or plain JSON; throws RecordReadError when it cannot be read whole. */
-export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: AbortSignal): Promise<RecordScan> {
-  const scanner = recordScanner();
+export async function scanRecord(source: AsyncIterable<Uint8Array>, signal?: AbortSignal, mode: ScanMode = "refused"): Promise<RecordScan> {
+  const scanner = recordScanner(mode);
   const iterator = source[Symbol.asyncIterator]();
   const bytes = (value: Uint8Array) => Buffer.from(value.buffer, value.byteOffset, value.byteLength);
   let gunzip: Gunzip | undefined;

@@ -47,8 +47,21 @@ export const REFUSALS = {
 } as const;
 export type RefusalCode = keyof typeof REFUSALS;
 
+/** Opens the accepted-commands list (Coordinator rulings on what a command's own timers may do). */
+export const NO_EFFECT_NOTE = "These accepted commands changed nothing in the game, except at most restarting this seat's own timers.";
+/** Added where the match's rules let any call keep a seat awake (no command idle allowance). */
+export const CALL_IDLE_NOTE = "Under this match's rules any call, observe included, keeps this seat awake the same way.";
+/** The caller's own seats' commands that the record cannot settle: never listed, never silently left out. */
+export function undecidedSentence(n: number): string {
+  return n === 1
+    ? "1 other accepted command is not listed because this match's record cannot show whether it kept this seat from going idle."
+    : `${n} other accepted commands are not listed because this match's record cannot show whether they kept this seat from going idle.`;
+}
+
 export type NoEffectStatus =
-  | { readonly status: "shown"; readonly commands: readonly { seat: number; tick: number; matchSeconds: number | null; type: string }[] }
+  | { readonly status: "shown"; readonly commands: readonly { seat: number; tick: number; matchSeconds: number | null; type: string }[];
+      /** [seat, commands the record cannot settle], every seat; replies show only the caller's own seats' total. */
+      readonly undecided: readonly [number, number][] }
   | { readonly status: "not_available"; readonly reason: string }
   | { readonly status: "being_worked_out" | "not_computed_now"; readonly reason: string };
 
@@ -78,6 +91,8 @@ interface ScanSummary {
   readonly refusedFrom: "calls" | "commands";
   readonly omitted: readonly [number, number][];
   readonly ticksPerSecond: number | null;
+  /** The match's rules have no command idle allowance: any call keeps a seat awake. */
+  readonly callIdle: boolean;
 }
 interface CacheEntry { summary: ScanSummary; noEffect: NoEffectStatus | null; retryAfter?: number; bytes: number }
 
@@ -115,9 +130,11 @@ function summarize(scan: RecordScan): ScanSummary {
     ? scan.refusals.flatMap(r => r.seat === null ? [] : [{ seat: r.seat, tick: r.tick, at: iso(r.receivedAt), tool: r.tool, code: r.code }])
     : scan.reduced.seats.flatMap(seat => seat.commands.filter(c => !c.accepted)
       .map(c => ({ seat: seat.seat, tick: c.tick, at: null, tool: c.type, code: c.errorCode ?? "refused" })));
+  const config = scan.reduced.config;
   return {
     seats: scan.reduced.seats.map(({ seat, colony, handle }) => ({ seat, colony, handle })),
     refused, refusedFrom: scan.refusals !== null ? "calls" : "commands", omitted: [...scan.omitted], ticksPerSecond: scan.ticksPerSecond,
+    callIdle: typeof config === "object" && config !== null && (config as { commandIdleTicks?: unknown }).commandIdleTicks === undefined,
   };
 }
 
@@ -195,7 +212,10 @@ export function createPostMortem(deps: PostMortemDeps) {
     void deps.versions.lookup(record.codeVersion, requestedAt).then(answer => {
       if (answer === "absent") { set({ status: "not_available", reason: "This match's game version is not in the game's published history." }); return; }
       if (answer === "unavailable") { set(tryLater("the game's history could not be read just now"), now() + RETRY_AFTER_MS); return; }
-      const queued = deps.jobs.rerun(id, record);
+      const history = deps.history;
+      if (history === undefined) { set(tryLater("the record could not be read again"), now() + RETRY_AFTER_MS); return; }
+      // The queue holds the match id and its proven version; the child reads the record afresh on each attempt.
+      const queued = deps.jobs.rerun(id, record.codeVersion!, signal => history.open(id, signal));
       if (queued.state === "busy" || queued.outcome === undefined) { set(tryLater("the re-run queue is full"), now() + RETRY_AFTER_MS); return; }
       set({ status: "being_worked_out", reason: queued.state === "running" ? "This match is being re-run. Ask again shortly." : "This match is queued for a re-run. Ask again shortly." });
       void queued.outcome.then(outcome => {
@@ -230,7 +250,8 @@ export function createPostMortem(deps: PostMortemDeps) {
         lobbyId = link.lobbyId;
       }
       const read = await deps.lobbies.readLobby(lobbyId!);
-      if (!read.ok) return refuse("not_found");
+      // A match whose stored link names a lobby that can't be read now: its seat identities can't be read.
+      if (!read.ok) return refuse(matchId !== null ? "ownership_unconfirmed" : "not_found");
       const lobby = read.value;
       if (!lobbySeats(lobby.colonies).some(seat => seat.identityId === identityId)) return refuse("not_found");
       // From here the caller holds a seat of this lobby.
@@ -292,20 +313,30 @@ function tryLater(why: string): NoEffectStatus {
   return { status: "not_computed_now", reason: `No-effect commands are not computed now (${why}). Try later.` };
 }
 
-function noEffectOf(outcome: RerunOutcome, ticksPerSecond: number | null): NoEffectStatus {
+export function noEffectOf(outcome: RerunOutcome, ticksPerSecond: number | null): NoEffectStatus {
   switch (outcome.kind) {
     case "findings": return { status: "shown", commands: outcome.findings.map(f => ({ seat: f.seat, tick: f.tick, type: f.type,
-      matchSeconds: ticksPerSecond === null ? null : f.tick / ticksPerSecond })) };
+      matchSeconds: ticksPerSecond === null ? null : f.tick / ticksPerSecond })), undecided: outcome.undecided };
     case "not_reproduced": return { status: "not_available", reason: "Re-running this match did not reproduce its stored record, so no-effect commands are not available for this match." };
+    case "no_rerun_data": return { status: "not_available", reason: "This match's stored record carries no re-run data." };
+    case "no_idle_data": return { status: "not_available", reason: "This match's stored record lacks the idle-clock data its re-run needs, so no-effect commands are not available for this match." };
     case "engine_error": return { status: "not_available", reason: "This match could not be re-run on the current game version, so no-effect commands are not available for this match." };
     case "stopped": return tryLater(outcome.cause === "admission" || outcome.cause === "memory" || outcome.cause === "meter" ? "the server is short of memory" : outcome.cause === "stalled" ? "the re-run stalled" : "the re-run failed");
   }
 }
 
+/** The no-effect answer as the caller may see it: its own seats' commands and count only. */
+export function ownNoEffect(noEffect: NoEffectStatus, mine: ReadonlySet<number>, callIdle: boolean): Record<string, unknown> {
+  if (noEffect.status !== "shown") return noEffect;
+  const undecided = noEffect.undecided.filter(([seat]) => mine.has(seat)).reduce((sum, [, n]) => sum + n, 0);
+  return { status: "shown", note: callIdle ? `${NO_EFFECT_NOTE} ${CALL_IDLE_NOTE}` : NO_EFFECT_NOTE,
+    commands: noEffect.commands.filter(c => mine.has(c.seat)), ...(undecided === 0 ? {} : { notListed: undecidedSentence(undecided) }) };
+}
+
 function shape(matchId: string, lobbyId: string, entry: CacheEntry, owned: readonly number[]): Record<string, unknown> {
   const mine = new Set(owned);
   const { summary } = entry;
-  const noEffect = entry.noEffect ?? { status: "being_worked_out", reason: "Ask again shortly." };
+  const noEffect: NoEffectStatus = entry.noEffect ?? { status: "being_worked_out", reason: "Ask again shortly." };
   return {
     matchId, lobbyId,
     seats: summary.seats.filter(seat => mine.has(seat.seat)).map(seat => ({
@@ -314,7 +345,7 @@ function shape(matchId: string, lobbyId: string, entry: CacheEntry, owned: reado
       refusedNotRetained: summary.omitted.find(([s]) => s === seat.seat)?.[1] ?? 0,
     })),
     refusedFrom: summary.refusedFrom,
-    noEffect: noEffect.status === "shown" ? { status: "shown", commands: noEffect.commands.filter(c => mine.has(c.seat)) } : noEffect,
+    noEffect: ownNoEffect(noEffect, mine, summary.callIdle),
   };
 }
 

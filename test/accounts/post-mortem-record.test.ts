@@ -2,9 +2,13 @@
 // The post-mortem's one streaming pass over a stored match record (src/accounts/postMortemRecord.ts): what it keeps
 // equals what a full parse gives, whatever the chunking, and a record it cannot read whole fails without buffering it.
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { ELEMENT_CAP_BYTES, OTHER_CAP_BYTES, RecordReadError, recordScanner, scanRecord, type RecordScan } from "../../src/accounts/postMortemRecord.ts";
+import {
+  BLOCK_TICKS, comparableEvent, ELEMENT_CAP_BYTES, LINE_ARGS_KNOWN, LINE_CELLS_CURSOR, LINE_SINCE, LINE_STUB, OTHER_CAP_BYTES, RecordReadError, recordScanner,
+  scanRecord, type RecordScan, type ReplyLines,
+} from "../../src/accounts/postMortemRecord.ts";
 import { entryCode } from "../../src/replays/recording.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
@@ -15,8 +19,8 @@ function record(extra: Record<string, unknown> = {}) {
     format: "antwar.match", version: 1, id: "2026-10-20T02-00-00-000Z-18", source: "match-log", status: "complete", unavailable: [],
     startedAt: "2026-10-20T02:00:00.000Z", endedAt: "2026-10-20T02:00:00.404Z", simulationEndedAt: null,
     rules: { version: 27, holdBehaviour: "x", config: { ticksPerSecond: 10, "quoted \"key\"": "a\\b" } },
-    setup: { rated: false, note: "commas, braces } and ] in a string" },
-    result: { winner: 0, reason: "stopped" },
+    setup: { rated: false, note: "commas, braces } and ] in a string", houseIdleTicks: 3000 },
+    result: { winner: 0, reason: "stopped", ratingChanges: [{ seat: 0, delta: 1 }] },
     seats: [
       { seat: 0, colony: 0, modelLabel: "m \"0\"", thinkingLevel: null, serviceTier: null, handle: "alice", joinedTick: 0,
         commands: [{ tick: 0, type: "join", accepted: true, request: { type: "join" }, error: null },
@@ -24,14 +28,18 @@ function record(extra: Record<string, unknown> = {}) {
       { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: null, joinedTick: 0,
         commands: [{ tick: 0, type: "join", accepted: true, request: { type: "join" }, error: null }] },
     ],
-    events: [{ tick: 0, event: { kind: "call", agent: 1 } }, { tick: 0, event: { kind: "call", agent: 0 } },
-      { tick: 1, event: { kind: "other", text: "é中 \"x\"" } }, { tick: 2, event: { kind: "call", agent: 0 } }],
+    events: [{ tick: 0, event: { kind: "call", agent: 1, call: "join", accepted: true, houseActivityTick: 0 } },
+      { tick: 0, event: { kind: "call", agent: 0, call: "join", accepted: true, houseActivityTick: 0 } },
+      { tick: 1, event: { kind: "other", text: "é中 \"x\"" } }, { tick: 2, event: { kind: "call", agent: 0, call: "order", accepted: false } },
+      { tick: 101, event: { kind: "join", agent: 1, identity: { displayName: "server only" } } }],
     rerun: { seed: 6006, stops: [4], abandonments: [], idle: [], houseActive: [[0, 1], [3, 4]] },
     codeVersion: "c".repeat(40),
     replies: [
       { type: "text", digest: "d".repeat(64), kind: "rules", text: "rules text" },
       { type: "reply", seat: 0, tick: 3, tool: "order", receivedAt: 1760925600300, answeredAt: 1760925600301, reply: { error: { code: "command_floor" } }, isError: true },
       { type: "reply", seat: 0, tick: 1, tool: "observe", receivedAt: 1760925600100, answeredAt: 1760925600101, reply: { ok: true } },
+      { type: "reply", seat: 0, tick: 1, tool: "observe", receivedAt: 1760925600102, answeredAt: 1760925600103, arguments: { since: 4, cellsCursor: "a:1" }, reply: { ok: true } },
+      { type: "reply", seat: 0, tick: 1, tool: "observe", receivedAt: 1760925600104, answeredAt: 1760925600105, arguments: { since: 4 }, trimmed: ["arguments"], reply: { ok: true } },
       { type: "stub", seat: 1, tick: null, tool: "join", receivedAt: 1760925599000, answeredAt: 1760925599001, code: "call_rate" },
       { type: "stub", seat: 1, tick: null, tool: "nonsense", receivedAt: 1760925599100, answeredAt: 1760925599101, code: "sdk_error", omitted: 3 },
       { type: "stub", seat: 0, tick: 2, tool: "observe", receivedAt: 1760925600200, answeredAt: 1760925600201, code: null },
@@ -41,7 +49,7 @@ function record(extra: Record<string, unknown> = {}) {
   };
 }
 
-/** What the scan must keep, computed from a full parse by the record service's rule (stub.code, else entryCode). */
+/** What a refused-mode scan must keep, computed from a full parse by the record service's rule (stub.code, else entryCode). */
 function expected(value: ReturnType<typeof record>): Pick<RecordScan, "refusals"> & { reduced: Partial<RecordScan["reduced"]> } {
   const replies = value.replies as Record<string, unknown>[] | null;
   return {
@@ -49,9 +57,10 @@ function expected(value: ReturnType<typeof record>): Pick<RecordScan, "refusals"
       .map(l => ({ l, code: l.type === "stub" ? l.code as string | null : entryCode(l) })).filter(x => x.code !== null)
       .map(({ l, code }) => ({ seat: (l.seat as number | null) ?? null, tick: (l.tick as number | null) ?? null, tool: l.tool as string, receivedAt: l.receivedAt as number, code: code! })),
     reduced: {
-      calls: value.events.filter(e => e.event.kind === "call").map(e => [e.tick, e.event.agent as number] as [number, number]),
-      seats: value.seats.map(s => ({ seat: s.seat, colony: s.colony as 0 | 1, handle: s.handle, commands: s.commands.map(c =>
-        ({ tick: c.tick, type: c.type, accepted: c.accepted, request: c.request, errorCode: c.error?.code ?? null })) })),
+      calls: [], blocks: [], lines: null, houseIdleTicks: 3000, modelIndex: false,
+      // Refused mode keeps no accepted command and no request.
+      seats: value.seats.map(s => ({ seat: s.seat, colony: s.colony as 0 | 1, handle: s.handle, joinedTick: null, commands: s.commands.filter(c => !c.accepted).map(c =>
+        ({ tick: c.tick, type: c.type, accepted: c.accepted, request: null, errorCode: c.error?.code ?? null })) })),
       rerun: value.rerun as unknown as RecordScan["reduced"]["rerun"], codeVersion: value.codeVersion, config: value.rules.config, result: { winner: 0, reason: "stopped" },
     },
   };
@@ -60,6 +69,32 @@ function expected(value: ReturnType<typeof record>): Pick<RecordScan, "refusals"
 async function* chunks(bytes: Buffer, size: number): AsyncGenerator<Buffer> {
   for (let i = 0; i < bytes.length; i += size) yield bytes.subarray(i, i + size);
 }
+
+/** What a rerun-mode scan must keep, from a full parse: every command, call facts, event blocks and reply lines. */
+function expectedRerun(value: ReturnType<typeof record>) {
+  const blocks = new Map<number, string[]>();
+  for (const e of value.events) {
+    const b = Math.floor(e.tick / BLOCK_TICKS);
+    blocks.set(b, [...(blocks.get(b) ?? []), comparableEvent(e.tick, e.event)]);
+  }
+  const hash = (lines: string[]) => createHash("sha256").update(lines.map(l => l + "\n").join("")).digest("hex");
+  return {
+    calls: value.events.filter(e => e.event.kind === "call").map(e => ({ tick: e.tick, seat: e.event.agent as number, call: e.event.call as string,
+      accepted: e.event.accepted as boolean, activity: (e.event.houseActivityTick as number | undefined) ?? null })),
+    blocks: [...blocks].sort(([a], [b]) => a - b).map(([b, lines]) => [b, lines.length, hash(lines)]),
+    seats: value.seats.map(s => ({ seat: s.seat, colony: s.colony, handle: s.handle, joinedTick: s.joinedTick, commands: s.commands.map(c =>
+      ({ tick: c.tick, type: c.type, accepted: c.accepted, request: c.request, errorCode: c.error?.code ?? null })) })),
+    lines: (value.replies as Record<string, any>[]).filter(l => l.type !== "text").map(l => {
+      const known = l.type === "reply" && !(l.trimmed ?? []).includes("arguments");
+      return { seat: typeof l.seat === "number" ? l.seat : -1, tick: l.tick ?? -1, tool: l.tool, code: l.type === "stub" ? l.code : entryCode(l),
+        flags: (l.type === "stub" ? LINE_STUB : 0) | (known ? LINE_ARGS_KNOWN : 0) | (known && l.arguments?.since != null ? LINE_SINCE : 0)
+          | (known && l.arguments?.cellsCursor != null ? LINE_CELLS_CURSOR : 0), omitted: l.omitted ?? 0 };
+    }),
+  };
+}
+const linesOf = (lines: ReplyLines | null) => lines === null ? null : Array.from({ length: lines.length }, (_, i) => ({
+  seat: lines.seat.at(i), tick: lines.tick.at(i), tool: lines.string(lines.tool.at(i)),
+  code: lines.code.at(i) === 0 ? null : lines.string(lines.code.at(i)), flags: lines.flags.at(i), omitted: lines.omitted.at(i) }));
 
 describe("match record scan", () => {
   it("keeps exactly what a full parse gives, split at every byte boundary", async () => {
@@ -73,6 +108,27 @@ describe("match record scan", () => {
       expect(scan.ticksPerSecond).toBe(10);
       expect([...scan.omitted]).toEqual([[1, 3]]);
     }
+  });
+
+  // Credible regression: the child's reduced record diverging from the stored record it re-runs (a dropped command,
+  // a call fact or reply flag read wrongly, or events hashed in another form than the re-run's).
+  it("keeps, in rerun mode, exactly the commands, call facts, event blocks and reply lines a full parse gives, at every boundary", async () => {
+    const value = record();
+    const bytes = Buffer.from(JSON.stringify(value, null, 1));
+    const want = expectedRerun(value);
+    for (let size = 1; size <= 48; size += 3) {
+      const scan = await scanRecord(chunks(bytes, size), undefined, "rerun");
+      expect(scan.refusals).toBeNull();
+      expect(scan.reduced.calls).toEqual(want.calls);
+      expect(scan.reduced.blocks).toEqual(want.blocks);
+      expect(scan.reduced.seats).toEqual(want.seats);
+      expect(linesOf(scan.reduced.lines)).toEqual(want.lines);
+      expect(scan.reduced.houseIdleTicks).toBe(3000);
+      expect(scan.reduced.result).toEqual({ winner: 0, reason: "stopped" });
+    }
+    // The server-only join identity is not part of the comparison.
+    expect(comparableEvent(101, { kind: "join", agent: 1, identity: { displayName: "x" } })).toBe(comparableEvent(101, { kind: "join", agent: 1 }));
+    expect((await scanRecord(chunks(Buffer.from(JSON.stringify(record({ replies: null }))), 50), undefined, "rerun")).reduced.lines).toBeNull();
   });
 
   it("reads gzip the same, and treats replies null as no retained calls", async () => {
@@ -130,7 +186,7 @@ describe("match record scan", () => {
         for (let i = 0; i < 400; i++) yield block;
         yield Buffer.from('{"tick":6,"event":{"kind":"call","agent":0}}],"replies":[]}');
       }
-      try { const scan = await scanRecord(source()); console.log(JSON.stringify({ ok: true, calls: scan.reduced.calls.length })); }
+      try { const scan = await scanRecord(source(), undefined, "rerun"); console.log(JSON.stringify({ ok: true, calls: scan.reduced.calls.length })); }
       catch (error) { console.log(JSON.stringify({ ok: false, error: error.constructor.name })); }
     `;
     for (const mode of ["plain", "invert"]) {
