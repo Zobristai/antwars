@@ -4,7 +4,7 @@ import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages, TICK_MS } from "../../src/live/snapshot.ts";
 import { openRecording, PLAYBACK_RATES, SCAN_RETRY_MS, serveMarks, type MarksPort, type MarksWorker, type Recording } from "../../web/src/recording.ts";
 import { groupMarks, markWords, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
-import type { ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNameNote, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import type { ReplayEvent } from "../../web/src/replay-events.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
@@ -279,6 +279,63 @@ describe("marks on the scrubber", () => {
     // No drawn names (a rated match): the classic names, as before.
     expect(markWords(DRAWN[1]!)).toEqual(["Food lead", "Very Large Colony", "3:25"]);
     m.controls.close();
+  });
+
+  it("gives a drawn name its source note in labels and list lines, keeps a pointed label for the mouse to reach it, and leaves rated marks as they were", () => {
+    vi.useFakeTimers();
+    try {
+      const colonyWords = (node: Element): Element[] => node.className.startsWith("aw-mark-colony") ? [node] : node.children.flatMap(colonyWords);
+      const drawn: ColonyNamePair = ["Sweetwater Colony", "Lake Skinner Colony"];
+      const m = marked(DRAWN, 391_600, drawn);
+      // A label: the drawn name in its colony's class (replay-marks.css colours it) with its note.
+      m.marks[1]!.onpointerenter!({ pointerType: "mouse" });
+      expect(colonyWords(m.chip!).map(w => [w.className, w.textContent, w.attrs.title])).toEqual([
+        ["aw-mark-colony c0", "Sweetwater Colony", colonyNameNote("Sweetwater Colony")],
+      ]);
+      // The mouse leaves the mark for the label: the label waits, and stays while the mouse is on it.
+      m.marks[1]!.onpointerleave!({ pointerType: "mouse" });
+      expect(m.chip!.hidden).toBe(false);
+      m.chip!.onpointerenter!({ pointerType: "mouse" });
+      vi.advanceTimersByTime(1000);
+      expect(m.chip!.hidden).toBe(false);
+      m.chip!.onpointerleave!({ pointerType: "mouse" });
+      expect(m.chip!.hidden).toBe(true);
+      // Left for anywhere else, it goes after the wait.
+      m.marks[1]!.onpointerenter!({ pointerType: "mouse" });
+      m.marks[1]!.onpointerleave!({ pointerType: "mouse" });
+      vi.advanceTimersByTime(200);
+      expect(m.chip!.hidden).toBe(true);
+      // A mark naming no colony hides its label at once.
+      m.marks[0]!.onpointerenter!({ pointerType: "mouse" });
+      m.marks[0]!.onpointerleave!({ pointerType: "mouse" });
+      expect(m.chip!.hidden).toBe(true);
+      // A group's list: every drawn name with its note.
+      m.marks[3]!.onclick!({ detail: 1 });
+      expect(m.list!.children.flatMap(colonyWords).map(w => [w.className, w.attrs.title])).toEqual(
+        Array(4).fill(["aw-mark-colony c1", colonyNameNote("Lake Skinner Colony")]));
+      m.controls.close();
+
+      // Rated (the classic names): no notes, and a pointed label hides as soon as the mouse leaves its mark.
+      const r = marked();
+      r.marks[1]!.onpointerenter!({ pointerType: "mouse" });
+      expect(colonyWords(r.chip!).map(w => [w.textContent, w.attrs.title])).toEqual([["Very Large Colony", undefined]]);
+      r.marks[1]!.onpointerleave!({ pointerType: "mouse" });
+      expect(r.chip!.hidden).toBe(true);
+      r.marks[3]!.onclick!({ detail: 1 });
+      expect(r.list!.children.flatMap(colonyWords).every(w => w.attrs.title === undefined)).toBe(true);
+      r.controls.close();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("colours marks, labels and list names by each colony's name, falling back to the classic colours", () => {
+    const css = readFileSync(new URL("../../web/src/replay-marks.css", import.meta.url), "utf8");
+    for (const c of [0, 1]) {
+      const ink = `color: var(--aw-k${c}, var(--aw-c${c}));`;
+      expect(css).toContain(`:is(.aw-mark, .aw-mark-icon).c${c} { ${ink} }`);
+      expect(css).toContain(`.aw-mark-colony.c${c} { ${ink} }`);
+    }
+    // No mark rule names a colony's classic colour on its own any more.
+    expect(css).not.toMatch(/color: var\(--aw-c[01]\)/);
   });
 
   it("keeps every line of a long group's list reachable: the list holds to the board's room over the row and scrolls", () => {
