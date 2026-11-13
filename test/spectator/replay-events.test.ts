@@ -82,7 +82,7 @@ function antsOf(list: { id: number; colony: 0 | 1; carrying: boolean }[], flags 
   };
 }
 /** Food delivered home: at each listed tick, `n` ants of a colony carrying food the tick before put it down.
- * `extra` adds events at a tick (a hatch's store drop, ground income); `dying` carriers vanish instead. */
+ * `extra` adds events at a tick (a hatch's store drop, a store rise with no delivery); `dying` carriers vanish instead. */
 function foodScan(deliveries: [tick: number, colony: 0 | 1, n: number][], last: number,
   { extra = new Map<number, StreamEvent[]>(), dying = [] as [number, 0 | 1, number][], flags = true } = {}) {
   let next = 100;
@@ -103,10 +103,10 @@ describe("food lead", () => {
     const out = foodScan([[1010, 0, 200], [1030, 1, 200], [1040, 1, 60 + FOOD_LEAD_FLOOR]], 1100);
     expect(out).toEqual([{ kind: "food", tick: 1040, ms: 4000, colony: 1 }]);
   });
-  it("counts a delivery in the tick a hatch spends the store, and not ground income or a carrier that died", () => {
+  it("counts a delivery in the tick a hatch spends the store, and not a store rise without a delivery or a carrier that died", () => {
     const extra = new Map<number, StreamEvent[]>([
       [1040, [store(1, 0), { kind: "birth", antId: 9 }]], // colony 1 delivers 110 and hatches in one tick: its store falls
-      [1050, [store(0, 5000)]], // ground income: the store rises with no delivery
+      [1050, [store(0, 5000)]], // older recordings: the store rises with no delivery
     ]);
     const out = foodScan([[1010, 0, 200], [1030, 1, 200], [1040, 1, 110]], 1100, { extra, dying: [[1060, 0, 500]] });
     expect(out).toEqual([{ kind: "food", tick: 1040, ms: 4000, colony: 1 }]);
