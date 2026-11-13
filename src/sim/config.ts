@@ -411,6 +411,12 @@ export interface LocalAntRules {
   readonly workerQueenThreatTiles?: number;
   /** Maximum free, non-carrying dispatched/idle workers recalled per colony, including its worker home guard. */
   readonly workerQueenRecallCount?: number;
+  /**
+   * No bot moves for a player. Present on every new match: every colony's free ants follow these local rules from
+   * the first tick, whether or not its seat has joined or is active, and the house never founds a queen. Absent on
+   * matches recorded before it, which keep their recorded house planning and founding for a colony with no active seat.
+   */
+  readonly everyColony?: true;
 }
 
 /** Queen HP numbers, in milli-HP and ticks. */

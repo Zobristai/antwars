@@ -1,0 +1,51 @@
+{
+ "capturedOn": "4618f6641e1256ebde148966f112aac4267866b6",
+ "never-joined": {
+  "stateSha256": {
+   "1": "e4e8cb1cb6faf7d17ec625d7f50fa43581d6e6bfee5f11e5f8563e8aa5763b6e",
+   "100": "9be381b996d48834a9ebfa0f385389ff03b5d132322d17ba9abce6deabe886ea",
+   "300": "260768f0d5ebdd3305799068815564e0f4e5b19a69af2a0bc5b380891e50f711",
+   "601": "ab2219ca7bf92d65ef1c0c50b3c1dec22367aa7188696db6ee925cf8fd21f6f2"
+  },
+  "result": {
+   "winner": null,
+   "reason": "abandoned",
+   "decidedBy": "draw",
+   "tick": 600
+  },
+  "tick1Roles": {
+   "fighter": 20,
+   "guard": 24,
+   "forager": 16
+  },
+  "stream": {
+   "messages": 602,
+   "bytes": 387258,
+   "sha256": "7a10dbf50f6fdad5b2edea0df9fd3c6a24952a5c1cb9065d0d69a9bb8b9e331b"
+  }
+ },
+ "both-seated": {
+  "stateSha256": {
+   "1": "cff4d61f438c22335cd5b31021c3fe78e3303f7ee5d11bf1f6ca92c510c29d2e",
+   "100": "a6f5d51d73b09c38264b1038e3dfd6f205f668da849d9c64506c71d91e798f93",
+   "300": "60105d19f1ccb9a6a37a056ad8616111bbd186246efed3c19b13e298a026c0b9",
+   "401": "358b1e13fc67372d66587c457cc0fc45fb16d7a00470510ae372243c1598df60"
+  },
+  "result": {
+   "winner": 0,
+   "reason": "time_up",
+   "decidedBy": "food_delivered",
+   "tick": 400
+  },
+  "tick1Roles": {
+   "fighter": 20,
+   "guard": 24,
+   "forager": 16
+  },
+  "stream": {
+   "messages": 402,
+   "bytes": 252446,
+   "sha256": "fbbe1497cddfb43aeb3ca00cc29a97a387d3a70df427b150f973f76301f6cb18"
+  }
+ }
+}
