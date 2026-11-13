@@ -107,11 +107,13 @@ export function expireMarks(state: SimState, nextTick: number): void {
 
 /**
  * Whether a colony plays the local ant rules this tick: the
- * redesign is on and at least one of its agents is seated (not idle; today's
- * seat rule). Such a side has no colony planner.
+ * redesign is on and, on a new match (localAnts.everyColony), always; on a match
+ * recorded before that, only while at least one of its agents is seated (not idle).
+ * Such a side has no colony planner.
  */
 export function localRulesSide(state: SimState, colony: ColonyId): boolean {
-  return state.config.localAnts !== undefined && state.agents.some((a) => a.colony === colony && !a.idle);
+  const local = state.config.localAnts;
+  return local !== undefined && (local.everyColony === true || state.agents.some((a) => a.colony === colony && !a.idle));
 }
 
 /**
