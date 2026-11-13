@@ -1,0 +1,38 @@
+[
+ {
+  "n": 1,
+  "request": "POST /api/leaderboard {\"limit\":50,\"mode\":\"house-1v1\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-13T02:25:29.523Z",
+  "bodySha256": "8b12e46274e1e0d7e003b04f8ac579d9444fa16c4255e0e152be65b3085d4fac",
+  "bytes": 40680
+ },
+ {
+  "n": 2,
+  "request": "GET /watch/catalog ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-13T02:32:55.015Z",
+  "bodySha256": "fd71c1df7bf6d5afa31b5a55fb5a1ad871eaeb0e0fce29c2927f4c28d18cd215",
+  "bytes": 1019
+ },
+ {
+  "n": 3,
+  "request": "GET /matches ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-13T02:32:55.112Z",
+  "bodySha256": "76580f13868785465b3219a85d0db467f6cb3a22a53703b0ac2a733052442441",
+  "bytes": 20272
+ },
+ {
+  "n": 4,
+  "request": "GET /watch/queue ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-13T02:33:20.167Z",
+  "bodySha256": "0248d88e61d446fd3ba771d8c0cd5984c779d403364713b7a1b40fa7d8816150",
+  "bytes": 157
+ }
+]
