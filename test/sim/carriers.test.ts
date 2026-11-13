@@ -25,7 +25,7 @@ function scene(group: Group = "free", soft = true) {
   const config: SimConfig = { ...base,
     terrain: undefined, foodLayout: undefined, foodPatches: [], startAnts: 0,
     softSeparation: soft ? base.softSeparation : undefined, squadSize: group === "squad" ? 1 : 0,
-    squadSupplyPermille: 1000, groundFoodIntervalTicks: undefined, earlyWin: undefined,
+    squadSupplyPermille: 1000, earlyWin: undefined,
     hatchCost: 1_000_000, combatGraceTicks: 0,
     queenHp: { ...base.queenHp!, shieldTicks: 0 },
     countMarks: base.countMarks };
