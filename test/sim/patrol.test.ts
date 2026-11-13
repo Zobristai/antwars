@@ -12,7 +12,7 @@ import { addAnt, emptyMatch } from "./fixtures.js";
 
 const config: SimConfig = { ...rulesConfig("redesign"), startAnts: 0, squadSize: 0,
   terrain: undefined, foodLayout: undefined, foodPatches: [], commandFloorTicks: 0,
-  groundFoodIntervalTicks: undefined, combatGraceTicks: 99_999, earlyWin: undefined };
+  combatGraceTicks: 99_999, earlyWin: undefined };
 function scene(extra: Partial<SimConfig> = {}, base: SimConfig = config) {
   const state = emptyMatch(100, { ...base, ...extra });
   const agent: Agent = { id: "a", colony: 0, joinSeq: 0, modelLabel: null, parentAgentId: null,
