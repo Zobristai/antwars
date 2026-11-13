@@ -188,9 +188,9 @@ async function resumeWorld() {
   const adoptions: string[] = [];
   const lobbies: Lobbies = {
     ...real,
-    async adoptMatch(lobbyId, slot, runId, fromRunId) {
+    async adoptMatch(lobbyId, slot, runId, fromRunId, colonyNames) {
       await adoption;
-      const adopted = await real.adoptMatch(lobbyId, slot, runId, fromRunId);
+      const adopted = await real.adoptMatch(lobbyId, slot, runId, fromRunId, colonyNames);
       if (adopted.ok) adoptions.push(runId);
       return adopted;
     },

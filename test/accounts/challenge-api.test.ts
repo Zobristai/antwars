@@ -135,7 +135,8 @@ async function occupySlot(w: Served, name: string) {
   return { lobbyId: lobby.id, a, b };
 }
 
-const ORDINARY_LOBBY_KEYS = ["colonies", "createdAt", "creatorId", "expiresAt", "id", "kind", "mode", "outcome", "rated", "size", "slot", "startsAt", "state"];
+// colonyNames: an unrated lobby's match draws its colony names from its id, and a lobby read reports them.
+const ORDINARY_LOBBY_KEYS = ["colonies", "colonyNames", "createdAt", "creatorId", "expiresAt", "id", "kind", "mode", "outcome", "rated", "size", "slot", "startsAt", "state"];
 
 describe.skipIf(!host)("house challenges through the account operations", { timeout: 180_000 }, () => {
   describe.each(TRANSPORTS)("over %s", (_transport, open) => {
@@ -514,7 +515,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     });
   });
 
-  it("carries challenge \"house\" on the Waiting card's lobby rows through GET /watch/queue, and nothing new on ordinary rows", async () => {
+  it("carries challenge \"house\" on the Waiting card's lobby rows through GET /watch/queue, and nothing new on ordinary rows but their drawn colony names", async () => {
     const w = await serve(async (port) => http(port));
     const ordinary = await w.claim("ordinary");
     const { lobby } = value(await w.lobbies.createLobby(ordinary.key, "public", 1));
@@ -524,7 +525,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     const { lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
     const unstarted = await w.lobbies.listUnstarted();
     expect(unstarted.map((row) => Object.keys(row).sort())).toEqual([
-      ["colonies", "createdAt", "mode", "seated", "size"], ["challenge", "colonies", "createdAt", "mode", "seated", "size"]]);
+      ["colonies", "colonyNames", "createdAt", "mode", "seated", "size"], ["challenge", "colonies", "colonyNames", "createdAt", "mode", "seated", "size"]]);
     const hub = new LiveHub(); closers.push(() => hub.close());
     const routes = watchRoutes({ accounts: w.stores, registry: {} as WatchRegistry, hub });
     const server = createServer((req, res) => { void routes(req, res); });

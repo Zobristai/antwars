@@ -132,9 +132,9 @@ function slotTimings(w: World) {
     return registration;
   });
   const begin = w.lobbies.beginMatch.bind(w.lobbies);
-  vi.spyOn(w.lobbies, "beginMatch").mockImplementation(async (lobbyId, slot, runId) => {
+  vi.spyOn(w.lobbies, "beginMatch").mockImplementation(async (lobbyId, slot, runId, colonyNames) => {
     if (!begunAt.has(slot)) begunAt.set(slot, Date.now());
-    return begin(lobbyId, slot, runId);
+    return begin(lobbyId, slot, runId, colonyNames);
   });
   return { registeredAt, begunAt };
 }
