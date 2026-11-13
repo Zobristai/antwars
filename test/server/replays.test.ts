@@ -16,7 +16,8 @@ import { createRecordService } from "../../src/records/service.ts";
 import { createRecordReplayStore } from "../../src/records/replay-store.ts";
 import { replaySourceFromEnv } from "../../src/replays/access.ts";
 import { comparisonOptions } from "../../src/server.ts";
-import { PUBLIC_CONFIG, RULES_VERSION } from "../../src/sim/config.ts";
+import { PUBLIC_CONFIG, RULES_VERSION, rulesConfig } from "../../src/sim/config.ts";
+import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import type { MatchRecord } from "../../src/replays/history.ts";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.ts";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.ts";
@@ -147,9 +148,9 @@ it("round-trips the full non-default rules config actually used by a public slot
   vi.spyOn(console, "log").mockImplementation(() => {});
   const gameJson: ReplayObject[] = [], binaries: ReplayObject[] = [];
   const records = recordPath();
-  const selected = comparisonOptions({ ANTWAR_RULES: "count-marks", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG);
-  // Select a non-default config through the environment parser, but keep the
-  // public slot path: held/private comparison runs must remain unrecorded.
+  // A non-default config, as a count-marks comparison run selected it before start-up refused that rules name,
+  // on the public slot path: held/private comparison runs must remain unrecorded.
+  const selected = { simConfig: { ...newMatchConfig(rulesConfig("count-marks")), players: 2 as const } };
   const run = slotRun();
   server = await startSpectatedServer({ ...run.options,
     simConfig: onOpenField({ ...selected.simConfig!, matchTicks: 2, startAnts: 12, commandFloorTicks: 7, queenFounding: PUBLIC_CONFIG.queenFounding }),

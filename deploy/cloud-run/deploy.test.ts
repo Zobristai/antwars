@@ -655,7 +655,7 @@ describe("existing deploy paths are unchanged", () => {
   });
 
   it("preview with comparison settings builds a missing image first", () => {
-    const r = run(["preview", SHA, "dir", "v4", "2"], { imageExists: false });
+    const r = run(["preview", SHA, "dir", "redesign", "2"], { imageExists: false });
     expect(r.status).toBe(0);
     expect(r.gcloud).toEqual([
       describeImage,
@@ -663,9 +663,18 @@ describe("existing deploy paths are unchanged", () => {
         "--service-account", "projects/example-project/serviceAccounts/antwar-build@example-project.iam.gserviceaccount.com",
         "--gcs-source-staging-dir", "gs://example-build/source", "--gcs-log-dir", "gs://example-build/logs"],
       describeImage,
-      previewDeploy(["--update-env-vars", "GCLOUD_PROJECT=example-project,ANTWAR_RULES=v4,ANTWAR_PLAYERS=2"]),
+      previewDeploy(["--update-env-vars", "GCLOUD_PROJECT=example-project,ANTWAR_RULES=redesign,ANTWAR_PLAYERS=2"]),
       describePreview,
     ]);
+  });
+
+  it("preview refuses v4 and count-marks before building or deploying anything", () => {
+    for (const rules of ["v4", "count-marks"]) {
+      const r = run(["preview", SHA, "dir", rules, "2"], { imageExists: false });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(`refusing: ${rules} no longer starts a match (the house bot moves for a player's colony under it); use redesign`);
+      expect(r.gcloud).toEqual([]);
+    }
   });
 
   it("preview still accepts any origin-branch commit and refuses one on no origin branch", () => {

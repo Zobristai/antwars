@@ -41,7 +41,7 @@ source "$(dirname "$0")/config.sh"
 # revision stays until the service is deleted (TEARDOWN.md). Neither ever names
 # service `antwar`.
 #
-# Comparison runs: <rules> (v4, count-marks or redesign) and <players>
+# Comparison runs: <rules> (redesign) and <players>
 # (2 or 4) set ANTWAR_RULES and ANTWAR_PLAYERS on the new revision; without them
 # both are removed, so no revision inherits a previous one's comparison settings.
 # An image already built for the sha is reused by digest, and every revision is
@@ -1725,9 +1725,13 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
   NAME="${3:-}"
   RULES="${4:-}"
   PLAYERS="${5:-}"
+  if [[ $# -eq 5 && "$RULES" =~ ^(v4|count-marks)$ ]]; then
+    echo "refusing: $RULES no longer starts a match (the house bot moves for a player's colony under it); use redesign" >&2
+    exit 2
+  fi
   if [[ ( $# -ne 3 && $# -ne 5 ) || ! "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! valid_name "$NAME" \
-    || [[ $# -eq 5 && ! ( "$RULES" =~ ^(v4|count-marks|redesign)$ && "$PLAYERS" =~ ^(2|4)$ ) ]]; then
-    echo "usage: $0 preview <full 40-hex commit sha pushed to origin> <name: a-z first, then a-z 0-9 -, at most 20> [<rules: v4|count-marks|redesign> <players: 2|4>]" >&2
+    || [[ $# -eq 5 && ! ( "$RULES" == redesign && "$PLAYERS" =~ ^(2|4)$ ) ]]; then
+    echo "usage: $0 preview <full 40-hex commit sha pushed to origin> <name: a-z first, then a-z 0-9 -, at most 20> [<rules: redesign> <players: 2|4>]" >&2
     exit 2
   fi
   settings ACCOUNT PROJECT BUILD_BUCKET BUILD_SA RUN_SA
