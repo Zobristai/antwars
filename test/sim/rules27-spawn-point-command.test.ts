@@ -11,6 +11,9 @@ import { addAnt } from "./fixtures.js";
 import { sevenMapRotation } from "./seven-map-rotation.js";
 import { startHarness, type Harness } from "../mcp/harness.js";
 import { DEFAULT_REPLY_LIMITS } from "../../src/mcp/replies.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 /**
  * The rules-27 SPAWN command. Count-mark
@@ -28,7 +31,7 @@ import { DEFAULT_REPLY_LIMITS } from "../../src/mcp/replies.js";
 type CountMarkInput = Extract<SimInput, { type: "count_mark" }>;
 
 function rules27(patch: Partial<SimConfig> = {}): SimConfig {
-  const base = rulesConfig("redesign");
+  const base = recordedHousePlan(rulesConfig("redesign"));
   // Pinned to the seven-map rotation this was written for, which holds the old two.
   return sevenMapRotation(newMatchConfig({ ...base, rules27: true, startAnts: 0, squadSize: 0, commandFloorTicks: 1, hatchIntervalTicks: 1_000_000,
     terrain: { ...base.terrain!, mapId: "three-crossings" }, ...patch }));
@@ -287,7 +290,7 @@ describe("rules 27 spawn-point command in match logs", () => {
     };
   }
   const config = (patch: Partial<SimConfig> = {}): SimConfig => {
-    const base = rulesConfig("redesign");
+    const base = recordedHousePlan(rulesConfig("redesign"));
     // Pinned to the seven-map rotation this was written for, which holds the old two.
     return sevenMapRotation(newMatchConfig({ ...base, rules27: true, startAnts: 6, commandFloorTicks: 5, terrain: { ...base.terrain!, mapId: "three-crossings" }, ...patch }));
   };

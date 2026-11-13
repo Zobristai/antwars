@@ -9,15 +9,18 @@ import { step } from "../../src/sim/step.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
 import type { SimState } from "../../src/sim/types.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Every match plays at grid scale 2: rules is the reference-grid template emptyMatch builds at
 // grid scale 2. Reference tile t is fine tiles 2t and 2t+1; an ant at reference tile t stands at its centre
 // (fine 2t + 0.5), a reference cell's food lives in fine cell (2tx, 2ty), and subunit positions double.
 const cell = (state: SimState, tx: number, ty: number) => 2 * ty * state.config.mapWidth + 2 * tx;
 
-const rules: SimConfig = { ...rulesConfig("redesign"), foodLayout: undefined, foodPatches: [], squadSize: 0,
+const rules: SimConfig = { ...recordedHousePlan(rulesConfig("redesign")), foodLayout: undefined, foodPatches: [], squadSize: 0,
   hatchIntervalTicks: Number.MAX_SAFE_INTEGER,
-  localAnts: { ...rulesConfig("redesign").localAnts!, workerHomeGuardCount: 0, workerHomeGuardSharePermille: 0,
+  localAnts: { ...recordedHousePlan(rulesConfig("redesign")).localAnts!, workerHomeGuardCount: 0, workerHomeGuardSharePermille: 0,
     workerPatchDispatchSharePermille: 0 } };
 function scenario(config = rules) {
   const state = emptyMatch(0, config);
@@ -286,7 +289,7 @@ describe("local food-target minimum hold", () => {
   });
 
   it("replays a scripted match with guard and food history deterministically", () => {
-    const run = playScripted({ seed: 6006, config: playable(rulesConfig("redesign")), agents: 4, ticks: 100 });
+    const run = playScripted({ seed: 6006, config: playable(recordedHousePlan(rulesConfig("redesign"))), agents: 4, ticks: 100 });
     expect(stateHash(replay(run.lines, run.state.tick))).toBe(stateHash(run.state));
   });
 });
