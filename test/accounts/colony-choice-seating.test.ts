@@ -5,7 +5,8 @@ import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, type Lobby } from "../../src/lobby/lobbies.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
-import { COLONY_NAMES, PUBLIC_CONFIG } from "../../src/sim/config.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
+import { PUBLIC_CONFIG } from "../../src/sim/config.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, type Agent } from "../server/helpers.ts";
 import { playable } from "../playable.ts";
@@ -103,7 +104,8 @@ describe.skipIf(!host)("colony choice on the slot server against the Firestore e
       const joined = await agent.call("join", { key: seat.key });
       expect(joined.isError, joined.text).toBe(false);
       const data = joined.data as { agentId: string; colony: string };
-      expect(data.colony).toBe(COLONY_NAMES[seat.colony]);
+      // A player-created lobby is unrated: its match plays under the names it draws from the lobby id.
+      expect(data.colony).toBe(drawColonyNames(lobbyId)[seat.colony]);
       expect(slotServer.game.match!.state.agents.find((played) => played.id === data.agentId)?.colony).toBe(seat.colony);
     }
   });
