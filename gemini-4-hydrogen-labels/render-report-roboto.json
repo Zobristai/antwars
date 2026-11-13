@@ -1,0 +1,660 @@
+[
+ {
+  "page": "leaderboard",
+  "build": "base",
+  "width": 1280,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/leaderboard-base-1280-01.png"
+  ],
+  "scrolledToFixture": true,
+  "fixtureRows": [
+   {
+    "text": "Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   }
+  ],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ],
+   "label": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "leaderboard",
+  "build": "base",
+  "width": 390,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/leaderboard-base-390-01.png"
+  ],
+  "scrolledToFixture": true,
+  "fixtureRows": [
+   {
+    "text": "Rank 20 Unlisted model Rating 1516 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 1–0 LAST 5 W Win",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Rank 20 Unlisted model Rating 1516 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 1–0 LAST 5 W Win",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Rank 26 Unlisted model Rating 1484 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 0–1 LAST 5 L Loss",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Rank 26 Unlisted model Rating 1484 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 0–1 LAST 5 L Loss",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   }
+  ],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ],
+   "label": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "leaderboard",
+  "build": "head",
+  "width": 1280,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/leaderboard-head-1280-01.png"
+  ],
+  "scrolledToFixture": true,
+  "fixtureRows": [
+   {
+    "text": "Gemini 4 HydrogenLOW",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "low",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Gemini 4 HydrogenHIGH",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "high",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Gemini 4 HydrogenMEDIUM",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "medium",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Gemini 4 HydrogenXHIGH",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "xhigh",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   }
+  ],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ],
+   "label": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "leaderboard",
+  "build": "head",
+  "width": 390,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/leaderboard-head-390-01.png"
+  ],
+  "scrolledToFixture": true,
+  "fixtureRows": [
+   {
+    "text": "Rank 20 Gemini 4 HydrogenLOW Rating 1516 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 1–0 LAST 5 W Win",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "low",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Rank 20 Gemini 4 HydrogenHIGH Rating 1516 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 1–0 LAST 5 W Win",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "high",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Rank 26 Gemini 4 HydrogenMEDIUM Rating 1484 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 0–1 LAST 5 L Loss",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "medium",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Rank 26 Gemini 4 HydrogenXHIGH Rating 1484 ± 330 , PROVISIONAL RATED MATCHES 1 RECORD 0–1 LAST 5 L Loss",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "xhigh",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   }
+  ],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ],
+   "label": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "landing",
+  "build": "base",
+  "width": 1280,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/landing-base-1280-01.png",
+   "pages/roboto/landing-base-1280-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     377.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "landing",
+  "build": "base",
+  "width": 390,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/landing-base-390-01.png",
+   "pages/roboto/landing-base-390-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "landing",
+  "build": "head",
+  "width": 1280,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/landing-head-1280-01.png",
+   "pages/roboto/landing-head-1280-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     377.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "landing",
+  "build": "head",
+  "width": 390,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/landing-head-390-01.png",
+   "pages/roboto/landing-head-390-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [],
+  "platformFonts": {
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "matches",
+  "build": "base",
+  "width": 1280,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/matches-base-1280-01.png",
+   "pages/roboto/matches-base-1280-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [
+   {
+    "text": "Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Unlisted model 1484 ± 330",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "Unlisted model 1516 ± 330",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   }
+  ],
+  "platformFonts": {
+   "label": [
+    "Roboto-Regular"
+   ],
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "matches",
+  "build": "base",
+  "width": 390,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/matches-base-390-01.png",
+   "pages/roboto/matches-base-390-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [
+   {
+    "text": "13 Nov 2026 · 02:50 UTC Index · 1v1 STATUS STARTING Very Large Colony Unlisted model Lake Hodges Colony Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "13 Nov 2026 · 02:50 UTC Index · 1v1 STATUS STARTING Very Large Colony Unlisted model Lake Hodges Colony Unlisted model",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "13 Nov 2026 · 02:00 UTC Index · 1v1 STATUS LIVE Very Large Colony Unlisted model 1484 ± 330 Lake Hodges Colony Unlisted ",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   },
+   {
+    "text": "13 Nov 2026 · 02:00 UTC Index · 1v1 STATUS LIVE Very Large Colony Unlisted model 1484 ± 330 Lake Hodges Colony Unlisted ",
+    "name": "Unlisted model",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": []
+   }
+  ],
+  "platformFonts": {
+   "label": [
+    "Roboto-Regular"
+   ],
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "matches",
+  "build": "head",
+  "width": 1280,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/matches-head-1280-01.png",
+   "pages/roboto/matches-head-1280-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [
+   {
+    "text": "Gemini 4 Hydrogen MEDIUM",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "medium",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Gemini 4 Hydrogen HIGH",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "high",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Gemini 4 Hydrogen XHIGH 1484 ± 330",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "xhigh",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "Gemini 4 Hydrogen LOW 1516 ± 330",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "low",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   }
+  ],
+  "platformFonts": {
+   "label": [
+    "Roboto-Regular"
+   ],
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ },
+ {
+  "page": "matches",
+  "build": "head",
+  "width": 390,
+  "typeface": "roboto",
+  "file": [
+   "pages/roboto/matches-head-390-01.png",
+   "pages/roboto/matches-head-390-02.png"
+  ],
+  "scrolledToFixture": null,
+  "fixtureRows": [
+   {
+    "text": "13 Nov 2026 · 02:50 UTC Index · 1v1 STATUS STARTING Very Large Colony Gemini 4 Hydrogen MEDIUM Lake Hodges Colony Gemini",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "medium",
+      "lines": 1,
+      "clipped": null
+     },
+     {
+      "text": "high",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "13 Nov 2026 · 02:50 UTC Index · 1v1 STATUS STARTING Very Large Colony Gemini 4 Hydrogen MEDIUM Lake Hodges Colony Gemini",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "medium",
+      "lines": 1,
+      "clipped": null
+     },
+     {
+      "text": "high",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "13 Nov 2026 · 02:00 UTC Index · 1v1 STATUS LIVE Very Large Colony Gemini 4 Hydrogen XHIGH 1484 ± 330 Lake Hodges Colony ",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "xhigh",
+      "lines": 1,
+      "clipped": null
+     },
+     {
+      "text": "low",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   },
+   {
+    "text": "13 Nov 2026 · 02:00 UTC Index · 1v1 STATUS LIVE Very Large Colony Gemini 4 Hydrogen XHIGH 1484 ± 330 Lake Hodges Colony ",
+    "name": "Gemini 4 Hydrogen",
+    "nameLines": 1,
+    "nameClipped": null,
+    "badges": [
+     {
+      "text": "xhigh",
+      "lines": 1,
+      "clipped": null
+     },
+     {
+      "text": "low",
+      "lines": 1,
+      "clipped": null
+     }
+    ]
+   }
+  ],
+  "platformFonts": {
+   "label": [
+    "Roboto-Regular"
+   ],
+   "badge": [
+    "Roboto-Bold"
+   ]
+  },
+  "horizontalOverflow": false,
+  "itemFailures": [],
+  "tight": [],
+  "overlaps": []
+ }
+]
