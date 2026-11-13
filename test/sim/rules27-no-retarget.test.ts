@@ -9,10 +9,13 @@ import { localRulesSide } from "../../src/sim/marks.js";
 import { advanceSoftAnts } from "../../src/sim/step.js";
 import type { Agent, Ant, ColonyId, Mark, SimState } from "../../src/sim/types.js";
 import { playable } from "../playable.ts";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Baseline: the cluster retarget and FORAGE job (step.ts advanceSoftAnts retarget predicate, forage.ts
 // retargetClusterForager). Rules 27 removes the retarget for agent-seated colonies only.
-const scene27: SimConfig = { ...playable(rulesConfig("redesign")), pointArrival: undefined, startAnts: 0, terrain: undefined, foodLayout: undefined, foodPatches: [] };
+const scene27: SimConfig = { ...playable(recordedHousePlan(rulesConfig("redesign"))), pointArrival: undefined, startAnts: 0, terrain: undefined, foodLayout: undefined, foodPatches: [] };
 
 function scene(config: SimConfig, seated: readonly ColonyId[]): SimState {
   const state = createMatch(10, config);
