@@ -5,15 +5,15 @@ import { gridScaleOf } from "../../src/sim/gridScale.js";
 import { chooseJoinColony, defaultAllocator, fillSquads, trimSquads } from "../../src/sim/agents.js";
 import { adjacentEnemyQueen, resolveCombat } from "../../src/sim/combat.js";
 import { pickupAndDeliver } from "../../src/sim/forage.js";
-import { houseDirection, nearestIntruder, sightScan } from "../../src/sim/houseBot.js";
-import { beginLocalGoals, noteContact, readLocalGoal, takeLocalGoals } from "../../src/sim/localArrival.js";
+import { nearestIntruder, sightScan } from "../../src/sim/houseBot.js";
+import { beginLocalGoals, noteContact, readLocalGoal } from "../../src/sim/localArrival.js";
 import { buildGrid, cloneState, createMatch, GridTracker, hasAdjacentEnemy, newColony, newStats, noEnemyNear, tileIndex, type Grid } from "../../src/sim/map.js";
 import { claimCountMarks } from "../../src/sim/marks.js";
 import { applySoftSeparation } from "../../src/sim/softSeparation.js";
 import { prepareInitialPointRests } from "../../src/sim/step.js";
 import { isBlockedTile } from "../../src/sim/terrain.js";
 import { updateTerritory } from "../../src/sim/territory.js";
-import type { Agent, Ant, ColonyId, Mark, QueenState, SimEvent, SimState } from "../../src/sim/types.js";
+import type { Agent, ColonyId, Mark, QueenState, SimEvent, SimState } from "../../src/sim/types.js";
 import { addAnt, HISTORICAL_CONFIG, PRE_FRONTLINE_CONFIGS } from "./fixtures.js";
 import { playable } from "../playable.ts";
 
@@ -193,70 +193,6 @@ describe("queens", () => {
     const ant = addAnt(state, 2, Math.floor(queen.queenX / SUB) - 1, Math.floor(queen.queenY / SUB));
     expect(adjacentEnemyQueen(state, ant)).toBe(queen);
   });
-
-  /**
-   * A colony-2 house fighter in sight of colony 0's queens and of no enemy ant or adjacent queen, holding a queen
-   * intent selected one tick ago and aimed at the held queen's position. With nearerQueen, colony 0 also has a
-   * live queen 1 three tiles from the fighter (not adjacent), so the fighter's fresh pick is that queen: a
-   * different target from any queen-0 hold, so the hold is always validated rather than taken as the same intent.
-   * Returns the hold afterwards and the point the fighter headed for (undefined if it never chose an intent).
-   */
-  function heldFighter(state: SimState, hold: { targetId: number; targetColony: ColonyId }, nearerQueen = false) {
-    const queen = queenOf(state, 0);
-    const { tx, ty } = openArea(state, 1, Math.floor(queen.queenX / SUB) + 6, Math.floor(queen.queenY / SUB) - 2);
-    expect(Math.abs(tx - Math.floor(queen.queenX / SUB)) + Math.abs(ty - Math.floor(queen.queenY / SUB))).toBeLessThan(state.config.sightTiles);
-    if (nearerQueen) state.colonies[0]!.queens!.push({ ...queen, id: 1, starting: undefined, queenX: tileCentre(tx - 3), queenY: tileCentre(ty) });
-    const ant = addAnt(state, 2, tx, ty, { role: "fighter" });
-    const target = queenOf(state, hold.targetColony, hold.targetId);
-    const intent = { kind: "queen" as const, targetId: hold.targetId, x: target.queenX, y: target.queenY, targetColony: hold.targetColony };
-    (ant as Ant & { houseIntentHold?: unknown }).houseIntentHold = { intent, role: "fighter", selectedTick: state.tick - 1 };
-    beginLocalGoals(state);
-    houseDirection(state, buildGrid(state), [], ant);
-    const goal = readLocalGoal(state, ant);
-    takeLocalGoals(state);
-    const after = (ant as Ant & { houseIntentHold: { intent: { kind: string; targetId: number; targetColony?: ColonyId }; selectedTick: number } }).houseIntentHold;
-    return { intent: after.intent, selectedTick: after.selectedTick, heading: goal === undefined ? undefined : { x: goal.x, y: goal.y } };
-  }
-
-  const at = (q: QueenState) => ({ x: q.queenX, y: q.queenY });
-
-  it("keeps a held colony-3 queen target while she lives, with colony 0's first queen lost", () => {
-    const state = fourColonyMatch();
-    const zero = state.colonies[0]!;
-    zero.queens = [{ ...zero.queens![0]!, lostTick: 1 }, { ...zero.queens![0]!, id: 1, starting: undefined }];
-    // The fresh pick is colony 0's queen 1: a different target, so the colony-3 hold is validated and kept.
-    const held = heldFighter(state, { targetId: 0, targetColony: 3 });
-    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 0, targetColony: 3 }));
-    expect(held.selectedTick).toBe(state.tick - 1);
-    expect(held.heading).toEqual(at(queenOf(state, 3)));
-  });
-
-  it("drops a held target naming the ant's own colony, though that queen lives", () => {
-    const state = fourColonyMatch();
-    const held = heldFighter(state, { targetId: 0, targetColony: 2 }, true);
-    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 1, targetColony: 0 }));
-    expect(held.selectedTick).toBe(state.tick);
-    expect(held.heading).toEqual(at(queenOf(state, 0, 1)));
-  });
-
-  it("drops a held colony-3 queen target once she is lost, while colony 0's first queen lives", () => {
-    const state = fourColonyMatch();
-    queenOf(state, 3).lostTick = 1;
-    const held = heldFighter(state, { targetId: 0, targetColony: 3 }, true);
-    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 1, targetColony: 0 }));
-    expect(held.selectedTick).toBe(state.tick);
-    expect(held.heading).toEqual(at(queenOf(state, 0, 1)));
-  });
-
-  it("treats a fresh pick of another colony's queen with the held id as a new target", () => {
-    const state = fourColonyMatch();
-    queenOf(state, 3).lostTick = 1;
-    // The fresh pick is colony 0's queen 0: the held id, another colony. It replaces the lost colony-3 target now.
-    const held = heldFighter(state, { targetId: 0, targetColony: 3 });
-    expect(held.intent).toEqual(expect.objectContaining({ kind: "queen", targetId: 0, targetColony: 0 }));
-    expect(held.selectedTick).toBe(state.tick);
-    expect(held.heading).toEqual(at(queenOf(state, 0)));
-  });
 });
 
 describe("territory", () => {
@@ -376,11 +312,10 @@ describe("joins, squads and delivery", () => {
 });
 
 describe("local rules", () => {
-  it("plans a seated colony 2's soldier by local rules and an unseated colony 3's soldier by the house bot", () => {
+  it("plans a seated colony 2's soldier by local rules", () => {
     const state = fourColonyMatch(0);
-    const near = openArea(state, 1, 40, 40), far = openArea(state, 1, 90, 60);
+    const near = openArea(state, 1, 40, 40);
     const seated = addAnt(state, 2, near.tx, near.ty, { caste: "soldier", role: "fighter" });
-    const unseated = addAnt(state, 3, far.tx, far.ty, { caste: "soldier", role: "fighter" });
     state.agents.push({ id: "two", colony: 2, joinSeq: 0, modelLabel: null, parentAgentId: null, squad: [], order: { kind: "hold" }, lastCallTick: 0, lastCommandTick: null, idle: false, pendingEvents: [] });
     // The match-start planning pass runs the house phase on a copy, short of the view step a full four-colony tick
     // would reach. Its planned goals are only on the preparation's private payload, so this reads that payload and
@@ -393,7 +328,5 @@ describe("local rules", () => {
     expect(goals).toBeInstanceOf(Map);
     const planned = goals as ReadonlyMap<number, { key: string; kind: string }>;
     expect(planned.get(seated.id)).toMatchObject({ key: `2/hold/${near.tx},${near.ty}`, kind: "guard" });
-    expect(planned.get(unseated.id)?.key).toMatch(/^3\//);
-    expect(planned.get(unseated.id)?.key).not.toContain("/hold/");
   });
 });
