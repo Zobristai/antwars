@@ -20,8 +20,8 @@ const ids = (config: SimConfig) => config.terrain!.maps.map(map => map.id);
 const NEW_MATCH_CONFIGS: readonly (readonly [string, SimConfig])[] = [
   ...[undefined, ...RULES_NAMES].map(name => [`newMatchConfig(rulesConfig(${name ?? ""}))`, newMatchConfig(rulesConfig(name))] as const),
   ["server, ANTWAR_RULES unset", comparisonOptions({}, DEFAULT_MCP_CONFIG).simConfig!],
-  ...RULES_NAMES.map(name => [`server, ANTWAR_RULES=${name}`,
-    comparisonOptions({ ANTWAR_RULES: name, ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG).simConfig!] as const),
+  // v4 and count-marks are refused at start-up; redesign is the only comparison rules name a server starts on.
+  ["server, ANTWAR_RULES=redesign", comparisonOptions({ ANTWAR_RULES: "redesign", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG).simConfig!],
   ["Game default", new Game().simConfig],
 ];
 
