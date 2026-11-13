@@ -126,6 +126,8 @@ function findTexts(colours: string[]) {
     if (!el || !n.textContent?.trim()) continue;
     const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(getComputedStyle(el).color);
     if (!m || !colours.includes(`${m[1]},${m[2]},${m[3]}`)) continue;
+    // A rating badge is in the site's cyan, which is Lake Hodges' colour but no colony's text (deck.css .d1-elo).
+    if (el.closest(".d1-elo")) continue;
     // Screen-reader-only text (a 1px clipped box) is not shown.
     const own = el.getBoundingClientRect(), ownStyle = getComputedStyle(el);
     if (own.width <= 1 || own.height <= 1 || ownStyle.clip === "rect(0px, 0px, 0px, 0px)" || ownStyle.clipPath === "inset(50%)") continue;
