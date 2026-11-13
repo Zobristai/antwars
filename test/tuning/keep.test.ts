@@ -161,7 +161,7 @@ describe("the keep rule's checks", () => {
   it("drops a candidate that matches over the try but changes a value on a seed replay", async () => {
     // Only the match start differs, which a reloaded checkpoint never runs.
     const store = freshStore();
-    edit("src/sim/map.ts", "      foodStore: 0,\n", "      foodStore: 1,\n");
+    edit("src/sim/map.ts", "    foodStore: 0,\n", "    foodStore: 1,\n");
     const outcome = await decideKeep(options(store, { seeds: [7, 8] }));
     expect(outcome.decision).toBe("drop");
     expect(outcome.replays.map(run => [run.name, run.mismatch])).toEqual([["try", null], ["seed 7", { tick: 0, part: "state", path: "/colonies/0/foodStore" }]]);
