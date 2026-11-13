@@ -832,14 +832,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 39 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 43 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(39);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(39);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(43);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(43);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -850,6 +850,10 @@ describe("the house handle list", () => {
     }
     // The three Muse handles are listed available.
     for (const handle of ["muse-spark-1-3", "muse-wonder-1-0", "muse-wonder-full-1-0"]) {
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+    }
+    // The four Gemini 4 Hydrogen handles are listed available.
+    for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
     expect(opponents.filter(o => o.available).map(o => o.handle).sort()).toEqual([...onTable].sort());
