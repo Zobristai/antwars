@@ -15,37 +15,30 @@ export interface SupercolonyName {
   readonly label: string;
   /** One line: where the supercolony is and the source naming it. */
   readonly note: string;
-  /** The colony's colour (0xRRGGBB) wherever its name appears: its ants, territory, name and score. */
-  readonly colour: number;
   /**
-   * Each of its agents' shades, by the agent's place in join order within the colony; a colony with more agents
-   * starts the list again. Without a list every agent shows the colony's colour, and agents are told apart by their
-   * glyph.
+   * The colony's one colour (0xRRGGBB) wherever its name appears: its ants, territory, name and score. Every one of its
+   * agents shows this same colour, in every match; agents within a colony are told apart by their glyph and name.
    */
-  readonly agentShades?: readonly number[];
+  readonly colour: number;
 }
 
 /**
- * The four, in table order, and the one place their colours are defined. Very Large and Lake Hodges keep the colours
- * colonies 0 and 1 have always had, and their agents keep their four shades each. Sweetwater's and Lake Skinner's
- * colours must stay apart from those two, from each other and from the board's own colours (food greens, the ants'
- * light body, white highlights), and read as text on the page's dark background; test/sim/colony-names.test.ts checks
- * each of these for whatever value is set here. Their agents share the colony's one colour and are told apart by glyph.
+ * The four, in table order, and the one place their colours are defined: one colour per colony. Very Large and Lake
+ * Hodges keep the colours colonies 0 and 1 have always had. Sweetwater's and Lake Skinner's colours must stay apart
+ * from those two, from each other and from the board's own colours (food greens, the ants' light body, white
+ * highlights), and read as text on the page's dark background; test/sim/colony-names.test.ts checks each of these for
+ * whatever value is set here.
  */
 export const SUPERCOLONY_NAMES = [
   {
     label: "Very Large Colony",
     note: "The Californian large supercolony: coastal California, roughly 900 to 1,000 km (Thomas et al. 2006, Molecular Ecology; Sunamura et al. 2009, Insectes Sociaux)",
     colour: 0xffb000,
-    // Amber, coral, gold, orange.
-    agentShades: [0xf4af38, 0xed7668, 0xebd14d, 0xf38c48],
   },
   {
     label: "Lake Hodges Colony",
     note: "Southern California, about 11 km² (Thomas et al. 2006, Molecular Ecology)",
     colour: 0x00c2ff,
-    // Cyan, violet, teal, azure.
-    agentShades: [0x4bc6fa, 0x9f85e5, 0x47d6cf, 0x77a4f6],
   },
   {
     label: "Sweetwater Colony",
@@ -126,12 +119,6 @@ function rowOf(names: ColonyNamePair, colony: 0 | 1): SupercolonyName {
 /** Each colony's colour in a match named `names`, index = colony id. */
 export function colonyColours(names: ColonyNamePair): readonly [number, number] {
   return [rowOf(names, 0).colour, rowOf(names, 1).colour];
-}
-
-/** Each colony's agent shades in a match named `names`, index = colony id. */
-export function colonyAgentShades(names: ColonyNamePair): readonly [readonly number[], readonly number[]] {
-  const shades = (row: SupercolonyName) => row.agentShades ?? [row.colour];
-  return [shades(rowOf(names, 0)), shades(rowOf(names, 1))];
 }
 
 /** A colour as CSS (#rrggbb). */
