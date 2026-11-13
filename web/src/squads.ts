@@ -1,9 +1,9 @@
 /**
  * Squads on the board ('Look'):
- * - each agent has its own hue inside its colony's colour family (agentShade), used for its squad's
- *   ants, marks, badge, order target and roster swatch;
+ * - every agent shows its colony's one colour (agentShade), used for its squad's ants, marks, badge, order target and
+ *   roster swatch; agents within a colony are told apart by their glyph and their name;
  * - each squad carries one small badge: the agent's glyph (compose.ts) in its
- *   shade, the same glyph its roster swatch shows, on a dark square plate (unlike the round mark pings) just beside
+ *   colony's colour, the same glyph its roster swatch shows, on a dark square plate (unlike the round mark pings) just beside
  *   the squad ant nearest the squad's mean position. The marks' layout places the
  *   badges (words.ts placeBadges) after the markers, clear of them where a spot
  *   is free. A badge is never dropped;
@@ -13,7 +13,7 @@
  *   plate, and never for the selected agent, whose card names it. A tooltip sits above everything with no leader,
  *   in the page's own type (tipContent; web/src/tip.ts draws it). Intents are not drawn on the board: they are lines in the
  *   chat;
- * - squad ants carry their agent's hue at all times and free ants the plain colony colour; the selected squad (hovered in the roster, else pointed at or tapped on the board) has each of
+ * - squad ants and free ants alike carry the colony colour; the selected squad (hovered in the roster, else pointed at or tapped on the board) has each of
  *   its ants ringed in an outline, and every other ant dimmed.
  */
 import { IconSprites } from "./icons/sprites.ts";
@@ -24,24 +24,17 @@ import type { StreamAgent } from "../../src/live/format.ts";
 import type { Frame } from "./buffer.ts";
 import type { Rect, TipContent } from "./words.ts";
 import { modelLine, playerLabel, badgeAnchors, badgeRadiusPx, glyphPolygon } from "./compose.ts";
-import { colonyShades } from "./colony-palette.ts";
+import { colonyTint } from "./colony-palette.ts";
 
 /**
- * The agent hues: each colony's colour family says which colony and the hue inside it which agent, the glyph staying as
- * the second cue. The families come from the colony's name (colony-palette.ts, src/sim/colonyNames.ts): Very Large's
- * amber, coral, gold and orange and Lake Hodges' cyan, violet, teal and azure, in the order agents take them, all at
- * near-equal OKLCH lightness so hue carries the difference; Sweetwater's and Lake Skinner's agents share their colony's
- * one colour and are told apart by their glyph alone. An agent takes its colony's list by its place in join order
- * among that colony's agents (`agents` only grows, so every agent keeps its hue all match); past the list's end it starts again.
+ * An agent's colour: its colony's one colour (colony-palette.ts, from the colony's name in src/sim/colonyNames.ts), the
+ * same for every agent of the colony in every match. Agents within a colony are told apart by their glyph and name.
  */
-export function agentShade(colony: number, agent: number, agents: readonly Pick<StreamAgent, "colony">[]): number {
-  let seat = 0;
-  for (let j = 0; j < agent && j < agents.length; j++) if (agents[j]?.colony === colony) seat++;
-  const hues = colonyShades(colony);
-  return hues[seat % hues.length]!;
+export function agentShade(colony: number, _agent: number, _agents: readonly Pick<StreamAgent, "colony">[]): number {
+  return colonyTint(colony);
 }
 
-/** Every agent's hue by agent index: what the boards tint squad ants with. */
+/** Every agent's colour by agent index: what the boards tint squad ants with. */
 export function agentHues(agents: readonly Pick<StreamAgent, "colony">[]): number[] {
   return agents.map((a, i) => agentShade(a.colony, i, agents));
 }

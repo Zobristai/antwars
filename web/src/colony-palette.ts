@@ -4,7 +4,7 @@
  * match's setup before they draw; until then, and for a match that carries no names, it is the rated names' colours.
  */
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyAgentShades, colonyColours, colourCss, supercolony, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyColours, colourCss, supercolony, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import type { Rgb } from "./board-look.ts";
 
 /**
@@ -43,11 +43,6 @@ export function colonyRgb(colony: number): readonly [number, number, number] {
 /** Both colonies' colours as 0..1 channels, index = colony id. */
 export function colonyRgbs(): readonly [readonly [number, number, number], readonly [number, number, number]] {
   return [colonyRgb(0), colonyRgb(1)];
-}
-
-/** A colony's agents' shades, in join order within the colony. */
-export function colonyShades(colony: number): readonly number[] {
-  return colonyAgentShades(names)[colony === 1 ? 1 : 0];
 }
 
 /** A colony's territory wash on the steppe look. */

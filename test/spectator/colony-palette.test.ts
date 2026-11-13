@@ -1,12 +1,13 @@
 // The page's colony colours follow its match's names: a match that carries none (every rated match) keeps colony 0's
-// amber and colony 1's cyan, its agent shades and its steppe shaders exactly; a drawn pair shows each name's own colour.
+// amber and colony 1's cyan and its steppe shaders exactly; a drawn pair shows each name's own colour. Every agent shows
+// its colony's one colour, rated matches included.
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
 import { SUPERCOLONY_NAMES, colourCss } from "../../src/sim/colonyNames.ts";
 import { COLONY_TINT } from "../../web/src/ants.ts";
 import { COLONY_RGB } from "../../web/src/territory.ts";
-import { colonyRgb, colonyShades, colonyTint, colonyWash, setMatchColonies } from "../../web/src/colony-palette.ts";
+import { colonyRgb, colonyTint, colonyWash, setMatchColonies } from "../../web/src/colony-palette.ts";
 import { agentShade } from "../../web/src/squads.ts";
 import { STEPPE_LOOK } from "../../web/src/ui/steppe-look.ts";
 
@@ -24,18 +25,18 @@ const SWEETWATER = SUPERCOLONY_NAMES[2].colour, LAKE_SKINNER = SUPERCOLONY_NAMES
 const channels = (rgb: number) => [((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255];
 
 describe("the page's colony colours", () => {
-  it("are the rated colours, shades and steppe shaders, byte for byte, while the match carries no names", () => {
+  it("are the rated colours and steppe shaders, byte for byte, while the match carries no names, with every agent in its colony's colour", () => {
     expect([colonyTint(0), colonyTint(1)]).toEqual([...COLONY_TINT]);
     expect([colonyRgb(0), colonyRgb(1)]).toEqual(COLONY_RGB);
-    expect(colonyShades(0)).toEqual([0xf4af38, 0xed7668, 0xebd14d, 0xf38c48]);
-    expect(colonyShades(1)).toEqual([0x4bc6fa, 0x9f85e5, 0x47d6cf, 0x77a4f6]);
+    const team = ([0, 1, 1, 0, 0, 1, 0, 1] as const).map(colony => ({ colony }));
+    expect(team.map((a, i) => agentShade(a.colony, i, team))).toEqual(team.map(a => (a.colony === 0 ? 0xffb000 : 0x00c2ff)));
     // The steppe look's shader text as main built it before colonies had their own colours.
     expect(sha(STEPPE_LOOK.board2d.fill(""))).toBe("89f71ab4be54fbf492617fd7245bca4718af5ee2c86f524c76206e7ff3db3d3c");
     expect(sha(STEPPE_LOOK.board2d.front(""))).toBe("b6a2a071eafda1373aa22fef5f45b31aaa51437599f0c193f104163ff20ddb52");
     expect(sha(STEPPE_LOOK.board3d.ground("definitions", ""))).toBe("ee225474b2c4d3682e29071001918cce01ff4281e27b87c8d16d884ddbc44949");
   });
 
-  it("follow a drawn pair: each colony its name's colour, wash and agent shades, and the page's colony CSS colours", () => {
+  it("follow a drawn pair: each colony its name's colour for every one of its agents, its wash, and the page's colony CSS colours", () => {
     const { props, doc } = fakeDocument();
     setMatchColonies(["Sweetwater Colony", "Very Large Colony"], doc);
     expect([colonyTint(0), colonyTint(1)]).toEqual([SWEETWATER, 0xffb000]);
@@ -44,15 +45,15 @@ describe("the page's colony colours", () => {
     expect(colonyWash(0).hue).not.toEqual(colonyWash(1).hue);
     // Its wash is its own colour, slightly darkened.
     expect(STEPPE_LOOK.board2d.fill("")).toContain(`vec3(${channels(SWEETWATER).map(c => (c * 0.92).toFixed(4)).join(", ")})`);
-    // Sweetwater's agents share its one colour; Very Large's keep their four shades, now on colony 1.
+    // Every agent shows its colony's one colour: Sweetwater's on colony 0, Very Large's on colony 1.
     const agents = [{ colony: 0 }, { colony: 1 }, { colony: 0 }, { colony: 1 }] as const;
-    expect(agents.map((a, i) => agentShade(a.colony, i, agents))).toEqual([SWEETWATER, 0xf4af38, SWEETWATER, 0xed7668]);
+    expect(agents.map((a, i) => agentShade(a.colony, i, agents))).toEqual([SWEETWATER, 0xffb000, SWEETWATER, 0xffb000]);
   });
 
   it("keep a colony's own colour for a name outside the table", () => {
     setMatchColonies(["Some Colony", "Lake Skinner Colony"]);
     expect([colonyTint(0), colonyTint(1)]).toEqual([0xffb000, LAKE_SKINNER]);
-    expect(colonyShades(1)).toEqual([LAKE_SKINNER]);
+    expect(agentShade(1, 0, [{ colony: 1 }])).toBe(LAKE_SKINNER);
   });
 
   it("keep the classic colours, wash and steppe shaders for a name that is an inherited member, such as constructor", () => {
