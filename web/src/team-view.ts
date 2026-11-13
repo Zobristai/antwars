@@ -9,6 +9,7 @@
  */
 import { SUB_TILE, streamQueens, type StreamAnts, type StreamMark } from "../../src/live/format.ts";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
+import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import { Frame, type Board, type Colony } from "./buffer.ts";
 import { gridScale } from "./grid-scale.ts";
 
@@ -98,6 +99,13 @@ export class TeamView {
   private boardFor: { source: Board; masks: TeamMasks; board: Board } | null = null;
   private territories = new WeakMap<Uint8Array, Uint8Array>();
   private trails = new WeakMap<Float32Array, Float32Array>();
+  /** The colony names the frames carry (the match's own, else the rated names), and who is told when they change. */
+  private names: ColonyNamePair = COLONY_NAMES;
+  onNames: ((names: ColonyNamePair) => void) | null = null;
+
+  get colonyNames(): ColonyNamePair {
+    return this.names;
+  }
 
   get choice(): TeamChoice {
     return this.current;
@@ -113,6 +121,10 @@ export class TeamView {
 
   /** The frame the board draws: the playback frame itself in Full view, else one colony's view of it. */
   apply(frame: Frame): Frame {
+    if (frame.board !== null) {
+      const names = colonyNamesOf(frame.board.setup);
+      if (names[0] !== this.names[0] || names[1] !== this.names[1]) { this.names = names; this.onNames?.(names); }
+    }
     const colony = this.current;
     if (colony === "full" || frame.board === null || frame.ants === null) {
       frame.fog = null;
@@ -195,7 +207,7 @@ export class TeamView {
 export const TEAM_VIEW_COPY = {
   label: "Point of view",
   full: "Full view",
-  colony: (colony: Colony) => `${COLONY_NAMES[colony]}'s view`,
+  colony: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]}'s view`,
 } as const;
 
 /**
@@ -214,8 +226,10 @@ export function teamViewControl(doc: Document, view: TeamView): HTMLSelectElemen
     select.append(o);
   };
   option("full", TEAM_VIEW_COPY.full);
-  option("0", TEAM_VIEW_COPY.colony(0));
-  option("1", TEAM_VIEW_COPY.colony(1));
+  option("0", TEAM_VIEW_COPY.colony(0, view.colonyNames));
+  option("1", TEAM_VIEW_COPY.colony(1, view.colonyNames));
+  // A match with its own colony names renames its two views once its frames carry them.
+  view.onNames = names => { select.options[1]!.textContent = TEAM_VIEW_COPY.colony(0, names); select.options[2]!.textContent = TEAM_VIEW_COPY.colony(1, names); };
   select.value = view.choice === "full" ? "full" : String(view.choice);
   select.addEventListener("change", () => {
     view.choice = select.value === "full" ? "full" : (Number(select.value) as Colony);

@@ -1,6 +1,7 @@
 // The spectator HUD agent panel model: read from the delayed playback frame only.
 // Every value comes from the stream through the existing HUD helpers; nothing here draws or invents data.
-import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../../src/sim/config.ts";
+import { RULES_NAMES, rulesConfig, type SimConfig } from "../../../src/sim/config.ts";
+import { colonyNamesOf } from "../../../src/sim/colonyNames.ts";
 import { isIdle, type OrderKind, type StreamMark } from "../../../src/live/format.ts";
 import type { Board, ChatLine, Frame } from "../buffer.ts";
 import { MODEL_LABEL, agentCard, cardSubject, matchTime, orderTarget, orderText, THOUGHT_LABEL, type AntInfo } from "../overlays.ts";
@@ -108,7 +109,7 @@ export function agentEntries(frame: Frame): AgentEntry[] {
       index, colony, shade, badge: badge(index, shade), name: a.identity ? rowName(a.identity.displayName, undefined).name : null, model: agentModelText(a), elo, idle,
       order: { kind: a.order, guard, text, target: directed && target ? target.colony : null },
       latest: line ? agentLine(line, frame, live) : a.intent ? standingThought(a.intent, index, colony) : null,
-      label: [playerLabel(index, a), COLONY_NAMES[colony], modelLine(a, MODEL_LABEL), text, idle ? "idle" : ""]
+      label: [playerLabel(index, a), colonyNamesOf(b.setup)[colony], modelLine(a, MODEL_LABEL), text, idle ? "idle" : ""]
         .filter(Boolean).join(" · "),
     };
   });
@@ -119,7 +120,7 @@ export function agentDetail(frame: Frame, agent: number, recent = 6): { lines: s
   const b = frame.board;
   const a = b?.agents[agent];
   if (!b || !a) return null;
-  const card = agentCard(agent, a, b.marks, frame.tick, tps(b), orderTarget(a.orderX, a.orderY, b));
+  const card = agentCard(agent, a, b.marks, frame.tick, tps(b), orderTarget(a.orderX, a.orderY, b), colonyNamesOf(b.setup));
   const live = liveMarks(frame);
   const history: AgentLineModel[] = [];
   for (let i = frame.chat.length - 1; i >= 0 && history.length < recent; i--) {
