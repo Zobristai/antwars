@@ -101,6 +101,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-toast[data-kind="fall"] .d2-toast-when { display: none; }
 .d2-toast[data-kind="fall"] .d2-toast-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: currentColor; }
 .d2-toast[data-kind="fall"] .d2-toast-who { font-size: 14px; line-height: 18px; }
+/* A drawn colony name in the caption takes the pointer, though the caption takes none, so hovering it shows its source
+   note (dom.ts setColonyText). Only the name: the rest of the caption still lets the pointer through to the board. */
+.d2-toast .aw-colony-name { pointer-events: auto; }
 
 /* The fall: everything but the board and its headline steps back; a fallen colony's own words dim, readable. */
 .d2-hud :is(.d2-plate-wrap, .d2-foot, .d2-pane, .d2-cluster, .d2-transport) { transition: opacity 600ms var(--aw-ease); }
