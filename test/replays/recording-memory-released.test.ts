@@ -17,6 +17,8 @@ import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
 import { ManualClock } from "../live/helpers.ts";
 import { playable } from "../playable.ts";
+// The captured scenario was recorded before the no-bot-moves rule, so it keeps that recording's config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // The released framed length depends on the random MatchStream identity's encoded size, so it is pinned to
 // run one's identity, as recording-goldens.test.ts does.
@@ -59,7 +61,7 @@ it("holds the captured scenario's released copy compressed, below its golden raw
     recordHandoff: createRecordHandoff({ codeVersion: "8327b0816a43e559876262682c6320ec7f0f5527", store: writer(pending), log: () => {} }) });
   const live: number[] = [];
   try {
-    let state = createMatch(6006, playable({ ...rulesConfig("redesign"), matchTicks: 4 }));
+    let state = createMatch(6006, playable(recordedHousePlan({ ...rulesConfig("redesign"), matchTicks: 4 })));
     hub.startMatch(1, state, { lobbyId: "synthetic-fixture-lobby", visibility: "public", rated: false });
     while (state.result === null) {
       const commands = state.tick === 0 ? [{ type: "join" as const, agentId: "synthetic-secret-agent", modelLabel: "fixture-agent", thinkingLevel: "high" as const }] : [];
