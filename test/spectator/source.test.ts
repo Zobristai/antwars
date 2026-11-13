@@ -262,8 +262,9 @@ it("keeps incremental replay precedence, bounded catch-up and the recording cloc
     // A full read-ahead queue has not observed EOF yet; draining admits the final read.
     await vi.waitFor(() => expect(source.recording!.complete).toBe(true));
     expect(source.lastTick).toBe(messages.at(-1)!.tick);
-    // The rating-record read starts with the recording; its failure leaves the recording's figures.
-    expect(paths).toEqual(["/watch/ratings/2026-10-21T00-00-00-000Z-1", "/replays/2026-10-21T00-00-00-000Z-1", "/matches/2026-10-21T00-00-00-000Z-1"]);
+    // The rating-record read starts with the recording; its failure leaves the recording's figures. The stored end is
+    // asked once playback has its read-ahead, then the scrubber marks' read follows (recording.ts).
+    expect(paths).toEqual(["/watch/ratings/2026-10-21T00-00-00-000Z-1", "/replays/2026-10-21T00-00-00-000Z-1", "/matches/2026-10-21T00-00-00-000Z-1", "/replays/2026-10-21T00-00-00-000Z-1"]);
     expect(reject).not.toHaveBeenCalled();
   } finally { source.close(); }
 });

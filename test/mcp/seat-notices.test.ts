@@ -10,7 +10,7 @@ import { playable } from "../playable.ts";
 
 const config = { ...rulesConfig("redesign"), terrain: undefined, foodLayout: undefined,
   antSpeedTilesPerSecond: 0, commandFloorTicks: 1, commandIdleTicks: 100_000,
-  hatchIntervalTicks: 100_000, groundFoodIntervalTicks: undefined, earlyWin: undefined };
+  hatchIntervalTicks: 100_000, earlyWin: undefined };
 let h: Harness;
 afterEach(async () => { await h?.close(); });
 

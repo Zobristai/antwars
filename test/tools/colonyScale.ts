@@ -19,7 +19,6 @@ import { registerTools } from "../../src/mcp/tools.js";
 import { COLONY_NAMES, PUBLIC_CONFIG, rulesConfig, type SimConfig } from "../../src/sim/config.js";
 import { withGridScale } from "../../src/sim/gridScale.js";
 import { parseHatchArm, selectHatchArm } from "./hatchVariants.js";
-import { groundIncome } from "../../src/sim/forage.js";
 import { createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
 import type { SimState, WinReason } from "../../src/sim/types.js";
@@ -34,7 +33,6 @@ export const BASELINE_CONFIG: SimConfig = {
   hatchCost: 3,
   hatchIntervalTicks: 18,
   foodRegrowTicks: 150,
-  groundFoodIntervalTicks: undefined,
   foodPatches: [
     { tileX: 12, tileY: 24, radius: 2, perTile: 2 },
     { tileX: 18, tileY: 9, radius: 2, perTile: 3 },
@@ -94,17 +92,13 @@ export function houseMatch(seed: number, config: SimConfig) {
   const peaks = counts(initial);
   const peakTicks: [number, number] = [0, 0];
   const samples: number[] = [];
-  const ground: [number, number] = [0, 0];
   const spent: [number, number] = [0, 0];
   const foundingSpent: [number, number] = [0, 0];
   while (state.result === null) {
-    const tick = state.tick;
     const before = performance.now();
     const out = step(state);
     state = out.state;
     samples.push(performance.now() - before);
-    const award = groundIncome(state, tick);
-    for (const colony of [0, 1] as const) ground[colony] += award[colony];
     for (const event of out.events) {
       if (event.type === "hatch") spent[event.colony] += event.caste === "soldier" ? config.castes!.soldierCost : config.hatchCost;
       if (event.type === "queen_founded") foundingSpent[event.colony] += event.foodCost ?? config.queenFounding!.cost;
@@ -121,10 +115,8 @@ export function houseMatch(seed: number, config: SimConfig) {
   }
   const income = state.colonies.map((colony) => {
     const forage = state.stats.delivered[colony.id];
-    const fromGround = ground[colony.id];
-    const total = forage + fromGround;
-    return { colony: colony.id, ground: fromGround, foraging: forage, total,
-      groundShare: total === 0 ? 0 : fromGround / total,
+    const total = forage;
+    return { colony: colony.id, foraging: forage, total,
       hatchSpending: spent[colony.id], queenFoundingSpending: foundingSpent[colony.id], finalStore: colony.foodStore,
       reconciled: total === spent[colony.id] + foundingSpent[colony.id] + colony.foodStore,
     };
@@ -245,18 +237,15 @@ async function main() {
   for (const seed of seeds) {
     const baseline = houseMatch(seed, withGridScale(BASELINE_CONFIG));
     const candidate = houseMatch(seed, candidateConfig);
-    const disabled = houseMatch(seed, { ...candidateConfig, groundFoodIntervalTicks: undefined });
     const before = await describe(baseline);
     const after = await describe(candidate);
     const checks = {
       duration: candidate.final.tick >= 12 * 60 * PUBLIC_CONFIG.ticksPerSecond,
       cap: candidate.peaks.every((n) => n <= 512),
       tickBudget: after.peakTiming.maxMs < 100,
-      incomeReconciles: candidate.income.every((c) => c.reconciled) && disabled.income.every((c) => c.reconciled),
+      incomeReconciles: candidate.income.every((c) => c.reconciled),
     };
-    runs.push({ seed, checks, baseline: before, candidate: after,
-      groundDisabled: { peaks: disabled.peaks, income: disabled.income, endTick: disabled.final.tick, result: disabled.final.result },
-    });
+    runs.push({ seed, checks, baseline: before, candidate: after });
     if (selected === undefined || candidate.peak.ants.length > selected.peak.ants.length) selected = candidate;
   }
   const selectedRun = runs.find((run) => run.seed === selected!.initial.seed)!;
@@ -267,10 +256,8 @@ async function main() {
   recording(selected!.initial, "out/recordings/colony-start.bin", 10);
   recording(selected!.peak, "out/recordings/colony-peak.bin", 100);
   const recordings = Object.fromEntries(["colony-start", "colony-peak"].map((name) => [name, createHash("sha256").update(readFileSync(`out/recordings/${name}.bin`)).digest("hex")]));
-  const interval = PUBLIC_CONFIG.groundFoodIntervalTicks!;
   const report = { exitCode, declaredHead: values.head, hatchArm, baselineHead: BASELINE_HEAD,
     seed: selectedRun.seed, seeds, privateInProcess: true, sources, recordings, duration,
-    groundRate: { foodPerTilePerPayout: 1, intervalTicks: interval, intervalSeconds: interval / PUBLIC_CONFIG.ticksPerSecond, foodPerTilePerSecond: PUBLIC_CONFIG.ticksPerSecond / interval },
     earliestEndTick: Math.min(...runs.map((run) => run.candidate.endTick)),
     peakBenchmark: { seed: selectedRun.seed, ...selectedRun.candidate.totalPeak, ...selectedRun.candidate.peakTiming },
     baseline: selectedRun.baseline, candidate: selectedRun.candidate, runs,

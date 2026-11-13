@@ -55,6 +55,10 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   "gemini-4-carbon-low": ["low", null, "Gemini 4 Carbon", ["low"]],
   "gemini-4-carbon-medium": ["medium", null, "Gemini 4 Carbon", ["medium"]],
   "gemini-4-carbon-high": ["high", null, "Gemini 4 Carbon", ["high"]],
+  "gemini-4-hydrogen-low": ["low", null, "Gemini 4 Hydrogen", ["low"]],
+  "gemini-4-hydrogen-medium": ["medium", null, "Gemini 4 Hydrogen", ["medium"]],
+  "gemini-4-hydrogen-high": ["high", null, "Gemini 4 Hydrogen", ["high"]],
+  "gemini-4-hydrogen-xhigh": ["xhigh", null, "Gemini 4 Hydrogen", ["xhigh"]],
   // Abliterated and Mistral models at the standard tier, so no Fast badge.
   "abliterated-model-large": ["max", "standard", "Abliterated GLM-5.2", ["max"]],
   "abliterated-model": ["high", "standard", "Abliterated Model", ["high"]],
@@ -194,8 +198,16 @@ describe("fixed level and tier per Antwars Model Index handle", () => {
       expectConfirmed(body.entries);
       const mcp = await client.call("leaderboard", args);
       expect(mcp.isError).toBe(false); expect(mcp.data).toEqual(body);
-      const page = await loadLeaderboard(undefined, undefined, (input, init) => fetch(`http://127.0.0.1:${server.port}${input}`, init), { mode: "house-1v1", scope: "house" });
-      const shown = new Map(page.entries.map(row => [row.displayName.slice("antwars/".length), shownLabel(row)]));
+      // The browser reader takes 50 rows a page; follow its cursor so every handle is read.
+      const rows = [];
+      let cursor: string | undefined;
+      do {
+        const page = await loadLeaderboard(cursor, undefined, (input, init) => fetch(`http://127.0.0.1:${server.port}${input}`, init), { mode: "house-1v1", scope: "house" });
+        rows.push(...page.entries);
+        cursor = page.next;
+      } while (cursor !== undefined);
+      expect(rows.length).toBeGreaterThan(50);
+      const shown = new Map(rows.map(row => [row.displayName.slice("antwars/".length), shownLabel(row)]));
       expect([...shown.keys()].sort()).toEqual([...HANDLES].sort());
       for (const [handle, [, , name, badges]] of Object.entries(CONFIRMED)) expect([handle, ...shown.get(handle)!]).toEqual([handle, name, badges]);
     } finally { await client.close(); await server.close(); rmSync(dataDir, { recursive: true, force: true }); }

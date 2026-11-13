@@ -11,7 +11,7 @@ import { playable } from "../playable.ts";
 
 const base = playable(rulesConfig("redesign"));
 const config = { ...base, antSpeedTilesPerSecond: 0, combatGraceTicks: 0,
-  defenderBonusPermille: 1000, hatchIntervalTicks: 1_000_000, groundFoodIntervalTicks: undefined };
+  defenderBonusPermille: 1000, hatchIntervalTicks: 1_000_000 };
 
 describe("observe count-mark combat feedback", () => {
   it("carries real combat totals and existing unspent food through command/current/history/reconnect replies", async () => {
@@ -84,7 +84,7 @@ describe("observe count-mark combat feedback", () => {
   it("keeps accounting-off copy and word marks free of the new fields", async () => {
     // The redesign with word marks, on the reference-grid template.
     const wordConfig = { ...rulesConfig("redesign"), wordMarksDisabled: undefined, antSpeedTilesPerSecond: 0, combatGraceTicks: 0,
-      defenderBonusPermille: 1000, hatchIntervalTicks: 1_000_000, groundFoodIntervalTicks: undefined };
+      defenderBonusPermille: 1000, hatchIntervalTicks: 1_000_000 };
     const { combatTotals: _newFlag, ...countMarks } = wordConfig.countMarks!;
     const old = playable({ ...wordConfig, countMarks });
     for (const text of [briefing(old), joinBriefing(old)]) {

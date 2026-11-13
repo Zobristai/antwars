@@ -21,8 +21,9 @@ import { playRedesign } from "./redesign-recording.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
-// A queen-hit/fall scene with pursuit DEFEND, on rules 27: seed 6016 has three attacks on the lost queen, the last fatal.
-const messages = playRedesign({ seed: 6016, agents: 9, ticks: 4000,
+// A queen-hit/fall scene with pursuit DEFEND, on rules 27: seed 6065 has three attacks on the lost queen, the last fatal,
+// and the other queen is never bitten (seed 6016 had this scene while the stored config's periodic store payout ran).
+const messages = playRedesign({ seed: 6065, agents: 9, ticks: 4000,
   sceneSettings: { terrain: TERRAIN_RULES, hatchTiming: SOLDIER_HATCH_TIMING } });
 const lostAt = messages.find((m) => m.events.some((e) => e.kind === "queenLost"))!;
 const lost = (lostAt.events.find((e) => e.kind === "queenLost") as Extract<StreamEvent, { queen: StreamQueen }>).queen;
