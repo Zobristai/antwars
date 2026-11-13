@@ -15,6 +15,7 @@ import { createLobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
 import { HOUSE_LABELS } from "../../src/rating/house.ts";
 import { createRatings, LEADERBOARD_SCOPES, RANKED_MODES, ratingCollection } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
 import { PUBLIC_CONFIG } from "../../src/sim/config.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { houseCast, type Keyed } from "../lobby/house-fixtures.ts";
@@ -529,10 +530,11 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     closers.push(() => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }));
     const body = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/watch/queue`)).json() as { lobbies: Body[] };
     expect(body.lobbies.map((row) => Object.keys(row))).toEqual([
-      ["mode", "size", "seated", "colonies", "ratings", "seats", "waitingSeconds", "since"],
-      ["mode", "size", "seated", "colonies", "ratings", "seats", "waitingSeconds", "since", "challenge"],
+      ["mode", "size", "seated", "colonies", "ratings", "seats", "waitingSeconds", "since", "colonyNames"],
+      ["mode", "size", "seated", "colonies", "ratings", "seats", "waitingSeconds", "since", "challenge", "colonyNames"],
     ]);
-    expect(body.lobbies[1]).toMatchObject({ mode: null, size: 1, seated: 1, colonies: [[], [builder.displayName]], challenge: "house" });
+    expect(body.lobbies[1]).toMatchObject({ mode: null, size: 1, seated: 1, colonies: [[], [builder.displayName]], challenge: "house",
+      colonyNames: drawColonyNames(lobbyId) });
     expect(JSON.stringify(body)).not.toContain(lobbyId);
   });
 
