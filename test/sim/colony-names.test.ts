@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
 import {
-  HOSTILE_PAIRS, SUPERCOLONY_NAMES, colonyAgentShades, colonyColours, colonyNameNote, colonyNamesOf, drawColonyNames, isClassicColonyNames,
+  HOSTILE_PAIRS, SUPERCOLONY_NAMES, colonyColours, colonyNameNote, colonyNamesOf, drawColonyNames, isClassicColonyNames,
   lobbyColonyNames,
 } from "../../src/sim/colonyNames.ts";
 
@@ -73,15 +73,14 @@ describe("the colony names", () => {
 });
 
 describe("the colony colours", () => {
-  it("keep the rated names' colours and agent shades exactly as they were", () => {
+  it("keep the rated names' colours exactly as they were, one colour per colony", () => {
     expect(colonyColours(COLONY_NAMES)).toEqual([0xffb000, 0x00c2ff]);
-    expect(colonyAgentShades(COLONY_NAMES)).toEqual([[0xf4af38, 0xed7668, 0xebd14d, 0xf38c48], [0x4bc6fa, 0x9f85e5, 0x47d6cf, 0x77a4f6]]);
+    expect(SUPERCOLONY_NAMES.map(n => Object.keys(n).sort())).toEqual(LABELS.map(() => ["colour", "label", "note"]));
   });
 
   it("follow the name wherever it stands, and a name outside the table keeps its colony's own colour", () => {
     expect(colonyColours(["Lake Hodges Colony", "Very Large Colony"])).toEqual([0x00c2ff, 0xffb000]);
     expect(colonyColours(["Sweetwater Colony", "Lake Skinner Colony"])).toEqual([SWEETWATER, LAKE_SKINNER]);
-    expect(colonyAgentShades(["Lake Skinner Colony", "Very Large Colony"])).toEqual([[LAKE_SKINNER], [0xf4af38, 0xed7668, 0xebd14d, 0xf38c48]]);
     expect(colonyColours(["Some Colony", "Other Colony"])).toEqual([0xffb000, 0x00c2ff]);
   });
 
@@ -96,13 +95,11 @@ describe("the colony colours", () => {
     }
   });
 
-  it("keep the two new colours apart from the board's food, ant body, highlight and the rated colonies' agent shades", () => {
+  it("keep the two new colours apart from the board's food, ant body and highlight", () => {
     // Food (web/src/food.ts FOOD, FOOD_LIGHT), the ants' chitin (web/src/ants.ts CHITIN), white highlights.
     const board = [0x9ccc4a, 0xc4e27c, 0xece4d4, 0xffffff];
-    const shades = [...SUPERCOLONY_NAMES[0].agentShades, ...SUPERCOLONY_NAMES[1].agentShades];
     for (const added of [SWEETWATER, LAKE_SKINNER]) {
       for (const other of board) expect(distance(added, other)).toBeGreaterThanOrEqual(0.15);
-      for (const other of shades) expect(distance(added, other)).toBeGreaterThanOrEqual(0.07);
     }
   });
 });
