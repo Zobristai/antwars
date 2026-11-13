@@ -7,6 +7,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this module.
 import { domIcon, textIcon } from "../icons/dom.ts";
+import { setColonyText } from "./dom.ts";
 import "./ui.css";
 import type { HudHost, HudView, Mounted } from "./types.ts";
 import type { Rect } from "../words.ts";
@@ -661,7 +662,9 @@ export function mountHud(context: HudHost): Mounted<HudView> {
       const when = matchTime(q?.lostTick ?? frame.tick, tps);
       lines = { what: `Queen ${(q?.id ?? 0) + 1} lost`, who: `${colonyNamesOf(b.setup)[colony]} · ${when}`, when: "", colony, kind: "fall" };
     }
-    const keyNow = lines ? JSON.stringify(lines) : "";
+    // A match's drawn colony names (unrated) are shown in their colonies' colours with their source notes.
+    const drawn = b.setup.colonyNames;
+    const keyNow = lines ? JSON.stringify([lines, drawn ?? null]) : "";
     if (keyNow === toastKey) return;
     toastKey = keyNow;
     toast.dataset.state = lines ? "shown" : "hidden";
@@ -669,8 +672,8 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     toast.dataset.kind = lines.kind;
     toast.style.color = lines.colony === 0 ? "var(--aw-k0, var(--aw-c0))" : "var(--aw-k1, var(--aw-c1))";
     toastWhen.textContent = lines.when;
-    toastWhat.textContent = lines.what;
-    toastWho.textContent = lines.who;
+    setColonyText(doc, toastWhat, lines.what, drawn);
+    setColonyText(doc, toastWho, lines.who, drawn);
   }
 
   let cardKey = "";

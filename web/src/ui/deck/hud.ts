@@ -19,7 +19,7 @@ import { setBoardLook } from "../../board-look.ts";
 import { STEPPE_LOOK } from "../steppe-look.ts";
 import { navigation } from "../nav.ts";
 import { boardHref, keep } from "../format.ts";
-import { h, setAttr, setHidden, setText } from "../dom.ts";
+import { h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
 import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
@@ -184,17 +184,18 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   /** Nothing painted yet, so the first frame always writes the lane. */
   let captionKey = "\u0000";
-  const paintCaption = (c: Caption | null) => {
-    const keyNow = c ? JSON.stringify(c) : "";
+  /** drawn: the match's drawn colony names (unrated), each then shown in its colony's colour with its source note. */
+  const paintCaption = (c: Caption | null, drawn: readonly [string, string] | undefined) => {
+    const keyNow = c ? JSON.stringify([c, drawn ?? null]) : "";
     if (keyNow === captionKey) return;
     captionKey = keyNow;
     cap.dataset.kind = c?.kind ?? "none";
     setHidden(capBar, c === null);
     if (!c) { setText(capWhat, ""); setText(capWhen, ""); setText(capWho, ""); return; }
     cap.style.setProperty("--d1-side", COLONY_CSS[c.colony]);
-    setText(capWhat, c.what);
+    setColonyText(doc, capWhat, c.what, drawn);
     setText(capWhen, c.when);
-    setText(capWho, c.who);
+    setColonyText(doc, capWho, c.who, drawn);
   };
 
   let boardKey = "";
@@ -215,7 +216,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     const b = frame?.board ?? null;
     paintBoardToggle(view.board);
     paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled));
-    paintCaption(caption(frame));
+    paintCaption(caption(frame), frame?.board?.setup.colonyNames);
     deck.update(frame);
     teams.update(view, b === null && /connecting/i.test(view.connection));
   }

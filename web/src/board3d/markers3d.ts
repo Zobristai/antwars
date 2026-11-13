@@ -7,7 +7,7 @@ import { Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, t
 import { SUB_TILE, streamQueens } from "../../../src/live/format.ts";
 import { TICK_MS } from "../../../src/live/snapshot.ts";
 import type { Frame } from "../buffer.ts";
-import { COLONY_TINT } from "../ants.ts";
+import { colonyTint } from "../colony-palette.ts";
 import { reducedMotion } from "../camera.ts";
 import { EMBLEM_BAR, QUEEN_EMBLEM, STORY_MARK_MS, crownPolygon, emblemState, mixColour } from "../effects.ts";
 import { visibleStory } from "../story.ts";
@@ -91,9 +91,9 @@ export class MarkerSpecs3D {
         const x = left ? x0 : x1, y = top ? y0 : y1;
         project(x, y, this.corner);
         project(left ? x1 : x0, y, this.end);
-        this.arm(COLONY_TINT[colony], s.zone);
+        this.arm(colonyTint(colony), s.zone);
         project(x, top ? y1 : y0, this.end);
-        this.arm(COLONY_TINT[colony], s.zone);
+        this.arm(colonyTint(colony), s.zone);
       }
       project(q.x / SUB_TILE, q.y / SUB_TILE, this.point);
       // The flash's spreading ring, not under reduced motion; the disc stays lit either way.
@@ -101,11 +101,11 @@ export class MarkerSpecs3D {
         const radius = QUEEN_EMBLEM.r + 1 + 7 * (1 - s.flash);
         this.put("ring", this.point.x, this.point.y, radius / 30, radius / 30, 0xffffff, 0.9 * s.flash);
       }
-      this.put(colony === 0 ? "queen0" : "queen1", this.point.x, this.point.y, s.scale, s.scale, mixColour(0xffffff, COLONY_TINT[colony], 0.5 * s.flash), s.alpha);
+      this.put(colony === 0 ? "queen0" : "queen1", this.point.x, this.point.y, s.scale, s.scale, mixColour(0xffffff, colonyTint(colony), 0.5 * s.flash), s.alpha);
       if (s.zone > 0 && s.bar !== null) {
         const y = this.point.y + QUEEN_EMBLEM.r + EMBLEM_BAR.gap + 1;
         this.put("line", this.point.x, y, EMBLEM_BAR.w / 112, 1.5, 0x111111, s.zone);
-        if (s.bar > 0) this.put("line", this.point.x - (EMBLEM_BAR.w / 2) * (1 - s.bar), y, (EMBLEM_BAR.w * s.bar) / 112, 1.5, mixColour(COLONY_TINT[colony], 0xffffff, s.flash), s.zone);
+        if (s.bar > 0) this.put("line", this.point.x - (EMBLEM_BAR.w / 2) * (1 - s.bar), y, (EMBLEM_BAR.w * s.bar) / 112, 1.5, mixColour(colonyTint(colony), 0xffffff, s.flash), s.zone);
       }
     }
     for (const e of visibleStory(frame.story)) {
@@ -118,9 +118,9 @@ export class MarkerSpecs3D {
         // As the 2D board's PlaceMarkers: still rings at the two phases' radii under reduced motion.
         const t = reduced ? phase : ((age / 1000 + phase) % 1 + 1) % 1;
         const scale = (14 + 46 * t) / 30;
-        this.put("ring", this.point.x, this.point.y, scale, scale, COLONY_TINT[e.colony], 0.6 * fade * (1 - t));
+        this.put("ring", this.point.x, this.point.y, scale, scale, colonyTint(e.colony), 0.6 * fade * (1 - t));
       }
-      this.put("dot", this.point.x, this.point.y, 1, 1, COLONY_TINT[e.colony], 0.7 * fade);
+      this.put("dot", this.point.x, this.point.y, 1, 1, colonyTint(e.colony), 0.7 * fade);
     }
     // The pointed order's tile, as the 2D board's PlaceMarkers square: a bright ring on the tile's centre, with its dot, in its agent's hue.
     if (this.target) {
@@ -169,8 +169,8 @@ export class BoardMarkers3D {
     g.rect(2 * CELL + 8, 63, 112, 2).fill({ color: 0xffffff });
     for (const c of [0, 1] as const) {
       const x = (3 + c) * CELL + 64;
-      g.circle(x, 64, QUEEN_EMBLEM.r).fill({ color: 0x0b0907, alpha: 0.85 }).stroke({ width: QUEEN_EMBLEM.ringW, color: COLONY_TINT[c] });
-      if (!crowns.draw("crown", x - QUEEN_EMBLEM.crown, 64 - QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, COLONY_TINT[c])) g.poly(crownPolygon(QUEEN_EMBLEM.crown).map((v, i) => v + (i % 2 === 0 ? x : 64))).fill({ color: COLONY_TINT[c] });
+      g.circle(x, 64, QUEEN_EMBLEM.r).fill({ color: 0x0b0907, alpha: 0.85 }).stroke({ width: QUEEN_EMBLEM.ringW, color: colonyTint(c) });
+      if (!crowns.draw("crown", x - QUEEN_EMBLEM.crown, 64 - QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, colonyTint(c))) g.poly(crownPolygon(QUEEN_EMBLEM.crown).map((v, i) => v + (i % 2 === 0 ? x : 64))).fill({ color: colonyTint(c) });
     }
     const holder = new Container();
     holder.addChild(g, crowns.layer);
