@@ -4,7 +4,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
 import { fallWindow, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
@@ -582,7 +582,7 @@ export function resultView(frame: Frame | null): ResultView | null {
  * player holding every seat is named once), a Benchmark's level and Fast in brackets after its name, joined with "&".
  */
 export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony,
-  colonyNames: ColonyNamePair = COLONY_NAMES): string {
+  colonyNames: readonly string[] = COLONY_NAMES): string {
   const names: string[] = [];
   agents.forEach((a, index) => {
     if (a.colony !== colony) return;

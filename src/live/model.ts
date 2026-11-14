@@ -163,7 +163,7 @@ export interface SpectatorPlayerOptions {
   readonly rated?: boolean;
   /** An unrated lobby match's drawn colony names; absent for the rated names. Two-colony matches only: a four-colony
    * setup always names its colonies by colony number. */
-  readonly colonyNames?: readonly string[];
+  readonly colonyNames?: readonly [string, string];
   /** Resolves seated identity by the sim's internal id; never writes that id to the stream. */
   readonly identity?: (agentId: string) => StreamIdentity | undefined;
 }

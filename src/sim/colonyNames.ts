@@ -54,8 +54,8 @@ export const SUPERCOLONY_NAMES = [
 
 export type SupercolonyLabel = (typeof SUPERCOLONY_NAMES)[number]["label"];
 
-/** A match's colony labels, index = colony id: two, or four in a four-colony match. */
-export type ColonyNamePair = readonly string[];
+/** A match's two colony labels, index = colony id. */
+export type ColonyNamePair = readonly [string, string];
 
 /** Every pair of the four, unordered: all are mutually hostile, so any can be drawn. */
 export const HOSTILE_PAIRS: readonly (readonly [SupercolonyLabel, SupercolonyLabel])[] = SUPERCOLONY_NAMES.flatMap((a, i) =>
@@ -99,12 +99,15 @@ export function lobbyColonyNames(lobbyId: string, rated: boolean): ColonyNamePai
 }
 
 /** Whether a pair is the rated names, which streams and records leave implicit. */
-export function isClassicColonyNames(names: ColonyNamePair): boolean {
+export function isClassicColonyNames(names: readonly string[]): boolean {
   return names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
 }
 
-/** A match's names from what it carries (a stream setup, a listed row): its drawn pair, or COLONY_NAMES when it carries none. */
-export function colonyNamesOf(match: { readonly colonyNames?: ColonyNamePair | null } | null | undefined): ColonyNamePair {
+/**
+ * A match's names from what it carries (a stream setup, a listed row), index = colony id: its own names, or
+ * COLONY_NAMES when it carries none.
+ */
+export function colonyNamesOf(match: { readonly colonyNames?: readonly string[] | null } | null | undefined): readonly string[] {
   return match?.colonyNames ?? COLONY_NAMES;
 }
 
@@ -112,12 +115,12 @@ export function colonyNamesOf(match: { readonly colonyNames?: ColonyNamePair | n
  * A colony's table row by its name, or by its id when the name is not one of the four (a match outside the table keeps
  * colony 0's and colony 1's own colours).
  */
-function rowOf(names: ColonyNamePair, colony: 0 | 1): SupercolonyName {
+function rowOf(names: readonly string[], colony: 0 | 1): SupercolonyName {
   return supercolony(names[colony]) ?? SUPERCOLONY_NAMES[colony];
 }
 
 /** Each colony's colour in a match named `names`, index = colony id. */
-export function colonyColours(names: ColonyNamePair): readonly [number, number] {
+export function colonyColours(names: readonly string[]): readonly [number, number] {
   return [rowOf(names, 0).colour, rowOf(names, 1).colour];
 }
 
