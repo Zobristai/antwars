@@ -27,31 +27,38 @@ const startRating = (value: Json): { rating: number; rd: number; ratedMatches: n
     typeof ratedMatches === "number" && Number.isSafeInteger(ratedMatches) && ratedMatches >= 0 ? { rating, rd, ratedMatches } : null;
 };
 
-/** A record's drawn colony names (setup.colonyNames); absent, or anything not exactly two names, reads as null. */
-const colonyNames = (value: Json): [string, string] | null =>
-  Array.isArray(value) && value.length === 2 && value.every(name => typeof name === "string" && name.length > 0)
-    ? [clip(value[0] as string, 64)!, clip(value[1] as string, 64)!] : null;
+/** A record's colony names (setup.colonyNames), one per colony; absent, or anything not exactly that many names, reads as null. */
+const colonyNames = (value: Json, colonies: number): string[] | null =>
+  Array.isArray(value) && value.length === colonies && value.every(name => typeof name === "string" && name.length > 0)
+    ? value.map(name => clip(name as string, 64)!) : null;
+/** The colony numbers of a two-colony match, and of a four-colony one. */
+const TWO = [0, 1] as const, FOUR = [0, 1, 2, 3] as const;
 
 export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   const record = object(JSON.parse(new TextDecoder().decode(bytes)));
   oneOf(record.format, ["antwar.match"]); oneOf(record.version, [1]);
   if (text(record.id) !== id) throw new Error("record identity mismatch");
   const startedAt = text(record.startedAt, 64), endedAt = nullableText(record.endedAt, 64), simulationEndedAt = nullableText(record.simulationEndedAt, 64);
+  const setup = record.setup === undefined || record.setup === null ? null : object(record.setup);
+  // A four-colony (Quadrants) record's setup carries colonies 4 and its four names; a record without it has two colonies.
+  const four = setup?.colonies !== undefined && oneOf(setup.colonies, [4]) === 4;
+  const colonies = four ? FOUR : TWO;
   const result = record.result === null ? null : object(record.result);
-  const winner = result === null ? null : oneOf(result.winner, [0, 1, null] as const);
+  const winner = result === null ? null : oneOf(result.winner, [...colonies, null]);
   const reason = result === null ? null : text(result.reason, 64), decidedBy = result === null ? null : text(result.decidedBy, 64);
   const seats = list(record.seats, 64).map(value => {
     const seat = object(value);
     const index = typeof seat.seat === "number" && Number.isSafeInteger(seat.seat) && seat.seat >= 0 ? seat.seat : invalid();
-    return { seat: index, colony: oneOf(seat.colony, [0, 1] as const), modelLabel: nullableText(seat.modelLabel),
+    return { seat: index, colony: oneOf(seat.colony, colonies), modelLabel: nullableText(seat.modelLabel),
       thinkingLevel: optionalText(seat.thinkingLevel), serviceTier: optionalText(seat.serviceTier), handle: optionalText(seat.handle),
       startRating: startRating(seat.startRating) };
   });
   const status = oneOf(record.status, ["complete", "partial", "unavailable"] as const);
   const unavailable = list(record.unavailable, 32).map(reason => text(reason));
-  const setup = record.setup === undefined || record.setup === null ? null : object(record.setup);
   const rated = setup === null ? undefined : optionalFlag(setup.rated), modelIndex = setup === null ? undefined : optionalFlag(setup.modelIndex);
-  const names = setup === null ? null : colonyNames(setup.colonyNames);
+  const names = setup === null ? null : colonyNames(setup.colonyNames, colonies.length);
+  // The row's four names are how it is known as a four-colony match (recorded-match-type.ts recordedMatchType).
+  if (four && names === null) invalid();
   return { id, startedAt, endedAt, simulationEndedAt, winner, reason, decidedBy,
     seats: seats.map(seat => ({ ...seat, modelLabel: clip(seat.modelLabel, 64), thinkingLevel: clip(seat.thinkingLevel, 32),
       serviceTier: clip(seat.serviceTier, 32), handle: clip(seat.handle, 256) })),
