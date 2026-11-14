@@ -13,7 +13,7 @@ export interface HistorySummary {
   startedAt: string;
   endedAt: string | null;
   simulationEndedAt: string | null;
-  /** 0 to 3, or null for a draw. */
+  /** The winning colony (0 or 1, or 0 to 3 in a four-colony match), or null for a draw or no result. */
   winner: number | null;
   reason: string | null;
   decidedBy: string | null;
@@ -30,8 +30,11 @@ export interface HistorySummary {
   rated?: boolean | null;
   /** The record's setup.modelIndex marker: an Antwars Model Index match. */
   modelIndex?: boolean;
-  /** The record's setup.colonyNames: an unrated match's drawn names; absent where the match used the rated names. */
-  colonyNames?: [string, string];
+  /**
+   * The record's setup.colonyNames, one per colony: an unrated match's two drawn names, absent where the match used the
+   * rated names; a four-colony (Quadrants) match's four names, always present.
+   */
+  colonyNames?: string[];
 }
 export interface HistoryPage { matches: HistorySummary[]; nextPageToken: string | null }
 export interface HistorySource {

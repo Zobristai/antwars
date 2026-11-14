@@ -24,7 +24,7 @@ import type { Browser, Page } from "playwright-core";
 import type { SimConfig } from "../../src/sim/config.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
-import type { SimInput, SimState } from "../../src/sim/types.ts";
+import { asTwoColony, type SimInput, type SimState } from "../../src/sim/types.ts";
 import { DEFAULT_LIVE_CONFIG, type LiveConfig } from "../../src/live/config.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import { LARGE_CONFIG, RECORD_CONFIG, scriptedInputs, type ScriptOptions } from "../../src/live/record.ts";
@@ -208,7 +208,7 @@ function summary(r: MatchRecord): HistorySummary {
   return {
     id: r.id, startedAt: r.startedAt, endedAt: r.endedAt, simulationEndedAt: r.simulationEndedAt,
     winner: r.result?.winner ?? null, reason: r.result?.reason ?? null, decidedBy: r.result?.decidedBy ?? null,
-    seats: r.seats.map(({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle }) => ({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle })),
+    seats: r.seats.map(({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle }) => ({ seat, colony: asTwoColony(colony), modelLabel, thinkingLevel, serviceTier, handle })),
     status: r.status, unavailable: r.unavailable,
   };
 }
