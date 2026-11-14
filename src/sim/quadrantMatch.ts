@@ -7,10 +7,11 @@
 import { SUB, type FoodPatch, type SimConfig } from "./config.js";
 import { tileCentre, withinTiles } from "./geometry.js";
 import { gridScaleOf, scaledFoodPatch } from "./gridScale.js";
-import { newAnt, newColony, newStats } from "./map.js";
+import { checkInitialQueens, newAnt, newColony, newStats, startingQueens } from "./map.js";
 import { OWN_VALUE_GRID_SCALE } from "./mapBoard.js";
 import { generateQuadrantBoard, type QuadrantBoard } from "./quadrantMap.js";
 import { nextUint32 } from "./rng.js";
+import type { StartBox } from "./startPlacement.js";
 import { isBlockedTile, selectMap } from "./terrain.js";
 import type { Ant, ColonyState, SimState, Terrain, TileOwner } from "./types.js";
 
@@ -19,13 +20,15 @@ export const QUADRANT_COLONIES = 4;
 /**
  * Rules a four-colony match cannot be played without. Each colony's ants follow their own local rules from
  * the first tick (there is no house player for a colony), a colony leaves the match when its last queen's
- * HP runs out, and the territory win is the majority hold. Lobby nest picks belong to the quadrant lobby.
+ * HP runs out, and the territory win is the majority hold. Lobby nest picks, when given, cover all four colonies.
  */
 function refuseUnplayable(config: SimConfig): void {
   if (config.localAnts === undefined) throw new RangeError("a four-colony match needs local ant rules: no house player moves a colony's ants");
   if (config.queenHp === undefined) throw new RangeError("a four-colony match needs queen HP: a colony leaves the match when its last queen dies");
   if (config.earlyWin === undefined) throw new RangeError("a four-colony match needs the territory win rules");
-  if (config.initialQueens !== undefined) throw new RangeError("a four-colony match does not take two-colony lobby nest picks");
+  if (config.initialQueens !== undefined && config.initialQueens.length !== QUADRANT_COLONIES) {
+    throw new RangeError("a four-colony match takes nest picks for exactly four colonies");
+  }
 }
 
 /**
@@ -50,6 +53,17 @@ function drawn(seed: number, config: SimConfig): { config: SimConfig; board: Qua
     rotationSize: config.rotationSize ?? { width: config.mapWidth, height: config.mapHeight },
     nestTileX: board.nests[0]!.tx * scale, nestTileY: board.nests[0]!.ty * scale,
     foodPatches: [...board.quadrantFood, ...board.centreFood].map(p => scaledFoodPatch(p, scale)) } };
+}
+
+/** A reference-tile rectangle in fine tiles. */
+function fine(r: { x: number; y: number; width: number; height: number }, scale: number): StartBox {
+  return { x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale };
+}
+
+/** Each colony's nest-pick box for a seed: the drawn board's start areas in fine tiles, in quadrant order. */
+export function quadrantStartBoxes(seed: number, config: SimConfig): StartBox[] {
+  const { config: drawnConfig, board } = drawn(seed, config);
+  return board.startAreas.map(area => fine(area, gridScaleOf(drawnConfig)));
 }
 
 /** The sub-tile position of a reference tile's centre, nudged one sub-tile into the fine tile on its own side of
@@ -99,31 +113,39 @@ function layQuadrantFood(config: SimConfig, board: QuadrantBoard, rngState: numb
 }
 
 /**
- * Colony 0's start tiles: the land tiles of its start area nearest its nest, one per start ant (nearest first,
- * then by row and column). Colonies 1 to 3 take the mirror images.
+ * Start tiles for one colony's ants: the land tiles of its start box, one per start ant, ant k taking the free
+ * tile nearest queen k mod the queen count (nearest first, then by row and column). Centres are in fine tiles.
  */
-function startTiles(config: SimConfig, board: QuadrantBoard, terrain: Terrain): { tx: number; ty: number }[] {
-  const scale = gridScaleOf(config), area = board.startAreas[0]!, nest = board.nests[0]!;
-  const nx = (nest.tx + 0.5) * scale - 0.5, ny = (nest.ty + 0.5) * scale - 0.5;
+function startTiles(config: SimConfig, box: StartBox, centres: readonly { x: number; y: number }[], terrain: Terrain): { tx: number; ty: number }[] {
   const tiles: { tx: number; ty: number }[] = [];
-  for (let ty = area.y * scale; ty < (area.y + area.height) * scale; ty++) {
-    for (let tx = area.x * scale; tx < (area.x + area.width) * scale; tx++) if (!isBlockedTile(terrain, tx, ty)) tiles.push({ tx, ty });
+  for (let ty = box.y; ty < box.y + box.height; ty++) {
+    for (let tx = box.x; tx < box.x + box.width; tx++) if (!isBlockedTile(terrain, tx, ty)) tiles.push({ tx, ty });
   }
   if (tiles.length < config.startAnts) throw new RangeError(`start area holds ${tiles.length} land tiles, fewer than ${config.startAnts} start ants`);
-  const distance = ({ tx, ty }: { tx: number; ty: number }) => (tx - nx) ** 2 + (ty - ny) ** 2;
-  tiles.sort((a, b) => distance(a) - distance(b) || a.ty - b.ty || a.tx - b.tx);
-  return tiles.slice(0, config.startAnts);
+  const byQueen = centres.map(({ x, y }) => {
+    const distance = ({ tx, ty }: { tx: number; ty: number }) => (tx - x) ** 2 + (ty - y) ** 2;
+    return tiles.slice().sort((a, b) => distance(a) - distance(b) || a.ty - b.ty || a.tx - b.tx);
+  });
+  const used = new Set<{ tx: number; ty: number }>(), chosen: { tx: number; ty: number }[] = [];
+  for (let ant = 0; ant < config.startAnts; ant++) {
+    const tile = byQueen[ant % byQueen.length]!.find(t => !used.has(t))!;
+    used.add(tile);
+    chosen.push(tile);
+  }
+  return chosen;
 }
 
 /** A four-colony match at tick 0. Queued agents join through inputs on the first step. */
 export function createQuadrantMatch(seed: number, base: SimConfig): SimState {
   const { config, board } = drawn(seed, base);
   const scale = gridScaleOf(config), width = config.mapWidth, height = config.mapHeight;
-  const fine = (r: { x: number; y: number; width: number; height: number }) =>
-    ({ x: r.x * scale, y: r.y * scale, width: r.width * scale, height: r.height * scale });
   const terrain: Terrain = Object.freeze({ mapId: board.mapId, mapName: board.mapName,
-    water: Object.freeze(board.water.map(r => Object.freeze(fine(r)))),
-    rocks: Object.freeze(board.rocks.map(r => Object.freeze({ ...fine(r), appearance: r.appearance }))) });
+    water: Object.freeze(board.water.map(r => Object.freeze(fine(r, scale)))),
+    rocks: Object.freeze(board.rocks.map(r => Object.freeze({ ...fine(r, scale), appearance: r.appearance }))) });
+  // Food draws no randomness that depends on ants or queens, so it is laid first and picks can be checked against it.
+  const laid = layQuadrantFood(config, board, seed >>> 0);
+  const picks = config.initialQueens, boxes = board.startAreas.map(area => fine(area, scale));
+  if (picks !== undefined) checkInitialQueens(config, terrain, laid.food, boxes);
 
   const colonies = board.nests.map(({ tx, ty }, id): ColonyState => {
     const colony = newColony(config, id, nestPosition(tx, board.width, scale), nestPosition(ty, board.height, scale));
@@ -131,20 +153,25 @@ export function createQuadrantMatch(seed: number, base: SimConfig): SimState {
     const queens = colony.queens ?? [{ id: 0, queenX: colony.queenX, queenY: colony.queenY, foundedTick: 0,
       lastHatchTick: -config.hatchIntervalTicks, overrunTicks: 0, lostTick: null,
       hp: config.queenHp!.hp, lastBiteTick: -config.queenHp!.biteIntervalTicks, regenFromTick: 0 }];
-    return { ...colony, queens, kills: 0 };
+    if (picks === undefined) return { ...colony, queens, kills: 0 };
+    const picked = startingQueens(queens[0]!, picks[id]!);
+    return { ...colony, queens: picked, queenX: picked[0]!.queenX, queenY: picked[0]!.queenY, kills: 0 };
   });
 
+  // Without picks, colony 0's start tiles around its nest and their mirror images; with picks, each colony's own
+  // start box around its picked queens. Ant ids interleave the colonies tile by tile either way.
+  const nest = board.nests[0]!;
+  const perColony = picks === undefined
+    ? startTiles(config, boxes[0]!, [{ x: (nest.tx + 0.5) * scale - 0.5, y: (nest.ty + 0.5) * scale - 0.5 }], terrain).map(({ tx, ty }) =>
+      [{ tx, ty }, { tx: width - 1 - tx, ty }, { tx, ty: height - 1 - ty }, { tx: width - 1 - tx, ty: height - 1 - ty }])
+    : transpose(boxes.map((box, colony) => startTiles(config, box, picks[colony]!.map(q => ({ x: q.tileX, y: q.tileY })), terrain)));
   const ants: Ant[] = [];
   let nextAntId = 1;
-  for (const { tx, ty } of startTiles(config, board, terrain)) {
-    const images = [{ tx, ty }, { tx: width - 1 - tx, ty }, { tx, ty: height - 1 - ty }, { tx: width - 1 - tx, ty: height - 1 - ty }];
-    images.forEach((tile, colony) => {
-      ants.push(newAnt(config, nextAntId, colony, tileCentre(tile.tx), tileCentre(tile.ty)));
-      nextAntId += 1;
-    });
-  }
+  for (const images of perColony) images.forEach((tile, colony) => {
+    ants.push(newAnt(config, nextAntId, colony, tileCentre(tile.tx), tileCentre(tile.ty)));
+    nextAntId += 1;
+  });
 
-  const laid = layQuadrantFood(config, board, seed >>> 0);
   const tiles = width * height;
   return {
     config,
@@ -166,4 +193,9 @@ export function createQuadrantMatch(seed: number, base: SimConfig): SimState {
     nextMarkId: 1,
     earlyWinProgress: { leader: null, ticks: 0 },
   };
+}
+
+/** Rows of columns: [colony][ant] becomes [ant][colony]. */
+function transpose<T>(columns: readonly (readonly T[])[]): T[][] {
+  return columns[0]!.map((_, row) => columns.map(column => column[row]!));
 }

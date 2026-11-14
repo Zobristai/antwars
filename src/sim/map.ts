@@ -1,7 +1,7 @@
-import { DEFAULT_CONFIG, SUB, type QueenRules, type SimConfig } from "./config.js";
+import { DEFAULT_CONFIG, SUB, type InitialQueen, type QueenRules, type SimConfig } from "./config.js";
 import { tileCentre, withinTiles } from "./geometry.js";
 import { addRocks, createTerrain, isBlockedTile, isWaterTile, landBirthPosition, passableMask, selectMap } from "./terrain.js";
-import { startBoxes } from "./startPlacement.js";
+import { startBoxes, type StartBox } from "./startPlacement.js";
 import { generateFoodLayout, referenceFoodConfig } from "./foodLayout.js";
 import { gridScaleOf, scaledFoodPatch, scaledTileCentre, withGridScale } from "./gridScale.js";
 import { isQuadrantRotation, validateMapBoards } from "./mapBoard.js";
@@ -279,28 +279,40 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
   return state;
 }
 
-/** Apply only after map generation: picks must never change the board they were made on. */
-function installInitialQueens(state: SimState): void {
-  const { config } = state, layout = config.initialQueens!;
-  if (config.queenFounding === undefined || layout.length !== 2 || layout.some(team => team.length === 0)) {
+/**
+ * Refuse a lobby nest layout unless there are queen rules and one nonempty list per start box, and every
+ * nest is a whole tile inside its colony's box, on land without food, and used once.
+ */
+export function checkInitialQueens(config: SimConfig, terrain: Terrain | undefined, food: readonly number[], boxes: readonly StartBox[]): void {
+  const layout = config.initialQueens!;
+  if (config.queenFounding === undefined || layout.length !== boxes.length || layout.some(team => team.length === 0)) {
     throw new Error("Initial queen layout requires queen rules and two nonempty teams");
   }
-  const boxes = startBoxes(config), used = new Set<number>();
-  for (const colony of [0, 1] as const) {
-    const box = boxes[colony];
+  const used = new Set<number>();
+  boxes.forEach((box, colony) => {
     for (const { tileX, tileY } of layout[colony]) {
       const index = tileIndex(config, tileX, tileY);
       if (!Number.isSafeInteger(tileX) || !Number.isSafeInteger(tileY) || tileX < box.x || tileX >= box.x + box.width
-        || tileY < box.y || tileY >= box.y + box.height || isBlockedTile(state.terrain, tileX, tileY)
-        || state.food[index] > 0 || used.has(index)) throw new Error("Invalid initial queen tile");
+        || tileY < box.y || tileY >= box.y + box.height || isBlockedTile(terrain, tileX, tileY)
+        || food[index] > 0 || used.has(index)) throw new Error("Invalid initial queen tile");
       used.add(index);
     }
-  }
+  });
+}
+
+/** A colony's starting queens, one per lobby nest in order, each a copy of its first queen at that tile's centre. */
+export function startingQueens(template: QueenState, nests: readonly InitialQueen[]): QueenState[] {
+  return nests.map(({ tileX, tileY }, id): QueenState => ({
+    ...template, id, starting: true, queenX: tileCentre(tileX), queenY: tileCentre(tileY),
+  }));
+}
+
+/** Apply only after map generation: picks must never change the board they were made on. */
+function installInitialQueens(state: SimState): void {
+  const { config } = state, layout = config.initialQueens!;
+  checkInitialQueens(config, state.terrain, state.food, startBoxes(config));
   for (const colony of [0, 1] as const) {
-    const before = state.colonies[colony], template = before.queens![0];
-    const queens = layout[colony].map(({ tileX, tileY }, id): QueenState => ({
-      ...template, id, starting: true, queenX: tileCentre(tileX), queenY: tileCentre(tileY),
-    }));
+    const before = state.colonies[colony], queens = startingQueens(before.queens![0], layout[colony]);
     state.colonies[colony] = { ...before, queens, queenX: queens[0].queenX, queenY: queens[0].queenY };
     // Preserve population, identities and offset pattern. Distribute the same ants
     // across starting nests; unlike map generation this consumes no random draws.

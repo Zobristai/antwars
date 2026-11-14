@@ -1,5 +1,6 @@
 /** Lobby-only starting placement. No ticks, timers, transport or public projections. */
 import { gridScaleOf, type GridScale } from "./gridScale.js";
+import type { ColonyId } from "./types.js";
 
 /** The nest-pick window of every lobby except index matches. */
 export const START_PICK_WINDOW_MS = 120_000;
@@ -11,7 +12,6 @@ export function startPickWindowMsFor(houseMatch: boolean): number {
   return houseMatch ? HOUSE_START_PICK_WINDOW_MS : START_PICK_WINDOW_MS;
 }
 
-type Colony = 0 | 1;
 export interface StartBox { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export interface StartTile { readonly tileX: number; readonly tileY: number }
 /**
@@ -19,7 +19,7 @@ export interface StartTile { readonly tileX: number; readonly tileY: number }
  * single-seat identity, and a distinct key per seat when one identity holds several
  * seats of its colony (src/mcp/game.ts seatKeyOf), so picks are per seat.
  */
-export interface StartSeat { readonly identityId: string; readonly colony: Colony }
+export interface StartSeat { readonly identityId: string; readonly colony: ColonyId }
 export interface StartingNest extends StartTile, StartSeat { readonly queenId: number }
 export interface StartGrid {
   readonly mapWidth: number;
@@ -79,43 +79,44 @@ const key = (tile: StartTile): string => `${tile.tileX},${tile.tileY}`;
  */
 export class StartPlacement {
   readonly closesAt: number;
-  private readonly boxes: [StartBox, StartBox];
+  private readonly boxes: readonly StartBox[];
   private readonly seats: readonly StartSeat[];
   private readonly picks = new Map<string, StartTile>();
   private readonly obstacles: Map<string, Exclude<StartTileObstacle, null>>;
-  private readonly candidates: [StartTile[], StartTile[]];
+  private readonly candidates: StartTile[][];
   private finalized: StartingNest[] | null = null;
   private readonly requireAllPicks: boolean;
 
   constructor(grid: StartGrid, seats: readonly StartSeat[], openedAt: number,
     obstacle: (tileX: number, tileY: number) => StartTileObstacle, windowMs = START_PICK_WINDOW_MS,
-    requireAllPicks = false) {
+    requireAllPicks = false, boxes?: readonly StartBox[]) {
     this.requireAllPicks = requireAllPicks;
     if (!Number.isFinite(openedAt)) throw new Error("Invalid pick window time");
     if (!Number.isSafeInteger(windowMs) || windowMs < 1) throw new Error("Invalid pick window duration");
     if (seats.length === 0 || new Set(seats.map(s => s.identityId)).size !== seats.length
-      || seats.some(s => !s.identityId || (s.colony !== 0 && s.colony !== 1))) {
+      || seats.some(s => !s.identityId || !Number.isInteger(s.colony) || s.colony < 0 || s.colony >= (boxes?.length ?? 2))) {
       throw new Error("Invalid starting roster");
     }
-    this.boxes = startBoxes(grid);
+    this.boxes = boxes?.map(box => ({ ...box })) ?? startBoxes(grid);
     this.seats = seats.map(s => ({ ...s }));
     this.closesAt = openedAt + windowMs;
     this.obstacles = new Map();
-    this.candidates = [[], []];
-    for (const colony of [0, 1] as const) {
-      const box = this.boxes[colony];
+    this.candidates = this.boxes.map(() => []);
+    this.boxes.forEach((box, colony) => {
       for (let y = box.y; y < box.y + box.height; y++) for (let x = box.x; x < box.x + box.width; x++) {
         const tile = { tileX: x, tileY: y }, blocked = obstacle(x, y);
         if (blocked !== null) this.obstacles.set(key(tile), blocked);
         else this.candidates[colony].push(tile);
       }
-      const relativeX = (tile: StartTile) => colony === 0 ? tile.tileX : grid.mapWidth - 1 - tile.tileX;
-      const distance = (tile: StartTile) => (relativeX(tile) - grid.nestTileX) ** 2 + (tile.tileY - grid.nestTileY) ** 2;
-      this.candidates[colony].sort((a, b) => distance(a) - distance(b) || a.tileY - b.tileY || relativeX(a) - relativeX(b));
+      // Defaults in colony 0's frame: odd colonies mirror x, colonies 2 and 3 also mirror y (the quadrant order).
+      const relativeX = (tile: StartTile) => colony & 1 ? grid.mapWidth - 1 - tile.tileX : tile.tileX;
+      const relativeY = (tile: StartTile) => colony & 2 ? grid.mapHeight - 1 - tile.tileY : tile.tileY;
+      const distance = (tile: StartTile) => (relativeX(tile) - grid.nestTileX) ** 2 + (relativeY(tile) - grid.nestTileY) ** 2;
+      this.candidates[colony].sort((a, b) => distance(a) - distance(b) || relativeY(a) - relativeY(b) || relativeX(a) - relativeX(b));
       if (this.candidates[colony].length < seats.filter(s => s.colony === colony).length) {
         throw new Error(`Starting box ${colony} has too few legal nest tiles`);
       }
-    }
+    });
   }
 
   pick(identityId: string, tileX: number, tileY: number, now: number): StartPickResult {
@@ -163,7 +164,7 @@ export class StartPlacement {
     if (this.finalized === null) {
       if (this.requireAllPicks && this.seats.some(seat => !this.picks.has(seat.identityId))) throw new MissingStartPicksError();
       const taken = new Set([...this.picks.values()].map(key));
-      const queenIds = [0, 0];
+      const queenIds = this.boxes.map(() => 0);
       this.finalized = this.seats.map(seat => {
         const tile = this.picks.get(seat.identityId) ?? this.candidates[seat.colony].find(t => !taken.has(key(t)));
         // Constructor checked capacity, and no pick can reduce the number of free spots needed.
