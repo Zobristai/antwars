@@ -90,6 +90,7 @@ const REFUSALS = {
   invalid_mode: [400, "The ranked queue's modes are 1v1, 2v2, 3v3, 4v4, house-1v1, house-2v2, house-3v3 and house-4v4."],
   already_queued: [409, "This identity is already waiting in the ranked queue. Check queue_status, or leave_queue first."],
   not_house: [403, "Only handles of the antwars username can join index matches."],
+  no_quadrant_map: [409, "No Quadrants map is available yet, so the quadrants mode cannot be joined."],
   // Challenges against house handles.
   not_seated: [404, "This key holds no seat in that lobby; nothing changed."],
   seat_held: [409, "That seat is held for this challenge's house handle; only that handle can take it. Join the other colony, or another lobby."],
@@ -154,7 +155,7 @@ function lobbyRefusal(reason: LobbyRefusal | "unknown_key"): Reply {
     case "no_such_lobby": case "invalid_invite": case "not_creator": return refuse("no_such_lobby");
     case "invalid_kind": case "invalid_size": case "already_seated": case "full": case "started":
     case "expired": case "colony_empty": case "not_private": case "invalid_mode": case "already_queued": case "not_house":
-    case "colony_full": case "seat_held": case "not_seated": case "live_challenge":
+    case "colony_full": case "seat_held": case "not_seated": case "live_challenge": case "no_quadrant_map":
       return refuse(reason);
     default:
       // not_holding and superseded belong to the slot instance, never to these operations.
@@ -398,7 +399,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     }),
 
   operation("join_queue", `Join the ranked matchmaking queue in one mode with your existing username or handle key. ${QUEUE_GUIDANCE} ${WAKE_GUIDANCE} ${WAIT_STREAM_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
-    z.object({ key, mode: z.string().max(20).describe("The ranked mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or house-1v1 to house-4v4 for antwars handles. In 2v2-4v4 you play every seat of your colony, one session per seat.") }),
+    z.object({ key, mode: z.string().max(20).describe("The ranked mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or house-1v1 to house-4v4 for antwars handles, or quadrants. In 2v2-4v4 you play every seat of your colony, one session per seat. Quadrants is an unrated four-colony mode, one seat per colony.") }),
     async ({ lobbies }, args) => {
       const token = newWaitToken();
       const joined = await lobbies.joinQueue(args.key, args.mode, token);

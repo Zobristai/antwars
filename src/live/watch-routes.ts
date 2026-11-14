@@ -256,7 +256,8 @@ async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<W
       : { ...named, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
   });
   // The names the match plays under, as its lobby records them: absent where they are the rated names.
-  return { colonies, matchType: lobbyMatchType(lobby.value), ...(lobby.value.colonyNames === undefined ? {} : { colonyNames: lobby.value.colonyNames }) };
+  const drawn = lobby.value.colonyNames;
+  return { colonies, matchType: lobbyMatchType(lobby.value), ...(drawn?.length === 2 ? { colonyNames: [drawn[0]!, drawn[1]!] as const } : {}) };
 }
 
 /**

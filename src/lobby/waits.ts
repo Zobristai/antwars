@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { randomBytes } from "node:crypto";
-import type { RankedMode } from "../rating/ratings.js";
+import type { QueueMode } from "./queue.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import type { Lobby } from "./lobbies.js";
 
@@ -47,7 +47,7 @@ import type { Lobby } from "./lobbies.js";
 /** A wait's state. Only paired, slot_ready and expired are final. */
 export type WaitState =
   /** A queue entry still waiting for a pairing, until expiresAt. */
-  | { readonly state: "waiting"; readonly mode: RankedMode; readonly expiresAt: number }
+  | { readonly state: "waiting"; readonly mode: QueueMode; readonly expiresAt: number }
   /** A lobby open for seats or waiting for a match slot; an open or waiting lobby expires at expiresAt. */
   | { readonly state: "waiting"; readonly lobby: "open" | "waiting"; readonly expiresAt: number; readonly lobbyId?: string }
   /**

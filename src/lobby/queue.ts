@@ -1,5 +1,5 @@
 import { isHouseOwned } from "../identity/houseOwnership.js";
-import { isRankedMode, type RankedMode } from "../rating/ratings.js";
+import type { RankedMode } from "../rating/ratings.js";
 import type { Fields, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 import type { Lobby, LobbyOutcome, LobbySize, Seat } from "./lobbies.js";
 import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type WaitIndexes, type WaitState } from "./waits.js";
@@ -21,6 +21,11 @@ import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type Wait
  * House modes admit only handles of the antwars username (refused `not_house`
  * otherwise) and pair them with each other.
  *
+ * Quadrants is an unrated four-colony mode: a join waits until three waiting entries
+ * exist whose owners differ from each other and from the joiner's, then the four become
+ * one public lobby of four one-seat colonies. It is refused `no_quadrant_map` while its
+ * map rotation holds no quadrant map.
+ *
  * Documents, under the store's namespace:
  *   queueEntries/{identityId}  { mode, joinedAt, state ("waiting" | "matched"), lobbyId }
  *   queueWaiting/{mode}        { entries }  waiting identity ids, oldest first
@@ -33,30 +38,38 @@ export const HOUSE_QUEUE_TTL_MS = 15 * 60 * 1000;
 
 /** An entry's lifetime from its join, by its mode: HOUSE_QUEUE_TTL_MS for a house mode, QUEUE_TTL_MS otherwise. */
 export function queueTtl(mode: string | undefined): number {
-  return isRankedMode(mode) && QUEUE_MODES[mode]?.house ? HOUSE_QUEUE_TTL_MS : QUEUE_TTL_MS;
+  return isQueueMode(mode) && QUEUE_MODES[mode]?.house ? HOUSE_QUEUE_TTL_MS : QUEUE_TTL_MS;
 }
 
-export const QUEUE_MODES: Partial<Record<RankedMode, { readonly size: LobbySize; readonly house: boolean }>> = {
-  "1v1": { size: 1, house: false },
-  "2v2": { size: 2, house: false },
-  "3v3": { size: 3, house: false },
-  "4v4": { size: 4, house: false },
-  "house-1v1": { size: 1, house: true },
-  "house-2v2": { size: 2, house: true },
-  "house-3v3": { size: 3, house: true },
-  "house-4v4": { size: 4, house: true },
+/** A queue's mode: a ranked mode, or the unrated four-colony quadrants. */
+export type QueueMode = RankedMode | "quadrants";
+
+export const QUEUE_MODES: Partial<Record<QueueMode, { readonly size: LobbySize; readonly house: boolean; readonly colonies: 2 | 4 }>> = {
+  "1v1": { size: 1, house: false, colonies: 2 },
+  "2v2": { size: 2, house: false, colonies: 2 },
+  "3v3": { size: 3, house: false, colonies: 2 },
+  "4v4": { size: 4, house: false, colonies: 2 },
+  "house-1v1": { size: 1, house: true, colonies: 2 },
+  "house-2v2": { size: 2, house: true, colonies: 2 },
+  "house-3v3": { size: 3, house: true, colonies: 2 },
+  "house-4v4": { size: 4, house: true, colonies: 2 },
+  quadrants: { size: 1, house: false, colonies: 4 },
 };
+
+export function isQueueMode(mode: unknown): mode is QueueMode {
+  return typeof mode === "string" && Object.hasOwn(QUEUE_MODES, mode);
+}
 
 export type QueueStatus =
   | { readonly state: "none" }
-  | { readonly state: "waiting"; readonly mode: RankedMode; readonly joinedAt: number; readonly expiresAt: number }
-  | { readonly state: "matched"; readonly mode: RankedMode; readonly lobbyId: string; readonly matchedAt: number }
-  | { readonly state: "expired"; readonly mode: RankedMode; readonly expiresAt: number };
+  | { readonly state: "waiting"; readonly mode: QueueMode; readonly joinedAt: number; readonly expiresAt: number }
+  | { readonly state: "matched"; readonly mode: QueueMode; readonly lobbyId: string; readonly matchedAt: number }
+  | { readonly state: "expired"; readonly mode: QueueMode; readonly expiresAt: number };
 
 /** The lobby a pairing makes, in the caller's transaction: Lobbies.queuedMatchWrites. */
 export type QueuedMatchWrites = (
   read: TransactionRead,
-  match: { readonly mode: RankedMode; readonly colonies: readonly [readonly Seat[], readonly Seat[]] },
+  match: { readonly mode: QueueMode; readonly colonies: readonly (readonly Seat[])[] },
   at: number,
 ) => Promise<{ readonly writes: readonly Write[]; readonly lobby: Lobby }>;
 
@@ -81,7 +94,7 @@ export function pairColonies(size: LobbySize, first: Seat, second: Seat): [Seat[
 
 /** The entry's status at `at`; a matched entry's time is its lobby's creation. */
 async function statusOf(read: TransactionRead, entry: Fields | null, at: number): Promise<QueueStatus> {
-  if (!entry || !isRankedMode(entry.mode)) return { state: "none" };
+  if (!entry || !isQueueMode(entry.mode)) return { state: "none" };
   const mode = entry.mode;
   const joinedAt = Number(entry.joinedAt);
   if (entry.state === "matched" && entry.lobbyId) {
@@ -97,12 +110,15 @@ async function statusOf(read: TransactionRead, entry: Fields | null, at: number)
  * waitToken: the join's waiting token (src/lobby/waits.ts), kept on the entry so a later join or leave can remove its wait;
  * indexes: the transaction's wait index edits, which a re-pointed partner's token moves through. A join matched here
  * writes its own wait as a lobby wait on the paired lobby (matchedQueueWaitWrites); the caller writes a waiting join's.
+ * quadrantMapReady: whether the quadrants map rotation can serve a match; quadrants is refused before any read while not.
  */
 export async function joinQueueStep(
   read: TransactionRead, joiner: Seat, mode: string, at: number, random: () => number, queuedMatchWrites: QueuedMatchWrites, indexes: WaitIndexes, waitToken = "",
+  quadrantMapReady = false,
 ): Promise<Step> {
-  const table = isRankedMode(mode) ? QUEUE_MODES[mode] : undefined;
-  if (!isRankedMode(mode) || !table) return { result: { ok: false, reason: "invalid_mode" }, writes: [] };
+  const table = isQueueMode(mode) ? QUEUE_MODES[mode] : undefined;
+  if (!isQueueMode(mode) || !table) return { result: { ok: false, reason: "invalid_mode" }, writes: [] };
+  if (table.colonies === 4 && !quadrantMapReady) return { result: { ok: false, reason: "no_quadrant_map" }, writes: [] };
   const docs = await read([entryPath(joiner.id), waitingPath(mode), `identities/${joiner.id}`]);
   if (table.house && !(await admitsHouse(read, docs.get(`identities/${joiner.id}`), joiner.id))) {
     return { result: { ok: false, reason: "not_house" }, writes: [] };
@@ -132,26 +148,34 @@ export async function joinQueueStep(
   };
   const ownWrite = (fields: Fields): Write => ({ op: own ? "update" : "create", path: entryPath(joiner.id), fields });
 
-  if (eligible.length === 0) {
+  // Quadrants needs three partners whose owners differ from each other and from the joiner's, picked in a random order.
+  const picks = table.colonies === 4
+    ? distinctOwners(shuffled(eligible, random), (id) => ownerOf(id, candidateDocs.get(`identities/${id}`))!, joinerOwner!, 3)
+    : eligible.length === 0 ? [] : [eligible[Math.min(eligible.length - 1, Math.max(0, Math.floor(random() * eligible.length)))]!];
+  if (picks.length < table.colonies - 1) {
     const fields = { mode, joinedAt: String(at), state: "waiting", lobbyId: "", waitToken };
     return {
       result: { ok: true, value: { state: "waiting", mode, joinedAt: at, expiresAt: at + queueTtl(mode) } },
       writes: [ownWrite(fields), ...listWrite([...waiting, joiner.id])],
     };
   }
-  const pick = eligible[Math.min(eligible.length - 1, Math.max(0, Math.floor(random() * eligible.length)))]!;
-  const partner = candidateDocs.get(`identities/${pick}`)!;
+  const seatOf = (id: string): Seat => ({ id, displayName: candidateDocs.get(`identities/${id}`)!.displayName ?? "" });
+  // Partners take the first colonies in pick order and the joiner the last; each holds every seat of its colony.
   const made = await queuedMatchWrites(read, {
-    mode, colonies: pairColonies(table.size, { id: pick, displayName: partner.displayName ?? "" }, joiner),
+    mode, colonies: table.colonies === 4 ? [...picks.map((id) => [seatOf(id)]), [joiner]] : pairColonies(table.size, seatOf(picks[0]!), joiner),
   }, at);
   const lobbyId = made.lobby.id;
-  // The waiting partner may not read its token again for hours: its record follows the lobby from this commit, with the
+  // A waiting partner may not read its token again for hours: its record follows the lobby from this commit, with the
   // lobby's own limit, so it is never swept on its queue expiry while the lobby still waits (src/lobby/waits.ts).
-  const partnerToken = candidateDocs.get(entryPath(pick))?.waitToken;
-  const partnerWait = partnerToken && isWaitToken(partnerToken) ? (await read([waitPath(partnerToken)])).get(waitPath(partnerToken)) : null;
-  const partnerRepoint: Write[] = partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt
-    ? await repointWrites(read, indexes, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread")
-    : [];
+  const partnerWrites: Write[] = [];
+  for (const pick of picks) {
+    partnerWrites.push({ op: "update", path: entryPath(pick), fields: { state: "matched", lobbyId } });
+    const partnerToken = candidateDocs.get(entryPath(pick))?.waitToken;
+    const partnerWait = partnerToken && isWaitToken(partnerToken) ? (await read([waitPath(partnerToken)])).get(waitPath(partnerToken)) : null;
+    if (partnerWait?.kind === "queue" && partnerWait.joinedAt === candidateDocs.get(entryPath(pick))?.joinedAt) {
+      partnerWrites.push(...await repointWrites(read, indexes, partnerToken!, lobbyId, pick, made.lobby.expiresAt, "unread"));
+    }
+  }
   // The joiner's own token is bound to the paired lobby the same way, from its first write.
   const ownWait = waitToken && isWaitToken(waitToken)
     ? await matchedQueueWaitWrites(read, indexes, waitToken, lobbyId, joiner.id, made.lobby.expiresAt)
@@ -160,13 +184,36 @@ export async function joinQueueStep(
     result: { ok: true, value: { state: "matched", mode, lobbyId, matchedAt: at } },
     writes: [
       ...made.writes,
-      { op: "update", path: entryPath(pick), fields: { state: "matched", lobbyId } },
-      ...partnerRepoint,
+      ...partnerWrites,
       ...ownWait,
       ownWrite({ mode, joinedAt: String(at), state: "matched", lobbyId, waitToken }),
-      ...listWrite(waiting.filter((id) => id !== pick)),
+      ...listWrite(waiting.filter((id) => !picks.includes(id))),
     ],
   };
+}
+
+/** The list in a uniformly random order (Fisher-Yates with the queue's random). */
+function shuffled<T>(list: readonly T[], random: () => number): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.min(i, Math.max(0, Math.floor(random() * (i + 1))));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/** The first `count` ids, in order, whose owners differ from each other and from `taken`; fewer when there are not enough. */
+function distinctOwners(ids: readonly string[], ownerOfId: (id: string) => string, taken: string, count: number): string[] {
+  const owners = new Set([taken]);
+  const picked: string[] = [];
+  for (const id of ids) {
+    if (picked.length === count) break;
+    const owner = ownerOfId(id);
+    if (owners.has(owner)) continue;
+    owners.add(owner);
+    picked.push(id);
+  }
+  return picked;
 }
 
 /**
@@ -175,7 +222,7 @@ export async function joinQueueStep(
  * entry is paired (the caller re-points the token to its lobby); a waiting one waits until its lifetime ends, then ran out of time. Reads nothing, writes nothing.
  */
 export function queueWait(entry: Fields | null, joinedAt: string, at: number): WaitState {
-  if (!entry || entry.joinedAt !== joinedAt || !isRankedMode(entry.mode)) return { state: "expired", reason: "ended" };
+  if (!entry || entry.joinedAt !== joinedAt || !isQueueMode(entry.mode)) return { state: "expired", reason: "ended" };
   if (entry.state === "matched" && entry.lobbyId) return { state: "paired", lobbyId: entry.lobbyId, lobbyWait: true };
   if (entry.state !== "waiting") return { state: "expired", reason: "ended" };
   const expiresAt = Number(joinedAt) + queueTtl(entry.mode);
@@ -191,7 +238,7 @@ export async function queueStatusStep(read: TransactionRead, identityId: string,
 }
 
 /** One live waiting entry, as the public Waiting view reads it. */
-export interface WaitingEntry { readonly identityId: string; readonly mode: RankedMode; readonly joinedAt: number }
+export interface WaitingEntry { readonly identityId: string; readonly mode: QueueMode; readonly joinedAt: number }
 
 /**
  * Every live waiting entry across QUEUE_MODES, oldest first, read without a transaction and writing nothing.
@@ -200,7 +247,7 @@ export interface WaitingEntry { readonly identityId: string; readonly mode: Rank
  * stored state nor queueWaiting is trusted alone.
  */
 export async function waitingEntries(get: (path: string) => Promise<Fields | null>, at: number): Promise<WaitingEntry[]> {
-  const modes = Object.keys(QUEUE_MODES).filter(isRankedMode);
+  const modes = Object.keys(QUEUE_MODES).filter(isQueueMode);
   const perMode = await Promise.all(modes.map(async (mode) => {
     const listed = ids((await get(waitingPath(mode)))?.entries);
     const entries = await Promise.all(listed.map(async (identityId) => ({ identityId, entry: await get(entryPath(identityId)) })));

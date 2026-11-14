@@ -2,7 +2,7 @@
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { AppliedCall, LineupSeat, LobbySeat, ObserveEvent } from "../mcp/game.js";
 import type { SavedStart } from "../mcp/lobbyStart.js";
-import type { RankedMode } from "../rating/ratings.js";
+import type { QueueMode } from "../lobby/queue.js";
 import { parseHoldBehaviour, type HoldBehaviour } from "../sim/holdBehaviour.js";
 import type { ColonyId, MatchResult, SimInput, SimState } from "../sim/types.js";
 import type { ViewCell } from "../sim/view.js";
@@ -98,7 +98,7 @@ export interface HeldReply {
 
 export interface SavedLobby {
   readonly id: string;
-  readonly mode: RankedMode | null;
+  readonly mode: QueueMode | null;
   readonly seats: readonly LobbySeat[];
   /** The finished pick window's starting queen per seat key; null when the match had no pick window. */
   readonly startingQueens: readonly (readonly [string, number])[] | null;

@@ -14,7 +14,7 @@ import type { AgentView } from "../sim/view.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
 import { GAME_SAVE_FORMAT, type GameSave, type SavedAgentRecord, type StartGameSave } from "../handover/matchSave.js";
 import { finishedStart, LobbyStart, type FinishedStart } from "./lobbyStart.js";
-import type { RankedMode } from "../rating/ratings.js";
+import type { QueueMode } from "../lobby/queue.js";
 import { captureCells, cellOffset, type CellSnapshot } from "./cellPages.js";
 import { startPickWindowMsFor, type StartPickError, type StartTerrain } from "../sim/startPlacement.js";
 import { agentsPerColony, DEFAULT_MCP_CONFIG, houseIdleSecondsOf, type McpConfig } from "./config.js";
@@ -347,7 +347,7 @@ export class Game {
    * matchSeq is null during its countdown, then the sequence of its one match.
    * start is its finished pick window, which gave each seat its starting queen; null before then.
    */
-  private lobby: { readonly id: string; readonly mode: RankedMode | null; readonly seats: ReadonlyMap<string, LobbySeat>; notPlayed: boolean; matchSeq: number | null; start: FinishedStart | null;
+  private lobby: { readonly id: string; readonly mode: QueueMode | null; readonly seats: ReadonlyMap<string, LobbySeat>; notPlayed: boolean; matchSeq: number | null; start: FinishedStart | null;
     /** Its match's colony names, decided once when it is seated and carried by its handover saves. */
     readonly names: ColonyNamePair } | null = null;
   /** Slot servers: the identities of the last lobby whose match was not played here. */
@@ -408,7 +408,7 @@ export class Game {
   }
 
   /** Slot servers: seat the lobby whose match is next; only its identities may join, each seat by its seat key. */
-  seatLobby(lobbyId: string, seats: readonly LobbySeat[], mode: RankedMode | null = null): void {
+  seatLobby(lobbyId: string, seats: readonly LobbySeat[], mode: QueueMode | null = null): void {
     this.starting = null;
     this.lobby = { id: lobbyId, mode, seats: new Map(seats.map((seat) => [seatKeyOf(seat), seat])), notPlayed: false, matchSeq: null, start: null,
       names: lobbyColonyNames(lobbyId, mode !== null) };

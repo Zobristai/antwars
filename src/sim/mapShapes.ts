@@ -46,6 +46,12 @@ export function newMatchMaps(): readonly MapDefinition[] {
   return [openField!, THREE_CROSSINGS_V2, CENTRAL_LAKE_V2, ...SCALE2_MAPS];
 }
 
+/** The Quadrants (four-colony) rotation: quadrant maps only. Empty until a quadrant map ships, so the mode is
+ * refused while it is empty. */
+export function quadrantMatchMaps(): readonly MapDefinition[] {
+  return [];
+}
+
 /** TEMPORARY: maps no new house-mode match
  * (house-1v1..house-4v4) draws until the sim speed-up is in production. Ranked and other modes still draw
  * them. To restore Wide Plain to house draws, empty this list; nothing else changes.
