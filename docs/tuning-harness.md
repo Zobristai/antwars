@@ -14,18 +14,25 @@ npm run tune -- <command> [options]
 
 Every command reads and writes one directory, the store. Give it with `--store <dir>` or the `ANTWARS_TUNING_STORE`
 environment variable. Every participant in a run must use the same store. Nothing is written inside the checkout.
+The store holds data only: it is read, never imported or run.
 
 | Store path | Contents |
 | --- | --- |
-| `trees/<key>/` | A commit, or a commit plus a patch, extracted from git objects. The key is the full SHA, plus `-` and the first 16 hex characters of the patch's SHA-256. |
 | `workloads/<commit>.json` | The workload `regen` generated at that commit. |
-| `references/<key>/…` | Per-tick exactness digests for each scenario and tick path. |
+| `references/<key>/…` | Per-tick exactness digests for each scenario and tick path. The key is the full SHA, plus `-` and the first 16 hex characters of the patch's SHA-256. |
 | `checkpoints/<commit>/<scenario>/<tick>.json` | Saved match states, written when `regen` is given `--checkpoints`. |
 | `noise/<session>/` | Noise-check arrivals, the admitted list and each participant's results. |
 | `runs/`, `profiles/` | Every report, and every CPU profile. |
 
-Commits are any commit-ish of this checkout. `--patch <file>` applies a patch to the candidate's tree, and
-`--reference-patch <file>` applies one to the reference's tree.
+Commits are any commit-ish of this checkout. `--patch <file> --patch-sha256 <hex>` applies a patch to the candidate's
+tree, and `--reference-patch <file> --reference-patch-sha256 <hex>` applies one to the reference's tree. A patch is
+applied only when its SHA-256 equals the digest given; otherwise the command stops.
+
+## Candidate trees
+
+Each command extracts every commit it runs from git objects into a private temporary directory of its own, readable
+only by its user, applies any patch there, runs from there and removes it when it exits. Trees are never kept in or
+run from the store.
 
 ## Workload
 
@@ -63,7 +70,7 @@ base.
 It also saves each scenario's state at `--checkpoints` evenly spaced ticks of its full match: by default 4, at 0, ¼,
 ½ and ¾. `time`, `noise` and `profile --at` start from these saved states. `--checkpoints 0` saves none.
 
-### `exact --reference <c> --candidate <c> [--patch <file>] [--paths …] [--scenarios …]`
+### `exact --reference <c> --candidate <c> [--patch <file> --patch-sha256 <hex>] [--paths …] [--scenarios …]`
 
 Plays every scenario on both trees and compares four streams on every tick, on each tick path:
 
@@ -78,7 +85,7 @@ SHA-256 over its raw bytes, and **no normalisation is applied**.
 The report gives the horizon, the seeds and the paths. For each scenario it gives a match, or the first tick and
 streams that differ. The command exits 1 on any difference.
 
-### `time --reference <c> --candidate <c> [--patch <file>] [--rounds 8] [--window 200 | --whole] [--scenarios …]`
+### `time --reference <c> --candidate <c> [--patch <file> --patch-sha256 <hex>] [--rounds 8] [--window 200 | --whole] [--scenarios …]`
 
 Interleaved, paired side-by-side timing on one host:
 
@@ -120,13 +127,13 @@ at the same time:
 A candidate's median paired gain must exceed the noise bar to count. `--local <n>` starts `n` participants on this
 host and prints the first one's report.
 
-### `profile --commit <c> [--patch <file>] [--scenario <id>] [--ticks <n>] [--at <tick>] [--top 30]`
+### `profile --commit <c> [--patch <file> --patch-sha256 <hex>] [--scenario <id>] [--ticks <n>] [--at <tick>] [--top 30]`
 
 CPU-profiles the ticks only, not start-up, and reports each function's self and inclusive time. Inclusive time
 counts each function once per sample, even under recursion. The default scenario is the first Wide Plain one. The
 report includes the configuration loaded and the saved `.cpuprofile`.
 
-### `test --commit <c> [--patch <file>]`
+### `test --commit <c> [--patch <file> --patch-sha256 <hex>]`
 
 Runs the scoped simulator tests in that tree. These are the simulation goldens, the advance/step agreement, the
 grid, combat and every replay and recording test, listed in `SCOPED_TESTS` in `scripts/tuning/harness.ts`.

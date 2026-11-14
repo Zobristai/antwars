@@ -2,7 +2,8 @@
 //   npm run tune -- <command> [options]        (or: node --import ./src/ts-resolve.mjs scripts/tuning/harness.ts …)
 // Commands: regen, exact, time, noise, profile, test. Every command reads and writes the shared store given by
 // --store <dir> or the ANTWARS_TUNING_STORE environment variable; nothing is written inside the checkout.
-// Commits are any commit-ish of this checkout; --patch / --reference-patch apply a patch file on top.
+// Commits are any commit-ish of this checkout; --patch / --reference-patch apply a patch file on top, only when its
+// SHA-256 equals --patch-sha256 / --reference-patch-sha256. Each tree runs from a private copy that is removed on exit.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -11,7 +12,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { functionTimes, type CpuProfile } from "./profile.ts";
 import { median, noiseBar, repetitionsFor, roundGain, sideOrder, type PairedSegment } from "./stats.ts";
-import { materialise, resolveCommit, type Tree } from "./trees.ts";
+import { materialise, resolveCommit, type PatchInput, type Tree } from "./trees.ts";
 import type { WorkerJob } from "./worker.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
@@ -28,6 +29,7 @@ export const DEFAULT_WINDOW = 200;
 
 const { positionals, values: o } = parseArgs({ allowPositionals: true, options: {
   store: { type: "string" }, commit: { type: "string" }, patch: { type: "string" }, reference: { type: "string" }, "reference-patch": { type: "string" },
+  "patch-sha256": { type: "string" }, "reference-patch-sha256": { type: "string" },
   candidate: { type: "string" }, base: { type: "string" }, rounds: { type: "string" }, window: { type: "string" }, scenarios: { type: "string" },
   "seeds-per-map": { type: "string" }, paths: { type: "string" }, checkpoints: { type: "string" }, jobs: { type: "string" }, ticks: { type: "string" },
   session: { type: "string" }, participant: { type: "string" }, expect: { type: "string" }, wait: { type: "string" }, "finish-wait": { type: "string" },
@@ -104,14 +106,20 @@ async function pool<T>(jobs: readonly (() => Promise<T>)[], width: number): Prom
   return results;
 }
 const defaultJobs = () => int(o.jobs, Math.max(1, cpus().length - 1), "jobs");
-const tree = (ref: string, patch?: string) => materialise(STORE, ROOT, ref, patch);
+function patchInput(path: string | undefined, digest: string | undefined, flag: string): PatchInput | undefined {
+  if (path === undefined) { if (digest !== undefined) throw new Error(`--${flag}-sha256 needs --${flag}`); return undefined; }
+  return { path, sha256: required(digest, `${flag}-sha256`) };
+}
+const tree = (ref: string, patch?: PatchInput) => materialise(ROOT, ref, patch);
+const candidatePatch = () => patchInput(o.patch, o["patch-sha256"], "patch");
+const referencePatch = () => patchInput(o["reference-patch"], o["reference-patch-sha256"], "reference-patch");
 
 // ---- exactness --------------------------------------------------------------------------------------------------
 const STREAMS = ["state", "events", "results", "recorded"] as const;
 function referenceFile(t: Tree, path: string, scenario: string, ticks?: number) {
   return join(STORE, "references", t.key, ticks === undefined ? "full" : `ticks-${ticks}`, path, `${scenario}.json`);
 }
-/** Digests for every scenario and path of a tree, reusing any already in the store (trees are content-addressed). */
+/** Digests for every scenario and path of a tree, reusing any already in the store (keyed by commit and patch digest). */
 async function digests(t: Tree, w: Workload, scenarios: readonly Scenario[], paths: readonly string[], ticks: number | undefined, checkpoints = false): Promise<void> {
   // Longest matches first, so the parallel runs finish together.
   const longestFirst = [...scenarios].sort((a, b) => (b.loaded.matchTicks as number) - (a.loaded.matchTicks as number));
@@ -275,7 +283,7 @@ async function main(): Promise<void> {
       return;
     }
     case "exact": {
-      const ref = tree(required(o.reference, "reference"), o["reference-patch"]), cand = tree(required(o.candidate, "candidate"), o.patch);
+      const ref = tree(required(o.reference, "reference"), referencePatch()), cand = tree(required(o.candidate, "candidate"), candidatePatch());
       const w = loadWorkload(ref.commit), scenarios = selectScenarios(w), ticks = o.ticks === undefined ? undefined : int(o.ticks, 0, "ticks");
       const paths = o.paths === undefined ? w.paths : o.paths.split(",");
       const t0 = Date.now();
@@ -291,7 +299,7 @@ async function main(): Promise<void> {
       return;
     }
     case "time": {
-      const ref = tree(required(o.reference, "reference"), o["reference-patch"]), cand = tree(required(o.candidate, "candidate"), o.patch);
+      const ref = tree(required(o.reference, "reference"), referencePatch()), cand = tree(required(o.candidate, "candidate"), candidatePatch());
       const w = loadWorkload(ref.commit), rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w);
       const before = host(), t = pairedTiming(ref, cand, w, rounds, window, "time");
       const report = { reference: describeTree(ref), candidate: describeTree(cand), host: { before, after: host() },
@@ -316,7 +324,7 @@ async function main(): Promise<void> {
       return;
     }
     case "profile": {
-      const t = tree(required(o.commit, "commit"), o.patch), w = loadWorkload(resolveCommit(ROOT, o.commit!));
+      const t = tree(required(o.commit, "commit"), candidatePatch()), w = loadWorkload(resolveCommit(ROOT, o.commit!));
       const s = o.scenario === undefined ? w.scenarios.find(x => x.map === "wide-plain") ?? w.scenarios[0]! : w.scenarios.find(x => x.id === o.scenario);
       if (s === undefined) throw new Error(`unknown --scenario; known: ${w.scenarios.map(x => x.id).join(", ")}`);
       const at = int(o.at, 0, "at"), ticks = o.ticks === undefined ? undefined : int(o.ticks, 0, "ticks");
@@ -334,7 +342,7 @@ async function main(): Promise<void> {
       return;
     }
     case "test": {
-      const t = tree(required(o.commit, "commit"), o.patch);
+      const t = tree(required(o.commit, "commit"), candidatePatch());
       console.error(`scoped simulator tests in ${t.key}: ${SCOPED_TESTS.join(" ")}`);
       const r = spawnSync(join(t.dir, "node_modules", ".bin", "vitest"), ["run", "--maxWorkers=2", ...SCOPED_TESTS], { cwd: t.dir, stdio: "inherit" });
       process.exitCode = r.status ?? 1;
