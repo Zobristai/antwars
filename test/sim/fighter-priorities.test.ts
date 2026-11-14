@@ -9,6 +9,9 @@ import { isPassable } from "../../src/sim/terrain.js";
 import { step } from "../../src/sim/step.js";
 import type { Agent, Ant, ColonyId } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Fixed expectations derived from 59ed9a6d309b48d31b7c9d09e283d6b1a5fcbab5:
 // houseBot.ts fighter/local priority branches and step.ts ownership dispatch.
@@ -21,7 +24,7 @@ type Remembered = Ant & { houseIntentHold?: { intent: {
 
 // Every match plays at grid scale 2; scale is that one grid scale.
 function scenario(colony: ColonyId, caller: Caller, scale: 2) {
-  const base = newMatchConfig(rulesConfig("redesign"));
+  const base = newMatchConfig(recordedHousePlan(rulesConfig("redesign")));
   const state = { ...emptyMatch(0, { ...base, startAnts: 0, foodLayout: undefined,
     foodPatches: [{ tileX: 12 * scale, tileY: 9 * scale, radius: 2 * scale, perTile: 2 }], terrain: undefined, hatchIntervalTicks: Number.MAX_SAFE_INTEGER,
     rallyStartPermille: 500, rallyEndPermille: 500 }),
