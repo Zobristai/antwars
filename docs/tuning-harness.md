@@ -16,17 +16,27 @@ Every command reads and writes one directory, the store. Give it with `--store <
 environment variable. Every participant in a run must use the same store. Nothing is written inside the checkout.
 The store holds data only: it is read, never imported or run.
 
+**Trust.** The harness trusts processes running as its own operating-system user, and treats every other writer to
+the store as untrusted. So:
+
+- Every store write goes to a fresh file created in the target directory and is then renamed over the final name.
+  Readers never see a partial file, and a write replaces a link at that name rather than writing through it.
+- Every store read refuses a symbolic link, at the file or at any directory between the store root and it.
+- Worker processes read and write only private files; the harness copies data into and out of the store.
+- `exact` always plays the candidate. It reads only the reference from the store, and only after checking it against
+  the digest `regen` printed.
+
 | Store path | Contents |
 | --- | --- |
 | `workloads/<commit>.json` | The workload `regen` generated at that commit. |
-| `references/<key>/…` | Per-tick exactness digests for each scenario and tick path. The key is the full SHA, plus `-` and the first 16 hex characters of the patch's SHA-256. |
+| `references/<commit>/<horizon>/<path>/<scenario>.json` | Per-tick exactness digests that `regen` wrote at that commit. |
 | `checkpoints/<commit>/<scenario>/<tick>.json` | Saved match states, written when `regen` is given `--checkpoints`. |
 | `noise/<session>/` | Noise-check arrivals, the admitted list, readiness and each participant's results. |
 | `runs/`, `profiles/` | Every report, and every CPU profile. |
 
 Commits are any commit-ish of this checkout. `--patch <file> --patch-sha256 <hex>` applies a patch to the candidate's
-tree, and `--reference-patch <file> --reference-patch-sha256 <hex>` applies one to the reference's tree. A patch is
-applied only when its SHA-256 equals the digest given; otherwise the command stops.
+tree, and, for `time`, `--reference-patch <file> --reference-patch-sha256 <hex>` applies one to the reference's tree.
+A patch is applied only when its SHA-256 equals the digest given; otherwise the command stops.
 
 ## Candidate trees
 
@@ -61,19 +71,23 @@ length and the Node version.
 
 ## Commands
 
-### `regen --commit <c> [--seeds-per-map 2] [--paths advance,step] [--checkpoints 4] [--jobs <n>]`
+### `regen --commit <c> [--seeds-per-map 2] [--paths advance,step] [--checkpoints 4] [--jobs <n>] [--scenarios …] [--ticks <n>]`
 
-Writes the workload and the exactness references at commit `c`. Runs that do not depend on each other go in
-parallel, `--jobs` at a time. Run `regen` at the base commit before `exact`, `time`, `noise` or `profile` use that
-base.
+Writes the workload and the exactness references at commit `c`, playing everything afresh; nothing already in the
+store is reused. Runs that do not depend on each other go in parallel, `--jobs` at a time. Run `regen` at the base
+commit before `exact`, `time`, `noise` or `profile` use that base.
 
 It also saves each scenario's state at `--checkpoints` evenly spaced ticks of its full match: by default 4, at 0, ¼,
-½ and ¾. `time`, `noise` and `profile --at` start from these saved states. `--checkpoints 0` saves none. Saved states
-are written whenever they are missing, even when that commit's exactness references already exist.
+½ and ¾. `time`, `noise` and `profile --at` start from these saved states. `--checkpoints 0` saves none. The
+workload lists only saved states that exist, since a match can end before a late one.
 
-### `exact --reference <c> --candidate <c> [--patch <file> --patch-sha256 <hex>] [--paths …] [--scenarios …]`
+It prints `referenceSha256`: the SHA-256 of the workload file and every reference written. Keep it; `exact` needs
+it. `--scenarios` and `--ticks` make a short workload, for smoke runs.
 
-Plays every scenario on both trees and compares four streams on every tick, on each tick path:
+### `exact --reference <c> --reference-sha256 <hex> --candidate <c> [--patch <file> --patch-sha256 <hex>] [--paths …] [--scenarios …] [--ticks <n>]`
+
+Checks the references `regen` wrote at `c` against `--reference-sha256` and stops if they differ. It then plays every
+scenario on the candidate, always afresh, and compares four streams on every tick, on each tick path:
 
 - the full state
 - the events
@@ -83,7 +97,7 @@ Plays every scenario on both trees and compares four streams on every tick, on e
 The tick paths are `advance` (the live server's) and `step` (replay verification's). Each stream is a chained
 SHA-256 over its raw bytes, and **no normalisation is applied**.
 
-The report gives the horizon, the seeds and the paths. For each scenario it gives a match, or the first tick and
+The report gives the reference digest it checked against, the horizon, the seeds and the paths. For each scenario it gives a match, or the first tick and
 streams that differ. The command exits 1 on any difference.
 
 ### `time --reference <c> --candidate <c> [--patch <file> --patch-sha256 <hex>] [--rounds 8] [--window 200 | --whole] [--scenarios …]`

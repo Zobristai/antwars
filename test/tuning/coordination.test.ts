@@ -1,14 +1,14 @@
-// Tuning-harness coordination: local participant arguments, regen's saved states, whole-file publication in the
-// noise check, and the load each participant holds until all have finished.
+// Tuning-harness coordination: local participant arguments, whole-file publication in the noise check, and the load
+// each participant holds until all have finished. (regen after exact is covered in store-safety.test.ts.)
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { participantArgs, participate, publishOnce, type Participation } from "../../scripts/tuning/noise.ts";
+import { participantArgs, participate, type Participation } from "../../scripts/tuning/noise.ts";
 import { HARNESS_OPTIONS } from "../../scripts/tuning/options.ts";
-import { pendingWork } from "../../scripts/tuning/plan.ts";
 import { functionTimes, type CpuProfile } from "../../scripts/tuning/profile.ts";
+import { storeWriteOnce } from "../../scripts/tuning/store.ts";
 
 // Record every file the noise coordination writes directly.
 const written: string[] = [];
@@ -32,15 +32,6 @@ describe("local noise participants", () => {
   }
 });
 
-describe("regen after exact", () => {
-  it("still writes the missing saved states when the exactness reference exists", () => {
-    expect(pendingWork(true, [0, 4500, 9000, 13500], () => false)).toEqual({ reference: false, states: [4500, 9000, 13500] });
-    expect(pendingWork(true, [0, 4500, 9000], tick => tick === 4500)).toEqual({ reference: false, states: [9000] });
-    expect(pendingWork(false, [], () => false)).toEqual({ reference: true, states: [] });
-    expect(pendingWork(true, [0, 4500], () => true)).toEqual({ reference: false, states: [] });
-  });
-});
-
 describe("noise coordination", () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "noise-test-")); written.length = 0; });
@@ -50,7 +41,7 @@ describe("noise coordination", () => {
   const at = (name: string) => events.find(([n]) => n === name)?.[1] ?? Number.NaN;
   function participant(me: string, prepareMs: number, measureMs: number): Participation {
     const mark = (what: string) => events.push([`${me}:${what}`, performance.now()]);
-    return { dir, me, expect: 2, waitMs: 10_000, finishMs: 10_000, pollMs: 5,
+    return { root: dir, dir: join(dir, "session"), me, expect: 2, waitMs: 10_000, finishMs: 10_000, pollMs: 5,
       prepare: async () => { await sleep(prepareMs); mark("ready"); },
       measure: async () => { mark("measure"); await sleep(measureMs); mark("measured"); return { participant: me, medians: [0] }; },
       // A load that runs until it is aborted.
@@ -71,15 +62,15 @@ describe("noise coordination", () => {
   it("writes every file under a temporary name first, so no participant reads a partial file", async () => {
     await Promise.all([participate(participant("a", 0, 10)), participate(participant("b", 0, 10))]);
     expect(written.length).toBeGreaterThan(0);
-    for (const file of written) expect(relative(dir, file).split("/")[0]).toBe("tmp");
-    expect(readdirSync(join(dir, "results")).sort()).toEqual(["a.json", "b.json"]);
-    expect(readdirSync(join(dir, "tmp"))).toEqual([]);
+    for (const file of written) expect(basename(file)).toMatch(/^\.tmp-/);
+    for (const sub of ["arrivals", "ready", "results"]) expect(readdirSync(join(dir, "session", sub)).filter(n => n.startsWith("."))).toEqual([]);
+    expect(readdirSync(join(dir, "session", "results")).sort()).toEqual(["a.json", "b.json"]);
   });
 
   it("lets only the first writer publish a first-writer-wins file", () => {
-    expect(publishOnce(dir, join(dir, "admitted.json"), '{"admitted":["a"]}')).toBe(true);
-    expect(publishOnce(dir, join(dir, "admitted.json"), '{"admitted":["a","b"]}')).toBe(false);
-    expect(readdirSync(join(dir, "tmp"))).toEqual([]);
+    expect(storeWriteOnce(dir, join(dir, "admitted.json"), '{"admitted":["a"]}')).toBe(true);
+    expect(storeWriteOnce(dir, join(dir, "admitted.json"), '{"admitted":["a","b"]}')).toBe(false);
+    expect(readdirSync(dir)).toEqual(["admitted.json"]);
   });
 });
 

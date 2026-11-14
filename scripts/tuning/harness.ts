@@ -3,19 +3,20 @@
 // Commands: regen, exact, time, noise, profile, test. Every command reads and writes the shared store given by
 // --store <dir> or the ANTWARS_TUNING_STORE environment variable; nothing is written inside the checkout.
 // Commits are any commit-ish of this checkout; --patch / --reference-patch apply a patch file on top, only when its
-// SHA-256 equals --patch-sha256 / --reference-patch-sha256. Each tree runs from a private copy that is removed on exit.
+// SHA-256 equals --patch-sha256 / --reference-patch-sha256. Each tree runs from a private copy that is removed on exit,
+// and workers read and write only private files: the harness moves data in and out of the store (see store.ts).
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, hostname, loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { participantArgs, participate } from "./noise.ts";
 import { HARNESS_OPTIONS } from "./options.ts";
-import { pendingWork } from "./plan.ts";
 import { functionTimes, type CpuProfile } from "./profile.ts";
 import { median, noiseBar, repetitionsFor, roundGain, sideOrder, type PairedSegment } from "./stats.ts";
-import { materialise, resolveCommit, type PatchInput, type Tree } from "./trees.ts";
+import { storeHas, storeRead, storeReadText, storeWrite } from "./store.ts";
+import { materialise, privateDir, resolveCommit, type PatchInput, type Tree } from "./trees.ts";
 import type { WorkerJob } from "./worker.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
@@ -45,6 +46,10 @@ const required = (v: string | undefined, name: string): string => { if (v === un
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
 const host = () => ({ hostname: hostname(), cpus: cpus().length, cpuModel: cpus()[0]?.model ?? null, loadavg: loadavg() });
+const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
+/** A path in this process's private working directory. */
+let work: string | undefined;
+const privatePath = (name: string) => join(work ??= privateDir(), name);
 
 // ---- workload ----------------------------------------------------------------------------------------------------
 interface Scenario { readonly id: string; readonly map: string; readonly seed: number; readonly weight: number; readonly loaded: Record<string, unknown> }
@@ -55,8 +60,20 @@ interface Workload {
 const workloadFile = (commit: string) => join(STORE, "workloads", `${commit}.json`);
 function loadWorkload(commit: string): Workload {
   const file = workloadFile(commit);
-  if (!existsSync(file)) throw new Error(`no workload for ${commit}: run regen --commit ${commit} first`);
-  return JSON.parse(readFileSync(file, "utf8")) as Workload;
+  if (!storeHas(STORE, file)) throw new Error(`no workload for ${commit}: run regen --commit ${commit} first`);
+  return JSON.parse(storeReadText(STORE, file)) as Workload;
+}
+const checkpointFile = (commit: string, scenario: string, tick: number) => join(STORE, "checkpoints", commit, scenario, `${tick}.json`);
+/** A private copy of a saved state, made once per process, so workers never read the store. */
+const privateStates = new Map<string, string>();
+function privateCheckpoint(storeFile: string): string {
+  let copy = privateStates.get(storeFile);
+  if (copy === undefined) {
+    copy = privatePath(`state-${randomUUID()}.json`);
+    writeFileSync(copy, storeRead(STORE, storeFile), { flag: "wx" });
+    privateStates.set(storeFile, copy);
+  }
+  return copy;
 }
 function selectScenarios(w: Workload): readonly Scenario[] {
   if (o.scenarios === undefined) return w.scenarios;
@@ -113,30 +130,26 @@ const referencePatch = () => patchInput(o["reference-patch"], o["reference-patch
 
 // ---- exactness --------------------------------------------------------------------------------------------------
 const STREAMS = ["state", "events", "results", "recorded"] as const;
-function referenceFile(t: Tree, path: string, scenario: string, ticks?: number) {
-  return join(STORE, "references", t.key, ticks === undefined ? "full" : `ticks-${ticks}`, path, `${scenario}.json`);
+const horizonDir = (ticks?: number) => (ticks === undefined ? "full" : `ticks-${ticks}`);
+function referenceFile(commit: string, path: string, scenario: string, ticks?: number) {
+  return join(STORE, "references", commit, horizonDir(ticks), path, `${scenario}.json`);
 }
 /**
- * Digests for every scenario and path of a tree, reusing any already in the store (keyed by commit and patch digest).
- * With checkpoints, the advance path also writes every missing saved state, even when its digests already exist.
+ * The SHA-256 naming one reference set: the workload file's bytes and every reference digest file of its scenarios and
+ * paths at one horizon. regen prints it; exact requires it and refuses a store whose references do not match.
  */
-async function digests(t: Tree, w: Workload, scenarios: readonly Scenario[], paths: readonly string[], ticks: number | undefined, checkpoints = false): Promise<void> {
-  // Longest matches first, so the parallel runs finish together.
-  const longestFirst = [...scenarios].sort((a, b) => (b.loaded.matchTicks as number) - (a.loaded.matchTicks as number));
-  const jobs = longestFirst.flatMap(s => paths.map(path => async () => {
-    const out = referenceFile(t, path, s.id, ticks), checkpointDir = join(STORE, "checkpoints", t.commit, s.id);
-    const todo = pendingWork(existsSync(out), checkpoints && path === "advance" ? w.checkpoints[s.id] ?? [] : [], tick => existsSync(join(checkpointDir, `${tick}.json`)));
-    if (!todo.reference && todo.states.length === 0) return;
-    mkdirSync(join(out, ".."), { recursive: true });
-    const scratch = `${out}.${randomUUID()}`;
-    // With the reference already written, play only as far as the last missing saved state and keep the reference.
-    await runWorkerAsync(t, { mode: "exact", map: s.map, seed: s.seed, path: path as "advance" | "step", out: scratch,
-      ticks: todo.reference ? ticks : Math.max(...todo.states), checkpointsAt: todo.states, checkpointDir });
-    if (todo.reference) renameSync(scratch, out);
-    else rmSync(scratch, { force: true });
-  }));
-  await pool(jobs, defaultJobs());
+function referenceSetDigest(workloadBytes: Uint8Array, entries: readonly { path: string; scenario: string; bytes: Uint8Array }[]): string {
+  const lines = entries.map(e => `${e.path} ${e.scenario} ${sha256(e.bytes)}\n`).sort();
+  return sha256(`workload ${sha256(workloadBytes)}\n${lines.join("")}`);
 }
+/** Play one scenario on one path in a worker, writing only private files; returns its digests and any saved states. */
+async function playDigests(t: Tree, s: Scenario, path: string, ticks: number | undefined, states: readonly number[]) {
+  const out = privatePath(`digests-${randomUUID()}.json`), checkpointDir = privatePath(`states-${randomUUID()}`);
+  await runWorkerAsync(t, { mode: "exact", map: s.map, seed: s.seed, path: path as "advance" | "step", ticks, out, checkpointsAt: states, checkpointDir });
+  const saved = states.filter(tick => existsSync(join(checkpointDir, `${tick}.json`))).map(tick => ({ tick, bytes: readFileSync(join(checkpointDir, `${tick}.json`)) }));
+  return { bytes: readFileSync(out), saved };
+}
+const longestFirst = (scenarios: readonly Scenario[]) => [...scenarios].sort((a, b) => (b.loaded.matchTicks as number) - (a.loaded.matchTicks as number));
 function compareDigests(ref: any, cand: any): { readonly match: boolean; readonly firstDifference: { readonly tick: number; readonly streams: string[] } | null } {
   const same = STREAMS.every(s => ref.final[s] === cand.final[s]) && ref.ticks === cand.ticks && ref.endTick === cand.endTick && ref.result === cand.result;
   if (same) return { match: true, firstDifference: null };
@@ -156,15 +169,18 @@ function segments(w: Workload, scenarios: readonly Scenario[], window: number | 
     const at = w.checkpoints[s.id];
     if (at === undefined || at.length === 0) throw new Error(`--window needs checkpoints: run regen --commit ${w.commit} --checkpoints <k>`);
     return at.map(tick => ({ scenario: s, weight: s.weight / at.length, startTick: tick, ticks: window,
-      ...(tick === 0 ? {} : { checkpoint: join(STORE, "checkpoints", w.commit, s.id, `${tick}.json`) }) }));
+      ...(tick === 0 ? {} : { checkpoint: checkpointFile(w.commit, s.id, tick) }) }));
   });
 }
 interface PairedTiming {
   readonly rounds: number; readonly segments: number; readonly window: number | null; readonly roundGains: readonly number[]; readonly medianPairedGain: number;
   readonly perSegment: Record<string, { reference: unknown; candidate: unknown }>; readonly slowSegments: readonly unknown[]; readonly loaded: Record<string, unknown>; readonly wallMs: number;
 }
+/** The worker's segment list, with every saved state read from a private copy. */
+const segmentJobs = (segs: readonly Segment[]) => segs.map(seg => ({ map: seg.scenario.map, seed: seg.scenario.seed, ticks: seg.ticks,
+  checkpoint: seg.checkpoint === undefined ? undefined : privateCheckpoint(seg.checkpoint) }));
 function pairedTiming(reference: Tree, candidate: Tree, w: Workload, rounds: number, window: number | undefined, label: string): PairedTiming {
-  const segs = segments(w, selectScenarios(w), window, tickCap()), t0 = Date.now();
+  const segs = segments(w, selectScenarios(w), window, tickCap()), jobs = segmentJobs(segs), t0 = Date.now();
   const gains: number[] = [], loaded: Record<string, unknown> = {};
   const runs: Record<string, { reference: any[]; candidate: any[] }> = {};
   for (let r = 0; r < rounds; r++) {
@@ -173,7 +189,7 @@ function pairedTiming(reference: Tree, candidate: Tree, w: Workload, rounds: num
     const means = { reference: [] as number[], candidate: [] as number[] };
     for (const side of sideOrder(r)) {
       const t = side === "reference" ? reference : candidate;
-      const out = runWorker(t, { mode: "time", segments: segs.map(seg => ({ map: seg.scenario.map, seed: seg.scenario.seed, checkpoint: seg.checkpoint, ticks: seg.ticks })) });
+      const out = runWorker(t, { mode: "time", segments: jobs });
       (out.runs as any[]).forEach((run, i) => {
         const seg = segs[i]!;
         means[side][i] = run.meanMs;
@@ -194,10 +210,8 @@ function pairedTiming(reference: Tree, candidate: Tree, w: Workload, rounds: num
   return { rounds, segments: segs.length, window: window ?? null, roundGains: gains, medianPairedGain: median(gains), perSegment, slowSegments, loaded, wallMs: Date.now() - t0 };
 }
 function writeRun(kind: string, report: unknown): string {
-  const dir = join(STORE, "runs");
-  mkdirSync(dir, { recursive: true });
-  const file = join(dir, `${kind}-${stamp()}-${randomUUID().slice(0, 8)}.json`);
-  writeFileSync(file, JSON.stringify(report, null, 2));
+  const file = join(STORE, "runs", `${kind}-${stamp()}-${randomUUID().slice(0, 8)}.json`);
+  storeWrite(STORE, file, JSON.stringify(report, null, 2));
   return file;
 }
 const describeTree = (t: Tree) => ({ commit: t.commit, patchDigest: t.patchDigest });
@@ -222,16 +236,15 @@ async function noise(): Promise<void> {
   const rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w), dir = join(STORE, "noise", session);
   let base: Tree | undefined;
   const timings: PairedTiming[] = [];
-  const outcome = await participate({ dir, me, expect, waitMs, finishMs,
+  const outcome = await participate({ root: STORE, dir, me, expect, waitMs, finishMs,
     prepare: () => { base = tree(baseRef); },
     measure: async () => {
-      const repetitions = repetitionsFor(JSON.parse(readFileSync(join(dir, "admitted.json"), "utf8")).admitted.length);
+      const repetitions = repetitionsFor(JSON.parse(storeReadText(STORE, join(dir, "admitted.json"))).admitted.length);
       for (let i = 0; i < repetitions; i++) timings.push(pairedTiming(base!, base!, w, rounds, window, `noise ${me} repetition ${i + 1}/${repetitions}`));
       return { participant: me, medians: timings.map(t => t.medianPairedGain), loaded: timings[0]!.loaded, roundGains: timings.map(t => t.roundGains) };
     },
     // The same work as one side of a measured round, repeated until every participant has finished.
-    load: signal => runWorkerAsync(base!, { mode: "time", segments: segments(w, selectScenarios(w), window, tickCap())
-      .map(seg => ({ map: seg.scenario.map, seed: seg.scenario.seed, checkpoint: seg.checkpoint, ticks: seg.ticks })) }, signal),
+    load: signal => runWorkerAsync(base!, { mode: "time", segments: segmentJobs(segments(w, selectScenarios(w), window, tickCap())) }, signal),
   });
   if ("refused" in outcome) { print({ session, participant: me, ...outcome }); process.exitCode = 1; return; }
   const all = outcome.results as { participant: string; medians: number[] }[];
@@ -249,33 +262,63 @@ async function main(): Promise<void> {
   switch (command) {
     case "regen": {
       // Workload and exactness references at a commit: the live config's maps, seedsPerMap seeds each, full matches.
+      // Everything is played afresh; nothing already in the store is reused.
       const t = tree(required(o.commit, "commit")), per = int(o["seeds-per-map"], 2, "seeds-per-map");
       const paths = (o.paths ?? "advance,step").split(",") as ("advance" | "step")[], k = int(o.checkpoints, DEFAULT_CHECKPOINTS, "checkpoints"), t0 = Date.now();
       const found = runWorker(t, { mode: "workload", seedsPerMap: per }), cap = tickCap();
-      const checkpoints = Object.fromEntries((found.scenarios as Scenario[]).map(s => {
-        const ticks = s.loaded.matchTicks as number;
-        return [s.id, k === 0 || cap !== undefined ? [] : Array.from({ length: k }, (_, i) => Math.floor((i * ticks) / k))];
+      const ids = o.scenarios?.split(","), scenarios = (found.scenarios as Scenario[]).filter(s => ids === undefined || ids.includes(s.id));
+      if (ids !== undefined && scenarios.length !== ids.length) throw new Error(`unknown scenario in --scenarios; known: ${found.scenarios.map((s: Scenario) => s.id).join(", ")}`);
+      // Saved states at k evenly spaced ticks of each match (of the first --ticks ticks, for a short run).
+      const wanted = Object.fromEntries(scenarios.map(s => {
+        const span = Math.min(cap ?? Infinity, s.loaded.matchTicks as number);
+        return [s.id, k === 0 ? [] : [...new Set(Array.from({ length: k }, (_, i) => Math.floor((i * span) / k)))]];
       }));
-      const w: Workload = { commit: t.commit, source: found.source, seedsPerMap: per, paths, scenarios: found.scenarios, checkpoints,
-        horizon: "each match plays until it ends by its own match-end rule (its map's match length, or an earlier result)" };
-      mkdirSync(join(STORE, "workloads"), { recursive: true });
-      writeFileSync(workloadFile(t.commit), JSON.stringify(w, null, 2));
-      await digests(t, w, w.scenarios, paths, cap, k > 0 && cap === undefined);
-      print({ commit: t.commit, wallMs: Date.now() - t0, workload: workloadFile(t.commit), scenarios: w.scenarios.map(s => ({ id: s.id, weight: s.weight, loaded: s.loaded })), paths, checkpoints });
+      const entries: { path: string; scenario: string; bytes: Uint8Array }[] = [], saved: Record<string, number[]> = {};
+      await pool(longestFirst(scenarios).flatMap(s => paths.map(path => async () => {
+        const states = path === paths[0] ? wanted[s.id]!.filter(x => x > 0) : [];
+        const played = await playDigests(t, s, path, cap, states);
+        storeWrite(STORE, referenceFile(t.commit, path, s.id, cap), played.bytes);
+        entries.push({ path, scenario: s.id, bytes: played.bytes });
+        for (const st of played.saved) storeWrite(STORE, checkpointFile(t.commit, s.id, st.tick), st.bytes);
+        if (path === paths[0]) saved[s.id] = wanted[s.id]!.filter(x => x === 0 || played.saved.some(st => st.tick === x));
+      })), defaultJobs());
+      // The workload is written last, listing only the saved states that exist (a match can end before a late one).
+      const w: Workload = { commit: t.commit, source: found.source, seedsPerMap: per, paths, scenarios, checkpoints: saved,
+        horizon: cap === undefined ? "each match plays until it ends by its own match-end rule (its map's match length, or an earlier result)" : `the first ${cap} ticks of each match` };
+      const workloadBytes = Buffer.from(JSON.stringify(w, null, 2));
+      storeWrite(STORE, workloadFile(t.commit), workloadBytes);
+      print({ commit: t.commit, referenceSha256: referenceSetDigest(workloadBytes, entries), horizon: horizonDir(cap), wallMs: Date.now() - t0,
+        workload: workloadFile(t.commit), scenarios: scenarios.map(s => ({ id: s.id, weight: s.weight, loaded: s.loaded })), paths, checkpoints: saved });
       return;
     }
     case "exact": {
-      const ref = tree(required(o.reference, "reference"), referencePatch()), cand = tree(required(o.candidate, "candidate"), candidatePatch());
-      const w = loadWorkload(ref.commit), scenarios = selectScenarios(w), ticks = o.ticks === undefined ? undefined : int(o.ticks, 0, "ticks");
+      // The reference is regen's stored digests, checked against the digest regen printed; the candidate always plays.
+      if (o["reference-patch"] !== undefined) throw new Error("exact compares against regen's references at a commit; --reference-patch does not apply");
+      const expected = required(o["reference-sha256"], "reference-sha256").toLowerCase();
+      const refCommit = resolveCommit(ROOT, required(o.reference, "reference")), ticks = tickCap();
+      const workloadBytes = storeRead(STORE, workloadFile(refCommit)), w = JSON.parse(workloadBytes.toString("utf8")) as Workload;
+      const refs = new Map<string, Buffer>();
+      for (const s of w.scenarios) for (const path of w.paths) {
+        const file = referenceFile(refCommit, path, s.id, ticks);
+        if (!storeHas(STORE, file)) throw new Error(`no reference for ${s.id} ${path} at ${horizonDir(ticks)}: run regen --commit ${refCommit}${ticks === undefined ? "" : ` --ticks ${ticks}`}`);
+        refs.set(`${path} ${s.id}`, storeRead(STORE, file));
+      }
+      const actual = referenceSetDigest(workloadBytes, [...refs].map(([key, bytes]) => ({ path: key.split(" ")[0]!, scenario: key.split(" ")[1]!, bytes })));
+      if (actual !== expected) throw new Error(`the stored references have digest ${actual}, not the expected ${expected}; refusing to compare`);
+      const cand = tree(required(o.candidate, "candidate"), candidatePatch()), scenarios = selectScenarios(w);
       const paths = o.paths === undefined ? w.paths : o.paths.split(",");
-      const t0 = Date.now();
-      await Promise.all([digests(ref, w, scenarios, paths, ticks), digests(cand, w, scenarios, paths, ticks)]);
+      if (paths.some(p => !w.paths.includes(p as "advance" | "step"))) throw new Error(`--paths must be among the workload's: ${w.paths.join(", ")}`);
+      const t0 = Date.now(), played = new Map<string, any>();
+      await pool(longestFirst(scenarios).flatMap(s => paths.map(path => async () => {
+        played.set(`${path} ${s.id}`, JSON.parse((await playDigests(cand, s, path, ticks, [])).bytes.toString("utf8")));
+      })), defaultJobs());
       const results = scenarios.flatMap(s => paths.map(path => {
-        const r = JSON.parse(readFileSync(referenceFile(ref, path, s.id, ticks), "utf8")), c = JSON.parse(readFileSync(referenceFile(cand, path, s.id, ticks), "utf8"));
+        const r = JSON.parse(refs.get(`${path} ${s.id}`)!.toString("utf8")), c = played.get(`${path} ${s.id}`);
         return { scenario: s.id, map: s.map, seed: s.seed, path, ticks: r.ticks, endTick: r.endTick, result: r.result, ...compareDigests(r, c) };
       }));
-      const report = { reference: describeTree(ref), candidate: describeTree(cand), compares: [...STREAMS], normalisation: "none: raw bytes of each stream, chained SHA-256 per tick",
-        horizon: ticks === undefined ? w.horizon : `${ticks} ticks`, seeds: scenarios.map(s => `${s.map}:${s.seed}`), paths, pass: results.every(r => r.match), wallMs: Date.now() - t0, results };
+      const report = { reference: { commit: refCommit, referenceSha256: actual }, candidate: describeTree(cand), compares: [...STREAMS],
+        normalisation: "none: raw bytes of each stream, chained SHA-256 per tick", horizon: ticks === undefined ? w.horizon : `${ticks} ticks`,
+        seeds: scenarios.map(s => `${s.map}:${s.seed}`), paths, pass: results.every(r => r.match), wallMs: Date.now() - t0, results };
       if (!report.pass) process.exitCode = 1;
       print({ ...report, file: writeRun("exact", report) });
       return;
@@ -310,11 +353,12 @@ async function main(): Promise<void> {
       if (s === undefined) throw new Error(`unknown --scenario; known: ${w.scenarios.map(x => x.id).join(", ")}`);
       const at = int(o.at, 0, "at"), ticks = o.ticks === undefined ? undefined : int(o.ticks, 0, "ticks");
       if (at > 0 && !(w.checkpoints[s.id] ?? []).includes(at)) throw new Error(`--at must be a checkpoint tick of ${s.id}: ${(w.checkpoints[s.id] ?? []).join(", ") || "none (regen --checkpoints)"}`);
-      mkdirSync(join(STORE, "profiles"), { recursive: true });
-      const file = join(STORE, "profiles", `${t.key}-${s.id}-${stamp()}.cpuprofile`);
-      const run = runWorker(t, { mode: "time", map: s.map, seed: s.seed, ticks, profileOut: file,
-        ...(at > 0 ? { checkpoint: join(STORE, "checkpoints", w.commit, s.id, `${at}.json`) } : {}) });
-      const times = functionTimes(JSON.parse(readFileSync(file, "utf8")) as CpuProfile, `${t.dir}/`), top = int(o.top, 30, "top");
+      const file = join(STORE, "profiles", `${t.key}-${s.id}-${stamp()}.cpuprofile`), profileOut = privatePath(`profile-${randomUUID()}.cpuprofile`);
+      const run = runWorker(t, { mode: "time", map: s.map, seed: s.seed, ticks, profileOut,
+        ...(at > 0 ? { checkpoint: privateCheckpoint(checkpointFile(w.commit, s.id, at)) } : {}) });
+      const profileBytes = readFileSync(profileOut);
+      storeWrite(STORE, file, profileBytes);
+      const times = functionTimes(JSON.parse(profileBytes.toString("utf8")) as CpuProfile, `${t.dir}/`), top = int(o.top, 30, "top");
       const bySelf = [...times.functions].sort((a, b) => b.selfMs - a.selfMs).slice(0, top);
       const byInclusive = [...times.functions].sort((a, b) => b.inclusiveMs - a.inclusiveMs).slice(0, top);
       const report = { tree: describeTree(t), loaded: run.loaded, scenario: s.id, fromTick: at, ticks: run.ticks, endTick: run.endTick, tickSummary: run.tick,

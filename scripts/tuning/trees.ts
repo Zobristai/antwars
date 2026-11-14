@@ -34,6 +34,15 @@ function hookCleanup(): void {
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { removeAll(); process.exit(128 + (signal === "SIGINT" ? 2 : 15)); });
 }
 
+/** A new private owner-only working directory for this process, removed on exit. */
+export function privateDir(): string {
+  hookCleanup();
+  const dir = mkdtempSync(join(tmpdir(), "antwars-work-"));
+  made.add(dir);
+  chmodSync(dir, 0o700);
+  return dir;
+}
+
 /** Remove a tree now rather than at exit. */
 export function removeTree(tree: Tree): void {
   rmSync(tree.dir, { recursive: true, force: true });
