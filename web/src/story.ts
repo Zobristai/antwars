@@ -189,7 +189,7 @@ export function resultHow(r: { reason: StreamResult["reason"] | string; decidedB
  * that took a queen, or at time-up the last lead change (the lead that held). Empty for a draw on
  * time, and for an end that took no queen and was not time-up.
  */
-export function decisive(story: readonly StoryEntry[], reason: string, winner: 0 | 1 | null): StoryEntry[] {
+export function decisive(story: readonly StoryEntry[], reason: string, winner: number | null): StoryEntry[] {
   const took = story.filter((e) => (e.kind === "overrun" || e.kind === "queen_attack") && e.outcome === "took");
   if (took.length > 0) return took;
   if (reason !== "time_up" || winner === null) return [];

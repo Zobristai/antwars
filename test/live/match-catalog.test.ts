@@ -106,6 +106,18 @@ describe("public spectator catalog projection", () => {
     expect(JSON.stringify(result)).not.toContain("never-public");
   });
 
+  it("carries a Quadrants match's four colonies of seats, its four names by colony and its type, copied", () => {
+    const seat = (displayName: string) => ({ displayName, modelLabel: null, thinkingLevel: null, serviceTier: null, rating: null, rd: null, ratedMatches: null });
+    const names = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+    const players = new Map([["quad", [[seat("ann")], [seat("bob")], [seat("cat")], [{ ...seat("dan"), identityId: "never-public" }]]]]);
+    const result = publicMatchCatalog([{ ...publicMatch, lobbyId: "quad", rated: false, mode: "quadrants" }], [], players,
+      new Map([["quad", { kind: "quadrants", size: 1 }]]), new Map([["quad", names]]));
+    expect(result.matches).toEqual([{ lobbyId: "quad", startedAt: 1000, rated: false, delaySeconds: 60,
+      colonies: [[seat("ann")], [seat("bob")], [seat("cat")], [seat("dan")]], matchType: { kind: "quadrants", size: 1 }, colonyNames: names }]);
+    expect(result.matches[0]!.colonyNames).not.toBe(names);
+    expect(JSON.stringify(result)).not.toContain("never-public");
+  });
+
   it("lists only public matches still in playback, oldest first, as the matches whose players are read", () => {
     const later: CatalogMatch = { ...publicMatch, lobbyId: "b", startedAt: 2000 };
     expect(listedMatches([later, { ...publicMatch, lobbyId: "c", playbackFinished: true }, { ...publicMatch, lobbyId: "p", visibility: "private" }, publicMatch])
