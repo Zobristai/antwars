@@ -2099,32 +2099,42 @@ describe("a continuation whose no-effect answer was dropped from the cache", () 
   });
 
   // Credible regression: a continuation whose answers were dropped starting the lookup and re-run again as soon as its
-  // first pass is read again, before its page, for an owner who leaves during that page.
-  it("starts no re-run for a departed owner's continuation whose answers were dropped, and restarts it for the next ask", async () => {
+  // first pass is read again, before its page, for an owner whose connection closes during that page; through the real
+  // tool, SDK transport and response scope.
+  it("starts no re-run for an owner whose connection closes during a continuation whose answers were dropped; its first pass is still read, and the next owner restarts the re-run", async () => {
     const held = heldJobs();
-    const f = world({ jobs: held.jobs, cacheBytes: 160 });
+    const f = world({ jobs: held.jobs, cacheBytes: 160, scanWaitMs: 5_000 });
     const alice = f.w.played("alice");
     const a = f.match(543, [[alice, 0]], { record: manyRefusals(replayId(543), 3000) });
     const continuation = await pagedAndShown(f, held, alice, a);
     const other = f.match(544, [[alice, 0]]);
     expect((await f.postMortem.query({ key: alice.key, lobbyId: other.lobbyId })).ok).toBe(true);
     await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id]));
-    const asked = (f.versions as ReturnType<typeof versionsAnswering>).asked.length;
-    // Its first pass read again (the first read from now), then its page (the second), held while the caller leaves.
+    const versions = f.versions as ReturnType<typeof versionsAnswering>;
+    const asked = versions.asked.length;
+    const http = await overHttp(f);
+    const query = vi.spyOn(f.postMortem, "query");
+    // Its first pass is read again (the first read from now), then its page (the second), held while the connection closes.
     const opens = f.history.open.mock.calls.length;
     const page = holdRead(f, 2);
-    const res = openResponse();
-    const gone = withResponseScope(res, () => f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation }));
+    const call = http.post("gone", [toolCall(1, POST_MORTEM_TOOL, { key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation })]);
     await vi.waitFor(() => expect(f.history.open.mock.calls.length).toBe(opens + 2));
-    res.destroy();
-    await sleep(20);
+    expect(f.history.open.mock.calls.slice(opens).map(([id]) => id)).toEqual([a.id, a.id]);
+    call.req.destroy();
+    await vi.waitFor(() => expect(http.openPosts()).toHaveLength(0));
     page.open();
-    expect(await gone).toEqual(refusal("still_reading"));
-    await sleep(20);
+    expect(await query.mock.results[0]!.value).toEqual(refusal("still_reading"));
+    await sleep(50);
     expect(held.started).toEqual([a.id, other.id]);
-    expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toHaveLength(asked);
-    expect((await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation })).ok).toBe(true);
+    expect(versions.asked).toHaveLength(asked);
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+    // The next owner, over the same transport, is served its page and told the version is being checked; the re-run restarts once.
+    const next = http.post("next", [toolCall(2, POST_MORTEM_TOOL, { key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation })]);
+    const reply = await next.reply(2);
+    expect(served(reply)).toBe(true);
+    expect(reply.result.structuredContent.noEffect).toEqual({ status: "being_worked_out", reason: "Checking this match's game version. Ask again shortly." });
     await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id, a.id]));
+    expect(versions.asked).toHaveLength(asked + 1);
   });
 
   // Credible regression: a re-run restarted for a continuation of a record that has since been replaced.
