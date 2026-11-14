@@ -28,7 +28,7 @@ describe("ANTWAR_RULES and ANTWAR_PLAYERS, read once at start-up", () => {
   });
 
   it("set, it selects the rules and holds one seeded match for exactly that many players", () => {
-    for (const rules of ["v4", "count-marks", "redesign"] as const) {
+    for (const rules of ["redesign"] as const) {
       for (const players of [2, 4] as const) {
         const o = comparisonOptions({ ANTWAR_RULES: rules, ANTWAR_PLAYERS: String(players) }, DEFAULT_MCP_CONFIG);
         expect(o).toMatchObject({ match: "held", expectedPlayers: players, seed: COMPARISON_SEED, matchLogStdout: true, includeComparisonSetup: true });
@@ -41,12 +41,23 @@ describe("ANTWAR_RULES and ANTWAR_PLAYERS, read once at start-up", () => {
   it("refuses a bad rules value, and a missing or bad player count when rules are set", () => {
     expect(() => comparisonOptions({ ANTWAR_RULES: "v5", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG)).toThrow(/ANTWAR_RULES/);
     for (const players of [undefined, "", "3", "02", "four"]) {
-      expect(() => comparisonOptions({ ANTWAR_RULES: "v4", ...(players === undefined ? {} : { ANTWAR_PLAYERS: players }) }, DEFAULT_MCP_CONFIG)).toThrow(/ANTWAR_PLAYERS must be 2 or 4/);
+      expect(() => comparisonOptions({ ANTWAR_RULES: "redesign", ...(players === undefined ? {} : { ANTWAR_PLAYERS: players }) }, DEFAULT_MCP_CONFIG)).toThrow(/ANTWAR_PLAYERS must be 2 or 4/);
+    }
+  });
+
+  // Under v4 and count-marks the house bot moves for a player's colony, so no new match starts on them;
+  // their recordings still re-simulate as recorded.
+  it("refuses v4 and count-marks, whatever the player count", () => {
+    for (const rules of ["v4", "count-marks"]) {
+      for (const players of [undefined, "2", "4"]) {
+        expect(() => comparisonOptions({ ANTWAR_RULES: rules, ...(players === undefined ? {} : { ANTWAR_PLAYERS: players }) }, DEFAULT_MCP_CONFIG))
+          .toThrow(`ANTWAR_RULES=${rules} no longer starts a match: under those rules the house bot moves for a player's colony. New matches play redesign; ${rules} recordings still re-simulate as recorded`);
+      }
     }
   });
 
   it("the server refuses to start, with a clear message, on a bad value", () => {
-    for (const env of [{ ANTWAR_RULES: "bogus", ANTWAR_PLAYERS: "2" }, { ANTWAR_RULES: "redesign" }]) {
+    for (const env of [{ ANTWAR_RULES: "bogus", ANTWAR_PLAYERS: "2" }, { ANTWAR_RULES: "redesign" }, { ANTWAR_RULES: "v4", ANTWAR_PLAYERS: "2" }, { ANTWAR_RULES: "count-marks", ANTWAR_PLAYERS: "4" }]) {
       const base: NodeJS.ProcessEnv = { ...process.env };
       delete base.ANTWAR_RULES;
       delete base.ANTWAR_PLAYERS;
@@ -58,6 +69,7 @@ describe("ANTWAR_RULES and ANTWAR_PLAYERS, read once at start-up", () => {
       });
       expect(r.status).toBe(1);
       expect(r.stderr).toMatch(/antwar refused to start: ANTWAR_(RULES|PLAYERS)/);
+      if (env.ANTWAR_RULES === "v4" || env.ANTWAR_RULES === "count-marks") expect(r.stderr).toContain(`ANTWAR_RULES=${env.ANTWAR_RULES} no longer starts a match`);
     }
   }, 45_000);
 });
@@ -176,7 +188,7 @@ describe("the join barrier, the headers and the stdout recording", () => {
   }
 
   it("holds tick 0 until both players of a 1v1 have joined, then starts one match with seed 6006 and refuses a third", async () => {
-    const { dataDir, printed } = await barrier(2, "count-marks");
+    const { dataDir, printed } = await barrier(2, "redesign");
     const match = server!.game.match!;
     expect(match.seed).toBe(COMPARISON_SEED);
     expect(match.state.agents).toHaveLength(2);
@@ -188,7 +200,7 @@ describe("the join barrier, the headers and the stdout recording", () => {
 
     const file = readFileSync([...matchLogs(dataDir).values()][0]!, "utf8").split("\n").filter((l) => l !== "");
     const header = JSON.parse(file[0]!);
-    expect(header).toMatchObject({ type: "header", seed: COMPARISON_SEED, rulesVersion: 27, config: { rules: "count-marks", players: 2 } });
+    expect(header).toMatchObject({ type: "header", seed: COMPARISON_SEED, rulesVersion: 27, config: { rules: "redesign", players: 2 } });
     const first = JSON.parse(file[1]!);
     expect(first.tick).toBe(0);
     expect(first.inputs.map((i: { type: string; modelLabel?: string }) => [i.type, i.modelLabel])).toEqual([["join", "model-0"], ["join", "model-1"]]);

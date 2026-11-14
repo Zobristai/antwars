@@ -38,6 +38,16 @@ export function finishedStart(queens: ReadonlyMap<string, number>): FinishedStar
 }
 
 /**
+ * A window saved by a build before the no-bot-moves rule holds a redesign config without localAnts.everyColony.
+ * Its match has not started, so it starts as every new match does, under the rule. Other rule sets are unchanged.
+ */
+function withNoBotMoves(config: SimConfig): SimConfig {
+  const local = config.localAnts;
+  if (config.rules !== "redesign" || local === undefined || local.everyColony === true) return config;
+  return { ...config, localAnts: { ...local, everyColony: true } };
+}
+
+/**
  * Private pre-tick state for a seated lobby. Slot/Game own the clock and invoke
  * finish at the deadline; neither ticks nor feed/log publication happen here.
  * Local playtests never construct this controller.
@@ -108,7 +118,7 @@ export class LobbyStart implements FinishedStart {
    * time it had left when saved, so the handover's pause takes none of the seats' pick time.
    */
   static reopen(seed: number, saved: SavedStart, now: number): LobbyStart {
-    const window = new LobbyStart(seed, saved.config, saved.seats, now,
+    const window = new LobbyStart(seed, withNoBotMoves(saved.config), saved.seats, now,
       Math.max(1, Math.ceil(saved.remainingMs)), saved.requireAllPicks);
     for (const [seatKey, tileX, tileY] of saved.picks) {
       const picked = window.pick(seatKey, tileX, tileY, now);
