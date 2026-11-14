@@ -1,6 +1,6 @@
 /** Team-coloured start-box edges on the same fine-tile plane as the 2D board. */
 import { Graphics } from "pixi.js";
-import { COLONY_TINT } from "./ants.ts";
+import { colonyTint } from "./colony-palette.ts";
 import { visibleStartBoxes, type StartBoxSetup, type VisibleStartBox } from "./start-boxes.ts";
 
 export class StartBoxes2D {
@@ -16,10 +16,10 @@ export class StartBoxes2D {
     this.boxes = visibleStartBoxes(frame.board?.setup);
     for (const box of this.boxes) {
       const { x, y, width, height, colony } = box;
-      g.rect(x, y, width, height).fill({ color: COLONY_TINT[colony], alpha: 0.035 });
+      g.rect(x, y, width, height).fill({ color: colonyTint(colony), alpha: 0.035 });
       // An inside stroke keeps the visible edge within the exact streamed rectangle.
       g.rect(x, y, width, height).stroke({ color: 0x080706, alpha: 0.75, width: 4 / this.tilePx, alignment: 1 });
-      g.rect(x, y, width, height).stroke({ color: COLONY_TINT[colony], alpha: 0.85, width: 2 / this.tilePx, alignment: 1 });
+      g.rect(x, y, width, height).stroke({ color: colonyTint(colony), alpha: 0.85, width: 2 / this.tilePx, alignment: 1 });
     }
   }
 }

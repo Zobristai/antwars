@@ -19,6 +19,7 @@
  */
 import { BufferImageSource, Container, Geometry, Mesh, Shader, Texture, type RenderTexture } from "pixi.js";
 import { boardLook } from "./board-look.ts";
+import { colonyRgb } from "./colony-palette.ts";
 import { NOISE_GLSL, QUAD_VERTEX, quadGeometry } from "./soil.ts";
 import { TRAIL_RES, type Frame } from "./buffer.ts";
 import { BOUNDARY_TILES, ROCK_GLSL, WATER_GLSL, WaterMask } from "./terrain.ts";
@@ -42,6 +43,7 @@ void main() {
   vScreen = aScreen;
 }`;
 
+/** The rated names' colours (colony-palette.ts gives the match's own). */
 export const COLONY_RGB: readonly [readonly number[], readonly number[]] = [
   [1.0, 0xb0 / 255, 0.0], // Very Large Colony, amber #FFB000
   [0.0, 0xc2 / 255, 1.0], // Lake Hodges Colony, cyan #00C2FF
@@ -200,8 +202,8 @@ export class Territory {
       uMap: { value: [mapW, mapH], type: "vec2<f32>" },
       uTrails: { value: 1, type: "f32" },
       uTime: { value: 0, type: "f32" },
-      uC0: { value: [...COLONY_RGB[0]], type: "vec3<f32>" },
-      uC1: { value: [...COLONY_RGB[1]], type: "vec3<f32>" },
+      uC0: { value: [...colonyRgb(0)], type: "vec3<f32>" },
+      uC1: { value: [...colonyRgb(1)], type: "vec3<f32>" },
     };
     // The board look (board-look.ts) gives both passes its own code; none keeps the plain code.
     const look = boardLook()?.board2d;
