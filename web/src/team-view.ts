@@ -9,7 +9,7 @@
  */
 import { SUB_TILE, streamQueens, type StreamAnts, type StreamMark } from "../../src/live/format.ts";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { Frame, type Board, type Colony } from "./buffer.ts";
 import { gridScale } from "./grid-scale.ts";
 
@@ -17,14 +17,15 @@ import { gridScale } from "./grid-scale.ts";
 export const SIGHT_TILES = 6;
 export const SMELL_TILES = 8;
 
-export type TeamChoice = "full" | Colony;
+/** Full view, or one colony's view by its id (0 and 1, or 0 to 3 in a four-colony match). */
+export type TeamChoice = "full" | number;
 
 /** Unseen ground lies under the page background (#121719) at this opacity, on both boards. */
 export const FOG_RGB = [0x12, 0x17, 0x19] as const;
 export const FOG_ALPHA = 0.62;
 
 /** Tiles within radius of any ant of the colony: createVisibility's range, from stream ants. */
-export function rangeMask(ants: Pick<StreamAnts, "count" | "x" | "y" | "colony">, mapW: number, mapH: number, colony: Colony, radius: number): Uint8Array {
+export function rangeMask(ants: Pick<StreamAnts, "count" | "x" | "y" | "colony">, mapW: number, mapH: number, colony: number, radius: number): Uint8Array {
   const seen = new Uint8Array(mapW * mapH);
   const origins = new Set<number>();
   for (let i = 0; i < ants.count; i++) {
@@ -48,7 +49,7 @@ export interface TeamMasks {
   readonly smell: Uint8Array;
 }
 
-export function teamMasks(ants: StreamAnts, board: Pick<Board, "setup">, colony: Colony): TeamMasks {
+export function teamMasks(ants: StreamAnts, board: Pick<Board, "setup">, colony: number): TeamMasks {
   const { mapW, mapH } = board.setup, scale = gridScale(board.setup);
   return { sight: rangeMask(ants, mapW, mapH, colony, SIGHT_TILES * scale), smell: rangeMask(ants, mapW, mapH, colony, SMELL_TILES * scale) };
 }
@@ -59,7 +60,7 @@ const tileOf = (mask: Uint8Array, mapW: number, mapH: number, x: number, y: numb
 };
 
 /** The board as one colony knows it: own territory, own marks within smell, food in sight, queens it can see. */
-export function teamBoard(board: Board, colony: Colony, masks: TeamMasks): Board {
+export function teamBoard(board: Board, colony: number, masks: TeamMasks): Board {
   const { mapW, mapH } = board.setup;
   const food = board.food.slice();
   for (let i = 0; i < food.length; i++) if (masks.sight[i] === 0) food[i] = 0;
@@ -73,16 +74,20 @@ export function teamBoard(board: Board, colony: Colony, masks: TeamMasks): Board
   };
 }
 
-/** Owner grid with only this colony's tiles (0 neutral, 1 colony 0, 2 colony 1). */
-export function ownTerritory(owners: Uint8Array, colony: Colony): Uint8Array {
+/** Owner grid with only this colony's tiles (0 neutral, colony + 1 for each colony's tiles). */
+export function ownTerritory(owners: Uint8Array, colony: number): Uint8Array {
   const out = new Uint8Array(owners.length), own = colony + 1;
   for (let i = 0; i < owners.length; i++) if (owners[i] === own) out[i] = own;
   return out;
 }
 
-/** Traffic trails (two channels per cell, colony 0 then 1) with only this colony's. */
-export function ownTrails(trails: Float32Array, colony: Colony): Float32Array {
+/**
+ * Traffic trails (two channels per cell, colony 0 then 1) with only this colony's. Colonies 2 and 3 of a four-colony
+ * match have no channel of their own in that layout, so their view keeps no trails rather than another colony's.
+ */
+export function ownTrails(trails: Float32Array, colony: number): Float32Array {
   const out = new Float32Array(trails.length);
+  if (colony > 1) return out;
   for (let i = colony; i < trails.length; i += 2) out[i] = trails[i]!;
   return out;
 }
@@ -95,15 +100,18 @@ export function ownTrails(trails: Float32Array, colony: Colony): Float32Array {
 export class TeamView {
   private current: TeamChoice = "full";
   private readonly out = new Frame();
-  private masksFor: { ants: StreamAnts; colony: Colony; masks: TeamMasks } | null = null;
+  private masksFor: { ants: StreamAnts; colony: number; masks: TeamMasks } | null = null;
   private boardFor: { source: Board; masks: TeamMasks; board: Board } | null = null;
   private territories = new WeakMap<Uint8Array, Uint8Array>();
   private trails = new WeakMap<Float32Array, Float32Array>();
-  /** The colony names the frames carry (the match's own, else the rated names), and who is told when they change. */
-  private names: ColonyNamePair = COLONY_NAMES;
-  onNames: ((names: ColonyNamePair) => void) | null = null;
+  /**
+   * The colony names the frames carry, one per colony (the match's own, else the rated names), and who is told when
+   * they change.
+   */
+  private names: readonly string[] = COLONY_NAMES;
+  onNames: ((names: readonly string[]) => void) | null = null;
 
-  get colonyNames(): ColonyNamePair {
+  get colonyNames(): readonly string[] {
     return this.names;
   }
 
@@ -123,7 +131,7 @@ export class TeamView {
   apply(frame: Frame): Frame {
     if (frame.board !== null) {
       const names = colonyNamesOf(frame.board.setup);
-      if (names[0] !== this.names[0] || names[1] !== this.names[1]) { this.names = names; this.onNames?.(names); }
+      if (names.length !== this.names.length || names.some((name, c) => name !== this.names[c])) { this.names = names; this.onNames?.(names); }
     }
     const colony = this.current;
     if (colony === "full" || frame.board === null || frame.ants === null) {
@@ -196,7 +204,7 @@ export class TeamView {
     return out;
   }
 
-  private territory(owners: Uint8Array, colony: Colony): Uint8Array {
+  private territory(owners: Uint8Array, colony: number): Uint8Array {
     let own = this.territories.get(owners);
     if (own === undefined) this.territories.set(owners, own = ownTerritory(owners, colony));
     return own;
@@ -207,12 +215,12 @@ export class TeamView {
 export const TEAM_VIEW_COPY = {
   label: "Point of view",
   full: "Full view",
-  colony: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]}'s view`,
+  colony: (colony: number, names: readonly string[] = COLONY_NAMES) => `${names[colony]}'s view`,
 } as const;
 
 /**
- * The one control: Full view (the default), then each colony's view. The HUDs borrow it into their board controls by
- * its class, as they borrow the replay transport.
+ * The one control: Full view (the default), then each colony's view, one per colony the match names (two, or four in a
+ * four-colony match). The HUDs borrow it into their board controls by its class, as they borrow the replay transport.
  */
 export function teamViewControl(doc: Document, view: TeamView): HTMLSelectElement {
   const select = doc.createElement("select");
@@ -226,13 +234,26 @@ export function teamViewControl(doc: Document, view: TeamView): HTMLSelectElemen
     select.append(o);
   };
   option("full", TEAM_VIEW_COPY.full);
-  option("0", TEAM_VIEW_COPY.colony(0, view.colonyNames));
-  option("1", TEAM_VIEW_COPY.colony(1, view.colonyNames));
-  // A match with its own colony names renames its two views once its frames carry them.
-  view.onNames = names => { select.options[1]!.textContent = TEAM_VIEW_COPY.colony(0, names); select.options[2]!.textContent = TEAM_VIEW_COPY.colony(1, names); };
+  // One view per colony the match names: existing views are renamed in place, missing ones added, extra ones removed,
+  // so a match with its own names (or four colonies) relabels the picker once its frames carry them.
+  const colonies = (names: readonly string[]) => {
+    names.forEach((_, c) => {
+      const o = select.options[c + 1];
+      if (o) o.textContent = TEAM_VIEW_COPY.colony(c, names);
+      else option(String(c), TEAM_VIEW_COPY.colony(c, names));
+    });
+    while (select.options.length > names.length + 1) select.remove(select.options.length - 1);
+    // A view of a colony the match no longer has returns to Full view, as the picker then shows.
+    if (view.choice !== "full" && view.choice >= names.length) {
+      view.choice = "full";
+      select.value = "full";
+    }
+  };
+  colonies(view.colonyNames);
+  view.onNames = colonies;
   select.value = view.choice === "full" ? "full" : String(view.choice);
   select.addEventListener("change", () => {
-    view.choice = select.value === "full" ? "full" : (Number(select.value) as Colony);
+    view.choice = select.value === "full" ? "full" : Number(select.value);
   });
   // A select keeps matching :focus-visible after a click or tap, where the round board controls beside it do not; the
   // HUDs drop its focus ring while it is marked as pointer-focused. A key or leaving it brings the ring back.
