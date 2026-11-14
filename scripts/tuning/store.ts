@@ -3,8 +3,9 @@
 // - every store directory, from the root down, must be owned by the harness's user and not writable by group or
 //   others, so no other user can replace a directory between a check and its use. The harness creates its directories
 //   itself with that mode, and refuses any directory that fails the check, or is a link, before reading or writing;
-// - every directory above the store root, up to /, must be owned by root or the harness's user and either not writable
-//   by group or others or sticky, so no other user can replace the store root or anything above it;
+// - every directory above the store root must be owned by root or the harness's user and either not writable by group
+//   or others or sticky, so no other user can replace the store root or anything above it. They are checked from /
+//   down, each after its parent has passed, so a directory already checked cannot be swapped out afterwards;
 // - the one exception is a shared directory other participants add files to (the noise check): it is sticky
 //   (mode 1777) under an owned parent, so others can add files there but cannot rename or remove anyone else's;
 // - a write creates a fresh file exclusively in the target directory and renames it over the final name, so it never
@@ -13,7 +14,7 @@
 //   harness's user.
 import { randomUUID } from "node:crypto";
 import { chmodSync, closeSync, constants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, sep } from "node:path";
 
 const SHARED_MODE = 0o1777;
 
@@ -52,33 +53,46 @@ export function ancestorProblem(st: Pick<Stats, "uid" | "mode"> & { isDirectory(
   return null;
 }
 
-function checkAncestor(path: string, root: string): void {
-  const problem = ancestorProblem(lstatSync(path), user());
-  if (problem !== null) throw new Error(`${path}, above the store ${root}, ${problem}; refusing the store`);
+/** How openStore looks at a directory; tests replace it to fix the order of checks against changes to the tree. */
+export interface StoreProbe {
+  lstat(path: string): Stats;
+  /** Called after each directory passes, before anything below it is looked at. */
+  passed(path: string): void;
 }
+const PROBE: StoreProbe = { lstat: path => lstatSync(path), passed: () => {} };
 
 /**
- * Open the store root. Links in the path are resolved once; then every directory from / down to the root must pass the
- * ancestor rule, and the root itself must be owned by this user and not writable by group or others. Missing
- * directories are created one at a time with mode 755, only below directories that have passed. Nothing in the store
- * is read or written before this returns.
+ * Open the store root. Links in the path are resolved once; then the directories are checked from / down, each only
+ * after its parent has passed, so nothing already checked can be replaced by another user: every directory above the
+ * root must pass the ancestor rule, and the root itself must be owned by this user and not writable by group or
+ * others. Missing directories are created one at a time with mode 755, each below a directory that has passed. Nothing
+ * in the store is read or written before this returns.
  */
-export function openStore(path: string): string {
+export function openStore(path: string, probe: StoreProbe = PROBE): string {
   let existing = path;
   const missing: string[] = [];
   while (!existsSync(existing)) { missing.unshift(basename(existing)); existing = dirname(existing); }
   const real = realpathSync(existing), root = join(real, ...missing);
-  for (let at = real; ; at = dirname(at)) {
-    if (at !== root) checkAncestor(at, root);
-    if (at === dirname(at)) break;
-  }
-  let at = real;
+  const top = parse(real).root, present = relative(top, real).split(sep).filter(part => part !== "");
+  const check = (at: string) => {
+    const st = probe.lstat(at);
+    if (at === root) {
+      const problem = directoryProblem(st, user());
+      if (problem !== null) throw new Error(`store directory ${at} ${problem}; refusing it`);
+    } else {
+      const problem = ancestorProblem(st, user());
+      if (problem !== null) throw new Error(`${at}, above the store ${root}, ${problem}; refusing the store`);
+    }
+    probe.passed(at);
+  };
+  let at = top;
+  check(at);
+  for (const part of present) { at = join(at, part); check(at); }
   for (const part of missing) {
-    if (at !== real) checkAncestor(at, root);
     at = join(at, part);
     try { mkdirSync(at, { mode: 0o755 }); } catch (e: any) { if (e.code !== "EEXIST") throw e; }
+    check(at);
   }
-  checkDir(root);
   return root;
 }
 

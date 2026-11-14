@@ -4,7 +4,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ancestorProblem, directoryProblem, openStore, storeHas, storeList, storeRead, storeReadText, storeSharedDir, storeWrite } from "../../scripts/tuning/store.ts";
 import { exact, harness, HEAD, ROOT, makeStore, markerPatch, regen, SHORT, sha256, type Store } from "./fixtures.ts";
@@ -199,6 +199,34 @@ describe("store directories", () => {
     chmodSync(ancestor, 0o777);
     expect(() => openStore(join(root, "linked", "deeper", "store"))).toThrow("writable by group or others and not sticky");
     chmodSync(ancestor, 0o755);
+  });
+
+  it("check directories from / down, so one already checked cannot be swapped for another user's", () => {
+    // Another user's directory holds a sticky directory of ours. If the bridge were checked before the directory holding
+    // it, that user could swap a trusted directory in after the bridge passed and the store would resolve through a
+    // bridge nobody checked. The probe reports the other user's directory as theirs and makes that swap the moment the
+    // bridge passes; the checks must refuse first, before the bridge is looked at and before anything is created.
+    const untrusted = join(root, "untrusted"), trusted = join(root, "trusted"), bridge = join(untrusted, "bridge");
+    for (const dir of [untrusted, trusted]) { mkdirSync(join(dir, "bridge"), { recursive: true }); chmodSync(join(dir, "bridge"), 0o1777); }
+    const theirs = lstatSync(untrusted).ino, passed: string[] = [];
+    let swapped = false;
+    const probe = {
+      lstat: (path: string) => {
+        const st = lstatSync(path);
+        return st.ino === theirs ? Object.create(st, { uid: { value: me + 1 } }) : st;
+      },
+      passed: (path: string) => {
+        passed.push(path);
+        if (path === bridge) { renameSync(untrusted, join(root, "aside")); renameSync(trusted, untrusted); swapped = true; }
+      },
+    };
+    expect(() => openStore(join(bridge, "store"), probe)).toThrow(`${untrusted}, above the store ${join(bridge, "store")}, is owned by another user`);
+    expect(swapped).toBe(false);
+    expect(existsSync(join(bridge, "store"))).toBe(false);
+    // Every directory that passed is the parent of the next, from / down to the store's tree.
+    expect(passed[0]).toBe("/");
+    expect(passed.at(-1)).toBe(root);
+    passed.slice(1).forEach((path, i) => expect(dirname(path)).toBe(passed[i]));
   });
 
   it("judge ancestors by the secure-path rule", () => {
