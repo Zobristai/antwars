@@ -18,7 +18,8 @@
     "test:essential": "npx firebase emulators:exec --only firestore 'npx vitest run --config vitest.essential.config.ts --maxWorkers=8'",
     "test:full": "npx firebase emulators:exec --only firestore 'npx vitest run --maxWorkers=2'",
     "test": "npm run test:essential",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "tune": "node scripts/tuning/harness.ts"
   },
   "engines": {
     "node": ">=24 <25"
