@@ -70,9 +70,7 @@ const initialPointRests = new WeakMap<SimState, PointRestPreparation>();
 
 /**
  * Each running match's one neighbour grid, synced at every phase that reads
- * one instead of rebuilt. advance keeps it across ticks; step's copy takes over the
- * previous state's and restarts it with a full build. The tracker is a cache, never
- * state: a previous state stepped again simply starts a new one.
+ * one instead of rebuilt. advance keeps it across ticks; step's copy starts its own.
  */
 const liveGrids = new WeakMap<SimState, GridTracker>();
 /** The grid tracker a running match's ticks use, once it has ticked; for tests and measurement. */
@@ -206,12 +204,7 @@ export function step(
   /** Logged server policy: live seats never lapse into command-idle takeover. */
   houseActive = false,
 ): StepOutput {
-  const next = cloneState(previous);
-  // The copy takes over the previous state's grid buffers instead of allocating its own;
-  // its first sync is still a full build, exactly as a new tracker's.
-  const tracker = liveGrids.get(previous);
-  if (tracker !== undefined) { liveGrids.delete(previous); tracker.rebuildNext(); liveGrids.set(next, tracker); }
-  return tickInPlace(next, initialPointRests.get(previous), inputs, allocator, observeHouseFounding, observers, stopNow, houseActive);
+  return tickInPlace(cloneState(previous), initialPointRests.get(previous), inputs, allocator, observeHouseFounding, observers, stopNow, houseActive);
 }
 
 /**

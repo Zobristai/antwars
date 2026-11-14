@@ -408,12 +408,6 @@ export class GridTracker {
   private dirtyList = new Int32Array(0);
   private stamp = 0;
 
-  /** Start over as a new tracker would, keeping the buffers: the next sync is a full build. */
-  rebuildNext(): void {
-    this.prevAscending = false;
-    this.fullBuilds = 0;
-  }
-
   sync(state: SimState): TrackedGrid {
     const { mapWidth, mapHeight } = state.config, ants = state.ants, n = ants.length;
     if (this.curTiles.length < n) this.curTiles = new Int32Array(Math.max(n, this.curTiles.length * 2, 64));
