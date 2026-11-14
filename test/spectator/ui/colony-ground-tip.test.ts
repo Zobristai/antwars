@@ -1,11 +1,12 @@
-// The 3D deck's floating tip (a member's details, a rating's "± RD", the asterisk's note) is one element kept in colony 0's
-// team (ui/deck/pane.ts), fixed to the viewport and placed beside whatever it describes, colony 1's included. Where the
-// teams sit beside the score, a team whose colony has a dark ground gets 2px more room at each side for the ground's ring
-// (colony-ground.css); that room must not clip the tip, so a tip over colony 1 shows in full when colony 0 has a ground,
-// and the ring around colony 0's name still fits inside its team. The deck is mounted on the test port with each drawn
-// pair and the rated names, written out as markup and laid out at 1280px in headless Chromium with the page's tokens
-// (web/index.html) and the client's stylesheets; the tip is shown over colony 1's name as the deck places it (showTip),
-// and every point across it must hit the tip itself. Not visual evidence.
+// The 3D deck's floating tip (a member's details, a rating's "± RD", the asterisk's note) is one element kept in colony
+// 0's team (ui/deck/pane.ts), fixed to the viewport and placed beside whatever it describes, colony 1's included. Where
+// the teams sit beside the score, a team whose colony has a dark ground gets 2px more room left, right and above for
+// the ground's ring (colony-ground.css); that room must not clip the tip, so a tip over colony 1 shows in full when
+// colony 0 has a ground, and the ring around colony 0's name, at the team's top left, still fits inside its team. The
+// deck is mounted on the test port with each drawn pair and the rated names, written out as markup and laid out at
+// 1280px in headless Chromium with the page's tokens (web/index.html) and the client's stylesheets; the tip is shown
+// over colony 1's name as the deck places it (showTip), and every point across it must hit the tip itself. Not visual
+// evidence.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
@@ -86,8 +87,8 @@ function ringRoom() {
   if (getComputedStyle(name).backgroundColor === "rgba(0, 0, 0, 0)") return null;
   const n = name.getBoundingClientRect(), t = team.getBoundingClientRect();
   // The team clips at its padding box (overflow), and no clip-path narrows that.
-  const left = t.left + team.clientLeft, right = left + team.clientWidth;
-  return { left: n.left - 2 - left, right: right - (n.right + 2), clipPath: getComputedStyle(team).clipPath };
+  const left = t.left + team.clientLeft, right = left + team.clientWidth, top = t.top + team.clientTop;
+  return { left: n.left - 2 - left, right: right - (n.right + 2), top: n.top - 2 - top, clipPath: getComputedStyle(team).clipPath };
 }
 
 let browser: Browser;
@@ -116,6 +117,7 @@ describe("the 3D deck's floating tip over colony 1 shows in full whatever ground
           expect(ring, "colony 0's name has a ground").not.toBeNull();
           expect(ring!.clipPath, "no clip-path on the team").toBe("none");
           expect(ring!.left, "room for the ring at the team's left").toBeGreaterThanOrEqual(0);
+          expect(ring!.top, "room for the ring at the team's top").toBeGreaterThanOrEqual(0);
         } else expect(ring, "colony 0's name has no ground").toBeNull();
       } finally { await tab.close(); }
     });
