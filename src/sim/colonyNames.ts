@@ -99,12 +99,15 @@ export function lobbyColonyNames(lobbyId: string, rated: boolean): ColonyNamePai
 }
 
 /** Whether a pair is the rated names, which streams and records leave implicit. */
-export function isClassicColonyNames(names: ColonyNamePair): boolean {
+export function isClassicColonyNames(names: readonly string[]): boolean {
   return names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
 }
 
-/** A match's names from what it carries (a stream setup, a listed row): its drawn pair, or COLONY_NAMES when it carries none. */
-export function colonyNamesOf(match: { readonly colonyNames?: readonly [string, string] | null } | null | undefined): ColonyNamePair {
+/**
+ * A match's names from what it carries (a stream setup, a listed row), index = colony id: its own names, or
+ * COLONY_NAMES when it carries none.
+ */
+export function colonyNamesOf(match: { readonly colonyNames?: readonly string[] | null } | null | undefined): readonly string[] {
   return match?.colonyNames ?? COLONY_NAMES;
 }
 

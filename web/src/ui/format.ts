@@ -1,6 +1,6 @@
 // The broadcast HUD: pure rules shared by its three pages. No DOM, no requests, no clock.
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { SUPERCOLONY_NAMES, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { SUPERCOLONY_NAMES } from "../../../src/sim/colonyNames.ts";
 import type { StreamResult } from "../../../src/live/format.ts";
 import { resultHow } from "../story.ts";
 import { replayDate } from "../replay.ts";
@@ -120,7 +120,7 @@ export function boardHref(board: "2d" | "3d", href: string): string {
 }
 
 /** The visible live/replay HUD headline, separate from its reason and rating lines. */
-export function resultHeadline(result: Pick<StreamResult, "winner" | "reason">, names: ColonyNamePair = COLONY_NAMES): string {
+export function resultHeadline(result: Pick<StreamResult, "winner" | "reason">, names: readonly string[] = COLONY_NAMES): string {
   if (result.reason === "abandoned") return "Abandoned";
   return result.winner === null ? "Draw" : `${names[result.winner]} wins`;
 }
