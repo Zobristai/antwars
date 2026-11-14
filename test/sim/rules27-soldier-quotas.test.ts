@@ -7,6 +7,9 @@ import { buildGrid } from "../../src/sim/map.js";
 import { localRulesSide } from "../../src/sim/marks.js";
 import type { Ant, ColonyId, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch, run } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 /**
  * In rules 27, an agent-seated colony's free soldiers get no front share,
@@ -16,7 +19,7 @@ type IntentAnt = Ant & { houseIntentHold?: { intent: { kind: string } } };
 const SOLDIERS = 12;
 
 function rulesOf(scale: 2, local: Partial<NonNullable<SimConfig["localAnts"]>> = {}): SimConfig {
-  const base = withGridScale(rulesConfig("redesign"));
+  const base = withGridScale(recordedHousePlan(rulesConfig("redesign")));
   return { ...base,
     startAnts: 0, terrain: undefined, foodLayout: undefined,
     foodPatches: [{ tileX: 12 * scale, tileY: 9 * scale, radius: 2 * scale, perTile: 2 }],
