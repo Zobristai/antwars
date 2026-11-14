@@ -13,6 +13,7 @@
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { colonyColours, colonyNameNote, colonyNamesOf, colourCss, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { TEXT_GROUND, needsTextGround } from "../colony-palette.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { benchmarkLabel } from "../leaderboard-page/view.ts";
 import { liveRow, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
@@ -290,11 +291,18 @@ function rowParts(doc: Document) {
     node.append(h(doc, "span", "d1p-sr", "Status "), row.stamp.text);
     return node;
   };
-  /** A row naming its own colonies inks them in their names' colours (--aw-k0, --aw-k1, archive.css .d1p-c0 and .d1p-c1). */
+  /**
+   * A row naming its own colonies inks them in their names' colours (--aw-k0, --aw-k1, archive.css .d1p-c0 and .d1p-c1),
+   * and puts a dark ground under a colony's coloured words where its colour needs one for 4.5:1 (colony-ground.css).
+   */
   const inkColonies = (node: HTMLElement, row: MatchRow) => {
     if (row.colonyNames === undefined) return;
     const colours = colonyColours(row.colonyNames);
     for (const colony of COLONIES) node.style.setProperty(`--aw-k${colony}`, colourCss(colours[colony]));
+    const grounded = COLONIES.filter(colony => needsTextGround(colours[colony]));
+    if (grounded.length === 0) return;
+    node.setAttribute("data-aw-ground", grounded.join(" "));
+    node.style.setProperty("--aw-ink-ground", colourCss(TEXT_GROUND));
   };
   /** A colony's name in its ink; a drawn name has its source as its tooltip, and the rated names are shown as they were. */
   const colonyLabel = (tag: "dt" | "span", row: MatchRow, colony: 0 | 1) => {
