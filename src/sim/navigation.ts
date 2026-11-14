@@ -68,7 +68,9 @@ function distances(config: SimConfig, graph: Navigation, goal: number): Int32Arr
   if (cached !== undefined) return cached;
   const width = config.mapWidth, height = config.mapHeight;
   const result = new Int32Array(width * height).fill(-1);
-  if (config.pointArrival !== undefined) {
+  // Breadth-first distances are unique, so any edge order yields the same field: older configurations
+  // share the compiled edges for a land goal (the only goal routeToward passes).
+  if (config.pointArrival !== undefined || graph.land[goal] === true) {
     const { offsets, neighbours, queue } = traversal(config, graph);
     let first = 0, last = 1;
     queue[0] = goal; result[goal] = 0;

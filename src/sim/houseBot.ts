@@ -693,25 +693,62 @@ export function localDirection(state: SimState, grid: Grid, ant: Ant, assignment
 }
 
 function rebalanceQueenGuards(state: SimState, members: Ant[], colony: ColonyId, budget: number): void {
-  const assigned = new Set<Ant>();
-  // Rank once per nest, not once per guard: the share can be hundreds of ants.
-  const queues = activeQueens(state.colonies[colony]).map((q) => ({ q, next: 0, ordered: members.map((ant) => {
-    const held = roleHeld(state, ant);
-    return { ant, incumbent: Number(ant.role === "guard" && ant.guardQueenId === q.id),
-      heldGuard: Number(ant.role === "guard" && held), heldNonGuard: Number(ant.role !== "guard" && held),
-      distance: distance(ant.x, ant.y, q.queenX, q.queenY) };
-  }).sort((a, b) => b.incumbent - a.incumbent || b.heldGuard - a.heldGuard || a.heldNonGuard - b.heldNonGuard ||
-    a.distance - b.distance || a.ant.id - b.ant.id).map(({ ant }) => ant) }));
+  const n = members.length, queens = activeQueens(state.colonies[colony]);
+  const assigned = new Uint8Array(n);
+  // Rank once per nest, not once per guard: the share can be hundreds of ants. Each nest orders the members by
+  // (incumbent guard of this nest first, held guard first, held non-guard last, nearer first, lower id first).
+  // That order is total, so it is computed as one sort of exact integer keys instead of a comparator sort.
+  const queues: { q: QueenState; next: number; ordered: Int32Array }[] = [];
+  if (queens.length > 0 && n > 0) {
+    // Member rank by id: the member index when ids ascend, as state.ants keeps them.
+    let rank: Int32Array | undefined, ascending = true;
+    for (let i = 1; i < n && ascending; i++) if (members[i]!.id <= members[i - 1]!.id) ascending = false;
+    if (!ascending) {
+      const byId = Int32Array.from({ length: n }, (_, i) => i).sort((a, b) => members[a]!.id - members[b]!.id);
+      rank = new Int32Array(n);
+      for (let r = 0; r < n; r++) rank[byId[r]!] = r;
+    }
+    const held = new Uint8Array(n);
+    for (let i = 0; i < n; i++) held[i] = Number(roleHeld(state, members[i]!));
+    const group = new Uint8Array(n), distances = new Float64Array(n), keys = new Float64Array(n);
+    for (const q of queens) {
+      let span = 1;
+      for (let i = 0; i < n; i++) {
+        const ant = members[i]!, guard = ant.role === "guard";
+        // incumbent, then held guard (both descending), then held non-guard (ascending).
+        group[i] = (guard && ant.guardQueenId === q.id ? 0 : 4) + (guard && held[i] === 1 ? 0 : 2) + (!guard && held[i] === 1 ? 1 : 0);
+        const d = distance(ant.x, ant.y, q.queenX, q.queenY);
+        distances[i] = d;
+        if (d >= span) span = d + 1;
+      }
+      const ordered = new Int32Array(n);
+      if (8 * span * n <= Number.MAX_SAFE_INTEGER) {
+        for (let i = 0; i < n; i++) keys[i] = (group[i]! * span + distances[i]!) * n + (rank === undefined ? i : rank[i]!);
+        keys.sort();
+        if (rank === undefined) for (let r = 0; r < n; r++) ordered[r] = keys[r]! % n;
+        else {
+          const byRank = new Int32Array(n);
+          for (let i = 0; i < n; i++) byRank[rank[i]!] = i;
+          for (let r = 0; r < n; r++) ordered[r] = byRank[keys[r]! % n]!;
+        }
+      } else {
+        for (let i = 0; i < n; i++) ordered[i] = i;
+        ordered.sort((a, b) => group[a]! - group[b]! || distances[a]! - distances[b]! || members[a]!.id - members[b]!.id);
+      }
+      queues.push({ q, next: 0, ordered });
+    }
+  }
   // The caller already applied the colony ceiling and eligible-ant limit.
-  for (let slot = 0; queues.length > 0 && slot < Math.min(budget, members.length); slot++) {
+  for (let slot = 0; queues.length > 0 && slot < Math.min(budget, n); slot++) {
     const queue = queues[slot % queues.length]!;
-    while (queue.next < queue.ordered.length && assigned.has(queue.ordered[queue.next]!)) queue.next++;
-    const ant = queue.ordered[queue.next++]!;
+    while (queue.next < queue.ordered.length && assigned[queue.ordered[queue.next]!] === 1) queue.next++;
+    const index = queue.ordered[queue.next++]!, ant = members[index]!;
     ant.role = "guard";
     ant.guardQueenId = queue.q.id;
-    assigned.add(ant);
+    assigned[index] = 1;
   }
-  for (const ant of members) if (!assigned.has(ant)) {
+  for (let i = 0; i < n; i++) if (assigned[i] === 0) {
+    const ant = members[i]!;
     if (ant.guardQueenId !== undefined) ant.guardQueenId = undefined;
     if (ant.role === "guard") ant.role = ant.caste === "soldier" ? "fighter" : "forager";
   }

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { playScripted } from "../../src/live/record.js";
 import { PUBLIC_CONFIG, SUB, rulesConfig, type SimConfig } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
-import { parseLog, terminalAt } from "../../src/sim/log.js";
+import { parseLog, stateHash, terminalAt } from "../../src/sim/log.js";
 import { buildGrid, createMatch, forEachNear, GridTracker, newAnt, verifyGridSyncs, type TrackedGrid } from "../../src/sim/map.js";
 import { advance, liveGridTracker, prepareInitialPointRests, step } from "../../src/sim/step.js";
 import type { SimState } from "../../src/sim/types.js";
@@ -112,5 +112,26 @@ describe("the live tick syncs one grid", () => {
     expect(pure.tick).toBeGreaterThan(100);
     expect(liveGridTracker(live)?.fullBuilds).toBe(1);
     expect(deaths + hatched).toBeGreaterThan(0);
+  }, 120_000);
+
+  it.each(CONFIGS)("%s: step's copy takes over the previous grid; stepping that previous state again plays the same tick", (_name, config) => {
+    // Post-match analysis steps one state several times (each alternative input set); the moved grid is only a cache.
+    const log = parseLog(playScripted({ seed: 643, config, agents: 2, ticks: 300, attack: true }).lines);
+    verifyGridSyncs(true);
+    let state = createMatch(log.header.seed, log.header.config);
+    prepareInitialPointRests(state);
+    while (state.result === null && state.tick < 300) {
+      const tick = state.tick, inputs = log.ticks.get(tick) ?? [], before = stateHash(state), held = liveGridTracker(state);
+      const first = step(state, inputs, undefined, undefined, undefined, terminalAt(log, tick), log.houseActive.has(tick));
+      if (held !== undefined) expect(liveGridTracker(first.state)).toBe(held);
+      expect(liveGridTracker(state)).toBeUndefined();
+      const again = step(state, inputs, undefined, undefined, undefined, terminalAt(log, tick), log.houseActive.has(tick));
+      expect(stateHash(state)).toBe(before);
+      expect(stateHash(again.state)).toBe(stateHash(first.state));
+      expect(again.results).toEqual(first.results);
+      expect(again.events).toEqual(first.events);
+      state = first.state;
+    }
+    expect(state.tick).toBeGreaterThan(100);
   }, 120_000);
 });
