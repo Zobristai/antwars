@@ -1862,6 +1862,45 @@ describe("delivery slots", () => {
     await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(0));
   });
 
+  /**
+   * A record whose re-run answer cannot be shaped: an undecided list whose entry is not a [seat, count] pair (as a broken
+   * re-run might send) is kept, then makes shaping the reply throw, after its slot has been taken.
+   */
+  async function shapingFails(f: ReturnType<typeof world>, held: ReturnType<typeof heldJobs>, alice: { key: string }, n: number) {
+    const m = f.match(n, [[alice as { id: string; name: string; key: string }, 0]]);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: m.lobbyId })).ok).toBe(true);
+    await vi.waitFor(() => expect(held.started).toContain(m.id));
+    held.finish(m.id, { kind: "findings", tested: 1, counts: [[0, 4], [1, 2]], bits: new Uint8Array([4, 0]), undecided: [5] } as unknown as RerunOutcome);
+    await sleep(0);
+    return m;
+  }
+
+  // Credible regression: a reply whose shaping throws keeping its slot for good, outside a request.
+  it("frees the slot of a reply whose shaping fails on return, outside a request", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs });
+    const alice = f.w.played("alice");
+    const { lobbyId } = await shapingFails(f, held, alice, 533);
+    expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual(refusal("record_unreadable"));
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+  });
+
+  // Credible regression: a reply whose shaping throws inside a request keeping its slot after its response has finished.
+  it("holds the slot of a reply whose shaping fails until its response has finished, inside a request", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs });
+    const alice = f.w.played("alice");
+    const { lobbyId } = await shapingFails(f, held, alice, 534);
+    const http = await overHttp(f);
+    const request = http.post("failed", [toolCall(1, POST_MORTEM_TOOL, { key: alice.key, lobbyId }), toolCall(2, "slow")]);
+    expect(refusalOf(await request.reply(1))).toBe("record_unreadable");
+    expect(http.openPosts().map(p => p.name)).toEqual(["failed"]);
+    expect(f.postMortem.deliveriesHeld()).toBe(1);
+    http.slow.open();
+    await request.done;
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(0));
+  });
+
   // Credible regression: slots unbounded, held during scan waits, or never freed when a response finishes or closes.
   it("holds at most four, none while waiting on a scan, each freed once its response finishes or closes", async () => {
     const f = world({ jobs: heldJobs().jobs, scanWaitMs: 5_000 });
