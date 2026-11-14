@@ -55,7 +55,8 @@ describe("older Recordings take each colony's handle from its lobby", () => {
     const filled = (await lobbySeatHandles(lookup)(page(recorded))).matches[0]!;
     expect(handles(filled)).toEqual([HOUSE, HOUSE_FAST, HOUSE, HOUSE_FAST, HOUSE, HOUSE_FAST, HOUSE, HOUSE_FAST]);
     // The badge rule, unchanged: each handle's fixed level and tier.
-    expect(colonyModels(filled.seats)?.map(colony => colony?.map(model => model.badges))).toEqual([
+    // A two-colony row's seats, as the page's parser types them.
+    expect(colonyModels(filled.seats as Parameters<typeof colonyModels>[0])?.map(colony => colony?.map(model => model.badges))).toEqual([
       [["xhigh"], ["xhigh"], ["xhigh"], ["xhigh"]], [["high", "Fast"], ["high", "Fast"], ["high", "Fast"], ["high", "Fast"]]]);
     expect(handles(recorded)).toEqual(Array(8).fill(null)); // The listed row itself is not rewritten.
   });

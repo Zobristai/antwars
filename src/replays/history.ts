@@ -20,7 +20,8 @@ export interface CommandRecord {
 }
 export interface SeatRecord {
   seat: number;
-  colony: 0 | 1;
+  /** 0 to 3; a two-colony match uses 0 and 1. */
+  colony: number;
   modelLabel: string | null;
   /** null when omitted, including recordings made before this metadata existed. */
   thinkingLevel: string | null;

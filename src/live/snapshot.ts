@@ -14,7 +14,8 @@ export const TICK_MS = 1000 / TICK_HZ;
 
 export const OWNER_NONE = 0;
 
-export type Colony = 0 | 1;
+/** A colony index, 0 to 3, as the sim's ColonyId; a two-colony stream carries 0 and 1 only. */
+export type Colony = number;
 
 /** A recorded match: messages concatenated, each prefixed with its u32 byte length. */
 export function packMessages(messages: Uint8Array[]): Uint8Array {

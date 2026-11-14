@@ -12,10 +12,12 @@
 import { SUB } from "../sim/config.js";
 import { gridScaleOf } from "../sim/gridScale.js";
 import { activeQueens, cloneState, queensOf } from "../sim/map.js";
+import { SUPERCOLONY_NAMES } from "../sim/colonyNames.js";
+import { quadrantStartBoxes } from "../sim/quadrantMatch.js";
 import { startBoxes } from "../sim/startPlacement.js";
 import { nextCaste, queenNextCaste } from "../sim/forage.js";
 import type { SimEvent, SimState, StepOutput } from "../sim/types.js";
-import { asTwoColony, WORDS } from "../sim/types.js";
+import { WORDS } from "../sim/types.js";
 import {
   ORDER_KINDS,
   SUB_TILE,
@@ -79,14 +81,15 @@ function toSubTile(v: number, tiles: number): number {
 
 export function setupOf(state: SimState): StreamSetup {
   const c = state.config;
-  const queen = (i: 0 | 1): [number, number] => [toSubTile(state.colonies[i].queenX, c.mapWidth), toSubTile(state.colonies[i].queenY, c.mapHeight)];
+  const queen = (i: number): [number, number] => [toSubTile(state.colonies[i]!.queenX, c.mapWidth), toSubTile(state.colonies[i]!.queenY, c.mapHeight)];
   return {
     mapW: c.mapWidth,
     mapH: c.mapHeight,
     gridScale: gridScaleOf(c),
     ...(c.initialQueens === undefined ? {} : {
-      startBoxes: startBoxes(c),
-      startingQueenIds: [c.initialQueens[0].map((_, id) => id), c.initialQueens[1].map((_, id) => id)] as [number[], number[]],
+      // A quadrant board's own start areas, one per colony, are its pick boxes.
+      startBoxes: state.colonies.length === 4 ? quadrantStartBoxes(state.seed, c) : startBoxes(c),
+      startingQueenIds: c.initialQueens.map(queens => queens.map((_, id) => id)),
     }),
     ...(state.terrain === undefined ? {} : { terrain: { mapId: state.terrain.mapId, mapName: state.terrain.mapName,
       water: state.terrain.water.map(r => [r.x, r.y, r.width, r.height] as const),
@@ -96,7 +99,9 @@ export function setupOf(state: SimState): StreamSetup {
     idleTicks: c.commandIdleTicks ?? c.squadTimerTicks,
     ...(c.commandIdleTicks === undefined ? {} : { commandIdleTicks: c.commandIdleTicks }),
     overrunRadiusTiles: c.overrunRadiusTiles,
-    queens: [queen(0), queen(1)],
+    queens: state.colonies.map((_, i) => queen(i)),
+    // A four-colony match names its colonies by colony number from the shared table, whatever its lobby drew.
+    ...(state.colonies.length === 4 ? { colonies: 4 as const, colonyNames: SUPERCOLONY_NAMES.map(name => name.label) } : {}),
     // Comparison runs carry their rules, seed and player count in the live header.
     ...(c.rules === undefined ? {} : { rules: c.rules, seed: state.seed, ...(c.players === undefined ? {} : { players: c.players }) }),
   };
@@ -115,11 +120,11 @@ export function hatchOf(state: SimState): StreamHatch {
  * caste is queenNextCaste's, which is the colony's nextCaste except for a rules-27 colony
  * with an agent, where each queen hatches her own brood.
  */
-export function storesOf(state: SimState): [StreamStore, StreamStore] {
+export function storesOf(state: SimState): StreamStore[] {
   const { config } = state;
   const intervalOf = (soldier: boolean) => config.hatchIntervalTicks * (soldier ? config.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
-  const store = (i: 0 | 1): StreamStore => {
-    const colony = state.colonies[i];
+  const store = (i: number): StreamStore => {
+    const colony = state.colonies[i]!;
     let soldier = config.castes !== undefined && nextCaste(state, colony) === "soldier";
     let nextHatchTick = colony.lastHatchTick + intervalOf(soldier);
     if (colony.queens !== undefined) {
@@ -133,11 +138,11 @@ export function storesOf(state: SimState): [StreamStore, StreamStore] {
     }
     return { food: colony.foodStore, nextHatchTick, nextCost: soldier ? config.castes!.soldierCost : config.hatchCost };
   };
-  return [store(0), store(1)];
+  return state.colonies.map((_, i) => store(i));
 }
 
 export function streamResult(result: NonNullable<SimState["result"]>, nextStartMs: number | null): StreamResult {
-  return { winner: result.winner === null ? null : asTwoColony(result.winner), reason: result.reason, decidedBy: result.decidedBy, tick: result.tick, nextStartMs };
+  return { winner: result.winner, reason: result.reason, decidedBy: result.decidedBy, tick: result.tick, nextStartMs };
 }
 
 /** Read the evaluator's existing progress; never re-evaluate territory qualification here.
@@ -147,7 +152,7 @@ export function territoryWinOf(state: SimState): StreamTerritoryWin | undefined 
   const progress = state.earlyWinProgress, rules = state.config.earlyWin;
   if (state.result !== null || rules === undefined || progress?.leader == null || progress.ticks <= 0) return undefined;
   const startTick = state.tick - progress.ticks;
-  return { colony: asTwoColony(progress.leader), startTick, winTick: startTick + rules.holdTicks - 1 };
+  return { colony: progress.leader, startTick, winTick: startTick + rules.holdTicks - 1 };
 }
 
 export interface SpectatorPlayerOptions {
@@ -156,8 +161,9 @@ export interface SpectatorPlayerOptions {
   /** With houseIdle: the match is in the Antwars Model Index (house-*), from its captured access policy. */
   readonly modelIndex?: boolean;
   readonly rated?: boolean;
-  /** An unrated lobby match's drawn colony names; absent for the rated names. */
-  readonly colonyNames?: readonly [string, string];
+  /** An unrated lobby match's drawn colony names; absent for the rated names. Two-colony matches only: a four-colony
+   * setup always names its colonies by colony number. */
+  readonly colonyNames?: readonly string[];
   /** Resolves seated identity by the sim's internal id; never writes that id to the stream. */
   readonly identity?: (agentId: string) => StreamIdentity | undefined;
 }
@@ -195,7 +201,9 @@ export class SpectatorRecorder {
   private readonly agentIndex = new Map<string, number>();
   private owner: number[];
   private food: number[];
-  private stores: [StreamStore, StreamStore];
+  private stores: StreamStore[];
+  /** Four-colony matches: the colonies already sent as eliminated (or eliminated before a resume). */
+  private readonly eliminated: Set<number>;
   private marks: Map<number, StreamMark>;
   private heading = new Map<number, number>();
   private lastPos = new Map<number, [number, number]>();
@@ -214,6 +222,7 @@ export class SpectatorRecorder {
     this.owner = initial.owner.slice();
     this.food = initial.food.slice();
     this.stores = storesOf(initial);
+    this.eliminated = new Set(initial.colonies.flatMap((c) => (c.eliminated === undefined ? [] : [c.id])));
     if (resume !== undefined) {
       this.initialState = null;
       this.resumedInitialFull = resume.initialFull;
@@ -233,7 +242,7 @@ export class SpectatorRecorder {
     this.initialState = cloneState(initial);
     this.resumedInitialFull = null;
     this.setup = { ...setupOf(initial), ...(players.rated === undefined ? {} : { rated: players.rated }),
-      ...(players.colonyNames === undefined ? {} : { colonyNames: players.colonyNames }),
+      ...(players.colonyNames === undefined || initial.colonies.length > 2 ? {} : { colonyNames: players.colonyNames }),
       ...(players.houseIdle === undefined ? {} : { houseIdleTicks: players.houseIdle.idleTicks, ...(players.modelIndex === true ? { modelIndex: true as const } : {}) }) };
     this.initialHouseActivity = new Map(initial.agents.map(a => [a.id, players.houseIdle?.activityTick(a.id) ?? a.joinedTick ?? 0]));
     initial.agents.forEach((a, i) => this.agentIndex.set(a.id, i));
@@ -257,12 +266,12 @@ export class SpectatorRecorder {
       // Stream version is independent of the match's rules. Historical matches
       // have the same authoritative birth stats and one queen per colony.
       queens: queensForStream(s),
-      hatched: [...s.stats.hatched] as [number, number],
+      hatched: [...s.stats.hatched],
       territory: Uint8Array.from(s.owner, (o) => o + 1),
       marks: [...this.marksOf(s).values()],
       agents: s.agents.map(
         (a): StreamAgent => ({
-          colony: asTwoColony(a.colony),
+          colony: a.colony,
           modelLabel: cutUtf8(a.modelLabel ?? "", LABEL_BYTES),
           ...(a.thinkingLevel === undefined ? {} : { thinkingLevel: cutUtf8(a.thinkingLevel, THINKING_LEVEL_BYTES) }),
           ...(a.serviceTier === undefined ? {} : { serviceTier: cutUtf8(a.serviceTier, SERVICE_TIER_BYTES) }),
@@ -278,9 +287,10 @@ export class SpectatorRecorder {
           intent: "",
         }),
       ),
-      overrun: s.colonies.map((c) => Math.max(0, ...activeQueens(c).map((q) => q.overrunTicks))) as [number, number],
+      overrun: s.colonies.map((c) => Math.max(0, ...activeQueens(c).map((q) => q.overrunTicks))),
       overrunRequired: s.config.overrunTicks,
-      deaths: [s.stats.deaths[0], s.stats.deaths[1]],
+      deaths: s.colonies.map((_, i) => s.stats.deaths[i]!),
+      ...(s.colonies.length > 2 ? { eliminations: eliminationsOf(s) } : {}),
       result: null,
       food: Uint32Array.from(s.food),
       hatch: hatchOf(s),
@@ -297,10 +307,15 @@ export class SpectatorRecorder {
     const state = out.state;
     const events: StreamEvent[] = [];
     const marks = this.marksOf(state);
+    // A four-colony elimination has no sim event: it is read from the state and sent before the step's end.
+    const leaving = this.eliminations(out);
     for (const e of out.events) {
       const se = this.event(state, e, marks);
-      if (se !== null) events.push(se);
+      if (se === null) continue;
+      if (se.kind === "end") events.push(...leaving.splice(0));
+      events.push(se);
     }
+    events.push(...leaving);
     // Territory: every tile whose owner changed this step.
     const tiles: number[] = [];
     const owners: number[] = [];
@@ -338,9 +353,9 @@ export class SpectatorRecorder {
     this.food = state.food.slice();
     // Stores: a colony whose food store, next hatch tick or next hatch cost changed.
     const stores = storesOf(state);
-    for (const c of [0, 1] as const) {
-      const was = this.stores[c];
-      const is = stores[c];
+    for (let c = 0; c < stores.length; c++) {
+      const was = this.stores[c]!;
+      const is = stores[c]!;
       if (is.food !== was.food || is.nextHatchTick !== was.nextHatchTick || is.nextCost !== was.nextCost) {
         events.push({ kind: "store", colony: c, food: is.food, nextHatchTick: is.nextHatchTick, nextCost: is.nextCost });
       }
@@ -352,6 +367,30 @@ export class SpectatorRecorder {
     }
     this.territoryWin = lead;
     return { tick: state.tick, ants: this.ants(state), events };
+  }
+
+  /**
+   * The colonies this step eliminated, by colony: first a queenLost for each queen the elimination retired without
+   * an engine event of its own (so every queen of the colony shows its elimination tick), then its eliminated event.
+   */
+  private eliminations(out: StepOutput): StreamEvent[] {
+    const state = out.state;
+    const leaving = state.colonies.filter((c) => c.eliminated !== undefined && !this.eliminated.has(c.id));
+    if (leaving.length === 0) return [];
+    const lostByEvent = new Set(out.events.flatMap((e) => (e.type === "queen_lost" ? [`${e.colony}:${e.queenId}`] : [])));
+    const queens = queensForStream(state);
+    const events: StreamEvent[] = [];
+    for (const colony of leaving) {
+      const tick = colony.eliminated!.tick;
+      for (const queen of queens) {
+        if (queen.colony === colony.id && queen.lostTick === tick && !lostByEvent.has(`${queen.colony}:${queen.id}`)) events.push({ kind: "queenLost", queen });
+      }
+    }
+    for (const colony of leaving) {
+      this.eliminated.add(colony.id);
+      events.push({ kind: "eliminated", colony: colony.id, tick: colony.eliminated!.tick });
+    }
+    return events;
   }
 
   private marksOf(state: SimState): Map<number, StreamMark> {
@@ -368,7 +407,7 @@ export class SpectatorRecorder {
     return {
       id: m.id,
       agent,
-      colony: asTwoColony(m.colony),
+      colony: m.colony,
       tileX: m.tileX,
       tileY: m.tileY,
       words: m.words.map((w) => WORDS.indexOf(w)),
@@ -388,10 +427,10 @@ export class SpectatorRecorder {
         return { kind: "birth", antId: e.antId };
       case "death": {
         const [x, y] = this.lastPos.get(e.antId) ?? [e.tileX * SUB_TILE + SUB_TILE / 2, e.tileY * SUB_TILE + SUB_TILE / 2];
-        return { kind: "death", antId: e.antId, colony: asTwoColony(e.colony), x, y };
+        return { kind: "death", antId: e.antId, colony: e.colony, x, y };
       }
       case "fight":
-        return { kind: "fight", antId: e.antId, targetId: e.targetId, colony: asTwoColony(e.colony), tileX: e.tileX, tileY: e.tileY };
+        return { kind: "fight", antId: e.antId, targetId: e.targetId, colony: e.colony, tileX: e.tileX, tileY: e.tileY };
       case "mark_laid": {
         const mark = marks.get(e.markId);
         return mark === undefined ? null : { kind: "mark", mark };
@@ -402,16 +441,16 @@ export class SpectatorRecorder {
         return queen ? { kind: e.type === "queen_founded" ? "queenFounded" : "queenLost", queen } : null;
       }
       case "queen_hp":
-        return { kind: "queenHp", colony: asTwoColony(e.colony), queenId: e.queenId, hp: e.hp };
+        return { kind: "queenHp", colony: e.colony, queenId: e.queenId, hp: e.hp };
       case "overrun_progress":
-        return e.queenId === undefined ? { kind: "overrun", colony: asTwoColony(e.colony), progress: e.progressTicks, required: e.requiredTicks }
-          : { kind: "queenOverrun", colony: asTwoColony(e.colony), queenId: e.queenId, progress: e.progressTicks, required: e.requiredTicks };
+        return e.queenId === undefined ? { kind: "overrun", colony: e.colony, progress: e.progressTicks, required: e.requiredTicks }
+          : { kind: "queenOverrun", colony: e.colony, queenId: e.queenId, progress: e.progressTicks, required: e.requiredTicks };
       case "match_end":
         return { kind: "end", result: streamResult(e.result, null) };
       case "agent_join": {
         const agent = this.agentIndex.size;
         this.agentIndex.set(e.agentId, agent);
-        return { kind: "join", agent, colony: asTwoColony(e.colony), modelLabel: cutUtf8(e.modelLabel ?? "", LABEL_BYTES),
+        return { kind: "join", agent, colony: e.colony, modelLabel: cutUtf8(e.modelLabel ?? "", LABEL_BYTES),
           ...(e.thinkingLevel === undefined ? {} : { thinkingLevel: cutUtf8(e.thinkingLevel, THINKING_LEVEL_BYTES) }),
           ...(e.serviceTier === undefined ? {} : { serviceTier: cutUtf8(e.serviceTier, SERVICE_TIER_BYTES) }), ...playerIdentity(this.players.identity?.(e.agentId)) };
       }
@@ -507,7 +546,7 @@ export class SpectatorState {
           break;
         case "birth": {
           const i = rec.ants.id.indexOf(e.antId);
-          if (f.hatched !== undefined && i >= 0) f.hatched[rec.ants.colony[i] as 0 | 1]++;
+          if (f.hatched !== undefined && i >= 0) f.hatched[rec.ants.colony[i]!]++;
           break;
         }
         case "queenFounded":
@@ -609,13 +648,13 @@ export class SpectatorState {
           break;
         }
         case "store": {
-          const stores = (f.stores ??= [
-            { food: 0, nextHatchTick: 0, nextCost: 0 },
-            { food: 0, nextHatchTick: 0, nextCost: 0 },
-          ]);
+          const stores = (f.stores ??= f.setup.queens.map(() => ({ food: 0, nextHatchTick: 0, nextCost: 0 })));
           stores[e.colony] = { food: e.food, nextHatchTick: e.nextHatchTick, nextCost: e.nextCost };
           break;
         }
+        case "eliminated":
+          (f.eliminations ??= []).push({ colony: e.colony, tick: e.tick });
+          break;
         default:
           break;
       }
@@ -630,8 +669,14 @@ export class SpectatorState {
   }
 }
 
+/** A four-colony state's eliminated colonies, ordered by tick then colony. */
+function eliminationsOf(state: SimState): { colony: number; tick: number }[] {
+  return state.colonies.flatMap((c) => (c.eliminated === undefined ? [] : [{ colony: c.id, tick: c.eliminated.tick }]))
+    .sort((a, b) => a.tick - b.tick || a.colony - b.colony);
+}
+
 export function queensForStream(state: SimState): StreamQueen[] {
-  return state.colonies.flatMap((c) => queensOf(c).map((q) => ({ id: q.id, colony: asTwoColony(c.id),
+  return state.colonies.flatMap((c) => queensOf(c).map((q) => ({ id: q.id, colony: c.id,
     x: toSubTile(q.queenX, state.config.mapWidth), y: toSubTile(q.queenY, state.config.mapHeight),
     foundedTick: q.foundedTick, lostTick: q.lostTick, overrun: q.overrunTicks, ...(q.hp === undefined ? {} : { hp: q.hp }) })));
 }

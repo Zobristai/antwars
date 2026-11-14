@@ -17,7 +17,7 @@ export function lobbyMatchType(lobby: { readonly mode: string | null; readonly s
 
 /** The recorded facts a recording with no readable lobby is typed by. */
 export interface RecordedMatch {
-  readonly seats: readonly { readonly colony: 0 | 1; readonly handle: string | null }[];
+  readonly seats: readonly { readonly colony: number; readonly handle: string | null }[];
   /** The record's setup.rated: false where its setup omits it, null (or absent) where it has no setup. */
   readonly rated?: boolean | null;
   /** The record's setup.modelIndex marker. */

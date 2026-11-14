@@ -54,8 +54,8 @@ export const SUPERCOLONY_NAMES = [
 
 export type SupercolonyLabel = (typeof SUPERCOLONY_NAMES)[number]["label"];
 
-/** A match's two colony labels, index = colony id. */
-export type ColonyNamePair = readonly [string, string];
+/** A match's colony labels, index = colony id: two, or four in a four-colony match. */
+export type ColonyNamePair = readonly string[];
 
 /** Every pair of the four, unordered: all are mutually hostile, so any can be drawn. */
 export const HOSTILE_PAIRS: readonly (readonly [SupercolonyLabel, SupercolonyLabel])[] = SUPERCOLONY_NAMES.flatMap((a, i) =>
@@ -104,7 +104,7 @@ export function isClassicColonyNames(names: ColonyNamePair): boolean {
 }
 
 /** A match's names from what it carries (a stream setup, a listed row): its drawn pair, or COLONY_NAMES when it carries none. */
-export function colonyNamesOf(match: { readonly colonyNames?: readonly [string, string] | null } | null | undefined): ColonyNamePair {
+export function colonyNamesOf(match: { readonly colonyNames?: ColonyNamePair | null } | null | undefined): ColonyNamePair {
   return match?.colonyNames ?? COLONY_NAMES;
 }
 

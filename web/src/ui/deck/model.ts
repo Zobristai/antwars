@@ -23,7 +23,7 @@ import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type Agent
 import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped } from "../format.ts";
 import { badge } from "../icons.ts";
 
-export type Colony = 0 | 1;
+export type Colony = number;
 export const COLONIES = [0, 1] as const;
 
 /**

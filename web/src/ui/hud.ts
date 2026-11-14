@@ -34,7 +34,7 @@ import {
 } from "./format.ts";
 import { navigation } from "./nav.ts";
 
-type Colony = 0 | 1;
+type Colony = number;
 const COLONIES = [0, 1] as const;
 /** Wide from this width (or any landscape screen from 560 px): the window beside a standing pane. */
 const WIDE_MIN_PX = 860;

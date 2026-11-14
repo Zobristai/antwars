@@ -242,9 +242,9 @@ export interface StreamSetup {
   /** Fine tiles per original tile edge: 2 on every decoded setup. */
   gridScale?: GridScale;
   /** Finalized lobby start boxes, in half-open integer tile coordinates. */
-  startBoxes?: [StreamStartBox, StreamStartBox];
+  startBoxes?: StreamStartBox[];
   /** Immutable per-colony starting identities, retained in reconnect snapshots. */
-  startingQueenIds?: [number[], number[]];
+  startingQueenIds?: number[][];
   /** Absent in historical recordings; false explicitly identifies an unrated lobby match. */
   rated?: boolean;
   terrain?: { mapId: string; mapName: string; water: readonly (readonly [number, number, number, number])[];
@@ -261,10 +261,12 @@ export interface StreamSetup {
   /** With houseIdleTicks: the match is in the Antwars Model Index (house-*). Decoded from presence 1. */
   modelIndex?: true;
   /** The match's colony names, index = colony id; absent where the match uses COLONY_NAMES (rated and historical matches). */
-  colonyNames?: readonly [string, string];
+  colonyNames?: readonly string[];
   overrunRadiusTiles: number;
   /** Queen positions in sub-tile units, per colony. */
-  queens: [[number, number], [number, number]];
+  queens: [number, number][];
+  /** Present exactly on a four-colony match's setup; the colony count is queens.length. */
+  colonies?: 4;
   /** Comparison runs only (version 6): the ANTWAR_RULES value, the match seed and the expected players. */
   rules?: (typeof STREAM_RULES)[number];
   seed?: number;
@@ -302,7 +304,7 @@ export interface StreamQueen {
 }
 
 /** Queen records for legacy recordings are derived, never invented on the wire. */
-export function streamQueens(full: { queens?: readonly StreamQueen[]; setup: StreamSetup; overrun?: readonly [number, number] }): readonly StreamQueen[] {
+export function streamQueens(full: { queens?: readonly StreamQueen[]; setup: StreamSetup; overrun?: readonly number[] }): readonly StreamQueen[] {
   return full.queens ?? ([0, 1] as const).map((colony) => ({ id: 0, colony, x: full.setup.queens[colony][0], y: full.setup.queens[colony][1],
     foundedTick: 0, lostTick: null, overrun: full.overrun?.[colony] ?? 0 }));
 }
@@ -318,7 +320,7 @@ export interface StreamFull {
   /** Authoritative nest list in multi-queen streams; absent in version 4 recordings. */
   queens?: StreamQueen[];
   /** Cumulative hatch totals per colony, from sim stats. Present in version 5, absent in version 4. */
-  hatched?: [number, number];
+  hatched?: number[];
   /** The match's identity, unique across server restarts (not its /live/:match number); absent when the sender did not say (recordings). */
   match?: number;
   setup: StreamSetup;
@@ -329,10 +331,10 @@ export interface StreamFull {
   marks: StreamMark[];
   agents: StreamAgent[];
   /** Consecutive ticks of enemy majority at each colony's queen. */
-  overrun: [number, number];
+  overrun: number[];
   overrunRequired: number;
   /** Ants of each colony that have died so far. */
-  deaths: [number, number];
+  deaths: number[];
   /** Present only once playback has reached the final tick. */
   result: StreamResult | null;
   /** Food on each tile, row-major. Optional for senders; decode always sets it. */
@@ -340,7 +342,9 @@ export interface StreamFull {
   /** Optional for senders; decode always sets it. */
   hatch?: StreamHatch;
   /** Per colony. Optional for senders; decode always sets it. */
-  stores?: [StreamStore, StreamStore];
+  stores?: StreamStore[];
+  /** Every four-colony full snapshot (empty before the first), ordered by tick then colony; absent on two-colony snapshots. */
+  eliminations?: { colony: Colony; tick: number }[];
 }
 
 export type StreamEvent =
@@ -364,7 +368,9 @@ export type StreamEvent =
   | { kind: "queenFounded" | "queenLost"; queen: StreamQueen }
   | { kind: "queenOverrun"; colony: Colony; queenId: number; progress: number; required: number }
   /** Redesign (version 6): a queen's HP changed. */
-  | { kind: "queenHp"; colony: Colony; queenId: number; hp: number };
+  | { kind: "queenHp"; colony: Colony; queenId: number; hp: number }
+  /** A four-colony colony left the match on this step, before the message's end event; tick in simulation-step numbering. */
+  | { kind: "eliminated"; colony: Colony; tick: number };
 
 export interface StreamMessage {
   tick: number;
@@ -401,6 +407,7 @@ const EVENT_CODES = {
   queenOverrun: 17,
   queenHp: 18,
   territoryWin: 19,
+  eliminated: 20,
 } as const satisfies Record<StreamEvent["kind"], number>;
 
 const NO_STORE: StreamStore = { food: 0, nextHatchTick: 0, nextCost: 0 };
