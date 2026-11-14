@@ -1,4 +1,4 @@
-import { isRankedMode, type RankedMode } from "../rating/ratings.js";
+import { isQueueMode, type QueueMode } from "../lobby/queue.js";
 
 /** Immutable match admission policy, independent of the slot's next occupant. */
 export interface MatchAccess {
@@ -6,7 +6,7 @@ export interface MatchAccess {
   readonly visibility: "public" | "private";
   readonly rated: boolean;
   /** Absent on legacy records and unrated lobbies; never infer house mode from ownership. */
-  readonly mode?: RankedMode | null;
+  readonly mode?: QueueMode | null;
 }
 
 export const RATED_DELAY_SECONDS = 300;
@@ -15,7 +15,7 @@ export const UNRATED_DELAY_SECONDS = 60;
 /** Capture at match creation, never by looking up whichever lobby holds a slot now. */
 export function captureMatchAccess(value: MatchAccess): Readonly<MatchAccess> {
   if (!value.lobbyId || !["public", "private"].includes(value.visibility) || typeof value.rated !== "boolean" ||
-    (value.mode != null && !isRankedMode(value.mode))) {
+    (value.mode != null && !isQueueMode(value.mode))) {
     throw new Error("Invalid spectator match access policy");
   }
   return Object.freeze({ lobbyId: value.lobbyId, visibility: value.visibility, rated: value.rated,
