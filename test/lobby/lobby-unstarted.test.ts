@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { createIdentities, type Identities } from "../../src/identity/identities.ts";
 import { createLobbies, LOBBY_TTL_MS } from "../../src/lobby/lobbies.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
 import type { Fields, Store } from "../../src/store/firestore.ts";
 
 function memoryStore(): Store {
@@ -73,6 +74,8 @@ describe("Lobbies.listUnstarted", () => {
     // With how many of its colony's seats each holds: one each in a player-made lobby, every seat in a queue pairing.
     expect(listed.map(row => row.colonies.map(colony => colony.map(seat => seat.seats)))).toEqual([[[1, 1], [1]], [[1], [1]], [[2], [2]]]);
     expect(JSON.stringify(listed)).not.toContain("hal");
+    // A player-created lobby carries the colony names its unrated match draws from its id; a queue pairing, rated, none.
+    expect(listed.map(row => row.colonyNames)).toEqual([drawColonyNames(open.id), undefined, undefined]);
 
     // Once the slot's instance begins the 1v1 match, it leaves the list; the waiting 2v2 pairing stays.
     if (holding.state !== "matched") throw new Error("expected a pairing");

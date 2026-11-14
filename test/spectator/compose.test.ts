@@ -826,14 +826,12 @@ describe("agent badges", () => {
     expect(glyphPolygon(8, 4.5)).toEqual(glyphPolygon(0, 4.5));
   });
 
-  // Regression caught: agents told
-  // apart by lightness steps of one colony hue, hues taken by join order across both colonies instead of within each,
-  // or a colony's fifth agent left without a hue.
-  it("gives each agent its own hue in its colony's family, by join order within the colony", () => {
+  // Every agent shows its colony's one colour, whatever its place in join order; agents within a colony are told apart
+  // by glyph (above) and name.
+  it("gives every agent its colony's one colour", () => {
     const agents = ([0, 1, 1, 0, 0, 1, 0, 1, 0] as const).map((colony) => ({ colony }));
-    // Very Large Colony: amber, coral, gold, orange; Lake Hodges Colony: cyan, violet, teal, azure; then round again.
-    expect(agentHues(agents).map(cssColour)).toEqual(["#f4af38", "#4bc6fa", "#9f85e5", "#ed7668", "#ebd14d", "#47d6cf", "#f38c48", "#77a4f6", "#f4af38"]);
-    expect(agentShade(1, 2, agents)).toBe(0x9f85e5);
+    expect(agentHues(agents).map(cssColour)).toEqual(agents.map((a) => (a.colony === 0 ? "#ffb000" : "#00c2ff")));
+    expect(agentShade(1, 2, agents)).toBe(0x00c2ff);
   });
 });
 

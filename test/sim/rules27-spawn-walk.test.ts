@@ -20,7 +20,7 @@ const ARRIVAL_FINE_TILES: Record<Caste, number> = { worker: 2, soldier: 6 };
 function rules27(extra: Partial<SimConfig> = {}): SimConfig {
   const base = withGridScale(recordedHousePlan(rulesConfig("redesign")));
   return { ...base, rules27: true, startAnts: 0, squadSize: 0, terrain: undefined, foodLayout: undefined,
-    foodPatches: [], groundFoodIntervalTicks: undefined, ...extra };
+    foodPatches: [], ...extra };
 }
 
 /** Colony 0 seated by a real join; colony 1 is a house bot with no food. */

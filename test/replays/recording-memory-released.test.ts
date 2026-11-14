@@ -32,8 +32,9 @@ vi.mock("node:crypto", async (importOriginal) => {
   return { ...actual, randomInt };
 });
 
-/** The captured golden's run one: released framed bytes after gunzip, length prefixes included. */
-const GOLDEN_RELEASED_FRAMED_BYTES = 16_511;
+/** The captured golden's released framed bytes after gunzip, length prefixes included: run one's 16,511 plus the unrated
+ * fixture lobby's drawn colony names in its opening snapshot (+41; recording-goldens.test.ts). */
+const GOLDEN_RELEASED_FRAMED_BYTES = 16_552;
 /** Bound: the rules-26 golden's raw frame bytes. Stricter than the rules-27 capture's 16,491. */
 const RAW_FRAME_BYTES_BOUND = 16_473;
 

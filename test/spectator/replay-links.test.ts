@@ -64,7 +64,8 @@ it("plays an unlisted stored id through the real shared source and playback with
     playback.sample(source.now(now), frame);
     await new Promise((resolve) => setImmediate(resolve));
   }
-  expect(paths).toEqual([`/watch/ratings/${id}`, `/replays/${id}`]);
+  // The second read of the recording is the scrubber marks' (recording.ts).
+  expect(paths).toEqual([`/watch/ratings/${id}`, `/replays/${id}`, `/replays/${id}`]);
   expect(reject).not.toHaveBeenCalled();
   expect(frame.tick).toBe(decodeMessage(packets.at(-1)!).tick);
   expect(source.lastTick).toBe(frame.tick);

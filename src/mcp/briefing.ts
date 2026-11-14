@@ -1,4 +1,5 @@
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig } from "../sim/config.js";
+import { isClassicColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
@@ -85,7 +86,11 @@ export const IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the sea
 
 /** undrawn: the seed has not yet drawn the map, so config is the rotation's, not the match's.
  * local: the server serves no accounts (the local route), so no account, key or lobby text. */
-export interface BriefingContext { readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean }
+export interface BriefingContext {
+  readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean;
+  /** The match's colony names, index = colony id; COLONY_NAMES when absent (rated and non-lobby matches). */
+  readonly colonyNames?: ColonyNamePair;
+}
 
 /** The board size a reply may state: the drawn match's, or before the draw the size every
  * selectable map shares. Null when those sizes differ: no single size is stated. */
@@ -320,9 +325,6 @@ export function balanceRuleLines(config: SimConfig, compact = false): string[] {
       localWorkerRulesText(config, compact),
     ] : []),
     // Rules 27: no queen-threat recall of seated free workers.
-    ...(config.groundIncomeExcessPermille === undefined ? [] : [
-      `Ground income: ${tileAreaUnit(config)} up to half of all currently held territory pay full income; ${tileAreaUnit(config)} above that half pay ${config.groundIncomeExcessPermille / 10}% income. Neutral ${tileAreaUnit(config)} do not count toward the half; each colony's payout is rounded down.`,
-    ]),
     ...(early === undefined ? [] : [
       `Early win: from ${early.minTick / config.ticksPerSecond} s, holding at least ${early.minHeldTiles} ${tileAreaUnit(config)} and at least ${early.territoryRatioPermille / 1000} times the opponent's territory continuously for ${early.holdTicks / config.ticksPerSecond} s wins immediately. Any interruption resets the clock. A zero-territory opponent counts as one ${tileAreaUnit(config, false)} for this comparison. Queen elimination is resolved first; otherwise time-up still applies.`,
     ]),
@@ -376,11 +378,12 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
   const base = damagePerTick(config);
   const bonus = Math.trunc((base * config.defenderBonusPermille) / 1000);
   const board = statedBoardSize(config, context);
+  const names = context.colonyNames ?? COLONY_NAMES;
   return [
     houseIdleText(mcpConfig),
     ...(compact && context.local !== true ? [IDENTITY_GUIDANCE, KEY_HANDLING_GUIDANCE, context.house ? HOUSE_MODE_GUIDANCE : LOBBY_GUIDANCE] : []),
     ...terrainLines(config),
-    compact ? `Antwars: ${COLONY_NAMES[0]} vs ${COLONY_NAMES[1]}; ${board === null ? `board ${boardSizeChoices(config)}, set by the seed's map; x 0 to width-1 left-right, y 0 to height-1 top-bottom (observe cells.width/height)` : `${board.width}x${board.height}, x 0-${board.width - 1} left-right, y 0-${board.height - 1} top-bottom`}. ${durationText}; ${config.ticksPerSecond} ticks/s.${antCapText(config, context)} ${config.localAnts === undefined ? "House bot: non-squad ants" : "Active colony seat: free ants act autonomously"}. Squad up to ${config.squadSize} ants; fewer/none if unavailable, refills as ants free up.` : `Antwars: two supercolonies, the ${COLONY_NAMES[0]} and the ${COLONY_NAMES[1]}, fight on a ${board === null ? `tile map whose size is set by the map the seed selects: ${boardSizeChoices(config)} (x 0 to width - 1 left to right, y 0 to height - 1 top to bottom; observe cells give width and height)` : `${board.width}x${board.height} tile map (x 0-${board.width - 1} left to right, y 0-${board.height - 1} top to bottom)`}. A match lasts ${durationText} at ${config.ticksPerSecond} ticks per second. ${config.localAnts === undefined ? "A house bot runs every ant outside agents' squads" : "Free ants act autonomously while your colony has an active seat"}; you command a squad of up to ${config.squadSize} ants (fewer, or none, when your colony has no spare ants; squads fill as ants become free).`,
+    compact ? `Antwars: ${names[0]} vs ${names[1]}; ${board === null ? `board ${boardSizeChoices(config)}, set by the seed's map; x 0 to width-1 left-right, y 0 to height-1 top-bottom (observe cells.width/height)` : `${board.width}x${board.height}, x 0-${board.width - 1} left-right, y 0-${board.height - 1} top-bottom`}. ${durationText}; ${config.ticksPerSecond} ticks/s.${antCapText(config, context)} ${config.localAnts === undefined ? "House bot: non-squad ants" : "Active colony seat: free ants act autonomously"}. Squad up to ${config.squadSize} ants; fewer/none if unavailable, refills as ants free up.` : `Antwars: two supercolonies, the ${names[0]} and the ${names[1]}, fight on a ${board === null ? `tile map whose size is set by the map the seed selects: ${boardSizeChoices(config)} (x 0 to width - 1 left to right, y 0 to height - 1 top to bottom; observe cells give width and height)` : `${board.width}x${board.height} tile map (x 0-${board.width - 1} left to right, y 0-${board.height - 1} top to bottom)`}. A match lasts ${durationText} at ${config.ticksPerSecond} ticks per second. ${config.localAnts === undefined ? "A house bot runs every ant outside agents' squads" : "Free ants act autonomously while your colony has an active seat"}; you command a squad of up to ${config.squadSize} ants (fewer, or none, when your colony has no spare ants; squads fill as ants become free).`,
     compact ? `Non-lobby join: ${agentLimitText(mcpConfig)}` : agentLimitText(mcpConfig),
     compact ? `Calls: ${mcpConfig.callsPerSecond}/agent/sliding 1s; join/reconnect/rules/observe/commands all count. call_rate: wait retryAfterMs; no idle reset.` : callLimitText(mcpConfig),
     observeDetailText(config, mcpConfig, context, false),
@@ -427,11 +430,6 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
     "Rules for humans and agents: /rules on this server (same origin as your MCP address).",
     "How to win:",
     config.queenHp !== undefined ? queenHpLine(config, s, hp) : config.queenFounding === undefined ? `- Queen overrun: an enemy majority within ${config.overrunRadiusTiles} tiles of a queen for ${s(config.overrunTicks)} s wins at once. Overrun progress starts ${s(config.overrunGraceTicks)} s after match start for every queen.` : `- Queen overrun: an enemy majority within ${config.overrunRadiusTiles} tiles of a queen for ${s(config.overrunTicks)} s permanently loses that queen. A lost queen cannot hatch, receive food or be refounded. Your colony loses only when every queen has been overrun. Overrun progress cannot start before ${s(config.overrunGraceTicks)} s after match start; founded queens have no extra grace.`,
-    ...(config.groundFoodIntervalTicks === undefined || config.groundFoodIntervalTicks <= 0 ? [] : [
-      config.groundIncomeExcessPermille === undefined
-        ? `- Held ground: every ${s(config.groundFoodIntervalTicks)} s, each ${tileAreaUnit(config, false)} your colony holds earns 1 food in its store, in addition to food its foragers deliver. The first payout is ${s(config.groundFoodIntervalTicks)} s after match start; losing a tile before a payout loses that tile's income.`
-        : `- Held ground: every ${s(config.groundFoodIntervalTicks)} s, held ${tileAreaUnit(config)} pay food according to the marginal income taper described above, in addition to foraging. The first payout is ${s(config.groundFoodIntervalTicks)} s after match start; losing a tile before a payout loses that tile's income.`,
-    ]),
     compact ? `- Territory: ant claims its aligned ${gridScaleForText(config)}x${gridScaleForText(config)} tile cell, excluding water and rocks; neutral ${s(config.territoryDecayTicks)} s after last colony visit. Ownership cannot change while an ant there has an enemy in combat reach. ${config.adjudication === "kills-first" ? `Time-up or both last queens lost same tick: kills>territory>ants alive>food delivered>draw.` : `Time-up (${minutes} minutes): the larger territory wins; ties: ants alive, then food delivered.`}` : `- Territory: an ant claims its aligned ${gridScaleForText(config)}x${gridScaleForText(config)} tile cell, excluding water and rocks; each claimed fine tile belongs to its colony and returns to neutral ${s(config.territoryDecayTicks)} s after that colony's last visit, but it never changes owner, to another colony or to neutral, while an ant on it has an enemy within combat reach. ${config.adjudication === "kills-first" ? `Time-up or both last queens lost same tick: kills>territory>ants alive>food delivered>draw.` : `At time-up (${minutes} minutes) the larger territory wins; ties go to more ants alive, then more food delivered.`}`,
 
     compact ? `- Combat: non-carrying ants, any order, ${reachDefinedOnce(config) ? "with an enemy in reach" : `within ${gridScaleForText(config)} tiles of an enemy (diagonals too)`}, hit the lowest-HP enemy each tick. Ant: ${hp(config.antHp)} HP; ${hp(base * config.ticksPerSecond)} HP/s, ${hp(bonus * config.ticksPerSecond)} HP/s on own territory. Hits simultaneous; 0 HP -> dies, leaves ${config.corpseFood} food. No combat before ${s(config.combatGraceTicks)} s.` : `- Combat: whatever its order, every non-carrying ant within ${gridScaleForText(config)} tiles of an enemy (diagonals included) hits one of them, the one with the fewest HP, every tick. An ant has ${hp(config.antHp)} HP and deals ${hp(base * config.ticksPerSecond)} HP per second, or ${hp(bonus * config.ticksPerSecond)} HP per second while it stands on its own colony's territory. All hits land together; an ant at 0 HP dies and leaves ${config.corpseFood} food. No combat in the first ${s(config.combatGraceTicks)} s.`,
@@ -469,6 +467,9 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
     ...(nestWindow ? ["Nest window: join/observe nestSelection.terrain maps your box; also check teammates' picks."] : []),
     ...(compact && context.local !== true ? [IDENTITY_GUIDANCE, KEY_HANDLING_GUIDANCE, context.house ? HOUSE_MODE_GUIDANCE : LOBBY_GUIDANCE] : []),
     `Antwars: ${config.rules ?? "default"}; ${board === null ? `${boardSizeChoices(config)} tiles, set by the seed's map; x 0 to width-1, y 0 to height-1 (observe cells.width/height)` : `${board.width}x${board.height} tiles, x 0-${board.width - 1}, y 0-${board.height - 1}`}; ${config.ticksPerSecond} ticks/s, match ${joinLengthText(config, context)}.${antCapText(config, context)} You command up to ${config.squadSize} ants.`,
+    // Only an unrated lobby's drawn names are stated; a rated match's join briefing is unchanged.
+    ...(context.colonyNames === undefined || isClassicColonyNames(context.colonyNames) ? []
+      : [`This match's colonies: ${context.colonyNames[0]} (colony 0) and ${context.colonyNames[1]} (colony 1).`]),
     ...(config.terrain === undefined ? [] : [
       config.terrain.rocks === undefined
         ? `Seed picks ${config.terrain.maps.map(map => map.name).join("/")}. view.terrain: map name, public water rectangles/legend. Water blocks ants/marks; food stays dry. Ants route around water; target land. Ants/food/enemy nests obey sight.`
