@@ -1483,13 +1483,15 @@ export class Game {
     return rec?.finalResult.colonyNames ?? this.lobby?.names ?? COLONY_NAMES;
   }
 
-  /** A seated quadrants seat's colony name (the name its colony number holds); undefined in every other mode. */
+  /**
+   * A seated quadrants seat's colony name, from the names and colony its record captured at admission (only a
+   * quadrants match has four), so a reply answered after the slot seats its next lobby still names it; undefined in
+   * every other mode.
+   */
   quadrantSeatColony(agentId: string): string | undefined {
     const rec = this.records.get(agentId);
-    const lobby = this.lobby;
-    if (rec === undefined || rec.seat === null || lobby?.mode !== "quadrants" || rec.seatKey !== `${lobby.id}/${rec.seat.key}`) return undefined;
-    const seat = lobby.seats.get(rec.seat.key);
-    return seat === undefined ? undefined : lobby.names[seat.colony];
+    if (rec === undefined || rec.seat === null || rec.finalResult.colonyNames.length !== 4) return undefined;
+    return rec.finalResult.colonyNames[rec.seat.colony];
   }
 
   /** Unjoined callers see the slot mode; joined callers retain their own mode. */

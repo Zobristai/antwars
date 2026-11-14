@@ -9,6 +9,7 @@ import { createIdentities } from "../../src/identity/identities.ts";
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { createLobbies, type Lobby, type Seat } from "../../src/lobby/lobbies.ts";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.ts";
+import { KEY_RECHECK_MS } from "../../src/mcp/tools.ts";
 import { QUADRANT_ROTATION_REQUIRED, type Game } from "../../src/mcp/game.ts";
 import { isIndexMode } from "../../src/rating/harnessPhase.ts";
 import { createRatings, RANKED_MODES, ratingCollection } from "../../src/rating/ratings.ts";
@@ -327,5 +328,107 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     expect(control.lobby).toMatchObject({ outcome: "colony_0_won", rated: true });
     expect(pushed.mock.calls.length).toBeGreaterThan(0);
     expect(server.game.match!.state.colonies).toHaveLength(2);
+  });
+});
+
+/**
+ * A join accepted on a match's final tick is answered only once its join record is written. While that write keeps
+ * failing, the slot ends the lobby and seats the next one (a rated 1v1), so the reply comes from a server whose seated
+ * lobby is no longer the seat's own.
+ */
+describe("a final-tick join answered after the slot seats its next lobby", { timeout: 60_000 }, () => {
+  type Case = { mode: "quadrants" | "1v1"; twoSeats?: boolean; keyCheck?: "valid" | "replaced" };
+  async function finalJoinAfterNextLobby({ mode, twoSeats = false, keyCheck }: Case) {
+    const w = world([FIXTURE]);
+    let target = "", failing = false, released = false, failures = 0;
+    let server: GameServer | undefined;
+    // The target seat's join-record write fails from its final-tick join until the next lobby is seated.
+    const identities = new Proxy(w.identities, { get(own, prop, receiver) {
+      if (prop === "recordMatchJoin") return async (identityId: string, at?: number) => {
+        // From the first write after the result until release, so a later match's start does not end the failure.
+        if (identityId === target && !released && server?.game.match?.state.result != null) failing = true;
+        if (identityId === target && failing && !released) { failures += 1; throw new Error("store unavailable"); }
+        return own.recordMatchJoin(identityId, at);
+      };
+      const field = Reflect.get(own, prop, receiver);
+      return typeof field === "function" ? field.bind(own) : field;
+    } });
+    server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: LIVE, quadrantMaps: [FIXTURE],
+      startPickWindowMs: 300, mcpConfig: MCP, accounts: w.accounts, slot: { ...w.slot, identities } });
+    const running = server;
+    closers.push(() => running.close());
+    const game = server.game as unknown as Game;
+    const names = mode === "1v1" ? ["red", "blue"] : twoSeats ? ["ann", "bob", "ann", "dan"] : ["ann", "bob", "cat", "dan"];
+    const keys = new Map<string, Awaited<ReturnType<typeof claim>>>();
+    for (const name of names) if (!keys.has(name)) keys.set(name, await claim(w, name));
+    const lobby = await w.store.transaction<Lobby>(async read => {
+      const made = await w.lobbies.queuedMatchWrites(read, { mode, colonies: names.map(name => [{ id: keys.get(name)!.identity.id, displayName: keys.get(name)!.identity.displayName }]) }, Date.now());
+      return { result: made.lobby, writes: made.writes };
+    });
+    await waitFor(() => openStartOf(server) === lobby.id, 20_000);
+    // Every seat joins from its own session; a key holding two seats names the seat it joins.
+    const seated = await Promise.all(names.map(async (name, colony) => {
+      const seat = twoSeats && name === "ann" ? names.slice(0, colony + 1).filter(n => n === name).length : undefined;
+      const args = { key: keys.get(name)!.key, ...(seat === undefined ? {} : { seat }) };
+      const a = await agent(server);
+      expect((await a.call("join", args)).isError).toBe(false);
+      return { a, args, identityId: keys.get(name)!.identity.id };
+    }));
+    await waitFor(() => server.game.match !== null, 20_000);
+    // Colony 2 (or the 1v1's colony 0) keeps joining while every other colony is silent, so it wins on idle.
+    const winner = mode === "1v1" ? 0 : 2;
+    target = seated[winner]!.identityId;
+    const next = await ratedPair(w, "next");
+    const starts: number[] = [];
+    const replies: { isError: boolean; data: any; text: string }[] = [];
+    const joining = (async () => {
+      for (;;) {
+        starts.push(Date.now());
+        const reply = await seated[winner]!.a.call("join", seated[winner]!.args);
+        replies.push(reply);
+        if (reply.isError || reply.data?.matchOver === true) return reply;
+      }
+    })();
+    await waitFor(() => server.game.match!.state.result !== null, 30_000);
+    const result = server.game.match!.state.result;
+    await waitFor(() => (game as unknown as { lobby: { id: string } | null }).lobby?.id === next.lobbyId, 20_000);
+    if (keyCheck !== undefined) {
+      // Past the key recheck from the final join's start, so the join reads its key's holder again before replying.
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, starts.at(-1)! + KEY_RECHECK_MS + 500 - Date.now())));
+      if (keyCheck === "replaced") value(await w.identities.rotateKey(seated[winner]!.args.key));
+    }
+    // The reply is still waiting on its write.
+    expect([replies.length, failures > 0]).toEqual([starts.length - 1, true]);
+    released = true;
+    const reply = await joining;
+    return { reply, result };
+  }
+
+  it("names a Quadrants seat's colony and its winner", async () => {
+    const { reply, result } = await finalJoinAfterNextLobby({ mode: "quadrants" });
+    expect(result).toMatchObject({ winner: 2 });
+    expect([reply.isError, reply.data.matchOver, reply.data.colony, reply.data.winner], reply.text).toEqual([false, true, NAMES[2], NAMES[2]]);
+  });
+
+  it("names the colony of the seat a two-seat key joined", async () => {
+    const { reply } = await finalJoinAfterNextLobby({ mode: "quadrants", twoSeats: true });
+    expect([reply.isError, reply.data.colony, reply.data.winner], reply.text).toEqual([false, NAMES[2], NAMES[2]]);
+  });
+
+  it("names it after the join reads its still-current key again", async () => {
+    const { reply } = await finalJoinAfterNextLobby({ mode: "quadrants", keyCheck: "valid" });
+    expect([reply.isError, reply.data.colony, reply.data.winner], reply.text).toEqual([false, NAMES[2], NAMES[2]]);
+  });
+
+  it("refuses a join whose key was replaced, without a colony", async () => {
+    const { reply } = await finalJoinAfterNextLobby({ mode: "quadrants", keyCheck: "replaced" });
+    expect([reply.isError, reply.data.error?.code ?? reply.data.error], reply.text).toEqual([true, "key_revoked"]);
+    expect(reply.data as object).not.toHaveProperty("colony");
+  });
+
+  it("leaves a rated 1v1 reply without a colony", async () => {
+    const { reply } = await finalJoinAfterNextLobby({ mode: "1v1" });
+    expect([reply.isError, reply.data.matchOver, reply.data.winner], reply.text).toEqual([false, true, "Very Large Colony"]);
+    expect(Object.keys(reply.data).sort()).toEqual(["matchOver", "result", "view", "winner"]);
   });
 });
