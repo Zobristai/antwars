@@ -11,6 +11,7 @@ import { CORRECTED_REPLAY_IDS, CORRECTION_KIND, CORRECTION_MARKER, correctedHist
 import { binaryRecord, type MatchRecord } from "../../src/replays/history.ts";
 import { historyRoutes, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
 import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
+import { asTwoColony } from "../../src/sim/types.ts";
 import { replayRoutes } from "../../src/replays/replay-routes.ts";
 import type { Fields, Store } from "../../src/store/firestore.ts";
 import type { LiveGame, MountHandler } from "../../src/server.ts";
@@ -29,7 +30,7 @@ function stored(id: string, recording: { binary: Uint8Array; record: MatchRecord
   return { binary: recording.binary, record: recording.recordBody, row: { id, startedAt: r.startedAt, endedAt: r.endedAt, simulationEndedAt: r.simulationEndedAt,
     winner: r.result?.winner ?? null, reason: r.result?.reason ?? null, decidedBy: r.result?.decidedBy ?? null, status: r.status, unavailable: r.unavailable,
     rated: r.setup?.rated ?? null, modelIndex: false,
-    seats: r.seats.map(({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle }) => ({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle })) } };
+    seats: r.seats.map(({ seat, colony, modelLabel, thinkingLevel, serviceTier, handle }) => ({ seat, colony: asTwoColony(colony), modelLabel, thinkingLevel, serviceTier, handle })) } };
 }
 
 /** The three corrected recordings, stored, plus one no correction touches. */
