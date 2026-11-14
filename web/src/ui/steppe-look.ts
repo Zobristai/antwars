@@ -8,6 +8,7 @@ import { fbm, hash12, vnoise } from "../board3d/noise.ts";
 import { NOISE_GLSL } from "../soil.ts";
 import { TRAIL_RES } from "../buffer.ts";
 import type { BoardLook, Rgb } from "../board-look.ts";
+import { colonyWash } from "../colony-palette.ts";
 
 /** sRGB albedo, a little darker than sand so the pale ants and both colony hues stand out on it. */
 export const EARTH_LIGHT: Rgb = [0.70, 0.61, 0.46];
@@ -17,8 +18,8 @@ export const STRAW_GREEN: Rgb = [0.52, 0.56, 0.35];
 export const GRAVEL_LIGHT: Rgb = [0.65, 0.63, 0.58];
 export const GRAVEL_DARK: Rgb = [0.53, 0.51, 0.47];
 export const PEBBLE: Rgb = [0.41, 0.37, 0.31];
-/** Territory washes: amber toward orange and cyan toward blue, so both read on warm earth (the colonies' own hues stay). */
-export const HUE: readonly [Rgb, Rgb] = [[0.96, 0.55, 0.05], [0.0, 0.58, 0.98]];
+/** A colony's territory wash: its name's colour pushed so it reads on warm earth (colony-palette.ts WASH). */
+const hue = (colony: 0 | 1): Rgb => colonyWash(colony).hue;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -228,9 +229,9 @@ void main() {
   float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
   float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
   float own = max(w0, w1);
-  vec3 hue = w0 >= w1 ? ${vec3(HUE[0])} : ${vec3(HUE[1])};
+  vec3 hue = w0 >= w1 ? ${vec3(hue(0))} : ${vec3(hue(1))};
   // Cyan on warm earth greys sooner than amber does, so its wash is a little deeper.
-  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * (w0 >= w1 ? 1.0 : 1.3);
+  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * (w0 >= w1 ? ${colonyWash(0).depth.toFixed(1)} : ${colonyWash(1).depth.toFixed(1)});
   col = mix(col, mix(col, hue, 0.6), wash);
   float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
   col = mix(col, hue * 0.5, rim * 0.75);
@@ -257,18 +258,18 @@ void main() {
   float seam = (1.0 - smoothstep(0.02, 0.09, d)) * near;
   float glow = (1.0 - smoothstep(0.0, 0.4, d)) * near * 0.4;
   if (seam + glow < 0.01) discard;
-  vec3 side = r > 0.5 ? ${vec3(HUE[0])} : ${vec3(HUE[1])};
+  vec3 side = r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))};
   float a = clamp(seam * 0.8 + glow * 0.45, 0.0, 1.0);
   vec3 col = vec3(0.10, 0.08, 0.06) * seam * 0.8 + side * glow * 0.45;
   finalColor = vec4(col, a) * awBoundaryWeight(vUV);
 }`;
 }
 
-/** The 3D ground's added helpers, after Current's (board3d/ground.ts DEFS). */
-const DEFINITIONS_3D = /* glsl */ `
+/** The 3D ground's added helpers, after Current's (board3d/ground.ts DEFS), in the match's colony washes. */
+const definitions3d = () => /* glsl */ `
 #ifdef AW_GROUND
 ${NOISE_GLSL}
-vec3 d1Hue(vec4 s) { return mix(${vec3(HUE[1])}, ${vec3(HUE[0])}, step(0.75, s.r)); }
+vec3 d1Hue(vec4 s) { return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r)); }
 vec3 d1Owned(vec4 s, vec3 soil) { return mix(soil, mix(soil, d1Hue(s), 0.6), 0.45 * s.b); }
 float d1WetCell(vec2 c) {
   if (c.x < 0.0 || c.y < 0.0 || c.x >= uMap.x || c.y >= uMap.y) return 1.0;
@@ -318,7 +319,7 @@ export const STEPPE_LOOK: BoardLook = {
   board2d: { soil: SOIL_2D, fill: fill2d, front: front2d },
   board3d: {
     soil: steppe,
-    ground: (point, current) => point === "definitions" ? current + DEFINITIONS_3D : point === "diffuse" ? DIFFUSE_3D : current,
+    ground: (point, current) => point === "definitions" ? current + definitions3d() : point === "diffuse" ? DIFFUSE_3D : current,
     rock: [0.56, 0.53, 0.48],
     // Neutral daylight from the same quarter as Current's warm key, so the ground shows its own colour.
     light: {

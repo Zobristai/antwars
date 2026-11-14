@@ -85,7 +85,8 @@ function enemyQueensOf(cells: readonly ViewCell[], colony: AgentView["colony"]):
 /** Full current view; default events are a live sample, explicit since is lossless replay. */
 export function pagedView(game: Game, config: SimConfig, view: AgentView, withMap: boolean,
   extra: Record<string, unknown> = {}, since?: number, limits: ReplyLimits = DEFAULT_REPLY_LIMITS, cellsCursor?: string, freshCells = true): CallToolResult {
-  const publicView = { ...view, marks: view.marks.map(publicCountCaste), myMarks: view.myMarks.map(publicCountCaste),
+  // The sim names colonies by id; the match may have drawn its own names (an unrated lobby).
+  const publicView = { ...view, colonyName: game.colonyNames(view.agentId)[view.colony], marks: view.marks.map(publicCountCaste), myMarks: view.myMarks.map(publicCountCaste),
     ...(view.queens === undefined ? {} : { queens: view.queens.map(queen => publicQueen(game, view.agentId, queen)) }) };
   const page = game.cellsFor(view, config, cellsCursor, freshCells);
   const cellError = (code: string, message: string) => payload({ error: { code, message, howToFix: "Omit cellsCursor to start a fresh cell traversal; keep event since separate." }, tick: view.tick }, true);

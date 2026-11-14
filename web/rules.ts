@@ -135,9 +135,6 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
     ] },
     { title: "Territory", lines: [
       `An ant claims its aligned ${scale}x${scale} tile cell, excluding water and rocks. Territory totals count original-size tile areas, not fine tiles. A tile returns to neutral ${seconds(config.territoryDecayTicks)} after its owner's last visit. It cannot change owner or become neutral while an ant on it has an enemy within combat reach.`,
-      ...(config.groundFoodIntervalTicks === undefined || config.groundFoodIntervalTicks <= 0 ? [] : [
-        `Held ground earns food for its colony: every ${seconds(config.groundFoodIntervalTicks)}, ${config.groundIncomeExcessPermille === undefined ? `each held ${tileAreaUnit(config, false)} adds 1 food to the shared store.` : `held ${tileAreaUnit(config)} add food to the shared store, with the marginal taper described below.`} The first payout is that interval after match start; only tiles still held at a payout earn food.`,
-      ]),
     ] },
     { title: "Food and hatching", lines: [
       `Each colony starts with ${count(config.startAnts, "ant")}. Foragers pick up food and carry it to a friendly queen. A worker costs ${config.hatchCost} food. A queen can hatch ${config.castes && config.hatchTiming ? "a worker" : "an ant"} every ${seconds(config.hatchIntervalTicks)} when food is available, up to ${antCap} per colony.`,
