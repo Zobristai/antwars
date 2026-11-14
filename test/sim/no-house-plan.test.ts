@@ -15,6 +15,7 @@ import { recordLog } from "../../src/live/record.js";
 import { encodePublicMessage } from "../../src/live/format.js";
 import { SpectatorRecorder } from "../../src/live/model.js";
 import { briefing, joinBriefing } from "../../src/mcp/briefing.js";
+import { comparisonOptions } from "../../src/server.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { rulesConfig, SUB, type SimConfig } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
@@ -24,6 +25,7 @@ import { headerLine, parseLog, replay, terminalAt, tickLine } from "../../src/si
 import { createMatch } from "../../src/sim/map.js";
 import { localRulesSide } from "../../src/sim/marks.js";
 import { advance, prepareInitialPointRests, type ServerTerminal } from "../../src/sim/step.js";
+import { tuningMapConfig } from "../../src/sim/tuningMap.js";
 import type { ColonyId, SimInput, SimState } from "../../src/sim/types.js";
 
 // A pass-through wrapper, only to count the house planner's calls; every call runs the real planner.
@@ -44,11 +46,6 @@ const tally = (values: readonly string[]) => values.reduce<Record<string, number
 const withoutFlag = (config: SimConfig): SimConfig => {
   const { everyColony: _flag, ...local } = config.localAnts!;
   return { ...config, localAnts: local };
-};
-// A new redesign match config under the rule. Nothing sets the flag on new matches yet, so these tests set it.
-const ruledRedesign = (): SimConfig => {
-  const config = newMatchConfig(rulesConfig("redesign"));
-  return { ...config, localAnts: { ...config.localAnts!, everyColony: true } };
 };
 
 describe("matches recorded before the rule", () => {
@@ -83,7 +80,7 @@ describe("matches recorded before the rule", () => {
 
 /** A new match, logged the way the live server logs one: seats join on tick 0, houseActive every tick. */
 function recordNewMatch(seed: number, joiners: readonly (0 | 1)[], endTick: number, end: ServerTerminal): string[] {
-  const config = ruledRedesign();
+  const config = newMatchConfig(rulesConfig("redesign"));
   const state = createMatch(seed, config);
   prepareInitialPointRests(state);
   const lines = [headerLine(seed, config)];
@@ -151,7 +148,7 @@ describe("a match recorded after the rule", () => {
  */
 function recordMatch(seed: number, patch: Partial<SimConfig>, houseActive: boolean,
   inputsAt: (state: SimState) => SimInput[], endTick: number, end: ServerTerminal): string[] {
-  const config = { ...ruledRedesign(), ...patch };
+  const config = { ...newMatchConfig(rulesConfig("redesign")), ...patch };
   const state = createMatch(seed, config);
   prepareInitialPointRests(state);
   const lines = [headerLine(seed, config)];
@@ -246,8 +243,19 @@ describe("a player's colony on a new recorded match: the house never acts for it
   }, 60_000);
 });
 
+describe("every new redesign match carries the rule", () => {
+  it("on every path that builds a new redesign match config", () => {
+    expect(rulesConfig("redesign").localAnts?.everyColony).toBe(true);
+    expect(newMatchConfig(rulesConfig("redesign")).localAnts?.everyColony).toBe(true);
+    // Ordinary scheduled public matches (ANTWAR_RULES unset) and a redesign comparison run.
+    expect(comparisonOptions({}, DEFAULT_MCP_CONFIG).simConfig?.localAnts?.everyColony).toBe(true);
+    expect(comparisonOptions({ ANTWAR_RULES: "redesign", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG).simConfig?.localAnts?.everyColony).toBe(true);
+    expect(tuningMapConfig(64).localAnts?.everyColony).toBe(true);
+  });
+});
+
 describe("the rule changes no agent text and no stream bytes", () => {
-  const config = ruledRedesign();
+  const config = newMatchConfig(rulesConfig("redesign"));
   const old = withoutFlag(config);
 
   it("leaves the rated and house-mode briefings unchanged", () => {

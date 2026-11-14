@@ -5,6 +5,7 @@ import { playScripted, recordLog } from "../../src/live/record.ts";
 import { PUBLIC_CONFIG, rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { replay, stateHash } from "../../src/sim/log.ts";
+import { recordedHousePlan } from "../house-plan.ts";
 import { playable } from "../playable.ts";
 
 /**
@@ -20,7 +21,11 @@ const sha256 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes
 const TICKS = 900;
 const RECORDED = JSON.parse(readFileSync(fixture("scripted-hashes.json"), "utf8")) as
   Record<"public" | "redesign", { ticks: number; hashes: string[]; frames: number; framesSha256: string }>;
-const CONFIGS = { public: playable(PUBLIC_CONFIG), redesign: newMatchConfig(rulesConfig("redesign")) } as const;
+// The redesign log was recorded before the no-bot-moves rule, so today's match plays the config it carries.
+const CONFIGS = {
+  public: playable(PUBLIC_CONFIG),
+  redesign: newMatchConfig(recordedHousePlan(rulesConfig("redesign"))),
+} as const;
 
 describe.each(["public", "redesign"] as const)("a %s match log recorded before the change", name => {
   const text = readFileSync(fixture(`scripted-${name}.jsonl`), "utf8");
