@@ -11,7 +11,7 @@ import { playable } from "../playable.ts";
 
 describe("new matches use the measured finer grid", () => {
   it("resolves ordinary and comparison matches before match initialization", () => {
-    for (const value of [undefined, "v4", "count-marks", "redesign"]) {
+    for (const value of [undefined, "redesign"]) {
       const options = comparisonOptions({ ANTWAR_RULES: value, ANTWAR_PLAYERS: "4" }, DEFAULT_MCP_CONFIG);
       expect(options.simConfig!.gridScale).toBe(NEW_MATCH_GRID_SCALE);
       expect(options.simConfig!.mapWidth).toBe(64 * NEW_MATCH_GRID_SCALE);

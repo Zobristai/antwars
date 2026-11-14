@@ -9,6 +9,9 @@ import { claimCountMarks, expireMarks, localRulesSide } from "../../src/sim/mark
 import { step } from "../../src/sim/step.js";
 import type { Agent, Ant, SimEvent, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Colony 0's queen stands at reference tile (8,24). A is the closest known food to the worker
 // and to the nest; B is the food nearest the FORAGE mark, so the mark chooses B.
@@ -19,7 +22,7 @@ const B = { x: 32, y: 58 };
 const MARK = { x: 32, y: 60 };
 const WORKER = { x: 32, y: 48 };
 
-const REDESIGN = rulesConfig("redesign");
+const REDESIGN = recordedHousePlan(rulesConfig("redesign"));
 function config(countMarks: Partial<NonNullable<SimConfig["countMarks"]>> = {}): SimConfig {
   return { ...REDESIGN, terrain: undefined, foodLayout: undefined,
     commandFloorTicks: 1, countMarks: { ...REDESIGN.countMarks!, ...countMarks } };

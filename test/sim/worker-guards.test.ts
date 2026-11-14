@@ -8,9 +8,12 @@ import { step } from "../../src/sim/step.js";
 import type { SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Worker home guards of a house-bot colony: a seated colony holds none (rules 27).
-const redesign = rulesConfig("redesign");
+const redesign = recordedHousePlan(rulesConfig("redesign"));
 const rules: SimConfig = { ...redesign, foodLayout: undefined, squadSize: 0,
   hatchIntervalTicks: Number.MAX_SAFE_INTEGER,
   localAnts: { ...redesign.localAnts!, workerHomeGuardCount: 1, workerHomeGuardSharePermille: 0 } };

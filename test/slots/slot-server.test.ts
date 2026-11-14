@@ -250,9 +250,18 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     const next = await w.fill("public", 1, ["N1", "N2"]);
     expect(next.lobby.state).toBe("waiting");
     const active = await agentOn(server);
-    expect((await active.call("join", { key: keys[0]!.key })).isError).toBe(false);
+    // The slot server seats the lobby only at its next poll; a join that arrives first is answered lobby_loading,
+    // so the first join waits that out (as bootAndPlay's does). Any other refusal still fails here.
+    const first = await until(async () => {
+      const reply = await active.call("join", { key: keys[0]!.key });
+      return reply.isError && reply.data?.error?.code === "lobby_loading" ? undefined : reply;
+    });
+    expect(first.isError, first.text).toBe(false);
     // Every other seat joins and then stays idle: a seat that never joined would end the match abandoned, unrated.
-    for (const key of keys.slice(1)) expect((await (await agentOn(server)).call("join", { key: key.key })).isError).toBe(false);
+    for (const key of keys.slice(1)) {
+      const reply = await (await agentOn(server)).call("join", { key: key.key });
+      expect(reply.isError, reply.text).toBe(false);
+    }
     await until(() => running(server));
     await sleep(1_500);
     expect((await active.call("order", { kind: "forage" })).isError).toBe(false);

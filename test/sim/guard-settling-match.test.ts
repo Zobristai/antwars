@@ -10,9 +10,12 @@ import { advanceSoftAnts, step } from '../../src/sim/step.js';
 import { isPassable } from '../../src/sim/terrain.js';
 import type { SimState } from '../../src/sim/types.js';
 import { sevenMapRotation } from './seven-map-rotation.js';
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from '../house-plan.ts';
 
 // Frozen movement settings from pre-arrival main ba280fb7324e1ea90f0a100b89b2990c531100cc.
-const { pointArrival: _pointArrival, ...preArrivalBase } = rulesConfig('redesign');
+const { pointArrival: _pointArrival, ...preArrivalBase } = recordedHousePlan(rulesConfig('redesign'));
 const PRE_ARRIVAL_CONFIG: SimConfig = Object.freeze({ ...preArrivalBase, softSeparation: Object.freeze({
   radius: 100, strength: 1600, maxStep: 200, arrivalSubunits: 300, epsilon: 1, arrivalLinkRadius: 150,
 }) });
@@ -129,7 +132,7 @@ interface InitialGuard extends GuardEpisode {
 describe('rules-25 seeded independent guard settling', () => {
   it.each(['central-lake', 'three-crossings'] as const)('%s keeps bounded own-site arrival through 7200 ordinary steps', mapId => {
     // Pinned to the seven-map rotation this was written for, which holds the old two.
-    const base = sevenMapRotation(newMatchConfig(rulesConfig('redesign')));
+    const base = sevenMapRotation(newMatchConfig(recordedHousePlan(rulesConfig('redesign'))));
     const config = { ...base, terrain: { ...base.terrain!, mapId } };
     const nativeSpeed = speedPerTick(config), progress = nativeSpeed - 2;
     assert(progress > 0);

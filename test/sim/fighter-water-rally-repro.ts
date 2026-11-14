@@ -12,6 +12,9 @@ import { step } from "../../src/sim/step.js";
 import { isBlockedTile, isWaterTile, segmentOnLand } from "../../src/sim/terrain.js";
 import type { Ant, SimState } from "../../src/sim/types.js";
 import { sevenMapRotation } from "./seven-map-rotation.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 type Intent = { kind: string; homeId: number; targetId: number; x: number; y: number };
 type HeldAnt = Ant & { houseIntentHold?: { intent: Intent } };
@@ -33,7 +36,7 @@ function rawRally(state: SimState, ant: Ant, intent: Intent) {
 
 export function measureWaterRallies(mapId: string, seed = 6006) {
   // Pinned to the seven-map rotation this was written for, which holds the old two.
-  const config = sevenMapRotation(newMatchConfig(rulesConfig("redesign")));
+  const config = sevenMapRotation(newMatchConfig(recordedHousePlan(rulesConfig("redesign"))));
   let state = createMatch(seed, { ...config, terrain: { ...config.terrain!, mapId } });
   assert.equal(state.config.gridScale, 2);
   const histories = new Map<number, Motion[]>(), active = new Map<number, Crossing>();
