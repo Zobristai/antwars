@@ -156,6 +156,8 @@ export interface SpectatorPlayerOptions {
   /** With houseIdle: the match is in the Antwars Model Index (house-*), from its captured access policy. */
   readonly modelIndex?: boolean;
   readonly rated?: boolean;
+  /** An unrated lobby match's drawn colony names; absent for the rated names. */
+  readonly colonyNames?: readonly [string, string];
   /** Resolves seated identity by the sim's internal id; never writes that id to the stream. */
   readonly identity?: (agentId: string) => StreamIdentity | undefined;
 }
@@ -231,6 +233,7 @@ export class SpectatorRecorder {
     this.initialState = cloneState(initial);
     this.resumedInitialFull = null;
     this.setup = { ...setupOf(initial), ...(players.rated === undefined ? {} : { rated: players.rated }),
+      ...(players.colonyNames === undefined ? {} : { colonyNames: players.colonyNames }),
       ...(players.houseIdle === undefined ? {} : { houseIdleTicks: players.houseIdle.idleTicks, ...(players.modelIndex === true ? { modelIndex: true as const } : {}) }) };
     this.initialHouseActivity = new Map(initial.agents.map(a => [a.id, players.houseIdle?.activityTick(a.id) ?? a.joinedTick ?? 0]));
     initial.agents.forEach((a, i) => this.agentIndex.set(a.id, i));

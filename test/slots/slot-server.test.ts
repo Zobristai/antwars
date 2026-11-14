@@ -7,7 +7,8 @@ import { COUNTDOWN_MS, createLobbies, type Lobby, type LobbyKind, type MatchOutc
 import { lobbyPageUrl } from "../../src/lobby/site.ts";
 import { createRatings, ratingCollection } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
-import { COLONY_NAMES, PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
+import { PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, type Agent } from "../server/helpers.ts";
 import { retentionWorld, value } from "../identity/retentionStore.ts";
@@ -132,9 +133,9 @@ function slotTimings(w: World) {
     return registration;
   });
   const begin = w.lobbies.beginMatch.bind(w.lobbies);
-  vi.spyOn(w.lobbies, "beginMatch").mockImplementation(async (lobbyId, slot, runId) => {
+  vi.spyOn(w.lobbies, "beginMatch").mockImplementation(async (lobbyId, slot, runId, colonyNames) => {
     if (!begunAt.has(slot)) begunAt.set(slot, Date.now());
-    return begin(lobbyId, slot, runId);
+    return begin(lobbyId, slot, runId, colonyNames);
   });
   return { registeredAt, begunAt };
 }
@@ -211,7 +212,9 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     expect(started[0]).toBeGreaterThanOrEqual(lobby.startsAt!);
     const bob = await agentOn(server);
     const live = await bob.call("join", { key: keys[1]!.key });
-    expect(live.data.colony).toBe(COLONY_NAMES[1]);
+    // markRated stands in for a queue-made lobby's rating only: it sets no ranked mode, so this player-created lobby's
+    // match plays under the names it draws from its id, as every player-created lobby's does.
+    expect(live.data.colony).toBe(drawColonyNames(lobby.id)[1]);
     expect(server.game.match!.state.agents.map((agent) => agent.colony).sort()).toEqual([0, 1]);
     const operatorRunning = await operator(server, "start");
     expect(operatorRunning.status).toBe(409);

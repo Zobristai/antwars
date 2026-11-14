@@ -11,7 +11,7 @@ import { streamQueens, type StreamQueen } from "../../src/live/format.ts";
 import { HIT_FLASH_MS, QUEEN_COLLAPSE_MS, queenLossAge, type Frame } from "./buffer.ts";
 import { SUB_TILE, TICK_MS, type Colony } from "../../src/live/snapshot.ts";
 import { renderedBiteContacts } from "./bite.ts";
-import { COLONY_TINT } from "./ants.ts";
+import { colonyTint } from "./colony-palette.ts";
 import { reducedMotion } from "./camera.ts";
 import { visibleStory } from "./story.ts";
 import { boardQueenHp } from "./variant.ts";
@@ -177,7 +177,7 @@ export class QueenHomes {
       const s = emblemState(q, frame, reduced);
       if (s === null) continue;
       const colony = q.colony;
-      const colour = COLONY_TINT[colony];
+      const colour = colonyTint(colony);
       const tx = Math.floor(q.x / SUB_TILE), ty = Math.floor(q.y / SUB_TILE), r = setup.overrunRadiusTiles;
       const x0 = tx - r;
       const y0 = ty - r;
@@ -262,7 +262,7 @@ export class PlaceMarkers {
       if (age < 0 || age >= STORY_MARK_MS) continue;
       this.shown++;
       const fade = 1 - age / STORY_MARK_MS;
-      const colour = COLONY_TINT[e.colony]!;
+      const colour = colonyTint(e.colony);
       for (const phase of [0, 0.5]) {
         const t = reduced ? phase : ((age / 1000 + phase) % 1 + 1) % 1;
         g.circle(e.x, e.y, (14 + 46 * t) * px).stroke({ width: 2 * px, color: colour, alpha: 0.6 * fade * (1 - t) });
