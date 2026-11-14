@@ -98,27 +98,30 @@ export function lobbyColonyNames(lobbyId: string, rated: boolean): ColonyNamePai
   return rated ? COLONY_NAMES : drawColonyNames(lobbyId);
 }
 
-/** Whether a pair is the rated names, which streams and records leave implicit. */
-export function isClassicColonyNames(names: ColonyNamePair): boolean {
-  return names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
+/** Whether a match's names are the rated pair, which streams and records leave implicit; four names never are. */
+export function isClassicColonyNames(names: readonly string[]): boolean {
+  return names.length === 2 && names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
 }
 
-/** A match's names from what it carries (a stream setup, a listed row): its drawn pair, or COLONY_NAMES when it carries none. */
-export function colonyNamesOf(match: { readonly colonyNames?: readonly [string, string] | null } | null | undefined): ColonyNamePair {
+/**
+ * A match's names from what it carries (a stream setup, a listed row), index = colony id: its drawn pair or its four
+ * names, or COLONY_NAMES when it carries none.
+ */
+export function colonyNamesOf(match: { readonly colonyNames?: readonly string[] | null } | null | undefined): readonly string[] {
   return match?.colonyNames ?? COLONY_NAMES;
 }
 
 /**
  * A colony's table row by its name, or by its id when the name is not one of the four (a match outside the table keeps
- * colony 0's and colony 1's own colours).
+ * each colony's own table colour: colony 0's and colony 1's as they have always been).
  */
-function rowOf(names: ColonyNamePair, colony: 0 | 1): SupercolonyName {
+function rowOf(names: readonly string[], colony: number): SupercolonyName {
   return supercolony(names[colony]) ?? SUPERCOLONY_NAMES[colony];
 }
 
-/** Each colony's colour in a match named `names`, index = colony id. */
-export function colonyColours(names: ColonyNamePair): readonly [number, number] {
-  return [rowOf(names, 0).colour, rowOf(names, 1).colour];
+/** Each colony's colour in a match named `names`, one per name, index = colony id. */
+export function colonyColours(names: readonly string[]): number[] {
+  return names.map((_, colony) => rowOf(names, colony).colour);
 }
 
 /** A colour as CSS (#rrggbb). */

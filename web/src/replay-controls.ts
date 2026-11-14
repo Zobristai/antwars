@@ -1,5 +1,5 @@
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyNameNote, isClassicColonyNames, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNameNote, isClassicColonyNames } from "../../src/sim/colonyNames.ts";
 import { PLAYBACK_RATES, type PlaybackRate, type Recording } from "./recording.ts";
 import type { ReplayEvent } from "./replay-events.ts";
 import "./replay-marks.css";
@@ -31,7 +31,7 @@ const glyphMarkup = (kind: ReplayEvent["kind"]) =>
   `<svg class="aw-mark-glyph" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false">${GLYPHS[kind]}</svg>`;
 
 /** The words a mark is read by: its kind, its colony by the match's own name where it has one, and its match time. */
-export function markWords(e: ReplayEvent, names: ColonyNamePair = COLONY_NAMES): string[] {
+export function markWords(e: ReplayEvent, names: readonly string[] = COLONY_NAMES): string[] {
   return [KIND_NAMES[e.kind], ...(e.colony === null ? [] : [names[e.colony]]), replayTime(e.ms)];
 }
 
@@ -58,7 +58,7 @@ export function groupMarks(events: readonly ReplayEvent[], duration: number, wid
  * jumps there, marks too close to tell apart join a counted group that opens a list (replay-marks.css). Marks name
  * colonies by `names`, the match's own colony names, each in its colony's colour (replay-marks.css); a drawn name
  * (unrated) carries its one-line source note as its tooltip, and the pointer can reach it in a label and in a list. */
-export function mountReplayControls(doc: Document, recording: Recording, names: ColonyNamePair = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
+export function mountReplayControls(doc: Document, recording: Recording, names: readonly string[] = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
   const el = doc.createElement("div");
   el.className = "aw-replay-controls";
   el.setAttribute("role", "group");

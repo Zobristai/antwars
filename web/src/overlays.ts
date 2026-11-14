@@ -9,7 +9,7 @@ import type { ModeCopy } from "./replay.ts";
  * hover and pointed order for the board, with the board's area and what the board labels keep clear of.
  */
 import { COLONY_NAMES, RULES_NAMES, rulesConfig } from "../../src/sim/config.ts";
-import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { SUB_TILE, streamQueens, type StreamQueen, type StreamAgent, type StreamHatch, type StreamMark, type StreamStore } from "../../src/live/format.ts";
 import type { Board, Frame, StoryEntry } from "./buffer.ts";
 import { MODEL_LABEL, agentShade } from "./squads.ts";
@@ -160,7 +160,7 @@ export function storyWhen(e: Pick<StoryEntry, "kind" | "tick" | "endTick" | "out
  * and the result card, where it is history.
  */
 export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: number, queens: readonly StreamQueen[] = [], past = false,
-  names: ColonyNamePair = COLONY_NAMES): { what: string; who: string } {
+  names: readonly string[] = COLONY_NAMES): { what: string; who: string } {
   const colony = names[e.colony];
   const squad = e.agent >= 0 ? ` — squad ${agentHandle(e.agent)}` : "";
   const who = `${colony}${squad}`;
@@ -202,7 +202,7 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
  * coordinates: the board lights the order's tile while the card is pointed at.
  */
 export function agentCard(agent: number, a: StreamAgent, marks: readonly StreamMark[], now: number, tps: number, target: OrderTarget | null = null,
-  names: ColonyNamePair = COLONY_NAMES): string[] {
+  names: readonly string[] = COLONY_NAMES): string[] {
   const last = marks.filter((m) => m.agent === agent).sort((x, y) => y.laidTick - x.laidTick)[0];
   return [
     `${playerLabel(agent, a)} · ${names[a.colony]}`,

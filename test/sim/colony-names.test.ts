@@ -70,6 +70,14 @@ describe("the colony names", () => {
     expect(colonyNamesOf({})).toBe(COLONY_NAMES);
     expect(colonyNamesOf({ colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] })).toEqual(["Sweetwater Colony", "Lake Skinner Colony"]);
   });
+
+  it("carry a four-colony match's four names by colony id, which are never the rated pair", () => {
+    expect(colonyNamesOf({ colonyNames: LABELS })).toEqual(LABELS);
+    // Its first two names are the rated pair's, in the rated order, but four names are not the rated pair.
+    expect(isClassicColonyNames(LABELS)).toBe(false);
+    expect(isClassicColonyNames(COLONY_NAMES)).toBe(true);
+    expect(isClassicColonyNames([COLONY_NAMES[0]])).toBe(false);
+  });
 });
 
 describe("the colony colours", () => {
@@ -82,6 +90,14 @@ describe("the colony colours", () => {
     expect(colonyColours(["Lake Hodges Colony", "Very Large Colony"])).toEqual([0x00c2ff, 0xffb000]);
     expect(colonyColours(["Sweetwater Colony", "Lake Skinner Colony"])).toEqual([SWEETWATER, LAKE_SKINNER]);
     expect(colonyColours(["Some Colony", "Other Colony"])).toEqual([0xffb000, 0x00c2ff]);
+  });
+
+  it("give each of a four-colony match's colonies its own name's colour, a name outside the table keeping its colony's", () => {
+    expect(colonyColours(LABELS)).toEqual([0xffb000, 0x00c2ff, SWEETWATER, LAKE_SKINNER]);
+    expect(colonyColours(["Lake Skinner Colony", "Sweetwater Colony", "Lake Hodges Colony", "Very Large Colony"]))
+      .toEqual([LAKE_SKINNER, SWEETWATER, 0x00c2ff, 0xffb000]);
+    expect(colonyColours(["Very Large Colony", "Lake Hodges Colony", "Some Colony", "constructor"]))
+      .toEqual([0xffb000, 0x00c2ff, SWEETWATER, LAKE_SKINNER]);
   });
 
   it("are clearly apart from each other and readable on the page background", () => {

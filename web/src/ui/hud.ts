@@ -12,7 +12,7 @@ import "./ui.css";
 import type { HudHost, HudView, Mounted } from "./types.ts";
 import type { Rect } from "../words.ts";
 import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../src/sim/colonyNames.ts";
 import { streamQueens, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type Frame } from "../buffer.ts";
 import {
@@ -53,7 +53,7 @@ export const OVERVIEW_LABEL = "Whole board, from above";
 
 /** New words this HUD adds; every other string is the page's own. */
 export const D2_COPY = {
-  details: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]} details`,
+  details: (colony: Colony, names: readonly string[] = COLONY_NAMES) => `${names[colony]} details`,
   board: "Board",
   kills: "Kills",
   /** The clock's time left, as the score panel draws it: "29:20 · 0:40 left". */
