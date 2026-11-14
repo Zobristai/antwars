@@ -176,7 +176,9 @@ export function createWatchController(options: {
     started(seq, state, live, hub) {
       const metadata = current;
       if (!metadata) throw new Error("Spectator lobby metadata missing at match start");
-      hub.startMatch(seq, state, metadata.access, seatIdentity(metadata, live), live.spectatorHouseIdle?.(seq), live.colonyNames?.());
+      // The stream names a two-colony match's colonies; a four-colony stream is not supported yet, so it is given none.
+      const names = live.colonyNames?.();
+      hub.startMatch(seq, state, metadata.access, seatIdentity(metadata, live), live.spectatorHouseIdle?.(seq), names?.length === 2 ? [names[0]!, names[1]!] : undefined);
       // The HUD, result, share text and replay name each seat from this stream; an unlisted house handle shows as
       // "Unlisted model", logged once at the match's start.
       logUnlistedHouse("match stream", [...metadata.bySeat.values()].map(seat => seat.displayName));

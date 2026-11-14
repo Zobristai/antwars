@@ -1,5 +1,5 @@
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig } from "../sim/config.js";
-import { isClassicColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
+import { isClassicColonyNames, type ColonyNames } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
@@ -89,7 +89,7 @@ export const IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the sea
 export interface BriefingContext {
   readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean;
   /** The match's colony names, index = colony id; COLONY_NAMES when absent (rated and non-lobby matches). */
-  readonly colonyNames?: ColonyNamePair;
+  readonly colonyNames?: ColonyNames;
 }
 
 /** The board size a reply may state: the drawn match's, or before the draw the size every
