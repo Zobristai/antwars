@@ -116,6 +116,12 @@ describe("matches rows", () => {
     expect(recordingResult({ winner: null, reason: "time_up", decidedBy: "draw" }).result).toBe("Draw");
     expect(recordingResult({ winner: null, reason: null, decidedBy: null })).toEqual({ result: "Result unknown", how: null });
   });
+  it("names an unrated recording's colonies by the names it drew", () => {
+    const colonyNames: [string, string] = ["Sweetwater Colony", "Lake Skinner Colony"];
+    expect(recordingResult({ winner: 1, reason: "queens_killed", decidedBy: "queens_killed", colonyNames })).toEqual({ result: "Lake Skinner Colony won", how: "Queens killed" });
+    expect(resultHeadline({ winner: 0, reason: "queens_killed" }, colonyNames)).toBe("Sweetwater Colony wins");
+    expect(recordingModels([{ seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }], colonyNames)).toBe("Sweetwater Colony: m-a");
+  });
   it("names recorded models by colony and never invents seats", () => {
     expect(recordingModels([])).toBe("Seats not recorded");
     expect(recordingModels([{ seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: null }, { seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }])).toBe("Very Large Colony: m-a · Lake Hodges Colony: model unknown");

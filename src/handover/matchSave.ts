@@ -102,6 +102,8 @@ export interface SavedLobby {
   readonly seats: readonly LobbySeat[];
   /** The finished pick window's starting queen per seat key; null when the match had no pick window. */
   readonly startingQueens: readonly (readonly [string, number])[] | null;
+  /** An unrated lobby's drawn colony names; absent for the rated names, and in saves from before names were drawn. */
+  readonly colonyNames?: readonly [string, string];
 }
 
 export const GAME_SAVE_FORMAT = "antwar.game-save/1";

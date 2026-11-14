@@ -24,9 +24,11 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import { TRAIL_RES, type Frame } from "../buffer.ts";
 import { FOG_ALPHA } from "../team-view.ts";
 import { boardLook } from "../board-look.ts";
+import { colonyRgb } from "../colony-palette.ts";
 import { heightAt, soilAt } from "./noise.ts";
 import { WATER_GLSL, WaterMask, mirrorAxis } from "../terrain.ts";
 
+/** The rated names' colours (colony-palette.ts gives the match's own). */
 export const COLONY_RGB = [
   [1.0, 0xb0 / 255, 0.0],
   [0.0, 0xc2 / 255, 1.0],
@@ -238,8 +240,8 @@ uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1
     ubo.updateFloat("uTime", v.time);
     ubo.updateFloat("uFogOn", v.fog);
     ubo.updateFloat("uFrontOn", v.front);
-    ubo.updateFloat3("uC0", COLONY_RGB[0][0], COLONY_RGB[0][1], COLONY_RGB[0][2], "");
-    ubo.updateFloat3("uC1", COLONY_RGB[1][0], COLONY_RGB[1][1], COLONY_RGB[1][2], "");
+    ubo.updateFloat3("uC0", ...colonyRgb(0), "");
+    ubo.updateFloat3("uC1", ...colonyRgb(1), "");
     ubo.updateFloat3("uOffboardSoil", ...this.offboardSoil, "");
     ubo.setTexture("uA", this.textures.a);
     ubo.setTexture("uB", this.textures.b);
