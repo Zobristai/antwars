@@ -10,12 +10,15 @@ import { PRE_FRONTLINE_CONFIGS, addAnt, emptyMatch } from "./fixtures.js";
 import { recordSeenFood } from "../../src/sim/view.js";
 import { playable } from "../playable.ts";
 import type { Ant, ColonyId, SimState } from "../../src/sim/types.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // These focused balance scenarios pin their fixed geometry; seeded layouts have their own sweep.
 // rules is the reference-grid template; emptyMatch and playable build it at grid scale 2, so its
 // tiles, patches and distances double. Reference tile t is fine tiles 2t and 2t+1; ants stand at
 // the reference tile centre (fine 2t + 0.5) and a reference cell's food lives in fine cell (2tx, 2ty).
-const rules = { ...rulesConfig("redesign"), foodLayout: undefined };
+const rules = { ...recordedHousePlan(rulesConfig("redesign")), foodLayout: undefined };
 const ref = (t: number) => 2 * t + 0.5;
 const put = (s: SimState, colony: ColonyId, tx: number, ty: number, patch: Partial<Ant> = {}) => addAnt(s, colony, ref(tx), ref(ty), patch);
 /** An ant exactly at the queen-threat boundary: 24 fine tiles (12 reference tiles) from the queen's own fine tile. */
