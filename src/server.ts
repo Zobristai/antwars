@@ -647,13 +647,17 @@ export const COMPARISON_SEED = 6006;
  * Server options for a comparison run, read once at start-up from
  * ANTWAR_RULES and ANTWAR_PLAYERS. ANTWAR_RULES unset selects
  * redesign for ordinary scheduled public matches and never reads ANTWAR_PLAYERS.
- * It adds no barrier, seed override or seat override. Set (v4 included), it selects the rules, holds one match at a
+ * It adds no barrier, seed override or seat override. Set to redesign, it holds one match at a
  * join barrier of ANTWAR_PLAYERS (2 or 4) with that many seats, seed 6006, and
- * copies the match log to stdout. Any other value of either throws.
+ * copies the match log to stdout. v4 and count-marks are refused: under them the house bot moves for a
+ * player's colony, so no new match starts on them. Any other value of either throws.
  */
 export function comparisonOptions(env: Readonly<Record<string, string | undefined>>, mcp: McpConfig): Partial<ServerOptions> {
   const rules = env.ANTWAR_RULES;
   if (rules === undefined) return { simConfig: newMatchConfig(rulesConfig("redesign")) };
+  if (rules === "v4" || rules === "count-marks") {
+    throw new Error(`ANTWAR_RULES=${rules} no longer starts a match: under those rules the house bot moves for a player's colony. New matches play redesign; ${rules} recordings still re-simulate as recorded`);
+  }
   const simConfig = newMatchConfig(rulesConfig(rules));
   const players = env.ANTWAR_PLAYERS === "2" ? 2 : env.ANTWAR_PLAYERS === "4" ? 4 : null;
   if (players === null) {
