@@ -2196,7 +2196,8 @@ describe("a re-run that finishes while a reply's pages are read", () => {
     const held = heldJobs();
     const f = world({ jobs: held.jobs, cacheBytes: 160 });
     const alice = f.w.played("alice");
-    const a = f.match(561, [[alice, 0]]);
+    // Seat 0's two recorded refusals and 20 more: one page of 22.
+    const a = f.match(561, [[alice, 0]], { record: manyRefusals(replayId(561), 20) });
     const http = await overHttp(f);
     const ask = async (lobbyId: string): Promise<any> => (await http.client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: alice.key, lobbyId } }) as any).structuredContent;
     expect((await ask(a.lobbyId)).noEffect.status).toBe("being_worked_out");
@@ -2216,9 +2217,15 @@ describe("a re-run that finishes while a reply's pages are read", () => {
     const reply = await second;
     expect(reply.noEffect).toEqual(PENDING);
     expect(reply).not.toHaveProperty("noEffectPage");
+    // The held reply keeps its refused calls and their page.
+    expect(reply.seats.map((s: { seat: number }) => s.seat)).toEqual([0]);
+    expect(reply.seats[0].refused).toHaveLength(22);
+    expect(reply.refusedPage).toMatchObject({ total: 22, remaining: 0 });
     const again = await ask(a.lobbyId);
     expect(again.noEffect).toMatchObject(SHOWN);
     expect(again.noEffectPage).toMatchObject({ total: 1, remaining: 0 });
+    expect(reply.refusedPage).toEqual(again.refusedPage);
+    expect(reply.seats[0].refused).toEqual(again.seats[0].refused);
     expect(held.started).toEqual([a.id, other.id]);
   });
 });
