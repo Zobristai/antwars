@@ -96,7 +96,8 @@ export function storeHas(root: string, file: string, options: StoreOptions = {})
 export function storeRead(root: string, file: string, options: StoreOptions = {}): Buffer {
   inside(root, file);
   walk(root, dirname(file), false, options.shared === true);
-  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  // Non-blocking, so a FIFO or other special file cannot stall the open before it is refused below.
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const st = fstatSync(fd);
     if (!st.isFile()) throw new Error(`store path ${file} is not a plain file; refusing it`);

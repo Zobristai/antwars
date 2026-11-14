@@ -1,10 +1,12 @@
 // The tuning harness treats other writers to the shared store as untrusted: exact always plays the candidate and checks
 // the stored references against the digest regen printed, store files are never read or written through a link, and
 // store directories another user could change are refused.
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { basename, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { directoryProblem, openStore, storeHas, storeList, storeRead, storeReadText, storeSharedDir, storeWrite } from "../../scripts/tuning/store.ts";
 import { exact, harness, HEAD, makeStore, markerPatch, regen, SHORT, sha256, type Store } from "./fixtures.ts";
 
@@ -143,17 +145,59 @@ describe("store directories", () => {
     expect(() => openStore("/usr")).toThrow("not owned by the user running the harness");
   });
 
-  it("refuse a group-writable directory before reading or writing through it", () => {
-    mkdirSync(join(root, "runs"));
-    writeFileSync(join(root, "runs", "report.json"), "{}");
-    chmodSync(join(root, "runs"), 0o775);
-    expect(() => storeRead(root, join(root, "runs", "report.json"))).toThrow("writable by group or others");
-    expect(() => storeHas(root, join(root, "runs", "report.json"))).toThrow("writable by group or others");
-    expect(() => storeWrite(root, join(root, "runs", "other.json"), "{}")).toThrow("writable by group or others");
-    expect(readdirSync(join(root, "runs"))).toEqual(["report.json"]);
+  // Each kind of directory another user could replace, planted in the store: every access is refused before it reads a
+  // byte or writes a file, with no race involved.
+  const kinds: [string, (dir: string) => void][] = [
+    ["group-writable", dir => chmodSync(dir, 0o775)],
+    ["other-writable", dir => chmodSync(dir, 0o757)],
+    ["sticky and world-writable outside the noise check", dir => chmodSync(dir, 0o1777)],
+    ["owned by another user", () => { vi.spyOn(process, "getuid").mockReturnValue(me + 1); }],
+    ["a link", dir => { const real = join(root, "..", `${basename(root)}-elsewhere`); renameSync(dir, real); symlinkSync(real, dir); }],
+  ];
+  for (const [kind, plant] of kinds) {
+    it(`refuse a store directory that is ${kind} before reading or writing through it`, () => {
+      const dir = join(root, "runs"), file = join(dir, "report.json");
+      mkdirSync(dir);
+      writeFileSync(file, "{}");
+      plant(dir);
+      try {
+        const reason = kind === "owned by another user" ? "not owned" : kind === "a link" ? "not a plain directory" : "writable by group or others";
+        expect(() => storeRead(root, file)).toThrow(reason);
+        expect(() => storeHas(root, file)).toThrow(reason);
+        expect(() => storeList(root, dir)).toThrow(reason);
+        expect(() => storeWrite(root, join(dir, "other.json"), "{}")).toThrow(reason);
+        expect(() => storeWrite(root, join(dir, "deeper", "other.json"), "{}")).toThrow(reason);
+        expect(readdirSync(dir)).toEqual(["report.json"]);
+        expect(readFileSync(file, "utf8")).toBe("{}");
+      } finally {
+        vi.restoreAllMocks();
+        rmSync(join(root, "..", `${basename(root)}-elsewhere`), { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("refuse a store root another user could change", () => {
     chmodSync(root, 0o777);
     expect(() => openStore(root)).toThrow("writable by group or others");
+    chmodSync(root, 0o700);
+    vi.spyOn(process, "getuid").mockReturnValue(me + 1);
+    try { expect(() => openStore(root)).toThrow(/owned/); } finally { vi.restoreAllMocks(); }
   });
+
+  it("refuse a FIFO or a socket in the store without blocking", async () => {
+    mkdirSync(join(root, "runs"));
+    const fifo = join(root, "runs", "fifo.json"), socket = join(root, "runs", "socket.json");
+    execFileSync("mkfifo", [fifo]);
+    const server = createServer();
+    await new Promise<void>(done => server.listen(socket, done));
+    try {
+      for (const file of [fifo, socket]) {
+        expect(() => storeRead(root, file)).toThrow();
+        expect(() => storeHas(root, file)).toThrow("not a plain file");
+      }
+      expect(storeList(root, join(root, "runs"))).toEqual([]);
+    } finally { await new Promise(done => server.close(done)); }
+  }, 10_000);
 
   it("are created by the harness with a mode only it can write, and the shared one sticky", () => {
     storeWrite(root, join(root, "a", "b", "c.json"), "{}");

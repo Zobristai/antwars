@@ -29,7 +29,8 @@ the store as untrusted. So:
 - Every store write goes to a fresh file created in the target directory and is then renamed over the final name.
   Readers never see a partial file, and a write replaces a link at that name rather than writing through it.
 - Every store read, and every file a write creates, refuses a symbolic link at the file or at any directory between
-  the store root and it.
+  the store root and it. A read takes only a regular file owned by the harness's user; a FIFO or other special file
+  is refused without blocking.
 - Worker processes read and write only private files; the harness copies data into and out of the store.
 - `exact` always plays the candidate. It reads only the reference from the store, and only after checking it against
   the digest `regen` printed.
