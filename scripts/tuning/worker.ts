@@ -35,6 +35,9 @@ export interface WorkerJob {
   readonly out?: string;
 }
 
+/** A tick slower than this is counted as slow (the redesign point-rest stretches run at seconds per tick). */
+export const SLOW_TICK_MS = 500;
+
 const job = JSON.parse(process.argv[2]!) as WorkerJob;
 const src = (file: string) => import(join(job.tree, "src", file));
 const [Server, Map_, Step, Terrain] = await Promise.all([src("server.ts"), src("sim/map.ts"), src("sim/step.ts"), src("sim/terrain.ts")]);
@@ -95,6 +98,7 @@ if (job.mode === "workload") {
     const totalMs = tickMs.reduce((a, b) => a + b, 0);
     runs.push({ loaded: before, path: job.path ?? "advance", ticks: tickMs.length, endTick: state.tick, result: state.result?.reason ?? null,
       peakAnts: peak, totalMs, meanMs: totalMs / Math.max(1, tickMs.length), tick: tickMs.length > 0 ? tickSummary(tickMs) : null,
+      slowTicks: tickMs.filter(ms => ms > SLOW_TICK_MS).length,
       gc: { count: gc.length, totalMs: gc.reduce((a, b) => a + b, 0), maxMs: gc.length > 0 ? Math.max(...gc) : 0 } });
   }
   session?.disconnect();

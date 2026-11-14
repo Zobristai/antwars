@@ -54,14 +54,14 @@ length and the Node version.
 
 ## Commands
 
-### `regen --commit <c> [--seeds-per-map 2] [--paths advance,step] [--checkpoints <k>] [--jobs <n>]`
+### `regen --commit <c> [--seeds-per-map 2] [--paths advance,step] [--checkpoints 4] [--jobs <n>]`
 
 Writes the workload and the exactness references at commit `c`. Runs that do not depend on each other go in
 parallel, `--jobs` at a time. Run `regen` at the base commit before `exact`, `time`, `noise` or `profile` use that
 base.
 
-With `--checkpoints k`, it also saves each scenario's state at `k` evenly spaced ticks. `time --window` and
-`profile --at` start from these saved states.
+It also saves each scenario's state at `--checkpoints` evenly spaced ticks of its full match: by default 4, at 0, ¼,
+½ and ¾. `time`, `noise` and `profile --at` start from these saved states. `--checkpoints 0` saves none.
 
 ### `exact --reference <c> --candidate <c> [--patch <file>] [--paths …] [--scenarios …]`
 
@@ -78,7 +78,7 @@ SHA-256 over its raw bytes, and **no normalisation is applied**.
 The report gives the horizon, the seeds and the paths. For each scenario it gives a match, or the first tick and
 streams that differ. The command exits 1 on any difference.
 
-### `time --reference <c> --candidate <c> [--patch <file>] [--rounds 8] [--window <n>] [--scenarios …]`
+### `time --reference <c> --candidate <c> [--patch <file>] [--rounds 8] [--window 200 | --whole] [--scenarios …]`
 
 Interleaved, paired side-by-side timing on one host:
 
@@ -93,9 +93,13 @@ Interleaved, paired side-by-side timing on one host:
   - each side's mean, median, p99 and max tick time and GC time, per scenario
   - the host's load before and after
 
-`--window n` times `n` ticks from each saved checkpoint instead of whole matches.
+By default each segment is 200 ticks from one saved state, weighted by its map's share of the rotation divided among
+its seeds and saved states, so a try covers the start, middle and late game of every map. `--window n` sets the ticks;
+`--whole` times whole matches instead. Segments from saved states inside a point-rest stretch stay in, because live
+matches reach them. The report lists every segment whose reference had ticks over 500 ms (`slowSegments`) and
+gives each segment's figures (`perSegment`, keyed `<scenario>@<tick>`).
 
-### `noise --base <c> --session <name> --participant <id> --expect <n> [--wait 600] [--rounds 8] [--window <n>]`
+### `noise --base <c> --session <name> --participant <id> --expect <n> [--wait 600] [--rounds 8] [--window 200 | --whole]`
 
 Every participant times the unchanged base against itself in the same paired rounds as `time`, while the others run
 at the same time:

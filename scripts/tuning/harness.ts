@@ -21,13 +21,17 @@ export const SCOPED_TESTS = ["test/sim/golden.test.ts", "test/sim/advance.test.t
   "test/replays/recording-goldens.test.ts", "test/replays/recording.test.ts", "test/replays/pre-compression-replays.test.ts",
   "test/replays/corrected-recordings.test.ts", "test/replays/recordings-across-change.test.ts"];
 export const DEFAULT_ROUNDS = 8;
+/** Saved states per scenario that regen writes by default: at 0, ¼, ½ and ¾ of each full match. */
+export const DEFAULT_CHECKPOINTS = 4;
+/** Ticks timed from each saved state by default. */
+export const DEFAULT_WINDOW = 200;
 
 const { positionals, values: o } = parseArgs({ allowPositionals: true, options: {
   store: { type: "string" }, commit: { type: "string" }, patch: { type: "string" }, reference: { type: "string" }, "reference-patch": { type: "string" },
   candidate: { type: "string" }, base: { type: "string" }, rounds: { type: "string" }, window: { type: "string" }, scenarios: { type: "string" },
   "seeds-per-map": { type: "string" }, paths: { type: "string" }, checkpoints: { type: "string" }, jobs: { type: "string" }, ticks: { type: "string" },
   session: { type: "string" }, participant: { type: "string" }, expect: { type: "string" }, wait: { type: "string" }, "finish-wait": { type: "string" },
-  local: { type: "string" }, scenario: { type: "string" }, at: { type: "string" }, top: { type: "string" },
+  local: { type: "string" }, whole: { type: "boolean" }, scenario: { type: "string" }, at: { type: "string" }, top: { type: "string" },
 } });
 const command = positionals[0];
 const storeArg = o.store ?? process.env.ANTWARS_TUNING_STORE;
@@ -147,7 +151,7 @@ function segments(w: Workload, scenarios: readonly Scenario[], window: number | 
 }
 interface PairedTiming {
   readonly rounds: number; readonly segments: number; readonly window: number | null; readonly roundGains: readonly number[]; readonly medianPairedGain: number;
-  readonly perScenario: Record<string, { reference: unknown; candidate: unknown }>; readonly loaded: Record<string, unknown>; readonly wallMs: number;
+  readonly perSegment: Record<string, { reference: unknown; candidate: unknown }>; readonly slowSegments: readonly unknown[]; readonly loaded: Record<string, unknown>; readonly wallMs: number;
 }
 function pairedTiming(reference: Tree, candidate: Tree, w: Workload, rounds: number, window: number | undefined, label: string): PairedTiming {
   const segs = segments(w, selectScenarios(w), window, tickCap()), t0 = Date.now();
@@ -164,7 +168,7 @@ function pairedTiming(reference: Tree, candidate: Tree, w: Workload, rounds: num
         const seg = segs[i]!;
         means[side][i] = run.meanMs;
         loaded[`${seg.scenario.id}@${seg.startTick}`] = run.loaded;
-        (runs[seg.scenario.id] ??= { reference: [], candidate: [] })[side].push(run);
+        (runs[`${seg.scenario.id}@${seg.startTick}`] ??= { reference: [], candidate: [] })[side].push(run);
       });
     }
     segs.forEach((seg, i) => paired.push({ weight: seg.weight, referenceMeanMs: means.reference[i]!, candidateMeanMs: means.candidate[i]! }));
@@ -173,9 +177,11 @@ function pairedTiming(reference: Tree, candidate: Tree, w: Workload, rounds: num
   }
   const side = (list: any[]) => ({ meanMs: median(list.map(x => x.meanMs)), tickMedianMs: median(list.map(x => x.tick.median)),
     tickP99Ms: median(list.map(x => x.tick.p99)), tickMaxMs: median(list.map(x => x.tick.max)), gcTotalMs: median(list.map(x => x.gc.totalMs)),
-    ticks: list[0].ticks, result: list[0].result, peakAnts: list[0].peakAnts });
-  const perScenario = Object.fromEntries(Object.entries(runs).map(([k, v]) => [k, { reference: side(v.reference), candidate: side(v.candidate) }]));
-  return { rounds, segments: segs.length, window: window ?? null, roundGains: gains, medianPairedGain: median(gains), perScenario, loaded, wallMs: Date.now() - t0 };
+    slowTicks: median(list.map(x => x.slowTicks)), ticks: list[0].ticks, result: list[0].result, peakAnts: list[0].peakAnts });
+  const perSegment = Object.fromEntries(Object.entries(runs).map(([k, v]) => [k, { reference: side(v.reference), candidate: side(v.candidate) }]));
+  // Segments whose reference runs had ticks over the slow-tick limit: the redesign point-rest stretches.
+  const slowSegments = Object.entries(perSegment).filter(([, v]) => v.reference.slowTicks > 0).map(([k, v]) => ({ segment: k, slowTicks: v.reference.slowTicks, meanMs: v.reference.meanMs }));
+  return { rounds, segments: segs.length, window: window ?? null, roundGains: gains, medianPairedGain: median(gains), perSegment, slowSegments, loaded, wallMs: Date.now() - t0 };
 }
 function writeRun(kind: string, report: unknown): string {
   const dir = join(STORE, "runs");
@@ -186,6 +192,12 @@ function writeRun(kind: string, report: unknown): string {
 }
 const describeTree = (t: Tree) => ({ commit: t.commit, patchDigest: t.patchDigest });
 /** --ticks: stop each run after this many ticks instead of the full match (smoke runs; stated in every report). */
+/** Ticks timed from each saved state: --window, else DEFAULT_WINDOW when the workload has saved states; --whole times whole matches. */
+function windowFor(w: Workload): number | undefined {
+  if (o.whole === true) return undefined;
+  if (o.window !== undefined) return int(o.window, 0, "window");
+  return Object.values(w.checkpoints).some(c => c.length > 0) ? DEFAULT_WINDOW : undefined;
+}
 const tickCap = () => (o.ticks === undefined ? undefined : int(o.ticks, 0, "ticks"));
 function horizonText(w: Workload, window: number | undefined): string {
   if (window !== undefined) return `${window} ticks from each of the workload's checkpoints`;
@@ -202,7 +214,7 @@ async function noise(): Promise<void> {
   const base = tree(required(o.base, "base")), w = loadWorkload(base.commit);
   const session = required(o.session, "session"), me = required(o.participant, "participant"), expect = int(o.expect, 3, "expect");
   const waitMs = int(o.wait, 600, "wait") * 1000, finishMs = int(o["finish-wait"], 172_800, "finish-wait") * 1000;
-  const rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = o.window === undefined ? undefined : int(o.window, 0, "window");
+  const rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w);
   const dir = join(STORE, "noise", session);
   mkdirSync(join(dir, "arrivals"), { recursive: true });
   mkdirSync(join(dir, "results"), { recursive: true });
@@ -248,38 +260,39 @@ async function main(): Promise<void> {
     case "regen": {
       // Workload and exactness references at a commit: the live config's maps, seedsPerMap seeds each, full matches.
       const t = tree(required(o.commit, "commit")), per = int(o["seeds-per-map"], 2, "seeds-per-map");
-      const paths = (o.paths ?? "advance,step").split(",") as ("advance" | "step")[], k = int(o.checkpoints, 0, "checkpoints");
+      const paths = (o.paths ?? "advance,step").split(",") as ("advance" | "step")[], k = int(o.checkpoints, DEFAULT_CHECKPOINTS, "checkpoints"), t0 = Date.now();
       const found = runWorker(t, { mode: "workload", seedsPerMap: per }), cap = tickCap();
       const checkpoints = Object.fromEntries((found.scenarios as Scenario[]).map(s => {
         const ticks = s.loaded.matchTicks as number;
-        return [s.id, k === 0 ? [] : Array.from({ length: k }, (_, i) => Math.floor((i * ticks) / k))];
+        return [s.id, k === 0 || cap !== undefined ? [] : Array.from({ length: k }, (_, i) => Math.floor((i * ticks) / k))];
       }));
       const w: Workload = { commit: t.commit, source: found.source, seedsPerMap: per, paths, scenarios: found.scenarios, checkpoints,
         horizon: "each match plays until it ends by its own match-end rule (its map's match length, or an earlier result)" };
       mkdirSync(join(STORE, "workloads"), { recursive: true });
       writeFileSync(workloadFile(t.commit), JSON.stringify(w, null, 2));
       await digests(t, w, w.scenarios, paths, cap, k > 0 && cap === undefined);
-      print({ commit: t.commit, workload: workloadFile(t.commit), scenarios: w.scenarios.map(s => ({ id: s.id, weight: s.weight, loaded: s.loaded })), paths, checkpoints });
+      print({ commit: t.commit, wallMs: Date.now() - t0, workload: workloadFile(t.commit), scenarios: w.scenarios.map(s => ({ id: s.id, weight: s.weight, loaded: s.loaded })), paths, checkpoints });
       return;
     }
     case "exact": {
       const ref = tree(required(o.reference, "reference"), o["reference-patch"]), cand = tree(required(o.candidate, "candidate"), o.patch);
       const w = loadWorkload(ref.commit), scenarios = selectScenarios(w), ticks = o.ticks === undefined ? undefined : int(o.ticks, 0, "ticks");
       const paths = o.paths === undefined ? w.paths : o.paths.split(",");
+      const t0 = Date.now();
       await Promise.all([digests(ref, w, scenarios, paths, ticks), digests(cand, w, scenarios, paths, ticks)]);
       const results = scenarios.flatMap(s => paths.map(path => {
         const r = JSON.parse(readFileSync(referenceFile(ref, path, s.id, ticks), "utf8")), c = JSON.parse(readFileSync(referenceFile(cand, path, s.id, ticks), "utf8"));
         return { scenario: s.id, map: s.map, seed: s.seed, path, ticks: r.ticks, endTick: r.endTick, result: r.result, ...compareDigests(r, c) };
       }));
       const report = { reference: describeTree(ref), candidate: describeTree(cand), compares: [...STREAMS], normalisation: "none: raw bytes of each stream, chained SHA-256 per tick",
-        horizon: ticks === undefined ? w.horizon : `${ticks} ticks`, seeds: scenarios.map(s => `${s.map}:${s.seed}`), paths, pass: results.every(r => r.match), results };
+        horizon: ticks === undefined ? w.horizon : `${ticks} ticks`, seeds: scenarios.map(s => `${s.map}:${s.seed}`), paths, pass: results.every(r => r.match), wallMs: Date.now() - t0, results };
       if (!report.pass) process.exitCode = 1;
       print({ ...report, file: writeRun("exact", report) });
       return;
     }
     case "time": {
       const ref = tree(required(o.reference, "reference"), o["reference-patch"]), cand = tree(required(o.candidate, "candidate"), o.patch);
-      const w = loadWorkload(ref.commit), rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = o.window === undefined ? undefined : int(o.window, 0, "window");
+      const w = loadWorkload(ref.commit), rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w);
       const before = host(), t = pairedTiming(ref, cand, w, rounds, window, "time");
       const report = { reference: describeTree(ref), candidate: describeTree(cand), host: { before, after: host() },
         horizon: horizonText(w, window), gain: "1 − candidate / reference weighted mean tick time per round", ...t };
