@@ -12,10 +12,13 @@ export interface BoardLook2d {
    * vUV runs over the playable map, uSize is the bake's size in CSS px and uMap the map's size in physical tiles.
    */
   readonly soil: string;
-  /** The ground pass's fragment (territory.ts), given the pass's shared prelude; it samples uSoil at vUV. */
-  readonly fill: (prelude: string) => string;
-  /** The front line's fragment (territory.ts), given the same prelude. */
-  readonly front: (prelude: string) => string;
+  /**
+   * The ground pass's fragment (territory.ts), given the pass's shared prelude; it samples uSoil at vUV. colonies is the
+   * match's colony count, 2 when omitted; for 4 the prelude is territory.ts COMMON_FOUR, read with ownership4.
+   */
+  readonly fill: (prelude: string, colonies?: 2 | 4) => string;
+  /** The front line's fragment (territory.ts), given the same prelude and colony count. */
+  readonly front: (prelude: string, colonies?: 2 | 4) => string;
 }
 
 export interface BoardLook3d {

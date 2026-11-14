@@ -19,7 +19,7 @@ export const GRAVEL_LIGHT: Rgb = [0.65, 0.63, 0.58];
 export const GRAVEL_DARK: Rgb = [0.53, 0.51, 0.47];
 export const PEBBLE: Rgb = [0.41, 0.37, 0.31];
 /** A colony's territory wash: its name's colour pushed so it reads on warm earth (colony-palette.ts WASH). */
-const hue = (colony: 0 | 1): Rgb => colonyWash(colony).hue;
+const hue = (colony: number): Rgb => colonyWash(colony).hue;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -164,8 +164,47 @@ vec3 d1Water(vec2 tile, float time) {
 }
 `;
 
+/** A GLSL choice by colony id c, 0 to 3, of each colony's value. */
+const byColony = (value: (colony: number) => string) => `c == 0 ? ${value(0)} : c == 1 ? ${value(1)} : c == 2 ? ${value(2)} : ${value(3)}`;
+
+/** A four-colony match's 2D wash hue and depth by colony id, 0 to 3, as a two-colony match's are for colonies 0 and 1. */
+const washes2d = () => /* glsl */ `vec3 d1Wash(int c) { return ${byColony(c => vec3(hue(c)))}; }
+float d1Depth(int c) { return ${byColony(c => colonyWash(c).depth.toFixed(1))}; }
+`;
+
+/** The 2D territory in a two-colony match: each colony's wash, read with ownership(). */
+const territory2d = () => /* glsl */ `  vec4 s;
+  float r = ownership(vUV, s);
+  float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
+  float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
+  float own = max(w0, w1);
+  vec3 hue = w0 >= w1 ? ${vec3(hue(0))} : ${vec3(hue(1))};
+  // Cyan on warm earth greys sooner than amber does, so its wash is a little deeper.
+  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * (w0 >= w1 ? ${colonyWash(0).depth.toFixed(1)} : ${colonyWash(1).depth.toFixed(1)});
+  col = mix(col, mix(col, hue, 0.6), wash);
+  float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
+  col = mix(col, hue * 0.5, rim * 0.75);
+`;
+
+/** The same in a four-colony match, read with ownership4: the colony leading on each side of a meeting in its own wash. */
+const TERRITORY_2D_FOUR = /* glsl */ `  vec4 s;
+  int ca;
+  int cb;
+  float r = ownership4(vUV, s, ca, cb);
+  float w0 = ca < 0 ? 0.0 : clamp(r * 2.0 - 1.0, 0.0, 1.0);
+  float w1 = cb < 0 ? 0.0 : clamp(1.0 - r * 2.0, 0.0, 1.0);
+  float own = max(w0, w1);
+  int cw = w0 >= w1 ? ca : cb;
+  vec3 hue = d1Wash(cw);
+  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * d1Depth(cw);
+  col = mix(col, mix(col, hue, 0.6), wash);
+  float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
+  col = mix(col, hue * 0.5, rim * 0.75);
+`;
+
 /** The 2D ground pass: the baked steppe, water, boulders with their shadows, the territory wash and trails. */
-function fill2d(prelude: string): string {
+function fill2d(prelude: string, colonies: 2 | 4 = 2): string {
+  const four = colonies === 4;
   return /* glsl */ `${prelude}
 in vec2 vScreen;
 uniform sampler2D uSoil;
@@ -174,7 +213,7 @@ vec4 d1Cell(vec2 cell) { return texture(uWater, (clamp(cell, vec2(0.0), uMap - 1
 bool d1On(vec2 c) { return c.x >= 0.0 && c.y >= 0.0 && c.x < uMap.x && c.y < uMap.y; }
 float d1Wet(vec2 c) { return d1On(c) ? step(0.5, d1Cell(c).r) : 0.0; }
 float d1Stone(vec2 c) { return d1On(c) ? step(0.5 / 255.0, d1Cell(c).g) : 0.0; }
-${WATER_2D("d1Wet")}
+${WATER_2D("d1Wet")}${four ? washes2d() : ""}
 // A boulder over its streamed footprint: a rounded stone lit from the upper left with lichen on it, and scree in the
 // footprint's corners, so the whole blocked footprint still reads as rock.
 vec3 d1Boulder(vec2 tile, vec4 mask, vec3 ground) {
@@ -224,18 +263,7 @@ void main() {
     col *= mix(0.7, 1.0, smoothstep(0.0, 0.45, dr));
   }
   // Territory: a wash of the colony's hue, deeper toward the front, edged where it meets unheld ground.
-  vec4 s;
-  float r = ownership(vUV, s);
-  float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
-  float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
-  float own = max(w0, w1);
-  vec3 hue = w0 >= w1 ? ${vec3(hue(0))} : ${vec3(hue(1))};
-  // Cyan on warm earth greys sooner than amber does, so its wash is a little deeper.
-  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * (w0 >= w1 ? ${colonyWash(0).depth.toFixed(1)} : ${colonyWash(1).depth.toFixed(1)});
-  col = mix(col, mix(col, hue, 0.6), wash);
-  float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
-  col = mix(col, hue * 0.5, rim * 0.75);
-  // Trails: ground compacted by traffic, a little darker.
+${four ? TERRITORY_2D_FOUR : territory2d()}  // Trails: ground compacted by traffic, a little darker.
   vec2 tr = texture(uTrail, vUV).rg * uTrails;
   col *= 1.0 - 0.18 * clamp(tr.x + tr.y, 0.0, 1.0);
   // The playable edge: a crisp darker lip just inside it.
@@ -245,20 +273,25 @@ void main() {
 }`;
 }
 
-/** Where the colonies meet: a dark seam with each colony's hue glowing on its own side, premultiplied. */
-function front2d(prelude: string): string {
+/**
+ * Where the colonies meet: a dark seam with each colony's hue glowing on its own side, premultiplied. In a four-colony
+ * match, between the two colonies leading at each point, and only where a colony holds ground.
+ */
+function front2d(prelude: string, colonies: 2 | 4 = 2): string {
+  const four = colonies === 4;
+  const read = four
+    ? "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || ca < 0) discard;\n"
+    : "  vec4 s;\n  float r = ownership(vUV, s);\n  if (s.g < 0.45) discard;\n";
+  const side = four ? "d1Wash(r > 0.5 || cb < 0 ? ca : cb)" : `r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))}`;
   return /* glsl */ `${prelude}
-void main() {
+${four ? washes2d() : ""}void main() {
   if (awWaterAt(vUV) > 0.5 || awRockAt(vUV) > 0.5) discard;
-  vec4 s;
-  float r = ownership(vUV, s);
-  if (s.g < 0.45) discard;
-  float d = abs(r - 0.5);
+${read}  float d = abs(r - 0.5);
   float near = smoothstep(0.45, 0.9, s.g);
   float seam = (1.0 - smoothstep(0.02, 0.09, d)) * near;
   float glow = (1.0 - smoothstep(0.0, 0.4, d)) * near * 0.4;
   if (seam + glow < 0.01) discard;
-  vec3 side = r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))};
+  vec3 side = ${side};
   float a = clamp(seam * 0.8 + glow * 0.45, 0.0, 1.0);
   vec3 col = vec3(0.10, 0.08, 0.06) * seam * 0.8 + side * glow * 0.45;
   finalColor = vec4(col, a) * awBoundaryWeight(vUV);
