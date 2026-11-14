@@ -20,7 +20,7 @@ import {
 } from "../../src/accounts/postMortem.ts";
 import { packFindings, rerunRecord, sameState, unpackFindings, type RerunAnswer } from "../../src/accounts/postMortemChild.ts";
 import { createJobs, JobsBusy, type PostMortemJobs, type RecordOpener, type RerunOutcome } from "../../src/accounts/postMortemJobs.ts";
-import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
+import { PAGE_BYTES, scanRecord } from "../../src/accounts/postMortemRecord.ts";
 import type { VersionAnswer, VersionSource } from "../../src/accounts/postMortemVersion.ts";
 import { encodePublicMessage } from "../../src/live/format.ts";
 import { payload } from "../../src/mcp/replies.ts";
@@ -799,6 +799,33 @@ describe("a long list, in pages", () => {
     expect(bodyOf(done).noEffectPage).not.toHaveProperty("continuation");
     expect(refusedOf(done)).toHaveLength(2000);
   }, 120_000);
+
+  // Credible regression (CJK): a page measured by its JSON string's length, not its UTF-8 bytes, so names of
+  // three-byte characters fill a page well past its byte budget and a reply past its cap. The lone-surrogate case is
+  // coverage: such a name is written as 6-byte escapes, which a measure of the raw strings' bytes would undercount.
+  it.each([["CJK", "\u89b3".repeat(100) + "\u2026"], ["lone-surrogate", "\ud83d".repeat(100) + "\u2026"]])(
+    "pages refused calls with %s tool names by their serialized UTF-8 bytes, every reply within its cap, each call reachable once", async (_, tool) => {
+      const f = world();
+      const alice = f.w.played("alice"), bob = f.w.played("bob");
+      const record = generatedRecord(replayId(81));
+      for (let i = 0; i < 3000; i++) record.replies.push({ type: "stub", seat: 0, tick: null, tool, receivedAt: RECEIVED + 1000 + i, answeredAt: RECEIVED + 1001 + i, code: "call_rate" });
+      const { lobbyId } = f.match(81, [[alice, 0], [bob, 1]], { record });
+      const seen = new Set<string>();
+      let continuation: string | undefined, pages = 0;
+      do {
+        const reply = await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation });
+        expect(reply.ok, JSON.stringify(reply.body).slice(0, 200)).toBe(true);
+        const entries = refusedOf(reply) as unknown as Record<string, unknown>[];
+        expect(entries.reduce((sum, entry) => sum + Buffer.byteLength(JSON.stringify(entry)) + 32, 0)).toBeLessThanOrEqual(PAGE_BYTES);
+        expect(Buffer.byteLength(JSON.stringify(reply.body))).toBeLessThanOrEqual(REPLY_BYTES);
+        expect(bodyOf(reply).refusedPage.first).toBe(seen.size);
+        for (const r of refusedOf(reply)) { expect(seen.has(r.at)).toBe(false); seen.add(r.at); }
+        continuation = bodyOf(reply).refusedPage.continuation as string | undefined;
+        pages++;
+      } while (continuation !== undefined);
+      expect(pages).toBeGreaterThan(1);
+      expect(seen.size).toBe(3002);
+    }, 60_000);
 
   it("refuses an empty or over-long continuation before reading anything, and one it did not issue as start again", async () => {
     const f = world();
@@ -1583,7 +1610,7 @@ async function overHttp(f: ReturnType<typeof world>) {
     live.push(req);
     req.end(JSON.stringify(messages.length === 1 ? messages[0] : messages));
     return {
-      replies, done,
+      replies, done, req,
       async reply(id: number) { while (!replies.has(id)) await new Promise<void>(resolve => waiters.push(resolve)); return replies.get(id); },
     };
   }
@@ -1711,6 +1738,93 @@ describe("a caller that has gone", () => {
       expect(unhandled).not.toHaveBeenCalled();
       expect(f.postMortem.deliveriesHeld()).toBe(0);
     } finally { process.off("unhandledRejection", unhandled); }
+  });
+
+  // Credible regression: a page read queued in the scan pool runs once its turn comes though every caller waiting on it
+  // has gone, opening (or, for a private record, downloading and authenticating) the record for nobody; or a live owner
+  // who joined that read is dropped with them.
+  it.each(["public", "private"] as const)("reads no queued %s page whose callers have all gone by its turn, and reads it once for a live owner who joined", async visibility => {
+    let n = 0, held: number | null = null;
+    const turn = gate();
+    let next = turn;
+    const scan = (async (run: () => Promise<unknown>) => { if (++n === held) await next.opened; return run(); }) as PostMortemJobs["scan"];
+    const f = world({ jobs: { ...heldJobs().jobs, scan } });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(506, [[alice, 0]], { visibility, record: manyRefusals(replayId(506), 3000) });
+    const consume = vi.spyOn(f.archive, "consume");
+    const reads = () => visibility === "public" ? f.history.open.mock.calls.length : consume.mock.calls.length;
+    // The first pass and the first page, read by a completed ask.
+    const continuation = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId })).refusedPage.continuation as string;
+    expect(reads()).toBe(2);
+    // The next page's read waits for its turn; its one caller leaves meanwhile.
+    held = n + 1;
+    const leaving = new AbortController();
+    const gone = f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation }, leaving.signal);
+    await vi.waitFor(() => expect(n).toBe(held));
+    leaving.abort();
+    turn.open();
+    expect(await gone).toEqual(refusal("still_reading"));
+    expect(reads()).toBe(2);
+    // Again, with a live owner joining the same queued read: it is read once, for them.
+    next = gate();
+    held = n + 1;
+    const leaving2 = new AbortController();
+    const gone2 = f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation }, leaving2.signal);
+    const live = f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation });
+    await vi.waitFor(() => expect(n).toBe(held));
+    await sleep(50);
+    leaving2.abort();
+    next.open();
+    expect(await gone2).toEqual(refusal("still_reading"));
+    expect((await live).ok).toBe(true);
+    expect(n).toBe(held);
+    expect(reads()).toBe(3);
+  });
+
+  // Credible regression: the version lookup and re-run started before the caller's pages are read, so an owner whose
+  // connection closes while a page waits starts both for nobody, through the real tool, SDK transport and response scope.
+  it("starts no version lookup or re-run for an owner whose connection closes during its page read; the next owner starts each once", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, scanWaitMs: 5_000 });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(507, [[alice, 0]]);
+    const http = await overHttp(f);
+    const page = holdRead(f, 2);
+    const call = http.post("gone", [toolCall(1, POST_MORTEM_TOOL, { key: alice.key, lobbyId })]);
+    await vi.waitFor(() => expect(f.history.open).toHaveBeenCalledTimes(2));
+    call.req.destroy();
+    await vi.waitFor(() => expect(http.openPosts()).toHaveLength(0));
+    page.open();
+    await sleep(50);
+    expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toEqual([]);
+    expect(held.started).toEqual([]);
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+    // Its first pass is kept: the next owner reads nothing again, is told the version is being checked, and starts each once.
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(bodyOf(reply).noEffect).toEqual({ status: "being_worked_out", reason: "Checking this match's game version. Ask again shortly." });
+    expect(f.history.open).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(held.started).toEqual([id]));
+    expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toHaveLength(1);
+  });
+
+  // Credible regression: the no-effect answer tied to its caller's response, so a lookup still pending when the answered
+  // owner's response closes (as every response does once its reply is written) never queues the re-run it announced.
+  it("queues the re-run of an answered owner whose version lookup was still pending when its response closed", async () => {
+    const held = heldJobs();
+    const lookup = gate();
+    const asked: string[] = [];
+    const f = world({ jobs: held.jobs, versions: { async lookup(commit) { asked.push(commit); await lookup.opened; return "found"; } } });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(508, [[alice, 0]]);
+    const http = await overHttp(f);
+    const call = http.post("answered", [toolCall(1, POST_MORTEM_TOOL, { key: alice.key, lobbyId })]);
+    expect((await call.reply(1)).result.structuredContent.noEffect.status).toBe("being_worked_out");
+    await call.done;
+    expect(http.openPosts()).toHaveLength(0);
+    expect(asked).toHaveLength(1);
+    expect(held.started).toEqual([]);
+    lookup.open();
+    await vi.waitFor(() => expect(held.started).toEqual([id]));
   });
 });
 
@@ -1981,6 +2095,35 @@ describe("a continuation whose no-effect answer was dropped from the cache", () 
     expect(reply.ok).toBe(true);
     // Its first pass read again, then its page.
     expect(f.history.open.mock.calls.filter(([id]) => id === a.id).length).toBe(opens + 2);
+    await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id, a.id]));
+  });
+
+  // Credible regression: a continuation whose answers were dropped starting the lookup and re-run again as soon as its
+  // first pass is read again, before its page, for an owner who leaves during that page.
+  it("starts no re-run for a departed owner's continuation whose answers were dropped, and restarts it for the next ask", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, cacheBytes: 160 });
+    const alice = f.w.played("alice");
+    const a = f.match(543, [[alice, 0]], { record: manyRefusals(replayId(543), 3000) });
+    const continuation = await pagedAndShown(f, held, alice, a);
+    const other = f.match(544, [[alice, 0]]);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: other.lobbyId })).ok).toBe(true);
+    await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id]));
+    const asked = (f.versions as ReturnType<typeof versionsAnswering>).asked.length;
+    // Its first pass read again (the first read from now), then its page (the second), held while the caller leaves.
+    const opens = f.history.open.mock.calls.length;
+    const page = holdRead(f, 2);
+    const res = openResponse();
+    const gone = withResponseScope(res, () => f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation }));
+    await vi.waitFor(() => expect(f.history.open.mock.calls.length).toBe(opens + 2));
+    res.destroy();
+    await sleep(20);
+    page.open();
+    expect(await gone).toEqual(refusal("still_reading"));
+    await sleep(20);
+    expect(held.started).toEqual([a.id, other.id]);
+    expect((f.versions as ReturnType<typeof versionsAnswering>).asked).toHaveLength(asked);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation })).ok).toBe(true);
     await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id, a.id]));
   });
 

@@ -229,9 +229,11 @@ export function ownedColonies(lobby: Pick<Lobby, "colonies">, identityId: string
 
 const validContinuation = (value: string | null | undefined) => value === undefined || value === null
   || (typeof value === "string" && value.length > 0 && value.length <= CONTINUATION_MAX);
+/** A shaped entry's UTF-8 bytes as serialized in a reply (a lone surrogate is written as its 6-byte escape), plus a margin. */
+const serializedBytes = (shaped: Record<string, unknown>) => Buffer.byteLength(JSON.stringify(shaped)) + 32;
 /** A refused entry's bytes in a reply, at its largest: the longer tick basis and a viewer's seconds. */
-const refusedBytes = (entry: RefusedEntry) => JSON.stringify(shapeRefused(entry, "calls", 7)).length + 32;
-const noEffectBytes = (entry: NoEffectEntry) => JSON.stringify(shapeNoEffectEntry(entry, 7)).length + 32;
+const refusedBytes = (entry: RefusedEntry) => serializedBytes(shapeRefused(entry, "calls", 7));
+const noEffectBytes = (entry: NoEffectEntry) => serializedBytes(shapeNoEffectEntry(entry, 7));
 const statusBytes = (status: NoEffectStatus) => status.status === "shown"
   ? status.bits.byteLength + 32 * (status.counts.length + status.undecided.length) + 64 : JSON.stringify(status).length;
 const sha256 = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
@@ -283,6 +285,8 @@ export function createPostMortem(deps: PostMortemDeps) {
   const cache = new Map<string, CacheEntry>();
   let cacheBytes = 0;
   const work = new Map<string, Promise<unknown>>();
+  /** A queued or running page job's callers, each by its stopped(). */
+  const waiting = new Map<string, (() => boolean)[]>();
   const tokens = sealer();
   let deliveries = 0;
 
@@ -318,17 +322,25 @@ export function createPostMortem(deps: PostMortemDeps) {
   const noEffectKey = (id: string, identity: RecordIdentity) => `noEffect ${id} ${identityKey(identity)}`;
   const noEffectEntry = (id: string, identity: RecordIdentity) => cache.get(noEffectKey(id, identity));
 
-  /** One job per key at a time, in the jobs' scan pool; its value kept once read. */
-  function shared<T extends CacheEntry["value"]>(key: string, kind: CacheEntry["kind"], run: () => Promise<T>): Promise<T> {
+  /**
+   * One job per key at a time, in the jobs' scan pool; its value kept once read. A page job carries its callers' stopped()
+   * (stopped given): once admitted it runs only while one of them is still waiting, and otherwise ends with Stopped before
+   * reading anything. A first pass (no stopped) always runs, for every owner.
+   */
+  function shared<T extends CacheEntry["value"]>(key: string, kind: CacheEntry["kind"], run: () => Promise<T>, stopped?: () => boolean): Promise<T> {
     const kept = recall(key);
     if (kept !== undefined) return Promise.resolve(kept.value as T);
     let job = work.get(key) as Promise<T> | undefined;
     if (job === undefined) {
-      job = deps.jobs.scan(run);
+      const callers = stopped === undefined ? null : [stopped];
+      job = deps.jobs.scan(() => callers !== null && callers.every(gone => gone()) ? Promise.reject(new Stopped()) : run());
       work.set(key, job);
+      if (callers !== null) waiting.set(key, callers);
       const settled = job;
-      void settled.then(value => remember(key, kind, value), () => {}).finally(() => { if (work.get(key) === settled) work.delete(key); });
-    }
+      void settled.then(value => remember(key, kind, value), () => {}).finally(() => {
+        if (work.get(key) === settled) { work.delete(key); waiting.delete(key); }
+      });
+    } else if (stopped !== undefined) waiting.get(key)?.push(stopped);
     return job;
   }
 
@@ -462,10 +474,10 @@ export function createPostMortem(deps: PostMortemDeps) {
       next: next === null || read.nextPrefix === null ? null : tokens.seal({ ...cursor, ordinal: cursor.ordinal + read.page.entries.length, checkpoint: next, prefix: read.nextPrefix }) };
   }
 
-  /** A list's page: none to read once its entries are all shown. */
-  function pageOf(cursor: Cursor, key: string, findings: Findings | null): Promise<PageOut> {
+  /** A list's page: none to read once its entries are all shown, and none for callers that have all gone by its turn. */
+  function pageOf(cursor: Cursor, key: string, findings: Findings | null, stopped: () => boolean): Promise<PageOut> {
     if (cursor.ordinal >= cursor.total) return Promise.resolve({ entries: [], next: null, nextOffset: null });
-    return shared(key, "page", () => readPage(cursor, findings));
+    return shared(key, "page", () => readPage(cursor, findings), stopped);
   }
   const firstKey = (cursor: Cursor) => `page first ${cursor.list} ${cursor.base.replayId} ${cursor.base.colonies.join(",")} ${identityKey(cursor.base.identity)} ${cursor.findingsDigest ?? "-"}`;
 
@@ -609,8 +621,10 @@ export function createPostMortem(deps: PostMortemDeps) {
   /**
    * The reply to an owner whose ownership is proven: its first pass (on a fresh start), then each list's page. Once
    * stopped() (the caller gone or its wait run out), nothing more is read, re-run or shaped for it: it is checked after
-   * the first pass, between the two pages, and before the reply's slot is taken. A first pass already asked for runs on
-   * in the scan pool, under its own guard, and is kept for the next caller.
+   * the first pass, between the two pages, and before the reply's slot is taken; a queued page whose callers have all
+   * gone is not read; and the no-effect answer (version lookup, then re-run) is started only after the last check, as
+   * the reply is shaped. A first pass already asked for runs on in the scan pool, under its own guard, and is kept for
+   * the next caller.
    */
   async function answer(replayId: string, visibility: "public" | "private", lobbyId: string, colonies: ReadonlySet<number>, query: PostMortemQuery,
     refusedCursor: Cursor | undefined, noEffectCursor: Cursor | undefined, stopped: () => boolean, scope: ResponseScope | undefined): Promise<PostMortemReply> {
@@ -628,6 +642,8 @@ export function createPostMortem(deps: PostMortemDeps) {
     let status: NoEffectStatus | null = visibility === "private"
       ? { status: "not_available", reason: "No-effect commands are not available for private matches." }
       : noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? null;
+    // The first pass the no-effect answer is to be started from, once this reply is about to be shaped.
+    let startFrom: Initial | undefined;
     if (visibility === "public") {
       const entry = noEffectEntry(replayId, base.identity);
       const due = entry === undefined || (entry.value as NoEffectStatus).status === "not_computed_now" && entry.retryAfter !== undefined && now() >= entry.retryAfter;
@@ -640,12 +656,11 @@ export function createPostMortem(deps: PostMortemDeps) {
           if (stopped()) throw new Stopped();
         }
         if (!sameIdentity(first.identity, base.identity)) throw new RecordChanged();
-        startNoEffect(replayId, first);
+        startFrom = first;
       }
-      status = noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? status;
     }
     const refusedAt = refusedCursor ?? firstCursor(base, "refused", null);
-    const refused = await pageOf(refusedAt, refusedCursor ? `page ${sha256(query.refusedContinuation!)}` : firstKey(refusedAt), null);
+    const refused = await pageOf(refusedAt, refusedCursor ? `page ${sha256(query.refusedContinuation!)}` : firstKey(refusedAt), null, stopped);
     let noEffect: { cursor: Cursor; page: PageOut } | null = null;
     if (status?.status === "shown") {
       const findings: Findings = { counts: status.counts, bits: status.bits };
@@ -654,7 +669,7 @@ export function createPostMortem(deps: PostMortemDeps) {
       else {
         if (stopped()) throw new Stopped();
         const at = noEffectCursor ?? firstCursor(base, "noEffect", findings);
-        noEffect = { cursor: at, page: await pageOf(at, noEffectCursor ? `page ${sha256(query.noEffectContinuation!)}` : firstKey(at), findings) };
+        noEffect = { cursor: at, page: await pageOf(at, noEffectCursor ? `page ${sha256(query.noEffectContinuation!)}` : firstKey(at), findings, stopped) };
       }
     }
     if (stopped()) throw new Stopped();
@@ -664,6 +679,12 @@ export function createPostMortem(deps: PostMortemDeps) {
     let held = true;
     const release = () => { if (held) { held = false; deliveries--; } };
     try {
+      // Started only now, with nothing left to wait on before this reply is written: a caller seen gone by the check
+      // above starts no version lookup and no re-run. (A due status is never "shown", so no no-effect page was skipped.)
+      if (startFrom !== undefined) {
+        startNoEffect(replayId, startFrom);
+        status = noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? status;
+      }
       return { ok: true, body: shape(base, status, { cursor: refusedAt, page: refused }, noEffect) };
     } finally {
       if (scope !== undefined) scope.release = release;

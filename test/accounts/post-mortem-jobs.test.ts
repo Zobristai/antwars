@@ -373,6 +373,32 @@ describe("re-run supervision", () => {
     await Promise.all(all);
     expect(peak).toBe(SCAN_CONCURRENCY);
   });
+
+  // Credible regression: a finished scan freeing its place before its waiter has taken it, so a newcomer arriving in
+  // between starts a third scan beside the two running. Swept over the arrival's distance from the finish, as the
+  // window can move when code is added on either side.
+  it("hands a finished scan's place to its waiter: a newcomer 0 to 8 microtasks after the finish never makes three", async () => {
+    const ticks = async (n: number) => { for (let i = 0; i < n; i++) await Promise.resolve(); };
+    const peaks: number[] = [];
+    for (let depth = 0; depth <= 8; depth++) {
+      const jobs = createJobs({ meter: ROOMY, log: () => {} });
+      const gates: (() => void)[] = [];
+      let running = 0, peak = 0;
+      const work = () => jobs.scan(() => new Promise<void>(resolve => { running++; peak = Math.max(peak, running); gates.push(() => { running--; resolve(); }); }));
+      // Two running and one waiting.
+      const all = [work(), work(), work()];
+      await ticks(10);
+      expect(gates).toHaveLength(SCAN_CONCURRENCY);
+      gates.shift()!();
+      await ticks(depth);
+      all.push(work());
+      await ticks(20);
+      while (gates.length > 0) { gates.shift()!(); await ticks(20); }
+      await Promise.all(all);
+      peaks.push(peak);
+    }
+    expect(peaks).toEqual(Array.from({ length: 9 }, () => SCAN_CONCURRENCY));
+  });
 });
 
 // Credible regression: handing the child this server's environment (its keys and configuration) with the record.
@@ -761,6 +787,9 @@ describe("stall detection at the default limit", () => {
  */
 const FULL_PAGES_GENERATOR = `
 const SEATS = 2, CALLS = 7200;
+// "mixed": a 100-character CJK tool name, cut as the server stores long names, on about one refused line in a thousand.
+const MIXED = process.argv[1] === "mixed", WIDE = "\\u89b3\\u5bdf".repeat(50) + "\\u2026";
+const tool = (i, name) => MIXED && i % 997 === 1 ? WIDE : name;
 const out = process.stdout;
 const w = s => new Promise(r => out.write(s) ? r() : out.once("drain", r));
 (async () => {
@@ -776,8 +805,8 @@ const w = s => new Promise(r => out.write(s) ? r() : out.once("drain", r));
   const replies = [];
   for (let i = 0; i < 2 * CALLS * SEATS; i++) {
     const seat = i % SEATS;
-    replies.push(JSON.stringify(i % 2 ? { type: "stub", seat, tick: i >> 2, tool: "observe", receivedAt: 1e12 + i, answeredAt: 1e12 + i + 1, code: "call_rate" }
-      : { type: "reply", seat, tick: i >> 2, tool: "order", receivedAt: 1e12 + i, answeredAt: 1e12 + i + 1, isError: true, arguments: { since: i }, reply: { error: { code: "rate_limited", message: "One command per 10 s." } } }));
+    replies.push(JSON.stringify(i % 2 ? { type: "stub", seat, tick: i >> 2, tool: tool(i, "observe"), receivedAt: 1e12 + i, answeredAt: 1e12 + i + 1, code: "call_rate" }
+      : { type: "reply", seat, tick: i >> 2, tool: tool(i, "order"), receivedAt: 1e12 + i, answeredAt: 1e12 + i + 1, isError: true, arguments: { since: i }, reply: { error: { code: "rate_limited", message: "One command per 10 s." } } }));
   }
   await w(replies.join(",") + "]}");
 })();`;
@@ -785,13 +814,14 @@ const w = s => new Promise(r => out.write(s) ? r() : out.once("drain", r));
 // Credible regression: replies held for delivery outgrowing the budget taken from the margin, by a reply over its byte
 // cap, a slot count raised, or a reply built more than once per slot. Measured as heap and external memory still held
 // after garbage collection in a process of its own, over the real post-mortem with each owner's pages already kept; it
-// says nothing of kernel or socket buffers, which the slots do not bound.
-it("four replies of full pages, shaped, serialized and framed as the transport sends them, hold no more than the delivery budget", async () => {
+// says nothing of kernel or socket buffers, which the slots do not bound. The mixed variant: one non-Latin-1 name in a
+// page of ASCII keeps the page nearly as long, while the reply's strings take two bytes a character.
+it.each(["ascii", "mixed"])("four replies of full pages (%s tool names), shaped, serialized and framed as the transport sends them, hold no more than the delivery budget", async names => {
   const dir = mkdtempSync(join(tmpdir(), "antwar-pm-replies-"));
   const fixture = join(dir, "full-pages.json");
   try {
     await new Promise<void>((resolve, reject) => {
-      const gen = spawn(process.execPath, ["-e", FULL_PAGES_GENERATOR], { stdio: ["ignore", openSync(fixture, "w"), "inherit"] });
+      const gen = spawn(process.execPath, ["-e", FULL_PAGES_GENERATOR, names], { stdio: ["ignore", openSync(fixture, "w"), "inherit"] });
       children.push(gen);
       gen.once("exit", code => code === 0 ? resolve() : reject(new Error(`generator exited ${code}`)));
     });
@@ -839,7 +869,7 @@ it("four replies of full pages, shaped, serialized and framed as the transport s
     const code = await new Promise(resolve => prober.once("exit", resolve));
     expect(code).toBe(0);
     const { retained, framed, remaining } = JSON.parse(out) as { retained: number; framed: number[]; remaining: [number, number][] };
-    if (process.env.ANTWAR_REPORT_PEAK) console.log(`four held replies: ${(retained / MIB).toFixed(1)} MiB retained; framed ${framed.join(", ")} chars`);
+    if (process.env.ANTWAR_REPORT_PEAK) console.log(`four held replies (${names}): ${(retained / MIB).toFixed(1)} MiB retained; framed ${framed.join(", ")} chars`);
     // Every reply's two pages are full: each stopped at its byte budget with entries remaining.
     expect(remaining.every(([refused, noEffect]) => refused > 0 && noEffect > 0)).toBe(true);
     expect(retained).toBeLessThanOrEqual(DELIVERY_BUDGET_MIB * MIB);

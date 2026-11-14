@@ -267,12 +267,13 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
   async function scan<T>(run: () => Promise<T>): Promise<T> {
     if (scanning >= SCAN_CONCURRENCY) {
       if (scanQueue.length >= SCAN_QUEUE) throw new JobsBusy();
+      // Woken by a finished scan, which hands over its place: no newcomer can take it in between.
       await new Promise<void>(resolve => scanQueue.push(resolve));
-    }
-    scanning++;
+    } else scanning++;
     try { return await run(); } finally {
-      scanning--;
-      scanQueue.shift()?.();
+      const next = scanQueue.shift();
+      if (next !== undefined) next();
+      else scanning--;
     }
   }
 
