@@ -14,6 +14,17 @@ function agent(colony: 0 | 1, name: string | null, modelLabel = "claude-sonnet-5
   return { ...(name === null ? {} : { identity: { displayName: name, elo: 1500 } }), colony, modelLabel, joinTick: 0, lastCallTick: TICK - 20,
     prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" };
 }
+/** An agent of any of four colonies (the stream's colony ids 0 to 3). */
+const agentOf = (colony: number, name: string | null): StreamAgent => ({ ...agent(0, name), colony } as unknown as StreamAgent);
+const QUADRANTS = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+/** A finished four-colony match: four queens' positions and the four names its setup carries; winner 0 to 3 or null. */
+function fourColonyFrame(agents: StreamAgent[], result: { winner: number | null; reason: string; decidedBy: string }): Frame {
+  const f = frameOf(agents);
+  const b = f.board!;
+  b.setup = { ...b.setup, queens: [[8, 8], [56, 8], [8, 40], [56, 40]].map(([x, y]) => [x! * SUB_TILE, y! * SUB_TILE]), colonyNames: QUADRANTS } as unknown as Board["setup"];
+  b.result = { ...b.result!, ...result } as unknown as StreamResult;
+  return f;
+}
 function frameOf(agents: StreamAgent[], result: Partial<StreamResult> = {}): Frame {
   const f = new Frame();
   f.tick = TICK; f.targetMs = TICK * 100 + 10_000; f.match = 1;
@@ -81,6 +92,41 @@ describe("the post's text (shareText)", () => {
     const href = shareHref(frameOf([agent(0, "fennec"), agent(1, "tidewater")]), URL_)!;
     expect(href.startsWith("https://x.com/intent/post?text=")).toBe(true);
     expect(new URL(href).searchParams.get("text")).toBe(`fennec beat tidewater on Antwars — Queens killed. Watch: ${URL_}`);
+  });
+});
+
+describe("the post's text for a four-colony match", () => {
+  const seated = [agentOf(0, "fennec"), agentOf(1, "tidewater"), agentOf(2, "antwars/gpt-6-luna"), agentOf(3, "marsh #1"), agentOf(3, "reed #2")];
+  it("names the winner, then every other colony that took part in colony order, by its players; never one opponent", () => {
+    expect(shareText(fourColonyFrame(seated, { winner: 2, reason: "queens_killed", decidedBy: "queens_killed" }), URL_))
+      .toBe(`GPT-6 Luna (max · Fast) beat fennec, tidewater and marsh & reed on Antwars — Last colony standing · queens killed. Watch: ${URL_}`);
+    expect(shareText(fourColonyFrame(seated, { winner: 0, reason: "time_up", decidedBy: "kills" }), URL_))
+      .toBe(`fennec beat tidewater, GPT-6 Luna (max · Fast) and marsh & reed on Antwars — Time-up · decided on kills. Watch: ${URL_}`);
+  });
+  it("says it was a draw and names every colony that took part", () => {
+    expect(shareText(fourColonyFrame(seated, { winner: null, reason: "time_up", decidedBy: "draw" }), URL_))
+      .toBe(`fennec, tidewater, GPT-6 Luna (max · Fast) and marsh & reed drew on Antwars — Time-up · decided on draw. Watch: ${URL_}`);
+  });
+  it("leaves out a colony with no seated agent, and names the winner even when it had none", () => {
+    const three = [agentOf(0, "fennec"), agentOf(1, "tidewater"), agentOf(3, "marsh")];
+    expect(shareText(fourColonyFrame(three, { winner: 3, reason: "idle", decidedBy: "idle" }), URL_))
+      .toBe(`marsh beat fennec and tidewater on Antwars — Last colony standing · seats inactive. Watch: ${URL_}`);
+    expect(shareText(fourColonyFrame(three, { winner: null, reason: "idle", decidedBy: "draw" }), URL_))
+      .toBe(`fennec, tidewater and marsh drew on Antwars — Last seats inactive on the same tick · decided on draw. Watch: ${URL_}`);
+    expect(shareText(fourColonyFrame(three, { winner: 2, reason: "time_up", decidedBy: "territory" }), URL_))
+      .toBe(`Sweetwater Colony beat fennec, tidewater and marsh on Antwars — Time-up · decided on territory. Watch: ${URL_}`);
+    expect(shareText(fourColonyFrame([agentOf(1, "tidewater")], { winner: 1, reason: "idle", decidedBy: "idle" }), URL_))
+      .toBe(`tidewater won on Antwars — Last colony standing · seats inactive. Watch: ${URL_}`);
+  });
+  it("names the time-up winner of a same-tick all-idle end as the winner", () => {
+    expect(shareText(fourColonyFrame(seated, { winner: 1, reason: "idle", decidedBy: "territory" }), URL_))
+      .toBe(`tidewater beat fennec, GPT-6 Luna (max · Fast) and marsh & reed on Antwars — Last seats inactive on the same tick · decided on territory. Watch: ${URL_}`);
+  });
+  it("names a colony with no player by its name, and two colonies as it always did", () => {
+    expect(sideNames(seated, 2, QUADRANTS)).toBe("GPT-6 Luna (max · Fast)");
+    expect(sideNames([agentOf(0, "fennec")], 3, QUADRANTS)).toBe("Lake Skinner Colony");
+    // Two colonies: both named even with no player on one, by that colony's name.
+    expect(shareText(frameOf([agent(0, "fennec")], { winner: 0 }), URL_)).toBe(`fennec beat Lake Hodges Colony on Antwars — Queens killed. Watch: ${URL_}`);
   });
 });
 

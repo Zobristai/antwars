@@ -216,6 +216,37 @@ it("shows kills as the deciding criterion for time-up and both simultaneous quee
   expect(resultHow({ reason: "queens_killed", decidedBy: "kills" }, true)).toBe("Queens killed on both sides · decided on kills");
 });
 
+it("labels a four-colony end without two sides or one opponent, and a two-colony end as it always was", () => {
+  const how = (reason: string, decidedBy: string, colonies?: number) =>
+    resultHow({ reason, decidedBy } as Pick<StreamResult, "reason" | "decidedBy">, true, colonies);
+  // The last colony with a queen, or the last whose seats stayed active.
+  expect(how("queens_killed", "queens_killed", 4)).toBe("Last colony standing · queens killed");
+  expect(how("idle", "idle", 4)).toBe("Last colony standing · seats inactive");
+  // Every colony still in the match left on one tick, ranked: by a measure, or level through every one (a draw).
+  expect(how("queens_killed", "kills", 4)).toBe("Last queens killed on the same tick · decided on kills");
+  expect(how("queens_killed", "draw", 4)).toBe("Last queens killed on the same tick · decided on draw");
+  expect(how("idle", "territory", 4)).toBe("Last seats inactive on the same tick · decided on territory");
+  expect(how("idle", "food_delivered", 4)).toBe("Last seats inactive on the same tick · decided on food delivered");
+  expect(how("idle", "draw", 4)).toBe("Last seats inactive on the same tick · decided on draw");
+  // Time-up, the majority hold and an abandonment already name no side.
+  for (const decidedBy of ["kills", "territory", "ants_alive", "food_delivered"]) {
+    expect(how("time_up", decidedBy, 4)).toBe(`Time-up · decided on ${decidedBy.replace(/_/g, " ")}`);
+  }
+  expect(how("time_up", "draw", 4)).toBe("Time-up · decided on draw");
+  expect(how("sustained_territory", "territory", 4)).toBe("Sustained territory lead");
+  expect(how("abandoned", "draw", 4)).toBe("Seat inactive · unrated");
+  for (const [reason, decidedBy] of [["queens_killed", "queens_killed"], ["queens_killed", "kills"], ["idle", "idle"], ["idle", "draw"], ["idle", "ants_alive"], ["time_up", "draw"]]) {
+    expect(how(reason!, decidedBy!, 4)).not.toMatch(/both|opponent|either side/i);
+  }
+  // Two colonies, with the count given or not: unchanged.
+  for (const colonies of [undefined, 2]) {
+    expect(how("queens_killed", "queens_killed", colonies)).toBe("Queens killed");
+    expect(how("queens_killed", "kills", colonies)).toBe("Queens killed on both sides · decided on kills");
+    expect(how("idle", "idle", colonies)).toBe("Seat inactive");
+    expect(how("idle", "draw", colonies)).toBe("Seats inactive on both sides");
+  }
+});
+
 it("labels an abandoned match as idle and unrated rather than a time-up decision", () => {
   expect(resultHow({ reason: "abandoned", decidedBy: "draw" }, true)).toBe("Seat inactive · unrated");
   expect(decisive([], "abandoned", null)).toEqual([]);

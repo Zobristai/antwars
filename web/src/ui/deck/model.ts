@@ -4,7 +4,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
 import { fallWindow, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
@@ -547,10 +547,11 @@ const NO_ROWS: readonly HistoryRow[] = [];
 
 // ---------------------------------------------------------------- the result
 
-export interface Moment { readonly when: string; readonly what: string; readonly who: string; readonly colony: Colony }
+/** colony and winner: colony ids 0 to 3, so a four-colony match's result is shown as it is. */
+export interface Moment { readonly when: string; readonly what: string; readonly who: string; readonly colony: number }
 export interface ResultView {
   readonly headline: string;
-  readonly winner: Colony | null;
+  readonly winner: number | null;
   /** The reason, with the deciding measure where it differs (resultHow). */
   readonly how: string;
   /** Each rating line: the shown name, a Benchmark name's level and Fast badges, then the change. */
@@ -565,7 +566,7 @@ export function resultView(frame: Frame | null): ResultView | null {
   if (!frame || !b || r === null) return null;
   const rate = tps(b);
   return {
-    headline: resultHeadline(r, colonyNamesOf(b.setup)), winner: r.winner, how: resultHow(r, b.queens !== undefined),
+    headline: resultHeadline(r, colonyNamesOf(b.setup)), winner: r.winner, how: resultHow(r, b.queens !== undefined, b.setup.queens.length),
     ratings: ratingResultRows(b.setup.rated, b.agents, r),
     moments: decisive(frame.story, r.reason, r.winner).map(m => ({
       when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true, colonyNamesOf(b.setup)).what, who: colonyNamesOf(b.setup)[m.colony], colony: m.colony,
@@ -581,8 +582,8 @@ export function resultView(frame: Frame | null): ResultView | null {
  * One side's player(s) as the post names them: each distinct shown name in seat order (a seat's "#n" dropped, so one
  * player holding every seat is named once), a Benchmark's level and Fast in brackets after its name, joined with "&".
  */
-export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony,
-  colonyNames: ColonyNamePair = COLONY_NAMES): string {
+export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: number,
+  colonyNames: readonly string[] = COLONY_NAMES): string {
   const names: string[] = [];
   agents.forEach((a, index) => {
     if (a.colony !== colony) return;
@@ -601,16 +602,29 @@ export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colon
   return names.length > 0 ? names.join(" & ") : colonyNames[colony];
 }
 
+/** Names as a sentence lists them: "A", "A and B", "A, B and C". */
+const listed = (names: readonly string[]): string =>
+  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
 /**
  * The post's text: "{winner} beat {loser} on Antwars — {how it ended}. Watch:
  * {url}", or "{A} and {B} drew on Antwars — …" for a draw; null without a shown result or a link to share.
+ * With more than two colonies it names the colonies that took part (each with a seated agent; every colony where none
+ * has one), in colony order after the winner: "{winner} beat {A}, {B} and {C} on Antwars — …", or "{A}, {B}, {C} and {D}
+ * drew on Antwars — …".
  */
 export function shareText(frame: Frame | null, url: string | null): string | null {
   const shown = resultView(frame);
   if (shown === null || url === null) return null;
-  const agents = frame!.board!.agents, names = colonyNamesOf(frame!.board!.setup);
-  const [a, b] = shown.winner === null ? [0, 1] as const : [shown.winner, (1 - shown.winner) as Colony];
-  const players = shown.winner === null ? `${sideNames(agents, a, names)} and ${sideNames(agents, b, names)} drew` : `${sideNames(agents, a, names)} beat ${sideNames(agents, b, names)}`;
+  const board = frame!.board!, agents = board.agents, names = colonyNamesOf(board.setup);
+  const side = (colony: number) => sideNames(agents, colony, names);
+  const colonies = board.setup.queens.map((_, colony) => colony);
+  // Two colonies are both named, as they always were.
+  const tookPart = colonies.length <= 2 ? colonies : colonies.filter(colony => agents.some(a => a.colony === colony));
+  const named = tookPart.length > 0 ? tookPart : colonies;
+  const others = named.filter(colony => colony !== shown.winner);
+  const players = shown.winner === null ? `${listed(named.map(side))} drew`
+    : others.length > 0 ? `${side(shown.winner)} beat ${listed(others.map(side))}` : `${side(shown.winner)} won`;
   return `${players} on Antwars — ${shown.how}. Watch: ${url}`;
 }
 

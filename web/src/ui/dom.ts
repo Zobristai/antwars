@@ -31,8 +31,8 @@ export function setMarkup(node: Element, html: string): void {
   node.innerHTML = html;
 }
 
-/** Each colony's ink: its name's colour, set for the page from the match (web/src/colony-palette.ts), else the classic colour. */
-export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
+/** Each colony's ink, colonies 0 to 3: its name's colour, set for the page from the match (web/src/colony-palette.ts), else the classic colour. */
+export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))", "var(--aw-k2, var(--aw-c2))", "var(--aw-k3, var(--aw-c3))"] as const;
 
 /**
  * Writes text into node. Where the match drew its colony names (unrated), each of those names in the text is shown in

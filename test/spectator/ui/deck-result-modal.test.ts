@@ -130,6 +130,63 @@ describe("the match result as a modal over the screen", () => {
     expect(rated.dialog.byClass("d1-moment-what")[0]!.children).toHaveLength(0);
   });
 
+  it("names a four-colony winner, or a draw, in its own colour with its source note, and how it ended", () => {
+    const NAMES = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+    // A finished four-colony match: one queen per colony, every queen but the winner's lost (all four in a same-tick
+    // all-idle end), the four names its setup carries; winner 0 to 3 or null.
+    const ended = (winner: number | null, reason: string, decidedBy: string, allLost = false) => {
+      const f = frameOf({ ended: true });
+      const b = f.board!;
+      b.setup = { ...b.setup, queens: [[8, 8], [56, 8], [8, 40], [56, 40]].map(([x, y]) => [x! * SUB_TILE, y! * SUB_TILE]), colonyNames: NAMES } as unknown as Board["setup"];
+      b.queens = [8, 56, 8, 56].map((tile, colony) => ({ ...queen(colony, 0, tile, 0, allLost || colony !== winner ? END : null), colony }) as unknown as StreamQueen);
+      b.agents = NAMES.map((_, colony) => ({ ...agent(0, `seat-${colony}`, 1500), colony }) as unknown as StreamAgent);
+      b.result = { winner, reason, decidedBy, tick: END, nextStartMs: null } as unknown as Board["result"];
+      // The queen colony 3 took from colony 1.
+      f.story = [{ id: 1, kind: "queen_attack", queenId: 1, tick: END - 5, colony: 3, agent: -1, x: 56, y: 8, outcome: "took" } as unknown as StoryEntry];
+      return f;
+    };
+    const modal = () => {
+      const port = dom();
+      const result = mountResultModal(port.doc);
+      port.body.append(result.dialog as unknown as ElementPort);
+      return { dialog: result.dialog as unknown as ElementPort, show: (frame: Frame) => result.update(frame) };
+    };
+    const won = modal();
+    won.show(ended(2, "queens_killed", "queens_killed"));
+    expect(won.dialog.open).toBe(true);
+    const head = won.dialog.byClass("d1-result-head")[0]!;
+    expect(head.textContent).toBe("Sweetwater Colony wins");
+    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k2, var(--aw-c2))");
+    expect(head.classes()).toEqual(["d1-result-head", "c2"]);
+    expect(head.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
+    expect(won.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last colony standing · queens killed");
+    expect(won.dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
+    // The moment in its colony's colour, the colony it names in that colony's own.
+    const what = won.dialog.byClass("d1-moment-what")[0]!;
+    expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    const who = won.dialog.byClass("d1-moment-who")[0]!;
+    expect(who.textContent).toBe("· Lake Skinner Colony");
+    const name = who.children.find(c => c.tag === "span")!;
+    expect((name.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    expect(name.getAttribute("title")).toBe(colonyNameNote("Lake Skinner Colony"));
+
+    // A same-tick all-idle end: every queen lost at the result tick, the time-up winner still shown as the winner.
+    const idle = modal();
+    idle.show(ended(3, "idle", "territory", true));
+    const idleHead = idle.dialog.byClass("d1-result-head")[0]!;
+    expect(idleHead.textContent).toBe("Lake Skinner Colony wins");
+    expect((idleHead.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    expect(idle.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last seats inactive on the same tick · decided on territory");
+
+    const drawn = modal();
+    drawn.show(ended(null, "time_up", "draw"));
+    const drawHead = drawn.dialog.byClass("d1-result-head")[0]!;
+    expect(drawHead.textContent).toBe("Draw");
+    expect(drawHead.getAttribute("title")).toBeNull();
+    expect(drawn.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Time-up · decided on draw");
+    for (const dialog of [won.dialog, idle.dialog, drawn.dialog]) expect(dialog.textContent).not.toMatch(/both sides|opponent/i);
+  });
+
   it("leaves no result card in the score: the score keeps its clock and Balance, Win conditions give way at the end", () => {
     const { score, show } = mount();
     show(frameOf({ ended: true }));
