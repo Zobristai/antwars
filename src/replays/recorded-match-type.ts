@@ -6,12 +6,13 @@ export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" |
 export interface RecordingMatchType { readonly kind: RecordingMatchKind; readonly size: 1 | 2 | 3 | 4 | null }
 
 /**
- * A match's type from its lobby: the quadrants mode is the four-colony Quadrants mode, a house-* mode the Antwars Model
- * Index, any other mode the ranked queue, a modeless lobby a house challenge or else a player-made (unranked) lobby.
- * Recordings and Live now type a match by this one rule.
+ * A match's type from its lobby: the quadrants mode is a Quadrants match of one agent per colony, a house-* mode the
+ * Antwars Model Index, any other mode the ranked queue, a modeless lobby a house challenge or else a player-made (unranked)
+ * lobby. Recordings and Live now type a match by this one rule.
  */
 export function lobbyMatchType(lobby: { readonly mode: string | null; readonly size: 1 | 2 | 3 | 4; readonly challenge?: { readonly kind: string } }): RecordingMatchType {
-  const kind = lobby.mode !== null ? (lobby.mode === "quadrants" ? "quadrants" : lobby.mode.startsWith("house-") ? "index" : "ranked")
+  if (lobby.mode === "quadrants") return { kind: "quadrants", size: 1 };
+  const kind = lobby.mode !== null ? (lobby.mode.startsWith("house-") ? "index" : "ranked")
     : lobby.challenge?.kind === "house" ? "challenge" : "unranked";
   return { kind, size: lobby.size };
 }
