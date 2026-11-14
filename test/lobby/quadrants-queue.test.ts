@@ -204,6 +204,22 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       expect(value(await w.lobbies.readLobby(lobbyId)).colonyNames).toEqual(NAMES);
     });
 
+    it("reads a quadrants lobby's names from its document, not from the current name table", async () => {
+      const w = world(backend);
+      const { lobbyId } = await quadrantsLobby(w, "s");
+      // Names a document recorded under an earlier table, in another order, read back as stored.
+      const recorded = ["Sweetwater Colony", "Earlier Colony", "Very Large Colony", "Lake Hodges Colony"];
+      await w.store.transaction(async () => ({ result: null, writes: <Write[]>[
+        { op: "update", path: `lobbies/${lobbyId}`, fields: { colonyNames: JSON.stringify(recorded) } },
+      ] }));
+      expect(value(await w.lobbies.readLobby(lobbyId)).colonyNames).toEqual(recorded);
+      // A stored value that is not four names reads as the table's four.
+      await w.store.transaction(async () => ({ result: null, writes: <Write[]>[
+        { op: "update", path: `lobbies/${lobbyId}`, fields: { colonyNames: JSON.stringify(["One Colony", "Two Colony"]) } },
+      ] }));
+      expect(value(await w.lobbies.readLobby(lobbyId)).colonyNames).toEqual(NAMES);
+    });
+
     it("rates nothing for a quadrants release with an outcome a rated lobby rates, while a rated 1v1 released the same way is rated", async () => {
       const w = world(backend);
       const { lobbyId, ids } = await quadrantsLobby(w, "q");

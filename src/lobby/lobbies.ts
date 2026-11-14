@@ -536,8 +536,7 @@ function toLobby(id: string, fields: Fields, now: number): Lobby {
 
 /** The match's names as its record holds them (Lobby.colonyNames): present only where they are drawn names. */
 function matchNames(id: string, fields: Fields): { colonyNames?: readonly string[] } {
-  // A quadrants lobby's names are fixed by colony, as its document records them.
-  if (fields.mode === QUADRANTS) return { colonyNames: quadrantNames() };
+  if (fields.mode === QUADRANTS) return { colonyNames: storedQuadrantNames(fields.colonyNames) };
   let names: ColonyNamePair;
   if (fields.mode) names = COLONY_NAMES;
   else if (fields.colonyNames !== undefined) names = recordedNames(fields.colonyNames);
@@ -554,6 +553,15 @@ function recordedNames(value: string): ColonyNamePair {
     if (Array.isArray(parsed) && parsed.length === 2 && parsed.every((name) => typeof name === "string" && name.length > 0)) return [parsed[0], parsed[1]];
   } catch { /* the rated names */ }
   return COLONY_NAMES;
+}
+
+/** A quadrants lobby's names as its document stores them, by colony: four names, or (anything else) the table's four. */
+function storedQuadrantNames(value: string | undefined): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value ?? "");
+    if (Array.isArray(parsed) && parsed.length === 4 && parsed.every((name) => typeof name === "string" && name.length > 0)) return parsed;
+  } catch { /* the table's names */ }
+  return quadrantNames();
 }
 
 /** The lobby fields recording a match's names (Lobby.colonyNames); none when the caller gave none. */
