@@ -15,7 +15,7 @@ import { ICON, crownIcon, markIcon, orderIcon } from "./icons.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "./dom.ts";
 import { keep } from "./format.ts";
 
-const COLONY_CSS = ["var(--aw-c0)", "var(--aw-c1)"] as const;
+const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
 
 interface Row {
   index: number;

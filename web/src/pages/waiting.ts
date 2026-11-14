@@ -81,7 +81,7 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
     return { lines, result: null, note };
   };
   const stamp = row.mode !== null || full ? STAMPS.starting : seatsStamp(row.seated, 2 * row.size);
-  return { ...base, stamp: { text: stamp, look: "waiting" }, colonies: [colony(0), colony(1)] };
+  return { ...base, stamp: { text: stamp, look: "waiting" }, colonies: [colony(0), colony(1)], ...(row.colonyNames ? { colonyNames: row.colonyNames } : {}) };
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;

@@ -8,7 +8,7 @@ import { sustainedTerritoryWin, territoryCounts, updateTerritory } from "../../s
 import { isBlockedTile, moveOnLand, segmentOnLand } from "../../src/sim/terrain.js";
 import { routeToward } from "../../src/sim/navigation.js";
 import { resolveCombat } from "../../src/sim/combat.js";
-import { groundIncome, pickupAndDeliver, regrow, toward } from "../../src/sim/forage.js";
+import { pickupAndDeliver, regrow, toward } from "../../src/sim/forage.js";
 import { headerLine, replay, stateHash } from "../../src/sim/log.js";
 import { step } from "../../src/sim/step.js";
 import { applySoftSeparation } from "../../src/sim/softSeparation.js";
@@ -80,7 +80,6 @@ describe("finer terrain with original physical rules", () => {
     updateTerritory(fine, buildGrid(fine), 1);
     expect(fine.owner[20 * scale * config.mapWidth + 20 * scale]).toBe(-1);
     expect(territoryCounts(fine)).toEqual([(scale * scale - 1) / (scale * scale), 0]);
-    expect(Number.isInteger(groundIncome(fine, config.groundFoodIntervalTicks!)[0])).toBe(true);
   });
 
   it.each([2] as const)("preserves adjacent-ant combat reach at %i", scale => {
@@ -127,7 +126,7 @@ describe("finer terrain with original physical rules", () => {
     expect(currentLocalGoals(fine).get(ant!.id)).toMatchObject({ key, nativeReached: true });
   });
 
-  it.each([2] as const)("keeps pickup footprints, regrowth and ground-income rates physical at %i", scale => {
+  it.each([2] as const)("keeps pickup footprints and regrowth rates physical at %i", scale => {
     const fine = createMatch(7001, withGridScale({ ...rulesConfig("redesign"), terrain: undefined }));
     // The original (reference) cell holding the first food, and its corner fine cell.
     const source = fine.food.findIndex(amount => amount > 0), width = fine.config.mapWidth;
@@ -151,11 +150,6 @@ describe("finer terrain with original physical rules", () => {
     fine.food.fill(0);
     regrow(fine, fine.config.foodRegrowTicks);
     expect(sum(fine.food)).toBe(originalCells);
-    for (let dy = 0; dy < scale; dy++) for (let dx = 0; dx < scale; dx++) {
-      fine.owner[(y * scale + dy) * fine.config.mapWidth + x * scale + dx] = 0;
-    }
-    // Today's redesign rules pay no held-ground income (ground-income.test.ts), at any grid scale.
-    expect(groundIncome(fine, fine.config.groundFoodIntervalTicks!)).toEqual([0, 0]);
     expect(toward(ant, ant.x + 290 * scale, ant.y, fine)).toEqual({ x: 0, y: 0 });
     expect(toward(ant, ant.x + 310 * scale, ant.y, fine)).not.toEqual({ x: 0, y: 0 });
   });

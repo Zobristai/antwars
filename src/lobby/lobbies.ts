@@ -2,6 +2,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Identities } from "../identity/identities.js";
 import type { ColonyId } from "../sim/types.js";
+import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
+import { COLONY_NAMES } from "../sim/config.js";
 import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
@@ -33,9 +35,12 @@ import { lobbyPageUrl } from "./site.js";
  * Documents, under the store's namespace (string fields only):
  *   lobbies/{uuid}      { kind, size, creatorId, createdAt, state, rated, slot,
  *                         seats (JSON [{id, displayName, colony}]), inviteVerifier,
- *                         startsAt, matchRunId, outcome, mode }
+ *                         startsAt, matchRunId, outcome, mode, colonyNames }
  *                       mode is the ranked mode of a queue-made lobby, "" (or absent,
- *                       in lobbies stored before modes) for a player-created one
+ *                       in lobbies stored before modes) for a player-created one;
+ *                       colonyNames is the pair its begun match plays under, JSON, or ""
+ *                       for the rated names, written when the match begins or is adopted
+ *                       (absent on a match an older server began, which kept the rated names)
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
  *   queues/{kind}       { lobbies }  waiting lobby ids, earliest first
  *   listings/public     { lobbies }  public lobby ids, pruned of ended/expired ones
@@ -130,6 +135,11 @@ export interface Lobby {
   readonly outcome: MatchOutcome | null;
   /** Present only on a house challenge lobby: an unrated house challenge whose heldColony seat is held for heldFor. */
   readonly challenge?: LobbyChallenge;
+  /**
+   * Present only where its match plays under drawn names: the pair its begun match recorded, or, before it begins, the pair
+   * an unrated lobby's match draws from its id. Absent on a rated lobby and on a match begun under the rated names.
+   */
+  readonly colonyNames?: ColonyNamePair;
 }
 
 /** A house challenge lobby's label: always unrated, its held seat for one antwars/<handle>. */
@@ -275,17 +285,21 @@ export interface Lobbies {
   locate(lobbyId: string): Promise<LobbyOutcome<MatchLocation>>;
   /** The lobby holding the slot, or null. */
   slotHolder(slot: string): Promise<SlotHolder | null>;
-  /** Begins the holder's match as runId, refreshing its heartbeat; refused as superseded unless runId is registered, or started if already begun. */
-  beginMatch(lobbyId: string, slot: string, runId: string): Promise<LobbyOutcome<null>>;
+  /**
+   * Begins the holder's match as runId, refreshing its heartbeat; refused as superseded unless runId is registered, or started if already begun.
+   * colonyNames: the names the match plays under, recorded on the lobby; omitted, nothing is recorded.
+   */
+  beginMatch(lobbyId: string, slot: string, runId: string, colonyNames?: ColonyNamePair): Promise<LobbyOutcome<null>>;
   /**
    * A successor takes over the begun match fromRunId advanced last, once it has restored
    * that run's save: sets the lobby's matchRunId to runId and refreshes its
    * heartbeat, so its natural result releases and rates as runId's own. Refused as
    * superseded unless runId is the slot's registered instance, and stale_save unless the
    * lobby holds the slot with fromRunId's match; repeated by runId after it committed, it
-   * succeeds again, so a lost reply is retried safely.
+   * succeeds again, so a lost reply is retried safely. colonyNames: the names the restored match plays under, recorded
+   * on the lobby as at a begin; omitted, the lobby's record is left as it was.
    */
-  adoptMatch(lobbyId: string, slot: string, runId: string, fromRunId: string): Promise<LobbyOutcome<null>>;
+  adoptMatch(lobbyId: string, slot: string, runId: string, fromRunId: string, colonyNames?: ColonyNamePair): Promise<LobbyOutcome<null>>;
   /** The lobby; a waiting one is settled first, taking a free unwithheld slot if one exists. */
   readLobby(lobbyId: string): Promise<LobbyOutcome<Lobby>>;
   /** Public lobbies that are open, waiting or holding a slot, oldest first. */
@@ -369,6 +383,8 @@ export interface UnstartedLobby {
   readonly colonies: readonly [readonly UnstartedSeat[], readonly UnstartedSeat[]];
   /** Present only on a house challenge lobby, which the Waiting card labels. */
   readonly challenge?: "house";
+  /** Present only on a player-created lobby or house challenge: the colony names its unrated match draws from its id. */
+  readonly colonyNames?: ColonyNamePair;
 }
 
 export interface LobbySettings {
@@ -488,7 +504,33 @@ function toLobby(id: string, fields: Fields, now: number): Lobby {
     outcome: OUTCOMES.includes(fields.outcome as MatchOutcome) ? fields.outcome as MatchOutcome : null,
     mode: fields.mode ? fields.mode as RankedMode : null,
     ...(fields.challengeId ? { challenge: { kind: "house", heldFor: `${HOUSE_USERNAME}/${fields.heldFor}`, heldColony: HELD_COLONY } } : {}),
+    ...matchNames(id, fields),
   };
+}
+
+/** The match's names as its record holds them (Lobby.colonyNames): present only where they are drawn names. */
+function matchNames(id: string, fields: Fields): { colonyNames?: ColonyNamePair } {
+  let names: ColonyNamePair;
+  if (fields.mode) names = COLONY_NAMES;
+  else if (fields.colonyNames !== undefined) names = recordedNames(fields.colonyNames);
+  // Begun by an older server, which named every match with the rated names.
+  else if (fields.matchRunId) names = COLONY_NAMES;
+  else names = lobbyColonyNames(id, false);
+  return isClassicColonyNames(names) ? {} : { colonyNames: names };
+}
+
+/** A recorded pair: "" (or anything not two names) is the rated names. */
+function recordedNames(value: string): ColonyNamePair {
+  try {
+    const parsed: unknown = value === "" ? null : JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.length === 2 && parsed.every((name) => typeof name === "string" && name.length > 0)) return [parsed[0], parsed[1]];
+  } catch { /* the rated names */ }
+  return COLONY_NAMES;
+}
+
+/** The lobby fields recording a match's names (Lobby.colonyNames); none when the caller gave none. */
+function namesField(names: ColonyNamePair | undefined): Fields {
+  return names === undefined ? {} : { colonyNames: isClassicColonyNames(names) ? "" : JSON.stringify([names[0], names[1]]) };
 }
 
 const instancePath = (slot: string) => `instances/${slot}`;
@@ -1102,7 +1144,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       return { lobbyId, mode: lobby.mode, startsAt: lobby.startsAt ?? 0, matchRunId: fields.matchRunId || null, colonies: lobby.colonies };
     },
 
-    async beginMatch(lobbyId, slot, runId) {
+    async beginMatch(lobbyId, slot, runId, colonyNames) {
       return store.transaction<LobbyOutcome<null>>(async (read) => {
         const docs = await read([instancePath(slot), `slots/${slot}`, lobbyPath(lobbyId)]);
         if (docs.get(instancePath(slot))?.runId !== runId) return { result: refuse("superseded"), writes: [] };
@@ -1112,7 +1154,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         }
         if (fields.matchRunId) return { result: refuse("started"), writes: [] };
         const writes: Write[] = [
-          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId } },
+          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId, ...namesField(colonyNames) } },
           // The begun match's owner is alive and reached now.
           { op: "update", path: instancePath(slot), fields: { heartbeatAt: String(now()), heardAt: String(now()) } },
         ];
@@ -1120,7 +1162,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       });
     },
 
-    async adoptMatch(lobbyId, slot, runId, fromRunId) {
+    async adoptMatch(lobbyId, slot, runId, fromRunId, colonyNames) {
       return store.transaction<LobbyOutcome<null>>(async (read) => {
         const docs = await read([instancePath(slot), `slots/${slot}`, lobbyPath(lobbyId)]);
         if (docs.get(instancePath(slot))?.runId !== runId) return { result: refuse("superseded"), writes: [] };
@@ -1131,7 +1173,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         }
         const at = String(now());
         const writes: Write[] = [
-          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId } },
+          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId, ...namesField(colonyNames) } },
           // The adopted match's owner is alive and reached now, as at a begin.
           { op: "update", path: instancePath(slot), fields: { heartbeatAt: at, heardAt: at } },
         ];
@@ -1257,7 +1299,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
           .filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index)
           .map((seat) => ({ ...seat, seats: colony.filter((other) => other.id === seat.id).length }));
         unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(lobby.colonies[0]), distinct(lobby.colonies[1])],
-          ...(lobby.challenge ? { challenge: "house" as const } : {}) });
+          ...(lobby.challenge ? { challenge: "house" as const } : {}), ...(lobby.colonyNames === undefined ? {} : { colonyNames: lobby.colonyNames }) });
       }
       // A seat stores the name at seating; each is shown by its identity's current display name, as listWaiting names
       // queue entries, and a seat whose identity no longer resolves is left unnamed.

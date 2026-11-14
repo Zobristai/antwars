@@ -12,7 +12,7 @@ import { updateOverrun, decideTimeUp, queensKilled } from "../../src/sim/territo
 import { step } from "../../src/sim/step.js";
 import { takeView } from "../../src/sim/view.js";
 import type { SimEvent, SimInput } from "../../src/sim/types.js";
-import { PRE_FRONTLINE_PUBLIC_CONFIG, addAnt, emptyMatch, setOwner } from "./fixtures.js";
+import { addAnt, emptyMatch, setOwner } from "./fixtures.js";
 import { playable } from "../playable.ts";
 
 const config = { ...PUBLIC_CONFIG, startAnts: 0, commandFloorTicks: 1 };
@@ -420,24 +420,6 @@ describe("queen rules, fog and house controller", () => {
     houseFounding(s, s.tick + 2 * QUEEN_RULES.cooldownTicks, events);
     expect(events).toHaveLength(2);
     expect(s.colonies[0].foodStore).toBe(1000 - 2 * QUEEN_RULES.cost);
-  });
-
-  it("turns a recorded larger ground payout into a paid house queen on the next tick", () => {
-    const s = createMatch(6006, playable({ ...PRE_FRONTLINE_PUBLIC_CONFIG, startAnts: 0 }));
-    s.tick = QUEEN_RULES.firstFoundTick!;
-    s.owner.fill(-1); s.lastVisit.fill(s.tick);
-    // Ground pays per reference tile: four fine cells each at grid scale 2.
-    for (let i = 0; i < 4 * (QUEEN_RULES.cost + houseFoundingReserve(s) + 20); i++) s.owner[i] = 0;
-    for (let i = 4 * 1000; i < 4 * (1000 + QUEEN_RULES.cost - 20); i++) s.owner[i] = 1;
-    const paid = step(s);
-    expect(paid.state.colonies[0].foodStore).toBeGreaterThan(QUEEN_RULES.cost + houseFoundingReserve(s));
-    expect(paid.state.colonies[1].foodStore).toBeLessThan(QUEEN_RULES.cost);
-    const metrics = queenReportMetrics(paid.state);
-    const founded = step(paid.state); metrics.record(founded.state, founded.events);
-    expect(founded.events.flatMap((e) => e.type === "queen_founded" ? [e.colony] : [])).toEqual([0]);
-    const report = metrics.finish(founded.state);
-    expect(report.colonies.map((c) => c.foodSpentOnFounding)).toEqual([QUEEN_RULES.cost, 0]);
-    expect(report.territoryFoundingComparison).toMatchObject({ moreGroundColony: 0, moreGroundFoundedMore: true });
   });
 
   it("reports actual founding spend, losses, held-ground samples and the end reason", () => {

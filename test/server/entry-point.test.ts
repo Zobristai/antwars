@@ -10,7 +10,9 @@ import { createRatings } from "../../src/rating/ratings.js";
 import { createWatchRegistry } from "../../src/live/watch-registry.js";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
-import { tempDir } from "./helpers.js";
+import { memorySlot, tempDir } from "./helpers.js";
+import { inResponseScope, POST_MORTEM_TOOL, type PostMortemQuery } from "../../src/accounts/postMortem.js";
+import { startServer, type GameServer } from "../../src/server.js";
 
 const servers: SpectatedServer[] = [];
 const clients: { client: Client; transport: StreamableHTTPClientTransport }[] = [];
@@ -80,7 +82,7 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   });
   servers.push(server);
   const client = await connect(server);
-  expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual(["rules", "locate_match", "recover_key", ...ACCOUNT_OPERATIONS.map(op => op.name)].sort());
+  expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual(["rules", "locate_match", POST_MORTEM_TOOL, "recover_key", ...ACCOUNT_OPERATIONS.map(op => op.name)].sort());
   const call = async (name: string, args: Record<string, unknown>) => {
     const result = await client.callTool({ name, arguments: args });
     expect(result.isError, JSON.stringify(result)).not.toBe(true);
@@ -97,6 +99,17 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   expect(made.inviteLink).toEqual(expect.stringContaining(`#invite=${made.inviteToken}`));
   await call("join_lobby", { key, lobbyId, inviteToken: made.inviteToken });
   expect(await call("locate_match", { lobbyId })).toEqual({ slot: null, mcpUrl: null, spectatorUrl: null });
+  // The post-mortem tool answers within a seat client's 30 s: an unplayed lobby of the caller's, and a lobby that is not
+  // (by lobby id, one whose ownership can't be confirmed).
+  const postMortem = async (args: Record<string, unknown>) => {
+    const started = performance.now();
+    const result = await client.callTool({ name: POST_MORTEM_TOOL, arguments: args });
+    expect(performance.now() - started).toBeLessThan(30_000);
+    expect(result.isError).toBe(true);
+    return (result.structuredContent as { error: string }).error;
+  };
+  expect(await postMortem({ key, lobbyId })).toBe("not_ended");
+  expect(await postMortem({ key, lobbyId: "00000000-0000-4000-8000-000000000000" })).toBe("ownership_unconfirmed");
   await call("rating", { displayName: "EntryPlayer" });
   await call("leaderboard", {});
   const origin = `http://127.0.0.1:${server.port}`;
@@ -119,4 +132,41 @@ it("retains real account, queue, lobby, leaderboard, locator and watch/history/r
   expect(server.game.match).toBeNull();
   expect(server.game.nextStart).toBeNull();
   expect(readdirSync(dir)).toEqual([]);
+});
+
+it("serves match_post_mortem on the entry server only, never on a match slot", async () => {
+  const slot = memorySlot();
+  const dir = tempDir(); dirs.push(dir);
+  const server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir, slot: slot.slot, accounts: slot.accounts, watchRegistry: slot.watchRegistry,
+    historySource: { list: async () => ({ matches: [], nextPageToken: null }), open: async () => null } });
+  servers.push(server);
+  const client = await connect(server);
+  const names = (await client.listTools()).tools.map(tool => tool.name);
+  expect(names).toContain("locate_match");
+  expect(names).not.toContain(POST_MORTEM_TOOL);
+});
+
+// Credible regression: the entry server's /mcp route no longer running a request in its response scope, or the tool no
+// longer handing the call its MCP request signal, so a request's calls are not limited to one answer and a cancelled or
+// closed caller's work is not stopped.
+it("runs a match_post_mortem call inside its request's response scope, with the call's own signal", async () => {
+  const { store } = memoryWatchStore();
+  const identities = createIdentities(store);
+  const accounts = { identities, lobbies: createLobbies(store, identities), ratings: createRatings(store, identities) };
+  const dir = tempDir(); dirs.push(dir);
+  const seen: { inScope: boolean; signal: boolean }[] = [];
+  const postMortem = { query: async (_query: PostMortemQuery, signal?: AbortSignal) => {
+    seen.push({ inScope: inResponseScope(), signal: signal instanceof AbortSignal });
+    return { ok: true as const, body: {} };
+  } };
+  const server: GameServer = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, accounts, postMortem });
+  try {
+    const client = new Client({ name: "entry-point-test", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`));
+    clients.push({ client, transport });
+    await client.connect(transport);
+    const result = await client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: "k", lobbyId: "l" } });
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect(seen).toEqual([{ inScope: true, signal: true }]);
+  } finally { await server.close(); }
 });

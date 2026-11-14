@@ -295,10 +295,12 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-unknown { color: var(--aw-ink-3); }
 /* Colony colour only as ink: on a colony's name, which always names it too, and on the words of its WINNER, DRAW or
    ABANDONED badge (matches.ts playerLine), which stands in that colony's column or under its name; the badge keeps its
-   grey fill. */
-.d1p-c0 { color: var(--aw-c0); }
-.d1p-c1 { color: var(--aw-c1); }
+   grey fill. A row naming its own colonies sets --aw-k0 and --aw-k1 to its names' colours (matches.ts inkColonies). */
+.d1p-c0 { color: var(--aw-k0, var(--aw-c0)); }
+.d1p-c1 { color: var(--aw-k1, var(--aw-c1)); }
 .d1p-colony { font-weight: 600; }
+/* A colony name heading its own cell, in a row naming its own colonies (matches.ts colonyLabel). */
+td.c-model > .d1p-colony { display: block; }
 
 /* Status stamps, as the signed-off rows drawing draws them: a record's word (COMPLETE, PARTIAL, UNAVAILABLE) solid and
    light; a waiting row's (WAITING, STARTING, n OF m SEATS) dashed grey; LIVE red. */

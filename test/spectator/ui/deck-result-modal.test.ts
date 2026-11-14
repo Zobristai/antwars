@@ -2,10 +2,12 @@
 // with frames; the stylesheet half reads deck.css's contracts. Neither is visual evidence: browser captures are that.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { Frame, type Board } from "../../../web/src/buffer.ts";
+import { Frame, type Board, type StoryEntry } from "../../../web/src/buffer.ts";
+import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
 import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
 import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
 import { mountTeams } from "../../../web/src/ui/deck/pane.ts";
+import { mountResultModal } from "../../../web/src/ui/deck/result-modal.ts";
 import type { HudActions, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
 
@@ -69,12 +71,63 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
     expect(head.textContent).toBe("Very Large Colony wins");
-    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-c0)");
+    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
     expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
     expect(dialog.getAttribute("aria-labelledby")).toBe(head.id);
     expect(dialog.getAttribute("aria-describedby")).toBe(dialog.byClass("d1-result-how")[0]!.id);
     expect(closeButton(dialog).getAttribute("aria-label")).toBe("Close");
+  });
+
+  it("shows a drawn name in the result in its colony's colour with its source note, and a rated result as it always was", () => {
+    const took: StoryEntry = { id: 1, kind: "queen_attack", queenId: 0, tick: END - 5, colony: 0, agent: -1, x: 50, y: 20, outcome: "took" };
+    const ended = (drawn: readonly [string, string] | null) => {
+      const f = frameOf({ ended: true, rated: drawn === null });
+      if (drawn) f.board!.setup = { ...f.board!.setup, colonyNames: drawn };
+      f.story = [took];
+      return f;
+    };
+    // The dialog alone, as the deck's pane mounts it (its history list needs more of a page than this port has).
+    const modal = () => {
+      const port = dom();
+      const result = mountResultModal(port.doc);
+      port.body.append(result.dialog as unknown as ElementPort);
+      return { dialog: result.dialog as unknown as ElementPort, show: (frame: Frame) => result.update(frame) };
+    };
+    const drawn = modal();
+    drawn.show(ended(["Sweetwater Colony", "Lake Skinner Colony"]));
+    const head = drawn.dialog.byClass("d1-result-head")[0]!;
+    expect(head.textContent).toBe("Sweetwater Colony wins");
+    expect(head.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
+    const who = drawn.dialog.byClass("d1-moment-who")[0]!;
+    expect(who.textContent).toBe("· Sweetwater Colony");
+    const name = who.children.find(c => c.tag === "span")!;
+    expect(name.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
+    expect((name.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
+
+    // An overrun names the colony whose queen it took: that name in its own colony's colour with its note, the rest of
+    // the moment in the attacker's.
+    const overrun = modal();
+    const f = ended(["Sweetwater Colony", "Lake Skinner Colony"]);
+    f.story = [{ id: 2, kind: "overrun", queenId: 0, tick: END - 50, endTick: END - 10, colony: 0, agent: -1, x: 50, y: 20, outcome: "took", peak: 100, required: 100 }];
+    overrun.show(f);
+    const what = overrun.dialog.byClass("d1-moment-what")[0]!;
+    expect(what.textContent).toBe("Overrun attempt on the Lake Skinner Colony queen — took the queen");
+    expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
+    const target = what.children.find(c => c.tag === "span")!;
+    expect(target.textContent).toBe("Lake Skinner Colony");
+    expect(target.getAttribute("title")).toBe(colonyNameNote("Lake Skinner Colony"));
+    expect((target.style as unknown as { color: string }).color).toBe("var(--aw-k1, var(--aw-c1))");
+
+    const rated = modal();
+    rated.show(ended(null));
+    const ratedHead = rated.dialog.byClass("d1-result-head")[0]!;
+    expect(ratedHead.textContent).toBe("Very Large Colony wins");
+    expect(ratedHead.getAttribute("title")).toBeNull();
+    const ratedWho = rated.dialog.byClass("d1-moment-who")[0]!;
+    expect(ratedWho.textContent).toBe("· Very Large Colony");
+    expect(ratedWho.children).toHaveLength(0);
+    expect(rated.dialog.byClass("d1-moment-what")[0]!.children).toHaveLength(0);
   });
 
   it("leaves no result card in the score: the score keeps its clock and Balance, Win conditions give way at the end", () => {
