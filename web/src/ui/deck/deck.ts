@@ -11,11 +11,16 @@ import {
 } from "./model.ts";
 import { SCORE_COPY } from "../../story.ts";
 
+/** Every colony-named screen-reader text in the deck, rewritten when the match's colony names change. */
+type SaidName = { readonly node: HTMLElement; readonly colony: Colony; readonly after: string };
+
 /** A figure with its colony's name for a screen reader, which hears it without its column. */
-function figure(doc: Document, colony: Colony, cls: string, said = `${colonyName(colony)} `) {
+function figure(doc: Document, colony: Colony, cls: string, named: SaidName[], after = " ") {
   const node = h(doc, "span", `${cls} c${colony}`);
   const value = h(doc, "span");
-  node.append(h(doc, "span", "d1-sr", said), value);
+  const said = h(doc, "span", "d1-sr", `${colonyName(colony)}${after}`);
+  named.push({ node: said, colony, after });
+  node.append(said, value);
   return { node, value };
 }
 
@@ -54,11 +59,12 @@ export function mountDeck(doc: Document): Deck {
   const score = h(doc, "section", "d1-score");
   score.setAttribute("aria-label", "Score");
   const clockEl = h(doc, "p", "d1-clock");
+  const named: SaidName[] = [];
 
   // ---------------------------------------------------------------- Balance and Win conditions
   const gauge = (label: string) => {
     const row = h(doc, "div", "d1-gauge");
-    const figs = COLONIES.map(c => figure(doc, c, "d1-fig"));
+    const figs = COLONIES.map(c => figure(doc, c, "d1-fig", named));
     const tracks = COLONIES.map(c => track(doc, c));
     row.append(h(doc, "span", "d1-glabel", label), figs[0]!.node, tracks[0]!.node, tracks[1]!.node, figs[1]!.node);
     return { row, figs, tracks };
@@ -67,7 +73,7 @@ export function mountDeck(doc: Document): Deck {
   const territory = gauge(SCORE_COPY.territory);
   const ants = gauge(SCORE_COPY.ants);
   const queensRow = h(doc, "div", "d1-queens");
-  const counts = COLONIES.map(c => figure(doc, c, "d1-fig", `${colonyName(c)} standing: `));
+  const counts = COLONIES.map(c => figure(doc, c, "d1-fig", named, " standing: "));
   const lampLists = COLONIES.map(c => {
     const list = h(doc, "span", `d1-lamps c${c}`);
     list.setAttribute("role", "list");
@@ -108,7 +114,7 @@ export function mountDeck(doc: Document): Deck {
     const root = h(doc, "div", `d1-econ c${c}`);
     const values = measures.map(([key, label]) => {
       const cell = h(doc, "div", "d1-cell");
-      const value = figure(doc, c, "d1-mv");
+      const value = figure(doc, c, "d1-mv", named);
       cell.append(h(doc, "span", "d1-ml", label), value.node);
       root.append(cell);
       return { key, value: value.value };
@@ -168,10 +174,20 @@ export function mountDeck(doc: Document): Deck {
     setText(n.said, said);
   };
 
+  let shownNames = `${colonyName(0)}\n${colonyName(1)}`;
+  const writeNames = (setup: Parameters<typeof colonyName>[1]) => {
+    const names = `${colonyName(0, setup)}\n${colonyName(1, setup)}`;
+    if (names === shownNames) return;
+    shownNames = names;
+    for (const said of named) setText(said.node, `${colonyName(said.colony, setup)}${said.after}`);
+    for (const c of COLONIES) lampLists[c]!.setAttribute("aria-label", `${colonyName(c, setup)} queens`);
+  };
+
   return {
     score,
     economy: [economies[0]!.root, economies[1]!.root],
     update(frame) {
+      writeNames(frame?.board?.setup ?? null);
       setText(clockEl, clock(frame));
       flag(score, "is-ended", resultShown(frame));
       const bal = balance(frame);

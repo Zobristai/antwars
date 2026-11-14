@@ -18,11 +18,13 @@
  * coloured insect beside the pale-bodied workers even on a phone.
  * Soldiers never carry food, so they have no carrying frames.
  */
+import { colonyTint } from "./colony-palette.ts";
 import { Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, type Renderer } from "pixi.js";
 import { CORPSE_FADE_MS, type Frame } from "./buffer.ts";
 import { FOOD, FOOD_SHADE } from "./food.ts";
 import { Bites } from "./bite.ts";
 
+/** The rated names' colours (colony-palette.ts gives the match's own). */
 export const COLONY_TINT = [0xffb000, 0x00c2ff] as const;
 /** Corpses keep their colony accent, dulled. */
 const CORPSE_TINT = 0x8c8478;
@@ -224,27 +226,27 @@ export class Ants {
   constructor(renderer: Renderer, antPx: number, tilePx: number) {
     const g = new Graphics();
     for (const colony of [0, 1]) {
-      for (let f = 0; f < 3; f++) drawAnt(g, f * CELL_W, colony * CELL_H, f, false, COLONY_TINT[colony]!);
-      drawAnt(g, 3 * CELL_W, colony * CELL_H, 0, true, COLONY_TINT[colony]!);
+      for (let f = 0; f < 3; f++) drawAnt(g, f * CELL_W, colony * CELL_H, f, false, colonyTint(colony));
+      drawAnt(g, 3 * CELL_W, colony * CELL_H, 0, true, colonyTint(colony));
     }
     // Workers carrying a crumb, in rows 2 and 3: their own drawing, so the plain workers' stays as it was.
     const c = new Graphics();
     for (const colony of [0, 1]) {
-      for (let f = 0; f < 3; f++) drawAnt(c, f * CELL_W, (2 + colony) * CELL_H, f, false, COLONY_TINT[colony]!, true);
+      for (let f = 0; f < 3; f++) drawAnt(c, f * CELL_W, (2 + colony) * CELL_H, f, false, colonyTint(colony), true);
     }
     // Soldiers are drawn in worker units and scaled up as they are baked, so they stay crisp at their size.
     const s = new Graphics();
     s.position.set(0, SOLDIER_Y);
     s.scale.set(SOLDIER_SCALE);
     for (const colony of [0, 1]) {
-      for (let f = 0; f < 3; f++) drawSoldier(s, f * CELL_W, colony * CELL_H, f, COLONY_TINT[colony]!);
-      for (let jaw = 0; jaw < 2; jaw++) drawSoldier(s, (3 + jaw) * CELL_W, colony * CELL_H, 1, COLONY_TINT[colony]!, jaw);
+      for (let f = 0; f < 3; f++) drawSoldier(s, f * CELL_W, colony * CELL_H, f, colonyTint(colony));
+      for (let jaw = 0; jaw < 2; jaw++) drawSoldier(s, (3 + jaw) * CELL_W, colony * CELL_H, 1, colonyTint(colony), jaw);
     }
     // Keep the existing worker walk/corpse drawing untouched. Biting workers
     // have their own cells and explicit mandibles, not a changed walking pose.
     const b = new Graphics();
     for (const colony of [0, 1]) for (const carrying of [0, 1]) for (let jaw = 0; jaw < 2; jaw++) {
-      drawAnt(b, (4 + jaw) * CELL_W, (colony + 2 * carrying) * CELL_H, 1, false, COLONY_TINT[colony]!, !!carrying, jaw);
+      drawAnt(b, (4 + jaw) * CELL_W, (colony + 2 * carrying) * CELL_H, 1, false, colonyTint(colony), !!carrying, jaw);
     }
     const holder = new Container();
     holder.addChild(g, s, c, b);
