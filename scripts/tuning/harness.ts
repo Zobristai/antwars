@@ -7,7 +7,7 @@
 // and workers read and write only private files: the harness moves data in and out of the store (see store.ts).
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, hostname, loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -15,7 +15,7 @@ import { participantArgs, participate } from "./noise.ts";
 import { HARNESS_OPTIONS } from "./options.ts";
 import { functionTimes, type CpuProfile } from "./profile.ts";
 import { median, noiseBar, repetitionsFor, roundGain, sideOrder, type PairedSegment } from "./stats.ts";
-import { storeHas, storeRead, storeReadText, storeWrite } from "./store.ts";
+import { openStore, storeHas, storeRead, storeReadText, storeWrite } from "./store.ts";
 import { materialise, privateDir, resolveCommit, type PatchInput, type Tree } from "./trees.ts";
 import type { WorkerJob } from "./worker.ts";
 
@@ -35,8 +35,8 @@ const { positionals, values: o } = parseArgs({ allowPositionals: true, options: 
 const command = positionals[0];
 const storeArg = o.store ?? process.env.ANTWARS_TUNING_STORE;
 if (storeArg === undefined) throw new Error("give the shared store with --store <dir> or ANTWARS_TUNING_STORE");
-const STORE = resolve(storeArg);
-mkdirSync(STORE, { recursive: true });
+// Refused before any read or write unless this user owns it and nobody else can write to it (see store.ts).
+const STORE = openStore(resolve(storeArg));
 const int = (v: string | undefined, fallback: number, name: string): number => {
   const n = v === undefined ? fallback : Number(v);
   if (!Number.isSafeInteger(n) || n < 0) throw new Error(`--${name} must be a whole number`);
@@ -234,12 +234,12 @@ async function noise(): Promise<void> {
   const session = required(o.session, "session"), me = required(o.participant, "participant"), expect = int(o.expect, 3, "expect");
   const waitMs = int(o.wait, 600, "wait") * 1000, finishMs = int(o["finish-wait"], 172_800, "finish-wait") * 1000;
   const rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w), dir = join(STORE, "noise", session);
-  let base: Tree | undefined;
+  let base: Tree | undefined, admittedCount = 0;
   const timings: PairedTiming[] = [];
   const outcome = await participate({ root: STORE, dir, me, expect, waitMs, finishMs,
-    prepare: () => { base = tree(baseRef); },
+    prepare: list => { admittedCount = list.length; base = tree(baseRef); },
     measure: async () => {
-      const repetitions = repetitionsFor(JSON.parse(storeReadText(STORE, join(dir, "admitted.json"))).admitted.length);
+      const repetitions = repetitionsFor(admittedCount);
       for (let i = 0; i < repetitions; i++) timings.push(pairedTiming(base!, base!, w, rounds, window, `noise ${me} repetition ${i + 1}/${repetitions}`));
       return { participant: me, medians: timings.map(t => t.medianPairedGain), loaded: timings[0]!.loaded, roundGains: timings.map(t => t.roundGains) };
     },

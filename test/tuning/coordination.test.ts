@@ -10,11 +10,14 @@ import { HARNESS_OPTIONS } from "../../scripts/tuning/options.ts";
 import { functionTimes, type CpuProfile } from "../../scripts/tuning/profile.ts";
 import { storeWriteOnce } from "../../scripts/tuning/store.ts";
 
-// Record every file the noise coordination writes directly.
+// Record every file the noise coordination creates for writing.
 const written: string[] = [];
 vi.mock("node:fs", async original => {
   const fs = await original<typeof import("node:fs")>();
-  return { ...fs, writeFileSync: (file: any, ...rest: any[]) => { written.push(String(file)); return (fs.writeFileSync as any)(file, ...rest); } };
+  return { ...fs, openSync: (file: any, flags: any, ...rest: any[]) => {
+    if (typeof flags === "number" && (flags & fs.constants.O_CREAT) !== 0) written.push(String(file));
+    return (fs.openSync as any)(file, flags, ...rest);
+  } };
 });
 
 const parse = (args: string[]) => parseArgs({ args, options: HARNESS_OPTIONS, allowPositionals: true });
@@ -63,8 +66,7 @@ describe("noise coordination", () => {
     await Promise.all([participate(participant("a", 0, 10)), participate(participant("b", 0, 10))]);
     expect(written.length).toBeGreaterThan(0);
     for (const file of written) expect(basename(file)).toMatch(/^\.tmp-/);
-    for (const sub of ["arrivals", "ready", "results"]) expect(readdirSync(join(dir, "session", sub)).filter(n => n.startsWith("."))).toEqual([]);
-    expect(readdirSync(join(dir, "session", "results")).sort()).toEqual(["a.json", "b.json"]);
+    expect(readdirSync(join(dir, "session")).sort()).toEqual(["admitted.json", "arrival-a.json", "arrival-b.json", "ready-a.json", "ready-b.json", "result-a.json", "result-b.json"]);
   });
 
   it("lets only the first writer publish a first-writer-wins file", () => {

@@ -19,9 +19,17 @@ The store holds data only: it is read, never imported or run.
 **Trust.** The harness trusts processes running as its own operating-system user, and treats every other writer to
 the store as untrusted. So:
 
+- The store root must be owned by the user running the harness and not writable by group or others, and the directory
+  holding it must not let another user replace it. The harness creates every directory below the root itself, with
+  mode 755, and stops before any read or write if a store directory is a link, is owned by another user, or is
+  writable by group or others.
+- The one exception is each noise-check session directory, which is created sticky (mode 1777) so other participants
+  can add files to it but cannot rename or remove anyone else's. Files there are read only when they are plain files
+  owned by the harness's user.
 - Every store write goes to a fresh file created in the target directory and is then renamed over the final name.
   Readers never see a partial file, and a write replaces a link at that name rather than writing through it.
-- Every store read refuses a symbolic link, at the file or at any directory between the store root and it.
+- Every store read, and every file a write creates, refuses a symbolic link at the file or at any directory between
+  the store root and it.
 - Worker processes read and write only private files; the harness copies data into and out of the store.
 - `exact` always plays the candidate. It reads only the reference from the store, and only after checking it against
   the digest `regen` printed.
@@ -31,7 +39,7 @@ the store as untrusted. So:
 | `workloads/<commit>.json` | The workload `regen` generated at that commit. |
 | `references/<commit>/<horizon>/<path>/<scenario>.json` | Per-tick exactness digests that `regen` wrote at that commit. |
 | `checkpoints/<commit>/<scenario>/<tick>.json` | Saved match states, written when `regen` is given `--checkpoints`. |
-| `noise/<session>/` | Noise-check arrivals, the admitted list, readiness and each participant's results. |
+| `noise/<session>/` | Noise-check arrivals, the admitted list, readiness and each participant's results, in one sticky directory. |
 | `runs/`, `profiles/` | Every report, and every CPU profile. |
 
 Commits are any commit-ish of this checkout. `--patch <file> --patch-sha256 <hex>` applies a patch to the candidate's
