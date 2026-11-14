@@ -37,7 +37,9 @@ describe("rules-27 agent text describes the local worker rules", () => {
     const live = CONFIGS.live!;
     const concise = briefing(live);
     const r = live.localAnts!.defendTiles; // 3 tiles: 6 fine tiles at grid scale 2
-    expect(concise).toContain(`${LOCAL_ANT_LEAD} Active (not idle) colony seat: house bot off; none: on. Non-carrying ants outside squads/count marks bite in reach; within ${r} tiles of nearest live queen, pursue enemies within ${r} tiles of her. Otherwise free workers forage nearest colony-seen food and deliver to live nests;`);
+    // A new match carries the no-bot-moves rule; a config recorded before it still names the house bot.
+    expect(briefing({ ...live, localAnts: { ...live.localAnts!, everyColony: undefined } })).toContain(`${LOCAL_ANT_LEAD} Active (not idle) colony seat: house bot off; none: on. Non-carrying`);
+    expect(concise).toContain(`${LOCAL_ANT_LEAD} No house bot plans any colony, seated or not. Non-carrying ants outside squads/count marks bite in reach; within ${r} tiles of nearest live queen, pursue enemies within ${r} tiles of her. Otherwise free workers forage nearest colony-seen food and deliver to live nests;`);
     expect(concise).toContain("- Free workers: no remembered food available -> walk outward from nearest live nest until colony sees food. Count marks override; released workers resume where released.");
     expect(concise).toContain("Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies");
 
