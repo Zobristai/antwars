@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { COUNTDOWN_MS, createLobbies, LOBBY_TTL_MS, type LobbyOutcome, type LobbySettings } from "../../src/lobby/lobbies.ts";
 import { createRatings, RANKED_MODES } from "../../src/rating/ratings.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { FIRST_LOSS, FIRST_WIN } from "../rating/glicko-values.ts";
 import { glickoUpdate } from "../../src/rating/glicko.ts";
@@ -452,6 +453,8 @@ describe.skipIf(!host)("lobbies against the Firestore emulator", { timeout: 60_0
       creatorId: kay.identity.id, createdAt: w.clock.t, expiresAt: w.clock.t + LOBBY_TTL_MS,
       colonies: [[{ id: scout.identity.id, displayName: "Kite/Scout" }], [{ id: ann.identity.id, displayName: "Ann" }]],
       startsAt: w.clock.t + COUNTDOWN_MS, outcome: null, mode: null,
+      // A player-created lobby is unrated, so its match draws its colony names from its id.
+      colonyNames: drawColonyNames(lobby.id),
     });
     const stored = await w.raw(`lobbies/${lobby.id}`);
     expect(JSON.stringify(read)).not.toContain(stored!.inviteVerifier!);

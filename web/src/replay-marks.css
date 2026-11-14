@@ -25,8 +25,9 @@
 }
 .aw-mark-glyph { display: block; width: var(--aw-mark-size); height: var(--aw-mark-size); overflow: visible; fill: currentColor; stroke: #121719; stroke-width: 1.6; stroke-linejoin: round; }
 .aw-mark-glyph * { vector-effect: non-scaling-stroke; }
-:is(.aw-mark, .aw-mark-icon).c0 { color: var(--aw-c0); }
-:is(.aw-mark, .aw-mark-icon).c1 { color: var(--aw-c1); }
+/* A colony's colour: its name's (--aw-k0, --aw-k1, colony-palette.ts), else the rated names' (--aw-c0, --aw-c1). */
+:is(.aw-mark, .aw-mark-icon).c0 { color: var(--aw-k0, var(--aw-c0)); }
+:is(.aw-mark, .aw-mark-icon).c1 { color: var(--aw-k1, var(--aw-c1)); }
 .aw-mark-count {
   display: block; box-sizing: border-box; min-width: var(--aw-mark-count-width); height: var(--aw-mark-count-h); padding: 0 4px;
   border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1.5px var(--aw-ink);
@@ -44,8 +45,11 @@
 .aw-mark-icon { display: block; flex: none; color: var(--aw-ink); }
 .aw-mark-icon .aw-mark-glyph { width: var(--aw-mark-icon); height: var(--aw-mark-icon); }
 .aw-mark-words b { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
-.aw-mark-colony.c0 { color: var(--aw-c0); }
-.aw-mark-colony.c1 { color: var(--aw-c1); }
+.aw-mark-colony.c0 { color: var(--aw-k0, var(--aw-c0)); }
+.aw-mark-colony.c1 { color: var(--aw-k1, var(--aw-c1)); }
+/* A drawn name in a label takes the pointer, though the label takes none, so hovering it shows its source note
+   (replay-controls.ts keeps such a label a moment after the mouse leaves its mark). */
+.aw-mark-label .aw-mark-colony[title] { pointer-events: auto; }
 /* A long group's list is held to the room above the row (replay-controls.ts sets its max-height) and scrolls inside,
    its lines keeping their height; a line reached by keyboard focus scrolls into view. */
 .aw-mark-list {

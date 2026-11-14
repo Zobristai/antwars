@@ -161,6 +161,16 @@ describe("shared spectator HTTP routes", () => {
     expect(owners.slice(2).every(stream => stream.writes.length === 4)).toBe(true);
   });
 
+  it("names a listed unrated match as its lobby records it, so a match begun under the rated names keeps them", async () => {
+    const f = await fixture("public", false);
+    const listedNames = async () => (await (await request(f.gatewayOrigin, "/watch/catalog")).json()).matches
+      .map((match: { colonyNames?: unknown }) => match.colonyNames);
+    // An older server's match, handed over: its lobby records no drawn names, as its game and stream use none.
+    expect(await listedNames()).toEqual([undefined]);
+    f.lobbies.set(id, { ...f.lobbies.get(id)!, colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] });
+    expect(await listedNames()).toEqual([["Sweetwater Colony", "Lake Skinner Colony"]]);
+  });
+
   it("discovers the owner from another instance and forwards only the rated delayed stream", async () => {
     const f = await fixture("public");
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
