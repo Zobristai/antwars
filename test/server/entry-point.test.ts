@@ -11,7 +11,8 @@ import { createWatchRegistry } from "../../src/live/watch-registry.js";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
 import { memorySlot, tempDir } from "./helpers.js";
-import { POST_MORTEM_TOOL } from "../../src/accounts/postMortem.js";
+import { inResponseScope, POST_MORTEM_TOOL, type PostMortemQuery } from "../../src/accounts/postMortem.js";
+import { startServer, type GameServer } from "../../src/server.js";
 
 const servers: SpectatedServer[] = [];
 const clients: { client: Client; transport: StreamableHTTPClientTransport }[] = [];
@@ -143,4 +144,29 @@ it("serves match_post_mortem on the entry server only, never on a match slot", a
   const names = (await client.listTools()).tools.map(tool => tool.name);
   expect(names).toContain("locate_match");
   expect(names).not.toContain(POST_MORTEM_TOOL);
+});
+
+// Credible regression: the entry server's /mcp route no longer running a request in its response scope, or the tool no
+// longer handing the call its MCP request signal, so a request's calls are not limited to one answer and a cancelled or
+// closed caller's work is not stopped.
+it("runs a match_post_mortem call inside its request's response scope, with the call's own signal", async () => {
+  const { store } = memoryWatchStore();
+  const identities = createIdentities(store);
+  const accounts = { identities, lobbies: createLobbies(store, identities), ratings: createRatings(store, identities) };
+  const dir = tempDir(); dirs.push(dir);
+  const seen: { inScope: boolean; signal: boolean }[] = [];
+  const postMortem = { query: async (_query: PostMortemQuery, signal?: AbortSignal) => {
+    seen.push({ inScope: inResponseScope(), signal: signal instanceof AbortSignal });
+    return { ok: true as const, body: {} };
+  } };
+  const server: GameServer = await startServer({ port: 0, host: "127.0.0.1", dataDir: dir, accounts, postMortem });
+  try {
+    const client = new Client({ name: "entry-point-test", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`));
+    clients.push({ client, transport });
+    await client.connect(transport);
+    const result = await client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: "k", lobbyId: "l" } });
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect(seen).toEqual([{ inScope: true, signal: true }]);
+  } finally { await server.close(); }
 });

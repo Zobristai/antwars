@@ -12,6 +12,15 @@
  * A re-run starts only while the headroom holds the child's reserve (its V8 heap cap's measured peak), two scans and the
  * margin, checked afresh before each attempt, and a watchdog reading the meter every 50 ms kills the child once the
  * headroom falls below the margin. These figures were measured in tests, not in production.
+ *
+ * The margin is not all the watchdog's. The child may overshoot its reserve by up to 17 MiB (CHILD_RESERVE_MIB), and up
+ * to DELIVERY_BUDGET_MIB of replies may be held while their responses are delivered; both are taken from the margin, so
+ * with both at their largest a re-run is stopped sooner. The watchdog stops re-run children only: scans are bounded by
+ * the pool (two running, 16 queued), SCAN_RESERVE_MIB and their own five-minute read guard, a scan a departed caller
+ * asked for included. The watchdog catches a rise only if one sample interval's growth stays below the headroom it
+ * last read; synthetic probes in a test environment saw single-interval steps of up to 118 MiB of resident memory and 43 MiB
+ * of control-group memory. Those are observations, not bounds: no headroom is guaranteed. Not measured: a real re-run's
+ * or scan's steps, kernel and socket buffers (delivery slots do not bound them), production headroom, proxy buffering.
  */
 import { fork, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -30,8 +39,13 @@ export { paddedBits } from "./postMortemRecord.js";
 export const CHILD_RESERVE_MIB = 1100;
 /** Two concurrent worst-case refused-call scans, over a base read in the scanning process (tests: post-mortem-jobs.test.ts). */
 export const SCAN_RESERVE_MIB = 200;
-/** Above a real re-run's growth between two samples (tests: 114 MiB per 50 ms). */
+/** Above a real re-run's growth between two samples (tests: 114 MiB per 50 ms); shared as the header says. */
 export const MARGIN_MIB = 198;
+/**
+ * The most memory replies may hold while being delivered: DELIVERY_SLOTS (postMortem.ts) replies of at most REPLY_BYTES
+ * each, shaped, serialized as the tool's text and framed as JSON-RPC (tests: post-mortem-jobs.test.ts). Taken from MARGIN_MIB.
+ */
+export const DELIVERY_BUDGET_MIB = 32;
 export const SAMPLE_MS = 50;
 export const STALL_MS = 60_000;
 export const CHILD_FLAGS = ["--max-old-space-size=900", "--max-semi-space-size=8"] as const;

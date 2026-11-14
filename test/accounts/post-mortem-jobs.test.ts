@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  admits, cgroupMeter, CHILD_ENV, CHILD_FLAGS, createJobs, forkRerunChild, JobsBusy, MAX_RERUN_BITS, MEMORY_POLICY, overLimit, ownCgroup, paddedBits,
+  admits, cgroupMeter, CHILD_ENV, CHILD_FLAGS, createJobs, DELIVERY_BUDGET_MIB, forkRerunChild, JobsBusy, MAX_RERUN_BITS, MEMORY_POLICY, overLimit, ownCgroup, paddedBits,
   parseCgroupBytes, parseMemoryQuantity, RERUN_QUEUE, SAMPLE_MS, SCAN_CONCURRENCY, SCAN_QUEUE, STALL_MS, STDERR_TAIL_BYTES, validFindings, type Meter, type RerunOutcome,
 } from "../../src/accounts/postMortemJobs.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
@@ -753,3 +753,95 @@ describe("stall detection at the default limit", () => {
     expect(await stopped).toEqual({ kind: "stopped", cause: "stalled" });
   });
 });
+
+/**
+ * A record whose replies fill both pages of a reply: two seats of 7,200 commands each and 28,800 refused replies and
+ * stubs. Its size is not the point (pages are cut at their byte budget whatever the record's size); the point is that
+ * each owner's refused page and no-effect page are full.
+ */
+const FULL_PAGES_GENERATOR = `
+const SEATS = 2, CALLS = 7200;
+const out = process.stdout;
+const w = s => new Promise(r => out.write(s) ? r() : out.once("drain", r));
+(async () => {
+  await w('{"id":"x","rules":{"config":{"ticksPerSecond":10}},"result":{"winner":1,"reason":"time_up","tick":35999},"seats":[');
+  for (let s = 0; s < SEATS; s++) {
+    const commands = [];
+    for (let i = 0; i < CALLS; i++) commands.push(JSON.stringify({ tick: i * 5, type: "order", accepted: true, request: { type: "order", order: { kind: "go_to", tileX: i % 200, tileY: i % 60 } }, error: null }));
+    await w((s ? "," : "") + '{"seat":' + s + ',"colony":' + s + ',"handle":"h' + s + '","joinedTick":0,"commands":[' + commands.join(",") + "]}");
+  }
+  const events = [];
+  for (let i = 0; i < CALLS * SEATS; i++) events.push(JSON.stringify({ tick: Math.floor(i / SEATS) * 5, event: { kind: "call", agent: i % SEATS, call: "order", accepted: true, houseActivityTick: Math.floor(i / SEATS) * 5 } }));
+  await w('],"events":[' + events.join(",") + '],"rerun":{"seed":1,"stops":[],"abandonments":[],"idle":[],"houseActive":[]},"codeVersion":"' + "c".repeat(40) + '","replies":[');
+  const replies = [];
+  for (let i = 0; i < 2 * CALLS * SEATS; i++) {
+    const seat = i % SEATS;
+    replies.push(JSON.stringify(i % 2 ? { type: "stub", seat, tick: i >> 2, tool: "observe", receivedAt: 1e12 + i, answeredAt: 1e12 + i + 1, code: "call_rate" }
+      : { type: "reply", seat, tick: i >> 2, tool: "order", receivedAt: 1e12 + i, answeredAt: 1e12 + i + 1, isError: true, arguments: { since: i }, reply: { error: { code: "rate_limited", message: "One command per 10 s." } } }));
+  }
+  await w(replies.join(",") + "]}");
+})();`;
+
+// Credible regression: replies held for delivery outgrowing the budget taken from the margin, by a reply over its byte
+// cap, a slot count raised, or a reply built more than once per slot. Measured as heap and external memory still held
+// after garbage collection in a process of its own, over the real post-mortem with each owner's pages already kept; it
+// says nothing of kernel or socket buffers, which the slots do not bound.
+it("four replies of full pages, shaped, serialized and framed as the transport sends them, hold no more than the delivery budget", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "antwar-pm-replies-"));
+  const fixture = join(dir, "full-pages.json");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const gen = spawn(process.execPath, ["-e", FULL_PAGES_GENERATOR], { stdio: ["ignore", openSync(fixture, "w"), "inherit"] });
+      children.push(gen);
+      gen.once("exit", code => code === 0 ? resolve() : reject(new Error(`generator exited ${code}`)));
+    });
+    const root = new URL("../..", import.meta.url);
+    const script = `
+      const { createReadStream } = await import("node:fs");
+      const { createPostMortem, DELIVERY_SLOTS } = await import(${JSON.stringify(new URL("src/accounts/postMortem.ts", root).href)});
+      const { payload } = await import(${JSON.stringify(new URL("src/mcp/replies.ts", root).href)});
+      const lobby = { id: "lobby-1", state: "ended", colonies: [[{ id: "a", displayName: "a" }], [{ id: "b", displayName: "b" }]] };
+      const findings = { kind: "findings", tested: 14400, counts: [[0, 7200], [1, 7200]], bits: new Uint8Array(1800).fill(255), undecided: [] };
+      const postMortem = createPostMortem({
+        identities: { resolveKey: async key => ({ ok: true, value: { id: key } }) },
+        lobbies: { readLobby: async () => ({ ok: true, value: lobby }) },
+        registry: { read: async () => ({ replayId: "2026-10-20T02-00-00-000Z-9", visibility: "public", playbackFinished: true }), replayLobby: async () => ({ state: "none" }) },
+        history: { open: async () => createReadStream(${JSON.stringify(fixture)}) },
+        versions: { lookup: async () => "found" },
+        jobs: { scan: run => run(), rerun: () => ({ state: "running", outcome: Promise.resolve(findings) }), pending: () => undefined },
+      });
+      const ask = key => postMortem.query({ key, lobbyId: lobby.id });
+      await ask("a");
+      await new Promise(resolve => setTimeout(resolve, 50));
+      // Each owner's two pages read and kept, as a busy server would have them.
+      for (const key of ["a", "b"]) {
+        const reply = await ask(key);
+        if (!reply.ok || reply.body.noEffect.status !== "shown") throw new Error("no-effect not shown: " + JSON.stringify(reply.body).slice(0, 300));
+      }
+      const used = () => { const m = process.memoryUsage(); return m.heapUsed + m.external; };
+      gc(); gc();
+      const base = used();
+      const held = [];
+      for (let i = 0; i < DELIVERY_SLOTS; i++) {
+        const reply = await ask(i % 2 ? "b" : "a");
+        const result = payload(reply.body);
+        held.push({ reply, result, framed: "event: message\\ndata: " + JSON.stringify({ jsonrpc: "2.0", id: i, result }) + "\\n\\n" });
+      }
+      gc(); gc();
+      const retained = used() - base;
+      process.stdout.write(JSON.stringify({ retained, framed: held.map(h => h.framed.length),
+        remaining: held.map(h => [h.reply.body.refusedPage.remaining, h.reply.body.noEffectPage.remaining]) }));`;
+    const prober = spawn(process.execPath, ["--expose-gc", "--import", new URL("src/ts-resolve.mjs", root).href, "--input-type=module", "-e", script],
+      { stdio: ["ignore", "pipe", "inherit"] });
+    children.push(prober);
+    let out = "";
+    prober.stdout!.on("data", chunk => { out += chunk; });
+    const code = await new Promise(resolve => prober.once("exit", resolve));
+    expect(code).toBe(0);
+    const { retained, framed, remaining } = JSON.parse(out) as { retained: number; framed: number[]; remaining: [number, number][] };
+    if (process.env.ANTWAR_REPORT_PEAK) console.log(`four held replies: ${(retained / MIB).toFixed(1)} MiB retained; framed ${framed.join(", ")} chars`);
+    // Every reply's two pages are full: each stopped at its byte budget with entries remaining.
+    expect(remaining.every(([refused, noEffect]) => refused > 0 && noEffect > 0)).toBe(true);
+    expect(retained).toBeLessThanOrEqual(DELIVERY_BUDGET_MIB * MIB);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}, 120_000);

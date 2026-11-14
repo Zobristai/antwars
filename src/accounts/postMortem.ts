@@ -14,8 +14,9 @@
  * once its delayed playback has finished, so nothing reaches a seat during a match or precedes the spectator delay.
  * Nothing is stored or changed.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { addAbortSignal, type Readable } from "node:stream";
+import { addAbortSignal, finished, type Readable, type Writable } from "node:stream";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Identities } from "../identity/identities.js";
@@ -46,6 +47,11 @@ export const CACHE_BYTES = 8 * 1024 * 1024;
 /** A reply holds at most two pages and this much besides, two continuations included. */
 export const REPLY_HEADER_BYTES = 8 * 1024 + 2 * 16 * 1024;
 export const REPLY_BYTES = 2 * PAGE_BYTES + REPLY_HEADER_BYTES;
+/**
+ * Replies being delivered at once, per process: each holds its slot from just before it is shaped until its HTTP
+ * response has finished or closed (postMortemJobs.ts DELIVERY_BUDGET_MIB). Over this, a caller is told the server is busy.
+ */
+export const DELIVERY_SLOTS = 4;
 
 export const REFUSALS = {
   invalid_key: "That key is not valid.",
@@ -57,7 +63,8 @@ export const REFUSALS = {
   read_timed_out: "Reading this match's record took too long. Ask again later.",
   start_again: "This match's record changed, or that continuation is no longer valid. Ask again without a continuation to start from the first page.",
   still_reading: "Still reading this match's record. Ask again in a minute.",
-  busy: "The server is busy reading other records. Ask again in a minute.",
+  busy: "The server is busy with other post-mortems. Ask again in a minute.",
+  one_per_request: "Only one match_post_mortem call is answered per request. Send each call in a request of its own.",
   bad_arguments: "Send your key and exactly one of lobbyId or matchId, and any refusedContinuation or noEffectContinuation exactly as a reply gave it.",
 } as const;
 export type RefusalCode = keyof typeof REFUSALS;
@@ -177,6 +184,30 @@ interface PageOut { readonly entries: readonly (RefusedEntry | NoEffectEntry)[];
 interface CacheEntry { value: PageOut | NoEffectStatus | Initial; retryAfter?: number; bytes: number; kind: "page" | "initial" | "noEffect" }
 
 const refuse = (error: RefusalCode): PostMortemReply => ({ ok: false, body: { error, message: REFUSALS[error] } });
+
+/** One HTTP request's handling: whether its response is done, whether a call of it has been answered, and that answer's slot. */
+interface ResponseScope { closed: boolean; claimed: boolean; release: (() => void) | null }
+const responseScope = new AsyncLocalStorage<ResponseScope>();
+
+/**
+ * Runs one HTTP request's handling (server.ts /mcp) in its response scope, with one listener on the response however
+ * many calls the request carries. The request's calls then share it: the first whose ownership is proven is the one
+ * answered, a call stops its work once the response has finished or closed, and the answer's delivery slot is freed
+ * once the response is done with it.
+ */
+export function withResponseScope<T>(res: Writable, run: () => T): T {
+  // A response already done is seen at once; finished() would say so only on a later tick.
+  const scope: ResponseScope = { closed: res.destroyed || res.writableFinished, claimed: false, release: null };
+  finished(res, () => {
+    scope.closed = true;
+    const release = scope.release;
+    scope.release = null;
+    release?.();
+  });
+  return responseScope.run(scope, run);
+}
+/** Whether this code runs inside an HTTP request's response scope. */
+export const inResponseScope = (): boolean => responseScope.getStore() !== undefined;
 /** The longest continuation a caller may send back. */
 export const CONTINUATION_MAX = 16 * 1024;
 /** One record read, initial pass or page, is stopped after this long. */
@@ -253,6 +284,7 @@ export function createPostMortem(deps: PostMortemDeps) {
   let cacheBytes = 0;
   const work = new Map<string, Promise<unknown>>();
   const tokens = sealer();
+  let deliveries = 0;
 
   /**
    * Keeps a page, a first pass or a no-effect answer, most recent last. Over the byte or entry cap, pages are dropped
@@ -531,11 +563,24 @@ export function createPostMortem(deps: PostMortemDeps) {
     } catch { return refuse("ownership_unconfirmed"); }
   }
 
-  async function query(query: PostMortemQuery): Promise<PostMortemReply> {
+  /**
+   * One call. signal is the MCP request's own: the SDK aborts it when the client cancels the call (as its timeout does),
+   * then drops the reply. A caller that has gone, by that signal or by its HTTP response finishing or closing, or whose
+   * wait has run out, gets no further page, re-run, slot or reply; a first pass it started runs on for every owner.
+   */
+  async function query(query: PostMortemQuery, signal?: AbortSignal): Promise<PostMortemReply> {
     if (typeof query.key !== "string" || query.key === "" || (query.lobbyId == null) === (query.matchId == null)
       || !validContinuation(query.refusedContinuation) || !validContinuation(query.noEffectContinuation)) return refuse("bad_arguments");
+    const scope = responseScope.getStore();
     const auth = await authorize(query);
     if ("ok" in auth) return auth;
+    // Of one request's calls, only the first whose ownership is proven is answered.
+    if (scope !== undefined) {
+      if (scope.claimed) return refuse("one_per_request");
+      scope.claimed = true;
+    }
+    let timedOut = false;
+    const stopped = () => timedOut || scope?.closed === true || signal?.aborted === true;
     const { replayId, visibility, lobby, colonies } = auth;
     // A continuation is opened only once ownership is proven, and serves only this owner, this match and its own list.
     const colonyList = [...colonies].sort().join(",");
@@ -549,10 +594,10 @@ export function createPostMortem(deps: PostMortemDeps) {
     if (refusedCursor && noEffectCursor && !sameIdentity(refusedCursor.base.identity, noEffectCursor.base.identity)) return refuse("start_again");
     let timer: NodeJS.Timeout | undefined;
     try {
-      return await Promise.race([answer(replayId, visibility, lobby.id, colonies, query, refusedCursor, noEffectCursor),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new StillReading()), scanWaitMs); })]);
+      return await Promise.race([answer(replayId, visibility, lobby.id, colonies, query, refusedCursor, noEffectCursor, stopped, scope),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => { timedOut = true; reject(new StillReading()); }, scanWaitMs); })]);
     } catch (error) {
-      if (error instanceof StillReading) return refuse("still_reading");
+      if (error instanceof StillReading || error instanceof Stopped) return refuse("still_reading");
       if (error instanceof JobsBusy) return refuse("busy");
       if (error instanceof MissingRecord) return refuse("record_unavailable");
       if (error instanceof RecordChanged) return refuse("start_again");
@@ -561,9 +606,14 @@ export function createPostMortem(deps: PostMortemDeps) {
     } finally { clearTimeout(timer); }
   }
 
-  /** The reply to an owner whose ownership is proven: its first pass (on a fresh start), then each list's page. */
+  /**
+   * The reply to an owner whose ownership is proven: its first pass (on a fresh start), then each list's page. Once
+   * stopped() (the caller gone or its wait run out), nothing more is read, re-run or shaped for it: it is checked after
+   * the first pass, between the two pages, and before the reply's slot is taken. A first pass already asked for runs on
+   * in the scan pool, under its own guard, and is kept for the next caller.
+   */
   async function answer(replayId: string, visibility: "public" | "private", lobbyId: string, colonies: ReadonlySet<number>, query: PostMortemQuery,
-    refusedCursor: Cursor | undefined, noEffectCursor: Cursor | undefined): Promise<PostMortemReply> {
+    refusedCursor: Cursor | undefined, noEffectCursor: Cursor | undefined, stopped: () => boolean, scope: ResponseScope | undefined): Promise<PostMortemReply> {
     let initial: Initial | undefined;
     let base: Base;
     const carried = refusedCursor ?? noEffectCursor;
@@ -572,16 +622,26 @@ export function createPostMortem(deps: PostMortemDeps) {
       initial = await shared(initialKey(replayId), "initial", () => initialPass(replayId, visibility, lobbyId));
       base = baseOf(initial, replayId, visibility, lobbyId, colonies);
     }
+    if (stopped()) throw new Stopped();
     // The owned colonies hold none of the record's seats: nothing of this record is the caller's.
     if (base.seats.length === 0) return refuse("ownership_unconfirmed");
     let status: NoEffectStatus | null = visibility === "private"
       ? { status: "not_available", reason: "No-effect commands are not available for private matches." }
       : noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? null;
     if (visibility === "public") {
-      const first = initial ?? recall(initialKey(replayId))?.value as Initial | undefined;
       const entry = noEffectEntry(replayId, base.identity);
       const due = entry === undefined || (entry.value as NoEffectStatus).status === "not_computed_now" && entry.retryAfter !== undefined && now() >= entry.retryAfter;
-      if (due && first !== undefined && sameIdentity(first.identity, base.identity)) startNoEffect(replayId, first);
+      if (due) {
+        // A continuation whose first pass and no-effect answer were both dropped from the cache reads the first pass
+        // again, so the re-run can start again; a first pass of other bytes means the record changed.
+        let first = initial ?? recall(initialKey(replayId))?.value as Initial | undefined;
+        if (first === undefined) {
+          first = await shared(initialKey(replayId), "initial", () => initialPass(replayId, visibility, lobbyId));
+          if (stopped()) throw new Stopped();
+        }
+        if (!sameIdentity(first.identity, base.identity)) throw new RecordChanged();
+        startNoEffect(replayId, first);
+      }
       status = noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? status;
     }
     const refusedAt = refusedCursor ?? firstCursor(base, "refused", null);
@@ -592,17 +652,34 @@ export function createPostMortem(deps: PostMortemDeps) {
       if (!matches(base, findings)) status = tryLater("the record could not be matched with its re-run");
       else if (noEffectCursor !== undefined && noEffectCursor.findingsDigest !== findingsDigest(findings)) throw new RecordChanged();
       else {
+        if (stopped()) throw new Stopped();
         const at = noEffectCursor ?? firstCursor(base, "noEffect", findings);
         noEffect = { cursor: at, page: await pageOf(at, noEffectCursor ? `page ${sha256(query.noEffectContinuation!)}` : firstKey(at), findings) };
       }
     }
-    return { ok: true, body: shape(base, status, { cursor: refusedAt, page: refused }, noEffect) };
+    if (stopped()) throw new Stopped();
+    // The reply's delivery slot: held until its HTTP response has finished or closed, or, outside one, until it is shaped.
+    if (deliveries >= DELIVERY_SLOTS) return refuse("busy");
+    deliveries++;
+    let held = true;
+    const release = () => { if (held) { held = false; deliveries--; } };
+    try {
+      return { ok: true, body: shape(base, status, { cursor: refusedAt, page: refused }, noEffect) };
+    } finally {
+      if (scope !== undefined) scope.release = release;
+      else release();
+    }
   }
 
-  return { query };
+  /** Replies holding a delivery slot now. */
+  const deliveriesHeld = () => deliveries;
+
+  return { query, deliveriesHeld };
 }
 
 class StillReading extends Error {}
+/** The caller has gone, or its wait has run out: nothing more is done for it. */
+class Stopped extends Error {}
 class MissingRecord extends Error {}
 class ReadTimedOut extends Error {}
 
@@ -688,9 +765,9 @@ function shape(base: Base, status: NoEffectStatus | null, refused: { cursor: Cur
   };
 }
 
-export const POST_MORTEM_DESCRIPTION = "After a match you played has ended and its delayed playback has finished: which of your seats' calls were refused (tool, error code, the time the server received the call, and the recorded tick with how it was taken: the tick the call was answered at, or the simulation step that refused it, plus the tick a viewer of the match sees it at and that viewer's seconds where the match records a tick rate), and, for a public match whose re-run reproduces its stored record, which accepted commands had no effect (with the same times, and commandIndex: the command's 0-based position in its seat's commands list in the published match record, which tells apart commands of one type in one step; calls refused before reaching the game may be absent from that list). Needs the key of the identity that held the seat, and exactly one of lobbyId or matchId. Shows only your own seats. Where the stored records cannot establish who held a seat, ownership can't be confirmed and nothing is shown. Private matches, records without re-run data, records whose re-run does not reproduce and records too large to re-run within the re-run's fixed memory limits say no-effect commands are not available; refused calls are still shown. A re-run can take minutes: until then noEffect says so, and asking again later shows the result. Long lists come in pages: refusedPage and noEffectPage give each list's total, how many remain and how far into the record the page read, and, where more remain, a continuation: ask again with it as refusedContinuation or noEffectContinuation for the next page. Reading a large record can take a while: until a page is ready the tool says to ask again. If the record changes, or the server restarts, a continuation stops working: ask again without one to start from the first page.";
+export const POST_MORTEM_DESCRIPTION = "After a match you played has ended and its delayed playback has finished: which of your seats' calls were refused (tool, error code, the time the server received the call, and the recorded tick with how it was taken: the tick the call was answered at, or the simulation step that refused it, plus the tick a viewer of the match sees it at and that viewer's seconds where the match records a tick rate), and, for a public match whose re-run reproduces its stored record, which accepted commands had no effect (with the same times, and commandIndex: the command's 0-based position in its seat's commands list in the published match record, which tells apart commands of one type in one step; calls refused before reaching the game may be absent from that list). Needs the key of the identity that held the seat, and exactly one of lobbyId or matchId. Shows only your own seats. Where the stored records cannot establish who held a seat, ownership can't be confirmed and nothing is shown. Private matches, records without re-run data, records whose re-run does not reproduce and records too large to re-run within the re-run's fixed memory limits say no-effect commands are not available; refused calls are still shown. A re-run can take minutes: until then noEffect says so, and asking again later shows the result. Long lists come in pages: refusedPage and noEffectPage give each list's total, how many remain and how far into the record the page read, and, where more remain, a continuation: ask again with it as refusedContinuation or noEffectContinuation for the next page. Reading a large record can take a while: until a page is ready the tool says to ask again. If the record changes, or the server restarts, a continuation stops working: ask again without one to start from the first page. Only one match_post_mortem call is answered per request: send each call in a request of its own.";
 
-export function registerPostMortemTool(server: McpServer, postMortem: ReturnType<typeof createPostMortem>, options: { seatClientAdmission?: boolean } = {}): void {
+export function registerPostMortemTool(server: McpServer, postMortem: Pick<ReturnType<typeof createPostMortem>, "query">, options: { seatClientAdmission?: boolean } = {}): void {
   server.registerTool(POST_MORTEM_TOOL, {
     description: POST_MORTEM_DESCRIPTION,
     inputSchema: {
@@ -700,9 +777,9 @@ export function registerPostMortemTool(server: McpServer, postMortem: ReturnType
       refusedContinuation: z.string().max(CONTINUATION_MAX).nullish().describe("For the next page of refused calls: a reply's refusedPage.continuation, exactly as given."),
       noEffectContinuation: z.string().max(CONTINUATION_MAX).nullish().describe("For the next page of no-effect commands: a reply's noEffectPage.continuation, exactly as given."),
     },
-  }, async (args) => {
+  }, async (args, extra) => {
     if (options.seatClientAdmission === true && refusesSeatClient(server)) return accountRefusal();
-    const reply = await postMortem.query(args);
+    const reply = await postMortem.query(args, extra.signal);
     return payload({ ...reply.body }, !reply.ok);
   });
 }

@@ -3,23 +3,27 @@
 // registry over one in-memory store, records generated here by the real simulation and record builder, and re-runs in
 // the real forked child. Ownership is by the lobby's seat identity ids only.
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer, get as httpGet, type Server } from "node:http";
+import { createServer, get as httpGet, request as httpRequest, type ClientRequest, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { gzipSync } from "node:zlib";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
-  CALL_IDLE_NOTE, createPostMortem, NO_EFFECT_NOTE, noEffectOf, ownedColonies, ownNoEffect, REFUSALS, REPLY_BYTES, TICKS_ONLY_NOTE, TIME_NOT_RECORDED, timeOf,
-  TOO_LARGE, undecidedSentence,
+  CALL_IDLE_NOTE, createPostMortem, DELIVERY_SLOTS, NO_EFFECT_NOTE, noEffectOf, ownedColonies, ownNoEffect, POST_MORTEM_DESCRIPTION, POST_MORTEM_TOOL, REFUSALS,
+  registerPostMortemTool, REPLY_BYTES, TICKS_ONLY_NOTE, TIME_NOT_RECORDED, timeOf, TOO_LARGE, undecidedSentence, withResponseScope,
 } from "../../src/accounts/postMortem.ts";
 import { packFindings, rerunRecord, sameState, unpackFindings, type RerunAnswer } from "../../src/accounts/postMortemChild.ts";
-import { createJobs, type PostMortemJobs, type RecordOpener, type RerunOutcome } from "../../src/accounts/postMortemJobs.ts";
+import { createJobs, JobsBusy, type PostMortemJobs, type RecordOpener, type RerunOutcome } from "../../src/accounts/postMortemJobs.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
 import type { VersionAnswer, VersionSource } from "../../src/accounts/postMortemVersion.ts";
 import { encodePublicMessage } from "../../src/live/format.ts";
+import { payload } from "../../src/mcp/replies.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
@@ -1504,5 +1508,455 @@ describe("a read that takes too long", () => {
     f.history.open.mockImplementationOnce(async () => new Readable({ read() { if (!sent) { sent = true; this.push(body.subarray(0, 10)); } } }));
     expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual({ ok: false, body: { error: "read_timed_out", message: REFUSALS.read_timed_out } });
     expect((await f.postMortem.query({ key: alice.key, lobbyId })).ok).toBe(true);
+  });
+});
+
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>(resolve => { open = resolve; });
+  return { opened, open };
+}
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const refusal = (error: keyof typeof REFUSALS) => ({ ok: false, body: { error, message: REFUSALS[error] } });
+/** A response that never finishes until the test ends or destroys it. */
+const openResponse = () => new Writable({ write(_chunk, _encoding, done) { done(); } });
+
+const closers: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const close of closers.splice(0)) await close(); });
+
+/**
+ * The tool served for real: a real McpServer, the real MCP handler and StreamableHTTPServerTransport (stateful, SSE, as
+ * the entry server serves it), behind an HTTP server that runs each request in its response scope as server.ts does.
+ * A gated test tool "slow" holds a request open; "noop" answers at once.
+ */
+async function overHttp(f: ReturnType<typeof world>) {
+  const slow = gate();
+  const h = await startHarness({ start: false, extraTools: server => {
+    registerPostMortemTool(server, f.postMortem);
+    server.registerTool("slow", { description: "Answers once the test lets it." }, async () => { await slow.opened; return payload({ slow: true }); });
+    server.registerTool("noop", { description: "Answers at once." }, async () => payload({ noop: true }));
+  } });
+  const posts: { name: string; res: ServerResponse }[] = [];
+  const server = createServer((req, res) => {
+    if (req.method === "POST") posts.push({ name: String(req.headers["x-test-request"] ?? ""), res });
+    void withResponseScope(res, () => h.handler.handle(req, res));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
+  const client = new Client({ name: "post-mortem-test", version: "0.0.0" });
+  const transport = new StreamableHTTPClientTransport(url);
+  await client.connect(transport);
+  const live: ClientRequest[] = [];
+  closers.push(async () => {
+    for (const req of live) req.destroy();
+    slow.open();
+    await client.close().catch(() => {});
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await h.close();
+  });
+  /** POST responses not yet finished or closed. */
+  const openPosts = () => posts.filter(p => !p.res.writableFinished && !p.res.destroyed);
+  /** One raw POST of one message or a batch, its SSE replies collected by id. */
+  function post(name: string, messages: readonly Record<string, unknown>[]) {
+    const replies = new Map<unknown, any>();
+    const waiters: (() => void)[] = [];
+    let buffer = "";
+    let ended!: () => void;
+    const done = new Promise<void>(resolve => { ended = resolve; });
+    const req = httpRequest(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream",
+      "mcp-session-id": transport.sessionId!, "mcp-protocol-version": LATEST_PROTOCOL_VERSION, "x-test-request": name } }, res => {
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => {
+        buffer += chunk;
+        for (let at = buffer.indexOf("\n\n"); at >= 0; at = buffer.indexOf("\n\n")) {
+          for (const line of buffer.slice(0, at).split("\n")) if (line.startsWith("data: ")) { const message = JSON.parse(line.slice(6)); replies.set(message.id, message); }
+          buffer = buffer.slice(at + 2);
+        }
+        for (const wake of waiters.splice(0)) wake();
+      });
+      res.on("end", ended);
+      res.on("close", ended);
+    });
+    // The test's own teardown destroys requests still open.
+    req.on("error", () => {});
+    live.push(req);
+    req.end(JSON.stringify(messages.length === 1 ? messages[0] : messages));
+    return {
+      replies, done,
+      async reply(id: number) { while (!replies.has(id)) await new Promise<void>(resolve => waiters.push(resolve)); return replies.get(id); },
+    };
+  }
+  return { client, slow, posts, openPosts, post };
+}
+const toolCall = (id: number, name: string, args: Record<string, unknown> = {}) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+const served = (message: any) => message.result.isError !== true && typeof message.result.structuredContent?.matchId === "string";
+const refusalOf = (message: any) => message.result.isError === true ? message.result.structuredContent.error as string : null;
+/** Lobby reads made to prove ownership, the first of them held until the gate opens. */
+function holdOwnership(f: ReturnType<typeof world>) {
+  const readLobby = f.lobbies.readLobby.bind(f.lobbies);
+  const held = gate();
+  const spy = vi.spyOn(f.lobbies, "readLobby").mockImplementationOnce(async id => { await held.opened; return readLobby(id); });
+  return { ...held, spy };
+}
+/** Record reads from now on, the nth of them held until the gate opens. */
+function holdRead(f: ReturnType<typeof world>, nth: number) {
+  const open = f.history.open.getMockImplementation()!;
+  const held = gate();
+  let n = 0;
+  f.history.open.mockImplementation(async (id: string) => { if (++n === nth) await held.opened; return open(id); });
+  return held;
+}
+
+describe("a caller that has gone", () => {
+  // Credible regression: the SDK's cancellation (a client's timeout) not treated as the caller going while its POST stays
+  // open, so a page is read and a reply shaped, holding a slot, for a reply the SDK drops.
+  it("on a real client's timeout during the ownership check, starts one first pass and reads, re-runs and delivers nothing more, its POST still open", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, scanWaitMs: 5_000 });
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const { lobbyId, id } = f.match(500, [[alice, 0], [bob, 1]]);
+    const ownership = holdOwnership(f);
+    const asked = vi.spyOn(f.postMortem, "query");
+    const http = await overHttp(f);
+    await expect(http.client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: alice.key, lobbyId } }, undefined, { timeout: 200 })).rejects.toThrow(/timed out/i);
+    await vi.waitFor(() => expect(asked.mock.calls[0]?.[1]?.aborted).toBe(true));
+    ownership.open();
+    expect(await asked.mock.results[0]!.value).toEqual(refusal("still_reading"));
+    // Its first pass was read, once; no page, no re-run, no slot; the cancelled call's POST never ends.
+    expect(f.history.open).toHaveBeenCalledTimes(1);
+    expect(held.started).toEqual([]);
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+    expect(http.openPosts()).toHaveLength(1);
+    // A later live ask reads no first pass again: only its first page; and starts the re-run.
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(reply.ok).toBe(true);
+    expect(f.history.open).toHaveBeenCalledTimes(2);
+    expect(held.started).toEqual([id]);
+  });
+
+  // Credible regression: the stop check before the slot removed, so a caller that went during its page read has its
+  // reply shaped and a slot held by a response the SDK never finishes.
+  it("on a real client's timeout during a page read, shapes nothing and holds no slot, its POST still open", async () => {
+    const f = world({ jobs: heldJobs().jobs, scanWaitMs: 5_000 });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(501, [[alice, 0]]);
+    const page = holdRead(f, 2);
+    const asked = vi.spyOn(f.postMortem, "query");
+    const http = await overHttp(f);
+    await expect(http.client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: alice.key, lobbyId } }, undefined, { timeout: 200 })).rejects.toThrow(/timed out/i);
+    await vi.waitFor(() => expect(asked.mock.calls[0]?.[1]?.aborted).toBe(true));
+    expect(f.history.open).toHaveBeenCalledTimes(2);
+    page.open();
+    expect(await asked.mock.results[0]!.value).toEqual(refusal("still_reading"));
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+    expect(http.openPosts()).toHaveLength(1);
+  });
+
+  // Credible regression: departed callers each starting their own first pass, or one not starting any.
+  it("shares one first pass between live askers and departed owners of a record", async () => {
+    const f = world({ jobs: heldJobs().jobs, scanWaitMs: 5_000 });
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const { lobbyId } = f.match(502, [[alice, 0], [bob, 1]]);
+    const firstPass = holdRead(f, 1);
+    const gone = () => { const c = new AbortController(); c.abort(); return c.signal; };
+    const asks = [f.postMortem.query({ key: alice.key, lobbyId }, gone()), f.postMortem.query({ key: alice.key, lobbyId }),
+      f.postMortem.query({ key: bob.key, lobbyId }), f.postMortem.query({ key: alice.key, lobbyId }), f.postMortem.query({ key: bob.key, lobbyId }, gone())];
+    await vi.waitFor(() => expect(f.history.open).toHaveBeenCalledTimes(1));
+    await sleep(50);
+    expect(f.history.open).toHaveBeenCalledTimes(1);
+    firstPass.open();
+    const replies = await Promise.all(asks);
+    expect([replies[0], replies[4]]).toEqual([refusal("still_reading"), refusal("still_reading")]);
+    expect(replies.slice(1, 4).every(reply => reply.ok)).toBe(true);
+  });
+
+  // Credible regression: a departed non-owner triggering a record read or scan.
+  it("reads no record for a departed non-owner, only the lobby that refuses it", async () => {
+    const scan = vi.fn((run: () => Promise<unknown>) => run());
+    const f = world({ jobs: { ...heldJobs().jobs, scan: scan as PostMortemJobs["scan"] } });
+    const alice = f.w.played("alice"), carol = f.w.played("carol");
+    const { lobbyId } = f.match(503, [[alice, 0]]);
+    const readLobby = vi.spyOn(f.lobbies, "readLobby");
+    const c = new AbortController(); c.abort();
+    expect(await f.postMortem.query({ key: carol.key, lobbyId }, c.signal)).toEqual(UNCONFIRMED);
+    expect(readLobby).toHaveBeenCalled();
+    expect(f.history.open).not.toHaveBeenCalled();
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  // Credible regression: a departed owner's continuation reading a page or its first pass.
+  it("reads nothing for a departed owner's continuation", async () => {
+    const f = world({ jobs: heldJobs().jobs });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(504, [[alice, 0]], { record: manyRefusals(replayId(504), 3000) });
+    const continuation = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId })).refusedPage.continuation as string;
+    const opens = f.history.open.mock.calls.length;
+    const c = new AbortController(); c.abort();
+    expect(await f.postMortem.query({ key: alice.key, lobbyId, refusedContinuation: continuation }, c.signal)).toEqual(refusal("still_reading"));
+    expect(f.history.open.mock.calls.length).toBe(opens);
+  });
+
+  // Credible regression: a full scan pool's refusal escaping as an unhandled rejection, or holding a slot, for a departed owner.
+  it("drops a departed owner's busy scan pool quietly, holding no slot", async () => {
+    const f = world({ jobs: { ...heldJobs().jobs, scan: () => Promise.reject(new JobsBusy()) } });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(505, [[alice, 0]]);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const c = new AbortController(); c.abort();
+      expect(await f.postMortem.query({ key: alice.key, lobbyId }, c.signal)).toEqual(refusal("busy"));
+      await sleep(20);
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(f.postMortem.deliveriesHeld()).toBe(0);
+    } finally { process.off("unhandledRejection", unhandled); }
+  });
+});
+
+describe("waiting for a record's first pass", () => {
+  // Credible regression: the wait timed from the call's start, so an owner whose ownership check outlasts it never
+  // reaches its first pass.
+  it("serves an owner whose ownership check outlasts the wait", async () => {
+    const f = world({ jobs: heldJobs().jobs, scanWaitMs: 1_000 });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(510, [[alice, 0]]);
+    const ownership = holdOwnership(f);
+    const firstPass = holdRead(f, 1);
+    const started = performance.now();
+    let answered = false;
+    const ask = f.postMortem.query({ key: alice.key, lobbyId }).finally(() => { answered = true; });
+    await sleep(1_500);
+    expect(performance.now() - started).toBeGreaterThan(1_000);
+    expect(answered).toBe(false);
+    expect(f.history.open).not.toHaveBeenCalled();
+    ownership.open();
+    // Its first pass takes a little of the wait, which starts only once ownership is proven.
+    await vi.waitFor(() => expect(f.history.open).toHaveBeenCalledTimes(1));
+    await sleep(100);
+    firstPass.open();
+    const reply = await ask;
+    expect(reply.ok).toBe(true);
+    expect(seatsOf(reply)).toEqual([0]);
+  });
+
+  // Credible regression: the ownership check raced against the wait, so a slow non-owner is told to ask again.
+  it("refuses a non-owner whose ownership check outlasts the wait exactly as any non-owner, reading nothing", async () => {
+    const f = world({ jobs: heldJobs().jobs, scanWaitMs: 100 });
+    const alice = f.w.played("alice"), carol = f.w.played("carol");
+    const { lobbyId } = f.match(511, [[alice, 0]]);
+    const ownership = holdOwnership(f);
+    const ask = f.postMortem.query({ key: carol.key, lobbyId });
+    await sleep(300);
+    ownership.open();
+    expect(await ask).toEqual(UNCONFIRMED);
+    expect(f.history.open).not.toHaveBeenCalled();
+  });
+
+  // Credible regression: the wait removed, so an owner waits on a slow first pass past its client's own deadline.
+  it("tells an owner to ask again once the wait runs out, while the first pass is still held", async () => {
+    const f = world({ jobs: heldJobs().jobs, scanWaitMs: 100 });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(512, [[alice, 0]]);
+    const firstPass = holdRead(f, 1);
+    const reply = await Promise.race([f.postMortem.query({ key: alice.key, lobbyId }), sleep(5_000).then(() => "no answer")]);
+    expect(reply).toEqual(refusal("still_reading"));
+    firstPass.open();
+  });
+
+  // Credible regression: the stop check after the first pass removed, so a timed-out ask reads a page and starts a re-run
+  // for nobody.
+  it("after the wait has run out, reads no page and starts no re-run, and keeps the first pass for the next ask", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, scanWaitMs: 100 });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(513, [[alice, 0]]);
+    const firstPass = holdRead(f, 1);
+    const asked = vi.spyOn(f.postMortem, "query");
+    expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual(refusal("still_reading"));
+    firstPass.open();
+    // The timed-out ask's own work ends once its first pass has been read.
+    await sleep(100);
+    expect(f.history.open).toHaveBeenCalledTimes(1);
+    expect(held.started).toEqual([]);
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+    expect(asked).toHaveBeenCalledTimes(1);
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(reply.ok).toBe(true);
+    expect(f.history.open).toHaveBeenCalledTimes(2);
+    expect(held.started).toEqual([id]);
+  });
+});
+
+describe("one answer per request", () => {
+  // Credible regression: several calls of one request each building a reply (no claim), the claim taken before ownership
+  // is proven, or a listener added to the response per call.
+  it("answers one proven owner's call of a batch, refuses the others one per request and a non-owner as any, with one response listener", async () => {
+    const f = world({ jobs: heldJobs().jobs });
+    const alice = f.w.played("alice"), bob = f.w.played("bob"), carol = f.w.played("carol");
+    const { lobbyId } = f.match(520, [[alice, 0], [bob, 1]]);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId })).ok).toBe(true);
+    const http = await overHttp(f);
+    const batch = (base: number) => [toolCall(base, POST_MORTEM_TOOL, { key: carol.key, lobbyId }),
+      ...[1, 2, 3, 4, 5].map(i => toolCall(base + i, POST_MORTEM_TOOL, { key: i % 2 ? alice.key : bob.key, lobbyId })), toolCall(base + 9, "slow")];
+    const one = http.post("one", batch(10)), two = http.post("two", batch(20));
+    const noop = http.post("noop", [...[1, 2, 3, 4, 5, 6].map(i => toolCall(30 + i, "noop")), toolCall(39, "slow")]);
+    for (const [request, base] of [[one, 10], [two, 20]] as const) {
+      const replies = await Promise.all([0, 1, 2, 3, 4, 5].map(i => request.reply(base + i)));
+      expect(refusalOf(replies[0])).toBe("ownership_unconfirmed");
+      expect(replies.slice(1).filter(served)).toHaveLength(1);
+      expect(replies.slice(1).map(refusalOf).filter(code => code === "one_per_request")).toHaveLength(4);
+    }
+    await Promise.all([1, 2, 3, 4, 5, 6].map(i => noop.reply(30 + i)));
+    // Both batches held open by "slow": each holds its one slot; a separate owner's request is still served.
+    expect(http.openPosts().map(p => p.name).sort()).toEqual(["noop", "one", "two"]);
+    expect(f.postMortem.deliveriesHeld()).toBe(2);
+    const single = http.post("single", [toolCall(40, POST_MORTEM_TOOL, { key: alice.key, lobbyId })]);
+    expect(served(await single.reply(40))).toBe(true);
+    await single.done;
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(2));
+    // One listener per request however many post-mortem calls it carries: the batch of six such calls has as many
+    // close listeners on its response as a batch of six other calls.
+    const listeners = (name: string) => http.posts.find(p => p.name === name)!.res.listenerCount("close");
+    expect(listeners("one")).toBe(listeners("noop"));
+    expect(listeners("two")).toBe(listeners("noop"));
+    http.slow.open();
+    await Promise.all([one.done, two.done, noop.done]);
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(0));
+  });
+
+  // Credible regression: the answered call chosen by batch order, not by whose ownership is proven first.
+  it("answers the call whose ownership is proven first, whatever its place in the batch", async () => {
+    const f = world({ jobs: heldJobs().jobs });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(521, [[alice, 0]]);
+    const http = await overHttp(f);
+    const ownership = holdOwnership(f);
+    const request = http.post("order", [toolCall(1, POST_MORTEM_TOOL, { key: alice.key, lobbyId }), toolCall(2, POST_MORTEM_TOOL, { key: alice.key, lobbyId })]);
+    expect(served(await request.reply(2))).toBe(true);
+    ownership.open();
+    expect(refusalOf(await request.reply(1))).toBe("one_per_request");
+  });
+
+  it("states the rule in its refusal and in the tool's description", () => {
+    expect(REFUSALS.one_per_request).toBe("Only one match_post_mortem call is answered per request. Send each call in a request of its own.");
+    expect(POST_MORTEM_DESCRIPTION).toContain("Only one match_post_mortem call is answered per request: send each call in a request of its own.");
+  });
+});
+
+describe("delivery slots", () => {
+  // Credible regression: a delivered reply's slot freed when its call returns, while its response, still open, holds it.
+  it("keeps a delivered reply's slot until its response has finished", async () => {
+    const f = world({ jobs: heldJobs().jobs });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(530, [[alice, 0]]);
+    const http = await overHttp(f);
+    const request = http.post("held", [toolCall(1, POST_MORTEM_TOOL, { key: alice.key, lobbyId }), toolCall(2, "slow")]);
+    const delivered = await request.reply(1);
+    expect(served(delivered)).toBe(true);
+    expect(delivered.result.structuredContent).toMatchObject({ matchId: id, lobbyId, seats: [{ seat: 0 }] });
+    expect(http.openPosts().map(p => p.name)).toEqual(["held"]);
+    expect(f.postMortem.deliveriesHeld()).toBe(1);
+    http.slow.open();
+    await request.done;
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(0));
+  });
+
+  // Credible regression: slots unbounded, held during scan waits, or never freed when a response finishes or closes.
+  it("holds at most four, none while waiting on a scan, each freed once its response finishes or closes", async () => {
+    const f = world({ jobs: heldJobs().jobs, scanWaitMs: 5_000 });
+    const alice = f.w.played("alice");
+    const { lobbyId } = f.match(531, [[alice, 0]]);
+    const waiting = f.match(532, [[alice, 0]]);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId })).ok).toBe(true);
+    // Four asks waiting on another record's first pass hold no slot: a kept record is served meanwhile, outside any request.
+    const firstPass = holdRead(f, 1);
+    const responses = [0, 1, 2, 3].map(() => openResponse());
+    const waits = responses.map(res => withResponseScope(res, () => f.postMortem.query({ key: alice.key, lobbyId: waiting.lobbyId })));
+    await vi.waitFor(() => expect(f.history.open).toHaveBeenCalledTimes(3));
+    const kept = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(kept.ok).toBe(true);
+    expect(f.postMortem.deliveriesHeld()).toBe(0);
+    firstPass.open();
+    expect((await Promise.all(waits)).every(reply => reply.ok)).toBe(true);
+    expect(f.postMortem.deliveriesHeld()).toBe(DELIVERY_SLOTS);
+    // A fifth is busy; a finished response frees its slot, and so does a closed one.
+    expect(await withResponseScope(openResponse(), () => f.postMortem.query({ key: alice.key, lobbyId }))).toEqual(refusal("busy"));
+    responses[0]!.end();
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(3));
+    responses[1]!.destroy();
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(2));
+    // A response already closed when its call is asked takes no slot; outside a request a slot is freed on return.
+    const closed = openResponse();
+    closed.destroy();
+    await sleep(0);
+    expect(await withResponseScope(closed, () => f.postMortem.query({ key: alice.key, lobbyId }))).toEqual(refusal("still_reading"));
+    expect((await f.postMortem.query({ key: alice.key, lobbyId })).ok).toBe(true);
+    expect(f.postMortem.deliveriesHeld()).toBe(2);
+    for (const res of responses.slice(2)) res.end();
+    await vi.waitFor(() => expect(f.postMortem.deliveriesHeld()).toBe(0));
+  });
+});
+
+describe("a continuation whose no-effect answer was dropped from the cache", () => {
+  const FINDINGS: RerunOutcome = { kind: "findings", tested: 1, counts: [[0, 4], [1, 2]], bits: new Uint8Array([4, 0]), undecided: [] };
+  /** Pages a record, has its re-run answer and the answer shown; the first page's continuation. */
+  async function pagedAndShown(f: ReturnType<typeof world>, held: ReturnType<typeof heldJobs>, alice: { key: string }, a: { lobbyId: string; id: string }) {
+    const continuation = bodyOf(await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId })).refusedPage.continuation as string;
+    await vi.waitFor(() => expect(held.started).toEqual([a.id]));
+    held.finish(a.id, FINDINGS);
+    await sleep(0);
+    expect(bodyOf(await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId })).noEffect.status).toBe("shown");
+    return continuation;
+  }
+
+  // Credible regression: a continuation whose first pass and no-effect answer were both dropped answering "being worked
+  // out" for good, its re-run never started again.
+  it("reads the first pass again and restarts the re-run once the entry cap has dropped both", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs });
+    const alice = f.w.played("alice");
+    const a = f.match(540, [[alice, 0]], { record: manyRefusals(replayId(540), 3000) });
+    const continuation = await pagedAndShown(f, held, alice, a);
+    // 64 other records' no-effect answers, newer than this one's, push it out of the cache.
+    for (let n = 0; n < 64; n++) {
+      const other = f.match(600 + n, [[alice, 0]]);
+      expect((await f.postMortem.query({ key: alice.key, lobbyId: other.lobbyId })).ok).toBe(true);
+    }
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation });
+    expect(reply.ok).toBe(true);
+    await vi.waitFor(() => expect(held.started.filter(id => id === a.id)).toHaveLength(2));
+  }, 60_000);
+
+  // Credible regression: as above, under the byte cap.
+  it("reads the first pass again and restarts the re-run once the byte cap has dropped both", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, cacheBytes: 160 });
+    const alice = f.w.played("alice");
+    const a = f.match(541, [[alice, 0]], { record: manyRefusals(replayId(541), 3000) });
+    const continuation = await pagedAndShown(f, held, alice, a);
+    const other = f.match(542, [[alice, 0]]);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: other.lobbyId })).ok).toBe(true);
+    const opens = f.history.open.mock.calls.filter(([id]) => id === a.id).length;
+    const reply = await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation });
+    expect(reply.ok).toBe(true);
+    // Its first pass read again, then its page.
+    expect(f.history.open.mock.calls.filter(([id]) => id === a.id).length).toBe(opens + 2);
+    await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id, a.id]));
+  });
+
+  // Credible regression: a re-run restarted for a continuation of a record that has since been replaced.
+  it("starts again, re-running nothing, when the record read again is another", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, cacheBytes: 160 });
+    const alice = f.w.played("alice");
+    const a = f.match(543, [[alice, 0]], { record: manyRefusals(replayId(543), 3000) });
+    const continuation = await pagedAndShown(f, held, alice, a);
+    const other = f.match(544, [[alice, 0]]);
+    expect((await f.postMortem.query({ key: alice.key, lobbyId: other.lobbyId })).ok).toBe(true);
+    f.store(a.lobbyId, a.id, "public", manyRefusals(replayId(543), 3001));
+    expect(await f.postMortem.query({ key: alice.key, lobbyId: a.lobbyId, refusedContinuation: continuation })).toEqual(refusal("start_again"));
+    await sleep(20);
+    expect(held.started).toEqual([a.id, other.id]);
   });
 });
