@@ -228,6 +228,37 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     expect(control.lobby).toMatchObject({ outcome: "colony_0_won", rated: true });
     expect(ratingPaths(w)).toEqual(expect.arrayContaining([`ratedMatches/${control.lobbyId}`]));
   });
+  it("records the engine's own result when every colony goes idle on one tick, the winner's elimination included", async () => {
+    const w = world([FIXTURE]);
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: LIVE, quadrantMaps: [FIXTURE], seed: 4242,
+      startPickWindowMs: 300, mcpConfig: MCP, accounts: w.accounts, slot: w.slot });
+    closers.push(() => server.close());
+    const players = [];
+    for (const name of ["Ann", "Bob", "Cat", "Dan"]) players.push(await claim(w, name));
+    for (const player of players) value(await w.lobbies.joinQueue(player.key, "quadrants"));
+    const lobbyId = value(await w.lobbies.queueStatus(players[0]!.key)) as { state: string; lobbyId?: string };
+    expect(lobbyId.state).toBe("matched");
+    // Every seat joins and then makes no call, so all four go idle on the same tick.
+    await waitFor(() => openStartOf(server) === lobbyId.lobbyId, 20_000);
+    for (const player of players) expect((await (await agent(server)).call("join", { key: player.key })).isError).toBe(false);
+    await waitFor(() => server.game.match?.state.result != null, 20_000);
+    const state = server.game.match!.state;
+    const ticks = state.colonies.map(colony => colony.eliminated?.tick);
+    expect(new Set(ticks).size).toBe(1);
+    expect(ticks[0]).toBe(state.result!.tick);
+    const winner = state.result!.winner;
+    expect(state.result).toMatchObject({ reason: "idle" });
+    expect(winner).not.toBeNull();
+    expect(winner).not.toBe(0);
+
+    const lobby = await ended(w, lobbyId.lobbyId!);
+    expect(lobby).toMatchObject({ outcome: `colony_${winner}_won`, rated: false });
+    // Unfiltered: every engine elimination, the winning colony's own on that same tick included.
+    expect(JSON.parse(w.docs.get(`lobbies/${lobbyId.lobbyId}`)!.result!)).toEqual({ reason: "idle",
+      eliminations: state.colonies.map(colony => ({ colony: colony.id, tick: colony.eliminated!.tick })) });
+    expect(ratingPaths(w)).toEqual([]);
+  });
+
   it("with the shipped empty rotation, a spectated server refuses Quadrants, ends a prepared Quadrants lobby not played and streams its 1v1", async () => {
     const w = world("shipped");
     const errors = vi.spyOn(console, "error");
