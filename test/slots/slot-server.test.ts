@@ -230,7 +230,15 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
   it("rates every identity seated at the start, idle ones included, on a natural result, then starts the next waiting lobby", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const w = world();
-    const { server, started } = await slotServer(w, "public-0", "a", SHORT);
+    // Proof of the flake's cause, removed by the fix: delay the poll that first finds the lobby holding the slot, so the
+    // first join reaches the server before it is seated.
+    let delayed = false;
+    const slowWorld = { ...w, lobbies: { ...w.lobbies, slotHolder: async (slot: string) => {
+      const holder = await w.lobbies.slotHolder(slot);
+      if (holder !== null && !delayed) { delayed = true; await sleep(2_000); }
+      return holder;
+    } } };
+    const { server, started } = await slotServer(slowWorld, "public-0", "a", SHORT);
     // The rated match lasts 20 ticks (1 s), so on a loaded runner it could end before the active seat's order arrived,
     // which then failed match_over. Until that order is submitted, its ticks run only to answer waiting calls
     // (the seats' joins), and the order is sent later than the whole match lasts, so it reaches a running match only
@@ -250,7 +258,8 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     const next = await w.fill("public", 1, ["N1", "N2"]);
     expect(next.lobby.state).toBe("waiting");
     const active = await agentOn(server);
-    expect((await active.call("join", { key: keys[0]!.key })).isError).toBe(false);
+    const first = await active.call("join", { key: keys[0]!.key });
+    expect(first.isError, first.text).toBe(false);
     // Every other seat joins and then stays idle: a seat that never joined would end the match abandoned, unrated.
     for (const key of keys.slice(1)) expect((await (await agentOn(server)).call("join", { key: key.key })).isError).toBe(false);
     await until(() => running(server));
