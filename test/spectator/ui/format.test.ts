@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, liveRow, liveState,
-  neverJoined, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
+  neverJoined, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, territoryShares, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
 } from "../../../web/src/ui/format.ts";
 import { EARLY_WIN_RULES } from "../../../src/sim/config.ts";
 import type { MatchesView, Recording } from "../../../web/src/matches-page/data.ts";
@@ -41,6 +41,24 @@ describe("score plate: progress toward each way to win", () => {
     expect(shares(3, 1)).toEqual([75, 25]);
     expect(shares(0, 4)).toEqual([0, 100]);
     expect(shares(0, 0)).toBeNull();
+  });
+  it("gives four colonies whole-percent shares of the held ground that add to exactly 100, and none when nothing is held", () => {
+    expect(territoryShares([30, 30, 30, 10])).toEqual([30, 30, 30, 10]);
+    // Thirds: the one point left goes to the lowest colony id among equal remainders.
+    expect(territoryShares([1, 1, 1, 0])).toEqual([34, 33, 33, 0]);
+    expect(territoryShares([0, 1, 1, 1])).toEqual([0, 34, 33, 33]);
+    // Largest remainders first: 2/7, 2/7, 2/7, 1/7 are 28.57, 28.57, 28.57, 14.29.
+    expect(territoryShares([2, 2, 2, 1])).toEqual([29, 29, 28, 14]);
+    // An eliminated colony's tiles are neutral: it holds nothing and shows 0, never a point of the rounding.
+    expect(territoryShares([999, 1, 0, 0])).toEqual([100, 0, 0, 0]);
+    expect(territoryShares([1, 0, 0, 0])).toEqual([100, 0, 0, 0]);
+    expect(territoryShares([0, 0, 0, 0])).toBeNull();
+    for (const held of [[1, 2, 3, 4], [7, 7, 7, 7], [1, 1, 1, 1], [3, 3, 3, 0], [123, 456, 789, 1011], [1, 1, 98, 0], [5, 0, 5, 1]]) {
+      const pct = territoryShares(held)!;
+      expect(pct.reduce((a, b) => a + b, 0), held.join(",")).toBe(100);
+      expect(pct.every(Number.isInteger), held.join(",")).toBe(true);
+      pct.forEach((p, i) => expect(Math.abs(p - (100 * held[i]!) / held.reduce((a, b) => a + b, 0)), held.join(",")).toBeLessThan(1));
+    }
   });
   it("puts the six-to-one line where the sim's early win needs the leader's share", () => {
     const line = leadLine(EARLY_WIN_RULES.territoryRatioPermille);
