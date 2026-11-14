@@ -16,15 +16,15 @@ const config: SimConfig = playable({
   matchTicks: 25,
   squadSize: 1,
   startAnts: 12,
-  colonyCap: 12,
-  hatchCost: 1_000_000,
-  hatchIntervalTicks: 1_000_000,
+  colonyCap: 24,
+  // Hatching spends delivered food, so a colony's store differs from what it delivered.
+  hatchCost: 1,
+  hatchIntervalTicks: 10,
   guardCount: 0,
   guardSharePermille: 0,
   foodJitter: 0,
   foodPatches: [{ tileX: 8, tileY: 24, radius: 5, perTile: 100 }],
   foodRegrowTicks: 1_000_000,
-  groundFoodIntervalTicks: 1,
 });
 
 /** Independent short reference: explicit commands, not balance loop/measurement code. */
@@ -65,9 +65,8 @@ describe("balance deliveries measurement", () => {
     expect(record.deliveries).not.toEqual(final.colonies.map(colony => colony.foodStore));
   });
 
-  it("records measured zeros rather than food stores or territory income", () => {
+  it("records measured zeros when nothing is delivered", () => {
     const spec = specFor({ ...config, foodPatches: [] }), final = terminalReference(spec), record = playBalanceMatch(spec);
-    expect(final.colonies.some(colony => colony.foodStore > 0)).toBe(true);
     expect(final.stats.delivered).toEqual([0, 0]);
     expect(record.deliveries).toEqual([0, 0]);
     expect(record.naturalResult).toEqual(final.result);

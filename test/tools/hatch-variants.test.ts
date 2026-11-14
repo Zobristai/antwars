@@ -149,7 +149,9 @@ describe("hatch experiment selection and figures", () => {
 
   // The harness sends brood with set_brood to the queens a seat owns.
   const foundingConfig: SimConfig = { ...short, ticksPerSecond: 1, matchTicks: 301, commandFloorTicks: 1,
-    antSpeedTilesPerSecond: 0, groundFoodIntervalTicks: 10, queenFounding: { ...rules.queenFounding!, cost: 1, firstFoundTick: 10,
+    // Motionless ants on a food patch around each nest deliver without walking, paying for founding and hatching.
+    antSpeedTilesPerSecond: 0, foodPatches: [{ tileX: short.nestTileX, tileY: short.nestTileY, radius: 2, perTile: 50 }], foodRegrowTicks: 1,
+    queenFounding: { ...rules.queenFounding!, cost: 1, firstFoundTick: 10,
       cooldownTicks: 30, minDistanceTiles: 1, maxLiveQueens: 2 } };
 
   it.each(BALANCE_STRATEGIES)("gives %s one existing founder seat, retaining brood and tick-3000-equivalent measurements", strategy => {

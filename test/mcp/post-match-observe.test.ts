@@ -114,10 +114,11 @@ describe("ended-seat observe reports a result instead of a running clock", () =>
     const agent = await h.connect();
     const joined = await agent.call("join");
     const receipt = h.game.finalResultReceipt(joined.data.agentId)!;
-    expect(receipt).toEqual({ result: null });
+    // The receipt keeps its match's result and the colony names that match used, nothing else.
+    expect(receipt).toEqual({ result: null, colonyNames: COLONY_NAMES });
     const result = finishEarly(0);
-    expect(receipt).toEqual({ result });
-    expect(Object.keys(receipt)).toEqual(["result"]);
+    expect(receipt).toEqual({ result, colonyNames: COLONY_NAMES });
+    expect(Object.keys(receipt)).toEqual(["result", "colonyNames"]);
     h.game.startMatch(22);
     // A different winner in the newer match must never replace this seat's result.
     finishEarly(1);

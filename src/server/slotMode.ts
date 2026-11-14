@@ -253,6 +253,7 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
             console.log(`antwar slot ${wiring.slot}: lobby ${save.lobbyId} restored as match ${match.seq} at tick ${save.tick}; waiting to adopt it`);
             return true;
           },
+          colonyNames: () => game.colonyNames(),
           startResumed() {
             game.setResuming(false);
             const start = game.activateResumedStart();

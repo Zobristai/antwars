@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createIdentities } from "../../src/identity/identities.js";
 import { CHALLENGE_OWNER_DAILY_LIMIT, CHALLENGE_SHARED_DAILY_LIMIT } from "../../src/lobby/challenges.js";
 import { createLobbies, type Lobby } from "../../src/lobby/lobbies.js";
+import { drawColonyNames } from "../../src/sim/colonyNames.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { createRatings } from "../../src/rating/ratings.js";
 import type { MatchInputs } from "../../src/records/handoff.js";
@@ -97,8 +98,9 @@ async function challenge(joins: Joins) {
   let playing: Awaited<ReturnType<typeof allowances>> | undefined;
   const joining = [...(joins.house ? [handle.key] : []), ...(joins.builder ? [builder.key] : [])];
   const run = await playLobby(w, lobbyId, joining, async () => { playing = await allowances(); });
-  // Only heldAbsent may be added to the lobby's stored fields by its ending.
-  expect(Object.keys(run.after).filter(key => !(key in run.before))).toEqual(run.after.heldAbsent === undefined ? [] : ["heldAbsent"]);
+  // Only the names its match began under and, by its ending, heldAbsent may be added to the lobby's stored fields.
+  expect(Object.keys(run.after).filter(key => !(key in run.before))).toEqual(run.after.heldAbsent === undefined ? ["colonyNames"] : ["colonyNames", "heldAbsent"]);
+  expect(run.after.colonyNames).toBe(JSON.stringify(drawColonyNames(lobbyId)));
   return { ended: run.ended, heldAbsent: run.after.heldAbsent, result: run.result, playing: playing!, after: await allowances() };
 }
 
@@ -150,5 +152,7 @@ it("an ordinary public lobby whose colony never joined ends abandoned and stores
   expect(value(await w.lobbies.join(lobby.id, blue.key)).state).toBe("holding");
   const run = await playLobby(w, lobby.id, [red.key]);
   expect(run.ended).toMatchObject({ outcome: "abandoned", rated: false });
-  expect(Object.keys(run.after).filter(key => !(key in run.before))).toEqual([]);
+  // Only the names its match began under, which the slot server recorded at its begin.
+  expect(Object.keys(run.after).filter(key => !(key in run.before))).toEqual(["colonyNames"]);
+  expect(run.after.colonyNames).toBe(JSON.stringify(drawColonyNames(lobby.id)));
 }, 20_000);
