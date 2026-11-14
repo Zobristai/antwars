@@ -1,6 +1,6 @@
 // A Quadrants match played end to end on one server serving the account tools and a lobby slot, under the production
 // redesign rules: four join_queue calls make the lobby, the slot plays it on a test-only quadrant map with four
-// colonies, each seat picks inside its own box, every successful slot join names its colony, idle colonies leave one
+// colonies, each seat picks inside its own box (or keeps a default nest there), every successful slot join names its colony, idle colonies leave one
 // by one and the last one standing wins, and the lobby records the result unrated. With the shipped (empty) rotation a
 // spectated server refuses the mode, ends a prepared quadrants lobby not played, and keeps streaming its 1v1 matches.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -157,16 +157,22 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
       expect((joined.data as any).colony).toBe(NAMES[colony]);
       expect((joined.data as any).nestSelection.box).toEqual(BOXES[colony]);
     }
-    const [box0, box1, box2] = BOXES as [typeof BOXES[0], typeof BOXES[0], typeof BOXES[0]];
+    const [box0, box1, box2, box3] = BOXES as [typeof BOXES[0], typeof BOXES[0], typeof BOXES[0], typeof BOXES[0]];
     const pick = async (colony: number, tileX: number, tileY: number) => (await seatAgents[colony]!.call("pick_nest", { tileX, tileY })).data as any;
-    // Inside the box, then a tile just outside it (refused, keeping the earlier pick), then the box's far corner.
+    // Every colony picks inside its own box and is refused a tile just outside it, on a different side each time; a
+    // refusal keeps the earlier pick. Colony 0: inside, past the right edge, then the box's far corner.
     expect(await pick(0, box0.x + 6, box0.y + 12)).toMatchObject({ accepted: true });
     expect((await pick(0, box0.x + box0.width, box0.y + box0.height - 1)).error.code).toBe("nest_outside_box");
     expect(await pick(0, box0.x + box0.width - 1, box0.y + box0.height - 1)).toMatchObject({ accepted: true });
+    // Colony 1: inside, then above the top edge.
     expect(await pick(1, box1.x, box1.y + 10)).toMatchObject({ accepted: true });
+    expect((await pick(1, box1.x + 10, box1.y - 1)).error.code).toBe("nest_outside_box");
+    // Colony 2: left of the left edge, then inside.
     expect((await pick(2, box2.x - 1, box2.y + 10)).error.code).toBe("nest_outside_box");
     expect(await pick(2, box2.x + 10, box2.y)).toMatchObject({ accepted: true });
-    // Colony 3 makes no pick: its default nest is inside its box.
+    // Colony 3: inside, then below the bottom edge.
+    expect(await pick(3, box3.x + 12, box3.y + 15)).toMatchObject({ accepted: true });
+    expect((await pick(3, box3.x + 12, box3.y + box3.height)).error.code).toBe("nest_outside_box");
 
     await waitFor(() => server.game.match !== null);
     const state = server.game.match!.state;
@@ -176,10 +182,9 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
       const q = state.colonies[colony]!.queens![0]!;
       return { tileX: Math.floor(q.queenX / SUB), tileY: Math.floor(q.queenY / SUB) };
     };
-    expect([0, 1, 2].map(queen)).toEqual([
-      { tileX: box0.x + box0.width - 1, tileY: box0.y + box0.height - 1 }, { tileX: box1.x, tileY: box1.y + 10 }, { tileX: box2.x + 10, tileY: box2.y }]);
-    const box3 = BOXES[3]!, q3 = queen(3);
-    expect(q3.tileX >= box3.x && q3.tileX < box3.x + box3.width && q3.tileY >= box3.y && q3.tileY < box3.y + box3.height).toBe(true);
+    expect([0, 1, 2, 3].map(queen)).toEqual([
+      { tileX: box0.x + box0.width - 1, tileY: box0.y + box0.height - 1 }, { tileX: box1.x, tileY: box1.y + 10 },
+      { tileX: box2.x + 10, tileY: box2.y }, { tileX: box3.x + 12, tileY: box3.y + 15 }]);
 
     // A join once play has begun names the colony too.
     for (const [colony, player] of players.entries()) {
@@ -241,6 +246,13 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     // Every seat joins and then makes no call, so all four go idle on the same tick.
     await waitFor(() => openStartOf(server) === lobbyId.lobbyId, 20_000);
     for (const player of players) expect((await (await agent(server)).call("join", { key: player.key })).isError).toBe(false);
+    // No seat picks a nest: each colony's default nest is inside its own box.
+    await waitFor(() => server.game.match !== null, 20_000);
+    for (const [colony, box] of BOXES.entries()) {
+      const q = server.game.match!.state.colonies[colony]!.queens![0]!;
+      const tileX = Math.floor(q.queenX / SUB), tileY = Math.floor(q.queenY / SUB);
+      expect(tileX >= box.x && tileX < box.x + box.width && tileY >= box.y && tileY < box.y + box.height, `colony ${colony} default nest`).toBe(true);
+    }
     await waitFor(() => server.game.match?.state.result != null, 20_000);
     const state = server.game.match!.state;
     const ticks = state.colonies.map(colony => colony.eliminated?.tick);
