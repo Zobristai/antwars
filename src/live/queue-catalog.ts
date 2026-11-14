@@ -37,6 +37,8 @@ export interface PublicWaitingLobby {
   readonly since: number;
   /** Present only on an unrated house challenge, for the Waiting card's label. */
   readonly challenge?: "house";
+  /** Present only where the lobby's unrated match draws its own colony names; absent means the rated names. */
+  readonly colonyNames?: readonly [string, string];
 }
 export interface PublicQueue { readonly waiting: readonly PublicWaitingAgent[]; readonly lobbies: readonly PublicWaitingLobby[] }
 
@@ -87,6 +89,7 @@ export function publicQueue(agents: readonly WaitingAgent[], at: number, lobbies
       waitingSeconds: seconds(lobby.createdAt),
       since: lobby.createdAt,
       ...(lobby.challenge === "house" ? { challenge: "house" as const } : {}),
+      ...(lobby.colonyNames === undefined ? {} : { colonyNames: [lobby.colonyNames[0], lobby.colonyNames[1]] as const }),
     })),
   };
 }

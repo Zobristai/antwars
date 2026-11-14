@@ -21,7 +21,7 @@ import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { COLONY_NAMES } from "../../src/sim/config.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { asTwoColony } from "../../src/sim/types.ts";
 import { replaySteps } from "../../test/tools/summary.ts";
 import { loadReplayFile } from "../../src/live/replayOptions.ts";
@@ -55,10 +55,10 @@ export function matchEnd(log: string, holds?: string): { finalTick: number; winn
   return { finalTick: state.tick, winner: state.result.winner === null ? null : asTwoColony(state.result.winner) };
 }
 
-const catalog = z.object({ matches: z.array(z.object({ lobbyId: z.string().uuid() })) });
+const catalog = z.object({ matches: z.array(z.object({ lobbyId: z.string().uuid(), colonyNames: z.tuple([z.string().min(1), z.string().min(1)]).optional() })) });
 
 /** Only public discovery and its exact watch route; never a root game or a join. */
-export async function discoverPublicWatch(base: string, request: typeof fetch = fetch): Promise<{ lobbyId: string; seq: number | null }> {
+export async function discoverPublicWatch(base: string, request: typeof fetch = fetch): Promise<{ lobbyId: string; seq: number | null; colonyNames?: readonly [string, string] }> {
   const response = await request(new URL("/watch/catalog", base), { signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`public catalog HTTP ${response.status}`);
   const match = catalog.parse(await response.json()).matches[0];
@@ -69,7 +69,7 @@ export async function discoverPublicWatch(base: string, request: typeof fetch = 
   const header = head.headers.get("x-antwar-match");
   const seq = header === null ? null : Number(header);
   if (seq !== null && (!Number.isSafeInteger(seq) || seq <= 0)) throw new Error("invalid slot-local match sequence");
-  return { lobbyId: match.lobbyId, seq };
+  return { lobbyId: match.lobbyId, seq, ...(match.colonyNames ? { colonyNames: match.colonyNames } : {}) };
 }
 
 async function main(): Promise<void> {
@@ -92,7 +92,8 @@ async function main(): Promise<void> {
   const timeoutMs = Number(values["timeout-minutes"]) * 60_000;
   mkdirSync(out, { recursive: true });
 
-  const { lobbyId, seq } = await discoverPublicWatch(base);
+  const watched = await discoverPublicWatch(base);
+  const { lobbyId, seq } = watched, names = colonyNamesOf(watched);
   console.log(`watching public lobby ${lobbyId} at ${base}/`);
   // A public proxy cannot identify a local log. Refuse before browser work.
   if (values.check) {
@@ -159,8 +160,8 @@ async function main(): Promise<void> {
       },
       {
         name: "the page shows the slot match's winning colony or draw",
-        pass: winner === null ? /draw/i.test(last.text) : last.text.includes(COLONY_NAMES[winner]),
-        detail: { winner: winner === null ? "draw" : COLONY_NAMES[winner], text: last.text },
+        pass: winner === null ? /draw/i.test(last.text) : last.text.includes(names[winner]),
+        detail: { winner: winner === null ? "draw" : names[winner], text: last.text },
       },
     ];
     for (const r of results) console.log(`${r.pass ? "PASS" : "FAIL"}  ${r.name}  ${JSON.stringify(r.detail).slice(0, 400)}`);

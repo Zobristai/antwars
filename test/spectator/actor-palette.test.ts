@@ -15,7 +15,8 @@ describe("actor palette background coverage", () => {
     expect(state.marks).toHaveLength(8);
     expect(state.ants).toHaveLength(background === "water" ? 0 : 10);
     expect(state.ants.filter(a => a.squad === null).map(a => a.colony)).toEqual(background === "water" ? [] : [0, 1]);
-    expect(new Set(state.agents.map((a, i) => agentShade(a.colony, i, state.agents.map((agent) => ({ colony: asTwoColony(agent.colony) }))))).size).toBe(8);
+    // One colour per colony: every agent shows its colony's colour.
+    expect(state.agents.map((a, i) => agentShade(a.colony, i, state.agents.map((agent) => ({ colony: asTwoColony(agent.colony) }))))).toEqual(state.agents.map(a => COLONY_TINT[a.colony]));
     expect(new Set(state.owner)).toEqual(new Set([background === "colony-0" ? 0 : background === "colony-1" ? 1 : -1]));
     if (background === "water") {
       const p = PALETTE_POOL;

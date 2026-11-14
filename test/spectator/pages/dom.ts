@@ -43,6 +43,14 @@ export class ElementPort {
       node.remove(); node.parent = this; this.children.push(node);
     }
   }
+  get nextElementSibling(): ElementPort | null {
+    const siblings = this.parent?.children ?? [];
+    return siblings.slice(siblings.indexOf(this) + 1).find(node => !node.tag.startsWith("#")) ?? null;
+  }
+  insertBefore(node: ElementPort, ref: ElementPort | null) {
+    if (!ref) { this.append(node); return; }
+    node.remove(); node.parent = this; this.children.splice(this.children.indexOf(ref), 0, node);
+  }
   prepend(node: ElementPort) { node.remove(); node.parent = this; this.children.unshift(node); }
   after(...nodes: ElementPort[]) {
     const p = this.parent!;

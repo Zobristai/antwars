@@ -72,9 +72,9 @@ async function world() {
   let adoption: Promise<boolean> = Promise.resolve(true);
   const lobbies: Lobbies = {
     ...real,
-    async adoptMatch(lobbyId, slot, runId, fromRunId) {
+    async adoptMatch(lobbyId, slot, runId, fromRunId, colonyNames) {
       if (!(await adoption)) return { ok: false, reason: "superseded" } as const;
-      return real.adoptMatch(lobbyId, slot, runId, fromRunId);
+      return real.adoptMatch(lobbyId, slot, runId, fromRunId, colonyNames);
     },
   };
   return {
