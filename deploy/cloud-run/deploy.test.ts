@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { parseMemoryQuantity } from "../../src/accounts/postMortemJobs.ts";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, isExpired, LOBBY_TTL_MS } from "../../src/lobby/lobbies.ts";
 import { markerName, parseInputObjectName, parseRunningBuildName, runningBuildName } from "../../src/records/input-store.ts";
@@ -712,8 +713,8 @@ describe("existing deploy paths are unchanged", () => {
       ["run", "deploy", "antwar", "--image", `${SERVER_REPO}:${SHA}`,
         // The record handoff settings; the slot allocator's 8 public and 8 private
         // live slots and the address it wakes them at; the load balancer's addresses.
-        // Variables set outside the script are kept.
-        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV}`,
+        // Variables set outside the script are kept. ANTWAR_MEMORY_LIMIT is --memory's own value.
+        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
         "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
         "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",
         "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION],
@@ -1220,8 +1221,8 @@ describe("load balancer addresses", () => {
   const ADDRESSES = ["192.0.2.10", "2001:db8::a", "198.51.100.7", "203.0.113.", "fe80::1"];
   const printed = (r: { stdout: string; stderr: string }) => ADDRESSES.filter((a) => (r.stdout + r.stderr).includes(a));
   // antwar's variables before ANTWAR_LOAD_BALANCER_ADDRESS, as the live path and `all` gave them, with the client-source
-  // claim rule.
-  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV}`]);
+  // claim rule and the memory limit.
+  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV},ANTWAR_MEMORY_LIMIT=2Gi`]);
   const gameDeploy = (r: { gcloud: string[][] }) => deploys(r.gcloud).find((c) => c[2] === "antwar")!;
 
   it("the live path adds only ANTWAR_LOAD_BALANCER_ADDRESS to antwar's variables, read before the build, and prints no address", () => {
@@ -1310,6 +1311,25 @@ describe.concurrent("all", () => {
   // The minute-long waits between rounds (the swap checks sleep 5 s between probes).
   const roundSleeps = (r: { calls: string[][] }) => r.calls.filter((c) => c[0] === "sleep" && c[1] !== "5");
 
+  // Credible regression: the game deployed without the post-mortem's configured limit, with one apart from its
+  // --memory, or with a form the server's parser rejects; the main path and a later all-services deploy alike.
+  it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which the server's parser accepts", async () => {
+    const later = await runAsync(["all", SHA], { state: live(), env: { ANTWAR_SWAP_STABLE: "" } });
+    expect(later.status, later.stderr).toBe(0);
+    const main = run([SHA]);
+    expect(main.status, main.stderr).toBe(0);
+    for (const [route, r] of [["all", later], ["main", main]] as const) {
+      const game = deploys(r.gcloud).filter((d) => d[2] === "antwar");
+      expect(game.length, route).toBeGreaterThan(0);
+      for (const d of game) {
+        const memory = d[d.indexOf("--memory") + 1]!;
+        expect(envOf(d).ANTWAR_MEMORY_LIMIT, route).toBe(memory);
+        expect(parseMemoryQuantity(envOf(d).ANTWAR_MEMORY_LIMIT), route).toBeGreaterThan(0);
+      }
+      for (const d of deploys(r.gcloud).filter((d) => d[2] !== "antwar")) expect(envOf(d).ANTWAR_MEMORY_LIMIT, `${route} ${d[2]}`).toBeUndefined();
+    }
+  }, TIMEOUT);
+
   it("deploys records, the 16 slots and the game from one image, and prints each new revision", async () => {
     const r = await runAsync(["all", SHA], { state: live(), env: { ANTWAR_SWAP_STABLE: "" } });
     expect(r.status, r.stderr).toBe(0);
@@ -1353,7 +1373,7 @@ describe.concurrent("all", () => {
     expect(r.gcloud.findIndex((c) => c[0] === "compute")).toBeLessThan(r.gcloud.findIndex((c) => c[0] === "artifacts"));
     for (const address of ["192.0.2.10", "2001:db8::a"]) expect(r.stdout + r.stderr).not.toContain(address);
     expect(deploys(r.gcloud)[17]).toEqual(["run", "deploy", "antwar", "--image", IMAGE,
-      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV}`,
+      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
       "--update-secrets", KEY,
       "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
       "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",
@@ -2163,7 +2183,12 @@ describe.concurrent("all", () => {
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
         "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",
-        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_MEMORY_LIMIT", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+      // Credible regression: the post-mortem's configured limit missing from the create request, apart from its
+      // memory, or in a form the server's parser rejects.
+      const memory = spec("antwar").template.containers[0]!.resources.limits.memory;
+      expect(env("antwar").find((e) => e.name === "ANTWAR_MEMORY_LIMIT")?.value).toBe(memory);
+      expect(parseMemoryQuantity(memory)).toBeGreaterThan(0);
       expect(env("antwar").filter((e) => e.valueSource).map((e) => e.valueSource)).toEqual([
         { secretKeyRef: { secret: "antwar-private-replay-key", version: "1" } }, { secretKeyRef: { secret: "ANTWAR_OPERATOR_TOKEN", version: "latest" } }]);
       // Every service runs the revision its create made, so it runs exactly the command its flags give: the record

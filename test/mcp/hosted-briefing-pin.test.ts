@@ -4,6 +4,7 @@ import { briefing, joinBriefing, type BriefingContext } from "../../src/mcp/brie
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { COMPARISON_SEED, comparisonOptions, startServer, type GameServer } from "../../src/server.js";
 import { rulesConfig } from "../../src/sim/config.js";
+import { drawColonyNames } from "../../src/sim/colonyNames.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { createMatch } from "../../src/sim/map.js";
 import { connect, tempDir, waitFor, type Agent } from "../server/helpers.js";
@@ -101,7 +102,8 @@ describe("hosted briefing stays byte-identical to main 5df81d04", () => {
     expect(hostedTexts({ local: false })).toEqual(hostedTexts());
   });
 
-  it("a lobby slot server serves the hosted text", async () => {
+  // A rated lobby serves the hosted text byte for byte; an unrated one the same text naming the colonies it drew.
+  for (const mode of ["1v1", null] as const) it(`a ${mode === null ? "unrated" : "rated"} lobby slot server serves the hosted text`, async () => {
     const h = await startHarness({ start: false, simConfig: rulesConfig("redesign"), slot: {
       identityOf: async key => key === "pin-key" ? "pin-seat" : undefined,
       locate: async () => undefined,
@@ -110,15 +112,18 @@ describe("hosted briefing stays byte-identical to main 5df81d04", () => {
       h.game.seatLobby("pin-lobby", [
         { identityId: "pin-seat", displayName: "Pin", colony: 0 },
         { identityId: "other-seat", displayName: "Other", colony: 1 },
-      ]);
+      ], mode);
       h.game.startMatch(41);
       const agent = await h.connect();
       const joined = await agent.call("join", { key: "pin-key" });
       expect(joined.isError, joined.text).toBe(false);
       const rules = await agent.call("rules");
       const config = h.game.match!.state.config;
-      expect(joined.data.briefing).toBe(joinBriefing(config, h.game.mcpConfig, false, { house: false, undrawn: false }));
-      expect(rules.data.rules).toBe(briefing(config, h.game.mcpConfig, { house: false, undrawn: false }));
+      const names = mode === null ? { colonyNames: drawColonyNames("pin-lobby") } : {};
+      expect(joined.data.briefing).toBe(joinBriefing(config, h.game.mcpConfig, false, { house: false, undrawn: false, ...names }));
+      if (mode !== null) expect(joined.data.briefing).toBe(joinBriefing(config, h.game.mcpConfig, false, { house: false, undrawn: false }));
+      expect(rules.data.rules).toBe(briefing(config, h.game.mcpConfig, { house: false, undrawn: false, ...names }));
+      if (mode !== null) expect(rules.data.rules).toBe(briefing(config, h.game.mcpConfig, { house: false, undrawn: false }));
       expect(joined.data.briefing).toContain("Accounts are required");
     } finally {
       await h.close();

@@ -7,7 +7,8 @@ import { COUNTDOWN_MS, createLobbies, type Lobby, type LobbyKind, type MatchOutc
 import { lobbyPageUrl } from "../../src/lobby/site.ts";
 import { createRatings, ratingCollection } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
-import { COLONY_NAMES, PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.ts";
+import { drawColonyNames } from "../../src/sim/colonyNames.ts";
+import { PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { connect, shortConfig, tempDir, TEST_MCP_CONFIG, type Agent } from "../server/helpers.ts";
 import { retentionWorld, value } from "../identity/retentionStore.ts";
@@ -132,9 +133,9 @@ function slotTimings(w: World) {
     return registration;
   });
   const begin = w.lobbies.beginMatch.bind(w.lobbies);
-  vi.spyOn(w.lobbies, "beginMatch").mockImplementation(async (lobbyId, slot, runId) => {
+  vi.spyOn(w.lobbies, "beginMatch").mockImplementation(async (lobbyId, slot, runId, colonyNames) => {
     if (!begunAt.has(slot)) begunAt.set(slot, Date.now());
-    return begin(lobbyId, slot, runId);
+    return begin(lobbyId, slot, runId, colonyNames);
   });
   return { registeredAt, begunAt };
 }
@@ -211,7 +212,9 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     expect(started[0]).toBeGreaterThanOrEqual(lobby.startsAt!);
     const bob = await agentOn(server);
     const live = await bob.call("join", { key: keys[1]!.key });
-    expect(live.data.colony).toBe(COLONY_NAMES[1]);
+    // markRated stands in for a queue-made lobby's rating only: it sets no ranked mode, so this player-created lobby's
+    // match plays under the names it draws from its id, as every player-created lobby's does.
+    expect(live.data.colony).toBe(drawColonyNames(lobby.id)[1]);
     expect(server.game.match!.state.agents.map((agent) => agent.colony).sort()).toEqual([0, 1]);
     const operatorRunning = await operator(server, "start");
     expect(operatorRunning.status).toBe(409);
@@ -247,9 +250,18 @@ describe.skipIf(!host)("slot servers against the Firestore emulator", { timeout:
     const next = await w.fill("public", 1, ["N1", "N2"]);
     expect(next.lobby.state).toBe("waiting");
     const active = await agentOn(server);
-    expect((await active.call("join", { key: keys[0]!.key })).isError).toBe(false);
+    // The slot server seats the lobby only at its next poll; a join that arrives first is answered lobby_loading,
+    // so the first join waits that out (as bootAndPlay's does). Any other refusal still fails here.
+    const first = await until(async () => {
+      const reply = await active.call("join", { key: keys[0]!.key });
+      return reply.isError && reply.data?.error?.code === "lobby_loading" ? undefined : reply;
+    });
+    expect(first.isError, first.text).toBe(false);
     // Every other seat joins and then stays idle: a seat that never joined would end the match abandoned, unrated.
-    for (const key of keys.slice(1)) expect((await (await agentOn(server)).call("join", { key: key.key })).isError).toBe(false);
+    for (const key of keys.slice(1)) {
+      const reply = await (await agentOn(server)).call("join", { key: key.key });
+      expect(reply.isError, reply.text).toBe(false);
+    }
     await until(() => running(server));
     await sleep(1_500);
     expect((await active.call("order", { kind: "forage" })).isError).toBe(false);

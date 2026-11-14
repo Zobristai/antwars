@@ -1,0 +1,97 @@
+{"type":"header","rulesVersion":27,"seed":6006,"config":{"rules25":true,"rules26":true,"rules27":true,"queenBrood":true,"colonyMirror":true,"forageTieBreak":"mirrored","ticksPerSecond":10,"matchTicks":18000,"mapWidth":128,"mapHeight":96,"nestTileX":16.5,"nestTileY":48.5,"nestDeliverTiles":2,"foodPatches":[{"tileX":24.5,"tileY":48.5,"radius":4,"perTile":2},{"tileX":36.5,"tileY":18.5,"radius":4,"perTile":3},{"tileX":36.5,"tileY":78.5,"radius":4,"perTile":3},{"tileX":60.5,"tileY":48.5,"radius":6,"perTile":8},{"tileX":56.5,"tileY":20.5,"radius":2,"perTile":1},{"tileX":56.5,"tileY":76.5,"radius":2,"perTile":1}],"foodRegrowTicks":150,"groundIncomeRevision":1,"foodJitter":1,"antSpeedTilesPerSecond":4,"startAnts":30,"colonyCap":512,"hatchCost":3,"hatchIntervalTicks":10,"corpseFood":1,"sightTiles":12,"smellTiles":16,"antHp":4000,"damagePerSecond":1000,"defenderBonusPermille":1250,"combatGraceTicks":600,"overrunRadiusTiles":4,"overrunTicks":600,"overrunGraceTicks":7200,"territoryDecayTicks":200,"markStrengthPermille":700,"markReachTiles":20,"markLifetimeTicks":1800,"markMaxWords":3,"squadSize":6,"squadSupplyPermille":500,"squadTimerTicks":900,"commandFloorTicks":100,"intentMaxChars":80,"attackRadiusTiles":6,"guardCount":2,"guardEngageTiles":12,"fighterShareStartPermille":600,"fighterShareEndPermille":900,"rallyStartPermille":300,"rallyEndPermille":1000,"pushRatioPermille":600,"castes":{"soldierCost":6,"soldierHpPermille":2000,"soldierDamagePermille":1500},"adjudication":"kills-first","controlRevision":1,"guardSharePermille":400,"queenFounding":{"cost":400,"costMultiplier":2,"costBasis":"founded-live","firstFoundTick":3000,"cooldownTicks":1800,"minDistanceTiles":32,"houseReserveFood":200,"standingNestsOnly":true,"guardsPerQueen":true,"totalGuardSharePermille":600},"terrain":{"maps":[{"id":"open-field","name":"Open Field","water":[]},{"id":"three-crossings","name":"Three Crossings","water":[{"x":30,"y":0,"width":4,"height":8},{"x":30,"y":12,"width":4,"height":10},{"x":30,"y":26,"width":4,"height":10},{"x":30,"y":40,"width":4,"height":8}]},{"id":"central-lake","name":"Central Lake","water":[{"x":27,"y":15,"width":10,"height":18},{"x":27,"y":0,"width":10,"height":12},{"x":27,"y":36,"width":10,"height":12}]}],"referenceWidth":64,"referenceHeight":48,"rocks":{"minPairs":6,"maxPairs":8,"minClusterTiles":1,"maxClusterTiles":3,"nestClearanceTiles":3,"placementAttempts":128}},"foodLayout":{"patches":[{"tileX":24.5,"tileY":48.5,"radius":4,"perTile":2},{"tileX":36.5,"tileY":18.5,"radius":4,"perTile":3},{"tileX":36.5,"tileY":78.5,"radius":4,"perTile":3},{"tileX":60.5,"tileY":48.5,"radius":6,"perTile":8},{"tileX":56.5,"tileY":20.5,"radius":2,"perTile":1},{"tileX":56.5,"tileY":76.5,"radius":2,"perTile":1}],"positionJitterTiles":4,"radiusJitterTiles":2,"richnessJitter":1,"nestClearanceTiles":4,"patchClearanceTiles":2,"minStartingFood":452,"maxStartingFood":1026,"placementAttempts":128,"layoutAttempts":1024,"optionalPatchIndices":[4,5]},"gridScale":2},"holdBehaviour":"ant115"}
+{"tick":0,"inputs":[{"type":"join","agentId":"agent-00","modelLabel":"claude-opus-4.1#0"},{"type":"join","agentId":"agent-01","modelLabel":"gpt-5#1"},{"type":"join","agentId":"agent-02","modelLabel":"gemini-2.5-pro#2"},{"type":"join","agentId":"agent-03","modelLabel":"grok-4#3"}]}
+{"tick":1,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":45},"intent":"hold the centre food until help arrives","mark":{"tileX":15,"tileY":49,"words":["ATTACK","QUEEN"]}}]}
+{"tick":3,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":51},"intent":"rally at the nest and break their charge","mark":{"tileX":109,"tileY":47,"words":["ENEMY","MANY","E"]}}]}
+{"tick":5,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":50},"intent":"flank north and cut their supply lines","mark":{"tileX":14,"tileY":49,"words":["HELP"]}}]}
+{"tick":7,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":50},"intent":"storm their queen while the front is thin","mark":{"tileX":112,"tileY":49,"words":["GATHER","NEST"]}}]}
+{"tick":39,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":46,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":53,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":60,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":99,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":101,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":45},"intent":"hold the centre food until help arrives","mark":{"tileX":59,"tileY":47,"words":["ENEMY","MANY","E"]}}]}
+{"tick":103,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":47},"intent":"rally at the nest and break their charge","mark":{"tileX":71,"tileY":50,"words":["HELP"]}}]}
+{"tick":105,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":52},"intent":"flank north and cut their supply lines","mark":{"tileX":62,"tileY":49,"words":["GATHER","NEST"]}}]}
+{"tick":106,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":107,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":46},"intent":"storm their queen while the front is thin","mark":{"tileX":72,"tileY":49,"words":["FOOD","N","MANY"]}}]}
+{"tick":113,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":120,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":159,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":166,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":173,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":180,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":201,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":51},"intent":"hold the centre food until help arrives","mark":{"tileX":62,"tileY":47,"words":["HELP"]}}]}
+{"tick":203,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":45},"intent":"rally at the nest and break their charge","mark":{"tileX":65,"tileY":49,"words":["GATHER","NEST"]}}]}
+{"tick":205,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":45},"intent":"flank north and cut their supply lines","mark":{"tileX":62,"tileY":50,"words":["FOOD","N","MANY"]}}]}
+{"tick":207,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":51},"intent":"storm their queen while the front is thin","mark":{"tileX":65,"tileY":49,"words":["HOLD"]}}]}
+{"tick":219,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":226,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":233,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":240,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":279,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":286,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":293,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":300,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":301,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":50},"intent":"hold the centre food until help arrives","mark":{"tileX":63,"tileY":46,"words":["GATHER","NEST"]}}]}
+{"tick":303,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":50},"intent":"rally at the nest and break their charge","mark":{"tileX":65,"tileY":50,"words":["FOOD","N","MANY"]}}]}
+{"tick":305,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":49},"intent":"flank north and cut their supply lines","mark":{"tileX":62,"tileY":50,"words":["HOLD"]}}]}
+{"tick":307,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":47},"intent":"storm their queen while the front is thin","mark":{"tileX":65,"tileY":47,"words":["AVOID","ENEMY"]}}]}
+{"tick":339,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":346,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":353,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":360,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":399,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":401,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":46},"intent":"hold the centre food until help arrives","mark":{"tileX":62,"tileY":47,"words":["FOOD","N","MANY"]}}]}
+{"tick":403,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":48},"intent":"rally at the nest and break their charge","mark":{"tileX":65,"tileY":48,"words":["HOLD"]}}]}
+{"tick":405,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":50},"intent":"flank north and cut their supply lines","mark":{"tileX":62,"tileY":50,"words":["AVOID","ENEMY"]}}]}
+{"tick":406,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":407,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":46},"intent":"storm their queen while the front is thin","mark":{"tileX":65,"tileY":50,"words":["GO","W"]}}]}
+{"tick":413,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":420,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":459,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":466,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":473,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":480,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":501,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":45},"intent":"hold the centre food until help arrives","mark":{"tileX":63,"tileY":46,"words":["HOLD"]}}]}
+{"tick":503,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":52},"intent":"rally at the nest and break their charge","mark":{"tileX":65,"tileY":49,"words":["AVOID","ENEMY"]}}]}
+{"tick":505,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":46},"intent":"flank north and cut their supply lines","mark":{"tileX":62,"tileY":50,"words":["GO","W"]}}]}
+{"tick":507,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":52},"intent":"storm their queen while the front is thin","mark":{"tileX":65,"tileY":49,"words":["ATTACK","QUEEN"]}}]}
+{"tick":519,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":526,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":533,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":540,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":579,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":586,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":593,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":600,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":601,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":46},"intent":"hold the centre food until help arrives","mark":{"tileX":62,"tileY":48,"words":["AVOID","ENEMY"]}}]}
+{"tick":603,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":48},"intent":"rally at the nest and break their charge","mark":{"tileX":65,"tileY":49,"words":["GO","W"]}}]}
+{"tick":605,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":46},"intent":"flank north and cut their supply lines","mark":{"tileX":62,"tileY":48,"words":["ATTACK","QUEEN"]}}]}
+{"tick":607,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":49},"intent":"storm their queen while the front is thin","mark":{"tileX":65,"tileY":50,"words":["ENEMY","MANY","E"]}}]}
+{"tick":639,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":646,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":653,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":660,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":699,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":701,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":51},"intent":"hold the centre food until help arrives","mark":{"tileX":44,"tileY":47,"words":["GO","W"]}}]}
+{"tick":703,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":51},"intent":"rally at the nest and break their charge","mark":{"tileX":79,"tileY":48,"words":["ATTACK","QUEEN"]}}]}
+{"tick":705,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":52},"intent":"flank north and cut their supply lines","mark":{"tileX":51,"tileY":49,"words":["ENEMY","MANY","E"]}}]}
+{"tick":706,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":707,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":45},"intent":"storm their queen while the front is thin","mark":{"tileX":69,"tileY":49,"words":["HELP"]}}]}
+{"tick":713,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":720,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":759,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":766,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":773,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":780,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":801,"inputs":[{"type":"order","agentId":"agent-00","order":{"kind":"attack","tileX":111,"tileY":46},"intent":"hold the centre food until help arrives","mark":{"tileX":67,"tileY":48,"words":["ATTACK","QUEEN"]}}]}
+{"tick":803,"inputs":[{"type":"order","agentId":"agent-01","order":{"kind":"attack","tileX":16,"tileY":46},"intent":"rally at the nest and break their charge","mark":{"tileX":101,"tileY":49,"words":["ENEMY","MANY","E"]}}]}
+{"tick":805,"inputs":[{"type":"order","agentId":"agent-02","order":{"kind":"attack","tileX":111,"tileY":45},"intent":"flank north and cut their supply lines","mark":{"tileX":56,"tileY":51,"words":["HELP"]}}]}
+{"tick":807,"inputs":[{"type":"order","agentId":"agent-03","order":{"kind":"attack","tileX":16,"tileY":49},"intent":"storm their queen while the front is thin","mark":{"tileX":84,"tileY":47,"words":["GATHER","NEST"]}}]}
+{"tick":819,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":826,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":833,"inputs":[{"type":"observe","agentId":"agent-01"}]}
+{"tick":840,"inputs":[{"type":"observe","agentId":"agent-00"}]}
+{"tick":879,"inputs":[{"type":"observe","agentId":"agent-03"}]}
+{"tick":886,"inputs":[{"type":"observe","agentId":"agent-02"}]}
+{"tick":893,"inputs":[{"type":"observe","agentId":"agent-01"}]}

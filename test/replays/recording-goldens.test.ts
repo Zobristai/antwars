@@ -4,6 +4,9 @@
 // this test follows step for step. The hashes below are run one's, except the readable record: it is run one's plus the two null seat fields
 // (serviceTier, handle), which every SeatRecord now carries; and the final state hash, both frame digests and the private envelope, which were
 // re-pinned when opening food within the start ants' sight moved to the fine row they stand in (same frame lengths, other food bytes).
+// Every payload but the log was re-pinned again when an unrated lobby match began carrying its drawn colony names: this unrated
+// fixture lobby draws "Lake Skinner Colony" against "Lake Hodges Colony", which its opening snapshot carries (stream version 26:
+// +41 framed bytes) and its decoded frames and readable record carry as setup.colonyNames (+59 bytes each).
 //
 // The one documented run-to-run difference is the random MatchStream identity: it is /0/full/match in
 // both frame arrays and the suffix of the replay, envelope and readable-record id. Here it is pinned to
@@ -50,19 +53,19 @@ const GOLDEN_ID = `2026-01-01T00-00-00-000Z-${GOLDEN_IDENTITY}`;
 
 /** The captured golden's run one: byte length and SHA-256 of each payload. */
 const GOLDEN = {
-  checkpointFramed: { byteLength: 16503, sha256: "f67a1f3f629c982a3f7d7b70f03c6922d624d6f06fe80ca0b500dcf550d4c233" },
-  releasedFramed: { byteLength: 16511, sha256: "b4ceaa01840e98cdb67b49da3526cdb10add53397745fab9c3ba2795065e79a6" },
-  checkpointDecoded: { byteLength: 157641, sha256: "0e6e00016f50be49feda596bf1fb716de8d88831bbb2d9fc89cb200648b86689" },
-  releasedDecoded: { byteLength: 157650, sha256: "b6be1a42bc207366e9a4b0e87ae6dca627aa54344443dfcd64629f61c3d1b4da" },
+  checkpointFramed: { byteLength: 16544, sha256: "08701ce01c7dbe7e02f446b216d45abc9f315baedf631bffd639a258d289af40" },
+  releasedFramed: { byteLength: 16552, sha256: "34cc0b20ed0f3e801f03255b21b71597c8fdc026cb1eb08e24692bbb35a8953f" },
+  checkpointDecoded: { byteLength: 157700, sha256: "9a77d85773999d34d20d70543286b531ce2282924b6606b68b2cfc351cb162cd" },
+  releasedDecoded: { byteLength: 157709, sha256: "daaea27632809d353844bed3bd1fc2ea7206f9e1240cae851bfd182e03430d38" },
   // Run one's readable record (5700 bytes, f5db6739…) plus the two null seat fields on its one seat,
   // `"serviceTier":null,"handle":null,` (33 bytes) after thinkingLevel (5733 bytes, a3224f49…); then, as the record
   // service publishes it, its one unavailable reason as REPLIES_NOT_RETAINED (+25 bytes),
   // `,"codeVersion":"8327b0816a43e559876262682c6320ec7f0f5527"` (+57) and `,"replies":null` (+15) last (5830 bytes,
   // 2855643e…); then, a public record, `,"rerun":{"seed":6006,"stops":[],"abandonments":[],"idle":[],"houseActive":[]}`
   // (+78) after its events, run one's log seed and its server controls (none: this capture logs no control); every other
-  // byte is run one's.
-  readableRecord: { byteLength: 5908, sha256: "f0ba6894e471fe70af00119fc6e30d08421cdf7df2cf62d237d8edd84b667e92" },
-  privateEnvelope: { byteLength: 7096, sha256: "2aeaf83508202ac159f627104aef551e6808c4565c44b128da40dfe3a6a01432" },
+  // byte is run one's (5908 bytes, f0ba6894…), until its setup's drawn colony names (+59 bytes).
+  readableRecord: { byteLength: 5967, sha256: "3f063c62ecfee2f5358225735110cbf8c6488659ad248b5d416cc2c08dcbdd1c" },
+  privateEnvelope: { byteLength: 7128, sha256: "24bd1a262c0abef2ea0b70f7ae612d815769c5593042433e5f0a50651688888b" },
   logJsonl: { byteLength: 4449, sha256: "bee2ef46b57482e748c5042aa0d1b9fe76dc4b6db0daad8eb997ab05e5809762" },
 } as const;
 

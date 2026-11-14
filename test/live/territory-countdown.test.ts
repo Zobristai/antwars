@@ -13,7 +13,7 @@ import { playable } from "../playable.ts";
 function scenario(holdTicks = 4) {
   const base = rulesConfig("redesign");
   // Pin the landed water/countdown composition; rocks.test.ts covers its new extension.
-  const config = { ...base, terrain: { ...base.terrain!, rocks: undefined }, hatchIntervalTicks: 100_000, groundFoodIntervalTicks: 0,
+  const config = { ...base, terrain: { ...base.terrain!, rocks: undefined }, hatchIntervalTicks: 100_000,
     earlyWin: { minTick: 10, holdTicks, territoryRatioPermille: 3000, minHeldTiles: 30 } };
   const state = emptyMatch(9, config);
   // Four fine tiles hold one physical tile at grid scale 2: 30 physical tiles against 10.

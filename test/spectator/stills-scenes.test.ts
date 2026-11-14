@@ -122,8 +122,10 @@ describe("the stills' moments", () => {
   // Regression caught in the db23bd5 stills: the fall recording, captured mid-match, was stepped from tick 0, so its
   // attack, fall and result scenes all landed on its last message, byte-identical, with no queen under attack.
   it("step a recording captured mid-match to its own ticks: the clock counts from its first message's tick, as the client plays it", () => {
-    // The scripted match ends at tick 941 (seed 6013 under main's seeded food patches, seed 6006 had both queens bitten at once and the match over by 640): captured from tick 600 on, as the capture host's fall recording was captured mid-match.
-    const messages = playRedesign({ seed: 6013, agents: 9, ticks: 4000, startAt: 600 });
+    // The scripted match ends at tick 2592 (seed 6014; seed 6013 ended at 941 while the stored config's periodic store payout ran, and
+    // seed 6006 had both queens bitten at once and the match over by 640): captured from tick 600 on, as the capture host's fall
+    // recording was captured mid-match.
+    const messages = playRedesign({ seed: 6014, agents: 9, ticks: 4000, startAt: 600 });
     expect(messages[0]!.tick).toBe(600);
     expect(messages[0]!.full).not.toBeNull();
     expect(messages.at(-1)!.tick).toBeGreaterThan(900);

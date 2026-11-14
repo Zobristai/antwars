@@ -40,12 +40,14 @@ import { openSource } from "./source.ts";
 import { TeamView, teamViewControl } from "./team-view.ts";
 import { Fog2D } from "./fog2d.ts";
 import { mountReplayControls } from "./replay-controls.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import type { RecordingStats } from "./recording.ts";
 import { Waiting } from "./waiting.ts";
 import { TOUCH_RADIUS_PX, linkLine, tiltOn as tiltParam } from "./compose.ts";
 import { excerptEnded, modeCopy } from "./replay.ts";
 import { boardMode, fallbackUrl, hasWebGL2, linkNeedsWebGLHome, runBoard, showNeedsWebGL, unlinkNeedsWebGLHome } from "./webgl2.ts";
 import { clear3dRetryUrl, start3dWithRecovery } from "./3d-recovery.ts";
+import { setMatchColonies } from "./colony-palette.ts";
 
 /** Internal resolution is capped at a 2560 px long side. */
 export const MAX_INTERNAL_LONG_SIDE = 2560;
@@ -231,6 +233,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   const input = await openSource(params, clock, document, rejectReady);
   if (!input) return;
   const { replay, head, linkState } = input;
+  setMatchColonies(colonyNamesOf(head.full!.setup), document);
   const overlays = new Overlays(document.body, { hover() {}, focusMark() {} }, "unavailable");
   // The HUD's window, where the board would be: the one part of the board's API a page without one has.
   window.__antwar.boardArea = () => overlays.area();
@@ -238,7 +241,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   const mode = replay ? "replay" : "live";
   overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
   const controls = params.has("replay") && input.recording
-    ? mountReplayControls(document, input.recording) : null;
+    ? mountReplayControls(document, input.recording, colonyNamesOf(head.full!.setup)) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
   // The needs-WebGL message stands in the HUD's window, where the board would be; its join panel is the HUD's.
   message?.querySelector(".aw-byoa")?.remove();
@@ -310,6 +313,8 @@ async function start(): Promise<void> {
   const input = await openSource(params, clock, document, rejectReady);
   if (!input) return;
   const { replay, feed, head, source, linkState } = input;
+  // The page's one match: its colonies' colours, before anything draws them.
+  setMatchColonies(colonyNamesOf(head.full!.setup), document);
   let playback = new Playback({ live: !input.recorded });
   let replayGeneration = input.recording?.generation ?? 0;
   const W = head.full!.setup.mapW;
@@ -351,7 +356,7 @@ async function start(): Promise<void> {
   const mode = replay ? "replay" : "live";
   overlays.setMode(modeCopy(mode, head.full!.agents.length, false, location.pathname, input.storedId, head.full!.setup.rated, input.delaySeconds));
   const controls = params.has("replay") && input.recording
-    ? mountReplayControls(document, input.recording) : null;
+    ? mountReplayControls(document, input.recording, colonyNamesOf(head.full!.setup)) : null;
   window.addEventListener("pagehide", () => controls?.close(), { once: true });
   const envelope = foundingEnvelope(head.full!.setup);
   overlays.setBoardAspect((envelope.x1 - envelope.x0) / (envelope.y1 - envelope.y0));
