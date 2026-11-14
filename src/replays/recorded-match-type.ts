@@ -32,16 +32,16 @@ const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.st
 
 /**
  * A recording's match type from its own recorded facts, for a recording whose lobby cannot be read: a four-colony record
- * is Quadrants; else its Model Index marker, then unrated; rated with every seat handle an antwars one is the Index, rated
- * with any other handle is Ranked. Null (no badge) where that cannot be told: a rated record with no marker, no non-house
- * handle and a blank handle (never "Ranked" on the rated flag alone), and a record with no setup, whose rated flag is unknown.
+ * is Quadrants, one agent per colony whatever seats it recorded; else its Model Index marker, then unrated; rated with
+ * every seat handle an antwars one is the Index, rated with any other handle is Ranked. Null (no badge) where that cannot
+ * be told: a rated record with no marker, no non-house handle and a blank handle (never "Ranked" on the rated flag alone),
+ * and a record with no setup, whose rated flag is unknown.
  */
 export function recordedMatchType(record: RecordedMatch): RecordingMatchType | null {
-  const colonies = record.colonyNames?.length === 4 ? 4 : 2;
-  const perColony = Math.max(...Array.from({ length: colonies }, (_, colony) => record.seats.filter(seat => seat.colony === colony).length));
+  const perColony = Math.max(...([0, 1] as const).map(colony => record.seats.filter(seat => seat.colony === colony).length));
   const size = perColony >= 1 && perColony <= 4 ? perColony as 1 | 2 | 3 | 4 : null;
   if (record.rated == null) return null;
-  if (colonies === 4) return { kind: "quadrants", size };
+  if (record.colonyNames?.length === 4) return { kind: "quadrants", size: 1 };
   if (record.modelIndex) return { kind: "index", size };
   if (!record.rated) return { kind: "unrated", size };
   const handles = record.seats.map(seat => seat.handle);

@@ -90,6 +90,10 @@ describe("a Quadrants match's row in the recorded match list", () => {
     // A lookup that finds no lobby, or fails, types the row from its record the same way.
     expect(await listMatches(records, async () => null)).toEqual([QUADRANTS_ROW, RATED_ROW, UNRATED_ROW]);
     expect(await listMatches([quadrantsRecord()], async () => { throw new Error("lobby read failed"); })).toEqual([QUADRANTS_ROW]);
+    // A match no agent joined records no seats, and is still one agent per colony.
+    const unjoined = { ...quadrantsRecord(), seats: [] };
+    expect(await listMatches([unjoined])).toEqual([{ ...QUADRANTS_ROW, seats: [] }]);
+    expect(await listMatches([unjoined], async () => null)).toEqual([{ ...QUADRANTS_ROW, seats: [] }]);
   });
 
   it("types it from its readable quadrants lobby, and takes each colony's missing handle from that lobby", async () => {
@@ -124,6 +128,7 @@ describe("a Quadrants match's row in the recorded match list", () => {
   it("types a record of four colonies as Quadrants by its own facts, one agent per colony", () => {
     const summary = parseSummary(QUADRANTS, new TextEncoder().encode(JSON.stringify(quadrantsRecord())));
     expect(recordedMatchType(summary)).toEqual({ kind: "quadrants", size: 1 });
+    expect(recordedMatchType({ ...summary, seats: [] })).toEqual({ kind: "quadrants", size: 1 });
     // A record whose rated flag is unknown has no type, as for any record.
     expect(recordedMatchType({ ...summary, rated: null })).toBeNull();
   });
