@@ -11,7 +11,7 @@ import type { ModeCopy } from "./replay.ts";
 import { COLONY_NAMES, RULES_NAMES, rulesConfig } from "../../src/sim/config.ts";
 import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import { SUB_TILE, streamQueens, type StreamQueen, type StreamAgent, type StreamHatch, type StreamMark, type StreamStore } from "../../src/live/format.ts";
-import type { Board, Frame, StoryEntry } from "./buffer.ts";
+import type { Board, Colony, Frame, StoryEntry } from "./buffer.ts";
 import { MODEL_LABEL, agentShade } from "./squads.ts";
 import { markAge, markReading, type Rect } from "./words.ts";
 import { agentHandle, modelLine, playerLabel } from "./compose.ts";
@@ -61,7 +61,7 @@ const ORDER_TEXT: Record<string, string> = { go_to: "go to", forage: "forage", h
 /** The target's identity stays separate from its words, so guard never depends on parsing a label. */
 export interface OrderTarget {
   readonly label: string;
-  readonly colony: 0 | 1;
+  readonly colony: Colony;
   readonly liveQueen: boolean;
 }
 
@@ -185,7 +185,7 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
       return { what: `${queen} — repelled at ${hpText(e.lowHp ?? 0)}`, who: colony };
     }
     case "overrun": {
-      const target = names[(1 - e.colony) as 0 | 1];
+      const target = names[e.target ?? 1 - e.colony];
       if (e.endTick === undefined || e.endTick > now) return { what: `Overrun attempt on the ${target} queen — under way`, who };
       const pct = Math.round((100 * (e.peak ?? 0)) / Math.max(1, e.required ?? 1));
       if (e.outcome === "took") return { what: `Overrun attempt on the ${target} queen — took the queen`, who };
@@ -342,7 +342,7 @@ export function colonyCardLines(ledger: ReturnType<typeof colonyLedger>, stats: 
  */
 export function queensUnderAttack(story: readonly StoryEntry[], now: number): Set<string> {
   const keys = new Set<string>();
-  for (const e of story) if (underWay(e, now)) keys.add(`${e.kind === "overrun" ? 1 - e.colony : e.colony}:${e.queenId ?? 0}`);
+  for (const e of story) if (underWay(e, now)) keys.add(`${e.kind === "overrun" ? e.target ?? 1 - e.colony : e.colony}:${e.queenId ?? 0}`);
   return keys;
 }
 

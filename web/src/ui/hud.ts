@@ -653,7 +653,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     if (e) {
       const t = storyText(e, b.agents, frame.tick, b.queens, false, colonyNamesOf(b.setup));
       const when = matchTime(storyWhen(e, frame.tick), tps);
-      lines = { what: t.what, who: t.who, when, colony: e.colony, kind: e.kind };
+      lines = { what: t.what, who: t.who, when, colony: e.colony as Colony, kind: e.kind };
     }
     if (fall && !ended) {
       // The fall is the match's moment: the queen lost, large, whatever the timeline last told.

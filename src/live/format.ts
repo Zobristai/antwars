@@ -302,7 +302,7 @@ export interface StreamQueen {
 }
 
 /** Queen records for legacy recordings are derived, never invented on the wire. */
-export function streamQueens(full: { queens?: readonly StreamQueen[]; setup: StreamSetup; overrun?: readonly [number, number] }): readonly StreamQueen[] {
+export function streamQueens(full: { queens?: readonly StreamQueen[]; setup: StreamSetup; overrun?: readonly number[] }): readonly StreamQueen[] {
   return full.queens ?? ([0, 1] as const).map((colony) => ({ id: 0, colony, x: full.setup.queens[colony][0], y: full.setup.queens[colony][1],
     foundedTick: 0, lostTick: null, overrun: full.overrun?.[colony] ?? 0 }));
 }

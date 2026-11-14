@@ -107,7 +107,7 @@ export function agentEntries(frame: Frame): AgentEntry[] {
     const line = newest.get(index);
     return {
       index, colony, shade, badge: badge(index, shade), name: a.identity ? rowName(a.identity.displayName, undefined).name : null, model: agentModelText(a), elo, idle,
-      order: { kind: a.order, guard, text, target: directed && target ? target.colony : null },
+      order: { kind: a.order, guard, text, target: directed && target ? target.colony as Colony : null },
       latest: line ? agentLine(line, frame, live) : a.intent ? standingThought(a.intent, index, colony) : null,
       label: [playerLabel(index, a), colonyNamesOf(b.setup)[colony], modelLine(a, MODEL_LABEL), text, idle ? "idle" : ""]
         .filter(Boolean).join(" · "),
