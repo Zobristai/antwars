@@ -67,7 +67,7 @@ function barrier(n: number) {
   };
 }
 
-const seatCounts = (lobby: { colonies: readonly [readonly unknown[], readonly unknown[]] }) => lobby.colonies.map((colony) => colony.length);
+const seatCounts = (lobby: { colonies: readonly (readonly unknown[])[] }) => lobby.colonies.map((colony) => colony.length);
 
 // Each test makes dozens of sequential emulator round trips.
 describe.skipIf(!host)("lobbies against the Firestore emulator", { timeout: 60_000 }, () => {
@@ -124,7 +124,7 @@ describe.skipIf(!host)("lobbies against the Firestore emulator", { timeout: 60_0
   });
 
   // An optional colony choice on join.
-  const seatIds = (lobby: { colonies: readonly [readonly { id: string }[], readonly { id: string }[]] }) =>
+  const seatIds = (lobby: { colonies: readonly (readonly { id: string }[])[] }) =>
     lobby.colonies.map((colony) => colony.map((seat) => seat.id));
 
   it("seats a join naming colony 0 or 1 in that colony while it has a free seat, and refuses a full chosen colony as colony_full, leaving the joiner unseated", async () => {

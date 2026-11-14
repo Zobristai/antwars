@@ -133,7 +133,11 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
       const found = await registry.replayLobby(replayId);
       if (found.state !== "found") return found.state === "pending" ? "pending" as const : null;
       const read = await lobbies.readLobby(found.lobbyId);
-      return read.ok ? read.value : null;
+      if (!read.ok) return null;
+      const lobby = read.value;
+      // A recording's lobby has two colonies; a quadrants lobby is a failed lookup here.
+      if (lobby.mode === "quadrants") throw new Error("a quadrants lobby is not a two-colony recording lobby");
+      return { ...lobby, mode: lobby.mode, colonies: [lobby.colonies[0]!, lobby.colonies[1]!] as const };
     } : undefined;
     server.mount("/matches", historyRoutes(options.historySource, lookup));
   }

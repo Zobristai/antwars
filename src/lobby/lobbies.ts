@@ -2,14 +2,16 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Identities } from "../identity/identities.js";
 import type { ColonyId } from "../sim/types.js";
-import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
-import { COLONY_NAMES } from "../sim/config.js";
-import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
+import { isClassicColonyNames, lobbyColonyNames, SUPERCOLONY_NAMES, type ColonyNamePair } from "../sim/colonyNames.js";
+import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, type MapDefinition } from "../sim/config.js";
+import { isQuadrantRotation } from "../sim/mapBoard.js";
+import { quadrantMatchMaps } from "../sim/mapShapes.js";
+import { isRankedMode, isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
-import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueStatus } from "./queue.js";
+import { joinQueueStep, lacksQuadrantMap, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueMode, type QueueStatus } from "./queue.js";
 import {
   endedLobbyWaitWrites, endedWrite, isFinal, isOwnLiveWait, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
   replacedWaitWrites, repointWrites, seatKeyPath, sweepAllExpiredWaits, waitIndexes, waitPath, withPairedLobby, type WaitIndexes, type WaitState,
@@ -102,10 +104,13 @@ import { lobbyPageUrl } from "./site.js";
  */
 
 export type LobbyKind = "public" | "private";
-/** Agents per colony; a match has two colonies. */
+/** Agents per colony; a match has two colonies, or four in a quadrants lobby. */
 export type LobbySize = 1 | 2 | 3 | 4;
 export type LobbyState = "open" | "waiting" | "holding" | "ended" | "expired";
+/** A colony a seat may be joined to: player-created lobbies have two. */
 export type Colony = 0 | 1;
+/** A stored seat's colony: 2 and 3 only in a quadrants lobby. */
+type SeatColony = 0 | 1 | 2 | 3;
 
 export interface Seat {
   readonly id: string;
@@ -125,10 +130,10 @@ export interface Lobby {
   readonly createdAt: number;
   /** When an open or waiting player-created lobby expires; irrelevant once it holds a slot, and for a queue-made lobby. */
   readonly expiresAt: number;
-  /** The ranked mode of a queue-made lobby, which never expires; null for a player-created lobby. */
-  readonly mode: RankedMode | null;
-  /** Seated identities by colony, in seating order. */
-  readonly colonies: readonly [readonly Seat[], readonly Seat[]];
+  /** The queue mode of a queue-made lobby, which never expires; null for a player-created lobby. */
+  readonly mode: QueueMode | null;
+  /** Seated identities by colony, in seating order: two colonies, or four in a quadrants lobby. */
+  readonly colonies: readonly (readonly Seat[])[];
   /** When its match starts: the countdown's end, set when the lobby takes a slot. */
   readonly startsAt: number | null;
   /** How its match ended, once its slot is released. */
@@ -138,8 +143,9 @@ export interface Lobby {
   /**
    * Present only where its match plays under drawn names: the pair its begun match recorded, or, before it begins, the pair
    * an unrated lobby's match draws from its id. Absent on a rated lobby and on a match begun under the rated names.
+   * A quadrants lobby's are its four stored names, by colony.
    */
-  readonly colonyNames?: ColonyNamePair;
+  readonly colonyNames?: readonly string[];
 }
 
 /** A house challenge lobby's label: always unrated, its held seat for one antwars/<handle>. */
@@ -154,8 +160,14 @@ export interface LobbyChallenge {
  * the match was replaced by a restarted instance or failed to start. Only a natural
  * result of a rated lobby is rated.
  */
-export type MatchOutcome = "colony_0_won" | "colony_1_won" | "draw" | "stopped" | "not_played" | "abandoned";
-const OUTCOMES: readonly MatchOutcome[] = ["colony_0_won", "colony_1_won", "draw", "stopped", "not_played", "abandoned"];
+export type MatchOutcome = "colony_0_won" | "colony_1_won" | "colony_2_won" | "colony_3_won" | "draw" | "stopped" | "not_played" | "abandoned";
+const OUTCOMES: readonly MatchOutcome[] = ["colony_0_won", "colony_1_won", "colony_2_won", "colony_3_won", "draw", "stopped", "not_played", "abandoned"];
+
+/** A quadrants match's result beside its outcome: why it ended, and the tick each eliminated colony was eliminated at. */
+export interface MatchResult {
+  readonly reason: string;
+  readonly eliminations: readonly { readonly colony: number; readonly tick: number }[];
+}
 
 /** The instance serving a slot. */
 export interface SlotInstance {
@@ -191,12 +203,12 @@ export interface MatchLocation {
 /** The lobby holding a slot, as its instance needs it. */
 export interface SlotHolder {
   readonly lobbyId: string;
-  /** The queue's ranked mode; null for an unrated player-created lobby. */
-  readonly mode: RankedMode | null;
+  /** The queue's mode; null for an unrated player-created lobby. */
+  readonly mode: QueueMode | null;
   readonly startsAt: number;
   /** The run that began its match; null during the countdown. */
   readonly matchRunId: string | null;
-  readonly colonies: readonly [readonly Seat[], readonly Seat[]];
+  readonly colonies: readonly (readonly Seat[])[];
 }
 
 export type LobbyRefusal =
@@ -212,8 +224,11 @@ export type LobbyRefusal =
   /** A leave by an identity with no seat in the lobby, or of a lobby that does not exist. */
   | "not_seated"
   /** A queue or lobby join by an identity whose latest challenge's lobby is live (another lobby, for a lobby join). */
-  | "live_challenge";
-export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal };
+  | "live_challenge"
+  /** A quadrants queue join while the quadrants map rotation holds no quadrant map. */
+  | "no_quadrant_map";
+/** also: a further refusal that applies too, reported with reason (a live-challenge quadrants join while no quadrant map is available). */
+export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal; readonly also?: "no_quadrant_map" };
 
 export interface CreatedLobby {
   readonly lobby: Lobby;
@@ -262,10 +277,11 @@ export interface Lobbies {
    * lobby is rated in the same transaction, in the lobby's mode ("1v1" when it has
    * none), teams by colony with each identity once; nothing else is rated. An abandoned
    * house challenge whose absentColonies (the colonies whose seat never joined) include its
-   * held colony records heldAbsent; no other lobby records absentColonies.
+   * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby, never rated, also stores
+   * result when given; no other lobby stores it.
    */
   endMatch(lobbyId: string, runId: string, outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers,
-    modelLabels?: ModelLabels, absentColonies?: readonly ColonyId[]): Promise<LobbyOutcome<{ readonly next: string | null }>>;
+    modelLabels?: ModelLabels, absentColonies?: readonly ColonyId[], result?: MatchResult): Promise<LobbyOutcome<{ readonly next: string | null }>>;
   /**
    * Registers runId as the slot's instance, replacing any earlier one: the last to
    * boot wins. With claim, nothing is written and the owner is returned while the
@@ -309,11 +325,11 @@ export interface Lobbies {
    * a public, rated lobby of that mode with the seats as given (size is the colony
    * length; the creator is the first colony-0 seat) and starts it through
    * settleSlots, holding a free public slot or waiting for one. It is not listed in
-   * listings/public.
+   * listings/public. A quadrants match is four one-seat colonies, unrated, carrying its four colony names.
    */
   queuedMatchWrites(
     read: TransactionRead,
-    match: { readonly mode: RankedMode; readonly colonies: readonly [readonly Seat[], readonly Seat[]] },
+    match: { readonly mode: QueueMode; readonly colonies: readonly (readonly Seat[])[] },
     at: number,
   ): Promise<{ readonly writes: readonly Write[]; readonly lobby: Lobby }>;
   /**
@@ -404,6 +420,8 @@ export interface LobbySettings {
   readonly random?: () => number;
   /** Recent lobbies per page of the challenge seated-elsewhere scan (CHALLENGE_SCAN_PAGE_SIZE unless a test pages it). */
   readonly challengeScanPageSize?: number;
+  /** The quadrants map rotation (quadrantMatchMaps() unless a test supplies one); quadrants is joinable only while it is a quadrant rotation. */
+  readonly quadrantMaps?: readonly MapDefinition[];
 }
 
 /** A player-created lobby's lifetime, open or waiting: 12 hours, renewed by nothing. */
@@ -421,7 +439,7 @@ export const SLOT = /^(public|private)-(\d+)$/;
 const LOBBY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LISTING = "listings/public";
 
-interface StoredSeat { readonly id: string; readonly displayName: string; readonly colony: Colony }
+interface StoredSeat { readonly id: string; readonly displayName: string; readonly colony: SeatColony }
 
 const refuse = (reason: LobbyRefusal) => ({ ok: false, reason }) as const;
 const ok = <T>(value: T) => ({ ok: true, value }) as const;
@@ -435,13 +453,16 @@ const SIZES: readonly LobbySize[] = [1, 2, 3, 4];
 /** The states a lobby document stores; expired is derived on read. */
 const STORED_STATES: readonly LobbyState[] = ["open", "waiting", "holding", "ended"];
 
-/** A lobby's stored seats, or null when they do not parse as [{id, displayName, colony: 0 | 1}] with valid ids (as lobbySeats, ratings.ts). */
-function storedSeats(stored: string): StoredSeat[] | null {
+/**
+ * A lobby's stored seats, or null when they do not parse as [{id, displayName, colony: 0 | 1}] with valid ids (as lobbySeats,
+ * ratings.ts); colony 2 or 3 too where the lobby has four colonies.
+ */
+function storedSeats(stored: string, colonies: 2 | 4): StoredSeat[] | null {
   let seats: unknown;
   try { seats = JSON.parse(stored); } catch { return null; }
   const isSeat = (seat: unknown): seat is StoredSeat => typeof seat === "object" && seat !== null
     && isValidId((seat as { id?: unknown }).id) && typeof (seat as { displayName?: unknown }).displayName === "string"
-    && ((seat as { colony?: unknown }).colony === 0 || (seat as { colony?: unknown }).colony === 1);
+    && [0, 1, 2, 3].slice(0, colonies).includes((seat as { colony?: unknown }).colony as number);
   return Array.isArray(seats) && seats.every(isSeat) ? seats : null;
 }
 
@@ -451,7 +472,7 @@ function storedSeats(stored: string): StoredSeat[] | null {
  */
 function lobbyDocument(id: string, fields: Fields): { kind: LobbyKind; size: LobbySize; state: LobbyState; seats: StoredSeat[] } {
   const malformed = (field: string) => new Error(`malformed lobby document ${lobbyPath(id)}: ${field} ${JSON.stringify(fields[field] ?? null)}`);
-  const seats = storedSeats(fields.seats ?? "[]");
+  const seats = storedSeats(fields.seats ?? "[]", colonyCount(fields));
   if (seats === null) throw malformed("seats");
   const kind = KINDS.find((known) => known === fields.kind);
   if (kind === undefined) throw malformed("kind");
@@ -461,6 +482,12 @@ function lobbyDocument(id: string, fields: Fields): { kind: LobbyKind; size: Lob
   if (size === undefined) throw malformed("size");
   return { kind, size, state, seats };
 }
+
+const QUADRANTS = "quadrants" satisfies QueueMode;
+/** A lobby's colonies: four in a quadrants lobby, two in every other. */
+const colonyCount = (fields: Fields): 2 | 4 => fields.mode === QUADRANTS ? 4 : 2;
+/** A quadrants lobby's four colony names, by colony, from the shared name table. */
+const quadrantNames = (): string[] => SUPERCOLONY_NAMES.map((name) => name.label);
 
 const seatsOf = (id: string, fields: Fields): StoredSeat[] => lobbyDocument(id, fields).seats;
 const capacity = (id: string, fields: Fields) => 2 * lobbyDocument(id, fields).size;
@@ -487,8 +514,8 @@ const lobbyDone = (read: TransactionRead, now: number) => async (lobbyId: string
 function toLobby(id: string, fields: Fields, now: number): Lobby {
   const { kind, size, state, seats } = lobbyDocument(id, fields);
   const createdAt = Number(fields.createdAt);
-  const colonies: [Seat[], Seat[]] = [[], []];
-  for (const seat of seats) colonies[seat.colony].push({ id: seat.id, displayName: seat.displayName });
+  const colonies: Seat[][] = Array.from({ length: colonyCount(fields) }, () => []);
+  for (const seat of seats) colonies[seat.colony]!.push({ id: seat.id, displayName: seat.displayName });
   return {
     id,
     kind,
@@ -502,14 +529,15 @@ function toLobby(id: string, fields: Fields, now: number): Lobby {
     colonies,
     startsAt: fields.startsAt ? Number(fields.startsAt) : null,
     outcome: OUTCOMES.includes(fields.outcome as MatchOutcome) ? fields.outcome as MatchOutcome : null,
-    mode: fields.mode ? fields.mode as RankedMode : null,
+    mode: fields.mode ? fields.mode as QueueMode : null,
     ...(fields.challengeId ? { challenge: { kind: "house", heldFor: `${HOUSE_USERNAME}/${fields.heldFor}`, heldColony: HELD_COLONY } } : {}),
     ...matchNames(id, fields),
   };
 }
 
 /** The match's names as its record holds them (Lobby.colonyNames): present only where they are drawn names. */
-function matchNames(id: string, fields: Fields): { colonyNames?: ColonyNamePair } {
+function matchNames(id: string, fields: Fields): { colonyNames?: readonly string[] } {
+  if (fields.mode === QUADRANTS) return { colonyNames: storedQuadrantNames(fields.colonyNames) };
   let names: ColonyNamePair;
   if (fields.mode) names = COLONY_NAMES;
   else if (fields.colonyNames !== undefined) names = recordedNames(fields.colonyNames);
@@ -526,6 +554,15 @@ function recordedNames(value: string): ColonyNamePair {
     if (Array.isArray(parsed) && parsed.length === 2 && parsed.every((name) => typeof name === "string" && name.length > 0)) return [parsed[0], parsed[1]];
   } catch { /* the rated names */ }
   return COLONY_NAMES;
+}
+
+/** A quadrants lobby's names as its document stores them, by colony: four names, or (anything else) the table's four. */
+function storedQuadrantNames(value: string | undefined): string[] {
+  try {
+    const parsed: unknown = JSON.parse(value ?? "");
+    if (Array.isArray(parsed) && parsed.length === 4 && parsed.every((name) => typeof name === "string" && name.length > 0)) return parsed;
+  } catch { /* the table's names */ }
+  return quadrantNames();
 }
 
 /** The lobby fields recording a match's names (Lobby.colonyNames); none when the caller gave none. */
@@ -559,6 +596,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   };
   const now = settings.now ?? Date.now;
   const random = settings.random ?? Math.random;
+  // The engine's own four-colony rule: a non-empty rotation of quadrant maps only.
+  const quadrantMapReady = isQuadrantRotation({ ...PUBLIC_CONFIG, terrain: { ...TERRAIN_RULES, maps: settings.quadrantMaps ?? quadrantMatchMaps() } });
   const countdownMs = settings.countdownMs ?? COUNTDOWN_MS;
   const staleHoldGraceMs = settings.staleHoldGraceMs;
 
@@ -708,7 +747,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
    */
   async function release(read: TransactionRead, lobbyId: string, ending?: {
     readonly runId: string; readonly outcome: MatchOutcome; readonly thinkingLevels?: ThinkingLevels; readonly serviceTiers?: ServiceTiers;
-    readonly modelLabels?: ModelLabels; readonly absentColonies?: readonly ColonyId[];
+    readonly modelLabels?: ModelLabels; readonly absentColonies?: readonly ColonyId[]; readonly result?: MatchResult;
   }) {
     type Released = LobbyOutcome<{ readonly next: string | null }>;
     const at = now();
@@ -720,11 +759,15 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     const writes: Write[] = [];
     let outcome = "";
     let heldAbsent = false;
+    let result: Fields = {};
     if (ending) {
       if (docs.get(instancePath(fields.slot))?.runId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       if (ending.outcome !== "not_played" && fields.matchRunId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       outcome = ending.outcome;
       heldAbsent = outcome === "abandoned" && !!fields.challengeId && (ending.absentColonies ?? []).includes(HELD_COLONY);
+      if (ending.result !== undefined && fields.mode === QUADRANTS) {
+        result = { result: JSON.stringify(ending.result) };
+      }
       const winner = ratedWinner(ending.outcome);
       if (winner !== null && fields.rated === "true") {
         // In a ranked team mode one identity holds every seat of its colony, so each
@@ -741,23 +784,27 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     const settled = await settleSlots(read, fields.kind as LobbyKind, at, undefined, slotPath);
     return {
       result: ok({ next: settled.handedTo[0] ?? null }) as Released,
-      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}), ...(heldAbsent ? { heldAbsent: "true" } : {}) } }, ...settled.writes, ...writes] as Write[],
+      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}), ...(heldAbsent ? { heldAbsent: "true" } : {}), ...result } }, ...settled.writes, ...writes] as Write[],
     };
   }
 
   async function queuedMatchWrites(
     read: TransactionRead,
-    { mode, colonies }: { readonly mode: RankedMode; readonly colonies: readonly [readonly Seat[], readonly Seat[]] },
+    { mode, colonies }: { readonly mode: QueueMode; readonly colonies: readonly (readonly Seat[])[] },
     at: number,
   ): Promise<{ readonly writes: readonly Write[]; readonly lobby: Lobby }> {
-    const size = colonies[0].length;
-    if (![1, 2, 3, 4].includes(size) || colonies[1].length !== size) throw new Error("a queue-made match needs two colonies of 1-4 seats each");
+    const quadrants = mode === QUADRANTS;
+    const size = colonies[0]?.length ?? 0;
+    if (quadrants) {
+      if (colonies.length !== 4 || colonies.some((colony) => colony.length !== 1)) throw new Error("a quadrants match needs four colonies of one seat each");
+    } else if (colonies.length !== 2 || ![1, 2, 3, 4].includes(size) || colonies[1]!.length !== size) throw new Error("a queue-made match needs two colonies of 1-4 seats each");
     const id = randomUUID();
     const seats: StoredSeat[] = colonies.flatMap((colony, index) =>
-      colony.map((seat) => ({ id: seat.id, displayName: seat.displayName, colony: index as Colony })));
+      colony.map((seat) => ({ id: seat.id, displayName: seat.displayName, colony: index as SeatColony })));
     const fields: Fields = {
-      kind: "public", size: String(size), creatorId: colonies[0][0]!.id, createdAt: String(at), state: "open",
-      rated: "true", slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
+      kind: "public", size: String(size), creatorId: colonies[0]![0]!.id, createdAt: String(at), state: "open",
+      rated: quadrants ? "false" : "true", slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
+      ...(quadrants ? { colonyNames: JSON.stringify(quadrantNames()) } : {}),
     };
     // settleSlots writes the starting lobby once, as an update holding or waiting (and
     // notes a taken slot for its wake); the lobby is new, so that write becomes its
@@ -1084,9 +1131,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       return store.transaction((read) => release(read, lobbyId));
     },
 
-    async endMatch(lobbyId, runId, outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies) {
+    async endMatch(lobbyId, runId, outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies, result) {
       if (!OUTCOMES.includes(outcome)) throw new Error(`invalid match outcome ${outcome}`);
-      return store.transaction((read) => release(read, lobbyId, { runId, outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies }));
+      return store.transaction((read) => release(read, lobbyId, { runId, outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies, result }));
     },
 
     async registerInstance(slot, instance, claim) {
@@ -1154,7 +1201,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         }
         if (fields.matchRunId) return { result: refuse("started"), writes: [] };
         const writes: Write[] = [
-          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId, ...namesField(colonyNames) } },
+          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId, ...(fields.mode === QUADRANTS ? {} : namesField(colonyNames)) } },
           // The begun match's owner is alive and reached now.
           { op: "update", path: instancePath(slot), fields: { heartbeatAt: String(now()), heardAt: String(now()) } },
         ];
@@ -1173,7 +1220,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         }
         const at = String(now());
         const writes: Write[] = [
-          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId, ...namesField(colonyNames) } },
+          { op: "update", path: lobbyPath(lobbyId), fields: { matchRunId: runId, ...(fields.mode === QUADRANTS ? {} : namesField(colonyNames)) } },
           // The adopted match's owner is alive and reached now, as at a begin.
           { op: "update", path: instancePath(slot), fields: { heartbeatAt: at, heardAt: at } },
         ];
@@ -1190,10 +1237,13 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!joiner) return refuse("unknown_key");
       return store.transaction(async (read) => {
         const at = now();
-        // Refused before any queue or wait write: a live challenge keeps its builder out of the queue.
-        if (await challenges.liveChallenge(read, joiner.id, at) !== undefined) return { result: refuse("live_challenge"), writes: [] };
+        // Refused before any queue or wait write: a live challenge keeps its builder out of the queue. A quadrants join
+        // while no quadrant map is available reports that too, so the builder is not told to join once its challenge ends.
+        if (await challenges.liveChallenge(read, joiner.id, at) !== undefined) {
+          return { result: lacksQuadrantMap(mode, quadrantMapReady) ? { ...refuse("live_challenge"), also: "no_quadrant_map" } : refuse("live_challenge"), writes: [] };
+        }
         const indexes = waitIndexes(read);
-        const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, indexes, waitToken);
+        const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, indexes, waitToken, quadrantMapReady);
         if (!step.result.ok) return step;
         const replaced = await replacedQueueWait(read, indexes, joiner.id, at);
         const writes = [...step.writes, ...replaced];
@@ -1265,7 +1315,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     },
 
     async listWaiting() {
-      const entries = await waitingEntries((path) => store.get(path), now());
+      // The Waiting view lists the ranked queues only; it shows no quadrants entry.
+      const entries = (await waitingEntries((path) => store.get(path), now())).flatMap(({ mode, ...entry }) => isRankedMode(mode) ? [{ ...entry, mode }] : []);
       const named = await Promise.all(entries.map(async ({ identityId, mode, joinedAt }) => {
         const identity = await identities.findById(identityId);
         return identity ? { identityId, displayName: identity.displayName, mode, joinedAt } : null;
@@ -1293,13 +1344,16 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         // A holding lobby's match begins when its slot's instance stamps matchRunId (beginMatch); Live now lists it then.
         if (!(fields.state === "open" || fields.state === "waiting" || (fields.state === "holding" && !fields.matchRunId))) continue;
         const lobby = toLobby(id, fields, at);
-        const seated = lobby.colonies[0].length + lobby.colonies[1].length;
+        // The Waiting view shows two-colony lobbies only; it shows no quadrants lobby.
+        if (lobby.mode === QUADRANTS) continue;
+        const [first = [], second = []] = lobby.colonies;
+        const seated = first.length + second.length;
         if (seated === 0) continue;
         const distinct = (colony: readonly Seat[]): UnstartedSeat[] => colony
           .filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index)
           .map((seat) => ({ ...seat, seats: colony.filter((other) => other.id === seat.id).length }));
-        unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(lobby.colonies[0]), distinct(lobby.colonies[1])],
-          ...(lobby.challenge ? { challenge: "house" as const } : {}), ...(lobby.colonyNames === undefined ? {} : { colonyNames: lobby.colonyNames }) });
+        unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(first), distinct(second)],
+          ...(lobby.challenge ? { challenge: "house" as const } : {}), ...(lobby.colonyNames === undefined ? {} : { colonyNames: [lobby.colonyNames[0]!, lobby.colonyNames[1]!] }) });
       }
       // A seat stores the name at seating; each is shown by its identity's current display name, as listWaiting names
       // queue entries, and a seat whose identity no longer resolves is left unnamed.
