@@ -20,7 +20,7 @@ export interface CommandRecord {
 }
 export interface SeatRecord {
   seat: number;
-  colony: 0 | 1;
+  colony: number;
   modelLabel: string | null;
   /** null when omitted, including recordings made before this metadata existed. */
   thinkingLevel: string | null;

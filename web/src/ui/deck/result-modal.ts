@@ -7,7 +7,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports both HUDs, which import this module.
 import type { Frame } from "../../buffer.ts";
-import { colonyNameNote, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
+import { colonyNameNote } from "../../../../src/sim/colonyNames.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
 import { D1_ICON } from "./icons.ts";
 import { PAGE_WORDS, resultView, shareHref, type ResultView } from "./model.ts";
@@ -78,7 +78,7 @@ export function mountResultModal(doc: Document): ResultModal {
    * drawn: the match's drawn colony names (unrated), else undefined. A drawn name is shown in its colony's colour with
    * its one-line source as its tooltip wherever the result names it; the rated names are shown as they always were.
    */
-  const writeBody = (r: ResultView | null, drawn: ColonyNamePair | undefined) => {
+  const writeBody = (r: ResultView | null, drawn: readonly string[] | undefined) => {
     const keyNow = r ? JSON.stringify([r, drawn ?? null]) : "";
     if (keyNow === bodyKey) return;
     bodyKey = keyNow;

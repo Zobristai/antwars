@@ -9,7 +9,7 @@
  */
 import { SUB_TILE, streamQueens, type StreamAnts, type StreamMark } from "../../src/live/format.ts";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { Frame, type Board, type Colony } from "./buffer.ts";
 import { gridScale } from "./grid-scale.ts";
 
@@ -100,10 +100,10 @@ export class TeamView {
   private territories = new WeakMap<Uint8Array, Uint8Array>();
   private trails = new WeakMap<Float32Array, Float32Array>();
   /** The colony names the frames carry (the match's own, else the rated names), and who is told when they change. */
-  private names: ColonyNamePair = COLONY_NAMES;
-  onNames: ((names: ColonyNamePair) => void) | null = null;
+  private names: readonly string[] = COLONY_NAMES;
+  onNames: ((names: readonly string[]) => void) | null = null;
 
-  get colonyNames(): ColonyNamePair {
+  get colonyNames(): readonly string[] {
     return this.names;
   }
 
@@ -207,7 +207,7 @@ export class TeamView {
 export const TEAM_VIEW_COPY = {
   label: "Point of view",
   full: "Full view",
-  colony: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]}'s view`,
+  colony: (colony: Colony, names: readonly string[] = COLONY_NAMES) => `${names[colony]}'s view`,
 } as const;
 
 /**
