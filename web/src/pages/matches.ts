@@ -12,7 +12,7 @@
 // Rows and links come from today's helpers (ui/format.ts), read-only.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { colonyColours, colonyNameNote, colonyNamesOf, colourCss, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { colonyColours, colonyNameNote, colonyNamesOf, colourCss } from "../../../src/sim/colonyNames.ts";
 import { TEXT_GROUND, needsTextGround } from "../colony-palette.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { benchmarkLabel } from "../leaderboard-page/view.ts";
@@ -69,7 +69,7 @@ export interface MatchRow {
   readonly stamp: { readonly text: string; readonly look: "complete" | "partial" | "unavailable" | "waiting" | "live" };
   readonly action: { readonly text: string; readonly href: string; readonly label: string } | null;
   /** The match's own colony names (an unrated match's drawn pair); absent where it uses the rated names. */
-  readonly colonyNames?: ColonyNamePair;
+  readonly colonyNames?: readonly string[];
 }
 /** One Matches list's card. */
 export interface MatchList {

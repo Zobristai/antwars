@@ -14,7 +14,8 @@ export const TICK_MS = 1000 / TICK_HZ;
 
 export const OWNER_NONE = 0;
 
-export type Colony = 0 | 1;
+/** A colony id: 0 and 1 in a two-colony match, 0 to 3 in a four-colony one. */
+export type Colony = number;
 
 /** A recorded match: messages concatenated, each prefixed with its u32 byte length. */
 export function packMessages(messages: Uint8Array[]): Uint8Array {
