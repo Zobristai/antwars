@@ -3,6 +3,8 @@
 // - every store directory, from the root down, must be owned by the harness's user and not writable by group or
 //   others, so no other user can replace a directory between a check and its use. The harness creates its directories
 //   itself with that mode, and refuses any directory that fails the check, or is a link, before reading or writing;
+// - every directory above the store root, up to /, must be owned by root or the harness's user and either not writable
+//   by group or others or sticky, so no other user can replace the store root or anything above it;
 // - the one exception is a shared directory other participants add files to (the noise check): it is sticky
 //   (mode 1777) under an owned parent, so others can add files there but cannot rename or remove anyone else's;
 // - a write creates a fresh file exclusively in the target directory and renames it over the final name, so it never
@@ -10,8 +12,8 @@
 // - every final component is opened without following links, and a file read must be a plain file owned by the
 //   harness's user.
 import { randomUUID } from "node:crypto";
-import { chmodSync, closeSync, constants, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { chmodSync, closeSync, constants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
 const SHARED_MODE = 0o1777;
 
@@ -40,14 +42,42 @@ function checkDir(path: string, shared = false): void {
 }
 
 /**
- * Open the store root: create it if missing, then refuse it unless it is owned by this user and not writable by group or
- * others, and its parent cannot be used by another user to replace it.
+ * Why a directory above the store root is refused, or null: it must be a real directory owned by root or this user,
+ * and either not writable by group or others or sticky (so another user cannot replace what is in it).
  */
-export function openStore(root: string): string {
-  mkdirSync(root, { recursive: true, mode: 0o755 });
-  const parent = statSync(dirname(root));
-  if (parent.uid !== user() && parent.uid !== 0) throw new Error(`the directory holding the store ${root} is owned by another user; refusing it`);
-  if ((parent.mode & 0o022) !== 0 && (parent.mode & 0o1000) === 0) throw new Error(`the directory holding the store ${root} is writable by group or others; refusing it`);
+export function ancestorProblem(st: Pick<Stats, "uid" | "mode"> & { isDirectory(): boolean; isSymbolicLink(): boolean }, uid: number): string | null {
+  if (st.isSymbolicLink() || !st.isDirectory()) return "is not a plain directory";
+  if (st.uid !== uid && st.uid !== 0) return "is owned by another user";
+  if ((st.mode & 0o022) !== 0 && (st.mode & 0o1000) === 0) return "is writable by group or others and not sticky";
+  return null;
+}
+
+function checkAncestor(path: string, root: string): void {
+  const problem = ancestorProblem(lstatSync(path), user());
+  if (problem !== null) throw new Error(`${path}, above the store ${root}, ${problem}; refusing the store`);
+}
+
+/**
+ * Open the store root. Links in the path are resolved once; then every directory from / down to the root must pass the
+ * ancestor rule, and the root itself must be owned by this user and not writable by group or others. Missing
+ * directories are created one at a time with mode 755, only below directories that have passed. Nothing in the store
+ * is read or written before this returns.
+ */
+export function openStore(path: string): string {
+  let existing = path;
+  const missing: string[] = [];
+  while (!existsSync(existing)) { missing.unshift(basename(existing)); existing = dirname(existing); }
+  const real = realpathSync(existing), root = join(real, ...missing);
+  for (let at = real; ; at = dirname(at)) {
+    if (at !== root) checkAncestor(at, root);
+    if (at === dirname(at)) break;
+  }
+  let at = real;
+  for (const part of missing) {
+    if (at !== real) checkAncestor(at, root);
+    at = join(at, part);
+    try { mkdirSync(at, { mode: 0o755 }); } catch (e: any) { if (e.code !== "EEXIST") throw e; }
+  }
   checkDir(root);
   return root;
 }

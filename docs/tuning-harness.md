@@ -19,8 +19,10 @@ The store holds data only: it is read, never imported or run.
 **Trust.** The harness trusts processes running as its own operating-system user, and treats every other writer to
 the store as untrusted. So:
 
-- The store root must be owned by the user running the harness and not writable by group or others, and the directory
-  holding it must not let another user replace it. The harness creates every directory below the root itself, with
+- The store root must be owned by the user running the harness and not writable by group or others. Every directory
+  above it, up to `/`, must be owned by root or that user and either not writable by group or others or sticky (as
+  `/tmp` usually is), so no other user can replace the store or anything above it. Links in the store path are
+  resolved first, and these rules apply to the real path. The harness creates every directory below the root itself, with
   mode 755, and stops before any read or write if a store directory is a link, is owned by another user, or is
   writable by group or others.
 - The one exception is each noise-check session directory, which is created sticky (mode 1777) so other participants

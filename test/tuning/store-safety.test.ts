@@ -7,7 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { directoryProblem, openStore, storeHas, storeList, storeRead, storeReadText, storeSharedDir, storeWrite } from "../../scripts/tuning/store.ts";
+import { ancestorProblem, directoryProblem, openStore, storeHas, storeList, storeRead, storeReadText, storeSharedDir, storeWrite } from "../../scripts/tuning/store.ts";
 import { exact, harness, HEAD, makeStore, markerPatch, regen, SHORT, sha256, type Store } from "./fixtures.ts";
 
 let store: Store;
@@ -182,6 +182,34 @@ describe("store directories", () => {
     chmodSync(root, 0o700);
     vi.spyOn(process, "getuid").mockReturnValue(me + 1);
     try { expect(() => openStore(root)).toThrow(/owned/); } finally { vi.restoreAllMocks(); }
+  });
+
+  it("refuse a store under an ancestor another user could change, before creating anything", () => {
+    const ancestor = join(root, "open"), path = join(ancestor, "deeper", "store");
+    mkdirSync(ancestor);
+    chmodSync(ancestor, 0o777);
+    expect(() => openStore(path)).toThrow("writable by group or others and not sticky");
+    expect(readdirSync(ancestor)).toEqual([]);
+    // The same ancestor made sticky, as /tmp usually is, is accepted.
+    chmodSync(ancestor, 0o1777);
+    expect(openStore(path)).toBe(path);
+    expect(statSync(join(ancestor, "deeper")).mode & 0o7777).toBe(0o755);
+    // A store reached through a link is checked, and used, at its real location.
+    symlinkSync(ancestor, join(root, "linked"));
+    expect(openStore(join(root, "linked", "deeper", "store"))).toBe(path);
+    chmodSync(ancestor, 0o777);
+    expect(() => openStore(join(root, "linked", "deeper", "store"))).toThrow("writable by group or others and not sticky");
+    chmodSync(ancestor, 0o755);
+  });
+
+  it("judge ancestors by the secure-path rule", () => {
+    expect(ancestorProblem(asDir(0, 0o555), me)).toBeNull();
+    expect(ancestorProblem(asDir(me, 0o755), me)).toBeNull();
+    expect(ancestorProblem(asDir(0, 0o1777), me)).toBeNull();
+    expect(ancestorProblem(asDir(me + 1, 0o755), me)).toContain("owned by another user");
+    expect(ancestorProblem(asDir(0, 0o775), me)).toContain("not sticky");
+    expect(ancestorProblem(asDir(me, 0o757), me)).toContain("not sticky");
+    expect(ancestorProblem({ ...asDir(0, 0o755), isSymbolicLink: () => true }, me)).toContain("not a plain directory");
   });
 
   it("refuse a FIFO or a socket in the store without blocking", async () => {
