@@ -641,7 +641,12 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
           return payload({ ...base, ...(colony === undefined ? {} : { colony }), ...nest, matchStarts: startText(outcome.nextStart), message: "Your lobby's match has not started; you are seated in it. Call observe until it starts." });
         }
         const { view } = outcome;
-        if (view.result !== null) return viewResult(game, joined.config, outcome);
+        if (view.result !== null) {
+          // A quadrants join answered on the match's final tick still names its colony; other modes keep their reply.
+          const colony = game.quadrantSeatColony(joined.agentId);
+          if (colony === undefined) return viewResult(game, joined.config, outcome);
+          return pagedView(game, joined.config, view, false, { colony, ...outcome.observeInfo, ...winnerFields(game, view.agentId, view.result) }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
+        }
         return pagedView(game, joined.config, view, false, { ...base, colony: game.colonyNames(joined.agentId)[view.colony], squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
       };
       // A join in flight counts toward the limit until it answers, so concurrent joins cannot pass it together.

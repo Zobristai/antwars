@@ -194,8 +194,8 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     }
 
     // Colony 3 never calls again and leaves first, while play goes on; colonies 0 and 1 then stop and leave;
-    // colony 2 keeps calling and is the last colony standing.
-    const calling = new Set([0, 1, 2]);
+    // colony 2 keeps rejoining, one join waiting on every tick, and is the last colony standing.
+    const calling = new Set([0, 1]);
     const eliminated = (colony: number) => server.game.match!.state.colonies[colony]!.eliminated !== undefined;
     let stopped = false;
     const loop = (async () => {
@@ -203,6 +203,10 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
         await Promise.all([...calling].map(colony => seatAgents[colony]!.call("observe")));
         await new Promise(resolve => setTimeout(resolve, 50));
       }
+    })();
+    const rejoins: { isError: boolean; data: any; text: string }[] = [];
+    const rejoining = (async () => {
+      while (!stopped && server.game.match!.state.result === null) rejoins.push(await seatAgents[2]!.call("join", { key: players[2]!.key }));
     })();
     try {
       await waitFor(() => eliminated(3), 20_000);
@@ -212,8 +216,13 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
       await waitFor(() => server.game.match!.state.result !== null, 20_000);
     } finally {
       stopped = true;
-      await loop;
+      await Promise.all([loop, rejoining]);
     }
+    // The join answered on the final tick carries the result and still names the colony.
+    const finalJoin = rejoins.find(reply => reply.data?.matchOver === true);
+    expect(finalJoin, "a join answered on the final tick").toBeDefined();
+    expect([finalJoin!.isError, finalJoin!.data.colony, finalJoin!.data.winner]).toEqual([false, NAMES[2], NAMES[2]]);
+    for (const reply of rejoins) expect(reply.data?.colony, reply.text).toBe(NAMES[2]);
     const final = server.game.match!.state;
     expect(final.result).toMatchObject({ winner: 2, reason: "idle" });
     expect(final.colonies.map(colony => colony.eliminated?.reason)).toEqual(["idle", "idle", undefined, "idle"]);
