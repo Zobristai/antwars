@@ -1,6 +1,8 @@
 import type { InitialQueen, SimConfig } from "../sim/config.js";
 import { HOLD_BEHAVIOUR, type HoldBehaviour } from "../sim/holdBehaviour.js";
 import { createMatch } from "../sim/map.js";
+import { isQuadrantRotation } from "../sim/mapBoard.js";
+import { quadrantStartBoxes } from "../sim/quadrantMatch.js";
 import { isRockTile, isWaterTile } from "../sim/terrain.js";
 import { StartPlacement, type StartSeat, type StartPickResult } from "../sim/startPlacement.js";
 import type { SimState } from "../sim/types.js";
@@ -51,6 +53,8 @@ export class LobbyStart implements FinishedStart {
   private readonly undrawn: SimConfig;
   private readonly seats: readonly StartSeat[];
   private readonly requireAllPicks: boolean;
+  /** How many colonies pick: four on a quadrant rotation, two otherwise. */
+  private readonly colonies: number;
   /** Each seat key's starting queenId as finish assigned it; empty until finish. */
   private readonly queens = new Map<string, number>();
 
@@ -64,9 +68,12 @@ export class LobbyStart implements FinishedStart {
     const { initialQueens: _previous, ...unpicked } = config;
     const board = createMatch(seed, unpicked);
     this.config = { ...board.config, queenFounding: { ...board.config.queenFounding!, costBasis: "founded-live" } };
+    // A quadrant board's own start areas are the pick boxes; other boards keep the boxes their config gives.
+    const boxes = isQuadrantRotation(unpicked) ? quadrantStartBoxes(seed, unpicked) : undefined;
+    this.colonies = boxes?.length ?? 2;
     this.placement = new StartPlacement(this.config, seats, openedAt, (x, y) =>
       isWaterTile(board.terrain, x, y) ? "water" : isRockTile(board.terrain, x, y) ? "rock"
-        : board.food[y * this.config.mapWidth + x] > 0 ? "food" : null, windowMs, requireAllPicks);
+        : board.food[y * this.config.mapWidth + x] > 0 ? "food" : null, windowMs, requireAllPicks, boxes);
     this.closesAt = this.placement.closesAt;
   }
 
@@ -95,7 +102,7 @@ export class LobbyStart implements FinishedStart {
   /** Handover save: this open window at `now`, as plain data; nothing here changes the window. */
   save(now: number): SavedStart {
     // A seat's team view lists its colony's picks; one seat of each colony covers them all.
-    const picks = [0, 1].flatMap(colony => {
+    const picks = Array.from({ length: this.colonies }, (_, colony) => colony).flatMap(colony => {
       const seat = this.seats.find(s => s.colony === colony);
       return seat === undefined ? [] : this.placement.teamView(seat.identityId)!.picks.map(pick => [pick.identityId, pick.tileX, pick.tileY] as const);
     });
@@ -121,9 +128,9 @@ export class LobbyStart implements FinishedStart {
   finish(now: number): SimState {
     const nests = this.placement.finish(now);
     for (const nest of nests) this.queens.set(nest.identityId, nest.queenId);
-    const team = (colony: 0 | 1): InitialQueen[] => nests.filter(nest => nest.colony === colony)
+    const team = (colony: number): InitialQueen[] => nests.filter(nest => nest.colony === colony)
       .map(({ tileX, tileY }) => ({ tileX, tileY }));
-    return createMatch(this.seed, { ...this.config, initialQueens: [team(0), team(1)],
+    return createMatch(this.seed, { ...this.config, initialQueens: Array.from({ length: this.colonies }, (_, colony) => team(colony)),
       queenFounding: { ...this.config.queenFounding!, costBasis: "founded-live" } });
   }
 }

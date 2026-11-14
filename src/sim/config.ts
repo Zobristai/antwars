@@ -253,8 +253,8 @@ export interface SimConfig {
   readonly gridScale?: GridScale;
   /** New-match nest-pick geometry; absence preserves historical 12x24 boxes. */
   readonly startArea?: "back-quarter";
-  /** Lobby-only finalized layout. Absence preserves historical/local one-nest starts. */
-  readonly initialQueens?: readonly [readonly InitialQueen[], readonly InitialQueen[]];
+  /** Lobby-only finalized layout, one list per colony. Absence preserves historical/local one-nest starts. */
+  readonly initialQueens?: readonly (readonly InitialQueen[])[];
   /** Absent in recorded matches: preserve historical movement and state shape. */
   readonly pointArrival?: PointArrivalRules;
   /** Rules 25: a forager walks on until its food cell is within reach; absent keeps the recorded soft arrival stop. */
