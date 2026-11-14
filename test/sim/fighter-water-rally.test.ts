@@ -9,9 +9,12 @@ import { isPassable, isWaterTile } from "../../src/sim/terrain.js";
 import type { Ant, ColonyId } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { assertWaterRallies, measureWaterRallies } from "./fighter-water-rally-repro.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 function scenario(colony: ColonyId, caller: "house-worker" | "house-soldier", founding = true) {
-  const reference = newMatchConfig(rulesConfig("redesign"));
+  const reference = newMatchConfig(recordedHousePlan(rulesConfig("redesign")));
   const state = { ...emptyMatch(0, { ...reference, startAnts: 0, terrain: undefined,
     foodLayout: undefined, foodPatches: [], rallyStartPermille: 500, rallyEndPermille: 500,
     ...(founding ? {} : { queenFounding: undefined }) }),

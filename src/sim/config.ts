@@ -259,12 +259,12 @@ export interface SimConfig {
   readonly foodLayout?: FoodLayoutRules;
   /** Each food tile below its ceiling regrows 1 food this often. */
   readonly foodRegrowTicks: number;
-  /** Economy marker every config carries (RULES_VERSION 27): the layout's optional patches may be left out. */
+  /**
+   * Frozen RULES_VERSION 27 generation marker: the layout's optional patches may be left out. Its name and value are
+   * written in every log header, private input and public match record, so both stay fixed; only parseLog's generic
+   * marker check reads it, and nothing in the simulation does.
+   */
   readonly groundIncomeRevision: 1;
-  /** One food per held tile at this interval; absent or zero disables ground income. */
-  readonly groundFoodIntervalTicks?: number;
-  /** Marginal income paid above half of all held territory; absent means full income. */
-  readonly groundIncomeExcessPermille?: number;
   /** Absent preserves historical matches and replay state. */
   readonly earlyWin?: EarlyWinRules;
   /** Per-tile jitter applied to patch food from the seeded PRNG (mirrored). */
@@ -411,6 +411,12 @@ export interface LocalAntRules {
   readonly workerQueenThreatTiles?: number;
   /** Maximum free, non-carrying dispatched/idle workers recalled per colony, including its worker home guard. */
   readonly workerQueenRecallCount?: number;
+  /**
+   * No bot moves for a player. Present on every new match: every colony's free ants follow these local rules from
+   * the first tick, whether or not its seat has joined or is active, and the house never founds a queen. Absent on
+   * matches recorded before it, which keep their recorded house planning and founding for a colony with no active seat.
+   */
+  readonly everyColony?: true;
 }
 
 /** Queen HP numbers, in milli-HP and ticks. */
@@ -476,7 +482,6 @@ export const DEFAULT_CONFIG: SimConfig = {
     { tileX: 30, tileY: 24, radius: 3, perTile: 8 },
   ],
   foodRegrowTicks: 150,
-  // New matches rely on delivered food; recorded configs keep their own interval.
   groundIncomeRevision: 1,
   foodJitter: 1,
 

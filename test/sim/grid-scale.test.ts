@@ -96,7 +96,7 @@ describe("grid scale 2 is the only playable grid scale", () => {
       expect(fine.softSeparation![key]).toBe(base.softSeparation![key] * scale);
     }
     for (const key of ["matchTicks", "startAnts", "colonyCap", "hatchCost", "hatchIntervalTicks",
-      "foodRegrowTicks", "groundFoodIntervalTicks", "territoryDecayTicks", "damagePerSecond", "squadSize"] as const) {
+      "foodRegrowTicks", "territoryDecayTicks", "damagePerSecond", "squadSize"] as const) {
       expect(fine[key]).toBe(base[key]);
     }
     expect(fine.earlyWin).toEqual(base.earlyWin);

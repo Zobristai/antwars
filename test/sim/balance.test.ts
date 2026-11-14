@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { rulesConfig } from "../../src/sim/config.js";
-import { groundIncome } from "../../src/sim/forage.js";
 import { localDirection, localSoldierAssignments } from "../../src/sim/houseBot.js";
 import { headerLine, replay, stateHash, tickLine } from "../../src/sim/log.js";
 import { buildGrid, cloneState, createMatch } from "../../src/sim/map.js";
@@ -11,12 +10,15 @@ import { PRE_FRONTLINE_CONFIGS, addAnt, emptyMatch } from "./fixtures.js";
 import { recordSeenFood } from "../../src/sim/view.js";
 import { playable } from "../playable.ts";
 import type { Ant, ColonyId, SimState } from "../../src/sim/types.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // These focused balance scenarios pin their fixed geometry; seeded layouts have their own sweep.
 // rules is the reference-grid template; emptyMatch and playable build it at grid scale 2, so its
 // tiles, patches and distances double. Reference tile t is fine tiles 2t and 2t+1; ants stand at
 // the reference tile centre (fine 2t + 0.5) and a reference cell's food lives in fine cell (2tx, 2ty).
-const rules = { ...rulesConfig("redesign"), foodLayout: undefined };
+const rules = { ...recordedHousePlan(rulesConfig("redesign")), foodLayout: undefined };
 const ref = (t: number) => 2 * t + 0.5;
 const put = (s: SimState, colony: ColonyId, tx: number, ty: number, patch: Partial<Ant> = {}) => addAnt(s, colony, ref(tx), ref(ty), patch);
 /** An ant exactly at the queen-threat boundary: 24 fine tiles (12 reference tiles) from the queen's own fine tile. */
@@ -111,22 +113,6 @@ describe("configured battle balance", () => {
     expect(localSoldierAssignments(s)!.workerGuards!.size).toBe(0);
     expect(localSoldierAssignments(s)!.front.size).toBe(1);
     expect(s.ants.find((a) => a.id === lone.id)!.claim).toBeUndefined();
-  });
-  it("preserves recorded full and tapered ground income, never on neutral tiles", () => {
-    const recorded = PRE_FRONTLINE_CONFIGS.redesign;
-    const s = emptyMatch(0, recorded);
-    s.owner.fill(-1);
-    // Ground income counts reference tiles: four fine cells each at grid scale 2.
-    s.owner.fill(0, 0, 4 * 80); s.owner.fill(1, 4 * 80, 4 * 100);
-    const payout = recorded.groundFoodIntervalTicks!;
-    expect(groundIncome(s, 0)).toEqual([0, 0]);
-    expect(groundIncome(s, payout - 1)).toEqual([0, 0]);
-    expect(groundIncome(s, payout)).toEqual([57, 20]); // 50 full + floor(30 * .25)
-    s.owner.fill(0, 0, 4 * 50); s.owner.fill(1, 4 * 50, 4 * 100);
-    expect(groundIncome(s, payout)).toEqual([50, 50]);
-    expect(groundIncome({ ...s, config: { ...s.config, groundIncomeExcessPermille: undefined } }, payout)).toEqual([50, 50]);
-    s.owner.fill(-1);
-    expect(groundIncome(s, payout)).toEqual([0, 0]);
   });
   it("recruits colony-wide nearest first, without a shared cap, and never takes squads or the other colony", () => {
     const s = emptyMatch(0, rules);

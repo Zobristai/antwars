@@ -33,10 +33,10 @@ describe("public match catalog without playback replacement", () => {
   });
 
   it("preserves every server catalog entry with zero-delay house matches and still rejects invalid delays", () => {
-    // The HUD reads each entry's four fields; the players and a Model Index match's harness phase are the Matches page's,
-    // extra fields it drops.
+    // The HUD reads each entry's four fields; the players, a Model Index match's harness phase and an unrated match's colony
+    // names are the Matches page's, extra fields it drops.
     expect(readPublicMatchCatalog(mixedCatalog)).toEqual({ ...mixedCatalog,
-      matches: mixedCatalog.matches.map(({ colonies: _players, harnessPhase: _phase, matchType: _type, ...entry }) => entry) });
+      matches: mixedCatalog.matches.map(({ colonies: _players, harnessPhase: _phase, matchType: _type, colonyNames: _names, ...entry }) => entry) });
     expect(mixedCatalog.matches.map(match => match.delaySeconds)).toEqual([300, 60, 0, 0, 0, 0]);
     for (const delaySeconds of [-1, 1, 299, "0", null]) {
       expect(readPublicMatchCatalog({ ...catalog, matches: [{ ...catalog.matches[0], delaySeconds }] })).toBeNull();

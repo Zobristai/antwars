@@ -8,6 +8,9 @@ import { buildGrid, createMatch, newAnt } from "../../src/sim/map.js";
 import { advanceSoftAnts } from "../../src/sim/step.js";
 import { isRockTile, isWaterTile } from "../../src/sim/terrain.js";
 import type { Ant, ColonyId, SimState } from "../../src/sim/types.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Immutable baseline: 59ed9a6d309b48d31b7c9d09e283d6b1a5fcbab5.
 // Pinned at that baseline: rally interpolation, laneY and navigation's nearest-land/own-side tie
@@ -29,7 +32,7 @@ type RallyAnt = Ant & { houseIntentHold?: { intent: {
 } } };
 
 function scene(colony: ColonyId, scale: 2, founding: boolean, caller: Caller) {
-  const scaled = newMatchConfig(rulesConfig("redesign"));
+  const scaled = newMatchConfig(recordedHousePlan(rulesConfig("redesign")));
   const config: SimConfig = { ...scaled, startAnts: 0, terrain: undefined,
     foodLayout: undefined, foodPatches: [], rallyStartPermille: 500, rallyEndPermille: 500,
     queenFounding: founding ? scaled.queenFounding : undefined,

@@ -12,6 +12,8 @@
 // Rows and links come from today's helpers (ui/format.ts), read-only.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
+import { colonyColours, colonyNameNote, colonyNamesOf, colourCss, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { TEXT_GROUND, needsTextGround } from "../colony-palette.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { benchmarkLabel } from "../leaderboard-page/view.ts";
 import { liveRow, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
@@ -31,6 +33,8 @@ import {
 const SELF_REPORTED = "Self-reported: outside the Antwars Model Index, each agent names its own model.";
 /** Every table's heads, the button's read by screen readers only. */
 export const MATCH_HEADS = ["Time", "Game type", "Status"] as const;
+/** The colony columns' heads over rows naming their own colonies: each cell then names its own. */
+export const COLONY_HEADS = ["First colony", "Second colony"] as const;
 const COLONIES = [0, 1] as const;
 /** One column grid for every list (archive.css). */
 const MATCH_COLUMNS = ["c-start", "c-type", "c-model", "c-model", "c-status", "c-go"] as const;
@@ -64,6 +68,8 @@ export interface MatchRow {
    * waiting row's (WAITING, STARTING, n OF m SEATS) dashed, a live match's red. */
   readonly stamp: { readonly text: string; readonly look: "complete" | "partial" | "unavailable" | "waiting" | "live" };
   readonly action: { readonly text: string; readonly href: string; readonly label: string } | null;
+  /** The match's own colony names (an unrated match's drawn pair); absent where it uses the rated names. */
+  readonly colonyNames?: ColonyNamePair;
 }
 /** One Matches list's card. */
 export interface MatchList {
@@ -177,6 +183,7 @@ export function liveMatchRow(match: LiveMatch, search: string): MatchRow {
     ...(type === null && !seated ? { typeNote: "not recorded" } : {}),
     stamp: { text: STAMPS.live, look: "live" },
     action: { text: "Watch", href: row.href, label: `Watch, ${liveKind(match)} started ${when}` },
+    ...(match.colonyNames ? { colonyNames: match.colonyNames } : {}),
   };
 }
 
@@ -284,64 +291,102 @@ function rowParts(doc: Document) {
     node.append(h(doc, "span", "d1p-sr", "Status "), row.stamp.text);
     return node;
   };
+  /**
+   * A row naming its own colonies inks them in their names' colours (--aw-k0, --aw-k1, archive.css .d1p-c0 and .d1p-c1),
+   * and puts a dark ground under a colony's coloured words where its colour needs one for 4.5:1 (colony-ground.css).
+   */
+  const inkColonies = (node: HTMLElement, row: MatchRow) => {
+    if (row.colonyNames === undefined) return;
+    const colours = colonyColours(row.colonyNames);
+    for (const colony of COLONIES) node.style.setProperty(`--aw-k${colony}`, colourCss(colours[colony]));
+    const grounded = COLONIES.filter(colony => needsTextGround(colours[colony]));
+    if (grounded.length === 0) return;
+    node.setAttribute("data-aw-ground", grounded.join(" "));
+    node.style.setProperty("--aw-ink-ground", colourCss(TEXT_GROUND));
+  };
+  /** A colony's name in its ink; a drawn name has its source as its tooltip, and the rated names are shown as they were. */
+  const colonyLabel = (tag: "dt" | "span", row: MatchRow, colony: 0 | 1) => {
+    const name = colonyNamesOf(row)[colony];
+    const node = h(doc, tag, `d1p-colony d1p-c${colony}`, name);
+    const note = row.colonyNames === undefined ? null : colonyNameNote(name);
+    if (note) node.title = note;
+    return node;
+  };
   /** The stacked rows' colonies: each colony's name in its ink over (or beside) its lines. */
-  const colonyList = (lines: readonly (readonly HTMLElement[])[]) => {
+  const colonyList = (row: MatchRow, lines: readonly (readonly HTMLElement[])[]) => {
     const list = h(doc, "dl", "d1p-colonies");
     for (const colony of COLONIES) {
       const block = h(doc, "dd");
       block.append(...lines[colony]!);
-      list.append(h(doc, "dt", `d1p-colony d1p-c${colony}`, COLONY_NAMES[colony]), block);
+      list.append(colonyLabel("dt", row, colony), block);
     }
     return list;
   };
-  /** One Matches list's card: its state line, then its table and its stacked rows, both from the same rows. */
+  /** One Matches list's card: its state line, then its tables and its stacked rows, both from the same rows. */
   const matchCard = (spec: MatchList): HTMLElement => {
     const body: Node[] = [];
     if (spec.rows.length > 0 || spec.loading) {
-      const table = h(doc, "table", `d1p-table d1p-match d1p-${spec.list} d1p-wide`);
-      table.setAttribute("aria-labelledby", spec.titleId);
-      columns(table, MATCH_COLUMNS);
-      const head = h(doc, "thead"), labels = h(doc, "tr");
-      labels.append(headCell(MATCH_HEADS[0], "c-start"), headCell(MATCH_HEADS[1], "c-type"));
-      for (const colony of COLONIES) labels.append(headCell(COLONY_NAMES[colony], `c-model d1p-c${colony}`));
-      labels.append(headCell(MATCH_HEADS[2], "c-status"), srHead(spec.actionHead, "c-go"));
-      head.append(labels);
-      const tbody = h(doc, "tbody");
+      // Rows using the rated names sit under the rated names' heads, drawn exactly as a list of rated rows only; rows
+      // naming their own colonies sit under neutral heads, each cell naming its own colonies. A list holding both is
+      // drawn as consecutive tables, one per run of rows of one kind, in the list's order.
+      const runs: { ownNames: boolean; rows: MatchRow[] }[] = [];
+      for (const row of spec.rows) {
+        const ownNames = row.colonyNames !== undefined, last = runs[runs.length - 1];
+        if (last?.ownNames === ownNames) last.rows.push(row); else runs.push({ ownNames, rows: [row] });
+      }
+      if (runs.length === 0) runs.push({ ownNames: false, rows: [] });
       const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
       list.setAttribute("aria-labelledby", spec.titleId);
-      if (spec.loading) {
-        table.setAttribute("aria-hidden", "true"); list.hidden = true;
-        for (let line = 0; line < 2; line++) tbody.append(skeleton(6, ["84px", "84px", "128px", "128px", "70px"]));
-      }
-      for (const row of spec.rows) {
-        const wide = `${spec.list}|wide|${row.id}`, narrow = `${spec.list}|narrow|${row.id}`;
-        const line = h(doc, "tr");
-        const type = h(doc, "td", "c-type");
-        type.append(...typeNodes(row));
-        line.append(startCell(row.when), type);
-        for (const colony of COLONIES) {
-          const cell = h(doc, "td", "c-model");
-          cell.append(...colonyLines(row.colonies[colony], colony, wide));
-          line.append(cell);
+      if (spec.loading) list.hidden = true;
+      runs.forEach(({ ownNames, rows }, run) => {
+        const table = h(doc, "table", `d1p-table d1p-match d1p-${spec.list} d1p-wide`);
+        table.setAttribute("aria-labelledby", spec.titleId);
+        columns(table, MATCH_COLUMNS);
+        const head = h(doc, "thead"), labels = h(doc, "tr");
+        labels.append(headCell(MATCH_HEADS[0], "c-start"), headCell(MATCH_HEADS[1], "c-type"));
+        // A colony's ink is its name's, so the neutral heads over rows naming their own colonies take none.
+        for (const colony of COLONIES) labels.append(headCell(ownNames ? COLONY_HEADS[colony] : COLONY_NAMES[colony], ownNames ? "c-model" : `c-model d1p-c${colony}`));
+        labels.append(headCell(MATCH_HEADS[2], "c-status"), srHead(spec.actionHead, "c-go"));
+        head.append(labels);
+        const tbody = h(doc, "tbody");
+        if (spec.loading) {
+          table.setAttribute("aria-hidden", "true");
+          if (run === 0) for (let line = 0; line < 2; line++) tbody.append(skeleton(6, ["84px", "84px", "128px", "128px", "70px"]));
         }
-        const status = h(doc, "td", "c-status");
-        status.append(stampNode(row));
-        const go = h(doc, "td", "c-go");
-        if (row.action) go.append(rowPill(row.action.text, row.action.href, row.action.label, wide));
-        line.append(status, go);
-        tbody.append(line);
+        for (const row of rows) {
+          const wide = `${spec.list}|wide|${row.id}`, narrow = `${spec.list}|narrow|${row.id}`;
+          const line = h(doc, "tr");
+          inkColonies(line, row);
+          const type = h(doc, "td", "c-type");
+          type.append(...typeNodes(row));
+          line.append(startCell(row.when), type);
+          for (const colony of COLONIES) {
+            const cell = h(doc, "td", "c-model");
+            if (ownNames) cell.append(colonyLabel("span", row, colony));
+            cell.append(...colonyLines(row.colonies[colony], colony, wide));
+            line.append(cell);
+          }
+          const status = h(doc, "td", "c-status");
+          status.append(stampNode(row));
+          const go = h(doc, "td", "c-go");
+          if (row.action) go.append(rowPill(row.action.text, row.action.href, row.action.label, wide));
+          line.append(status, go);
+          tbody.append(line);
 
-        // The stacked row: its time, then its type and status, beside the button; then each colony's lines under its name.
-        const item = h(doc, "li");
-        const lead = h(doc, "p", "d1p-line is-lead");
-        lead.append(...typeNodes(row), stampNode(row));
-        item.append(startLine(row.when), lead);
-        item.append(colonyList(COLONIES.map(colony => colonyLines(row.colonies[colony], colony, narrow))));
-        if (row.action) item.append(rowPill(row.action.text, row.action.href, row.action.label, narrow));
-        list.append(item);
-      }
-      table.append(head, tbody);
-      body.push(table, list);
+          // The stacked row: its time, then its type and status, beside the button; then each colony's lines under its name.
+          const item = h(doc, "li");
+          inkColonies(item, row);
+          const lead = h(doc, "p", "d1p-line is-lead");
+          lead.append(...typeNodes(row), stampNode(row));
+          item.append(startLine(row.when), lead);
+          item.append(colonyList(row, COLONIES.map(colony => colonyLines(row.colonies[colony], colony, narrow))));
+          if (row.action) item.append(rowPill(row.action.text, row.action.href, row.action.label, narrow));
+          list.append(item);
+        }
+        table.append(head, tbody);
+        body.push(table);
+      });
+      body.push(list);
     }
     return card(spec.titleId, spec.title, [stateLine(doc, spec.state.glyph, spec.state.text)], body, spec.foot ?? [], spec.cardClass);
   };
@@ -380,6 +425,7 @@ export function recordingMatchRow(r: Recording, row: ReturnType<typeof recording
     colonies: [colony(0), colony(1)],
     stamp: { text: stampWord(r.status), look: r.status },
     action: { text: PAGE_WORDS.replay, href: row.href, label: `Replay, recording started ${row.when}` },
+    ...(r.colonyNames ? { colonyNames: r.colonyNames } : {}),
   };
 }
 
