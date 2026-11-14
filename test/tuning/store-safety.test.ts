@@ -1,14 +1,13 @@
 // The tuning harness treats other writers to the shared store as untrusted: exact always plays the candidate and checks
 // the stored references against the digest regen printed, store files are never read or written through a link, and
 // store directories another user could change are refused.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ancestorProblem, directoryProblem, openStore, storeHas, storeList, storeRead, storeReadText, storeSharedDir, storeWrite } from "../../scripts/tuning/store.ts";
-import { exact, harness, HEAD, makeStore, markerPatch, regen, SHORT, sha256, type Store } from "./fixtures.ts";
+import { exact, harness, HEAD, ROOT, makeStore, markerPatch, regen, SHORT, sha256, type Store } from "./fixtures.ts";
 
 let store: Store;
 beforeEach(() => { store = makeStore(); });
@@ -212,20 +211,29 @@ describe("store directories", () => {
     expect(ancestorProblem({ ...asDir(0, 0o755), isSymbolicLink: () => true }, me)).toContain("not a plain directory");
   });
 
-  it("refuse a FIFO or a socket in the store without blocking", async () => {
+  // A blocking open would stall the whole test process, beyond the reach of the test's own timer, so the reads run in a
+  // child process that is killed if it has not finished in time: a regression fails the test instead of hanging it.
+  it("refuse a FIFO or a socket in the store without blocking", () => {
     mkdirSync(join(root, "runs"));
     const fifo = join(root, "runs", "fifo.json"), socket = join(root, "runs", "socket.json");
     execFileSync("mkfifo", [fifo]);
-    const server = createServer();
-    await new Promise<void>(done => server.listen(socket, done));
-    try {
-      for (const file of [fifo, socket]) {
-        expect(() => storeRead(root, file)).toThrow();
-        expect(() => storeHas(root, file)).toThrow("not a plain file");
-      }
-      expect(storeList(root, join(root, "runs"))).toEqual([]);
-    } finally { await new Promise(done => server.close(done)); }
-  }, 10_000);
+    // A socket file stays in place after its listener has gone.
+    const listener = spawnSync(process.execPath, ["-e", `require("node:net").createServer().listen(${JSON.stringify(socket)}, function () { process.exit(0); })`], { timeout: 10_000 });
+    expect(listener.status).toBe(0);
+    const script = `
+      import { storeHas, storeList, storeRead } from ${JSON.stringify(join(ROOT, "scripts", "tuning", "store.ts"))};
+      const attempt = f => { try { f(); return "accepted"; } catch (e) { return e.message; } };
+      const files = ${JSON.stringify([fifo, socket])}, root = ${JSON.stringify(root)};
+      console.log(JSON.stringify({ read: files.map(f => attempt(() => storeRead(root, f))), has: files.map(f => attempt(() => storeHas(root, f))),
+        list: storeList(root, ${JSON.stringify(join(root, "runs"))}) }));`;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL" });
+    expect(r.signal, "the store reads blocked and were killed").toBeNull();
+    expect(r.status, r.stderr).toBe(0);
+    const out = JSON.parse(r.stdout);
+    for (const message of out.read) expect(message).not.toBe("accepted");
+    expect(out.has).toEqual([expect.stringContaining("not a plain file"), expect.stringContaining("not a plain file")]);
+    expect(out.list).toEqual([]);
+  }, 30_000);
 
   it("are created by the harness with a mode only it can write, and the shared one sticky", () => {
     storeWrite(root, join(root, "a", "b", "c.json"), "{}");
