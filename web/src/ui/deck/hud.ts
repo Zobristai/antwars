@@ -34,7 +34,8 @@ import { caption, legend, type Caption, type Legend } from "./model.ts";
 const BUTTON_IN_BAR = "(min-width: 520px)";
 /** From this width the deck stands over the board; narrower, the stacked deck is too tall to come before it. */
 const DECK_FIRST = "(min-width: 760px)";
-const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
+/** Each colony's colour, index = colony id: its name's (colony-palette.ts), else the rated names' for colonies 0 and 1. */
+const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))", "var(--aw-k2, var(--aw-ink))", "var(--aw-k3, var(--aw-ink))"] as const;
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;

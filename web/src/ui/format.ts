@@ -56,6 +56,19 @@ export function shares(a: number, b: number): readonly [number, number] | null {
   return [first, 100 - first];
 }
 
+/**
+ * Each colony's whole-percent share of the held ground, index = colony id, summing to exactly 100: each share is rounded
+ * down and the points left over go to the largest remainders, ties to the lower colony id. Null when no tile is held.
+ */
+export function territoryShares(held: readonly number[]): number[] | null {
+  const total = held.reduce((sum, n) => sum + n, 0);
+  if (!(total > 0)) return null;
+  const parts = held.map(n => Math.floor((100 * n) / total));
+  const order = held.map((n, colony) => ({ colony, rest: (100 * n) % total })).sort((a, b) => b.rest - a.rest || a.colony - b.colony);
+  for (let left = 100 - parts.reduce((sum, n) => sum + n, 0), i = 0; left > 0; left--, i++) parts[order[i]!.colony]! += 1;
+  return parts;
+}
+
 /** Where a leader's share must reach for a ratio-to-one lead (6000 permille: 6/7 of the bar), in percent from its end. */
 export const leadLine = (ratioPermille: number): number => (100 * ratioPermille) / (ratioPermille + 1000);
 
