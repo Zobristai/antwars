@@ -5,8 +5,11 @@ import { localRulesSide } from "../../src/sim/marks.ts";
 import { step } from "../../src/sim/step.ts";
 import type { SimInput, SimState } from "../../src/sim/types.ts";
 import { playable } from "../playable.ts";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
-const rules = playable({ ...rulesConfig("redesign"), commandIdleTicks: 5, commandFloorTicks: 1 });
+const rules = playable({ ...recordedHousePlan(rulesConfig("redesign")), commandIdleTicks: 5, commandFloorTicks: 1 });
 // This accepted word-mark case exercises the rules-22 command surface.
 const wordMarkRules = { ...rules, wordMarksDisabled: undefined };
 const join = { type: "join", agentId: "a", placement: 0 } as const;
@@ -23,7 +26,7 @@ function world(state: SimState) {
 
 describe("accepted-command idle-seat floor", () => {
   it("preserves every active-seat world, agent, event, result and RNG state tick for tick", () => {
-    const config = playable({ ...rulesConfig("redesign"), foodLayout: undefined, mapWidth: 32, mapHeight: 16,
+    const config = playable({ ...recordedHousePlan(rulesConfig("redesign")), foodLayout: undefined, mapWidth: 32, mapHeight: 16,
       nestTileX: 4, nestTileY: 8, startAnts: 12, matchTicks: 320, commandFloorTicks: 20,
       foodPatches: [{ tileX: 10, tileY: 8, radius: 2, perTile: 10 }] });
     let current = createMatch(6006, config);
@@ -52,7 +55,7 @@ describe("accepted-command idle-seat floor", () => {
   }, 30_000);
 
   it("configures 180 seconds (1800 ticks) only for the redesign rules", () => {
-    const config = rulesConfig("redesign");
+    const config = recordedHousePlan(rulesConfig("redesign"));
     expect(config.commandIdleTicks).toBe(180 * config.ticksPerSecond);
     expect(config.commandIdleTicks).toBe(1800);
     expect(PUBLIC_CONFIG.commandIdleTicks).toBeUndefined();

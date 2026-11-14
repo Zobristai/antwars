@@ -107,12 +107,18 @@ export function expireMarks(state: SimState, nextTick: number): void {
 
 /**
  * Whether a colony plays the local ant rules this tick: the
- * redesign is on and at least one of its agents is seated (not idle; today's
- * seat rule). Such a side has no colony planner. In a four-colony match every
- * colony plays them from the first tick: no house player moves its ants.
+ * redesign is on and either the match plays them on every colony or at least
+ * one of the colony's agents is seated (not idle; today's seat rule). A
+ * four-colony match, and a new match (localAnts.everyColony), plays them on
+ * every colony from the first tick; a two-colony match recorded before that,
+ * only while one of its agents is seated. Such a side has no colony planner.
  */
 export function localRulesSide(state: SimState, colony: ColonyId): boolean {
-  return state.config.localAnts !== undefined && (state.colonies.length > 2 || state.agents.some((a) => a.colony === colony && !a.idle));
+  const local = state.config.localAnts;
+  return (
+    local !== undefined &&
+    (state.colonies.length > 2 || local.everyColony === true || state.agents.some((a) => a.colony === colony && !a.idle))
+  );
 }
 
 /**

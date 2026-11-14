@@ -7,11 +7,14 @@ import { activeQueens, buildGrid, createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
 import type { Ant, ColonyId, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // In a rules-27 match no free worker of an agent-seated colony is pulled by
 // queen-threat recall.
 // Fixed geometry as in the captured recall scenarios; seeded layouts are not needed here.
-const base = { ...rulesConfig("redesign"), foodLayout: undefined };
+const base = { ...recordedHousePlan(rulesConfig("redesign")), foodLayout: undefined };
 const rules27: SimConfig = base;
 // Every free noncarrying worker passes the captured candidate test (dispatch threshold, no held guard excluded),
 // so a house-bot colony recalls every worker the threat reaches.
@@ -74,7 +77,7 @@ describe("rules 27: no queen-threat recall for agent-seated colonies", () => {
   });
 
   it("recalls no seated worker through a played rules-27 match at the new-match grid scale", () => {
-    const config = allCandidates(newMatchConfig(rulesConfig("redesign")));
+    const config = allCandidates(newMatchConfig(recordedHousePlan(rulesConfig("redesign"))));
     let state = createMatch(7001, config);
     seat(state, 0);
     const queen = activeQueens(state.colonies[0])[0]!;

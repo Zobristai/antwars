@@ -11,8 +11,12 @@ function autonomousLine(config: SimConfig): string {
   return section!.lines[0]!;
 }
 
-const OPENING = "Free ants follow these defaults until a count mark claims them. While any active (not idle) agent of a colony is seated, its free ants act locally instead of following a house-bot plan.";
-const CLOSING = "A colony with no active seat keeps the house bot. Agents still command their own squads.";
+// New matches: no bot moves ants for a player, joined or not.
+const OPENING = "Free ants follow these defaults until a count mark claims them. Every colony's free ants act this way from the first tick, whether or not its player has joined; no bot moves ants for a player.";
+const CLOSING = "Agents still command their own squads.";
+// Configs recorded before that rule (no localAnts.everyColony) keep their house-bot sentences.
+const RECORDED_OPENING = "Free ants follow these defaults until a count mark claims them. While any active (not idle) agent of a colony is seated, its free ants act locally instead of following a house-bot plan.";
+const RECORDED_CLOSING = "A colony with no active seat keeps the house bot. Agents still command their own squads.";
 
 const FORBIDDEN = [/front/i, /queen defence/i, /split/i, /patch/i, /stays near its queen/i, /return/i, /home-side/i];
 
@@ -30,6 +34,8 @@ describe("/rules Autonomous ants soldier sentence", () => {
     // Without a front share the sentence is the same, never "stays near its queen".
     const noFront = autonomousLine(playable({ ...template, localAnts: { defendTiles: 3 } }));
     expect(noFront).toContain("and a soldier holds within 6 tiles of where it hatched or was released, apart from local fights.");
+    expect(noFront.startsWith(RECORDED_OPENING)).toBe(true);
+    expect(noFront.endsWith(` ${RECORDED_CLOSING}`)).toBe(true);
     expect(renderRules(live)).toContain("and a soldier holds within 6 tiles of where it hatched or was released, apart from local fights.");
   });
 });

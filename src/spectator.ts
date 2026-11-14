@@ -30,6 +30,9 @@ import type { RecordHandoff } from "./records/handoff.js";
 import type { WatchRegistry } from "./live/watch-registry.js";
 import { createWatchController, type WatchController } from "./live/watch-controller.js";
 import { watchRoutes } from "./live/watch-routes.js";
+import { createPostMortem } from "./accounts/postMortem.js";
+import { createJobs } from "./accounts/postMortemJobs.js";
+import type { VersionSource } from "./accounts/postMortemVersion.js";
 
 /** The built spectator page. */
 export const WEB_DIST = resolve(import.meta.dirname, "..", "web", "dist");
@@ -64,6 +67,8 @@ export interface SpectatedServerOptions extends ServerOptions {
   readonly replayStore?: ReplayStore;
   readonly replaySource?: ReplaySource;
   readonly historySource?: HistorySource;
+  /** The stored records under historySource's corrections: the post-mortem reads every record it does not correct here. */
+  readonly storedHistorySource?: HistorySource;
   readonly privateArchive?: PrivateArchive;
   /** Hands recorded matches to the record service, which builds their readable records. */
   readonly recordHandoff?: RecordHandoff;
@@ -76,6 +81,8 @@ export interface SpectatedServerOptions extends ServerOptions {
    * spectator meets the per-source bound. Never logged.
    */
   readonly relayKey?: Uint8Array;
+  /** The entry server's check of a match record's game version against the published history (post-mortem). */
+  readonly postMortemVersions?: VersionSource;
 }
 
 /** A game server with the spectator stream and page mounted; closing it closes the stream too. */
@@ -110,7 +117,11 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
     // Handover save and restore: LiveHub.saveMatch/resumeMatch and WatchController.save/resume.
     ...(controller && spectatorHandover(hub, controller as WatchController & HandoverWatch, lobbies)),
   };
-  const server = await startServer({ ...options, feed: entryPoint ? undefined : feed });
+  // The entry server serves match_post_mortem over the stored records; a slot never does.
+  const postMortem = entryPoint && options.accounts && options.watchRegistry ? createPostMortem({ identities: options.accounts.identities,
+    lobbies: options.accounts.lobbies, registry: options.watchRegistry, history: options.historySource, storedHistory: options.storedHistorySource, archive: options.privateArchive,
+    versions: options.postMortemVersions, jobs: createJobs() }) : undefined;
+  const server = await startServer({ ...options, feed: entryPoint ? undefined : feed, postMortem });
   if (!entryPoint) server.mount("/live", (req, res) => hub.handle(req, res));
   if (options.accounts && options.watchRegistry) server.mount("/watch", watchRoutes({ accounts: options.accounts, registry: options.watchRegistry,
     hub, origin: options.slot?.publicUrl, archive: options.privateArchive, replays: options.replaySource, relayKey: options.relayKey }));

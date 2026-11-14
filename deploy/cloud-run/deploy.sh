@@ -41,7 +41,7 @@ source "$(dirname "$0")/config.sh"
 # revision stays until the service is deleted (TEARDOWN.md). Neither ever names
 # service `antwar`.
 #
-# Comparison runs: <rules> (v4, count-marks or redesign) and <players>
+# Comparison runs: <rules> (redesign) and <players>
 # (2 or 4) set ANTWAR_RULES and ANTWAR_PLAYERS on the new revision; without them
 # both are removed, so no revision inherits a previous one's comparison settings.
 # An image already built for the sha is reused by digest, and every revision is
@@ -1439,7 +1439,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # store namespace, replay bucket and operator token); a first deploy has none to
     # keep, so it sets them from the live slot settings, the deploy config and the
     # public slots' operator token secret.
-    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client"
+    # ANTWAR_MEMORY_LIMIT is --memory's own value: the post-mortem's re-run limit where no control group gives one.
+    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
     if [[ "$FIRST_DEPLOY" == 1 ]]; then
       GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
@@ -1725,9 +1726,13 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
   NAME="${3:-}"
   RULES="${4:-}"
   PLAYERS="${5:-}"
+  if [[ $# -eq 5 && "$RULES" =~ ^(v4|count-marks)$ ]]; then
+    echo "refusing: $RULES no longer starts a match (the house bot moves for a player's colony under it); use redesign" >&2
+    exit 2
+  fi
   if [[ ( $# -ne 3 && $# -ne 5 ) || ! "$SHA" =~ ^[0-9a-f]{40}$ ]] || ! valid_name "$NAME" \
-    || [[ $# -eq 5 && ! ( "$RULES" =~ ^(v4|count-marks|redesign)$ && "$PLAYERS" =~ ^(2|4)$ ) ]]; then
-    echo "usage: $0 preview <full 40-hex commit sha pushed to origin> <name: a-z first, then a-z 0-9 -, at most 20> [<rules: v4|count-marks|redesign> <players: 2|4>]" >&2
+    || [[ $# -eq 5 && ! ( "$RULES" == redesign && "$PLAYERS" =~ ^(2|4)$ ) ]]; then
+    echo "usage: $0 preview <full 40-hex commit sha pushed to origin> <name: a-z first, then a-z 0-9 -, at most 20> [<rules: redesign> <players: 2|4>]" >&2
     exit 2
   fi
   settings ACCOUNT PROJECT BUILD_BUCKET BUILD_SA RUN_SA
@@ -1798,7 +1803,8 @@ MEMORY=2Gi
 # live slot settings (ANTWAR_PUBLIC_SLOTS, ANTWAR_PRIVATE_SLOTS,
 # ANTWAR_SLOT_URL_TEMPLATE), ANTWAR_LOAD_BALANCER_ADDRESS (the antwars.ai
 # forwarding-rule addresses, read at deploy time) and the username claim limit's rule
-# (ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client); variables set outside this script are kept.
+# (ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client), and ANTWAR_MEMORY_LIMIT, --memory's own value, the post-mortem's re-run
+# limit where no control group gives one; variables set outside this script are kept.
 # Its ^;^ prefix makes ; the separator, so the address list's commas stay inside one value.
 
 REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
@@ -1851,7 +1857,7 @@ CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
 stamp gcloud run deploy antwar --image "$IMAGE" --no-traffic ...
 deploy_named antwar \
   --image "$IMAGE" \
-  --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client" \
+  --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY" \
   --service-account "$RUN_SA" \
   --min-instances 1 --max-instances 1 \
   --max 1 \

@@ -441,6 +441,12 @@ export interface LocalAntRules {
   readonly workerQueenThreatTiles?: number;
   /** Maximum free, non-carrying dispatched/idle workers recalled per colony, including its worker home guard. */
   readonly workerQueenRecallCount?: number;
+  /**
+   * No bot moves for a player. Present on every new match: every colony's free ants follow these local rules from
+   * the first tick, whether or not its seat has joined or is active, and the house never founds a queen. Absent on
+   * matches recorded before it, which keep their recorded house planning and founding for a colony with no active seat.
+   */
+  readonly everyColony?: true;
 }
 
 /** Queen HP numbers, in milli-HP and ticks. */
@@ -593,7 +599,9 @@ export const PUBLIC_CONFIG: SimConfig = { ...UNCAPPED_PUBLIC_BASE, adjudication:
 /**
  * The config an ANTWAR_RULES value plays. Unset is today's public
  * config, unchanged; v4 is the same rules marked as an explicit comparison run;
- * any other value throws, so the server refuses to start.
+ * any other value throws, so the server refuses to start. No new match starts on v4 or
+ * count-marks (src/server.ts comparisonOptions refuses them); their configs remain for the
+ * simulation paths their recordings re-simulate on.
  */
 export function rulesConfig(value: string | undefined): SimConfig {
   switch (value) {
@@ -611,10 +619,10 @@ export function rulesConfig(value: string | undefined): SimConfig {
         foodLayout: foodLayoutRules(LIVE_REDESIGN_FOOD_PATCHES, 452, 1026),
         countMarks: { ...COUNT_MARK_RULES, recruitColonyWide: true, placement: "colony_sight", reportClaimAvailability: true },
         patrolLinkTiles: 6,
-        localAnts: { ...BALANCED_LOCAL_ANT_RULES, workerGuardSettle: true }, queenHp: QUEEN_HP_RULES,
+        localAnts: { ...BALANCED_LOCAL_ANT_RULES, workerGuardSettle: true, everyColony: true }, queenHp: QUEEN_HP_RULES,
         earlyWin: EARLY_WIN_RULES, commandIdleTicks: 180 * PUBLIC_CONFIG.ticksPerSecond };
     default:
-      throw new Error(`ANTWAR_RULES must be unset or one of ${RULES_NAMES.join(", ")}; got ${JSON.stringify(value)}`);
+      throw new Error(`ANTWAR_RULES must be unset or redesign; got ${JSON.stringify(value)}`);
   }
 }
 
