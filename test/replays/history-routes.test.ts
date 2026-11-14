@@ -17,7 +17,6 @@ import { headerLine, tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
 import type { SimInput } from "../../src/sim/types.ts";
-import type { Recording } from "../../web/src/matches-page/data.ts";
 import { colonyModels } from "../../web/src/pages/model.ts";
 import { playable } from "../playable.ts";
 
@@ -55,9 +54,8 @@ describe("older Recordings take each colony's handle from its lobby", () => {
     const recorded = row(fourVsFour, [0, 1, 0, 1, 0, 1, 0, 1].map(colony => ({ colony: colony as 0 | 1 })));
     const filled = (await lobbySeatHandles(lookup)(page(recorded))).matches[0]!;
     expect(handles(filled)).toEqual([HOUSE, HOUSE_FAST, HOUSE, HOUSE_FAST, HOUSE, HOUSE_FAST, HOUSE, HOUSE_FAST]);
-    // The badge rule, unchanged: each handle's fixed level and tier.
-    // This listed row's seats are colonies 0 and 1, the two colonies the Matches page reads.
-    expect(colonyModels(filled.seats as Recording["seats"])?.map(colony => colony?.map(model => model.badges))).toEqual([
+    // The badge rule, unchanged: each handle's fixed level and tier. A two-colony row, as the page's two-colony seats type reads it.
+    expect(colonyModels(filled.seats as Parameters<typeof colonyModels>[0])?.map(colony => colony?.map(model => model.badges))).toEqual([
       [["xhigh"], ["xhigh"], ["xhigh"], ["xhigh"]], [["high", "Fast"], ["high", "Fast"], ["high", "Fast"], ["high", "Fast"]]]);
     expect(handles(recorded)).toEqual(Array(8).fill(null)); // The listed row itself is not rewritten.
   });
