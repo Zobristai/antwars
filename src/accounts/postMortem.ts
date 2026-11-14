@@ -680,7 +680,8 @@ export function createPostMortem(deps: PostMortemDeps) {
     const release = () => { if (held) { held = false; deliveries--; } };
     try {
       // Started only now, with nothing left to wait on before this reply is written: a caller seen gone by the check
-      // above starts no version lookup and no re-run. (A due status is never "shown", so no no-effect page was skipped.)
+      // above starts no version lookup and no re-run. A re-run that finished while this reply's pages were read leaves
+      // its status "shown" here with no page read for it: shape() then says to ask again rather than show it.
       if (startFrom !== undefined) {
         startNoEffect(replayId, startFrom);
         status = noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? status;
@@ -768,7 +769,8 @@ function shape(base: Base, status: NoEffectStatus | null, refused: { cursor: Cur
   const mine = new Set(base.seats.map(seat => seat.seat));
   const rate = base.ticksPerSecond;
   const basis = base.source === "calls" ? "calls" : "step";
-  const settled = status ?? { status: "being_worked_out", reason: "Ask again shortly." };
+  // "shown" only with the page read from its findings: never an empty list for findings this reply did not read.
+  const settled = status === null || status.status === "shown" && noEffect === null ? { status: "being_worked_out", reason: "Ask again shortly." } as const : status;
   const shown = settled.status === "shown" ? noEffect : null;
   const entries = refused.page.entries as readonly RefusedEntry[];
   return {

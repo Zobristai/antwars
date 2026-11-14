@@ -2152,3 +2152,73 @@ describe("a continuation whose no-effect answer was dropped from the cache", () 
     expect(held.started).toEqual([a.id, other.id]);
   });
 });
+
+describe("a re-run that finishes while a reply's pages are read", () => {
+  const FINDINGS: RerunOutcome = { kind: "findings", tested: 1, counts: [[0, 4], [1, 2]], bits: new Uint8Array([4, 0]), undecided: [] };
+  const PENDING = { status: "being_worked_out", reason: "Ask again shortly." };
+  const SHOWN = { status: "shown", commands: [{ seat: 0, commandIndex: 2, type: "set_brood", tick: 2 }] };
+
+  // Credible regression: a reply re-reading its no-effect status as it is shaped, after another owner's re-run finished
+  // during its refused page, says "shown" with an empty list and no continuation for findings it never read.
+  it("asks a proven owner to ask again, not an empty shown list, when another owner's re-run finishes during its refused page", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs });
+    const alice = f.w.played("alice"), bob = f.w.played("bob");
+    const { lobbyId, id } = f.match(560, [[alice, 0], [bob, 1]]);
+    const http = await overHttp(f);
+    const ask = async (who: { key: string }): Promise<any> => (await http.client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: who.key, lobbyId } }) as any).structuredContent;
+    // The first read is the shared first pass; the second, alice's refused page, is held.
+    const page = holdRead(f, 2);
+    const first = ask(alice);
+    await vi.waitFor(() => expect(f.history.open.mock.calls.length).toBe(2));
+    const fromBob = await ask(bob);
+    expect(fromBob.seats.map((s: { seat: number }) => s.seat)).toEqual([1]);
+    expect(fromBob.noEffect.status).toBe("being_worked_out");
+    await vi.waitFor(() => expect(held.started).toEqual([id]));
+    held.finish(id, FINDINGS);
+    await sleep(0);
+    page.open();
+    const reply = await first;
+    expect(reply.seats.map((s: { seat: number }) => s.seat)).toEqual([0]);
+    expect(reply.noEffect).toEqual(PENDING);
+    expect(reply).not.toHaveProperty("noEffectPage");
+    const again = await ask(alice);
+    expect(again.noEffect).toMatchObject(SHOWN);
+    expect(again.noEffectPage).toMatchObject({ total: 1, remaining: 0 });
+    expect(reply.refusedPage).toEqual(again.refusedPage);
+    expect(reply.seats[0].refused).toEqual(again.seats[0].refused);
+    expect(held.started).toEqual([id]);
+  });
+
+  // Credible regression: the same false empty "shown" when a re-run still pending after its no-effect answer was dropped
+  // from the cache finishes during the next ask's refused page.
+  it("asks the owner to ask again, not an empty shown list, when a re-run whose answer was dropped finishes during its refused page", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs, cacheBytes: 160 });
+    const alice = f.w.played("alice");
+    const a = f.match(561, [[alice, 0]]);
+    const http = await overHttp(f);
+    const ask = async (lobbyId: string): Promise<any> => (await http.client.callTool({ name: POST_MORTEM_TOOL, arguments: { key: alice.key, lobbyId } }) as any).structuredContent;
+    expect((await ask(a.lobbyId)).noEffect.status).toBe("being_worked_out");
+    await vi.waitFor(() => expect(held.started).toEqual([a.id]));
+    // Another record's answers push this one's out of the cache while its re-run is still pending.
+    const other = f.match(562, [[alice, 0]]);
+    await ask(other.lobbyId);
+    await vi.waitFor(() => expect(held.started).toEqual([a.id, other.id]));
+    const opens = f.history.open.mock.calls.length;
+    // Its first pass read again (the first read from now), then its refused page (the second), held.
+    const page = holdRead(f, 2);
+    const second = ask(a.lobbyId);
+    await vi.waitFor(() => expect(f.history.open.mock.calls.length).toBe(opens + 2));
+    held.finish(a.id, FINDINGS);
+    await sleep(0);
+    page.open();
+    const reply = await second;
+    expect(reply.noEffect).toEqual(PENDING);
+    expect(reply).not.toHaveProperty("noEffectPage");
+    const again = await ask(a.lobbyId);
+    expect(again.noEffect).toMatchObject(SHOWN);
+    expect(again.noEffectPage).toMatchObject({ total: 1, remaining: 0 });
+    expect(held.started).toEqual([a.id, other.id]);
+  });
+});
