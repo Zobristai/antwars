@@ -9,6 +9,7 @@ import { createAccountApi } from "./accounts/httpApi.js";
 import { waitStreamRoutes } from "./accounts/waitStream.js";
 import { startWaitSweep } from "./lobby/waits.js";
 import { registerAccountTools } from "./accounts/mcpTools.js";
+import { registerPostMortemTool, withResponseScope, type createPostMortem } from "./accounts/postMortem.js";
 import type { AccountStores } from "./accounts/service.js";
 import type { MatchSaves } from "./handover/saveStore.js";
 import type { Identities } from "./identity/identities.js";
@@ -132,6 +133,8 @@ export interface ServerOptions {
    * and waiting tokens' streams on GET /wait/<token>.
    */
   readonly accounts?: AccountStores;
+  /** The entry server's match_post_mortem (src/accounts/postMortem.ts); never served by a slot. */
+  readonly postMortem?: Pick<ReturnType<typeof createPostMortem>, "query">;
 }
 
 export interface SlotWiring {
@@ -300,6 +303,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
   // Only a match slot limits each client source's evictions at the session cap.
   // Only a server with neither accounts nor a slot, run outside Cloud Run (K_SERVICE unset), briefs without
   // account and lobby text: a newcomer's npm start. Every hosted service, antwar-preview included, keeps it.
+  const postMortemServed = accounts !== undefined && mode.kind !== "slot" && options.postMortem !== undefined;
   const handler = createMcpHandler(game, { gameplay: mode.hostsMatches, localBriefing: accounts === undefined && options.slot === undefined && !process.env.K_SERVICE, perSourceInitializeLimit: mode.kind === "slot", ...(accounts === undefined ? {} : { extraTools: (server, session) => {
     // Only the entry server (no slot) refuses seat client 1.0.0 its entry calls.
     registerAccountTools(server, accounts, { seatClientAdmission: mode.kind !== "slot", session });
@@ -307,6 +311,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
       const located = await accounts.lobbies.locate(lobbyId);
       return located.ok ? located.value : undefined;
     }, { seatClientAdmission: true });
+    if (postMortemServed) registerPostMortemTool(server, options.postMortem!, { seatClientAdmission: true });
   } }) });
   const mounts: { prefix: string; handler: MountHandler }[] = [];
   // /api bodies: MCP's read deadline and body-read cap values, counted in a pool of their own.
@@ -490,7 +495,8 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
     { routeClass: "/operator", under: "/operator/", handle: serveOperator },
     { routeClass: "/mcp", path: "/mcp", handle: (req, res) => {
       res.once("finish", replied);
-      return handler.handle(req, res);
+      // The entry server's post-mortem calls share their request's response scope (src/accounts/postMortem.ts).
+      return postMortemServed ? withResponseScope(res, () => handler.handle(req, res)) : handler.handle(req, res);
     } },
     ...mode.routes,
   ]);

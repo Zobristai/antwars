@@ -35,8 +35,11 @@ export interface HistorySummary {
 export interface HistoryPage { matches: HistorySummary[]; nextPageToken: string | null }
 export interface HistorySource {
   list(pageToken: string | undefined, signal: AbortSignal): Promise<HistoryPage>;
-  /** Decoded JSON byte stream. null means missing; consumer owns its destruction. */
-  open(id: string, signal: AbortSignal): Promise<Readable | null>;
+  /**
+   * Decoded JSON byte stream. null means missing (or, given a generation, that generation missing); consumer owns its
+   * destruction. Its storedIdentity is the stored object's generation and length as the reply that carries it gives them.
+   */
+  open(id: string, signal: AbortSignal, generation?: string): Promise<Readable | null>;
   /**
    * The listing rows as served, where a source changes them: the /matches route applies it last, after it has typed
    * each row and filled its missing seat handles from the lobby, so it sees every value the page will serve.
@@ -45,6 +48,19 @@ export interface HistorySource {
 }
 export function validHistoryPageToken(token: string): boolean {
   return token.length > 0 && token.length <= 2048 && /^[\x21-\x7e]+$/.test(token);
+}
+
+/** A stored object's generation and stored length, from the one reply whose bytes a stream carries. */
+export interface StoredIdentity { readonly generation: string; readonly storedLength: number }
+const identities = new WeakMap<Readable, StoredIdentity>();
+/** The identity of the reply an opened record's stream carries; undefined where its source gives none. */
+export function storedIdentity(stream: Readable): StoredIdentity | undefined { return identities.get(stream); }
+/** A reply's identity headers, both valid, else none. */
+function identityOf(headers: Readonly<Record<string, string | string[] | undefined>>): StoredIdentity | undefined {
+  const generation = headers["x-goog-generation"], length = headers["x-goog-stored-content-length"];
+  if (typeof generation !== "string" || !/^[1-9]\d{0,19}$/.test(generation) || typeof length !== "string" || !/^\d{1,20}$/.test(length)) return undefined;
+  const storedLength = Number(length);
+  return Number.isSafeInteger(storedLength) ? { generation, storedLength } : undefined;
 }
 
 /** A record that cannot be summarised: list() leaves it off its page instead of failing the page. */
@@ -246,15 +262,18 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
     const raw = await objects.open(`${id}.json`, token, signal, LABELS, generation);
     if (raw === null) return null;
     const body = Readable.from(decodedJson(raw, signal), { objectMode: false, signal });
+    const identity = identityOf(raw.headers);
+    if (identity !== undefined) identities.set(body, identity);
     // Guard the handoff, including client disconnect before pipeline attaches.
     body.on("error", () => {});
     body.once("close", () => raw.destroy());
     return body;
   }
   return {
-    async open(id, signal) {
+    async open(id, signal, generation) {
       if (!isReplayId(id)) throw new Error("invalid match id");
-      return openWithToken(id, await metadataAccessToken(request, signal), signal);
+      if (generation !== undefined && !/^[1-9]\d{0,19}$/.test(generation)) throw new Error("invalid generation");
+      return openWithToken(id, await metadataAccessToken(request, signal), signal, generation);
     },
     async list(pageToken, signal) {
       // Our cursor is an exclusive name boundary, not GCS's ascending cursor.
