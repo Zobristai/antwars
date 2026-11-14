@@ -1,15 +1,17 @@
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 
 /** What kind of match a recording was; the web words it (web/src/ui/format.ts), so no mode slug is ever shown. */
-export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" | "unrated";
+export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" | "unrated" | "quadrants";
 /** A recording's match type and agents per colony; size null where neither the lobby nor recorded seats tell it. */
 export interface RecordingMatchType { readonly kind: RecordingMatchKind; readonly size: 1 | 2 | 3 | 4 | null }
 
 /**
- * A match's type from its lobby: a house-* mode is the Antwars Model Index, any other mode the ranked queue, a modeless
- * lobby a house challenge or else a player-made (unranked) lobby. Recordings and Live now type a match by this one rule.
+ * A match's type from its lobby: the quadrants mode is a Quadrants match of one agent per colony, a house-* mode the
+ * Antwars Model Index, any other mode the ranked queue, a modeless lobby a house challenge or else a player-made (unranked)
+ * lobby. Recordings and Live now type a match by this one rule.
  */
 export function lobbyMatchType(lobby: { readonly mode: string | null; readonly size: 1 | 2 | 3 | 4; readonly challenge?: { readonly kind: string } }): RecordingMatchType {
+  if (lobby.mode === "quadrants") return { kind: "quadrants", size: 1 };
   const kind = lobby.mode !== null ? (lobby.mode.startsWith("house-") ? "index" : "ranked")
     : lobby.challenge?.kind === "house" ? "challenge" : "unranked";
   return { kind, size: lobby.size };
