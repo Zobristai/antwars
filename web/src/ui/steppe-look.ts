@@ -9,6 +9,7 @@ import { NOISE_GLSL } from "../soil.ts";
 import { TRAIL_RES } from "../buffer.ts";
 import type { BoardLook, Rgb } from "../board-look.ts";
 import { colonyWash } from "../colony-palette.ts";
+import { laterColonies } from "../board3d/owner-levels.ts";
 
 /** sRGB albedo, a little darker than sand so the pale ants and both colony hues stand out on it. */
 export const EARTH_LIGHT: Rgb = [0.70, 0.61, 0.46];
@@ -19,7 +20,7 @@ export const GRAVEL_LIGHT: Rgb = [0.65, 0.63, 0.58];
 export const GRAVEL_DARK: Rgb = [0.53, 0.51, 0.47];
 export const PEBBLE: Rgb = [0.41, 0.37, 0.31];
 /** A colony's territory wash: its name's colour pushed so it reads on warm earth (colony-palette.ts WASH). */
-const hue = (colony: 0 | 1): Rgb => colonyWash(colony).hue;
+const hue = (colony: number): Rgb => colonyWash(colony).hue;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -265,11 +266,16 @@ void main() {
 }`;
 }
 
-/** The 3D ground's added helpers, after Current's (board3d/ground.ts DEFS), in the match's colony washes. */
-const definitions3d = () => /* glsl */ `
+/**
+ * The 3D ground's added helpers, after Current's (board3d/ground.ts defs), in the match's colony washes: for two
+ * colonies exactly the two-colony helpers; a four-colony match's also wash colonies 2 and 3.
+ */
+const definitions3d = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 ${NOISE_GLSL}
-vec3 d1Hue(vec4 s) { return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r)); }
+${colonies > 2
+    ? `vec3 d1Hue(vec4 s) {\n${laterColonies(vec3(hue(2)), vec3(hue(3)))}  return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r));\n}`
+    : `vec3 d1Hue(vec4 s) { return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r)); }`}
 vec3 d1Owned(vec4 s, vec3 soil) { return mix(soil, mix(soil, d1Hue(s), 0.6), 0.45 * s.b); }
 float d1WetCell(vec2 c) {
   if (c.x < 0.0 || c.y < 0.0 || c.x >= uMap.x || c.y >= uMap.y) return 1.0;
@@ -319,7 +325,7 @@ export const STEPPE_LOOK: BoardLook = {
   board2d: { soil: SOIL_2D, fill: fill2d, front: front2d },
   board3d: {
     soil: steppe,
-    ground: (point, current) => point === "definitions" ? current + definitions3d() : point === "diffuse" ? DIFFUSE_3D : current,
+    ground: (point, current, colonies = 2) => point === "definitions" ? current + definitions3d(colonies) : point === "diffuse" ? DIFFUSE_3D : current,
     rock: [0.56, 0.53, 0.48],
     // Neutral daylight from the same quarter as Current's warm key, so the ground shows its own colour.
     light: {
