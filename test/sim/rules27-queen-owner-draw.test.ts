@@ -7,6 +7,9 @@ import { assignQueenOwners } from "../../src/sim/queenOwners.js";
 import { step } from "../../src/sim/step.js";
 import type { ColonyId, QueenState, SimInput, SimState } from "../../src/sim/types.js";
 import { addAnt, setOwner } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 /**
  * In rules 27 every
@@ -18,7 +21,7 @@ import { addAnt, setOwner } from "./fixtures.js";
  */
 
 function rules27(patch: Partial<SimConfig> = {}): SimConfig {
-  const base = rulesConfig("redesign");
+  const base = recordedHousePlan(rulesConfig("redesign"));
   return newMatchConfig({ ...base, startAnts: 0, squadSize: 0, commandFloorTicks: 1, hatchIntervalTicks: 1_000_000, ...patch });
 }
 const RULES_27 = rules27();

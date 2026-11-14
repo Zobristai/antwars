@@ -437,6 +437,25 @@ describe("no house player in a four-colony match", () => {
   }
 });
 
+describe("which colonies play the local ant rules with no seated agent", () => {
+  it("every colony of a new two-colony match, which carries the no-bot-moves rule", () => {
+    const state = createMatch(SEED, LIVE);
+    expect(state.colonies).toHaveLength(2);
+    expect(state.config.localAnts?.everyColony).toBe(true);
+    expect(state.agents.some(a => !a.idle)).toBe(false);
+    expect(state.colonies.every(c => localRulesSide(state, c.id))).toBe(true);
+  });
+
+  it("every colony of a four-colony match whose config lacks the no-bot-moves rule", () => {
+    const { everyColony: _rule, ...localAnts } = LIVE.localAnts!;
+    const state = createMatch(SEED, quadrantConfig(QUADRANTS, { localAnts }));
+    expect(state.colonies).toHaveLength(4);
+    expect(state.config.localAnts?.everyColony).toBeUndefined();
+    expect(state.agents.some(a => !a.idle)).toBe(false);
+    expect(state.colonies.every(c => localRulesSide(state, c.id))).toBe(true);
+  });
+});
+
 // Every colony's food store stays a number and colonies 2 and 3 hatch, as colonies 0 and 1 do.
 it("keeps every colony's food store a finite number and hatches ants in colonies 2 and 3", () => {
   let state = createMatch(SEED, quadrantConfig(QUADRANTS));

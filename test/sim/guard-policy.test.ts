@@ -5,12 +5,15 @@ import { houseDirection, queenGuardTargets, rebalanceRoles } from "../../src/sim
 import { beginLocalGoals, currentLocalGoals } from "../../src/sim/localArrival.js";
 import { buildGrid } from "../../src/sim/map.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Literal expectations from houseBot.ts at
 // 59ed9a6d309b48d31b7c9d09e283d6b1a5fcbab5: queenGuardTargets,
 // rebalanceQueenGuards and guardDirection. No second implementation call is
 // used as an oracle. Native fine-grid units are intentional.
-const rules = newMatchConfig(rulesConfig("redesign"));
+const rules = newMatchConfig(recordedHousePlan(rulesConfig("redesign")));
 function scenario(config: SimConfig = rules) {
   const state = emptyMatch(100, { ...config, startAnts: 0, terrain: undefined,
     foodLayout: undefined, foodPatches: [] });

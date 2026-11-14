@@ -9,6 +9,7 @@ import { createAccountApi } from "./accounts/httpApi.js";
 import { waitStreamRoutes } from "./accounts/waitStream.js";
 import { startWaitSweep } from "./lobby/waits.js";
 import { registerAccountTools } from "./accounts/mcpTools.js";
+import { registerPostMortemTool, withResponseScope, type createPostMortem } from "./accounts/postMortem.js";
 import type { AccountStores } from "./accounts/service.js";
 import type { MatchSaves } from "./handover/saveStore.js";
 import type { Identities } from "./identity/identities.js";
@@ -134,6 +135,8 @@ export interface ServerOptions {
    * and waiting tokens' streams on GET /wait/<token>.
    */
   readonly accounts?: AccountStores;
+  /** The entry server's match_post_mortem (src/accounts/postMortem.ts); never served by a slot. */
+  readonly postMortem?: Pick<ReturnType<typeof createPostMortem>, "query">;
 }
 
 export interface SlotWiring {
@@ -303,6 +306,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
   // Only a match slot limits each client source's evictions at the session cap.
   // Only a server with neither accounts nor a slot, run outside Cloud Run (K_SERVICE unset), briefs without
   // account and lobby text: a newcomer's npm start. Every hosted service, antwar-preview included, keeps it.
+  const postMortemServed = accounts !== undefined && mode.kind !== "slot" && options.postMortem !== undefined;
   const handler = createMcpHandler(game, { gameplay: mode.hostsMatches, localBriefing: accounts === undefined && options.slot === undefined && !process.env.K_SERVICE, perSourceInitializeLimit: mode.kind === "slot", ...(accounts === undefined ? {} : { extraTools: (server, session) => {
     // Only the entry server (no slot) refuses seat client 1.0.0 its entry calls.
     registerAccountTools(server, accounts, { seatClientAdmission: mode.kind !== "slot", session });
@@ -310,6 +314,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
       const located = await accounts.lobbies.locate(lobbyId);
       return located.ok ? located.value : undefined;
     }, { seatClientAdmission: true });
+    if (postMortemServed) registerPostMortemTool(server, options.postMortem!, { seatClientAdmission: true });
   } }) });
   const mounts: { prefix: string; handler: MountHandler }[] = [];
   // /api bodies: MCP's read deadline and body-read cap values, counted in a pool of their own.
@@ -493,7 +498,8 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
     { routeClass: "/operator", under: "/operator/", handle: serveOperator },
     { routeClass: "/mcp", path: "/mcp", handle: (req, res) => {
       res.once("finish", replied);
-      return handler.handle(req, res);
+      // The entry server's post-mortem calls share their request's response scope (src/accounts/postMortem.ts).
+      return postMortemServed ? withResponseScope(res, () => handler.handle(req, res)) : handler.handle(req, res);
     } },
     ...mode.routes,
   ]);
@@ -644,13 +650,17 @@ export const COMPARISON_SEED = 6006;
  * Server options for a comparison run, read once at start-up from
  * ANTWAR_RULES and ANTWAR_PLAYERS. ANTWAR_RULES unset selects
  * redesign for ordinary scheduled public matches and never reads ANTWAR_PLAYERS.
- * It adds no barrier, seed override or seat override. Set (v4 included), it selects the rules, holds one match at a
+ * It adds no barrier, seed override or seat override. Set to redesign, it holds one match at a
  * join barrier of ANTWAR_PLAYERS (2 or 4) with that many seats, seed 6006, and
- * copies the match log to stdout. Any other value of either throws.
+ * copies the match log to stdout. v4 and count-marks are refused: under them the house bot moves for a
+ * player's colony, so no new match starts on them. Any other value of either throws.
  */
 export function comparisonOptions(env: Readonly<Record<string, string | undefined>>, mcp: McpConfig): Partial<ServerOptions> {
   const rules = env.ANTWAR_RULES;
   if (rules === undefined) return { simConfig: newMatchConfig(rulesConfig("redesign")) };
+  if (rules === "v4" || rules === "count-marks") {
+    throw new Error(`ANTWAR_RULES=${rules} no longer starts a match: under those rules the house bot moves for a player's colony. New matches play redesign; ${rules} recordings still re-simulate as recorded`);
+  }
   const simConfig = newMatchConfig(rulesConfig(rules));
   const players = env.ANTWAR_PLAYERS === "2" ? 2 : env.ANTWAR_PLAYERS === "4" ? 4 : null;
   if (players === null) {

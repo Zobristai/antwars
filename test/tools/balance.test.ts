@@ -7,6 +7,7 @@ import { step } from "../../src/sim/step.js";
 import { takeView } from "../../src/sim/view.js";
 import { addAnt, emptyMatch } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
+import { recordedHousePlan } from "../house-plan.ts";
 import { spawnSync } from "node:child_process";
 
 const rules = playable(rulesConfig("redesign"));
@@ -213,6 +214,8 @@ describe("balance sweep evidence", () => {
   });
 
   it("keeps live allocation quotas separate from observed off-lane positions in the checkpoint", () => {
+    // The house plan's soldier allocation, as recorded matches still re-simulate it.
+    const rules = recordedHousePlan(playable(rulesConfig("redesign")));
     const state = emptyMatch(6000, rules);
     // Every ant starts on the colony-0 nest tile, inside the central lane.
     const nestX = Math.floor(rules.nestTileX), nestY = Math.floor(rules.nestTileY);
@@ -241,7 +244,8 @@ describe("balance sweep evidence", () => {
   });
 
   it("records post-step free-pool limits without treating a snapshot as claim-pass causality", () => {
-    const state = emptyMatch(300, rules);
+    // A house-planned colony's guards, as recorded matches still re-simulate them.
+    const state = emptyMatch(300, recordedHousePlan(rules));
     state.marks.push({ id: 1, agentId: "a", colony: 0, tileX: 40, tileY: 24, words: [], laidTick: 0, steering: 0, verb: "ATTACK", count: 20 });
     const probe = { markId: 1, acceptedTick: 0, assessedTick: 300, peakClaimed: 0, lastClaimedTick: null };
     expect(zeroClaimedDiagnostic(state, probe)).toMatchObject({ availability: "no_live_ants", liveAnts: 0, availabilityAt: "post_step" });

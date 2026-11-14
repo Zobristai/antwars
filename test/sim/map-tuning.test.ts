@@ -10,6 +10,7 @@ import { step } from "../../src/sim/step.js";
 import { TUNING_MAP_ID, TUNING_MAP_MAX_ANTS_PER_SIDE, tuningMapConfig } from "../../src/sim/tuningMap.js";
 import type { SimEvent, SimState } from "../../src/sim/types.js";
 import { addAnt } from "./fixtures.js";
+import { recordedHousePlan } from "../house-plan.ts";
 
 const SEED = 7001;
 const START_ANTS = 30;
@@ -74,8 +75,11 @@ describe("a tuning-map match plays with the chosen count as its colony cap", () 
 
   // On Wide Plain's 256x92 board, more than about 6,200 living ants per side exhaust the resting sites
   // (PointRestCapacityError on tick 0); the tuning map's own 256x184 board holds 10,000 per side.
+  // Pinned to the house-planned config of matches recorded before the no-bot-moves rule: on a new match all
+  // 20,000 free ants follow the local rules, which take minutes per tick at this count (as a seated colony's
+  // ants already did), so this capacity check keeps the house path it was written against.
   it("10,000 living ants per side: the match plays its first ticks", () => {
-    let state = createMatch(SEED, tuningMapConfig(TUNING_MAP_MAX_ANTS_PER_SIDE));
+    let state = createMatch(SEED, recordedHousePlan(tuningMapConfig(TUNING_MAP_MAX_ANTS_PER_SIDE)));
     for (let i = 0; i < 3; i++) state = step(state, []).state;
     expect([state.tick, state.result, state.config.colonyCap]).toEqual([3, null, TUNING_MAP_MAX_ANTS_PER_SIDE]);
     expect([0, 1].map(colony => state.ants.filter(ant => ant.colony === colony).length))

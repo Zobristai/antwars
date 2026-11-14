@@ -7,6 +7,9 @@ import { step } from "../../src/sim/step.js";
 import { passableMask, segmentOnLand } from "../../src/sim/terrain.js";
 import type { Ant, Caste, QueenState, SimInput, SimState } from "../../src/sim/types.js";
 import { addAnt, antById, emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 // Rules-27 hatchlings walk to their queen's spawn point.
 const join: SimInput = { type: "join", agentId: "a", placement: 0 };
@@ -15,7 +18,7 @@ const wake: SimInput = { type: "order", agentId: "a", order: { kind: "hold" } };
 const ARRIVAL_FINE_TILES: Record<Caste, number> = { worker: 2, soldier: 6 };
 
 function rules27(extra: Partial<SimConfig> = {}): SimConfig {
-  const base = withGridScale(rulesConfig("redesign"));
+  const base = withGridScale(recordedHousePlan(rulesConfig("redesign")));
   return { ...base, rules27: true, startAnts: 0, squadSize: 0, terrain: undefined, foodLayout: undefined,
     foodPatches: [], ...extra };
 }
@@ -260,7 +263,7 @@ describe("rules 27: hatchlings walk to their queen's spawn point", () => {
   });
 
   it("walks around the map's terrain to the spawn tile", () => {
-    const terrain = withGridScale(rulesConfig("redesign")).terrain;
+    const terrain = withGridScale(recordedHousePlan(rulesConfig("redesign"))).terrain;
     let state = seated(rules27({ terrain }));
     expect(state.terrain).toBeDefined();
     brood(state, "worker");

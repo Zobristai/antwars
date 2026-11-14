@@ -7,6 +7,9 @@ import { releaseClaim } from "../../src/sim/marks.js";
 import { step } from "../../src/sim/step.js";
 import type { Agent, Ant, SimEvent, SimInput, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+// House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
+// no-bot-moves rule (localAnts.everyColony absent), so these house-path tests pin that recorded config.
+import { recordedHousePlan } from "../house-plan.ts";
 
 /** The hold radius is 3 reference tiles, 6 fine tiles at grid scale 2. Stated here, not read from config. */
 const HOLD_FINE_TILES = 6;
@@ -18,7 +21,7 @@ const byId = (state: SimState, id: number): Ant => state.ants.find((ant) => ant.
 
 /** A seated colony 0 on the live redesign rules at grid scale 2, open ground, no enemy ants. */
 function scene(overrides: Partial<SimConfig> = {}): { state: SimState; agent: Agent; queen: Tile } {
-  const base = withGridScale(rulesConfig("redesign"));
+  const base = withGridScale(recordedHousePlan(rulesConfig("redesign")));
   const config: SimConfig = { ...base, startAnts: 0, terrain: undefined,
     foodLayout: undefined, foodPatches: [], hatchIntervalTicks: Number.MAX_SAFE_INTEGER, commandFloorTicks: 1,
     // No automatic squad drafting: every soldier here stays free unless a test drafts it.
