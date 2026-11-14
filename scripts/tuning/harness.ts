@@ -6,10 +6,13 @@
 // SHA-256 equals --patch-sha256 / --reference-patch-sha256. Each tree runs from a private copy that is removed on exit.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, hostname, loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { participantArgs, participate } from "./noise.ts";
+import { HARNESS_OPTIONS } from "./options.ts";
+import { pendingWork } from "./plan.ts";
 import { functionTimes, type CpuProfile } from "./profile.ts";
 import { median, noiseBar, repetitionsFor, roundGain, sideOrder, type PairedSegment } from "./stats.ts";
 import { materialise, resolveCommit, type PatchInput, type Tree } from "./trees.ts";
@@ -27,14 +30,7 @@ export const DEFAULT_CHECKPOINTS = 4;
 /** Ticks timed from each saved state by default. */
 export const DEFAULT_WINDOW = 200;
 
-const { positionals, values: o } = parseArgs({ allowPositionals: true, options: {
-  store: { type: "string" }, commit: { type: "string" }, patch: { type: "string" }, reference: { type: "string" }, "reference-patch": { type: "string" },
-  "patch-sha256": { type: "string" }, "reference-patch-sha256": { type: "string" },
-  candidate: { type: "string" }, base: { type: "string" }, rounds: { type: "string" }, window: { type: "string" }, scenarios: { type: "string" },
-  "seeds-per-map": { type: "string" }, paths: { type: "string" }, checkpoints: { type: "string" }, jobs: { type: "string" }, ticks: { type: "string" },
-  session: { type: "string" }, participant: { type: "string" }, expect: { type: "string" }, wait: { type: "string" }, "finish-wait": { type: "string" },
-  local: { type: "string" }, whole: { type: "boolean" }, scenario: { type: "string" }, at: { type: "string" }, top: { type: "string" },
-} });
+const { positionals, values: o } = parseArgs({ allowPositionals: true, options: HARNESS_OPTIONS });
 const command = positionals[0];
 const storeArg = o.store ?? process.env.ANTWARS_TUNING_STORE;
 if (storeArg === undefined) throw new Error("give the shared store with --store <dir> or ANTWARS_TUNING_STORE");
@@ -88,9 +84,10 @@ function runWorker(tree: Tree, job: Omit<WorkerJob, "tree">): any {
   if (r.status !== 0) throw new Error(`worker failed (${tree.key}, ${JSON.stringify(job)}): ${r.stderr.slice(-2000)}`);
   return parseLast(r.stdout, "worker");
 }
-function runWorkerAsync(tree: Tree, job: Omit<WorkerJob, "tree">): Promise<any> {
+function runWorkerAsync(tree: Tree, job: Omit<WorkerJob, "tree">, signal?: AbortSignal): Promise<any> {
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, workerArgs(tree, job), { cwd: ROOT, env: { ...process.env, NODE_OPTIONS: "" } });
+    const child = spawn(process.execPath, workerArgs(tree, job), { cwd: ROOT, env: { ...process.env, NODE_OPTIONS: "" }, signal });
+    child.on("error", fail);
     let out = "", err = "";
     child.stdout.on("data", d => { out += d; });
     child.stderr.on("data", d => { err += d; });
@@ -119,19 +116,24 @@ const STREAMS = ["state", "events", "results", "recorded"] as const;
 function referenceFile(t: Tree, path: string, scenario: string, ticks?: number) {
   return join(STORE, "references", t.key, ticks === undefined ? "full" : `ticks-${ticks}`, path, `${scenario}.json`);
 }
-/** Digests for every scenario and path of a tree, reusing any already in the store (keyed by commit and patch digest). */
+/**
+ * Digests for every scenario and path of a tree, reusing any already in the store (keyed by commit and patch digest).
+ * With checkpoints, the advance path also writes every missing saved state, even when its digests already exist.
+ */
 async function digests(t: Tree, w: Workload, scenarios: readonly Scenario[], paths: readonly string[], ticks: number | undefined, checkpoints = false): Promise<void> {
   // Longest matches first, so the parallel runs finish together.
   const longestFirst = [...scenarios].sort((a, b) => (b.loaded.matchTicks as number) - (a.loaded.matchTicks as number));
   const jobs = longestFirst.flatMap(s => paths.map(path => async () => {
-    const out = referenceFile(t, path, s.id, ticks);
-    if (existsSync(out)) return;
+    const out = referenceFile(t, path, s.id, ticks), checkpointDir = join(STORE, "checkpoints", t.commit, s.id);
+    const todo = pendingWork(existsSync(out), checkpoints && path === "advance" ? w.checkpoints[s.id] ?? [] : [], tick => existsSync(join(checkpointDir, `${tick}.json`)));
+    if (!todo.reference && todo.states.length === 0) return;
     mkdirSync(join(out, ".."), { recursive: true });
-    const at = checkpoints && path === "advance" ? (w.checkpoints[s.id] ?? []).filter(x => x > 0) : [];
     const scratch = `${out}.${randomUUID()}`;
-    await runWorkerAsync(t, { mode: "exact", map: s.map, seed: s.seed, path: path as "advance" | "step", ticks, out: scratch,
-      checkpointsAt: at, checkpointDir: join(STORE, "checkpoints", t.commit, s.id) });
-    renameSync(scratch, out);
+    // With the reference already written, play only as far as the last missing saved state and keep the reference.
+    await runWorkerAsync(t, { mode: "exact", map: s.map, seed: s.seed, path: path as "advance" | "step", out: scratch,
+      ticks: todo.reference ? ticks : Math.max(...todo.states), checkpointsAt: todo.states, checkpointDir });
+    if (todo.reference) renameSync(scratch, out);
+    else rmSync(scratch, { force: true });
   }));
   await pool(jobs, defaultJobs());
 }
@@ -212,52 +214,32 @@ function horizonText(w: Workload, window: number | undefined): string {
   return tickCap() === undefined ? w.horizon : `the first ${tickCap()} ticks of each match`;
 }
 
-// ---- noise rendezvous ---------------------------------------------------------------------------------------------
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-function createOnce(file: string, text: string): boolean {
-  try { writeFileSync(file, text, { flag: "wx" }); return true; } catch (e: any) { if (e.code === "EEXIST") return false; throw e; }
-}
-
+// ---- noise check ----------------------------------------------------------------------------------------------
 async function noise(): Promise<void> {
-  const base = tree(required(o.base, "base")), w = loadWorkload(base.commit);
+  const baseRef = required(o.base, "base"), w = loadWorkload(resolveCommit(ROOT, baseRef));
   const session = required(o.session, "session"), me = required(o.participant, "participant"), expect = int(o.expect, 3, "expect");
   const waitMs = int(o.wait, 600, "wait") * 1000, finishMs = int(o["finish-wait"], 172_800, "finish-wait") * 1000;
-  const rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w);
-  const dir = join(STORE, "noise", session);
-  mkdirSync(join(dir, "arrivals"), { recursive: true });
-  mkdirSync(join(dir, "results"), { recursive: true });
-  const admittedFile = join(dir, "admitted.json");
-  if (existsSync(admittedFile)) throw new Error(`noise session ${session} has already closed admission`);
-  const t0 = Date.now();
-  createOnce(join(dir, "arrivals", me), new Date().toISOString());
-  // Admission closes when the expected participants have arrived or the wait runs out; the first to see it writes the list.
-  while (!existsSync(admittedFile)) {
-    const arrived = readdirSync(join(dir, "arrivals")).sort();
-    if (arrived.length >= expect || Date.now() - t0 >= waitMs) createOnce(admittedFile, JSON.stringify({ admitted: arrived, closedAt: new Date().toISOString() }));
-    else await sleep(500);
-  }
-  const { admitted } = JSON.parse(readFileSync(admittedFile, "utf8")) as { admitted: string[] };
-  const waitedMs = Date.now() - t0;
-  if (!admitted.includes(me)) { print({ session, participant: me, refused: "arrived after admission closed", admitted }); process.exitCode = 1; return; }
-  const repetitions = repetitionsFor(admitted.length);
-  const medians: number[] = [], timings: PairedTiming[] = [];
-  for (let i = 0; i < repetitions; i++) {
-    const t = pairedTiming(base, base, w, rounds, window, `noise ${me} repetition ${i + 1}/${repetitions}`);
-    timings.push(t);
-    medians.push(t.medianPairedGain);
-  }
-  writeFileSync(join(dir, "results", `${me}.json`), JSON.stringify({ participant: me, medians, loaded: timings[0]!.loaded, roundGains: timings.map(t => t.roundGains) }));
-  // Wait for every admitted participant before reporting, so the verdict covers the whole concurrent load.
-  const t1 = Date.now();
-  while (readdirSync(join(dir, "results")).length < admitted.length) {
-    if (Date.now() - t1 > finishMs) throw new Error(`noise session ${session}: not every admitted participant finished within ${finishMs / 1000} s`);
-    await sleep(2000);
-  }
-  const all = admitted.map(p => JSON.parse(readFileSync(join(dir, "results", `${p}.json`), "utf8")) as { participant: string; medians: number[] });
+  const rounds = int(o.rounds, DEFAULT_ROUNDS, "rounds"), window = windowFor(w), dir = join(STORE, "noise", session);
+  let base: Tree | undefined;
+  const timings: PairedTiming[] = [];
+  const outcome = await participate({ dir, me, expect, waitMs, finishMs,
+    prepare: () => { base = tree(baseRef); },
+    measure: async () => {
+      const repetitions = repetitionsFor(JSON.parse(readFileSync(join(dir, "admitted.json"), "utf8")).admitted.length);
+      for (let i = 0; i < repetitions; i++) timings.push(pairedTiming(base!, base!, w, rounds, window, `noise ${me} repetition ${i + 1}/${repetitions}`));
+      return { participant: me, medians: timings.map(t => t.medianPairedGain), loaded: timings[0]!.loaded, roundGains: timings.map(t => t.roundGains) };
+    },
+    // The same work as one side of a measured round, repeated until every participant has finished.
+    load: signal => runWorkerAsync(base!, { mode: "time", segments: segments(w, selectScenarios(w), window, tickCap())
+      .map(seg => ({ map: seg.scenario.map, seed: seg.scenario.seed, checkpoint: seg.checkpoint, ticks: seg.ticks })) }, signal),
+  });
+  if ("refused" in outcome) { print({ session, participant: me, ...outcome }); process.exitCode = 1; return; }
+  const all = outcome.results as { participant: string; medians: number[] }[];
   const verdict = noiseBar(all.flatMap(r => r.medians));
-  const report = { session, participant: me, base: describeTree(base), host: host(), admitted, expected: expect, waitLimitS: waitMs / 1000, waitedS: waitedMs / 1000,
-    repetitionsPerParticipant: repetitions, rounds, window: window ?? null, horizon: horizonText(w, window),
-    participantMedians: Object.fromEntries(all.map(r => [r.participant, r.medians])), ...verdict, loaded: timings[0]!.loaded, myRunWallMs: timings.map(t => t.wallMs) };
+  const report = { session, participant: me, base: describeTree(base!), host: host(), admitted: outcome.admitted, expected: expect, waitLimitS: waitMs / 1000,
+    waitedS: outcome.waitedMs / 1000, repetitionsPerParticipant: timings.length, rounds, window: window ?? null, horizon: horizonText(w, window),
+    participantMedians: Object.fromEntries(all.map(r => [r.participant, r.medians])), ...verdict, loaded: timings[0]!.loaded,
+    myRunWallMs: timings.map(t => t.wallMs), heldLoadAfterFinishS: outcome.heldLoadMs / 1000 };
   writeRun(`noise-${session}-${me}`, report);
   print(report);
 }
@@ -312,10 +294,9 @@ async function main(): Promise<void> {
       if (local === 0) return noise();
       // Local mode: start `local` participants at once on this host and show the first one's report.
       const session = o.session ?? `local-${stamp()}`;
-      const argv = process.argv.slice(2).filter((a, i, all) => a !== "--local" && all[i - 1] !== "--local" && a !== "--session" && all[i - 1] !== "--session");
       const children = Array.from({ length: local }, (_, i) => new Promise<string>((done, fail) => {
-        const child = spawn(process.execPath, ["--import", join(ROOT, "src", "ts-resolve.mjs"), import.meta.filename, ...argv, "--session", session,
-          "--participant", `local-${i + 1}`, "--expect", String(local), "--store", STORE], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
+        const args = participantArgs(o, "noise", { session, participant: `local-${i + 1}`, expect: local, store: STORE });
+        const child = spawn(process.execPath, ["--import", join(ROOT, "src", "ts-resolve.mjs"), import.meta.filename, ...args], { cwd: ROOT, stdio: ["ignore", "pipe", "inherit"] });
         let out = "";
         child.stdout.on("data", d => { out += d; });
         child.on("close", code => code === 0 ? done(out) : fail(new Error(`participant local-${i + 1} exited ${code}`)));

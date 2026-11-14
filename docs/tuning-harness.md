@@ -21,7 +21,7 @@ The store holds data only: it is read, never imported or run.
 | `workloads/<commit>.json` | The workload `regen` generated at that commit. |
 | `references/<key>/…` | Per-tick exactness digests for each scenario and tick path. The key is the full SHA, plus `-` and the first 16 hex characters of the patch's SHA-256. |
 | `checkpoints/<commit>/<scenario>/<tick>.json` | Saved match states, written when `regen` is given `--checkpoints`. |
-| `noise/<session>/` | Noise-check arrivals, the admitted list and each participant's results. |
+| `noise/<session>/` | Noise-check arrivals, the admitted list, readiness and each participant's results. |
 | `runs/`, `profiles/` | Every report, and every CPU profile. |
 
 Commits are any commit-ish of this checkout. `--patch <file> --patch-sha256 <hex>` applies a patch to the candidate's
@@ -68,7 +68,8 @@ parallel, `--jobs` at a time. Run `regen` at the base commit before `exact`, `ti
 base.
 
 It also saves each scenario's state at `--checkpoints` evenly spaced ticks of its full match: by default 4, at 0, ¼,
-½ and ¾. `time`, `noise` and `profile --at` start from these saved states. `--checkpoints 0` saves none.
+½ and ¾. `time`, `noise` and `profile --at` start from these saved states. `--checkpoints 0` saves none. Saved states
+are written whenever they are missing, even when that commit's exactness references already exist.
 
 ### `exact --reference <c> --candidate <c> [--patch <file> --patch-sha256 <hex>] [--paths …] [--scenarios …]`
 
@@ -115,14 +116,19 @@ at the same time:
   `--wait` seconds have passed. Anyone arriving later is refused.
 - **Repeats:** when fewer than three participants are admitted, each one repeats the check until at least three
   medians exist.
-- **Finish:** each participant waits for every admitted participant to finish. The wait is capped by
-  `--finish-wait`, in seconds.
+- **Ready:** once admitted, each participant prepares its tree and waits until every admitted participant is ready,
+  so all measurements start together.
+- **Finish:** a participant that finishes keeps running the same load until every admitted participant has finished,
+  so every measurement runs under the whole concurrent load. The waits are capped by `--finish-wait`, in seconds.
+- **Files:** arrivals, the admitted list, readiness and results are each written whole under a temporary name and then
+  moved into place, so no participant reads a partial file.
 - **Report:**
   - the admitted participants and how long admission took
   - each participant's median paired gain
   - their range
   - the **noise bar**, the largest absolute median
   - the configuration loaded
+  - how long it held the load after finishing
 
 A candidate's median paired gain must exceed the noise bar to count. `--local <n>` starts `n` participants on this
 host and prints the first one's report.

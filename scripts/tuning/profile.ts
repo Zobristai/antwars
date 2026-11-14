@@ -12,7 +12,7 @@ export interface FunctionTime { readonly function: string; readonly selfMs: numb
 /**
  * Self time is each sample's interval charged to the function on top of the stack; inclusive time charges it once to
  * every distinct function on the stack, so recursion is not counted twice. Functions are named
- * "name file:line"; `root` is removed from file URLs so names are relative to the timed tree.
+ * "name file:line:column" (the column when the profile gives one, so functions sharing a line stay apart); `root` is removed from file URLs so names are relative to the timed tree.
  */
 export function functionTimes(profile: CpuProfile, root = ""): { readonly totalMs: number; readonly functions: readonly FunctionTime[] } {
   const parent = new Map<number, number>(), key = new Map<number, string>();
@@ -20,7 +20,8 @@ export function functionTimes(profile: CpuProfile, root = ""): { readonly totalM
     for (const child of node.children ?? []) parent.set(child, node.id);
     const f = node.callFrame, url = f.url.startsWith("file://") ? f.url.slice(7) : f.url;
     const file = root !== "" && url.startsWith(root) ? url.slice(root.length).replace(/^\/+/, "") : url;
-    key.set(node.id, `${f.functionName === "" ? "(anonymous)" : f.functionName}${file === "" ? "" : ` ${file}:${f.lineNumber + 1}`}`);
+    const column = f.columnNumber === undefined ? "" : `:${f.columnNumber + 1}`;
+    key.set(node.id, `${f.functionName === "" ? "(anonymous)" : f.functionName}${file === "" ? "" : ` ${file}:${f.lineNumber + 1}${column}`}`);
   }
   const self = new Map<string, number>(), inclusive = new Map<string, number>();
   let totalUs = 0;
