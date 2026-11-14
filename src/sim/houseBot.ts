@@ -756,7 +756,8 @@ export function houseFounding(state: SimState, tick: number, events: SimEvent[],
     const report = (reason: HouseFoundingReason, refusalCode: string | null = null) => observe?.({
       tick, colony: colony.id, reason, foodStore, price, reserve, threshold, nextFoundTick, liveQueens: live,
       searchedHeldTiles, eligibleSites, refusalCode });
-    if (state.agents.some((a) => a.colony === colony.id && !a.idle)) { report("agent_controlled"); continue; }
+    // A new match's colonies are all players' colonies: the house founds for none of them.
+    if (state.config.localAnts?.everyColony === true || state.agents.some((a) => a.colony === colony.id && !a.idle)) { report("agent_controlled"); continue; }
     if (rules.houseReserveFood === undefined ? foodStore <= threshold : foodStore < threshold) { report("food_reserve"); continue; }
     if (tick < nextFoundTick) { report(tick < (rules.firstFoundTick ?? 0) ? "opening" : "cooldown"); continue; }
     if (live === 0) { report("no_live_queen"); continue; }

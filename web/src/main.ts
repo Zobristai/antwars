@@ -47,6 +47,7 @@ import { TOUCH_RADIUS_PX, linkLine, tiltOn as tiltParam } from "./compose.ts";
 import { excerptEnded, modeCopy } from "./replay.ts";
 import { boardMode, fallbackUrl, hasWebGL2, linkNeedsWebGLHome, runBoard, showNeedsWebGL, unlinkNeedsWebGLHome } from "./webgl2.ts";
 import { clear3dRetryUrl, start3dWithRecovery } from "./3d-recovery.ts";
+import { setMatchColonies } from "./colony-palette.ts";
 
 /** Internal resolution is capped at a 2560 px long side. */
 export const MAX_INTERNAL_LONG_SIDE = 2560;
@@ -232,6 +233,7 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   const input = await openSource(params, clock, document, rejectReady);
   if (!input) return;
   const { replay, head, linkState } = input;
+  setMatchColonies(colonyNamesOf(head.full!.setup), document);
   const overlays = new Overlays(document.body, { hover() {}, focusMark() {} }, "unavailable");
   // The HUD's window, where the board would be: the one part of the board's API a page without one has.
   window.__antwar.boardArea = () => overlays.area();
@@ -311,6 +313,8 @@ async function start(): Promise<void> {
   const input = await openSource(params, clock, document, rejectReady);
   if (!input) return;
   const { replay, feed, head, source, linkState } = input;
+  // The page's one match: its colonies' colours, before anything draws them.
+  setMatchColonies(colonyNamesOf(head.full!.setup), document);
   let playback = new Playback({ live: !input.recorded });
   let replayGeneration = input.recording?.generation ?? 0;
   const W = head.full!.setup.mapW;

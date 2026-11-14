@@ -1,5 +1,5 @@
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import type { ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNameNote, isClassicColonyNames, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import { PLAYBACK_RATES, type PlaybackRate, type Recording } from "./recording.ts";
 import type { ReplayEvent } from "./replay-events.ts";
 import "./replay-marks.css";
@@ -56,7 +56,8 @@ export function groupMarks(events: readonly ReplayEvent[], duration: number, wid
  * The caller mounts only for explicit replays, never the live page's stand-in recording; the HUD places `el` (HudHost.replay).
  * Once the recording's marks are read (Recording.events), they stand on the slider's track as buttons: a click or tap
  * jumps there, marks too close to tell apart join a counted group that opens a list (replay-marks.css). Marks name
- * colonies by `names`, the match's own colony names. */
+ * colonies by `names`, the match's own colony names, each in its colony's colour (replay-marks.css); a drawn name
+ * (unrated) carries its one-line source note as its tooltip, and the pointer can reach it in a label and in a list. */
 export function mountReplayControls(doc: Document, recording: Recording, names: ColonyNamePair = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
   const el = doc.createElement("div");
   el.className = "aw-replay-controls";
@@ -136,6 +137,11 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
    * label and closes no list. */
   let relaying = false;
   let chipTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A pointed-at label that names a drawn colony stays a moment after the mouse leaves its mark, so the mouse can reach
+   * the name and its note; a label without one hides at once, as it always has. */
+  let chipLeaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The match's drawn colony names, whose words carry their source notes; none for the rated names. */
+  const drawn = isClassicColonyNames(names) ? null : names;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
     const value = parseFloat(doc.defaultView?.getComputedStyle(el).getPropertyValue(name) ?? "");
@@ -171,6 +177,8 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       const colony = doc.createElement("span");
       colony.className = `aw-mark-colony c${e.colony}`;
       colony.textContent = rest[0]!;
+      const note = drawn ? colonyNameNote(rest[0]!) : null;
+      if (note) colony.setAttribute("title", note);
       text.append(colony, doc.createTextNode(" · "));
     }
     const when = doc.createElement("b");
@@ -181,6 +189,8 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
   const showChip = (e: ReplayEvent, x: number, forMs: number | null) => {
     if (chipTimer) clearTimeout(chipTimer);
     chipTimer = null;
+    if (chipLeaveTimer) clearTimeout(chipLeaveTimer);
+    chipLeaveTimer = null;
     closeList();
     words(chip, e);
     chipEvent = e;
@@ -188,7 +198,20 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     place(chip, x);
     if (forMs !== null) chipTimer = setTimeout(hideChip, forMs);
   };
-  const hideChip = () => { if (chipTimer) clearTimeout(chipTimer); chipTimer = null; chipEvent = null; chip.hidden = true; };
+  const hideChip = () => {
+    if (chipTimer) clearTimeout(chipTimer);
+    if (chipLeaveTimer) clearTimeout(chipLeaveTimer);
+    chipTimer = chipLeaveTimer = null; chipEvent = null; chip.hidden = true;
+  };
+  /** The mouse left a mark: a label naming a drawn colony waits for it (laterClose's wait), any other hides now. */
+  const leaveChip = () => {
+    const noted = drawn !== null && chipEvent !== null && chipEvent.colony !== null;
+    if (!noted) return hideChip();
+    if (chipLeaveTimer) clearTimeout(chipLeaveTimer);
+    chipLeaveTimer = setTimeout(hideChip, 200);
+  };
+  chip.onpointerenter = (event: PointerEvent) => { if (mouse(event) && chipLeaveTimer) { clearTimeout(chipLeaveTimer); chipLeaveTimer = null; } };
+  chip.onpointerleave = (event: PointerEvent) => { if (mouse(event) && !chipTimer) hideChip(); };
   const jump = (e: ReplayEvent, x: number) => {
     recording.seek(e.ms);
     showChip(e, x, LABEL_MS);
@@ -288,7 +311,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       if (group.events.length === 1) {
         button.onclick = () => jump(first, group.x);
         button.onpointerenter = (event: PointerEvent) => { if (mouse(event)) showChip(first, group.x, null); };
-        button.onpointerleave = (event: PointerEvent) => { if (mouse(event) && !chipTimer) hideChip(); };
+        button.onpointerleave = (event: PointerEvent) => { if (mouse(event) && !chipTimer) leaveChip(); };
         button.onfocus = () => { if (!relaying) showChip(first, group.x, null); };
         button.onblur = () => { if (!relaying && !chipTimer) hideChip(); };
       } else {
@@ -363,6 +386,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
   update();
   return { el, update, close: () => {
     if (chipTimer) clearTimeout(chipTimer);
+    if (chipLeaveTimer) clearTimeout(chipLeaveTimer);
     if (closeTimer) clearTimeout(closeTimer);
     doc.removeEventListener?.("pointerdown", outside);
     resized?.disconnect();
