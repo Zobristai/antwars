@@ -7,14 +7,15 @@ import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { SUB_TILE, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
+import type { Colony } from "../../../src/live/snapshot.ts";
 import { buildAntGeometry } from "./ants3d.ts";
 import type { Ground } from "./ground.ts";
 
 const MOUND_R = 1.7, MOUND_H = 0.55, QUEEN_LENGTHS = 2.4;
 
-export function queenTiles(setup: Pick<StreamSetup, "queens">): [[number, number], [number, number]] {
-  const t = ([x, y]: readonly [number, number]): [number, number] => [x / SUB_TILE, y / SUB_TILE];
-  return [t(setup.queens[0]), t(setup.queens[1])];
+/** Every colony's setup queen position in tiles, index = colony id. */
+export function queenTiles(setup: Pick<StreamSetup, "queens">): [number, number][] {
+  return setup.queens.map(([x, y]): [number, number] => [x / SUB_TILE, y / SUB_TILE]);
 }
 export function tileToWorld(tx: number, ty: number, mapH: number, groundY: number): [number, number, number] {
   return [tx, groundY, mapH - ty];
@@ -37,7 +38,7 @@ export class Nests {
     this.hole = new StandardMaterial("entrance", scene);
     this.hole.diffuseColor = new Color3(0, 0, 0);
     this.hole.specularColor = new Color3(0, 0, 0);
-    this.update(([0, 1] as const).map((colony) => ({ id: 0, colony, x: setup.queens[colony][0], y: setup.queens[colony][1], foundedTick: 0, lostTick: null, overrun: 0 })));
+    this.update(setup.queens.map(([x, y], colony) => ({ id: 0, colony: colony as Colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 })));
   }
 
   /** Follow the ants' current length after layout/refits, including queens founded later. */

@@ -31,6 +31,7 @@ import { BoardMarkers3D } from "../../../web/src/board3d/markers3d.ts";
 import { QueenHomes } from "../../../web/src/effects.ts";
 import { Words } from "../../../web/src/words.ts";
 import { Frame } from "../../../web/src/buffer.ts";
+import { colonyTint } from "../../../web/src/colony-palette.ts";
 
 // These structural tests do not rasterise. The separate browser pixel test uses real canvases/Pixi.
 vi.spyOn(DOMAdapter.get(), "createCanvas").mockImplementation((width = 1, height = 1) => {
@@ -74,6 +75,25 @@ describe("board masks", () => {
     expect(new Set(Object.values(textures).map(t => t.source)).size).toBe(1);
     await useIcons(null); markers.update(empty, () => {});
     expect(holders[2]!.children).toHaveLength(0);
+  });
+  it("carries one queen emblem per colony of a four-colony match, each in its colony's colour, in one atlas", async () => {
+    const crowns: number[][] = [], widths: number[] = [];
+    const generateTexture = vi.fn(({ target, frame }: { target: Container; frame: { width: number } }) => {
+      crowns.push((target.children[1] as Container).children.map(c => (c as Sprite).tint));
+      widths.push(frame.width);
+      return RenderTexture.create({ width: frame.width, height: 128 });
+    });
+    await useIcons("test-only");
+    const markers = new BoardMarkers3D({ generateTexture, resolution: 1 } as unknown as Renderer, 4);
+    expect(crowns[0]).toEqual([0, 1, 2, 3].map(colonyTint));
+    expect(widths[0]).toBe(7 * 128);
+    const textures = (markers as unknown as { textures: Record<string, Texture> }).textures;
+    expect(Object.keys(textures)).toEqual(["ring", "dot", "line", "queen0", "queen1", "queen2", "queen3"]);
+    expect(new Set(Object.values(textures).map(t => t.source)).size).toBe(1);
+    // A two-colony match's atlas is the one it always was: two emblems, five cells.
+    new BoardMarkers3D({ generateTexture, resolution: 1 } as unknown as Renderer);
+    expect(crowns[1]).toEqual([0, 1].map(colonyTint));
+    expect(widths[1]).toBe(5 * 128);
   });
   it("routes marks and board castes through the ready mask without removing ring geometry", async () => {
     await useIcons("test-only");

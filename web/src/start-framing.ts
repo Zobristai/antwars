@@ -9,7 +9,7 @@ type OpeningBoard = { setup: StreamSetup; queens?: readonly StreamQueen[]; resul
 /** Finalized tick zero is the only published opening phase. Loss/result always ends it. */
 export function openingPhase(tick: number, board: OpeningBoard | null | undefined): board is OpeningBoard {
   return tick === 0 && board != null && board.result === null &&
-    board.setup.startingQueenIds !== undefined && visibleStartBoxes(board.setup).length === 2 &&
+    board.setup.startingQueenIds !== undefined && visibleStartBoxes(board.setup).length === board.setup.queens.length &&
     streamQueens(board).every(q => q.lostTick === null);
 }
 
@@ -20,7 +20,7 @@ export function openingPhase(tick: number, board: OpeningBoard | null | undefine
 export function openingBounds(board: OpeningBoard, extraRadius = 0): Box | null {
   const boxes = visibleStartBoxes(board.setup);
   const ids = board.setup.startingQueenIds;
-  if (boxes.length !== 2 || !ids || ids.some(group => group.length === 0)) return null;
+  if (boxes.length !== board.setup.queens.length || !ids || ids.some(group => group.length === 0)) return null;
   const queens = streamQueens(board).filter(q => isStartingQueen(board.setup, q));
   if (ids.some((group, colony) => group.some(id => !queens.some(q => q.colony === colony && q.id === id)))) return null;
   if (queens.some(q => !Number.isFinite(q.x) || !Number.isFinite(q.y))) return null;
