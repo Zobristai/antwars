@@ -265,6 +265,8 @@ export interface StreamSetup {
   overrunRadiusTiles: number;
   /** Queen positions in sub-tile units, per colony. */
   queens: [[number, number], [number, number]];
+  /** Present exactly on a four-colony match's setup. */
+  colonies?: 4;
   /** Comparison runs only (version 6): the ANTWAR_RULES value, the match seed and the expected players. */
   rules?: (typeof STREAM_RULES)[number];
   seed?: number;
@@ -341,6 +343,8 @@ export interface StreamFull {
   hatch?: StreamHatch;
   /** Per colony. Optional for senders; decode always sets it. */
   stores?: [StreamStore, StreamStore];
+  /** Four-colony full snapshots only: each colony that has left the match, with its tick, ordered by tick then colony. */
+  eliminations?: { colony: Colony; tick: number }[];
 }
 
 export type StreamEvent =
@@ -364,7 +368,9 @@ export type StreamEvent =
   | { kind: "queenFounded" | "queenLost"; queen: StreamQueen }
   | { kind: "queenOverrun"; colony: Colony; queenId: number; progress: number; required: number }
   /** Redesign (version 6): a queen's HP changed. */
-  | { kind: "queenHp"; colony: Colony; queenId: number; hp: number };
+  | { kind: "queenHp"; colony: Colony; queenId: number; hp: number }
+  /** Four-colony matches: a colony left the match on this simulation-step tick. */
+  | { kind: "eliminated"; colony: Colony; tick: number };
 
 export interface StreamMessage {
   tick: number;
@@ -401,6 +407,7 @@ const EVENT_CODES = {
   queenOverrun: 17,
   queenHp: 18,
   territoryWin: 19,
+  eliminated: 20,
 } as const satisfies Record<StreamEvent["kind"], number>;
 
 const NO_STORE: StreamStore = { food: 0, nextHatchTick: 0, nextCost: 0 };
