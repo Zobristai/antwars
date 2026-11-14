@@ -11,7 +11,7 @@ import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 import { builderLeftWrite, CHALLENGE_SCAN_PAGE_SIZE, createChallengeSteps, HELD_COLONY, type ChallengeOutcome, type ChallengeState, type ChallengeStatus, type LaunchOutcome, type OpponentList, type OpponentListForUsername } from "./challenges.js";
-import { joinQueueStep, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueMode, type QueueStatus } from "./queue.js";
+import { joinQueueStep, lacksQuadrantMap, leaveQueueStep, queueEntryPath, queueStatusStep, queueTtl, queueWait, waitingEntries, type QueueMode, type QueueStatus } from "./queue.js";
 import {
   endedLobbyWaitWrites, endedWrite, isFinal, isOwnLiveWait, isWaitToken, LEFT_LOBBY, leftLobbyWaitWrites, lobbyWait, lobbyWaitWrites, prunedLobbyWaitWrites, queueWaitWrite,
   replacedWaitWrites, repointWrites, seatKeyPath, sweepAllExpiredWaits, waitIndexes, waitPath, withPairedLobby, type WaitIndexes, type WaitState,
@@ -227,7 +227,8 @@ export type LobbyRefusal =
   | "live_challenge"
   /** A quadrants queue join while the quadrants map rotation holds no quadrant map. */
   | "no_quadrant_map";
-export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal };
+/** also: a further refusal that applies too, reported with reason (a live-challenge quadrants join while no quadrant map is available). */
+export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal; readonly also?: "no_quadrant_map" };
 
 export interface CreatedLobby {
   readonly lobby: Lobby;
@@ -1236,8 +1237,11 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (!joiner) return refuse("unknown_key");
       return store.transaction(async (read) => {
         const at = now();
-        // Refused before any queue or wait write: a live challenge keeps its builder out of the queue.
-        if (await challenges.liveChallenge(read, joiner.id, at) !== undefined) return { result: refuse("live_challenge"), writes: [] };
+        // Refused before any queue or wait write: a live challenge keeps its builder out of the queue. A quadrants join
+        // while no quadrant map is available reports that too, so the builder is not told to join once its challenge ends.
+        if (await challenges.liveChallenge(read, joiner.id, at) !== undefined) {
+          return { result: lacksQuadrantMap(mode, quadrantMapReady) ? { ...refuse("live_challenge"), also: "no_quadrant_map" } : refuse("live_challenge"), writes: [] };
+        }
         const indexes = waitIndexes(read);
         const step = await joinQueueStep(read, joiner, mode, at, random, queuedMatchWrites, indexes, waitToken, quadrantMapReady);
         if (!step.result.ok) return step;

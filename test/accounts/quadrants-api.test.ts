@@ -17,7 +17,7 @@ import { createLobbies } from "../../src/lobby/lobbies.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer } from "../../src/server.ts";
 import type { MapDefinition } from "../../src/sim/config.ts";
-import { createFirestore, type Fields, type Store } from "../../src/store/firestore.ts";
+import { createFirestore, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
 import { createMatchesData } from "../../web/src/matches-page/data.ts";
 import { shortConfig, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
 import { playable } from "../playable.ts";
@@ -27,6 +27,7 @@ const projectId = process.env.GCLOUD_PROJECT || "demo-antwar";
 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 const NAMES = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
 const NO_MAP = "No Quadrants map is available yet, so the quadrants mode cannot be joined.";
+const LIVE_CHALLENGE = "This identity has a live challenge, so it cannot also join the ranked queue or another lobby; nothing changed. Follow it with challenge_status; join once it has ended, or after leaving its lobby with leave_lobby before it starts.";
 
 /** Test-only quadrant geometry, not a production map. */
 const FIXTURE: MapDefinition = {
@@ -112,7 +113,7 @@ async function world(backend: string, quadrantMaps: readonly MapDefinition[] | "
   await new Promise<void>(resolve => watch.listen(0, "127.0.0.1", resolve));
   closers.push(() => new Promise<void>(resolve => { watch.closeAllConnections(); watch.close(() => resolve()); }));
   const watchOrigin = `http://127.0.0.1:${(watch.address() as AddressInfo).port}`;
-  return { clock, port: server.port, watchOrigin };
+  return { clock, port: server.port, watchOrigin, store, lobbies };
 }
 
 async function ok(call: Call, op: string, args: Record<string, unknown>): Promise<Body> {
@@ -207,6 +208,41 @@ for (const backend of ["memory", "Firestore emulator"]) {
         const rating = await call("rating", { displayName: "Ann", mode: "quadrants" });
         expect(rating.ok).toBe(false);
         if (transport === "HTTP") expect(rating.status).toBe(400);
+      });
+
+      it("refuses a builder with a live challenge live_challenge, adding the no-map reason only to quadrants while the rotation is empty", async () => {
+        /** A live challenge for builder: its latest request names a lobby still open. */
+        const liveChallenge = async (w: Awaited<ReturnType<typeof world>>, call: Call) => {
+          const builder = await claim(call, "Builder"), host1 = await claim(call, "Host");
+          const created = await w.lobbies.createLobby(host1.key, "public", 1);
+          if (!created.ok) throw new Error(created.reason);
+          await w.store.transaction(async () => ({ result: null, writes: <Write[]>[
+            { op: "create", path: `challengeChallengers/${builder.id}`, fields: { requestId: "request-1" } },
+            { op: "create", path: "challengeRequests/request-1", fields: { lobbyId: created.value.lobby.id } },
+          ] }));
+          return builder;
+        };
+        const refusal = async (call: Call, key: string, mode: string) => {
+          const refused = await call("join_queue", { key, mode });
+          if (transport === "HTTP") expect(refused.status).toBe(409);
+          expect(await ok(call, "queue_status", { key })).toEqual({ queue: { state: "none" } });
+          return [refused.ok, refused.body.error, refused.body.message, refused.body.waitToken];
+        };
+
+        const empty = await world(backend, "shipped");
+        const emptyCall = await open(empty.port);
+        const builder = await liveChallenge(empty, emptyCall);
+        expect(await refusal(emptyCall, builder.key, "quadrants")).toEqual([false, "live_challenge", `${LIVE_CHALLENGE} ${NO_MAP}`, undefined]);
+        // The ranked and house modes keep the live-challenge refusal unchanged.
+        for (const mode of ["1v1", "4v4", "house-1v1"]) {
+          expect(await refusal(emptyCall, builder.key, mode), mode).toEqual([false, "live_challenge", LIVE_CHALLENGE, undefined]);
+        }
+
+        // With a quadrant map in the rotation, quadrants is refused for the live challenge alone.
+        const ready = await world(backend);
+        const readyCall = await open(ready.port);
+        const readyBuilder = await liveChallenge(ready, readyCall);
+        expect(await refusal(readyCall, readyBuilder.key, "quadrants")).toEqual([false, "live_challenge", LIVE_CHALLENGE, undefined]);
       });
     });
 

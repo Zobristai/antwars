@@ -60,6 +60,11 @@ export function isQueueMode(mode: unknown): mode is QueueMode {
   return typeof mode === "string" && Object.hasOwn(QUEUE_MODES, mode);
 }
 
+/** Whether a join in mode is refused no_quadrant_map: a four-colony mode while its map rotation cannot serve a match. */
+export function lacksQuadrantMap(mode: string, quadrantMapReady: boolean): boolean {
+  return isQueueMode(mode) && QUEUE_MODES[mode]?.colonies === 4 && !quadrantMapReady;
+}
+
 export type QueueStatus =
   | { readonly state: "none" }
   | { readonly state: "waiting"; readonly mode: QueueMode; readonly joinedAt: number; readonly expiresAt: number }
@@ -118,7 +123,7 @@ export async function joinQueueStep(
 ): Promise<Step> {
   const table = isQueueMode(mode) ? QUEUE_MODES[mode] : undefined;
   if (!isQueueMode(mode) || !table) return { result: { ok: false, reason: "invalid_mode" }, writes: [] };
-  if (table.colonies === 4 && !quadrantMapReady) return { result: { ok: false, reason: "no_quadrant_map" }, writes: [] };
+  if (lacksQuadrantMap(mode, quadrantMapReady)) return { result: { ok: false, reason: "no_quadrant_map" }, writes: [] };
   const docs = await read([entryPath(joiner.id), waitingPath(mode), `identities/${joiner.id}`]);
   if (table.house && !(await admitsHouse(read, docs.get(`identities/${joiner.id}`), joiner.id))) {
     return { result: { ok: false, reason: "not_house" }, writes: [] };

@@ -403,7 +403,10 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     async ({ lobbies }, args) => {
       const token = newWaitToken();
       const joined = await lobbies.joinQueue(args.key, args.mode, token);
-      return joined.ok ? ok({ queue: joined.value, ...waitFields(token) }) : lobbyRefusal(joined.reason);
+      if (joined.ok) return ok({ queue: joined.value, ...waitFields(token) });
+      const reply = lobbyRefusal(joined.reason);
+      // A further refusal that also applies keeps the first one's code and adds its own message.
+      return reply.ok || joined.also === undefined ? reply : { ...reply, body: { ...reply.body, message: `${reply.body.message} ${REFUSALS[joined.also][1]}` } };
     }),
 
   operation("queue_status", `Read your ranked queue entry with your key: none, waiting (mode, joinedAt, expiresAt), matched (mode, lobbyId, matchedAt) or expired (mode, expiresAt). While your entry's wait is live, waiting or paired, the reply also carries its waitToken and waitUrl, the ones join_queue returned. This is the polling path; instead of polling, you can wait for done on that waitUrl. ${QUEUE_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
