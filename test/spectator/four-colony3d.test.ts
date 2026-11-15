@@ -12,6 +12,7 @@ import { Scene } from "@babylonjs/core/scene.js";
 import type { StreamQueen, StreamSetup } from "../../src/live/format.ts";
 import { CORPSE_FADE_MS, Frame, type Board } from "../../web/src/buffer.ts";
 import { colonyTint } from "../../web/src/colony-palette.ts";
+import { colonyStats } from "../../web/src/overlays.ts";
 import { Ants3D } from "../../web/src/board3d/ants3d.ts";
 import { COLONY_RGB, Ground } from "../../web/src/board3d/ground.ts";
 import { MARKER_FRAMES, markerParticles } from "../../web/src/board3d/markers3d.ts";
@@ -177,6 +178,22 @@ describe("a four-colony match on the 3D board", () => {
     };
     inside(fitOpeningPose(base, bounds, H, w, h, area, 2, 6));
     inside(fitFoundingPose(base, foundingFrame(W, H, (x, y) => ground.heightAt(x, y)), w, h, area, 2));
+  });
+});
+
+describe("the counts the 3D page's deck reads every frame", () => {
+  it("count every colony's living ants, so a four-colony match keeps the 3D page running", () => {
+    const f = new Frame(); f.board = board4();
+    // [colony, caste]: colony 0 one worker and one soldier, 1 one worker, 2 one of each, 3 three workers and a soldier.
+    const ants = [[0, 0], [0, 1], [1, 0], [2, 0], [2, 1], [3, 0], [3, 0], [3, 0], [3, 1]] as const;
+    f.ensure(ants.length); f.count = ants.length;
+    ants.forEach(([colony, caste], i) => { f.colony[i] = colony; f.caste[i] = caste; });
+    expect(colonyStats(f).map((s) => [s.workers, s.soldiers])).toEqual([[1, 1], [1, 0], [1, 1], [3, 1]]);
+    // A two-colony board, or no board yet, counts two colonies as before.
+    f.board = { ...board4(), setup: { ...setup4(), queens: setup4().queens.slice(0, 2) } }; f.count = 2;
+    expect(colonyStats(f)).toHaveLength(2);
+    f.board = null;
+    expect(colonyStats(f)).toHaveLength(2);
   });
 });
 
