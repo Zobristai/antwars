@@ -15,7 +15,6 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "gpt-6-1-terra-max-fast",
   "gpt-6-astra",
   "gpt-6-luna",
-  "claude-fable-5-1",
   "claude-sonnet-5-5",
   "glm-5-3",
   "k3-1-pro",

@@ -12,17 +12,24 @@
   .d1-mv.c1 > span:not(.d1-sr), .d1-hold-win.c1 .d1-hold-text, .d1-outcome.c1, .d1-result-head.c1, .d1-moment-what.c1,
   .d2-toast[data-colony="1"][data-kind="fall"] .d2-toast-what, .d1-caption[data-colony="1"][data-kind="fall"] .d1-cap-what
 ),
-/* Colonies 2 and 3, only in a four-colony match: the replay marks' names, and the result box's names, heading and moment. */
-:root[data-aw-ground~="2"] .aw-mark-colony.c2, :root[data-aw-ground~="3"] .aw-mark-colony.c3,
-:root[data-aw-ground~="2"] :is(.aw-colony-name.c2, .d1-result-head.c2, .d1-moment-what.c2),
-:root[data-aw-ground~="3"] :is(.aw-colony-name.c3, .d1-result-head.c3, .d1-moment-what.c3) {
+:root[data-aw-ground~="2"] :is(
+  .aw-colony-name.c2, .aw-mark-colony.c2, .d2-name.c2 .d2-name-text, .d1-name.c2, .d1-fig.c2 > span:not(.d1-sr),
+  .d1-mv.c2 > span:not(.d1-sr), .d1-hold-win.c2 .d1-hold-text, .d1-outcome.c2, .d1-result-head.c2, .d1-moment-what.c2,
+  .d2-toast[data-colony="2"][data-kind="fall"] .d2-toast-what, .d1-caption[data-colony="2"][data-kind="fall"] .d1-cap-what
+),
+:root[data-aw-ground~="3"] :is(
+  .aw-colony-name.c3, .aw-mark-colony.c3, .d2-name.c3 .d2-name-text, .d1-name.c3, .d1-fig.c3 > span:not(.d1-sr),
+  .d1-mv.c3 > span:not(.d1-sr), .d1-hold-win.c3 .d1-hold-text, .d1-outcome.c3, .d1-result-head.c3, .d1-moment-what.c3,
+  .d2-toast[data-colony="3"][data-kind="fall"] .d2-toast-what, .d1-caption[data-colony="3"][data-kind="fall"] .d1-cap-what
+) {
   background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 /* A line that would otherwise run the panel's full width keeps its ground to its words. */
 :root[data-aw-ground~="0"] :is(.d1-result-head.c0, .d2-toast[data-colony="0"][data-kind="fall"] .d2-toast-what),
 :root[data-aw-ground~="1"] :is(.d1-result-head.c1, .d2-toast[data-colony="1"][data-kind="fall"] .d2-toast-what),
-:root[data-aw-ground~="2"] .d1-result-head.c2, :root[data-aw-ground~="3"] .d1-result-head.c3 {
+:root[data-aw-ground~="2"] :is(.d1-result-head.c2, .d2-toast[data-colony="2"][data-kind="fall"] .d2-toast-what),
+:root[data-aw-ground~="3"] :is(.d1-result-head.c3, .d2-toast[data-colony="3"][data-kind="fall"] .d2-toast-what) {
   justify-self: start; width: fit-content;
 }
 /* Where the teams sit beside the score they clip their contents (deck.css .d1-team), and a team's first column starts at
@@ -32,7 +39,8 @@
    colony 0's team holds the floating tip (pane.ts), which is fixed to the viewport and so escapes that clip but would not
    escape a clip-path. */
 @media (min-width: 1280px) {
-  :root[data-aw-ground~="0"] .d1-team.c0, :root[data-aw-ground~="1"] .d1-team.c1 { margin: -2px -2px 0; padding: 2px 2px 0; }
+  :root[data-aw-ground~="0"] .d1-team.c0, :root[data-aw-ground~="1"] .d1-team.c1,
+  :root[data-aw-ground~="2"] .d1-team.c2, :root[data-aw-ground~="3"] .d1-team.c3 { margin: -2px -2px 0; padding: 2px 2px 0; }
 }
 /* The Matches page inks each row naming its own colonies on its own (matches.ts inkColonies), so the row, not the page
    root, carries data-aw-ground and --aw-ink-ground: a colony's name, and its WINNER, DRAW or ABANDONED badge, whose grey
