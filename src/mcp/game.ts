@@ -10,7 +10,7 @@ import { newMatchConfig } from "../sim/gridScale.js";
 import { eliminationsAt, headerLine, tickLine } from "../sim/log.js";
 import { cloneState, createMatch } from "../sim/map.js";
 import { advance, prepareInitialPointRests, step, type ServerTerminal } from "../sim/step.js";
-import type { Agent, BroodSet, ColonyId, InputErrorCode, InputResult, MatchResult, SimInput, SimState, StepOutput, VisibleEvent } from "../sim/types.js";
+import type { Agent, BroodSet, ColonyId, EliminationReason, InputErrorCode, InputResult, MatchResult, SimInput, SimState, StepOutput, VisibleEvent } from "../sim/types.js";
 import { asTwoColony } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
@@ -86,6 +86,14 @@ export interface SlotAccess {
   assignedLobby?(identityId: string): Promise<string | undefined>;
 }
 
+/** One of the other three colonies of a four-colony match, as its agents' observe replies name it. */
+export interface Opponent {
+  readonly colony: ColonyId;
+  readonly name: string;
+  /** Once the colony has left the match: the tick and why, never its scores. */
+  readonly eliminated?: { readonly tick: number; readonly reason: EliminationReason };
+}
+
 /** Adapter-only observe fields, captured with the sim view, never by taking another view. */
 export interface ObserveInfo {
   /** Present for a rated-house seat; the live server setting, not a rules value. */
@@ -96,6 +104,8 @@ export interface ObserveInfo {
     idleResetCommands: string,
     enemyTerritorySharePermille?: number,
   ];
+  /** Four-colony matches only: the three other colonies, in colony order, live and after the end. */
+  readonly opponents?: readonly Opponent[];
 }
 
 export interface CallTiming {
@@ -1464,8 +1474,10 @@ export class Game {
     // An accepted set_brood refreshes this house-activity timer, never the command-idle one.
     const brood = config.castes !== undefined ? ["set_brood"] : [];
     const resets = [...new Set([...base.status[1].split(" "), ...brood, "observe", "rules", "join"])].join(" ");
+    const opponents = state === null || agent === undefined ? undefined : opponentsOf(state, agent.colony, this.colonyNames(agentId));
     return { houseIdleSeconds: this.houseIdleSeconds,
-      status: base.status[2] === undefined ? [left, resets] : [left, resets, base.status[2]] };
+      status: base.status[2] === undefined ? [left, resets] : [left, resets, base.status[2]],
+      ...(opponents === undefined ? {} : { opponents }) };
   }
 
   /**
@@ -1576,6 +1588,16 @@ export function observeInfo(state: SimState | null, agentId: string, config: Sim
       ? [secondsLeft, resets]
       : [secondsLeft, resets, Math.trunc(enemyTiles * 1000 / (config.mapWidth * config.mapHeight))],
   };
+}
+
+/**
+ * The other three colonies of a four-colony match, named as the agent's match names them, each with its elimination
+ * tick and reason once it has left; undefined in every other match.
+ */
+function opponentsOf(state: SimState, colony: ColonyId, names: ColonyNames): Opponent[] | undefined {
+  if (state.colonies.length !== 4 || names.length !== 4) return undefined;
+  return state.colonies.filter(other => other.id !== colony).map(other => ({ colony: other.id, name: names[other.id]!,
+    ...(other.eliminated === undefined ? {} : { eliminated: { tick: other.eliminated.tick, reason: other.eliminated.reason } }) }));
 }
 
 /** A seat's result as saved: its names are its lobby's, which the save carries once (savedNames). */
