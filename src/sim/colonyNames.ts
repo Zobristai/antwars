@@ -104,24 +104,20 @@ export function isClassicColonyNames(names: readonly string[]): boolean {
 }
 
 /**
- * A match's names from what it carries (a stream setup, a listed row), index = colony id: its drawn pair or its four
- * names, or COLONY_NAMES when it carries none.
+ * A match's names from what it carries (a stream setup, a listed row), index = colony id: its own names, or
+ * COLONY_NAMES when it carries none.
  */
 export function colonyNamesOf(match: { readonly colonyNames?: readonly string[] | null } | null | undefined): readonly string[] {
   return match?.colonyNames ?? COLONY_NAMES;
 }
 
 /**
- * A colony's table row by its name, or by its id when the name is not one of the four (a match outside the table keeps
- * each colony's own table colour: colony 0's and colony 1's as they have always been).
+ * Each colony's colour in a match named `names`, index = colony id, one per name: its name's table row's colour, or, for a
+ * name that is not one of the four, its colony's own table colour (a match outside the table keeps colony 0's and colony
+ * 1's own colours).
  */
-function rowOf(names: readonly string[], colony: number): SupercolonyName {
-  return supercolony(names[colony]) ?? SUPERCOLONY_NAMES[colony];
-}
-
-/** Each colony's colour in a match named `names`, one per name, index = colony id. */
 export function colonyColours(names: readonly string[]): number[] {
-  return names.map((_, colony) => rowOf(names, colony).colour);
+  return names.map((name, colony) => (supercolony(name) ?? SUPERCOLONY_NAMES[colony]).colour);
 }
 
 /** A colour as CSS (#rrggbb). */

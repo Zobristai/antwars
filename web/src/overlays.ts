@@ -61,7 +61,7 @@ const ORDER_TEXT: Record<string, string> = { go_to: "go to", forage: "forage", h
 /** The target's identity stays separate from its words, so guard never depends on parsing a label. */
 export interface OrderTarget {
   readonly label: string;
-  readonly colony: 0 | 1;
+  readonly colony: number;
   readonly liveQueen: boolean;
 }
 
@@ -87,7 +87,7 @@ export function orderText(a: Pick<StreamAgent, "colony" | "order" | "orderX" | "
  * the colony with more territory wins (the Rules page), so it reads "match ends in" with the time left to match end.
  * The countdown never runs past the match's end.
  */
-function territoryWin(b: Pick<Board, "territoryWin" | "result" | "setup">, tick: number): { leader: 0 | 1; label: string; figure: string } | null {
+function territoryWin(b: Pick<Board, "territoryWin" | "result" | "setup">, tick: number): { leader: number; label: string; figure: string } | null {
   const lead = b.territoryWin;
   if (lead === undefined || b.result !== null || tick < lead.startTick + 1) return null;
   const tps = b.setup.ticksPerSecond;
@@ -108,7 +108,7 @@ export function territoryWinText(b: Pick<Board, "territoryWin" | "result" | "set
  * figure with the colony it favours, else no countdown and the colony holding more territory (none when level or none
  * is held); nothing once the result is in, which the result card tells.
  */
-export function headline(b: Pick<Board, "territoryWin" | "result" | "setup" | "held">, tick: number): { leader: 0 | 1 | null; label: string; figure: string } {
+export function headline(b: Pick<Board, "territoryWin" | "result" | "setup" | "held">, tick: number): { leader: number | null; label: string; figure: string } {
   if (b.result !== null) return { leader: null, label: "", figure: "" };
   const win = territoryWin(b, tick);
   if (win !== null) return win;
@@ -256,7 +256,7 @@ export function nextHatchCaste(b: Pick<Board, "setup" | "queens" | "hatch">, cos
 }
 
 /** Soonest eligibility from delayed playback, never a promise of a future birth. */
-export function scoreHatchStatus(b: Pick<Board, "setup" | "queens" | "hatch" | "stores" | "result" | "overrun" | "overrunRequired">, colony: 0 | 1, living: number, tick: number): { text: string; description: string } {
+export function scoreHatchStatus(b: Pick<Board, "setup" | "queens" | "hatch" | "stores" | "result" | "overrun" | "overrunRequired">, colony: number, living: number, tick: number): { text: string; description: string } {
   const label = (text: string, detail = text) => ({ text, description: `${colonyNamesOf(b.setup)[colony]}: ${detail}` });
   if (b.result !== null || tick >= b.setup.matchTicks) return label("Ended", "Match ended; no upcoming hatch");
   if (!streamQueens(b).some(q => q.colony === colony && q.lostTick === null && !(boardQueenHp(b) === undefined && b.overrunRequired > 0 && q.overrun >= b.overrunRequired))) return label("No queens", "No live queens; no upcoming hatch");

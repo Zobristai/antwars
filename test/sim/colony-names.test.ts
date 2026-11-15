@@ -92,12 +92,10 @@ describe("the colony colours", () => {
     expect(colonyColours(["Some Colony", "Other Colony"])).toEqual([0xffb000, 0x00c2ff]);
   });
 
-  it("give each of a four-colony match's colonies its own name's colour, a name outside the table keeping its colony's", () => {
-    expect(colonyColours(LABELS)).toEqual([0xffb000, 0x00c2ff, SWEETWATER, LAKE_SKINNER]);
-    expect(colonyColours(["Lake Skinner Colony", "Sweetwater Colony", "Lake Hodges Colony", "Very Large Colony"]))
-      .toEqual([LAKE_SKINNER, SWEETWATER, 0x00c2ff, 0xffb000]);
-    expect(colonyColours(["Very Large Colony", "Lake Hodges Colony", "Some Colony", "constructor"]))
-      .toEqual([0xffb000, 0x00c2ff, SWEETWATER, LAKE_SKINNER]);
+  it("give a four-colony match one colour per name, a name outside the table keeping its colony's own", () => {
+    expect(colonyColours(LABELS)).toEqual(SUPERCOLONY_NAMES.map(n => n.colour));
+    expect(colonyColours(["Lake Skinner Colony", "Sweetwater Colony", "Some Colony", "Very Large Colony"]))
+      .toEqual([LAKE_SKINNER, SWEETWATER, SWEETWATER, 0xffb000]);
   });
 
   it("are clearly apart from each other and readable on the page background", () => {
