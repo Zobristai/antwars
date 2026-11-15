@@ -110,11 +110,12 @@ describe("a Quadrants lobby's match under the production redesign rules", () => 
     }
   });
 
-  it("states no colony names in a seat's join briefing, while a two-colony match's drawn pair is still stated", async () => {
+  it("adds no names line to a two-colony config's join briefing for a seat's four names, while a drawn pair is still stated", async () => {
     const s = seated();
     const joined = (await s.game.joinSeated("id-2"))!;
     const unnamed = joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false });
-    // Four names, the first two the rated pair's: no names line, neither the rated pair nor two of the four.
+    // Four names on a two-colony config, the first two the rated pair's: no names line, neither the rated pair nor two
+    // of the four. A four-colony config's briefing names all four (test/mcp/quadrants-briefing.test.ts).
     expect(joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false, colonyNames: s.game.colonyNames(joined.agentId!) })).toBe(unnamed);
     expect(joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false, colonyNames: COLONY_NAMES })).toBe(unnamed);
     const drawn = drawColonyNames("quad-lobby");
