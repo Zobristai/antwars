@@ -36,6 +36,12 @@ export type NextStart = { readonly kind: "scheduled"; readonly at: Date } | { re
 export type AdapterErrorCode = "unknown_token" | "agent_cap" | "colony_full" | "call_rate" | "not_started" | "match_not_played" | "not_applied";
 export type GameErrorCode = InputErrorCode | AdapterErrorCode;
 
+/** Four-colony matches: when and why a seat's own colony left its match, as the engine recorded it (never its scores). */
+export interface SeatElimination {
+  readonly tick: number;
+  readonly reason: EliminationReason;
+}
+
 /**
  * Compact receipt shared with bound sessions; survives only as long as its holders do.
  * notPlayed, set only on a slot server whose match was replaced or failed to start,
@@ -46,6 +52,8 @@ export interface FinalResultReceipt {
   readonly notPlayed?: true;
   /** The colony names of the receipt's match, so its result is named as that match named it after its record is gone. */
   readonly colonyNames?: ColonyNames;
+  /** Four-colony matches: the seat's own colony's elimination, kept here once the seat's record is retired. */
+  readonly eliminated?: SeatElimination;
 }
 
 /** One seat of the lobby whose match this slot server plays. An identity may hold several seats of its colony. */
@@ -277,7 +285,7 @@ interface AgentRecord {
   callTimes: number[];
   /** Sessions keep only this receipt, not a retired record's events or match state. */
   /** colonyNames: this agent's match's names, captured at admission and taken from the lobby again on resume. */
-  readonly finalResult: { result: MatchResult | null; notPlayed?: true; readonly colonyNames: ColonyNames };
+  readonly finalResult: { result: MatchResult | null; notPlayed?: true; readonly colonyNames: ColonyNames; eliminated?: SeatElimination };
   /** Slot servers: the lobby and seat key this seat belongs to, its rejoin key. */
   readonly seatKey: string | null;
   /** Slot servers: the identity holding this seat, whose join activity is recorded. */
@@ -784,6 +792,9 @@ export class Game {
   private retireRecordsBefore(seq: number): void {
     for (const rec of [...this.records.values()]) {
       if (rec.matchSeq < seq - 1) {
+        // A bound session keeps only the receipt: it carries the seat's own elimination on from here.
+        const eliminated = this.ownElimination(rec.agentId);
+        if (eliminated !== undefined) rec.finalResult.eliminated = eliminated;
         rec.cellSnapshot = null;
         this.records.delete(rec.agentId);
         this.recordedTimes.delete(rec.agentId);
@@ -1469,7 +1480,8 @@ export class Game {
     if (rec === undefined) return base;
     const agent = state?.agents.find(agent => agent.id === agentId);
     const since = this.houseActivity.get(agentId) ?? agent?.joinedTick ?? 0;
-    const left = state === null || agent === undefined || state.result !== null ? null
+    // A colony out of its four-colony match has no idle countdown left, as after the end.
+    const left = state === null || agent === undefined || state.result !== null || state.colonies[agent.colony]?.eliminated !== undefined ? null
       : Math.max(0, Math.ceil(this.houseIdleSeconds - (state.tick - since) / config.ticksPerSecond));
     // An accepted set_brood refreshes this house-activity timer, never the command-idle one.
     const brood = config.castes !== undefined ? ["set_brood"] : [];
@@ -1504,6 +1516,21 @@ export class Game {
     const rec = this.records.get(agentId);
     if (rec === undefined || rec.seat === null || rec.finalResult.colonyNames.length !== 4) return undefined;
     return rec.finalResult.colonyNames[rec.seat.colony];
+  }
+
+  /**
+   * Four-colony matches: when and why the seat's own colony left its match, read from that match's state while the
+   * seat's record lasts (live and after the end); undefined while the colony plays, for an unknown or retired seat
+   * (its receipt keeps it then) and in every two-colony match.
+   */
+  ownElimination(agentId: string): SeatElimination | undefined {
+    const rec = this.records.get(agentId);
+    const where = rec === undefined ? null : this.locate(rec);
+    const state = where === null || where.kind === "queued" ? null : where.match?.state ?? null;
+    if (state === null || state.colonies.length !== 4) return undefined;
+    const agent = state.agents.find(agent => agent.id === agentId);
+    const eliminated = agent === undefined ? undefined : state.colonies[agent.colony]?.eliminated;
+    return eliminated === undefined ? undefined : { tick: eliminated.tick, reason: eliminated.reason };
   }
 
   /** Unjoined callers see the slot mode; joined callers retain their own mode. */
@@ -1600,8 +1627,8 @@ function opponentsOf(state: SimState, colony: ColonyId, names: ColonyNames): Opp
     ...(other.eliminated === undefined ? {} : { eliminated: { tick: other.eliminated.tick, reason: other.eliminated.reason } }) }));
 }
 
-/** A seat's result as saved: its names are its lobby's, which the save carries once (savedNames). */
-function savedResult({ colonyNames: _names, ...result }: AgentRecord["finalResult"]): SavedAgentRecord["finalResult"] {
+/** A seat's result as saved: its names are its lobby's, which the save carries once (savedNames); its elimination is the saved state's. */
+function savedResult({ colonyNames: _names, eliminated: _eliminated, ...result }: AgentRecord["finalResult"]): SavedAgentRecord["finalResult"] {
   return result;
 }
 

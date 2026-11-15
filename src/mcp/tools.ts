@@ -377,12 +377,12 @@ export function callIdOf(extra: { readonly _meta?: Readonly<Record<string, unkno
  * original reply and no second effect; any other call is made as today, and its reply is remembered
  * under its call id if the match applies it. Refused, rate-limited or unapplied ids stay unremembered.
  */
-async function applyCommand(game: Game, agentId: string, callId: string | undefined, input: SimInput,
+async function applyCommand(game: Game, agentId: string, receipt: FinalResultReceipt | undefined, callId: string | undefined, input: SimInput,
   reply: (outcome: Outcome) => CallToolResult): Promise<CallToolResult> {
   const repeat = callId === undefined ? undefined : game.appliedCall(agentId, callId);
   if (repeat !== undefined) return repeat;
   const outcome = await game.call(agentId, input, true, callId === undefined ? undefined : { callId, reply });
-  return (callId === undefined ? undefined : game.appliedCall(agentId, callId)) ?? reply(outcome);
+  return (callId === undefined ? undefined : game.appliedCall(agentId, callId)) ?? reply(retiredOutcome(outcome, receipt));
 }
 
 /** A refused command also says when the next command is allowed: null when the call produced no view. */
@@ -443,6 +443,17 @@ async function sessionObserve(game: Game, agentId: string, receipt: FinalResultR
       observeInfo: observeInfo(null, "", game.simConfig) };
   }
   return outcome;
+}
+
+/**
+ * A four-colony seat's rules read or command once its record is retired: the match-ended error with its receipt's
+ * result and colony names, as observe answers it (sessionObserve), not unknown_agent. Every other outcome, and every
+ * call in a two-colony match, is unchanged.
+ */
+function retiredOutcome(outcome: Outcome, receipt: FinalResultReceipt | undefined): Outcome {
+  if (outcome.kind !== "error" || outcome.code !== "unknown_agent" || receipt?.result == null || receipt.notPlayed === true
+    || receipt.colonyNames?.length !== 4) return outcome;
+  return { kind: "error", code: "match_over", view: null, result: receipt.result, colonyNames: receipt.colonyNames };
 }
 
 function bindSession(game: Game, session: SessionState, agentId: string, admission?: KeyAdmission): void {
@@ -800,6 +811,48 @@ function keyRevoked(): CallToolResult {
 }
 
 /**
+ * Four-colony matches: what every reply to the session's seated agent carries besides its own fields. eliminated,
+ * once the seat's own colony has left its match, live and after the end; and, once the match has ended, its winner
+ * fields where the reply has none. Empty for an unbound session and in every two-colony match.
+ */
+function seatReport(game: Game, session: SessionState, data: Record<string, unknown>): Record<string, unknown> {
+  const { agentId, finalResult: receipt } = session;
+  if (agentId === null) return {};
+  const eliminated = game.ownElimination(agentId) ?? receipt?.eliminated;
+  const ended = receipt?.result != null && receipt.notPlayed !== true && receipt.colonyNames?.length === 4 ? receipt.result : null;
+  return { ...(eliminated === undefined || Object.hasOwn(data, "eliminated") ? {} : { eliminated }),
+    ...(ended === null || Object.hasOwn(data, "matchOver") ? {} : winnerFields(game, agentId, ended, receipt!.colonyNames)) };
+}
+
+/**
+ * Adds seatReport's fields to every tool reply of the session's seated agent, whichever tool or path formed it, as
+ * the seat is bound after the call. A refusal the SDK formed itself (an unknown tool, arguments its schema refuses)
+ * has only its message as text; when there is something to add, it becomes an error of code sdk_error carrying that
+ * message, the code its recording already gives it. Every other reply, and every reply in a two-colony match, is
+ * left as it is. Installed beneath recordCalls, so the match recording keeps the reply the agent received; it wraps
+ * the same SDK tools/call handler, for the reason recordCalls gives.
+ */
+function reportSeat(server: McpServer, game: Game, session: SessionState): void {
+  const handlers = (server.server as unknown as { readonly _requestHandlers?: Map<string, RequestHandler> })._requestHandlers;
+  const answer = handlers?.get("tools/call");
+  if (handlers === undefined || answer === undefined) {
+    throw new Error("the MCP SDK's tools/call handler was not found, so four-colony seats could not be told their elimination");
+  }
+  handlers.set("tools/call", async (request, extra) => {
+    const reply = await answer(request, extra) as CallToolResult;
+    const [text, ...more] = reply.content;
+    if (text?.type !== "text" || more.length > 0) return reply;
+    const sdkRefusal = reply.structuredContent === undefined && reply.isError === true;
+    if (reply.structuredContent === undefined && !sdkRefusal) return reply;
+    const data = reply.structuredContent ?? { error: { code: SDK_ERROR, message: text.text } };
+    const added = seatReport(game, session, data);
+    if (Object.keys(added).length === 0) return reply;
+    const fields = { ...data, ...added };
+    return { ...reply, content: [{ type: "text", text: JSON.stringify(fields) }], structuredContent: fields };
+  });
+}
+
+/**
  * Records every call this session makes for the seat it plays, game and account tools alike, in full or as a
  * stub (Game.recordReply): the received
  * and answered times, the arguments exactly as sent, before the SDK's schema parsing (which nulls wrong-typed fields
@@ -873,7 +926,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     const agentId = session.agentId;
     if (agentId === null) return payload({ rules: briefing(game.undrawnConfig, game.mcpConfig, { house: game.isHouseMatch(), undrawn: true, colonyNames: game.colonyNames(), ...local }) });
     // A rules read is an ordinary admitted observe call for rate limits and seat timers.
-    const outcome = await game.call(agentId, { type: "observe", agentId });
+    const outcome = retiredOutcome(await game.call(agentId, { type: "observe", agentId }), session.finalResult);
     if (outcome.kind === "error") return viewResult(game, game.simConfig, outcome);
     const result = outcome.kind === "view" ? outcome.view.result : null;
     const rules = briefing(game.configForAgent(agentId), game.mcpConfig, { house: game.isHouseMatch(agentId), undrawn: !game.mapDrawnFor(agentId), colonyNames: game.colonyNames(agentId), ...local });
@@ -881,6 +934,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     return payload({ rules, ...nestFields(game, agentId, false, rules.includes("starting queens do not count")), ...(result === null ? {} : winnerFields(game, agentId, result)) });
   });
   if (game.slot !== undefined) guardKeyAdmission(server, game, game.slot, session);
+  reportSeat(server, game, session);
   recordCalls(server, game, session);
   if (options.gameplay === false) return;
   const rootSchema = rootJoinSchema(game.mcpConfig);
@@ -1042,7 +1096,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
         ...(intent === undefined ? {} : { intent: clampIntent(config, intent) }),
         ...(brood === undefined ? {} : { brood }),
       };
-      return applyCommand(game, agentId, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input, intent === undefined ? undefined : [...intent].length));
+      return applyCommand(game, agentId, session.finalResult, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input, intent === undefined ? undefined : [...intent].length));
     },
   );
 
@@ -1061,7 +1115,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       if (caught.length > 0) return typeError(game, session, "command", caught);
       const config = game.configForAgent(agentId);
       const input: SimInput = { type: "found_queen", agentId, tileX: args.tileX, tileY: args.tileY };
-      return applyCommand(game, agentId, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
+      return applyCommand(game, agentId, session.finalResult, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
     },
   );
 
@@ -1083,7 +1137,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       if (caught.length > 0) return typeError(game, session, "command", caught);
       const config = game.configForAgent(agentId);
       const input: SimInput = { type: "set_brood", agentId, brood: args.brood, ...(args.queenId === undefined ? {} : { queenId: args.queenId }) };
-      return applyCommand(game, agentId, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
+      return applyCommand(game, agentId, session.finalResult, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
     },
   );
 
@@ -1103,7 +1157,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       if (caught.length > 0) return typeError(game, session, "command", caught);
       const config = game.configForAgent(agentId);
       const input: SimInput = { type: "mark", agentId, ...markTileOf(spec), words: clampWords(config, spec.words) };
-      return applyCommand(game, agentId, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
+      return applyCommand(game, agentId, session.finalResult, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
     },
   );
 
@@ -1143,7 +1197,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
         ...(spec.markId === undefined ? {} : { markId: spec.markId }),
         ...(spec.toTileX === undefined ? {} : { toTileX: spec.toTileX }), ...(spec.toTileY === undefined ? {} : { toTileY: spec.toTileY }),
         ...(spec.queenId === undefined ? {} : { queenId: spec.queenId }) };
-      return applyCommand(game, agentId, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
+      return applyCommand(game, agentId, session.finalResult, callIdOf(extra), input, (outcome) => commandResult(game, config, outcome, input));
     },
   );
 }
