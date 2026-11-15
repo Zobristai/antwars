@@ -35,8 +35,9 @@ import { createGcsHistorySource, type HistorySource } from "../../src/replays/hi
 import { createPrivateArchive } from "../../src/replays/private-archive.ts";
 import { privateMediaName, sealPrivateMedia } from "../../src/replays/private-media.ts";
 import type { ReplayObject } from "../../src/replays/store.ts";
-import { rulesConfig, type SimConfig } from "../../src/sim/config.ts";
-import { headerLine, tickLine } from "../../src/sim/log.ts";
+import { rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
+import { newMatchConfig } from "../../src/sim/gridScale.ts";
+import { eliminationsAt, headerLine, tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
 import type { ServerTerminal } from "../../src/sim/step.ts";
@@ -66,12 +67,14 @@ function houseMatch(id: string, options: {
   names?: readonly string[]; idleTicks: number; stopAt: number; modelIndex?: boolean;
   /** The match's rules give no command idle allowance: any call keeps a seat awake (historical configs). */
   callIdle?: boolean;
+  /** The rules template and seed to play: by default the two-colony redesign rules and seed 6006. */
+  rules?: SimConfig; seed?: number;
   calls: Record<number, readonly (SimInput | { input: SimInput; counts: false })[]>;
 }) {
   const names = options.names ?? ["alice", "bob"];
-  const { commandIdleTicks: _historical, ...rules } = playable(rulesConfig("redesign"));
+  const { commandIdleTicks: _historical, ...rules } = playable(options.rules ?? rulesConfig("redesign"));
   const config: SimConfig = { ...rules, matchTicks: 40, commandFloorTicks: 100, startAnts: 16, ...(options.callIdle ? {} : { commandIdleTicks: 1 }) };
-  let state: SimState = createMatch(6006, config);
+  let state: SimState = createMatch(options.seed ?? 6006, config);
   const activity = new Map<string, number>();
   const recorder = new SpectatorRecorder(state, { identity: agentId => ({ displayName: names[Number(agentId.replace("seat-private-", ""))]! }),
     houseIdle: { idleTicks: options.idleTicks, activityTick: agentId => activity.get(agentId) }, ...(options.modelIndex ? { modelIndex: true } : {}) });
@@ -90,7 +93,7 @@ function houseMatch(id: string, options: {
         out = step(state, inputs, undefined, undefined, undefined, terminal, true);
       }
     }
-    lines.push(tickLine(tick, inputs, terminal, true));
+    lines.push(tickLine(tick, inputs, terminal, true, eliminationsAt(out.state, tick)));
     messages.push(encodePublicMessage({ ...recorder.record(out), full: null }));
     state = out.state;
   }
@@ -168,15 +171,15 @@ function world(options: { versions?: VersionSource; jobs?: PostMortemJobs; cache
     storedHistory: options.storedHistory, pageScanBytes: options.pageScanBytes, maxRerunBits: options.maxRerunBits,
     readGuardMs: options.readGuardMs, scanWaitMs: options.scanWaitMs });
   let lobbyCount = 0;
-  /** A lobby of `seats` [identity, colony], its registry row and its stored record under id. */
-  function match(n: number, seats: readonly (readonly [{ id: string; name: string }, 0 | 1])[], options: {
-    visibility?: "public" | "private"; playbackFinished?: boolean; lobbyState?: string; record?: unknown; row?: boolean; id?: string;
+  /** A lobby of `seats` [identity, colony 0-3], in mode ("quadrants" for a four-colony lobby), its registry row and its stored record under id. */
+  function match(n: number, seats: readonly (readonly [{ id: string; name: string }, number])[], options: {
+    visibility?: "public" | "private"; playbackFinished?: boolean; lobbyState?: string; record?: unknown; row?: boolean; id?: string; mode?: string;
   } = {}) {
     const lobbyId = `00000000-0000-4000-8000-${String(++lobbyCount).padStart(12, "0")}`;
     const id = options.id ?? replayId(n);
     w.docs.set(`lobbies/${lobbyId}`, { kind: options.visibility ?? "public", size: "1", state: options.lobbyState ?? "ended", rated: "false", slot: "",
       seats: JSON.stringify(seats.map(([who, colony]) => ({ id: who.id, displayName: who.name, colony }))), creatorId: seats[0]?.[0].id ?? "",
-      createdAt: String(w.now()), inviteVerifier: "", startsAt: "", matchRunId: "run-1", outcome: "colony_0_won", mode: "" });
+      createdAt: String(w.now()), inviteVerifier: "", startsAt: "", matchRunId: "run-1", outcome: "colony_0_won", mode: options.mode ?? "" });
     if (options.row !== false) {
       w.docs.set(`watchMatches/${lobbyId}`, { visibility: options.visibility ?? "public", rated: "false", mode: "",
         startedAt: String(RECEIVED).padStart(16, "0"), origin: "https://slot.example", slot: "public-0", runId: "run-1",
@@ -426,6 +429,176 @@ describe("which colonies a caller owns", () => {
     expect(ownedColonies(lobby([["a", "alice", 0], ["c", "carol", 0]]), "a")).toEqual(new Set());
     expect(ownedColonies(lobby([["a", "alice", 0], ["a", "alice", 1], ["c", "carol", 1]]), "a")).toEqual(new Set([0]));
   });
+  // Credible regression: owners chosen from colonies 0 and 1 only.
+  it("reads every colony of a four-colony lobby, giving each one identity its own colony and a shared colony to none", () => {
+    const quadrants = (ids: readonly (readonly string[])[]) => ({ colonies: ids.map(colony => colony.map(id => ({ id, displayName: id }))) as never });
+    const four = quadrants([["a"], ["b"], ["c"], ["d"]]);
+    expect(["a", "b", "c", "d"].map(id => ownedColonies(four, id))).toEqual([0, 1, 2, 3].map(colony => new Set([colony])));
+    expect(ownedColonies(four, "e")).toEqual(new Set());
+    expect(ownedColonies(quadrants([["a"], ["b"], ["c", "e"], ["c"]]), "c")).toEqual(new Set([3]));
+  });
+});
+
+/** Test-only four-colony board (as test/server/four-colony-log.test.ts): a fixture, never a shipped map. */
+const QUADRANT_BOARD: MapDefinition = {
+  id: "close-quadrants", name: "Close Quadrants", water: [],
+  quadrant: { referenceWidth: 64, referenceHeight: 48, centreHalfWidth: 2, centreHalfHeight: 2, nestTileX: 29, nestTileY: 8,
+    startArea: { x: 0, y: 0, width: 8, height: 8 }, foodPatches: [{ tileX: 8, tileY: 8, radius: 3, perTile: 2 }], centreFood: [{ radius: 1, perTile: 2 }] },
+};
+
+/**
+ * Each four-colony seat's refused calls as its record's replies hold them: seat 0 a rate-limited join before the match,
+ * seat 1 a refused set_brood, seat 2 an SDK error and a refused set_brood, seat 3 a rate-limited join; seat 3's
+ * accepted observe is not a refusal.
+ */
+const QUADRANT_REPLIES = [
+  { type: "stub", seat: 0, tick: null, tool: "join", receivedAt: RECEIVED - 50, answeredAt: RECEIVED - 49, code: "call_rate" },
+  { type: "reply", seat: 1, tick: 3, tool: "set_brood", receivedAt: RECEIVED + 200, answeredAt: RECEIVED + 201, isError: true,
+    reply: { error: { code: "bad_brood", message: "brood is one of workers, soldiers, mixed." } } },
+  { type: "stub", seat: 2, tick: 2, tool: "observe", receivedAt: RECEIVED + 100, answeredAt: RECEIVED + 101, code: "sdk_error" },
+  { type: "reply", seat: 2, tick: 4, tool: "set_brood", receivedAt: RECEIVED + 300, answeredAt: RECEIVED + 301, isError: true,
+    reply: { error: { code: "bad_brood", message: "brood is one of workers, soldiers, mixed." } } },
+  { type: "stub", seat: 3, tick: null, tool: "join", receivedAt: RECEIVED - 40, answeredAt: RECEIVED - 39, code: "call_rate" },
+  { type: "reply", seat: 3, tick: 2, tool: "observe", receivedAt: RECEIVED + 150, answeredAt: RECEIVED + 151, reply: { ok: true } },
+] as const;
+
+/** The live rules on the test-only quadrant board: a four-colony match. */
+const QUADRANT_RULES: SimConfig = (() => {
+  const live = newMatchConfig(rulesConfig("redesign"));
+  return { ...live, terrain: { ...live.terrain!, maps: [QUADRANT_BOARD] } };
+})();
+
+/**
+ * A finished public four-colony match's stored record, in the four-colony record shape (seats in colonies 0 to 3, each
+ * its simulation colony; the stream result; setup colonies 4; a root eliminations member), written directly. Each seat
+ * joins at tick 0 and the match is stopped at tick 4. Its re-run data replays the real four-colony simulation on a
+ * test-only quadrant board, but its stored events are not the ones the spectator recorder writes, so its re-run does
+ * not reproduce it.
+ */
+function quadrantsRecord(id: string, names: readonly string[] = ["alice", "bob", "carol", "dave"]) {
+  const config: SimConfig = { ...QUADRANT_RULES, matchTicks: 40 };
+  return {
+    format: "antwar.match", version: 1, id, source: "match-log", status: "complete", unavailable: [],
+    startedAt: new Date(RECEIVED).toISOString(), endedAt: new Date(RECEIVED + 404).toISOString(), simulationEndedAt: null,
+    rules: { version: 1, config }, setup: { colonies: 4, ticksPerSecond: config.ticksPerSecond, rated: false, houseIdleTicks: 1000 },
+    result: { winner: null, reason: "stopped", decidedBy: null, tick: 4 },
+    eliminations: [],
+    seats: [0, 1, 2, 3].map(colony => ({ seat: colony, colony, modelLabel: `model-${colony}`, thinkingLevel: null, serviceTier: null,
+      handle: names[colony]!, joinedTick: 0,
+      commands: [{ tick: 0, type: "join", accepted: true, request: { type: "join", modelLabel: `model-${colony}` }, error: null }] })),
+    events: [0, 1, 2, 3].map(seat => ({ tick: 0, event: { kind: "call", agent: seat, call: "join", accepted: true, houseActivityTick: 0 } })),
+    rerun: { seed: 404, stops: [4], abandonments: [], idle: [], houseActive: [[0, 4]] },
+    codeVersion: CODE,
+    replies: QUADRANT_REPLIES,
+  };
+}
+
+/**
+ * A finished public four-colony match on the test-only quadrant board, built by the real simulation, spectator recorder
+ * and record builder, so its re-run reproduces it. Seat n joins colony n at tick 0; seat 2 sets its brood at tick 1
+ * and sets the same brood again at tick 2 (a command with no effect, its index 2); seat 3 sets its brood at tick 2.
+ * The match is stopped at tick 4. Each seat's refused calls are QUADRANT_REPLIES.
+ */
+function reproducingQuadrantsRecord(id: string) {
+  const built = houseMatch(id, { rules: QUADRANT_RULES, seed: 404, names: ["alice", "bob", "carol", "dave"], idleTicks: 1000, stopAt: 4, calls: {
+    0: [0, 1, 2, 3].map(seat => joinAs(seat)), 1: [brood(2, "soldiers")], 2: [brood(2, "soldiers"), brood(3, "soldiers")],
+  } });
+  return { ...built, replies: QUADRANT_REPLIES };
+}
+
+/** Seat `seat`'s refused calls as its owner's reply shows them. */
+function quadrantRefused(seat: number, ticksPerSecond: number) {
+  return QUADRANT_REPLIES.filter(line => line.seat === seat && (line.type === "stub" || "isError" in line)).map(line => ({
+    ...(timeOf(line.tick, "calls", ticksPerSecond) ?? { tick: null }), at: new Date(line.receivedAt).toISOString(), tool: line.tool,
+    code: line.type === "stub" ? line.code : "bad_brood",
+  }));
+}
+
+/** The documents a match's lobby and registry row are stored as, and its stored record's bytes. */
+const storedState = (f: ReturnType<typeof world>, lobbyId: string, id: string) => JSON.stringify({
+  lobby: f.w.docs.get(`lobbies/${lobbyId}`), row: f.w.docs.get(`watchMatches/${lobbyId}`), record: f.records.get(id)?.toString("base64"),
+});
+
+describe("a four-colony match", () => {
+  // Credible regression: owners chosen from colonies 0 and 1 only, or a record seat in colony 2 or 3 failing the record
+  // scan, so the owners of colonies 2 and 3 are refused and every owner's record reads as unreadable.
+  it("serves the one owner of each of its four colonies, 2 and 3 included, that colony's own seat and refused calls only, and changes nothing stored", async () => {
+    const f = world();
+    const owners = ["alice", "bob", "carol", "dave"].map(name => f.w.played(name));
+    const record = quadrantsRecord(replayId(500));
+    const { lobbyId, id } = f.match(500, owners.map((owner, colony) => [owner, colony] as const), { mode: "quadrants", record });
+    const before = storedState(f, lobbyId, id);
+    for (const [colony, owner] of owners.entries()) {
+      for (const ask of [{ lobbyId }, { matchId: id }]) {
+        const reply = await f.postMortem.query({ key: owner.key, ...ask });
+        expect(reply.ok).toBe(true);
+        expect(reply.body).toMatchObject({ matchId: id, lobbyId, refusedFrom: "calls" });
+        expect(bodyOf(reply).seats).toEqual([{ seat: colony, colony, refusedNotRetained: 0, refused: quadrantRefused(colony, record.rules.config.ticksPerSecond) }]);
+      }
+    }
+    expect(quadrantRefused(2, 10).map(entry => entry.code)).toEqual(["sdk_error", "bad_brood"]);
+    expect(storedState(f, lobbyId, id)).toBe(before);
+    // The only writes are the key's own last-use time, as for any key a call presents.
+    expect(f.w.commits.flat()).toEqual(f.w.activityWrites());
+  }, 60_000);
+
+  // Credible regression: a four-colony re-run that cannot run its seats in colonies 2 and 3, or reports findings by
+  // colony 0 and 1 seats only, so the owner of colony 2 is never shown its no-effect command.
+  it("shows each owner only its own seat's no-effect commands when its re-run reproduces its record, colony 2's included", async () => {
+    const f = world();
+    const owners = ["alice", "bob", "carol", "dave"].map(name => f.w.played(name));
+    const record = reproducingQuadrantsRecord(replayId(505));
+    expect(record.setup).toMatchObject({ colonies: 4 });
+    expect(record.seats.map((seat: { seat: number; colony: number }) => [seat.seat, seat.colony])).toEqual([[0, 0], [1, 1], [2, 2], [3, 3]]);
+    const { lobbyId, id } = f.match(505, owners.map((owner, colony) => [owner, colony] as const), { mode: "quadrants", record });
+    const before = storedState(f, lobbyId, id);
+    const done = await settled(() => f.postMortem.query({ key: owners[2]!.key, lobbyId }));
+    expect(bodyOf(done).noEffect).toEqual({ status: "shown", note: NO_EFFECT_NOTE,
+      commands: [{ seat: 2, commandIndex: 2, type: "set_brood", tick: 2, tickBasis: "simulation step", viewerTick: 3, viewerSeconds: 0.3 }] });
+    for (const [colony, owner] of owners.entries()) {
+      const reply = await f.postMortem.query({ key: owner.key, matchId: id });
+      expect(bodyOf(reply).seats).toEqual([{ seat: colony, colony, refusedNotRetained: 0, refused: quadrantRefused(colony, record.rules.config.ticksPerSecond) }]);
+      expect(bodyOf(reply).noEffect).toEqual(colony === 2 ? bodyOf(done).noEffect : { status: "shown", note: NO_EFFECT_NOTE, commands: [] });
+    }
+    expect(storedState(f, lobbyId, id)).toBe(before);
+    expect(f.w.commits.flat()).toEqual(f.w.activityWrites());
+  }, 60_000);
+
+  // Credible regression: a four-colony record whose re-run child cannot read it, told to try later for good.
+  it("says plainly that no-effect commands are not available when its re-run does not reproduce its record, still showing each owner's refused calls", async () => {
+    const f = world();
+    const owners = ["alice", "bob", "carol", "dave"].map(name => f.w.played(name));
+    const record = quadrantsRecord(replayId(501));
+    const { lobbyId, id } = f.match(501, owners.map((owner, colony) => [owner, colony] as const), { mode: "quadrants", record });
+    const before = storedState(f, lobbyId, id);
+    const done = await settled(() => f.postMortem.query({ key: owners[2]!.key, lobbyId }));
+    expect(bodyOf(done).noEffect).toEqual({ status: "not_available",
+      reason: "Re-running this match did not reproduce its stored record, so no-effect commands are not available for this match." });
+    for (const [colony, owner] of owners.entries()) {
+      const reply = await f.postMortem.query({ key: owner.key, matchId: id });
+      expect(bodyOf(reply).noEffect).toEqual(bodyOf(done).noEffect);
+      expect(bodyOf(reply).seats).toEqual([{ seat: colony, colony, refusedNotRetained: 0, refused: quadrantRefused(colony, record.rules.config.ticksPerSecond) }]);
+    }
+    expect(storedState(f, lobbyId, id)).toBe(before);
+    expect(f.w.commits.flat()).toEqual(f.w.activityWrites());
+  }, 60_000);
+
+  // Credible regression: widening the record scan to colonies 2 and 3 letting a two-colony match's record name them.
+  it("keeps unreadable, as before, a two-colony match's record that names a seat in colony 2 or 3, and any record seat in a colony past 3", async () => {
+    const f = world();
+    const alice = f.w.played("alice"), bob = f.w.played("bob"), carol = f.w.played("carol"), dave = f.w.played("dave");
+    const unreadable = { ok: false, body: { error: "record_unreadable", message: REFUSALS.record_unreadable } };
+    for (const [n, colony] of [[502, 2], [503, 3]] as const) {
+      const record = generatedRecord(replayId(n));
+      record.seats[1].colony = colony;
+      const { lobbyId } = f.match(n, [[alice, 0], [bob, 1]], { record });
+      expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual(unreadable);
+    }
+    const pastThree = quadrantsRecord(replayId(504));
+    pastThree.seats[3]!.colony = 4;
+    const { lobbyId } = f.match(504, [[alice, 0], [bob, 1], [carol, 2], [dave, 3]], { mode: "quadrants", record: pastThree });
+    expect(await f.postMortem.query({ key: alice.key, lobbyId })).toEqual(unreadable);
+  }, 60_000);
 });
 
 /**
