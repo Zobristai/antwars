@@ -81,14 +81,11 @@ export function ownTerritory(owners: Uint8Array, colony: number): Uint8Array {
   return out;
 }
 
-/**
- * Traffic trails (two channels per cell, colony 0 then 1) with only this colony's. Colonies 2 and 3 of a four-colony
- * match have no channel of their own in that layout, so their view keeps no trails rather than another colony's.
- */
-export function ownTrails(trails: Float32Array, colony: number): Float32Array {
+/** Traffic trails (one channel per colony in each cell, colonies the match's colony count) with only this colony's. */
+export function ownTrails(trails: Float32Array, colony: number, colonies: number): Float32Array {
   const out = new Float32Array(trails.length);
-  if (colony > 1) return out;
-  for (let i = colony; i < trails.length; i += 2) out[i] = trails[i]!;
+  if (colony >= colonies) return out;
+  for (let i = colony; i < trails.length; i += colonies) out[i] = trails[i]!;
   return out;
 }
 
@@ -154,7 +151,7 @@ export class TeamView {
     out.territoryA = this.territory(frame.territoryA, colony);
     out.territoryB = this.territory(frame.territoryB, colony);
     let trails = this.trails.get(frame.trails);
-    if (trails === undefined) this.trails.set(frame.trails, trails = ownTrails(frame.trails, colony));
+    if (trails === undefined) this.trails.set(frame.trails, trails = ownTrails(frame.trails, colony, board.setup.queens.length));
     out.trails = trails;
     out.board = this.boardFor.board;
     out.ants = ants;

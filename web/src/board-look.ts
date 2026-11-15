@@ -21,8 +21,11 @@ export interface BoardLook2d {
 export interface BoardLook3d {
   /** The soil's colour at physical tile (x, y), written as board3d/noise.ts soilAt writes it. */
   readonly soil: (x: number, y: number, out: number[]) => void;
-  /** The ground plugin's code at each injection point, given Current's code there (board3d/ground.ts). */
-  readonly ground: (point: "definitions" | "diffuse" | "beforeFog", current: string) => string;
+  /**
+   * The ground plugin's code at each injection point, given Current's code there (board3d/ground.ts) and the match's
+   * colony count (2 when omitted, or 4).
+   */
+  readonly ground: (point: "definitions" | "diffuse" | "beforeFog", current: string, colonies?: number) => string;
   /** The boulders' colour; under a look they also cast shadows. */
   readonly rock: Rgb;
   /** The key and fill lights, the shadows' darkness and the image pass's contrast and vignette (board3d/main3d.ts). */
