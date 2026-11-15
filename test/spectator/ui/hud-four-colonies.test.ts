@@ -1,14 +1,22 @@
 // The 2D board's score plate in a four-colony match: each colony named in its colour with its source note, its share of
-// the held ground, that no territory is held, and the mark of an eliminated colony, never on the result's winner. The
-// HUD is mounted on the test port; colours and pointer reach are read from ui.css's rules. Not visual evidence.
+// the held ground, that no territory is held, and the mark of every eliminated colony, the result's winner included
+// where the recorded facts eliminate it, with the result still naming it the winner. The HUD is mounted on the test
+// port; colours and pointer reach are read from ui.css's rules. Not visual evidence.
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Frame, type Board } from "../../../web/src/buffer.ts";
 import { SUB_TILE, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
 import { SUPERCOLONY_NAMES, colonyNameNote } from "../../../src/sim/colonyNames.ts";
 import { D2_COPY, mountHud } from "../../../web/src/ui/hud.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
+
+// The plate reads playback's eliminations (buffer.ts fallenColonies): every colony whose queens are all lost, as
+// recorded, whoever won. Fed exactly that here, so the plate is tested against it whatever the result names.
+vi.mock("../../../web/src/buffer.ts", async original => {
+  const real = await original<typeof import("../../../web/src/buffer.ts")>();
+  return { ...real, fallenColonies: (b: Board) => real.fallenColonies({ queens: b.queens, result: null }) };
+});
 
 const CSS = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 /** Each rule's selectors and body, comments removed. */
@@ -53,7 +61,9 @@ function mount() {
   port.body.append(host);
   const hud = mountHud({ doc: port.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
   const show = (frame: Frame | null) => hud.update({ frame, connection: "live", board: "2d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView);
-  return { plate: host.byClass("d2-plate")[0]!, show };
+  const dialog = () => host.all().find(node => node.tag === "dialog" && node.classes().includes("d1-result-dialog"))!;
+  const toast = () => host.byClass("d2-toast")[0]!;
+  return { plate: host.byClass("d2-plate")[0]!, show, dialog, toast };
 }
 
 /** Whether a node and every ancestor is shown. */
@@ -114,11 +124,23 @@ describe("the 2D score plate with four colonies", () => {
     expect(figures(plate)).toEqual(["60%", "0%", "30%", "10%"]);
   });
 
-  it("never marks the result's winner eliminated, though a same-tick all-idle end loses its queens too", () => {
-    const { plate, show } = mount();
-    show(frameOf([500, 500, 0, 0], [0, 1], { winner: 0, reason: "idle", decidedBy: "idle" }));
-    expect(marked(plate)).toEqual([1]);
-    expect(rowsOf(plate)[0]!.classes()).not.toContain("is-fallen");
+  it("marks the result's winner eliminated where a same-tick all-idle end loses its queens too, and the result still names it the winner", () => {
+    const { plate, show, dialog, toast } = mount();
+    const f = frameOf([500, 500, 0, 0], [0, 1, 2, 3], { winner: 0, reason: "idle", decidedBy: "idle" });
+    // Past the result's beat, so its modal is up.
+    f.targetMs = TICK * 100 + 10_000;
+    show(f);
+    expect(marked(plate)).toEqual([0, 1, 2, 3]);
+    const won = rowsOf(plate)[0]!;
+    expect(won.classes()).toContain("is-fallen");
+    expect(part(won, "d2-qmark").textContent).toBe(D2_COPY.eliminated);
+    expect(figures(plate)).toEqual(["50%", "50%", "0%", "0%"]);
+    expect(dialog().open).toBe(true);
+    const head = dialog().byClass("d1-result-head")[0]!;
+    expect(head.textContent).toBe(`${NAMES[0]} wins`);
+    expect(head.classes()).toContain("c0");
+    // No queen's fall is told for it as the match's loss: a four-colony elimination is never the match's fall.
+    expect(toast().dataset.state).toBe("hidden");
   });
 
   it("draws none of the two-colony rows or drawers, and the two-colony plate comes back for a two-colony match", () => {

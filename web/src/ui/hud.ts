@@ -365,16 +365,16 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const named: readonly string[] = colonyNamesOf(b.setup);
     const held: readonly number[] = b.held;
     const pct = territoryShares(Array.from({ length: count }, (_, c) => held[c] ?? 0));
+    // Every colony the recorded facts eliminate is marked, the result's winner included where a same-tick all-idle end
+    // loses its queens too; the result's headline still names it the winner.
     const fallen: readonly boolean[] = fallenColonies(b);
-    // A same-tick all-idle end loses the winner's queens too: the result names it the winner, never eliminated.
-    const winner = b.result?.winner ?? null;
     text(q.heading, pct ? SCORE_COPY.territory : D2_COPY.noTerritory);
     for (let c = 0; c < count; c++) {
       const r = q.rows[c]!;
       const name = named[c] ?? "";
       text(r.name, name);
       attr(r.name, "title", colonyNameNote(name));
-      const out = fallen[c] === true && winner !== c;
+      const out = fallen[c] === true;
       flag(r.node, "is-fallen", out);
       show(r.mark, out);
       show(r.track, !out);
