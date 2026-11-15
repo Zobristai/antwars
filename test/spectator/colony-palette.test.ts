@@ -60,6 +60,14 @@ describe("the page's colony colours", () => {
     expect(attrs.size).toBe(0);
   });
 
+  it("give a four-colony match's page all four colony CSS colours, and the dark ground to each colony whose colour needs one", () => {
+    const { props, attrs, doc } = fakeDocument();
+    setMatchColonies(SUPERCOLONY_NAMES.map(n => n.label), doc);
+    expect(props).toEqual(new Map([["--aw-k0", "#ffb000"], ["--aw-k1", "#00c2ff"], ["--aw-k2", colourCss(SWEETWATER)],
+      ["--aw-k3", colourCss(LAKE_SKINNER)], ["--aw-ink-ground", colourCss(TEXT_GROUND)]]));
+    expect(attrs).toEqual(new Map([["data-aw-ground", "2 3"]]));
+  });
+
   it("keep a colony's own colour for a name outside the table", () => {
     setMatchColonies(["Some Colony", "Lake Skinner Colony"]);
     expect([colonyTint(0), colonyTint(1)]).toEqual([0xffb000, LAKE_SKINNER]);

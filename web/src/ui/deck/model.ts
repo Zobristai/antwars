@@ -614,7 +614,7 @@ export function resultView(frame: Frame | null): ResultView | null {
   if (!frame || !b || r === null) return null;
   const rate = tps(b);
   return {
-    headline: resultHeadline(r, colonyNamesOf(b.setup)), winner: r.winner, how: resultHow(r, b.queens !== undefined),
+    headline: resultHeadline(r, colonyNamesOf(b.setup)), winner: r.winner, how: resultHow(r, b.queens !== undefined, b.setup.queens.length),
     ratings: ratingResultRows(b.setup.rated, b.agents, r),
     moments: decisive(frame.story, r.reason, r.winner).map(m => ({
       when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true, colonyNamesOf(b.setup)).what, who: colonyNamesOf(b.setup)[m.colony], colony: m.colony,
@@ -650,16 +650,29 @@ export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colon
   return names.length > 0 ? names.join(" & ") : colonyNames[colony];
 }
 
+/** Names as a sentence lists them: "A", "A and B", "A, B and C". */
+const listed = (names: readonly string[]): string =>
+  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
 /**
  * The post's text: "{winner} beat {loser} on Antwars — {how it ended}. Watch:
  * {url}", or "{A} and {B} drew on Antwars — …" for a draw; null without a shown result or a link to share.
+ * With more than two colonies it names the colonies that took part (each with a seated agent; every colony where none
+ * has one), in colony order after the winner: "{winner} beat {A}, {B} and {C} on Antwars — …", or "{A}, {B}, {C} and {D}
+ * drew on Antwars — …".
  */
 export function shareText(frame: Frame | null, url: string | null): string | null {
   const shown = resultView(frame);
   if (shown === null || url === null) return null;
-  const agents = frame!.board!.agents, names = colonyNamesOf(frame!.board!.setup);
-  const [a, b] = shown.winner === null ? [0, 1] as const : [shown.winner, (1 - shown.winner) as Colony];
-  const players = shown.winner === null ? `${sideNames(agents, a, names)} and ${sideNames(agents, b, names)} drew` : `${sideNames(agents, a, names)} beat ${sideNames(agents, b, names)}`;
+  const board = frame!.board!, agents = board.agents, names = colonyNamesOf(board.setup);
+  const side = (colony: Colony) => sideNames(agents, colony, names);
+  const colonies = board.setup.queens.map((_, colony) => colony);
+  // Two colonies are both named, as they always were.
+  const tookPart = colonies.length <= 2 ? colonies : colonies.filter(colony => agents.some(a => a.colony === colony));
+  const named = tookPart.length > 0 ? tookPart : colonies;
+  const others = named.filter(colony => colony !== shown.winner);
+  const players = shown.winner === null ? `${listed(named.map(side))} drew`
+    : others.length > 0 ? `${side(shown.winner)} beat ${listed(others.map(side))}` : `${side(shown.winner)} won`;
   return `${players} on Antwars — ${shown.how}. Watch: ${url}`;
 }
 
