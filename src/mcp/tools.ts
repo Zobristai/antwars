@@ -829,27 +829,18 @@ function seatReport(game: Game, session: SessionState, data: Record<string, unkn
  * the seat is bound after the call. A refusal the SDK formed itself (an unknown tool, arguments its schema refuses)
  * has only its message as text; when there is something to add, it becomes an error of code sdk_error carrying that
  * message, the code its recording already gives it. Every other reply, and every reply in a two-colony match, is
- * left as it is. Installed beneath recordCalls, so the match recording keeps the reply the agent received; it wraps
- * the same SDK tools/call handler, for the reason recordCalls gives.
+ * left as it is. The fields go on a copy of the reply; recordCalls adds them before it records and returns it.
  */
-function reportSeat(server: McpServer, game: Game, session: SessionState): void {
-  const handlers = (server.server as unknown as { readonly _requestHandlers?: Map<string, RequestHandler> })._requestHandlers;
-  const answer = handlers?.get("tools/call");
-  if (handlers === undefined || answer === undefined) {
-    throw new Error("the MCP SDK's tools/call handler was not found, so four-colony seats could not be told their elimination");
-  }
-  handlers.set("tools/call", async (request, extra) => {
-    const reply = await answer(request, extra) as CallToolResult;
-    const [text, ...more] = reply.content;
-    if (text?.type !== "text" || more.length > 0) return reply;
-    const sdkRefusal = reply.structuredContent === undefined && reply.isError === true;
-    if (reply.structuredContent === undefined && !sdkRefusal) return reply;
-    const data = reply.structuredContent ?? { error: { code: SDK_ERROR, message: text.text } };
-    const added = seatReport(game, session, data);
-    if (Object.keys(added).length === 0) return reply;
-    const fields = { ...data, ...added };
-    return { ...reply, content: [{ type: "text", text: JSON.stringify(fields) }], structuredContent: fields };
-  });
+function withSeatReport(game: Game, session: SessionState, reply: CallToolResult): CallToolResult {
+  const [text, ...more] = reply.content;
+  if (text?.type !== "text" || more.length > 0) return reply;
+  const sdkRefusal = reply.structuredContent === undefined && reply.isError === true;
+  if (reply.structuredContent === undefined && !sdkRefusal) return reply;
+  const data = reply.structuredContent ?? { error: { code: SDK_ERROR, message: text.text } };
+  const added = seatReport(game, session, data);
+  if (Object.keys(added).length === 0) return reply;
+  const fields = { ...data, ...added };
+  return { ...reply, content: [{ type: "text", text: JSON.stringify(fields) }], structuredContent: fields };
 }
 
 /**
@@ -861,7 +852,8 @@ function reportSeat(server: McpServer, game: Game, session: SessionState): void 
  * call as served text, which the recording keeps once per match. That needs the SDK's tools/call and tools/list
  * handlers themselves, which McpServer installs on its first registerTool; the SDK offers no public hook for them, so
  * a missing handler fails the session's setup loudly rather than recording nothing. The seat is the one bound after
- * the call, so a successful join is recorded for the seat it binds.
+ * the call, so a successful join is recorded for the seat it binds. The reply answered, and recorded, is the one
+ * withSeatReport gives, so the recording keeps the reply the agent received.
  */
 function recordCalls(server: McpServer, game: Game, session: SessionState): void {
   const handlers = (server.server as unknown as { readonly _requestHandlers?: Map<string, RequestHandler> })._requestHandlers;
@@ -888,7 +880,7 @@ function recordCalls(server: McpServer, game: Game, session: SessionState): void
     const name = typeof tool !== "string" ? "" : tool.length > MAX_STORED_TOOL_CHARS ? `${tool.slice(0, MAX_STORED_TOOL_CHARS)}…` : tool;
     let result: unknown;
     try {
-      result = await answer(request, extra);
+      result = withSeatReport(game, session, await answer(request, extra) as CallToolResult);
     } catch (error) {
       // The SDK refused the request itself (its params fail the tools/call schema: a tool name that is not a string,
       // arguments that are not an object) or passed a handler's error through: the agent gets a protocol error and no
@@ -934,7 +926,6 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     return payload({ rules, ...nestFields(game, agentId, false, rules.includes("starting queens do not count")), ...(result === null ? {} : winnerFields(game, agentId, result)) });
   });
   if (game.slot !== undefined) guardKeyAdmission(server, game, game.slot, session);
-  reportSeat(server, game, session);
   recordCalls(server, game, session);
   if (options.gameplay === false) return;
   const rootSchema = rootJoinSchema(game.mcpConfig);
