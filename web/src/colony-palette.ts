@@ -1,10 +1,11 @@
 /**
- * The colours of the match on this page, by colony id: each colony shows its name's colour from the shared table
- * (src/sim/colonyNames.ts) on both boards and in the HUD. A page shows one match, so the boards set it once from the
- * match's setup before they draw; until then, and for a match that carries no names, it is the rated names' colours.
+ * The colours of the match on this page, by colony id: each of its colonies (two, or four) shows its name's colour from
+ * the shared table (src/sim/colonyNames.ts) on both boards and in the HUD. A page shows one match, so the boards set it
+ * once from the match's setup before they draw; until then, and for a match that carries no names, it is the rated
+ * names' colours.
  */
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyColours, colourCss, supercolony } from "../../src/sim/colonyNames.ts";
+import { SUPERCOLONY_NAMES, colonyColours, colourCss, supercolony } from "../../src/sim/colonyNames.ts";
 import type { Rgb } from "./board-look.ts";
 import "./colony-ground.css";
 
@@ -20,6 +21,7 @@ const WASH: Readonly<Record<string, { readonly hue: Rgb; readonly depth: number 
 const WASH_SHADE = 0.92, WASH_DEPTH = 1.2;
 
 let names: readonly string[] = COLONY_NAMES;
+let colours: readonly number[] = colonyColours(names);
 
 /**
  * The lightest panel colour a colony's coloured text sits on: --aw-raise (web/index.html), a list row under the pointer
@@ -45,19 +47,25 @@ export function needsTextGround(rgb: number): boolean {
   return contrastRatio(rgb, TEXT_PANEL_MAX) < 4.5;
 }
 
+/** The most colonies a match has, so the most colony CSS colours a page sets (--aw-k0 to --aw-k3). */
+const MAX_COLONIES = SUPERCOLONY_NAMES.length;
+
 /**
- * Sets the page's match; with a document, also its colony CSS colours (--aw-k0 to --aw-k3, one per colony) and, for
- * each colony whose colour needs one, the dark ground under its coloured text: the root's data-aw-ground lists those
- * colonies ("0" to "3") and --aw-ink-ground is the ground's colour (colony-ground.css). A match that needs none carries
- * neither.
+ * Sets the page's match, its names by colony id; with a document, also its colony CSS colours, one per colony (--aw-k0,
+ * --aw-k1, and --aw-k2, --aw-k3 in a four-colony match), and, for each colony whose colour needs one, the dark ground
+ * under its coloured text: the root's data-aw-ground lists those colonies ("0" to "3") and --aw-ink-ground is the
+ * ground's colour (colony-ground.css). A match that needs none carries neither.
  */
-export function setMatchColonies(pair: readonly string[], doc?: Document): void {
-  names = pair;
+export function setMatchColonies(matchNames: readonly string[], doc?: Document): void {
+  names = matchNames;
+  colours = colonyColours(matchNames);
   if (!doc) return;
   const root = doc.documentElement;
-  const colours = colonyColours(pair);
-  colours.forEach((colour, c) => root.style.setProperty(`--aw-k${c}`, colourCss(colour)));
-  const grounded = colours.flatMap((colour, c) => needsTextGround(colour) ? [c] : []);
+  for (let c = 0; c < MAX_COLONIES; c++) {
+    if (c < colours.length) root.style.setProperty(`--aw-k${c}`, colourCss(colours[c]));
+    else root.style.removeProperty(`--aw-k${c}`);
+  }
+  const grounded = colours.flatMap((rgb, c) => needsTextGround(rgb) ? [c] : []);
   if (grounded.length > 0) {
     root.setAttribute("data-aw-ground", grounded.join(" "));
     root.style.setProperty("--aw-ink-ground", colourCss(TEXT_GROUND));
@@ -67,9 +75,12 @@ export function setMatchColonies(pair: readonly string[], doc?: Document): void 
   }
 }
 
+/** A colony of the page's match by its id; any other value reads as colony 0, as it always has. */
+const colonyOf = (colony: number) => (Number.isInteger(colony) && colony > 0 && colony < colours.length ? colony : 0);
+
 /** A colony's colour as 0xRRGGBB. */
 export function colonyTint(colony: number): number {
-  return colonyColours(names)[colony === 1 ? 1 : 0];
+  return colours[colonyOf(colony)];
 }
 
 /** A colony's colour as 0..1 channels. */
@@ -78,17 +89,17 @@ export function colonyRgb(colony: number): readonly [number, number, number] {
   return [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
 }
 
-/** Both colonies' colours as 0..1 channels, index = colony id. */
-export function colonyRgbs(): readonly [readonly [number, number, number], readonly [number, number, number]] {
-  return [colonyRgb(0), colonyRgb(1)];
+/** Every colony's colour in the page's match as 0..1 channels, one per colony, index = colony id. */
+export function colonyRgbs(): readonly (readonly [number, number, number])[] {
+  return colours.map((_, c) => colonyRgb(c));
 }
 
 /** A colony's territory wash on the steppe look. */
 export function colonyWash(colony: number): { readonly hue: Rgb; readonly depth: number } {
-  const id = colony === 1 ? 1 : 0;
+  const id = colonyOf(colony);
   // Own entries only, so a name such as "constructor" never reads an inherited member; a name outside the table keeps
-  // its colony's classic wash, as colonyColours keeps its classic colour.
-  const name = supercolony(names[id]) ? names[id] : COLONY_NAMES[id];
+  // its colony's own table wash, as colonyColours keeps its own table colour.
+  const name = supercolony(names[id]) ? names[id] : SUPERCOLONY_NAMES[id].label;
   const own = Object.hasOwn(WASH, name) ? WASH[name] : undefined;
   if (own) return own;
   const [r, g, b] = colonyRgb(colony);
