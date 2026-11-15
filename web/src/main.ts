@@ -372,7 +372,8 @@ async function start(): Promise<void> {
   // The board look bakes its soil over the whole map, sized in physical tiles (board-look.ts).
   const physicalMap = { w: W / scale, h: H / scale };
   const territory = new Territory(W, H, bakeSoil(renderer, w, h, physicalMap), { w, h, ...fit });
-  const ants = new Ants(renderer, antLengthPx(fit.tilePx * scale), fit.tilePx);
+  // One colour per colony of the page's match (setup.queens: one entry per colony).
+  const ants = new Ants(renderer, antLengthPx(fit.tilePx * scale), fit.tilePx, head.full!.setup.queens.length);
   const battles = new Battles(renderer, fit.tilePx);
   const places = new PlaceMarkers(fit.tilePx);
   const queens = new QueenHomes(fit.tilePx);
