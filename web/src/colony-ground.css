@@ -1,5 +1,5 @@
 /* A colony's coloured text on a dark ground, where its colour would fall short of 4.5:1 on the panels it sits on.
-   colony-palette.ts sets the page root's data-aw-ground to the colonies that need one ("0", "1") and --aw-ink-ground to
+   colony-palette.ts sets the page root's data-aw-ground to the colonies that need one ("0" to "3") and --aw-ink-ground to
    its colour; the colours themselves are unchanged. The rated colours never need one, so a rated match matches none of
    these rules. The ground is the text's own box, with 2px around it drawn as a shadow, so nothing moves. */
 :root[data-aw-ground~="0"] :is(
@@ -11,7 +11,9 @@
   .aw-colony-name.c1, .aw-mark-colony.c1, .d2-name.c1 .d2-name-text, .d1-name.c1, .d1-fig.c1 > span:not(.d1-sr),
   .d1-mv.c1 > span:not(.d1-sr), .d1-hold-win.c1 .d1-hold-text, .d1-outcome.c1, .d1-result-head.c1, .d1-moment-what.c1,
   .d2-toast[data-colony="1"][data-kind="fall"] .d2-toast-what, .d1-caption[data-colony="1"][data-kind="fall"] .d1-cap-what
-) {
+),
+/* Colonies 2 and 3, only in a four-colony match: the replay marks' names. */
+:root[data-aw-ground~="2"] .aw-mark-colony.c2, :root[data-aw-ground~="3"] .aw-mark-colony.c3 {
   background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }

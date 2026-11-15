@@ -27,7 +27,7 @@ import { BufferImageSource, Container, Geometry, Mesh, Shader, Texture, UniformG
 import { boardLook } from "./board-look.ts";
 import { colonyRgb } from "./colony-palette.ts";
 import { NOISE_GLSL, QUAD_VERTEX, quadGeometry } from "./soil.ts";
-import { TRAIL_RES, type Frame } from "./buffer.ts";
+import { TRAIL_RES, trailTexels, type Frame } from "./buffer.ts";
 import { BOUNDARY_TILES, ROCK_GLSL, WATER_GLSL, WaterMask } from "./terrain.ts";
 
 /** Tiles over which the territory tint fades from the front inward. */
@@ -433,10 +433,7 @@ export class Territory {
     if (this.keyTrail !== frame.trails) {
       const t = frame.trails;
       const d = this.trailData;
-      for (let i = 0, n = t.length / 2; i < n; i++) {
-        d[i * 4] = t[i * 2]! * 255;
-        d[i * 4 + 1] = t[i * 2 + 1]! * 255;
-      }
+      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);
       this.trailTex.source.update();
       this.keyTrail = t;
     }
