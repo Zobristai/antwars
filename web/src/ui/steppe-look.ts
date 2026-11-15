@@ -275,14 +275,15 @@ ${four ? TERRITORY_2D_FOUR : territory2d()}  // Trails: ground compacted by traf
 
 /**
  * Where the colonies meet: a dark seam with each colony's hue glowing on its own side, premultiplied. In a four-colony
- * match, between the two colonies leading at each point, and only where a colony holds ground.
+ * match, between the two colonies leading at each point, and only where two colonies hold ground, so a colony's edge
+ * against unheld ground draws none.
  */
 function front2d(prelude: string, colonies: 2 | 4 = 2): string {
   const four = colonies === 4;
   const read = four
-    ? "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || ca < 0) discard;\n"
+    ? "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || cb < 0) discard;\n"
     : "  vec4 s;\n  float r = ownership(vUV, s);\n  if (s.g < 0.45) discard;\n";
-  const side = four ? "d1Wash(r > 0.5 || cb < 0 ? ca : cb)" : `r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))}`;
+  const side = four ? "d1Wash(r > 0.5 ? ca : cb)" : `r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))}`;
   return /* glsl */ `${prelude}
 ${four ? washes2d() : ""}void main() {
   if (awWaterAt(vUV) > 0.5 || awRockAt(vUV) > 0.5) discard;

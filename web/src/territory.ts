@@ -232,11 +232,14 @@ const LAND_FOUR = /* glsl */ `  vec4 s;
 
 const FILL_FOUR = fillFragment(COMMON_FOUR, LAND_FOUR);
 
-/** The front line of a four-colony match: drawn only where a colony holds ground, between the two leading there. */
+/**
+ * The front line of a four-colony match, between the two colonies leading at each point: drawn only where two colonies
+ * hold ground, so a colony's edge against unheld ground (an eliminated colony's former ground among it) draws none.
+ */
 const FRONT_FOUR = frontFragment(
   COMMON_FOUR,
-  "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || ca < 0) discard;\n",
-  "colonyColour(ca) * clamp(r * 2.0 - 0.5, 0.0, 1.0) + colonyColour(cb < 0 ? ca : cb) * clamp(1.5 - r * 2.0, 0.0, 1.0)",
+  "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || cb < 0) discard;\n",
+  "colonyColour(ca) * clamp(r * 2.0 - 0.5, 0.0, 1.0) + colonyColour(cb) * clamp(1.5 - r * 2.0, 0.0, 1.0)",
 );
 
 export class Territory {

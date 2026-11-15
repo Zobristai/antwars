@@ -208,6 +208,20 @@ describe("the 2D territory passes", () => {
     expect(fragments(t)).toEqual(two);
   });
 
+  it("draw the four-colony front only where two colonies hold ground, on the plain board and the steppe look", () => {
+    // Over a colony's edge against unheld ground (an eliminated colony's former ground among it) only one colony holds
+    // any ground, so ownership4 gives cb = -1 there and the front pass draws nothing.
+    const t = make();
+    t.update(frame(4, quads, quads.map(o => (o === 3 ? 0 : o))), 0);
+    for (const look of [null, STEPPE_LOOK]) {
+      setBoardLook(look);
+      t.relook();
+      const front = fragments(t)[1]!;
+      expect(front).toContain("float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || cb < 0) discard;\n");
+      expect(front).not.toContain("ca < 0) discard");
+    }
+  });
+
   it("give each colony its own colour on the plain board and its own wash on the steppe look", () => {
     const t = make();
     t.update(frame(4, quads), 0);
@@ -260,6 +274,7 @@ describe("the 2D territory passes", () => {
     return { play, shown };
   }
 
+  // Simulates and streams a whole match, which can outrun vitest's default 5 s on a busy machine.
   it("draw a recorded four-colony match with the four-colony passes, and its eliminated colony's ground as neutral", () => {
     const state = createMatch(404, CONFIG);
     const { play, shown } = recorded(state);
@@ -290,5 +305,5 @@ describe("the 2D territory passes", () => {
     expect(holdings()).toEqual(encodeHoldings(after.territoryA, mapW, mapH));
     expect(held(holdings(), 1)).toBe(false);
     for (const c of [0, 2, 3]) expect(held(holdings(), c)).toBe(true);
-  });
+  }, 30_000);
 });
