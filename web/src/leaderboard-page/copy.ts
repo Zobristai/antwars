@@ -4,6 +4,8 @@ export const C = {
   more: "Load more",
   thinkingNotRecorded: "not recorded",
   fastBadge: "Fast",
+  /** A house model whose model is no longer offered (src/rating/houseLabels.ts RETIRED_HOUSE_HANDLES). */
+  retiredBadge: "retired",
   serviceUnavailable: "The public leaderboard is not enabled on this server.",
   modes: "Choose a ranking",
   houseTitle: "Ranked", houseModels: "house models", everyoneTitle: "Ranked", houseModeTitle: "Antwars Model Index",

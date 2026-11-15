@@ -2,7 +2,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Identities } from "../identity/identities.js";
 import type { ColonyId } from "../sim/types.js";
-import { isClassicColonyNames, lobbyColonyNames, SUPERCOLONY_NAMES, type ColonyNamePair } from "../sim/colonyNames.js";
+import { isClassicColonyNames, lobbyColonyNames, quadrantColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, type MapDefinition } from "../sim/config.js";
 import { isQuadrantRotation } from "../sim/mapBoard.js";
 import { quadrantMatchMaps } from "../sim/mapShapes.js";
@@ -486,8 +486,6 @@ function lobbyDocument(id: string, fields: Fields): { kind: LobbyKind; size: Lob
 const QUADRANTS = "quadrants" satisfies QueueMode;
 /** A lobby's colonies: four in a quadrants lobby, two in every other. */
 const colonyCount = (fields: Fields): 2 | 4 => fields.mode === QUADRANTS ? 4 : 2;
-/** A quadrants lobby's four colony names, by colony, from the shared name table. */
-const quadrantNames = (): string[] => SUPERCOLONY_NAMES.map((name) => name.label);
 
 const seatsOf = (id: string, fields: Fields): StoredSeat[] => lobbyDocument(id, fields).seats;
 const capacity = (id: string, fields: Fields) => 2 * lobbyDocument(id, fields).size;
@@ -562,7 +560,7 @@ function storedQuadrantNames(value: string | undefined): string[] {
     const parsed: unknown = JSON.parse(value ?? "");
     if (Array.isArray(parsed) && parsed.length === 4 && parsed.every((name) => typeof name === "string" && name.length > 0)) return parsed;
   } catch { /* the table's names */ }
-  return quadrantNames();
+  return quadrantColonyNames();
 }
 
 /** The lobby fields recording a match's names (Lobby.colonyNames); none when the caller gave none. */
@@ -804,7 +802,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     const fields: Fields = {
       kind: "public", size: String(size), creatorId: colonies[0]![0]!.id, createdAt: String(at), state: "open",
       rated: quadrants ? "false" : "true", slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
-      ...(quadrants ? { colonyNames: JSON.stringify(quadrantNames()) } : {}),
+      ...(quadrants ? { colonyNames: JSON.stringify(quadrantColonyNames()) } : {}),
     };
     // settleSlots writes the starting lobby once, as an update holding or waiting (and
     // notes a taken slot for its wake); the lobby is new, so that write becomes its

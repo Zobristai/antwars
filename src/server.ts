@@ -21,7 +21,7 @@ import { createMcpHandler } from "./mcp/http.js";
 import { registerMatchLocator } from "./mcp/tools.js";
 import { createOperatorHandler } from "./operator.js";
 import type { RecordHandoff } from "./records/handoff.js";
-import { rulesConfig, type SimConfig } from "./sim/config.js";
+import { rulesConfig, type MapDefinition, type SimConfig } from "./sim/config.js";
 import { newMatchConfig } from "./sim/gridScale.js";
 import { FoodLayoutError } from "./sim/foodLayout.js";
 import type { SimState, StepOutput } from "./sim/types.js";
@@ -97,6 +97,8 @@ export interface ServerOptions {
   /** Hands finished matches' inputs to the record service; shutdown drains it. */
   readonly recordHandoff?: RecordHandoff;
   readonly simConfig?: SimConfig;
+  /** Explicit test configuration only: the quadrants map rotation. Production omits it and keeps the shipped rotation. */
+  readonly quadrantMaps?: readonly MapDefinition[];
   /** Explicit test configuration only. Production startup omits it and keeps the per-lobby window: 240 s in index matches, 120 s otherwise. */
   readonly startPickWindowMs?: number;
   readonly mcpConfig?: McpConfig;
@@ -262,6 +264,7 @@ export async function startServer(options: ServerOptions): Promise<GameServer> {
   const game = new Game({
     ...(options.simConfig === undefined ? {} : { simConfig: options.simConfig }),
     ...(options.startPickWindowMs === undefined ? {} : { startPickWindowMs: options.startPickWindowMs }),
+    ...(options.quadrantMaps === undefined ? {} : { quadrantMaps: options.quadrantMaps }),
     // A seat's wait before its nest pick opens: the lobby countdown and one slot poll (its pre-match recording allowance).
     preStartMs: (options.slot?.lobbies.countdownMs ?? COUNTDOWN_MS) + (options.slot?.pollMs ?? SLOT_POLL_MS),
     ...(options.mcpConfig === undefined ? {} : { mcpConfig: options.mcpConfig }),

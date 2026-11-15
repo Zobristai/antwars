@@ -194,7 +194,8 @@ export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLa
   const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? label(seat.modelLabel) : seat.handle ?? "model unknown";
   if (name === UNLISTED_MODEL) return { name, badges: [], quiet: null };
   const fixed = seat.handle === null ? { thinkingLevel: null, serviceTier: null } : houseLabel(seat.handle);
-  const badges = benchmarkLabel({ displayName: "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier }).badges;
+  // A house seat passes its handle, so a retired one carries the retired badge; any other seat passes no name.
+  const badges = benchmarkLabel({ displayName: house ? seat.handle! : "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier }).badges;
   return { name, badges, quiet: null };
 }
 

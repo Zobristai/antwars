@@ -20,7 +20,8 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   "claude-opus-5-5-medium": ["medium", null, "Claude Opus 5.5", ["medium"]],
   "claude-opus-5-5-xhigh": ["xhigh", null, "Claude Opus 5.5", ["xhigh"]],
   "claude-opus-5-5-max": ["max", null, "Claude Opus 5.5", ["max"]],
-  "claude-fable-5-1": ["max", null, "Claude Fable 5.1", ["max"]],
+  // Its model is no longer offered: the retired badge follows its level.
+  "claude-fable-5-1": ["max", null, "Claude Fable 5.1", ["max", "retired"]],
   "claude-fable-5-2": ["max", null, "Claude Fable 5.2", ["max"]],
   "claude-fable-5-2-high": ["high", null, "Claude Fable 5.2", ["high"]],
   "claude-fable-5-2-xhigh": ["xhigh", null, "Claude Fable 5.2", ["xhigh"]],

@@ -185,7 +185,7 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
       return { what: `${queen} — repelled at ${hpText(e.lowHp ?? 0)}`, who: colony };
     }
     case "overrun": {
-      const target = names[(1 - e.colony) as 0 | 1];
+      const target = names[e.target ?? 1 - e.colony];
       if (e.endTick === undefined || e.endTick > now) return { what: `Overrun attempt on the ${target} queen — under way`, who };
       const pct = Math.round((100 * (e.peak ?? 0)) / Math.max(1, e.required ?? 1));
       if (e.outcome === "took") return { what: `Overrun attempt on the ${target} queen — took the queen`, who };
@@ -343,7 +343,7 @@ export function colonyCardLines(ledger: ReturnType<typeof colonyLedger>, stats: 
  */
 export function queensUnderAttack(story: readonly StoryEntry[], now: number): Set<string> {
   const keys = new Set<string>();
-  for (const e of story) if (underWay(e, now)) keys.add(`${e.kind === "overrun" ? 1 - e.colony : e.colony}:${e.queenId ?? 0}`);
+  for (const e of story) if (underWay(e, now)) keys.add(`${e.kind === "overrun" ? e.target ?? 1 - e.colony : e.colony}:${e.queenId ?? 0}`);
   return keys;
 }
 

@@ -2,13 +2,13 @@
 import { randomInt } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { MatchSave } from "../handover/saveStore.js";
-import type { MatchOutcome } from "../lobby/lobbies.js";
+import type { MatchOutcome, MatchResult as LobbyMatchResult } from "../lobby/lobbies.js";
 import type { LobbySeat, SlotAccess } from "../mcp/game.js";
 import { slotActivity } from "../slots/activity.js";
 import { createAdmissionCap } from "../net/admission.js";
 import { KEEP_ALIVE_HOLD_MS, KEEP_ALIVE_MAX, KEEP_ALIVE_PATH, serveKeepAlive, startKeepAlive, type KeepAlive } from "../slots/keepAlive.js";
 import { startSlotRunner, type SlotRunner } from "../slots/slotServer.js";
-import type { ColonyId } from "../sim/types.js";
+import type { ColonyId, MatchResult, SimState } from "../sim/types.js";
 import type { SlotWiring } from "../server.js";
 import type { MatchCore, ServerMode } from "./modes.js";
 
@@ -253,7 +253,8 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
             console.log(`antwar slot ${wiring.slot}: lobby ${save.lobbyId} restored as match ${match.seq} at tick ${save.tick}; waiting to adopt it`);
             return true;
           },
-          colonyNames: () => game.colonyNames(),
+          // A two-colony match's names, which its lobby records; a four-colony lobby's are its own, so none is given.
+          colonyNames: () => { const names = game.colonyNames(); return names.length === 2 ? [names[0]!, names[1]!] : undefined; },
           startResumed() {
             game.setResuming(false);
             const start = game.activateResumedStart();
@@ -361,7 +362,7 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
     matchEnded(result) {
       game.setNextStart(null);
       runner?.ended(result.reason === "abandoned" ? "abandoned" : stopping ? "stopped" : naturalOutcome(result.winner), game.matchThinkingLevels(), game.matchServiceTiers(), game.matchModelLabels(),
-        game.matchAbsentColonies());
+        game.matchAbsentColonies(), fourColonyResult(game.match?.state, result));
     },
     startFailed() {
       // The runner sees no running match and records it not played.
@@ -428,5 +429,15 @@ async function serveLocation(req: IncomingMessage, res: ServerResponse, wiring: 
 
 /** A natural result as the lobby records it. */
 function naturalOutcome(winner: ColonyId | null): MatchOutcome {
-  return winner === null ? "draw" : winner === 0 ? "colony_0_won" : "colony_1_won";
+  return winner === null ? "draw" : winner === 0 ? "colony_0_won" : winner === 1 ? "colony_1_won" : winner === 2 ? "colony_2_won" : "colony_3_won";
+}
+
+/**
+ * A four-colony match's result as its lobby records it: why it ended, and every colony the engine eliminated with its
+ * tick, as the engine recorded them (a winner the engine also eliminated is kept); none for a two-colony match.
+ */
+function fourColonyResult(state: SimState | undefined, result: MatchResult): LobbyMatchResult | undefined {
+  if (state === undefined || state.colonies.length !== 4) return undefined;
+  return { reason: result.reason,
+    eliminations: state.colonies.flatMap(colony => colony.eliminated === undefined ? [] : [{ colony: colony.id, tick: colony.eliminated.tick }]) };
 }
