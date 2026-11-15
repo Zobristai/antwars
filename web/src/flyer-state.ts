@@ -5,7 +5,7 @@ import type { Frame } from "./buffer.ts";
  * Frame ant i's flyer state, or null for a non-flyer. frame.ants is the sampled message's ants, ids ascending: frame ant i is
  * message ant i in Full view, but a one-colony view filters the frame's arrays and keeps frame.ants whole, so match by id.
  */
-export function flyerOf(frame: Frame, i: number): StreamFlyer | null {
+export function flyerOf(frame: Pick<Frame, "ants" | "id">, i: number): StreamFlyer | null {
   const ants = frame.ants, flyers = ants?.flyers;
   if (!ants || !flyers) return null;
   const id = frame.id[i]!;

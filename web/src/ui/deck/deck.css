@@ -159,6 +159,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-seats { font-weight: 400; color: var(--aw-ink-3); }
 /* The economy: a cell per measure, its label over its figure. */
 .d1-econ { flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--d1-hair); }
+.d1-econ.has-flyers { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 .d1-cell { display: grid; grid-template-rows: 14px 20px; row-gap: 1px; min-width: 0; }
 .d1-ml { min-width: 0; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1-mv { display: flex; align-items: center; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -477,7 +478,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-below { grid-column: 1; grid-row: 4; border-radius: 0; box-shadow: none; }
   .d1-deck { padding: 8px 8px 0; }
   /* The economy in two rows of cells, so each figure keeps its width. */
-  .d1-econ { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; }
+  .d1-econ, .d1-econ.has-flyers { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; }
   /* Each agent row a 44 px target. */
   .d1-agent { min-height: 44px; padding: 4px 4px 4px 10px; column-gap: 8px; border-radius: 0; border-bottom: 1px solid var(--d1-hair); font-size: 12px; }
   .d1-title { font-size: 13px; }

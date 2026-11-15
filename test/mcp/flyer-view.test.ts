@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { SUB } from "../../src/sim/config.js";
 import { isPassable } from "../../src/sim/terrain.js";
-import { expandCells, type DenseCells, type ViewFlyer } from "../../src/sim/view.js";
+import { CELL_ENCODING, FLYER_CELL_ENCODING, denseCells, expandCells, type DenseCells, type ViewCell, type ViewFlyer } from "../../src/sim/view.js";
 import type { Ant, SimState } from "../../src/sim/types.js";
 import { startHarness, type CallResult, type TestAgent } from "./harness.js";
 import { COLONY_NAMES } from "../../src/sim/config.js";
@@ -27,14 +27,36 @@ function landAway(state: SimState, from: Tile, apart: number): Tile {
   throw new Error("no land away");
 }
 
-/** One observe per tick: the processed tick it describes, the flyer's reading, and its position after that tick. */
-interface Reading { readonly tick: number; readonly flyer: ViewFlyer | undefined; readonly x: number; readonly y: number; readonly airborne: boolean; readonly reply: CallResult }
+type ShownAnt = ViewCell["ants"][number] & Tile;
+
+/** Every ant the reply's cells show, with its tile, decoded from the served table; the reply holds the whole snapshot. */
+function shownAnts(reply: CallResult): Map<number, ShownAnt> {
+  expect(reply.data.view.cellsMore, "one cell page").toBe(false);
+  expect(reply.data.view.cells.encoding).toBe(FLYER_CELL_ENCODING);
+  const shown = new Map<number, ShownAnt>();
+  for (const cell of expandCells(reply.data.view.cells as DenseCells)) for (const ant of cell.ants) shown.set(ant.antId, { ...ant, tileX: cell.tileX, tileY: cell.tileY });
+  return shown;
+}
+
+/** The ant's record in the served cell data, exactly as sent. */
+function servedRecord(reply: CallResult, antId: number): string | undefined {
+  const data = (reply.data.view.cells as DenseCells).data;
+  for (const token of data === "" ? [] : data.split(";")) {
+    const ants = token.split("*")[0]!.split(":")[1];
+    for (const record of ants === undefined ? [] : ants.split("/")) if (record.split(".")[0] === antId.toString(36)) return record;
+  }
+  return undefined;
+}
+
+/** One observe per tick: the processed tick it describes, the flyer's reading, its cell entry, and its position after that tick. */
+interface Reading { readonly tick: number; readonly flyer: ViewFlyer | undefined; readonly shown: ShownAnt | undefined; readonly x: number; readonly y: number; readonly airborne: boolean; readonly reply: CallResult }
 
 async function readTick(s: FlyerSeat, agent: TestAgent, antId: number): Promise<Reading> {
   const reply = await agent.call("observe");
   expect(reply.isError, reply.text).toBe(false);
   const ant = antOf(s.state(), antId)!;
-  return { tick: reply.data.view.tick - 1, flyer: viewFlyers(reply).find(f => f.antId === antId), x: ant.x, y: ant.y, airborne: ant.air !== undefined, reply };
+  return { tick: reply.data.view.tick - 1, flyer: viewFlyers(reply).find(f => f.antId === antId), shown: shownAnts(reply).get(antId),
+    x: ant.x, y: ant.y, airborne: ant.air !== undefined, reply };
 }
 
 async function readUntil(s: FlyerSeat, antId: number, done: (r: Reading) => boolean, limit = 400): Promise<Reading[]> {
@@ -50,9 +72,11 @@ async function readUntil(s: FlyerSeat, antId: number, done: (r: Reading) => bool
 const eventTick = (s: FlyerSeat, type: "flyer_takeoff" | "flyer_landing", antId: number, after = -1): number =>
   s.events.find(e => e.type === type && e.antId === antId && e.tick > after)!.tick;
 
-/** Every reading agrees with the motion: hovering stands still over the tile it hovers on, never flying while grounded. */
+/** Every reading agrees with the motion: hovering stands still over the tile it hovers on, never flying while grounded.
+ * The flyer's own cell entry marks it a flyer in the same state, a locked-out one reading grounded. */
 function consistent(readings: readonly Reading[]): void {
   for (const [i, r] of readings.entries()) {
+    expect(r.shown?.flyer, `tick ${r.tick}`).toBe(r.flyer?.state === "lockedOut" ? "grounded" : r.flyer?.state);
     if (r.flyer?.state === "hovering") expect([r.x, r.y], `tick ${r.tick}`).toEqual([centre(r.flyer.destTileX!), centre(r.flyer.destTileY!)]);
     if (r.flyer?.state === "hovering" && readings[i - 1]?.flyer?.state === "hovering") expect([r.x, r.y], `tick ${r.tick}`).toEqual([readings[i - 1]!.x, readings[i - 1]!.y]);
     if (r.flyer?.state === "flying" || r.flyer?.state === "hovering") expect(r.airborne, `tick ${r.tick}`).toBe(true);
@@ -154,43 +178,94 @@ describe.each(SEAT_MODES)("observe shows the agent's flyers, $label seat", ({ mo
     consistent(readings);
   }, 120_000);
 
-  it("shows an enemy flyer, airborne or landed, whenever its tile is in the colony's sight", async () => {
+  it("shows a sighted enemy flyer as a flyer, flying, hovering or grounded, and nothing of its destination, marks or lockout", async () => {
     let enemyFlyer = -1, enemyHome: Tile = { tileX: 0, tileY: 0 };
     seat = await seatFlyers(mode, state => { [enemyHome] = seenLand(state, 1, 1) as [Tile]; enemyFlyer = placeFlyer(state, 1, enemyHome).id; });
-    const hover = seenLand(seat.state(), 1, 400).find(t => Math.hypot(t.tileX - enemyHome.tileX, t.tileY - enemyHome.tileY) >= 4)!;
-    const laid = await seat.enemy.call("count_mark", { verb: "GATHER", count: 1, caste: "flyer", ...at(hover) });
-    expect(laid.isError, laid.text).toBe(false);
-    const cellAnts = async (scout: Tile | null): Promise<{ ids: Set<number>; airborne: boolean }> => {
-      const state = seat!.state();
-      if (scout !== null) scoutAt(state, 0, scout);
-      let reply: CallResult = await seat!.agent.call("observe");
-      const ids = new Set<number>();
-      for (;;) {
-        expect(reply.isError, reply.text).toBe(false);
-        for (const cell of expandCells(reply.data.view.cells as DenseCells)) for (const ant of cell.ants) ids.add(ant.antId);
-        if (reply.data.view.cellsMore !== true) break;
-        reply = await seat!.agent.call("observe", { cellsCursor: reply.data.view.cellsCursor });
-      }
-      return { ids, airborne: antOf(seat!.state(), enemyFlyer)!.air !== undefined };
+    const s = seat, sight = s.state().config.sightTiles, lockout = s.state().config.flyers!.lockoutTicks;
+    const distance = (a: Tile, b: Tile) => Math.hypot(a.tileX - b.tileX, a.tileY - b.tileY);
+    const enemyLand = seenLand(s.state(), 1, 400);
+    // A hover tile far enough for a flight of several ticks; one scout between the two ends sees the whole flight.
+    const hover = enemyLand.find(t => distance(t, enemyHome) >= sight / 2 && distance(t, enemyHome) <= sight - 2)!;
+    const middle = { tileX: (hover.tileX + enemyHome.tileX) / 2, tileY: (hover.tileY + enemyHome.tileY) / 2 };
+    const scout = enemyLand.toSorted((a, b) => distance(a, middle) - distance(b, middle))[0]!;
+    /** One observe by colony 0, with a fresh scout on the scout tile when asked (free ants walk off). */
+    const sighting = async (scouted: boolean) => {
+      if (scouted) scoutAt(s.state(), 0, scout);
+      const reply = await s.agent.call("observe");
+      expect(reply.isError, reply.text).toBe(false);
+      expect(viewFlyers(reply).some(f => f.antId === enemyFlyer)).toBe(false);
+      return { tick: reply.data.view.tick - 1, reply, shown: shownAnts(reply).get(enemyFlyer), record: servedRecord(reply, enemyFlyer) };
     };
-    seat.h.advance(5);
-    const nearLand = seenLand(seat.state(), 1, 400).find(t => { const d = Math.hypot(t.tileX - hover.tileX, t.tileY - hover.tileY); return d >= 2 && d <= 4; })!;
-    const airborne = await cellAnts(nearLand);
-    expect(airborne.airborne).toBe(true);
-    expect(airborne.ids.has(enemyFlyer)).toBe(true);
-    nextCommand(seat);
-    const removed = await seat.enemy.call("count_mark", { verb: "REMOVE", markId: laid.data.mark.markId });
+    const unseenAtHome = await sighting(false);
+    expect(unseenAtHome.shown).toBeUndefined();
+    expect(unseenAtHome.record).toBeUndefined();
+
+    const laid = await s.enemy.call("count_mark", { verb: "GATHER", count: 1, caste: "flyer", ...at(hover) });
+    expect(laid.isError, laid.text).toBe(false);
+    const aloft: Awaited<ReturnType<typeof sighting>>[] = [];
+    while (aloft.filter(r => r.shown?.flyer === "hovering").length < 5) {
+      expect(aloft.length, "reading limit").toBeLessThan(200);
+      aloft.push(await sighting(true));
+    }
+    const takeOff = eventTick(s, "flyer_takeoff", enemyFlyer);
+    const firstHover = aloft.find(r => r.shown?.flyer === "hovering")!.tick;
+    for (const [i, r] of aloft.entries()) {
+      expect(r.shown, `tick ${r.tick}`).toMatchObject({ colony: 1, caste: "worker", flyer: r.tick < takeOff ? "grounded" : r.tick < firstHover ? "flying" : "hovering" });
+      // Only its id, HP, colony, caste and state letter: no destination, mark or take-off tick.
+      expect(r.record, `tick ${r.tick}`).toMatch(/^[0-9a-z]+\.[0-9a-z]+\.[gfh]$/);
+      if (r.shown!.flyer === "hovering") expect(at(r.shown!), `tick ${r.tick}`).toEqual(at(hover));
+      if (r.shown!.flyer === "hovering" && aloft[i - 1]?.shown?.flyer === "hovering") expect(r.record).toBe(aloft[i - 1]!.record);
+    }
+    const flying = aloft.filter(r => r.shown!.flyer === "flying");
+    expect(flying.length).toBeGreaterThan(1);
+    expect(new Set(flying.map(r => `${r.shown!.tileX},${r.shown!.tileY}`)).size).toBeGreaterThan(1);
+
+    // REMOVE lands it under itself; through its lockout and after, it is served the same, grounded on the hover tile.
+    nextCommand(s);
+    const removed = await s.enemy.call("count_mark", { verb: "REMOVE", markId: laid.data.mark.markId });
     expect(removed.isError, removed.text).toBe(false);
-    for (let i = 0; i < 100 && antOf(seat.state(), enemyFlyer)!.air !== undefined; i++) seat.h.advance(1);
-    const landed = await cellAnts(nearLand);
-    expect(landed.airborne).toBe(false);
-    expect(landed.ids.has(enemyFlyer)).toBe(true);
-    // Out of sight: no colony ant within sight of its tile, so it is not shown.
-    for (const ant of seat.state().ants) if (ant.colony === 0 && Math.hypot(ant.x / SUB - hover.tileX, ant.y / SUB - hover.tileY) <= seat.state().config.sightTiles + 2) ant.hp = 0;
-    seat.h.advance(1);
-    const unseen = await cellAnts(null);
-    expect(unseen.ids.has(enemyFlyer)).toBe(false);
+    const landing = eventTick(s, "flyer_landing", enemyFlyer);
+    const landed: Awaited<ReturnType<typeof sighting>>[] = [];
+    while (landed.length === 0 || landed.at(-1)!.tick < landing + lockout + 3) landed.push(await sighting(true));
+    for (const r of landed) expect(r.shown, `tick ${r.tick}`).toMatchObject({ colony: 1, caste: "worker", flyer: "grounded", ...at(hover) });
+    expect(landed.some(r => r.tick < landing + lockout) && landed.some(r => r.tick >= landing + lockout)).toBe(true);
+    expect(new Set(landed.map(r => r.record))).toEqual(new Set([landed[0]!.record]));
+
+    // Out of sight: no colony ant within sight of its tile, so it is not shown, landed or airborne.
+    for (const ant of s.state().ants) if (ant.colony === 0 && Math.hypot(ant.x / SUB - hover.tileX, ant.y / SUB - hover.tileY) <= sight + 2) ant.hp = 0;
+    s.h.advance(1);
+    const unseenLanded = await sighting(false);
+    expect(unseenLanded.shown).toBeUndefined();
+    expect(unseenLanded.record).toBeUndefined();
+    nextCommand(s);
+    const away = await s.enemy.call("count_mark", { verb: "GATHER", count: 1, caste: "flyer", ...at(enemyHome) });
+    expect(away.isError, away.text).toBe(false);
+    s.h.advance(2);
+    const unseenAloft = await sighting(false);
+    expect(eventTick(s, "flyer_takeoff", enemyFlyer, landing)).toBeLessThanOrEqual(unseenAloft.tick);
+    expect(s.events.some(e => e.type === "flyer_landing" && e.antId === enemyFlyer && e.tick > landing)).toBe(false);
+    expect(unseenAloft.shown).toBeUndefined();
+    expect(unseenAloft.record).toBeUndefined();
   }, 120_000);
+});
+
+describe("the cell table's flyer field", () => {
+  it("carries each flyer's state in the flyer grammar and decodes it back; other tables keep today's grammar", () => {
+    const cells: ViewCell[] = [
+      { tileX: 3, tileY: 1, food: 0, ants: [{ antId: 7, colony: 1, hp: 2000, caste: "worker", flyer: "hovering" }, { antId: 9, colony: 0, hp: 2000, caste: "worker" }] },
+      { tileX: 5, tileY: 2, food: 2, ants: [{ antId: 11, colony: 0, hp: 1500, caste: "worker", flyer: "flying" }, { antId: 12, colony: 1, hp: 2000, caste: "worker", flyer: "grounded" }] },
+    ];
+    const table = denseCells(cells, 64, 48, true);
+    expect(table.encoding).toBe(FLYER_CELL_ENCODING);
+    expect(table.encoding.startsWith(CELL_ENCODING)).toBe(true);
+    expect(table.data.split(/[:/;]/).filter(part => /\.[gfh]$/.test(part))).toEqual([`7.${(2000 * 6 + 3).toString(36)}.h`, `${(11).toString(36)}.${(1500 * 6 + 2).toString(36)}.f`, `${(12).toString(36)}.${(2000 * 6 + 3).toString(36)}.g`]);
+    expect(expandCells(table)).toEqual(cells);
+    const plain = cells.map(cell => ({ ...cell, ants: cell.ants.map(({ flyer: _flyer, ...ant }) => ant) }));
+    expect(denseCells(plain, 64, 48)).toEqual({ ...denseCells(plain, 64, 48, true), encoding: CELL_ENCODING });
+    const one = { width: 64, height: 48, encoding: FLYER_CELL_ENCODING, foodRadix: 1 };
+    expect(expandCells({ ...one, data: "0:1.8.h" })).toEqual([{ tileX: 0, tileY: 0, food: 0, ants: [{ antId: 1, colony: 0, hp: 1, caste: "worker", flyer: "hovering" }] }]);
+    for (const data of ["0:1.8.l", "0:1.8.h.3", "0:1.8."]) expect(() => expandCells({ ...one, data }), data).toThrow(RangeError);
+  });
 });
 
 describe("view.flyers at the largest ant cap", () => {

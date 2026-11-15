@@ -313,8 +313,9 @@ reply decoded, with nothing cut:
 - `cells`: every tile the reply carries, per row `y<row>:` then tiles by x.
   `x-x2` is a run of equal food-only tiles, `f<n>` food, `Q<own|enemy><hp>` a
   queen, `:` then the tile's ants, comma-separated as id + caste + hp (`w`
-  worker, `s` soldier, `a` no caste; lowercase own, UPPERCASE enemy; hp in HP).
-  Example: `y48: 10-14f3 16Qown30:7w4,8S2.5`;
+  worker, `s` soldier, `f` flyer, `a` no caste; lowercase own, UPPERCASE enemy;
+  hp in HP). A flyer, own or enemy, adds its state: `(grounded)`, `(flying)` or
+  `(hovering)`. Example: `y48: 10-14f3 16Qown30:7w4,8S2.5,9F2(hovering)`;
 - `territory own`: the seat's own tiles as x ranges per row (`y48: 0-25 30`).
 
 When the reply pages its cells, the `cells` line says `MORE CELLS FOLLOW` and

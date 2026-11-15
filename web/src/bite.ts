@@ -22,15 +22,26 @@ export class EngagementTracker {
   private pairs = new Map<number, Engagement>();
   private lastTick: number | null = null;
   private castes = new Map<number, number>();
+  /** The ants airborne (flying or hovering) in the previous message. */
+  private aloft = new Set<number>();
 
   observe(m: StreamMessage, reach = 1): readonly Engagement[] {
     if (m.full || this.lastTick === null || m.tick !== this.lastTick + 1) {
-      this.pairs.clear(); this.castes.clear();
+      this.pairs.clear(); this.castes.clear(); this.aloft.clear();
     }
     this.lastTick = m.tick;
     const index = new Map<number, number>();
     for (let i = 0; i < m.ants.count; i++) index.set(m.ants.id[i]!, i);
     const dead = new Set(m.events.filter((e) => e.kind === "death").map((e) => e.antId));
+    // The air is a separate fight: an airborne flyer bites only an airborne enemy, a ground ant only a ground one, so a
+    // pair of which only one fighter has taken off or landed has stopped biting. Flights change before the tick's bites,
+    // so each ant fought where the message leaves it; one that died this tick is gone from it, and fought where it last
+    // was unless this tick took it off or landed it.
+    const flyers = m.ants.flyers;
+    const flown = new Map<number, boolean>();
+    for (const e of m.events) if (e.kind === "takeoff" || e.kind === "landing") flown.set(e.antId, e.kind === "takeoff");
+    const airborne = (id: number, i: number | undefined) =>
+      i !== undefined ? isAirborne(flyers?.[i] ?? null) : flown.get(id) ?? this.aloft.has(id);
     const fresh = new Set<number>();
     for (const e of m.events) if (e.kind === "fight") {
       fresh.add(e.antId);
@@ -41,20 +52,23 @@ export class EngagementTracker {
       const a = index.get(pair.a), b = index.get(pair.b);
       if (pair.a === pair.b) { this.pairs.delete(id); continue; }
       const terminal = dead.has(pair.a) || dead.has(pair.b);
+      const apart = airborne(pair.a, a) !== airborne(pair.b, b);
       if (terminal) {
         // Live attackers retain the authorized fixed-interval killing hit.
         // Dead attackers require this tick's explicit fight; previous corpse
         // coordinates do NOT prove a dying ant's final movement or attack.
-        if ((a !== undefined && dead.has(pair.b)) || (dead.has(pair.a) && fresh.has(pair.a) && (b !== undefined || dead.has(pair.b)))) {
+        if (!apart && ((a !== undefined && dead.has(pair.b)) || (dead.has(pair.a) && fresh.has(pair.a) && (b !== undefined || dead.has(pair.b))))) {
           shown.push({ ...pair, terminalTick: m.tick, caste: a === undefined ? this.castes.get(id) ?? 0 : m.ants.caste?.[a] ?? 0 });
         }
         this.pairs.delete(id);
-      } else if (a === undefined || b === undefined || m.ants.colony[a] === m.ants.colony[b] ||
+      } else if (a === undefined || b === undefined || m.ants.colony[a] === m.ants.colony[b] || apart ||
         !adjacentWithSlack(m.ants.x[a]!, m.ants.y[a]!, m.ants.x[b]!, m.ants.y[b]!, reach)) {
         this.pairs.delete(id);
       } else shown.push(pair);
     }
     this.castes = new Map(Array.from(index, ([id, i]) => [id, m.ants.caste?.[i] ?? 0]));
+    this.aloft.clear();
+    if (flyers) for (let i = 0; i < m.ants.count; i++) if (isAirborne(flyers[i] ?? null)) this.aloft.add(m.ants.id[i]!);
     return shown;
   }
 }

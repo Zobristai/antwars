@@ -6,6 +6,7 @@
 // Conformance fixtures every implementation should pass: test/fixtures/seat-codec/conformance.json
 
 const MAX_BOARD_SIDE_TILES = 256;
+const SIGHTED_FLYER_CODES = {"grounded":"g","flying":"f","hovering":"h"};
 
 export function expandCells(table) {
   if (table.data === "") return [];
@@ -16,6 +17,7 @@ export function expandCells(table) {
     return parsed;
   };
   if (!Number.isSafeInteger(table.foodRadix) || table.foodRadix < 1) throw new RangeError("Invalid food radix");
+  const flyerStates = new Map(Object.entries(SIGHTED_FLYER_CODES).map(([state, code]) => [code, state]));
   const cells = [];
   let previousIndex = 0;
   for (const row of table.data.split(";")) {
@@ -26,10 +28,13 @@ export function expandCells(table) {
     const [packedTile, queen, queenHp] = header.split(",").map(n);
     const delta = Math.floor(packedTile / table.foodRadix), food = packedTile - delta * table.foodRadix;
     const ants = body === "" ? [] : body.split("/").map(record => {
-      const [antId, packed] = record.split(".").map(n);
+      const [antIdText, packedText, flyerCode, ...extra] = record.split(".");
+      const [antId, packed] = [n(antIdText ?? ""), n(packedText ?? "")];
+      const flyer = flyerCode === undefined ? undefined : flyerStates.get(flyerCode);
+      if (extra.length > 0 || (flyerCode !== undefined && flyer === undefined)) throw new RangeError("Invalid cell ant record");
       const hp = Math.floor(packed / 6), kind = packed % 6;
       return { antId, hp, colony: (kind % 2),
-        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") }) };
+        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") }), ...(flyer === undefined ? {} : { flyer }) };
     });
     for (let i = 0; i < count; i++) {
       const index = previousIndex + delta;

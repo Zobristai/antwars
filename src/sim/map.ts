@@ -620,13 +620,22 @@ export function forEachNear(
   }
 }
 
-/** Whether any enemy of this ant stands within combat reach (adjacent or same tile). */
+/**
+ * Whether an enemy this ant can fight stands within combat reach (adjacent or same tile). The air is a separate
+ * fight: an airborne flyer is in reach only of airborne enemies, and a ground ant only of ground ones.
+ */
 export function hasAdjacentEnemy(state: SimState, grid: Grid, ant: Ant): boolean {
+  const tx = Math.floor(ant.x / SUB), ty = Math.floor(ant.y / SUB), r = gridScaleOf(state.config);
   const counts = gridColonyCounts(grid);
-  if (counts !== undefined) return !noneNear(state, counts[ant.colony === 0 ? 1 : 0], Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config));
+  if (counts !== undefined) {
+    if (noneNear(state, counts[ant.colony === 0 ? 1 : 0], tx, ty, r)) return false;
+    // Without flyers every ant is on the ground, so any enemy in reach is one it fights.
+    if (state.config.flyers === undefined) return true;
+  }
+  const airborne = ant.air !== undefined;
   let found = false;
-  forEachNear(state, grid, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config), (other) => {
-    if (other.colony !== ant.colony) found = true;
+  forEachNear(state, grid, tx, ty, r, (other) => {
+    if (other.colony !== ant.colony && (other.air !== undefined) === airborne) found = true;
   });
   return found;
 }

@@ -234,6 +234,14 @@ export function flyFlyers(state: SimState, marks: ReadonlyMap<number, Mark>, cha
   return flown;
 }
 
+/**
+ * The state as ground planning reads it: without the airborne flyers, which no ground ant can bite or be bitten by,
+ * so none is a ground ant's contact, pursuit target or strength. The same state when no flyer is airborne.
+ */
+export function groundView(state: SimState): SimState {
+  return state.ants.some((ant) => ant.air !== undefined) ? { ...state, ants: state.ants.filter((ant) => ant.air === undefined) } : state;
+}
+
 /** Take the given ants (in state.ants order) out of state.ants for the ground movement phase. */
 export function liftAnts(state: SimState, lifted: readonly Ant[]): void {
   if (lifted.length === 0) return;

@@ -106,7 +106,7 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
   // Built inside result() so the page-fit search measures the list with its cells.
   const listsEnemyQueens = usesCompactAgentText(config);
   const result = () => cellPage(payload({ ...extra, view: { ...compact, ...markTables,
-    cells: denseCells(snapshot.cells.slice(offset, end), config.mapWidth, config.mapHeight), ...cellContinuation(snapshot, end),
+    cells: denseCells(snapshot.cells.slice(offset, end), config.mapWidth, config.mapHeight, config.flyers !== undefined), ...cellContinuation(snapshot, end),
     ...(listsEnemyQueens ? { enemyQueens: enemyQueensOf(snapshot.cells.slice(offset, end), view.colony) } : {}),
     events: indices.toSorted((a, b) => a - b).map(i => since === undefined ? currentEvent(history[i]!, i) : publicEvent(history[i]!)),
     eventsMode: since === undefined ? "current" : "history",

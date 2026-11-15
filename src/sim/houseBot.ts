@@ -465,7 +465,8 @@ function sameIntent(a: HouseIntent, b: HouseIntent): boolean {
 /** Validate only a competing choice; ordinary same-target ticks need no whole-ant scan. */
 function liveIntent(state: SimState, ant: Ant, intent: HouseIntent): HouseIntent | null {
   if (intent.kind === "chase" || intent.kind === "pursue") {
-    const enemy = state.ants.find(other => other.id === intent.targetId && other.colony !== ant.colony && other.hp > 0);
+    // A target that has taken off is out of every ground ant's reach: the hold lapses.
+    const enemy = state.ants.find(other => other.id === intent.targetId && other.colony !== ant.colony && other.hp > 0 && other.air === undefined);
     return enemy === undefined ? null : { ...intent, x: enemy.x, y: enemy.y };
   }
   if ("homeId" in intent && !activeQueens(state.colonies[ant.colony]).some(q => q.id === intent.homeId)) return null;

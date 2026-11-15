@@ -18,7 +18,7 @@ import {
   type InputOutcome,
 } from "./agents.js";
 import { resolveCombat } from "./combat.js";
-import { awaitsFlight, flyFlyers, freeFlyerDirection, heldFlyers, keepOnHoldTiles, liftAnts, mergeAnts } from "./flyers.js";
+import { awaitsFlight, flyFlyers, freeFlyerDirection, groundView, heldFlyers, keepOnHoldTiles, liftAnts, mergeAnts } from "./flyers.js";
 import { foodTiles, hatch, pickupAndDeliver, regrow, retargetClusterForager } from "./forage.js";
 import { enforceQueenGuardCap, houseDirection, houseFounding, localDirection, localSoldierAssignments, rebalanceRoles, rememberWorkerGuards, type HouseFoundingObserver } from "./houseBot.js";
 import { buildGrid, cloneState, GridTracker, type Grid } from "./map.js";
@@ -40,7 +40,8 @@ function housePhase(state: SimState, gridOf: (state: SimState) => Grid = buildGr
   // 1. Original house phase, before inputs change the world. Never reorder it
   // for active seats: roles, food targets and all later randomness stay stable.
   rebalanceRoles(state);
-  const startGrid = gridOf(state);
+  // Ground planning (contact, pursuit and strength) reads the ants on the ground; sight and combat read them all.
+  const startGrid = gridOf(groundView(state));
   const food = foodTiles(state);
   const house = new Map<number, Vec>();
   const foraging = new Set<number>();
@@ -327,7 +328,11 @@ function tickInPlace(
   // Flyers take off, fly, hover and land here, before any ground ant moves and before combat.
   // A flyer in the air this tick has already moved: it sits out ground directions, soft
   // separation, point rests and local arrival, and is back in state.ants before combat.
+  const flightEvents = events.length;
   const flown = config.flyers === undefined ? [] : flyFlyers(state, markById, patrol, tick, events);
+  // The flight pass pushes an event only for a take-off or a landing. After one, the claimed ants below plan on
+  // the ground as the flight left it: a flyer that landed is a ground ant they fight, one that took off is not.
+  const claimGrid = events.length === flightEvents ? startGrid : liveGrid(groundView(state));
   for (const ant of flown) {
     foraging.delete(ant.id);
     if (softMode) clearLocalGoal(state, ant);
@@ -347,7 +352,7 @@ function tickInPlace(
         dir = ZERO;
         foraging.delete(ant.id);
       } else {
-        const claimed = countMarkDirection(state, startGrid, food, ant, mark, patrol);
+        const claimed = countMarkDirection(state, claimGrid, food, ant, mark, patrol);
         dir = claimed.dir;
         if (claimed.foraging) foraging.add(ant.id);
         else foraging.delete(ant.id);

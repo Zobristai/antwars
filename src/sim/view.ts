@@ -9,12 +9,16 @@ import { terrainView } from "./terrain.js";
 import { flyerState, type FlyerStateName } from "./flyers.js";
 import type { Agent, Ant, Caste, ColonyId, CountMarkCaste, CountMarkVerb, MatchResult, Order, QueenBrood, SimEvent, SimState, VisibleEvent, Word } from "./types.js";
 
+/** A flyer as any colony that sees its tile sees it: in the air flying or hovering, otherwise grounded. Its destination,
+ * marks and lockout are not part of it. */
+export type SightedFlyerState = "grounded" | "flying" | "hovering";
+
 export interface ViewCell {
   readonly tileX: number;
   readonly tileY: number;
   readonly food: number;
-  /** caste is present only with the rules switch on. */
-  readonly ants: readonly { readonly antId: number; readonly colony: ColonyId; readonly hp: number; readonly caste?: Caste }[];
+  /** caste is present only with the rules switch on; flyer only for a flyer (rules with flyers), own or enemy. */
+  readonly ants: readonly { readonly antId: number; readonly colony: ColonyId; readonly hp: number; readonly caste?: Caste; readonly flyer?: SightedFlyerState }[];
   /** Owning colony of the queen on this tile (0/1), not a queen id; equals AgentView.colony for an own queen. */
   readonly queen?: ColonyId;
   /** That queen's HP in milli-HP. */
@@ -218,7 +222,7 @@ export function createVisibility(state: SimState): VisibilityContext {
       const food = state.food[index] ?? 0, occupants = grid.get(index), queen = queens.get(index);
       if (food === 0 && (occupants?.length ?? 0) === 0 && queen === undefined) continue;
       cells.push({ tileX: index % config.mapWidth, tileY: Math.floor(index / config.mapWidth), food,
-        ants: (occupants ?? []).map(a => ({ antId: a.id, colony: a.colony, hp: a.hp, ...casteOf(a) })),
+        ants: (occupants ?? []).map(a => ({ antId: a.id, colony: a.colony, hp: a.hp, ...casteOf(a), ...sightedFlyer(a, state.tick - 1) })),
         ...(queen === undefined ? {} : { queen: queen.colony, ...(queen.hp === undefined ? {} : { queenHp: queen.hp }) }) });
     }
     byColony.set(colony, cells);
@@ -326,6 +330,12 @@ function orderStatus(state: SimState, grid: Grid, agent: Agent, squad: readonly 
 /** An ant's caste field: set only with the caste switch on. */
 function casteOf(ant: Ant): { caste?: Caste } {
   return ant.caste === undefined ? {} : { caste: ant.caste };
+}
+
+/** A flyer's field in the cells any colony sees: a locked-out flyer reads grounded. Nothing for any other ant. */
+function sightedFlyer(ant: Ant, processedTick: number): { flyer?: SightedFlyerState } {
+  const flyer = flyerState(ant, processedTick);
+  return flyer === null ? {} : { flyer: flyer.state === "lockedOut" ? "grounded" : flyer.state };
 }
 
 /**
@@ -450,12 +460,19 @@ export interface DenseCells {
 
 export const CELL_ENCODING = "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.";
 
+/** The cell grammar where the match has flyers: a flyer's ant record carries its sighted state. */
+export const FLYER_CELL_ENCODING = `${CELL_ENCODING} A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.`;
+
+/** Each sighted flyer state's letter in the cell table; the seat codec generator copies it beside expandCells. */
+export const SIGHTED_FLYER_CODES: Readonly<Record<SightedFlyerState, string>> = { grounded: "g", flying: "f", hovering: "h" };
+
 function base36(value: number): string {
   if (!Number.isSafeInteger(value)) throw new RangeError("Cell integer exceeds the safe integer range");
   return value.toString(36);
 }
 
-export function denseCells(cells: readonly ViewCell[], width: number, height: number): DenseCells {
+/** withFlyers: the match has flyers, so the table states the flyer grammar. */
+export function denseCells(cells: readonly ViewCell[], width: number, height: number, withFlyers = false): DenseCells {
   const foodRadix = cells.reduce((max, cell) => Math.max(max, cell.food + 1), 1);
   const runs: { token: string; count: number; foodOnly: boolean }[] = [];
   let previousIndex = 0;
@@ -465,14 +482,15 @@ export function denseCells(cells: readonly ViewCell[], width: number, height: nu
       ...(cell.queen === undefined ? [] : [base36(cell.queen), ...(cell.queenHp === undefined ? [] : [base36(cell.queenHp)])])].join(",");
     previousIndex = index;
     const ants = cell.ants.map(ant => [ant.antId, ant.hp * 6 +
-      ant.colony + (ant.caste === undefined ? 0 : ant.caste === "worker" ? 2 : 4)].map(base36).join(".")).join("/");
+      ant.colony + (ant.caste === undefined ? 0 : ant.caste === "worker" ? 2 : 4)].map(base36)
+      .concat(ant.flyer === undefined ? [] : [SIGHTED_FLYER_CODES[ant.flyer]]).join(".")).join("/");
     const token = ants === "" ? header : `${header}:${ants}`;
     const foodOnly = cell.queen === undefined && ants === "";
     const last = runs.at(-1);
     if (foodOnly && last?.foodOnly && last.token === token) last.count += 1;
     else runs.push({ token, count: 1, foodOnly });
   }
-  return { width, height, encoding: CELL_ENCODING, foodRadix,
+  return { width, height, encoding: withFlyers ? FLYER_CELL_ENCODING : CELL_ENCODING, foodRadix,
     data: runs.map(run => run.count === 1 ? run.token : `${run.token}*${base36(run.count)}`).join(";") };
 }
 
@@ -486,6 +504,7 @@ export function expandCells(table: DenseCells): ViewCell[] {
     return parsed;
   };
   if (!Number.isSafeInteger(table.foodRadix) || table.foodRadix < 1) throw new RangeError("Invalid food radix");
+  const flyerStates = new Map(Object.entries(SIGHTED_FLYER_CODES).map(([state, code]) => [code, state as SightedFlyerState]));
   const cells: ViewCell[] = [];
   let previousIndex = 0;
   for (const row of table.data.split(";")) {
@@ -496,10 +515,13 @@ export function expandCells(table: DenseCells): ViewCell[] {
     const [packedTile, queen, queenHp] = header.split(",").map(n) as [number, ColonyId?, number?];
     const delta = Math.floor(packedTile / table.foodRadix), food = packedTile - delta * table.foodRadix;
     const ants = body === "" ? [] : body.split("/").map(record => {
-      const [antId, packed] = record.split(".").map(n) as [number, number];
+      const [antIdText, packedText, flyerCode, ...extra] = record.split(".");
+      const [antId, packed] = [n(antIdText ?? ""), n(packedText ?? "")];
+      const flyer = flyerCode === undefined ? undefined : flyerStates.get(flyerCode);
+      if (extra.length > 0 || (flyerCode !== undefined && flyer === undefined)) throw new RangeError("Invalid cell ant record");
       const hp = Math.floor(packed / 6), kind = packed % 6;
       return { antId, hp, colony: (kind % 2) as ColonyId,
-        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") as Caste }) };
+        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") as Caste }), ...(flyer === undefined ? {} : { flyer }) };
     });
     for (let i = 0; i < count; i++) {
       const index = previousIndex + delta;

@@ -28,7 +28,7 @@ import { openRecording, type Recording } from "../../web/src/recording.ts";
 import { FIGHT_EFFECT_MS, Frame, Playback, RENDER_DELAY_MS, TickPreparation, type Fight } from "../../web/src/buffer.ts";
 import { Ants } from "../../web/src/ants.ts";
 import { AIR_FIGHT, Battles, GROUND_SPARK } from "../../web/src/effects.ts";
-import { BITE_CONTACT_END_MS, BITE_CONTACT_MS, BITE_MS, Bites, airFights } from "../../web/src/bite.ts";
+import { BITE_CONTACT_END_MS, BITE_CONTACT_MS, BITE_MS, Bites, EngagementTracker, airFights } from "../../web/src/bite.ts";
 import { AIR_LIFT_2D_LENGTHS, AIR_LIFT_3D_TILES } from "../../web/src/flyer-lift.ts";
 import { AIR_RING_3D, Battles3D } from "../../web/src/board3d/effects3d.ts";
 import { Ground } from "../../web/src/board3d/ground.ts";
@@ -571,5 +571,220 @@ describe("3D board: air fights above the ground", () => {
     for (const p of positions("fight-sparks")) expect(p.y).toBeCloseTo(ground.heightAt(p.x, ground.mapH - p.z) + 0.09);
     battles.update(frame3d(), 10); battles.setVisible(false);
     expect(mesh("air-fight-ring").isVisible).toBe(false);
+  });
+});
+
+/** Steps of the split match, and the step on which one fighter of each pair changes layer. */
+const SPLIT_TICKS = 16, SPLIT = 8;
+
+/**
+ * One fighter of each pair takes off or lands mid-fight, the other staying where it was. Two flyers of opposing colonies
+ * hover over neighbouring tiles and bite each other in the air; a grounded flyer and an enemy ground worker stand on
+ * neighbouring tiles further along and bite each other on the ground. On SPLIT the second air flyer lands where it hovered
+ * and the grounded flyer takes off to hover where it stood: each pair is still in reach of itself, but the air is a
+ * separate fight, so both bites stop at once. The simulation's combat step runs every step, the spectator recorder turns
+ * each step into its message, and each is encoded to its bytes.
+ */
+function splitMatch() {
+  const initial: SimState = emptyMatch(0, { ...HISTORICAL_CONFIG, combatGraceTicks: 0 });
+  const hover = (tx: number, ty: number): FlyerAir => ({ destX: tileCentre(tx), destY: tileCentre(ty), hovering: true, released: false });
+  const hp = 1_000_000;
+  const high = addAnt(initial, 0, 10, 10, { flyer: true, air: hover(10, 10), hp });
+  const lander = addAnt(initial, 1, 10, 11, { flyer: true, air: hover(10, 11), hp });
+  const riser = addAnt(initial, 0, 20, 10, { flyer: true, hp });
+  const worker = addAnt(initial, 1, 20, 11, { hp });
+  const everyone = [high, lander, riser, worker];
+  const recorder = new SpectatorRecorder(initial);
+  const opening: StreamMessage = { ...recorder.initial(), full: recorder.initialFull() };
+  const deltas: Uint8Array[] = [], hpAfter: number[][] = [];
+  let state = initial;
+  for (let t = 0; t < SPLIT_TICKS - 1; t++) {
+    state = cloneState(state);
+    const ant = (id: number) => state.ants.find((a) => a.id === id)!;
+    const events: SimEvent[] = [];
+    if (t === SPLIT) {
+      ant(lander.id).air = undefined; ant(lander.id).takeOffTick = t + 100;
+      events.push({ type: "flyer_landing", tick: t, antId: lander.id, colony: lander.colony, tileX: 10, tileY: 11 });
+      ant(riser.id).air = hover(20, 10);
+      events.push({ type: "flyer_takeoff", tick: t, antId: riser.id, colony: riser.colony, tileX: 20, tileY: 10 });
+    }
+    resolveCombat(state, buildGrid(state), t, events);
+    state.tick = t + 1;
+    deltas.push(encodeMessage({ ...recorder.record({ state, events, results: [] }), full: null }));
+    hpAfter.push(everyone.map((a) => ant(a.id).hp));
+  }
+  return {
+    deltas, packets: [encodeReplayMessage(opening), ...deltas], hpAfter,
+    air: [high.id, lander.id], ground: [riser.id, worker.id], lander: lander.id, riser: riser.id,
+    width: initial.config.mapWidth, height: initial.config.mapHeight,
+  };
+}
+
+describe("one fighter takes off or lands mid-fight: the bite ends, on both boards, live and recorded", () => {
+  const match = splitMatch();
+  const everyone = [...match.air, ...match.ground];
+  const active: Recording[] = [];
+  let engine: NullEngine, scene: Scene, battles3d: Battles3D;
+  beforeEach(() => {
+    engine = new NullEngine(); scene = new Scene(engine);
+    battles3d = new Battles3D(scene, new Ground(scene, match.width, match.height));
+  });
+  afterEach(() => {
+    for (const r of active.splice(0)) r.close();
+    scene.dispose(); engine.dispose();
+  });
+  const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+  /** The message tick from which a pair is split: the message of step SPLIT. */
+  const split = SPLIT + 1;
+
+  /** What each board draws for this frame: the 2D battle layer's particles, and the 3D sparks and air rings. */
+  function drawn(frame: Frame) {
+    const ants = new Ants(renderer, 10, 10), battles = new Battles(renderer, 10);
+    ants.update(frame); battles.update(frame);
+    const flat = [...battles.layer.particleChildren as Particle[]];
+    const bites = new Bites(); bites.update(frame); bites.publishContacts(0.5, "3d");
+    battles3d.update(frame, 10);
+    const sparks = (scene.getMeshByName("fight-sparks") as Mesh).thinInstanceCount, rings = (scene.getMeshByName("air-fight-ring") as Mesh).thinInstanceCount;
+    const posed = everyone.map((id) => bites.pose(Array.from(frame.id.subarray(0, frame.count)).indexOf(id), 1, "3d") !== null);
+    return { flat, sparks, rings, posed };
+  }
+  const engaged = (frame: Frame, [a, b]: readonly number[]) => frame.engagements.filter((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a)).length;
+
+  /** Before the split both pairs bite, the air pair in the air; from the split on, neither pair is engaged and no board draws a bite. */
+  function expectSplitAt(frame: Frame) {
+    if (frame.tick >= 2 && frame.tick <= SPLIT) {
+      expect(engaged(frame, match.air)).toBe(2);
+      expect(engaged(frame, match.ground)).toBe(2);
+      expect([...airFights(frame).keys()]).toEqual([[...match.air].sort(byId).join(":")]);
+      expect(drawn(frame).posed).toEqual([true, true, true, true]);
+    } else if (frame.tick >= split) {
+      expect(frame.engagements).toEqual([]);
+      expect(airFights(frame).size).toBe(0);
+      const d = drawn(frame);
+      expect(d.posed).toEqual([false, false, false, false]);
+      expect(d.flat).toEqual([]);
+      expect([d.sparks, d.rings]).toEqual([0, 0]);
+    }
+  }
+
+  it("the simulation stops both bites on the step one fighter changes layer, and names no bite again", () => {
+    for (let t = 1; t < SPLIT_TICKS - 1; t++) {
+      for (let k = 0; k < 4; k++) {
+        if (t < SPLIT) expect(match.hpAfter[t]![k]).toBeLessThan(match.hpAfter[t - 1]![k]!);
+        else expect(match.hpAfter[t]![k]).toBe(match.hpAfter[t - 1]![k]);
+      }
+    }
+    const events = match.deltas.map((b) => decodeMessage(b).events);
+    expect(events[0]!.filter((e) => e.kind === "fight")).toHaveLength(4);
+    expect(events.slice(1).flat().filter((e) => e.kind === "fight")).toEqual([]);
+    expect(events[SPLIT]!.map((e) => e.kind === "takeoff" || e.kind === "landing" ? [e.kind, e.antId] : e.kind))
+      .toEqual(expect.arrayContaining([["landing", match.lander], ["takeoff", match.riser]]));
+    // The split message: the lander on the ground beside its airborne enemy, the riser airborne beside its ground enemy.
+    const at = decodeMessage(match.deltas[SPLIT]!), state = (id: number) => at.ants.flyers?.[Array.from(at.ants.id).indexOf(id)]?.state;
+    expect(at.tick).toBe(split);
+    expect(match.air.map(state)).toEqual(["hovering", "lockedOut"]);
+    expect(match.ground.map(state)).toEqual(["hovering", undefined]);
+  });
+
+  it("recorded playback draws both bites until the split, then none: no air fight, and no spark left on the ground", () => {
+    const pb = new Playback();
+    for (const bytes of match.packets) { const m = decodeMessage(bytes); pb.push(m, m.tick * TICK_MS); }
+    // Each instant is a head contact on the shared bite clock.
+    const contact = (tick: number) => {
+      const ms = Math.ceil((tick * TICK_MS - BITE_CONTACT_MS) / BITE_MS) * BITE_MS + BITE_CONTACT_MS;
+      expect(Math.floor(ms / TICK_MS)).toBe(tick);
+      const frame = new Frame();
+      expect(pb.sample(ms + RENDER_DELAY_MS, frame)).toBe(true);
+      expect(frame.tick).toBe(tick);
+      return frame;
+    };
+    // Before: the air pair's lifted spark and ring on the 2D board, the ground pair's ground spark; on the 3D board one
+    // spark for each pair and one ring.
+    const before = contact(6);
+    expectSplitAt(before);
+    const d = drawn(before);
+    expect(d.flat.filter((p) => p.tint === GROUND_SPARK.tint)).toHaveLength(1);
+    expect(d.flat.filter((p) => p.tint === 0x000000)).toHaveLength(AIR_FIGHT.dots);
+    expect([d.sparks, d.rings]).toEqual([2, 1]);
+    // After: nothing, at every contact.
+    for (const tick of [9, 11, 14]) expectSplitAt(contact(tick));
+  });
+
+  it("live playback of the streamed bytes shows the same, frame by frame", () => {
+    const live = new Playback({ live: true }), prepare = new TickPreparation(), frame = new Frame();
+    for (const bytes of match.packets) {
+      const m = decodeMessage(bytes);
+      live.pushPrepared(prepare.prepare(m)!, m.tick * TICK_MS);
+    }
+    const arrived = (SPLIT_TICKS - 1) * TICK_MS, seen = new Set<number>();
+    for (let ms = arrived; ms < arrived + 10_000 && frame.tick < SPLIT_TICKS - 1; ms += 50) {
+      expect(live.sample(ms, frame)).toBe(true);
+      seen.add(frame.tick);
+      expectSplitAt(frame);
+    }
+    expect([...seen].some((t) => t >= 2 && t <= SPLIT)).toBe(true);
+    expect([...seen].some((t) => t >= split)).toBe(true);
+  });
+
+  it("a recording shows the same after seeking forward and back", async () => {
+    const bytes = packMessages(match.packets);
+    const r = openRecording("/recording", undefined, async () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(bytes.slice()); c.close(); } })),
+      { controls: true, endTick: async () => SPLIT_TICKS - 1 });
+    active.push(r);
+    await r.first;
+    await vi.waitFor(() => expect(r.duration).toBe((SPLIT_TICKS - 1) * TICK_MS));
+    const seek = async (ms: number) => {
+      r.seek(ms);
+      const playback = new Playback(), frame = new Frame();
+      for (let i = 0; i < 100; i++) {
+        await turn();
+        for (const arrival of r.take(i * 16)) playback.push(arrival.m, arrival.at);
+        playback.sample(r.time, frame);
+        if (!r.seeking) return frame;
+      }
+      throw new Error("Seek never completed");
+    };
+    for (const [ms, after] of [[1300, true], [500, false], [1000, true], [700, false]] as const) {
+      const frame = await seek(ms);
+      expect(frame.tick >= split).toBe(after);
+      if (!after) expect(frame.tick).toBeGreaterThanOrEqual(2);
+      expectSplitAt(frame);
+    }
+  });
+});
+
+describe("a killing bite across the layers is not shown", () => {
+  const adjacent = (tick: number, ants: { id: number; colony: number; ty: number; flyer: StreamFlyer | null }[], events: StreamMessage["events"]): StreamMessage => ({
+    tick, full: null, events,
+    ants: {
+      count: ants.length, id: Uint32Array.from(ants.map((a) => a.id)),
+      x: Uint16Array.from(ants.map(() => 10.5 * SUB_TILE)), y: Uint16Array.from(ants.map((a) => (a.ty + 0.5) * SUB_TILE)),
+      heading: new Uint8Array(ants.length), colony: Uint8Array.from(ants.map((a) => a.colony)), agent: new Int16Array(ants.length).fill(-1),
+      caste: new Uint8Array(ants.length), flyers: ants.map((a) => a.flyer),
+    },
+  });
+  const air: StreamFlyer = { state: "hovering", destX: 0, destY: 0 }, ground: StreamFlyer = { state: "grounded" };
+  const bite = { kind: "fight" as const, antId: 1, targetId: 2, colony: 0 as const, tileX: 10, tileY: 10 };
+  const death = { kind: "death" as const, antId: 2, colony: 1 as const, x: 10.5 * SUB_TILE, y: 11.5 * SUB_TILE };
+  /** The engagements shown on the tick the target dies, after a bite named on the tick before. */
+  const killing = (first: StreamMessage, second: StreamMessage) => {
+    const tracker = new EngagementTracker();
+    expect(tracker.observe(first)).toEqual([{ a: 1, b: 2, tick: 1 }]);
+    return tracker.observe(second);
+  };
+
+  it("an attacker that took off on the tick its ground target died shows no final hit", () => {
+    expect(killing(
+      adjacent(1, [{ id: 1, colony: 0, ty: 10, flyer: ground }, { id: 2, colony: 1, ty: 11, flyer: null }], [bite]),
+      adjacent(2, [{ id: 1, colony: 0, ty: 10, flyer: air }], [{ kind: "takeoff", antId: 1, colony: 0, x: 10.5 * SUB_TILE, y: 10.5 * SUB_TILE }, death]),
+    )).toEqual([]);
+  });
+
+  it("an airborne attacker shows no final hit on a target that landed on the tick it died, and still does on one that died in the air", () => {
+    const start = adjacent(1, [{ id: 1, colony: 0, ty: 10, flyer: air }, { id: 2, colony: 1, ty: 11, flyer: air }], [{ ...bite, air: true }]);
+    expect(killing(start, adjacent(2, [{ id: 1, colony: 0, ty: 10, flyer: air }],
+      [{ kind: "landing", antId: 2, colony: 1, x: 10.5 * SUB_TILE, y: 11.5 * SUB_TILE }, death]))).toEqual([]);
+    expect(killing(start, adjacent(2, [{ id: 1, colony: 0, ty: 10, flyer: air }], [death])))
+      .toEqual([{ a: 1, b: 2, tick: 1, terminalTick: 2, caste: 0 }]);
   });
 });

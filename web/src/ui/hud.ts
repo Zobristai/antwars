@@ -16,10 +16,10 @@ import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../src
 import { streamQueens, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type Frame } from "../buffer.ts";
 import {
-  cardSubject, colonyLedger, colonyCardLines, colonyStats, headline, matchTime, nextAntCells, nextAntState, nextHatchCaste,
-  queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText,
+  cardSubject, colonyLedger, colonyCardLines, colonyStats, hatchIntervalTicks, headline, livingAnts, matchTime, nextAntCells, nextAntState,
+  nextHatchCaste, queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText,
 } from "../overlays.ts";
-import { boardQueenHp, redesignSoldierIntervalTicks } from "../variant.ts";
+import { boardQueenHp, rules28Flyer } from "../variant.ts";
 import { INSPIRED_BY_URL, PAGE_COPY, SCORE_COPY, clockTime, matchClock, significant } from "../story.ts";
 import { ZOOM_STEP } from "../camera.ts";
 import { setBoardLook } from "../board-look.ts";
@@ -259,7 +259,9 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const spawn = { ...chip("d2-next", colony), box: spawnPair.box, caste: "" };
     spawn.node.setAttribute("role", "img");
     spawnPair.value.append(spawn.node);
-    const values = { food: pair("food", "Food"), workers: pair("workers", "Workers"), soldiers: pair("soldiers", "Soldiers"), hatched: pair("hatched", SCORE_COPY.hatched), cap: pair("cap", SCORE_COPY.max) };
+    // Flyers only where the board's rules have them (rules28Flyer), under Workers; the drawer then takes a line more.
+    const values = { food: pair("food", "Food"), workers: pair("workers", "Workers"), soldiers: pair("soldiers", "Soldiers"), flyers: pair("flyers", "Flyers"), hatched: pair("hatched", SCORE_COPY.hatched), cap: pair("cap", SCORE_COPY.max) };
+    values.flyers.box.hidden = true;
     drawer.append(ledger);
     return { drawer, values, spawn };
   });
@@ -519,9 +521,9 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     flag(territory.node, "has-lead-line", early !== undefined && b.result === null && tiles !== null);
     if (early) territory.node.style.setProperty("--d2-lead", `${leadLine(early.territoryRatioPermille).toFixed(2)}%`);
     paintHold(b, tick);
-    // Ants: the living, workers and soldiers (colonyStats).
+    // Ants: the living, every caste (colonyStats).
     const stats = colonyStats(frame);
-    const living = COLONIES.map(k => stats[k].workers + stats[k].soldiers) as [number, number];
+    const living = COLONIES.map(k => livingAnts(stats[k])) as [number, number];
     paintShares(ants.sides.map(s => s.fill), shares(living[0], living[1]));
     for (const k of COLONIES) {
       text(kills.figures[k]!, killed[k].toLocaleString("en"));
@@ -602,10 +604,14 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const config = rulesOf(b);
     for (const colony of COLONIES) {
       if (drawerEls[colony]!.drawer.hidden) continue;
-      const living = stats[colony].workers + stats[colony].soldiers;
+      const living = livingAnts(stats[colony]);
       const lines = colonyCardLines(colonyLedger(stats[colony], living, b.hatch), stats[colony], "");
       const v = drawerEls[colony]!.values;
       text(v.workers.value, stats[colony].workers.toLocaleString("en")); text(v.soldiers.value, stats[colony].soldiers.toLocaleString("en"));
+      const flyers = rules28Flyer(b) !== undefined;
+      flag(drawerEls[colony]!.drawer, "has-flyers", flyers);
+      show(v.flyers.box, flyers);
+      text(v.flyers.value, flyers ? stats[colony].flyers.toLocaleString("en") : "");
       text(v.hatched.value, lines.hatched); text(v.cap.value, lines.cap);
       const food = nextAntCells(b.stores[colony], b.hatch, living, frame.tick, tps);
       text(v.food.value, food?.[0] ?? "");
@@ -636,11 +642,10 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     flag(next.node, "is-full", full);
     flag(next.node, "is-food", state.kind === "food");
     text(next.words, full ? D2_COPY.full : withoutCasteGlyph(withUnits(status.text)));
-    const caste = nextHatchCaste(b, store.nextCost) ?? "";
+    // A flyer has no icon of its own: the chip's label names it (scoreHatchStatus).
+    const coming = nextHatchCaste(b, store.nextCost), caste = coming ?? "";
     if (next.caste !== caste) { next.caste = caste; next.iconBox.innerHTML = caste === "worker" ? ICONS.worker : caste === "soldier" ? ICONS.soldier : ""; }
-    const interval = caste !== "soldier" ? hatch.intervalTicks : config?.rules === "redesign" ? redesignSoldierIntervalTicks(b, hatch.intervalTicks)
-      : hatch.intervalTicks * (config?.hatchTiming?.soldierIntervalMultiplier ?? 1);
-    const at = spawnFill(state, store.nextHatchTick, interval, tick);
+    const at = spawnFill(state, store.nextHatchTick, hatchIntervalTicks(b, hatch, coming, config), tick);
     setFill(next, reducedMotion?.matches ? stepped(at) : at);
   }
 

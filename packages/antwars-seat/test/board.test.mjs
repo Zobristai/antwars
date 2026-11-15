@@ -35,6 +35,16 @@ function coverageCells() {
   return cells.sort((a, b) => a.tileY * W + a.tileX - (b.tileY * W + b.tileX));
 }
 
+/** Flyers of both colonies in each state, beside a worker and under a queen. */
+function flyerCells() {
+  return [
+    { tileX: 30, tileY: 48, food: 0, ants: [{ antId: 300, colony: 0, hp: 2000, caste: "worker", flyer: "grounded" },
+      { antId: 301, colony: 1, hp: 2000, caste: "worker", flyer: "grounded" }, { antId: 302, colony: 0, hp: 4000, caste: "worker" }] },
+    { tileX: 31, tileY: 48, food: 2, ants: [{ antId: 303, colony: 0, hp: 1500, caste: "worker", flyer: "flying" }, { antId: 304, colony: 1, hp: 2000, caste: "worker", flyer: "flying" }] },
+    { tileX: 33, tileY: 48, food: 0, ants: [{ antId: 305, colony: 0, hp: 2000, caste: "worker", flyer: "hovering" }, { antId: 306, colony: 1, hp: 1, caste: "worker", flyer: "hovering" }], queen: 1, queenHp: 21500 },
+  ];
+}
+
 describe("generated decoders match the server", () => {
   it("generated expandCells returns exactly what the server's expandCells returns for denseCells output", () => {
     const cells = coverageCells();
@@ -53,6 +63,17 @@ describe("generated decoders match the server", () => {
     for (const data of ["zz!", "1,0*2", "0*0", `${(W * H * table.foodRadix).toString(36)}`]) {
       expect(() => serverExpandCells({ ...table, data })).toThrow();
       expect(() => expandCells({ ...table, data })).toThrow();
+    }
+  });
+
+  it("generated expandCells decodes a flyer table as the server does and refuses what the server refuses", () => {
+    const table = denseCells(flyerCells(), W, H, true);
+    expect(table.data).toMatch(/\.[gfh](\/|;|$)/);
+    expect(expandCells(table)).toEqual(serverExpandCells(table));
+    expect(expandCells(table)).toEqual(flyerCells());
+    for (const data of ["0:1.8.l", "0:1.8.h.3", "0:1.8.", "0:1.8.constructor"]) {
+      expect(() => serverExpandCells({ ...table, foodRadix: 1, data }), data).toThrow();
+      expect(() => expandCells({ ...table, foodRadix: 1, data }), data).toThrow();
     }
   });
 
@@ -154,6 +175,14 @@ describe("readable view", () => {
     expect(text).toContain("marks (5):\n");
     expect(text).toContain('{"markId":5,"words":["food"],"tileX":44,"tileY":48,"ticksLeft":300,"mine":false}');
     expect(text).toContain('myMarks (2):\n{"markId":1,"steering":3}');
+  });
+
+  it("prints each flyer, own or enemy, as a flyer with its state", () => {
+    const data = reply([], null);
+    data.view.cells = denseCells(flyerCells(), W, H, true);
+    const text = renderView(data);
+    expect(text).toContain("caste w=worker s=soldier f=flyer a=none");
+    expect(text).toContain("y48: 30:300f2(grounded),301F2(grounded),302w4 31f2:303f1.5(flying),304F2(flying) 33Qenemy21.5:305f2(hovering),306F0.001(hovering)");
   });
 
   it("says when more cells follow", () => {

@@ -2,7 +2,7 @@
  * redesign boards; named comparisons and historical boards keep their own rules.
  */
 import type { StreamQueen, StreamRules28Figures, StreamSetup } from "../../src/live/format.ts";
-import { QUEEN_HP_RULES, RULES_NAMES, rulesConfig, type CountMarkRules, type LocalAntRules, type QueenHpRules, type QueenRules, type SimConfig } from "../../src/sim/config.ts";
+import { QUEEN_HP_RULES, RULES_NAMES, hatchIntervalOf, rulesConfig, type CountMarkRules, type LocalAntRules, type QueenHpRules, type QueenRules, type SimConfig } from "../../src/sim/config.ts";
 
 type RuleBoard = {
   readonly setup: { readonly rules?: string };
@@ -38,6 +38,17 @@ export function redesignFigures(board: GenerationBoard): RedesignFigures {
 /** A redesign soldier's hatch interval in ticks: a marked board's streamed one, otherwise rules 27's multiple of the worker's. */
 export function redesignSoldierIntervalTicks(board: GenerationBoard, workerIntervalTicks: number): number {
   return streamedFigures(board)?.soldierIntervalTicks ?? workerIntervalTicks * RULES27_SOLDIER_INTERVAL_MULTIPLIER;
+}
+/**
+ * A marked board's flyer: its price and its hatch interval in ticks, at the board's own tick rate. Only rules 28 has
+ * flyers, and the stream carries neither figure, so both are the rules-28 configuration's. Undefined on a board without
+ * the marker, which has no flyers.
+ */
+export function rules28Flyer(board: { readonly setup?: Pick<StreamSetup, "rules28" | "ticksPerSecond"> }): { readonly cost: number; readonly intervalTicks: number } | undefined {
+  const config = rulesConfig("redesign");
+  if (board.setup?.rules28 !== true || config.flyers === undefined) return undefined;
+  const ticksPerSecond = board.setup.ticksPerSecond || config.ticksPerSecond;
+  return { cost: config.flyers.cost, intervalTicks: hatchIntervalOf({ ...config, ticksPerSecond }, "flyer") };
 }
 
 /** Streamed HP selects HP mode, even at zero; historical queens without HP use overrun. Full HP is the board's generation's. */

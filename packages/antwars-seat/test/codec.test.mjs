@@ -2,7 +2,7 @@
 // pin the wire format both sides (and any outside implementation) decode.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { denseCells, expandCells as serverExpandCells } from "../../../src/sim/view.ts";
+import { FLYER_CELL_ENCODING, denseCells, expandCells as serverExpandCells } from "../../../src/sim/view.ts";
 import { packTerritory, unpackTerritory as serverUnpackTerritory } from "../../../src/mcp/territory.ts";
 import { packMarks, unpackMarks as serverUnpackMarks } from "../../../src/mcp/markTable.ts";
 import { renderSeatCodec, SEAT_CODEC_PATH } from "../../../scripts/generate-seat-codec.ts";
@@ -24,7 +24,9 @@ describe("generated seat codec", () => {
 
 describe("conformance fixtures", () => {
   it("the server encoders reproduce every encoded payload", () => {
-    for (const { encoded, decoded } of FIXTURES.cells) expect(denseCells(decoded, encoded.width, encoded.height)).toEqual(encoded);
+    // A flyer match's table states the flyer grammar in its encoding.
+    for (const { encoded, decoded } of FIXTURES.cells) expect(denseCells(decoded, encoded.width, encoded.height, encoded.encoding === FLYER_CELL_ENCODING)).toEqual(encoded);
+    expect(FIXTURES.cells.some(({ encoded }) => encoded.encoding === FLYER_CELL_ENCODING)).toBe(true);
     for (const { encoded, decoded } of FIXTURES.territory) expect(packTerritory(decoded, encoded.width, encoded.height)).toEqual(encoded);
     for (const { encoded, decoded } of FIXTURES.marks) if (!Array.isArray(encoded)) expect(packMarks(decoded)).toEqual(encoded);
   });

@@ -28,6 +28,10 @@ const FACTS: readonly [string, RegExp][] = [
   ["airborne flyers fight only airborne enemy flyers", /Airborne flyers, flying or hovering, bite only airborne enemy flyers in reach/],
   ["ground ants and queens cannot hit them", /ground ants and queens cannot hit them/],
   ["an order ending in the air finishes its flight, lands and stays put", /a flying flyer finishes its flight, lands and stays put/],
+  ["flying and hovering flyers cannot claim, refresh or lock territory; landed flyers can",
+    /Flying and hovering flyers take no part in territory: they cannot claim, refresh or lock a tile, and an airborne enemy flyer never locks one\. Landed flyers claim, refresh and lock tiles as other ants do\./],
+  ["observe cells show every flyer in sight as a flyer, with no enemy destination, mark or lockout",
+    /In observe cells, every flyer your colony sees, yours or the enemy's, is marked as a flyer with its state: grounded, flying or hovering\. An enemy flyer's destination, marks and lockout are never shown\./],
 ];
 
 const PATROL_NOTE = /Flyer and ground PATROL marks never link with each other; flyer patrols do not pause\./;
@@ -70,6 +74,7 @@ describe.each(SEAT_MODES)("the flyer in the texts served to a $label rules-28 se
     expect(countMark.description).toMatch(/To move one of your flyer marks, send its markId with its own verb, a count and the new tile/);
     expect(tools.find(t => t.name === "set_brood")!.description).toMatch(/workers, soldiers, flyers or mixed/);
     expect(tools.find(t => t.name === "observe")!.description).toMatch(/view\.flyers/);
+    expect(tools.find(t => t.name === "observe")!.description).toMatch(/In cells, each flyer in sight, yours or the enemy's, adds its state, grounded, flying or hovering, per cells\.encoding\./);
   });
 });
 

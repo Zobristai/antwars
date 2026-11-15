@@ -38,8 +38,8 @@ describe("per-colony score stats", () => {
     playback.push({ tick: 100, full: snapshot, ants: ants([0, 1, 0, 1, 1], [0, 1, 1, 0, 0]), events: [] }, 10_000);
     const frame = sample(playback);
     expect(colonyStats(frame)).toEqual([
-      { hatched: 101, lost: 7, workers: 1, soldiers: 1 },
-      { hatched: 202, lost: 12, workers: 2, soldiers: 1 },
+      { hatched: 101, lost: 7, workers: 1, soldiers: 1, flyers: 0 },
+      { hatched: 202, lost: 12, workers: 2, soldiers: 1, flyers: 0 },
     ]);
     // Later sender mutation cannot alter an already held/displayed tick.
     snapshot.hatched![0] = 999;
@@ -52,8 +52,8 @@ describe("per-colony score stats", () => {
     const playback = new Playback();
     playback.push({ tick: 100, full: full(), ants: ants([0, 0, 1]), events: [] }, 10_000);
     expect(colonyStats(sample(playback))).toEqual([
-      { hatched: null, lost: 7, workers: 2, soldiers: 0 },
-      { hatched: null, lost: 12, workers: 1, soldiers: 0 },
+      { hatched: null, lost: 7, workers: 2, soldiers: 0, flyers: 0 },
+      { hatched: null, lost: 12, workers: 1, soldiers: 0, flyers: 0 },
     ]);
   });
 

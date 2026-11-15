@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { fileURLToPath } from "node:url";
 import { MAX_BOARD_SIDE_TILES } from "../src/sim/mapBoard.ts";
+import { SIGHTED_FLYER_CODES } from "../src/sim/view.ts";
 
 const ROOT = new URL("../", import.meta.url);
 export const SEAT_CODEC_PATH = fileURLToPath(new URL("packages/antwars-seat/lib/codec.generated.mjs", ROOT));
@@ -54,6 +55,7 @@ export function renderSeatCodec(): string {
     "// Conformance fixtures every implementation should pass: test/fixtures/seat-codec/conformance.json",
     "",
     `const MAX_BOARD_SIDE_TILES = ${MAX_BOARD_SIDE_TILES};`,
+    `const SIGHTED_FLYER_CODES = ${JSON.stringify(SIGHTED_FLYER_CODES)};`,
     "",
     parts.join("\n\n"),
     "",

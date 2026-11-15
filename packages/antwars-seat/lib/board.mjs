@@ -26,9 +26,10 @@ function shrink(value, depth = 0) {
 const hp = (milli) => String(milli / 1000);
 const CASTE = { worker: "w", soldier: "s" };
 
+/** A flyer, own or enemy, reads f with its state in brackets; other ants by caste. */
 function antText(ant, own) {
-  const letter = CASTE[ant.caste] ?? "a";
-  return `${ant.antId}${ant.colony === own ? letter : letter.toUpperCase()}${hp(ant.hp)}`;
+  const letter = ant.flyer === undefined ? CASTE[ant.caste] ?? "a" : "f";
+  return `${ant.antId}${ant.colony === own ? letter : letter.toUpperCase()}${hp(ant.hp)}${ant.flyer === undefined ? "" : `(${ant.flyer})`}`;
 }
 
 function tileText(cell, own) {
@@ -67,7 +68,7 @@ export function territoryLines(rows) {
   return lines;
 }
 
-const CELL_KEY = "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier a=none, lowercase own UPPERCASE enemy; hp in HP";
+const CELL_KEY = "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier f=flyer a=none, lowercase own UPPERCASE enemy; hp in HP; a flyer adds its state (grounded), (flying) or (hovering)";
 
 /** The readable text of any reply that carries a view. Nothing in cells, territory, squad, queens or marks is cut. */
 export function renderView(data) {
