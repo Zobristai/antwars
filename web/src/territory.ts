@@ -214,7 +214,10 @@ float ownership4(vec2 uv, out vec4 s, out int ca, out int cb) {
   return r;
 }`;
 
-/** LAND_TWO for four colonies: the same tint, each side of a meeting in its own colony's colour. Trails stay colonies 0 and 1's. */
+/**
+ * LAND_TWO for four colonies: the same tint, each side of a meeting in its own colony's colour, and each colony's
+ * trail (channel c of the trail texture is colony c's) in its own colour.
+ */
 const LAND_FOUR = /* glsl */ `  vec4 s;
   int ca;
   int cb;
@@ -226,8 +229,8 @@ const LAND_FOUR = /* glsl */ `  vec4 s;
   vec3 hue = (colonyColour(ca) * (ca == 0 ? 0.85 : 1.0) * w0 + colonyColour(cb) * (cb == 0 ? 0.85 : 1.0) * w1) / max(w0 + w1, 0.001);
   vec3 col = mix(soil, hue * 0.55 + soil * 0.45, tint);
   // Thin, faint paths: a slight lightening in each colony's hue.
-  vec2 tr = texture(uTrail, vUV).rg * uTrails;
-  col += (uC0 * 0.85 * tr.x + uC1 * tr.y) * 0.2;
+  vec4 tr = texture(uTrail, vUV) * uTrails;
+  col += (uC0 * 0.85 * tr.r + uC1 * tr.g + uC2 * tr.b + uC3 * tr.a) * 0.2;
 `;
 
 const FILL_FOUR = fillFragment(COMMON_FOUR, LAND_FOUR);

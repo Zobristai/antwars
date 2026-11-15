@@ -203,6 +203,14 @@ const TERRITORY_2D_FOUR = /* glsl */ `  vec4 s;
   col = mix(col, hue * 0.5, rim * 0.75);
 `;
 
+/**
+ * The 2D trails: every colony's traffic compacts the ground alike. A four-colony match sums all four of its colonies'
+ * channels (channel c of the trail texture is colony c's); a two-colony match's code is unchanged.
+ */
+const trails2d = (four: boolean) => four
+  ? "  vec4 tr = texture(uTrail, vUV) * uTrails;\n  col *= 1.0 - 0.18 * clamp(tr.r + tr.g + tr.b + tr.a, 0.0, 1.0);\n"
+  : "  vec2 tr = texture(uTrail, vUV).rg * uTrails;\n  col *= 1.0 - 0.18 * clamp(tr.x + tr.y, 0.0, 1.0);\n";
+
 /** The 2D ground pass: the baked steppe, water, boulders with their shadows, the territory wash and trails. */
 function fill2d(prelude: string, colonies: 2 | 4 = 2): string {
   const four = colonies === 4;
@@ -265,9 +273,7 @@ void main() {
   }
   // Territory: a wash of the colony's hue, deeper toward the front, edged where it meets unheld ground.
 ${four ? TERRITORY_2D_FOUR : territory2d()}  // Trails: ground compacted by traffic, a little darker.
-  vec2 tr = texture(uTrail, vUV).rg * uTrails;
-  col *= 1.0 - 0.18 * clamp(tr.x + tr.y, 0.0, 1.0);
-  // The playable edge: a crisp darker lip just inside it.
+${trails2d(four)}  // The playable edge: a crisp darker lip just inside it.
   vec2 lip = min(vUV, 1.0 - vUV) * uMap;
   col *= mix(0.7, 1.0, smoothstep(0.0, 0.8, min(lip.x, lip.y)));
   finalColor = vec4(col, 1.0);

@@ -1,10 +1,10 @@
 /**
  * Ant-traffic trails in a four-colony match: every trail cell holds one channel per colony (setup.queens.length), so
  * each colony's trail stays in its own cell and its own channel through tick preparation, a colony's point of view
- * and both boards' texture uploads (colony c in channel c), and the 3D ground's four-colony code draws all four
- * channels. A two-colony match's trails, the bytes both boards upload for them and the code that draws them are as
- * they were (the two-colony shader text is pinned in ground3d-four-colonies.test.ts and colony-palette.test.ts). The
- * quadrant map here is a test-only fixture.
+ * and both boards' texture uploads (colony c in channel c), and both boards' four-colony passes draw all four channels.
+ * A two-colony match's trails, the bytes both boards upload for them and the code that draws them are as they were
+ * (the two-colony shader text is pinned in territory-four.test.ts, ground3d-four-colonies.test.ts and
+ * colony-palette.test.ts). The quadrant map here is a test-only fixture.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
@@ -21,6 +21,7 @@ import type { SimInput } from "../../src/sim/types.ts";
 import { Frame, TickPreparation, TRAIL_DECAY_PER_TICK, TRAIL_DEPOSIT, TRAIL_RES, trailTexels, type Board } from "../../web/src/buffer.ts";
 import { Ground } from "../../web/src/board3d/ground.ts";
 import { setBoardLook } from "../../web/src/board-look.ts";
+import { colonyRgb } from "../../web/src/colony-palette.ts";
 import { STEPPE_LOOK } from "../../web/src/ui/steppe-look.ts";
 import { Territory } from "../../web/src/territory.ts";
 import { TeamView } from "../../web/src/team-view.ts";
@@ -186,7 +187,7 @@ describe("trail texels", () => {
   });
 });
 
-describe("both boards upload a four-colony match's trails one colony per channel, and the 3D ground draws them", () => {
+describe("both boards upload and draw a four-colony match's trails one colony per channel", () => {
   let engine: NullEngine;
   let scene: Scene;
   const browserAdapter = DOMAdapter.get();
@@ -247,9 +248,39 @@ describe("both boards upload a four-colony match's trails one colony per channel
     expect(firstDifference(territory.fill.shader!.resources.uTrail.resource as Uint8Array, before)).toBe(-1);
   });
 
+  const board2d = () => new Territory(8, 4, RenderTexture.create({ width: 10, height: 10 }), { w: 100, h: 100, ox: 0, oy: 0, tilePx: 1 });
+  type Shaded = { shader: { glProgram: { fragment: string }; resources: Record<string, unknown> } };
+  const fill2d = (t: Territory) => (t.fill as unknown as Shaded).shader;
   const diffuse3d = (g: Ground) => g.plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_UPDATE_DIFFUSE!;
+  const TWO_2D_PLAIN = ["  vec2 tr = texture(uTrail, vUV).rg * uTrails;", "  col += (uC0 * 0.85 * tr.x + uC1 * tr.y) * 0.2;"];
+  const TWO_2D_STEPPE = ["  vec2 tr = texture(uTrail, vUV).rg * uTrails;", "  col *= 1.0 - 0.18 * clamp(tr.x + tr.y, 0.0, 1.0);"];
   const TWO_3D_INK = "max(awTrail.r, awTrail.g)) * awStroke * uTrails;";
   const FOUR_3D_INK = "max(max(awTrail.r, awTrail.g), max(awTrail.b, awTrail.a))) * awStroke * uTrails;";
+
+  it("on the plain 2D board: each colony's trail lightens the ground in its own colour, colonies 2 and 3 from blue and alpha", () => {
+    const four = board2d();
+    four.update(frame(8, 4, 4), 0);
+    const shader = fill2d(four);
+    expect(shader.glProgram.fragment).toContain("  vec4 tr = texture(uTrail, vUV) * uTrails;\n  col += (uC0 * 0.85 * tr.r + uC1 * tr.g + uC2 * tr.b + uC3 * tr.a) * 0.2;\n");
+    const terr = shader.resources.terr as { uniforms: Record<string, number[]> };
+    expect(terr.uniforms.uC2).toEqual([...colonyRgb(2)]);
+    expect(terr.uniforms.uC3).toEqual([...colonyRgb(3)]);
+    const two = board2d();
+    two.update(frame(8, 4, 2), 0);
+    for (const line of TWO_2D_PLAIN) expect(fill2d(two).glProgram.fragment).toContain(line);
+    expect(fill2d(two).glProgram.fragment).not.toContain("tr.b");
+  });
+
+  it("on the steppe 2D board: every colony's traffic darkens the ground, all four channels", () => {
+    setBoardLook(STEPPE_LOOK);
+    const four = board2d();
+    four.update(frame(8, 4, 4), 0);
+    expect(fill2d(four).glProgram.fragment).toContain("  vec4 tr = texture(uTrail, vUV) * uTrails;\n  col *= 1.0 - 0.18 * clamp(tr.r + tr.g + tr.b + tr.a, 0.0, 1.0);\n");
+    const two = board2d();
+    two.update(frame(8, 4, 2), 0);
+    for (const line of TWO_2D_STEPPE) expect(fill2d(two).glProgram.fragment).toContain(line);
+    expect(fill2d(two).glProgram.fragment).not.toContain("tr.b");
+  });
 
   it("on the 3D ground, plain and steppe: the trail ink takes the strongest of all four colonies' channels", () => {
     for (const look of [null, STEPPE_LOOK]) {
