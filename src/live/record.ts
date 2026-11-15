@@ -27,7 +27,7 @@ import { withGridScale } from "../sim/gridScale.js";
 import { createMatch } from "../sim/map.js";
 import { createRng } from "../sim/rng.js";
 import { step } from "../sim/step.js";
-import { WORDS, type ColonyId, type SimInput, type SimState, type StepOutput, type Word } from "../sim/types.js";
+import { WORDS, type ColonyId, type ColonyState, type SimInput, type SimState, type StepOutput, type Word } from "../sim/types.js";
 import { encodeMessage, type StreamMessage } from "./format.js";
 import { SpectatorRecorder } from "./model.js";
 import { packMessages } from "./snapshot.js";
@@ -120,7 +120,8 @@ export function scriptedInputs(state: SimState, o: ScriptOptions): SimInput[] {
     const agent = state.agents.find((a) => a.id === id);
     if (agent === undefined) continue;
     if ((tick - 1 - 2 * i) % c.commandFloorTicks === 0) {
-      const enemy = state.colonies[(1 - agent.colony) as ColonyId];
+      const enemy = enemyOf(state, agent.colony);
+      if (enemy === undefined) continue;
       const spread = Math.floor((rng.next() - 0.5) * 8);
       const target =
         o.attack !== false
@@ -141,6 +142,17 @@ export function scriptedInputs(state: SimState, o: ScriptOptions): SimInput[] {
     }
   }
   return inputs;
+}
+
+/** The next colony after this one, in colony order and round again, that is still in the match: the other colony of a
+ * two-colony match. */
+function enemyOf(state: SimState, colony: ColonyId): ColonyState | undefined {
+  const n = state.colonies.length;
+  for (let k = 1; k < n; k++) {
+    const enemy = state.colonies[(colony + k) % n]!;
+    if (enemy.eliminated === undefined) return enemy;
+  }
+  return undefined;
 }
 
 /**
