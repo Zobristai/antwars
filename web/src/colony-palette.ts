@@ -4,7 +4,7 @@
  * match's setup before they draw; until then, and for a match that carries no names, it is the rated names' colours.
  */
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyColours, colourCss, supercolony, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyColours, colourCss, supercolony } from "../../src/sim/colonyNames.ts";
 import type { Rgb } from "./board-look.ts";
 import "./colony-ground.css";
 
@@ -19,7 +19,7 @@ const WASH: Readonly<Record<string, { readonly hue: Rgb; readonly depth: number 
 };
 const WASH_SHADE = 0.92, WASH_DEPTH = 1.2;
 
-let names: ColonyNamePair = COLONY_NAMES;
+let names: readonly string[] = COLONY_NAMES;
 
 /**
  * The lightest panel colour a colony's coloured text sits on: --aw-raise (web/index.html), a list row under the pointer
@@ -50,7 +50,7 @@ export function needsTextGround(rgb: number): boolean {
  * colour needs one, the dark ground under its coloured text: the root's data-aw-ground lists those colonies ("0", "1")
  * and --aw-ink-ground is the ground's colour (colony-ground.css). A match that needs none carries neither.
  */
-export function setMatchColonies(pair: ColonyNamePair, doc?: Document): void {
+export function setMatchColonies(pair: readonly string[], doc?: Document): void {
   names = pair;
   if (!doc) return;
   const root = doc.documentElement;

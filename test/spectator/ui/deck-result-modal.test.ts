@@ -156,18 +156,18 @@ describe("the match result as a modal over the screen", () => {
     expect(won.dialog.open).toBe(true);
     const head = won.dialog.byClass("d1-result-head")[0]!;
     expect(head.textContent).toBe("Sweetwater Colony wins");
-    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k2, var(--aw-c2))");
+    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k2)");
     expect(head.classes()).toEqual(["d1-result-head", "c2"]);
     expect(head.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
     expect(won.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last colony standing · queens killed");
     expect(won.dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
     // The moment in its colony's colour, the colony it names in that colony's own.
     const what = won.dialog.byClass("d1-moment-what")[0]!;
-    expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     const who = won.dialog.byClass("d1-moment-who")[0]!;
     expect(who.textContent).toBe("· Lake Skinner Colony");
     const name = who.children.find(c => c.tag === "span")!;
-    expect((name.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    expect((name.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     expect(name.getAttribute("title")).toBe(colonyNameNote("Lake Skinner Colony"));
 
     // A same-tick all-idle end: every queen lost at the result tick, the time-up winner still shown as the winner.
@@ -175,7 +175,7 @@ describe("the match result as a modal over the screen", () => {
     idle.show(ended(3, "idle", "territory", true));
     const idleHead = idle.dialog.byClass("d1-result-head")[0]!;
     expect(idleHead.textContent).toBe("Lake Skinner Colony wins");
-    expect((idleHead.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    expect((idleHead.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     expect(idle.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last seats inactive on the same tick · decided on territory");
 
     const drawn = modal();

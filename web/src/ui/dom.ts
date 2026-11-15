@@ -1,5 +1,5 @@
 // Small DOM helpers for the spectator HUD's agent panel.
-import { colonyNameNote, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
 
 export function h<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = doc.createElement(tag);
@@ -31,8 +31,11 @@ export function setMarkup(node: Element, html: string): void {
   node.innerHTML = html;
 }
 
-/** Each colony's ink, colonies 0 to 3: its name's colour, set for the page from the match (web/src/colony-palette.ts), else the classic colour. */
-export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))", "var(--aw-k2, var(--aw-c2))", "var(--aw-k3, var(--aw-c3))"] as const;
+/**
+ * Each colony's ink: its name's colour, set for the page from the match (web/src/colony-palette.ts), else the classic
+ * colour. Colonies 2 and 3 play only in a four-colony match, which always carries their names, so they have no classic one.
+ */
+export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))", "var(--aw-k2)", "var(--aw-k3)"] as const;
 
 /**
  * Writes text into node. Where the match drew its colony names (unrated), each of those names in the text is shown in
@@ -41,7 +44,7 @@ export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-
  * (ui.css), so hovering it shows its tooltip, and which keeps 4.5:1 on a dark ground where its colour needs one
  * (colony-ground.css).
  */
-export function setColonyText(doc: Document, node: HTMLElement, text: string, drawn: ColonyNamePair | undefined): void {
+export function setColonyText(doc: Document, node: HTMLElement, text: string, drawn: readonly string[] | undefined): void {
   if (!drawn) {
     // A name shown earlier in its colour (another match on this page) gives way to plain text.
     if (node.children.length > 0) node.textContent = text;

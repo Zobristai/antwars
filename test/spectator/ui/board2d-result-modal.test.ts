@@ -117,7 +117,7 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
     expect(head.textContent).toBe("Lake Skinner Colony wins");
-    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k3, var(--aw-c3))");
+    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last colony standing · queens killed");
   });
 

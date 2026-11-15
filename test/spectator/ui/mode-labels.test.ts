@@ -24,6 +24,8 @@ describe("site match labels", () => {
     expect(recordingType({ kind: "ranked", size: 3 })).toBe("Ranked · 3v3");
     expect(recordingType({ kind: "unranked", size: 4 })).toBe("Unranked · 4v4");
     expect(recordingType({ kind: "unrated", size: 1 })).toBe("Unranked · 1v1");
+    // A four-colony match is its mode's name alone: its four one-seat colonies are no 1v1.
+    expect(recordingType({ kind: "quadrants", size: 1 })).toBe("Quadrants");
     for (const word of Object.values(MATCH_TYPE_WORDS)) for (const retired of LABEL_RETIRED) expect(word).not.toMatch(retired);
   });
 

@@ -23,7 +23,7 @@ import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type Agent
 import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped } from "../format.ts";
 import { badge } from "../icons.ts";
 
-export type Colony = 0 | 1;
+export type Colony = number;
 export const COLONIES = [0, 1] as const;
 
 /**
@@ -547,11 +547,10 @@ const NO_ROWS: readonly HistoryRow[] = [];
 
 // ---------------------------------------------------------------- the result
 
-/** colony and winner: colony ids 0 to 3, so a four-colony match's result is shown as it is. */
-export interface Moment { readonly when: string; readonly what: string; readonly who: string; readonly colony: number }
+export interface Moment { readonly when: string; readonly what: string; readonly who: string; readonly colony: Colony }
 export interface ResultView {
   readonly headline: string;
-  readonly winner: number | null;
+  readonly winner: Colony | null;
   /** The reason, with the deciding measure where it differs (resultHow). */
   readonly how: string;
   /** Each rating line: the shown name, a Benchmark name's level and Fast badges, then the change. */
@@ -582,7 +581,7 @@ export function resultView(frame: Frame | null): ResultView | null {
  * One side's player(s) as the post names them: each distinct shown name in seat order (a seat's "#n" dropped, so one
  * player holding every seat is named once), a Benchmark's level and Fast in brackets after its name, joined with "&".
  */
-export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: number,
+export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony,
   colonyNames: readonly string[] = COLONY_NAMES): string {
   const names: string[] = [];
   agents.forEach((a, index) => {
@@ -617,7 +616,7 @@ export function shareText(frame: Frame | null, url: string | null): string | nul
   const shown = resultView(frame);
   if (shown === null || url === null) return null;
   const board = frame!.board!, agents = board.agents, names = colonyNamesOf(board.setup);
-  const side = (colony: number) => sideNames(agents, colony, names);
+  const side = (colony: Colony) => sideNames(agents, colony, names);
   const colonies = board.setup.queens.map((_, colony) => colony);
   // Two colonies are both named, as they always were.
   const tookPart = colonies.length <= 2 ? colonies : colonies.filter(colony => agents.some(a => a.colony === colony));
