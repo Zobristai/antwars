@@ -489,17 +489,17 @@ function cloneFull(f: StreamFull): StreamFull {
     setup: f.setup,
     ...(f.territoryWin === undefined ? {} : { territoryWin: { ...f.territoryWin } }),
     ...(f.queens === undefined ? {} : { queens: f.queens.map((q) => ({ ...q })) }),
-    ...(f.hatched === undefined ? {} : { hatched: [...f.hatched] as typeof f.hatched }),
+    ...(f.hatched === undefined ? {} : { hatched: [...f.hatched] }),
     territory: f.territory.slice(),
     marks: f.marks.map((m) => ({ ...m, words: m.words.slice() })),
     agents: f.agents.map((a) => ({ ...a })),
-    overrun: [...f.overrun] as typeof f.overrun,
+    overrun: [...f.overrun],
     overrunRequired: f.overrunRequired,
-    deaths: [...f.deaths] as typeof f.deaths,
+    deaths: [...f.deaths],
     result: f.result,
     ...(f.food !== undefined ? { food: f.food.slice() } : {}),
     ...(f.hatch !== undefined ? { hatch: { ...f.hatch } } : {}),
-    ...(f.stores !== undefined ? { stores: f.stores.map((s) => ({ ...s })) as typeof f.stores } : {}),
+    ...(f.stores !== undefined ? { stores: f.stores.map((s) => ({ ...s })) } : {}),
   };
 }
 

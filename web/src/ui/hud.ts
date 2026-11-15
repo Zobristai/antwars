@@ -12,7 +12,7 @@ import "./ui.css";
 import type { HudHost, HudView, Mounted } from "./types.ts";
 import type { Rect } from "../words.ts";
 import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../src/sim/colonyNames.ts";
 import { streamQueens, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type Frame } from "../buffer.ts";
 import {
@@ -34,7 +34,7 @@ import {
 } from "./format.ts";
 import { navigation } from "./nav.ts";
 
-type Colony = 0 | 1;
+type Colony = number;
 const COLONIES = [0, 1] as const;
 /** Wide from this width (or any landscape screen from 560 px): the window beside a standing pane. */
 const WIDE_MIN_PX = 860;
@@ -53,7 +53,7 @@ export const OVERVIEW_LABEL = "Whole board, from above";
 
 /** New words this HUD adds; every other string is the page's own. */
 export const D2_COPY = {
-  details: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]} details`,
+  details: (colony: Colony, names: readonly string[] = COLONY_NAMES) => `${names[colony]} details`,
   board: "Board",
   kills: "Kills",
   /** The clock's time left, as the score panel draws it: "29:20 · 0:40 left". */
@@ -653,7 +653,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     if (e) {
       const t = storyText(e, b.agents, frame.tick, b.queens, false, colonyNamesOf(b.setup));
       const when = matchTime(storyWhen(e, frame.tick), tps);
-      lines = { what: t.what, who: t.who, when, colony: e.colony as Colony, kind: e.kind };
+      lines = { what: t.what, who: t.who, when, colony: e.colony, kind: e.kind };
     }
     if (fall && !ended) {
       // The fall is the match's moment: the queen lost, large, whatever the timeline last told.

@@ -4,7 +4,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
 import { fallWindow, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
@@ -23,7 +23,7 @@ import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type Agent
 import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped } from "../format.ts";
 import { badge } from "../icons.ts";
 
-export type Colony = 0 | 1;
+export type Colony = number;
 export const COLONIES = [0, 1] as const;
 
 /**
@@ -369,7 +369,7 @@ export function caption(frame: Frame | null): Caption | null {
   const e = significant(frame.story, frame.tick, rate);
   if (!e) return null;
   return {
-    kind: "event", colony: e.colony as Colony, when: matchTime(storyWhen(e, frame.tick), rate),
+    kind: "event", colony: e.colony, when: matchTime(storyWhen(e, frame.tick), rate),
     what: storyText(e, b.agents, frame.tick, b.queens, false, colonyNamesOf(b.setup)).what.replace(HP_TAIL, ""), who: colonyNamesOf(b.setup)[e.colony],
   };
 }
@@ -428,7 +428,7 @@ function commandRow(c: CommandEntry, b: Board, rate: number): HistoryRow {
   const when = matchTime(c.tick, rate);
   let glyph: HistoryGlyph = null, what = CALL_WORDS[c.call], intent = "";
   if (c.order) {
-    const a = { colony: c.colony as Colony, order: c.order.kind, orderX: c.order.tileX, orderY: c.order.tileY };
+    const a = { colony: c.colony, order: c.order.kind, orderX: c.order.tileX, orderY: c.order.tileY };
     const target = orderTarget(c.order.tileX, c.order.tileY, b);
     const directed = c.order.kind === "go_to" || c.order.kind === "attack";
     glyph = { kind: "order", order: c.order.kind, guard: directed && !!target?.liveQueen && target.colony === c.colony };
@@ -568,7 +568,7 @@ export function resultView(frame: Frame | null): ResultView | null {
     headline: resultHeadline(r, colonyNamesOf(b.setup)), winner: r.winner, how: resultHow(r, b.queens !== undefined),
     ratings: ratingResultRows(b.setup.rated, b.agents, r),
     moments: decisive(frame.story, r.reason, r.winner).map(m => ({
-      when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true, colonyNamesOf(b.setup)).what, who: colonyNamesOf(b.setup)[m.colony], colony: m.colony as Colony,
+      when: matchTime(storyWhen(m, frame.tick), rate), what: storyText(m, b.agents, frame.tick, b.queens, true, colonyNamesOf(b.setup)).what, who: colonyNamesOf(b.setup)[m.colony], colony: m.colony,
     })),
     next: r.nextStartMs === null ? "Next match · not announced"
       : `Next match · ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(r.nextStartMs)}`,
@@ -582,7 +582,7 @@ export function resultView(frame: Frame | null): ResultView | null {
  * player holding every seat is named once), a Benchmark's level and Fast in brackets after its name, joined with "&".
  */
 export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony,
-  colonyNames: ColonyNamePair = COLONY_NAMES): string {
+  colonyNames: readonly string[] = COLONY_NAMES): string {
   const names: string[] = [];
   agents.forEach((a, index) => {
     if (a.colony !== colony) return;

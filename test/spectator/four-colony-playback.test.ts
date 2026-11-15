@@ -15,7 +15,7 @@ const W = 16, H = 16, HP = 5000;
 const NESTS = [[2, 2], [13, 2], [2, 13], [13, 13]] as const;
 const at = (tile: number) => tile * SUB_TILE + SUB_TILE / 2;
 const queen = (colony: number, lostTick: number | null = null, hp = HP): StreamQueen =>
-  ({ id: 0, colony, x: at(NESTS[colony]![0]), y: at(NESTS[colony]![1]), foundedTick: 0, lostTick, overrun: 0, hp }) as StreamQueen;
+  ({ id: 0, colony, x: at(NESTS[colony]![0]), y: at(NESTS[colony]![1]), foundedTick: 0, lostTick, overrun: 0, hp });
 
 /** Ants by colony, two each beside their nest: ids 1-8, colony c holding ids 2c+1 and 2c+2. */
 function ants(colonies: readonly number[]): StreamMessage["ants"] {
@@ -36,25 +36,29 @@ function opening(): StreamMessage {
   const territory = new Uint8Array(W * H);
   territory.set([1, 1, 1, 1, 2, 2, 2, 3, 3, 4]);
   const store = { food: 0, nextHatchTick: 0, nextCost: 10 };
-  // Four entries per colony field, as a four-colony full snapshot decodes; the two-entry types widen with the stream.
-  const full = {
+  // Four entries per colony field, as a four-colony full snapshot decodes.
+  const full: StreamFull = {
     match: 7,
-    setup: { mapW: W, mapH: H, ticksPerSecond: 10, matchTicks: 600, idleTicks: 300, overrunRadiusTiles: 2, queens: NESTS.map(([x, y]) => [at(x), at(y)]) },
+    setup: { mapW: W, mapH: H, ticksPerSecond: 10, matchTicks: 600, idleTicks: 300, overrunRadiusTiles: 2, queens: NESTS.map(([x, y]): [number, number] => [at(x), at(y)]), colonies: 4 },
     queens: [0, 1, 2, 3].map((c) => queen(c)),
     hatched: [0, 0, 0, 0],
     territory,
     marks: [], agents: [], overrun: [0, 0, 0, 0], overrunRequired: 100, deaths: [0, 0, 0, 0], result: null,
     stores: [0, 1, 2, 3].map(() => ({ ...store })),
-  } as unknown as StreamFull;
+    eliminations: [],
+  };
   return { tick: 0, ants: ants([0, 1, 2, 3]), full, events: [] };
 }
 
 const delta = (tick: number, colonies: readonly number[], events: StreamEvent[] = []): StreamMessage => ({ tick, ants: ants(colonies), full: null, events });
 const territory = (tiles: number[], owner: number): StreamEvent => ({ kind: "territory", tiles, owners: tiles.map(() => owner) });
-const lost = (colony: number, tick: number): StreamEvent => ({ kind: "queenLost", queen: queen(colony, tick, 0) });
-const bite = (colony: number, hp: number) => ({ kind: "queenHp", colony, queenId: 0, hp }) as StreamEvent;
+/** A queen lost with the HP she had: 0 when killed, her HP when her colony left the match idle. */
+const lost = (colony: number, tick: number, hp: number): StreamEvent => ({ kind: "queenLost", queen: queen(colony, tick, hp) });
+const bite = (colony: number, hp: number): StreamEvent => ({ kind: "queenHp", colony, queenId: 0, hp });
+/** The stream's own elimination notice; playback reads eliminations from the queens, which agree with it. */
+const eliminated = (colony: number, tick: number): StreamEvent => ({ kind: "eliminated", colony, tick });
 /** A same-tick all-idle end: every colony left on tick 5, colony 2 ranked first. */
-const RESULT = { winner: 2, reason: "idle", decidedBy: "kills", tick: 5, nextStartMs: null } as unknown as StreamResult;
+const RESULT: StreamResult = { winner: 2, reason: "idle", decidedBy: "kills", tick: 5, nextStartMs: null };
 
 /**
  * The match: colony 3 takes the territory lead (tick 1), colony 1 is eliminated by its queen's death (tick 2), the
@@ -66,10 +70,11 @@ function match(): StreamMessage[] {
     opening(),
     delta(1, [0, 1, 2, 3], [territory([10, 11, 12, 13, 14, 15], 4), bite(1, 2000)]),
     // Removed, not killed: colony 1's ants leave the list with no death event, its tiles turn neutral.
-    delta(2, [0, 2, 3], [bite(1, 0), lost(1, 2), territory([4, 5, 6], 0)]),
+    delta(2, [0, 2, 3], [bite(1, 0), lost(1, 2, 0), territory([4, 5, 6], 0), eliminated(1, 2)]),
     delta(3, [0, 2, 3], [territory([16, 17], 1)]),
     delta(4, [0, 2, 3], [bite(2, 3000)]),
-    delta(5, [], [lost(0, 5), lost(2, 5), lost(3, 5), territory([0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], 0), { kind: "end", result: RESULT }]),
+    delta(5, [], [lost(0, 5, HP), lost(2, 5, 3000), lost(3, 5, HP), territory([0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], 0),
+      eliminated(0, 5), eliminated(2, 5), eliminated(3, 5), { kind: "end", result: RESULT }]),
   ];
 }
 
@@ -154,7 +159,7 @@ describe("four-colony playback", () => {
   });
 
   it("names an overrun attempt's target colony where it is not simply the other colony", () => {
-    const names = ["North", "East", "South", "West"] as unknown as Parameters<typeof storyText>[5];
+    const names = ["North", "East", "South", "West"];
     const attempt = { id: 1, kind: "overrun" as const, tick: 3, colony: 3, target: 1, agent: -1, x: 13, y: 2, queenId: 0 };
     expect(storyText(attempt, [], 3, [], false, names).what).toBe("Overrun attempt on the East queen — under way");
     expect([...queensUnderAttack([attempt], 3)]).toEqual(["1:0"]);
@@ -164,7 +169,7 @@ describe("four-colony playback", () => {
 describe("two-colony fall unchanged", () => {
   it("reads both colonies fallen when both last queens die on one tick, winner or not", () => {
     const queens = [queen(0, 9), queen(1, 9)];
-    const result = { winner: 0, reason: "queens_killed", decidedBy: "kills", tick: 9, nextStartMs: null } as StreamResult;
+    const result: StreamResult = { winner: 0, reason: "queens_killed", decidedBy: "kills", tick: 9, nextStartMs: null };
     expect(fallenColonies({ queens, result })).toEqual([true, true]);
     expect(fallenColonies({ queens: [queen(0)] })).toEqual([false, false]);
   });
