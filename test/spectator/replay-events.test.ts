@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { StreamEvent, StreamFull, StreamMessage, StreamQueen } from "../../src/live/format.ts";
+import { SpectatorRecorder } from "../../src/live/model.ts";
+import { rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
+import { newMatchConfig } from "../../src/sim/gridScale.ts";
+import { createMatch } from "../../src/sim/map.ts";
+import { advance, type ServerTerminal } from "../../src/sim/step.ts";
+import type { SimInput } from "../../src/sim/types.ts";
 import { FIGHT_MIN_DEATHS, FIGHT_QUIET_TICKS, FOOD_LEAD_FLOOR, ReplayEventScan } from "../../web/src/replay-events.ts";
 
 const START = 1000;
@@ -162,11 +168,11 @@ describe("four colonies", () => {
     s.push(after);
     expect(s.events().map(e => [e.kind, e.tick, e.colony])).toEqual([["nest", 1100, 2], ["nest", 1300, 0], ["nest", 1300, 1]]);
   });
-  it("still marks a nest the winner lost before its result", () => {
+  it("makes no nest-lost mark for the winner for a nest it lost before its result either", () => {
     const by = new Map<number, StreamEvent[]>();
     add(by, 1100, { kind: "queenLost", queen: queen4(1, 4, 1099) });
     add(by, 1300, lost(0, 1300), lost(2, 1300), lost(3, 1300), end(1, 1300, "queens_killed"));
-    expect(scan(by, 1300, quadrants()).map(e => [e.tick, e.colony])).toEqual([[1100, 1], [1300, 0], [1300, 2], [1300, 3]]);
+    expect(scan(by, 1300, quadrants()).map(e => [e.tick, e.colony])).toEqual([[1300, 0], [1300, 2], [1300, 3]]);
   });
   it("keeps a two-colony winner's nest lost in its result's message marked, as before", () => {
     const by = new Map<number, StreamEvent[]>();
@@ -184,5 +190,47 @@ describe("four colonies", () => {
     expect(run([[1010, 0, 200], [1030, 2, 260], [1050, 3, 120], [1060, 3, 200]])).toEqual([
       { kind: "food", tick: 1030, ms: 3000, colony: 2 }, { kind: "food", tick: 1060, ms: 6000, colony: 3 },
     ]);
+  });
+});
+
+describe("a four-colony match as the recorder sends it", () => {
+  /** Test-only quadrant geometry (as in test/live/four-colony-recorder.test.ts); no quadrant map ships. */
+  const QUADRANTS: MapDefinition = {
+    id: "fixture-quadrants", name: "Fixture Quadrants",
+    water: [{ x: 16, y: 2, width: 3, height: 9 }, { x: 4, y: 24, width: 10, height: 2 }],
+    quadrant: {
+      referenceWidth: 64, referenceHeight: 64, centreHalfWidth: 8, centreHalfHeight: 6, nestTileX: 7, nestTileY: 11,
+      startArea: { x: 2, y: 4, width: 12, height: 15 },
+      foodPatches: [{ tileX: 10, tileY: 20, radius: 2, perTile: 3 }, { tileX: 20, tileY: 14, radius: 1, perTile: 5 }],
+      centreFood: [{ radius: 2, perTile: 4 }, { radius: 1, perTile: 2 }],
+    },
+  };
+  const LIVE = newMatchConfig(rulesConfig("redesign"));
+  const CONFIG: SimConfig = { ...LIVE, terrain: { ...LIVE.terrain!, maps: [QUADRANTS] } };
+  const JOINS: SimInput[] = [0, 1, 2, 3].map(c => ({ type: "join", agentId: `a${c}`, modelLabel: `model ${c}` }));
+
+  it("marks the nest of a colony eliminated for idleness, and of every colony the winner outlasted, and none of the winner's", () => {
+    const state = createMatch(404, CONFIG);
+    const recorder = new SpectatorRecorder(state);
+    const opening = recorder.initial();
+    const messages: StreamMessage[] = [{ ...opening, full: recorder.initialFull() }];
+    const play = (inputs: readonly SimInput[] = [], terminal: ServerTerminal = false) => {
+      const rec = recorder.record(advance(state, inputs, undefined, undefined, undefined, terminal, true));
+      messages.push({ ...rec, full: null });
+      return rec.tick;
+    };
+    for (let t = 0; t < 100; t++) play(t === 0 ? JOINS : []);
+    // Colony 2 is ended idle: the engine retires its queen with no queen loss of its own.
+    const idle = play([], { idle: [2] });
+    for (let t = 0; t < 10; t++) play();
+    // Colonies 0, 1 and 3 go idle on one tick: the result names a winner among them, whose queen is lost with theirs.
+    const end = play([], { idle: [0, 1, 3] });
+    const winner = state.result!.winner!;
+    expect([0, 1, 3]).toContain(winner);
+
+    const scan = new ReplayEventScan();
+    for (const m of messages) scan.push(m);
+    const nests = scan.events().filter(e => e.kind === "nest").map(e => [e.tick, e.colony]);
+    expect(nests).toEqual([[idle, 2], ...[0, 1, 3].filter(c => c !== winner).map(c => [end, c])]);
   });
 });

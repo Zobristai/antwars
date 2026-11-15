@@ -28,8 +28,8 @@ export const FOOD_LEAD_FLOOR = 50;
  * - Fight: a run of ticks with bites, ending after FIGHT_QUIET_TICKS with none, marked at its first bite when
  *   at least FIGHT_MIN_DEATHS ants died from that bite until the run ended.
  * - Nest lost: each queen lost, at the message that reports it. Recordings without a queen list: the overrun end.
- *   A four-colony match's winner gets none from its result's message on: in a same-tick all-idle end its queens are
- *   lost with the colonies it outlasted, yet it won (a nest it lost before then is still marked).
+ *   A four-colony match's winner gets none, once its result is read: in a same-tick all-idle end its queens are lost
+ *   with the colonies it outlasted, yet it won. An elimination's retired queens each come with their own queen loss.
  * - Food lead: the colony that has gathered the most food so far changes, by more than the margin over the runner-up
  *   (of every colony in the match; with two, simply the other). Food gathered is
  *   food delivered home: an ant whose carrying flag clears while it lives (the only way a carrier puts food down).
@@ -46,7 +46,7 @@ export class ReplayEventScan {
   private queenList = false;
   /** The match's colony count, from its first message's setup (two when that message carries none). */
   private colonies = 2;
-  /** A four-colony match's winner, once the message carrying its result is read. */
+  /** A four-colony match's winner, once the message carrying its result is read: events() leaves out its nest marks. */
   private winner: Colony | null = null;
   private readonly lost = new Set<string>();
 
@@ -120,7 +120,7 @@ export class ReplayEventScan {
   /** The marks so far, closing a fight still running at the recording's end. */
   events(): ReplayEvent[] {
     this.closeRun();
-    return [...this.out].sort((x, y) => x.tick - y.tick);
+    return this.out.filter(e => e.kind !== "nest" || e.colony !== this.winner).sort((x, y) => x.tick - y.tick);
   }
 
   private closeRun(): void {
@@ -129,7 +129,6 @@ export class ReplayEventScan {
   }
 
   private nest(colony: Colony, id: number, tick: number): void {
-    if (colony === this.winner) return;
     const key = `${colony}:${id}`;
     if (this.lost.has(key)) return;
     this.lost.add(key);
