@@ -1,6 +1,6 @@
 // The broadcast HUD: pure rules shared by its three pages. No DOM, no requests, no clock.
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { colonyNamesOf } from "../../../src/sim/colonyNames.ts";
+import { SUPERCOLONY_NAMES } from "../../../src/sim/colonyNames.ts";
 import type { StreamResult } from "../../../src/live/format.ts";
 import { resultHow } from "../story.ts";
 import { replayDate } from "../replay.ts";
@@ -151,21 +151,37 @@ export interface RecordingRow {
   readonly type: string | null;
 }
 
+/** How many colonies a listed recording has: four for a four-colony (Quadrants) match, which its type, its four names, its
+ * winner or a seat of colony 2 or 3 shows; two otherwise. */
+export function recordedColonies(r: Partial<Pick<Recording, "winner" | "seats" | "matchType" | "colonyNames">>): 2 | 4 {
+  const four = r.matchType?.kind === "quadrants" || r.colonyNames?.length === 4 || (r.winner ?? 0) > 1 || (r.seats ?? []).some(seat => seat.colony > 1);
+  return four ? 4 : 2;
+}
+
+/** A listed match's colony names, index = colony id, one for each of its `colonies`: the names it carries, else the shared
+ * table's in its order, which are the rated names for a two-colony match and the four Quadrants names for a four-colony
+ * one. */
+export function listedNames(row: { readonly colonyNames?: readonly string[] | null }, colonies: number): readonly string[] {
+  if (row.colonyNames?.length === colonies) return row.colonyNames;
+  return colonies === 2 ? COLONY_NAMES : SUPERCOLONY_NAMES.slice(0, colonies).map(name => name.label);
+}
+
 /** Known only from the record; null stays unknown, and a null winner is a draw only where the record says so. */
-export function recordingResult(r: Pick<Recording, "winner" | "reason" | "decidedBy"> & Partial<Pick<Recording, "colonyNames">>): { result: string; how: string | null } {
+export function recordingResult(r: Pick<Recording, "winner" | "reason" | "decidedBy"> & Partial<Pick<Recording, "colonyNames" | "seats" | "matchType">>): { result: string; how: string | null } {
   const how = r.reason !== null && r.decidedBy !== null ? resultHow({ reason: r.reason, decidedBy: r.decidedBy }, true) : null;
   if (r.reason === "abandoned") return { result: "Abandoned", how };
-  if (r.winner !== null) return { result: `${colonyNamesOf(r)[r.winner]} won`, how };
+  if (r.winner !== null) return { result: `${listedNames(r, recordedColonies(r))[r.winner]} won`, how };
   if (r.decidedBy === "draw") return { result: "Draw", how };
   return { result: "Result unknown", how: null };
 }
 
-/** Recorded model labels by colony; an empty seat list is unrecorded seats, never a match without agents. */
+/** Recorded model labels by colony, one colony for each name; an empty seat list is unrecorded seats, never a match
+ * without agents. */
 export function recordingModels(seats: Recording["seats"], names: readonly string[] = COLONY_NAMES): string {
   if (seats.length === 0) return "Seats not recorded";
-  return ([0, 1] as const).flatMap(colony => {
+  return names.flatMap((name, colony) => {
     const labels = seats.filter(s => s.colony === colony).sort((a, b) => a.seat - b.seat).map(s => s.modelLabel ?? "model unknown");
-    return labels.length ? [`${names[colony]}: ${labels.join(", ")}`] : [];
+    return labels.length ? [`${name}: ${labels.join(", ")}`] : [];
   }).join(" · ");
 }
 
@@ -173,14 +189,15 @@ export function recordingModels(seats: Recording["seats"], names: readonly strin
 export const RECORD_LABEL: Record<Recording["status"], string> = { complete: "Record complete", partial: "Record partial", unavailable: "Record unavailable" };
 
 /** Each match type's word on the Matches lists' Game type badge; never a mode slug. A public or invite-only lobby and an
- * unrated match are both "Unranked", against "Ranked". */
+ * unrated match are both "Unranked", against "Ranked"; a four-colony match is its mode's name, "Quadrants". */
 export const MATCH_TYPE_WORDS: Record<NonNullable<Recording["matchType"]>["kind"], string> = {
-  index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked",
+  index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked", quadrants: "Quadrants",
 };
-/** "Ranked · 2v2"; the word alone where the size is unknown; null for no type, or none sent. */
+/** "Ranked · 2v2"; the word alone where the size is unknown, and for Quadrants, whose four colonies are no NvN; null for no
+ * type, or none sent. */
 export function recordingType(type: Recording["matchType"]): string | null {
   if (type == null) return null;
-  return type.size === null ? MATCH_TYPE_WORDS[type.kind] : `${MATCH_TYPE_WORDS[type.kind]} · ${type.size}v${type.size}`;
+  return type.size === null || type.kind === "quadrants" ? MATCH_TYPE_WORDS[type.kind] : `${MATCH_TYPE_WORDS[type.kind]} · ${type.size}v${type.size}`;
 }
 
 export function recordingRow(r: Recording, search: string): RecordingRow {
@@ -188,16 +205,16 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
   return {
     id: r.id, href: keep(`/?replay=${encodeURIComponent(r.id)}`, search),
     when: utcStamp(r.startedAt) ?? utcStamp(replayDate(r.id) ?? "") ?? "Start unknown",
-    result, how, models: recordingModels(r.seats, colonyNamesOf(r)), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
+    result, how, models: recordingModels(r.seats, listedNames(r, recordedColonies(r))), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
   };
 }
 
 /** A match known never joined: a "complete" record (its seats verified against the match log) that holds no seat for one
- * colony, or none at all. Such a match was never played. Any other record keeps its row: a "partial" record may lack a
- * colony that joined after the replay stopped, and an "unavailable" record carries no seat data, so neither shows that a
- * colony never joined. */
-export const neverJoined = (r: Pick<Recording, "seats" | "status">): boolean =>
-  r.status === "complete" && !(r.seats.some(seat => seat.colony === 0) && r.seats.some(seat => seat.colony === 1));
+ * of its colonies, or none at all. Such a match was never played. Any other record keeps its row: a "partial" record may
+ * lack a colony that joined after the replay stopped, and an "unavailable" record carries no seat data, so neither shows
+ * that a colony never joined. */
+export const neverJoined = (r: Pick<Recording, "seats" | "status"> & Partial<Pick<Recording, "winner" | "matchType" | "colonyNames">>): boolean =>
+  r.status === "complete" && Array.from({ length: recordedColonies(r) }, (_, colony) => colony).some(colony => !r.seats.some(seat => seat.colony === colony));
 
 /** Saved history only, deduplicated by immutable id, newest first by start; a match a colony never joined is not listed
  * (its record and replay stay reachable by their own link). */

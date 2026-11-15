@@ -5,18 +5,19 @@
 // One row layout for every record (the signed-off rows drawing): six columns in every table, Time (date over UTC time;
 // Waiting's when the wait began), Game type (one badge), the two colonies, Status (one stamp: WAITING, STARTING,
 // n OF m SEATS, LIVE, COMPLETE, PARTIAL or UNAVAILABLE) and the button (Watch for live, Replay for a recording, none while
-// waiting). Each colony holds its players one line each, in one order everywhere: username (builders only), model, level,
+// waiting); a four-colony (Quadrants) row holds its four colonies in one Colonies cell across both colony columns. Each
+// colony holds its players one line each, in one order everywhere: username (builders only), model, level,
 // Fast, the cyan rating badge (figure only, ± on hover, tap or focus), ×N seats, then the colony's result (WINNER, DRAW or
 // ABANDONED, in its ink; none while waiting or live). In a card too narrow for the table each row stacks in the same
 // order in every list (archive.css): time, game type and status, each colony's name over its player lines, the button.
 // Rows and links come from today's helpers (ui/format.ts), read-only.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { colonyColours, colonyNameNote, colonyNamesOf, colourCss } from "../../../src/sim/colonyNames.ts";
+import { colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { TEXT_GROUND, needsTextGround } from "../colony-palette.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { benchmarkLabel } from "../leaderboard-page/view.ts";
-import { liveRow, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
+import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
@@ -35,6 +36,8 @@ const SELF_REPORTED = "Self-reported: outside the Antwars Model Index, each agen
 export const MATCH_HEADS = ["Time", "Game type", "Status"] as const;
 /** The colony columns' heads over rows naming their own colonies: each cell then names its own. */
 export const COLONY_HEADS = ["First colony", "Second colony"] as const;
+/** The one head over both colony columns in rows of four colonies, whose one cell names each of them. */
+export const FOUR_COLONY_HEAD = "Colonies";
 const COLONIES = [0, 1] as const;
 /** One column grid for every list (archive.css). */
 const MATCH_COLUMNS = ["c-start", "c-type", "c-model", "c-model", "c-status", "c-go"] as const;
@@ -63,12 +66,14 @@ export interface MatchRow {
   /** The Game type badge's words ("Ranked · 1v1"); null for no badge, or the quiet words where it is not recorded. */
   readonly type: string | null;
   readonly typeNote?: string;
-  readonly colonies: readonly [ColonyCell, ColonyCell];
+  /** Each colony's cell, index = colony id: two, or four in a Quadrants match. */
+  readonly colonies: readonly ColonyCell[];
   /** The status stamp: its words and its look, as the drawing draws it: a record's (complete, partial, unavailable) solid, a
    * waiting row's (WAITING, STARTING, n OF m SEATS) dashed, a live match's red. */
   readonly stamp: { readonly text: string; readonly look: "complete" | "partial" | "unavailable" | "waiting" | "live" };
   readonly action: { readonly text: string; readonly href: string; readonly label: string } | null;
-  /** The match's own colony names (an unrated match's drawn pair); absent where it uses the rated names. */
+  /** The match's own colony names, one per colony (an unrated match's drawn pair, a Quadrants match's four); absent where it
+   * uses the rated names. */
   readonly colonyNames?: readonly string[];
 }
 /** One Matches list's card. */
@@ -172,20 +177,25 @@ export function livePlayers(seats: readonly LiveSeat[]): SeatGroup[] {
  * result, LIVE, and Watch. */
 export function liveMatchRow(match: LiveMatch, search: string): MatchRow {
   const row = liveRow(match, search), when = utcStamp(match.startedAt) ?? START_UNKNOWN;
-  const seated = match.colonies[0].length + match.colonies[1].length > 0;
-  const colony = (index: 0 | 1): ColonyCell => {
-    const lines = livePlayers(match.colonies[index]);
+  const seated = match.colonies.some(seats => seats.length > 0);
+  const colony = (seats: readonly LiveSeat[]): ColonyCell => {
+    const lines = livePlayers(seats);
     return { lines, result: null, note: lines.length > 0 ? null : "not recorded" };
   };
   const type = recordingType(match.matchType);
   return {
-    id: row.id, when, type, colonies: [colony(0), colony(1)],
+    id: row.id, when, type, colonies: match.colonies.map(colony),
     ...(type === null && !seated ? { typeNote: "not recorded" } : {}),
     stamp: { text: STAMPS.live, look: "live" },
     action: { text: "Watch", href: row.href, label: `Watch, ${liveKind(match)} started ${when}` },
-    ...(match.colonyNames ? { colonyNames: match.colonyNames } : {}),
+    ...ownNames(match, match.colonies.length),
   };
 }
+
+/** A row's own colony names, as MatchRow carries them: a four-colony match always names its colonies (its own names, else
+ * the four in table order); a two-colony match only where it carries a drawn pair. */
+const ownNames = (match: { readonly colonyNames?: readonly string[] | null }, colonies: number): { colonyNames?: readonly string[] } =>
+  colonies > 2 ? { colonyNames: listedNames(match, colonies) } : match.colonyNames ? { colonyNames: match.colonyNames } : {};
 
 // ---------------------------------------------------------------- one row's parts, shared by every list
 /** The parts the Matches lists are built from, so Waiting, Live now and Recordings stand on one column grid. */
@@ -253,7 +263,7 @@ function rowParts(doc: Document) {
    * then the colony's result in its ink. The username and model are one name unit, the line's first child: too long for
    * its column, it ends in an ellipsis there, its whole text its title on hover and read in full by a screen reader;
    * badges, the rating, the count and the result are never cut. `key` keys its rating badge for focus across redraws. */
-  const playerLine = ({ parts, seats, rating }: SeatGroup, colony: 0 | 1, result: ColonyResult | null, key: string) => {
+  const playerLine = ({ parts, seats, rating }: SeatGroup, colony: number, result: ColonyResult | null, key: string) => {
     const node = h(doc, "span", "d1p-model");
     const name = h(doc, "span", "d1p-name");
     if (parts.user !== null) name.append(h(doc, "span", "d1p-user", parts.user));
@@ -280,7 +290,7 @@ function rowParts(doc: Document) {
   };
   const note = (text: string) => h(doc, "span", "d1p-model d1p-unknown", text);
   /** A colony's lines in a row, in either form: its players, then its quiet note ("seat open"), or the note alone. */
-  const colonyLines = (cell: ColonyCell, colony: 0 | 1, key: string): HTMLElement[] => [
+  const colonyLines = (cell: ColonyCell, colony: number, key: string): HTMLElement[] => [
     ...cell.lines.map((group, index) => playerLine(group, colony, cell.result, `${key}|${colony}|${index}`)),
     ...(cell.note !== null ? [note(cell.note)] : []),
   ];
@@ -292,34 +302,35 @@ function rowParts(doc: Document) {
     return node;
   };
   /**
-   * A row naming its own colonies inks them in their names' colours (--aw-k0, --aw-k1, archive.css .d1p-c0 and .d1p-c1),
+   * A row naming its own colonies inks them in their names' colours (--aw-k0 to --aw-k3, archive.css .d1p-c0 to .d1p-c3),
    * and puts a dark ground under a colony's coloured words where its colour needs one for 4.5:1 (colony-ground.css).
    */
   const inkColonies = (node: HTMLElement, row: MatchRow) => {
     if (row.colonyNames === undefined) return;
     const colours = colonyColours(row.colonyNames);
-    for (const colony of COLONIES) node.style.setProperty(`--aw-k${colony}`, colourCss(colours[colony]));
-    const grounded = COLONIES.filter(colony => needsTextGround(colours[colony]));
+    colours.forEach((colour, colony) => node.style.setProperty(`--aw-k${colony}`, colourCss(colour)));
+    const grounded = colours.flatMap((colour, colony) => needsTextGround(colour) ? [colony] : []);
     if (grounded.length === 0) return;
     node.setAttribute("data-aw-ground", grounded.join(" "));
     node.style.setProperty("--aw-ink-ground", colourCss(TEXT_GROUND));
   };
   /** A colony's name in its ink; a drawn name has its source as its tooltip, and the rated names are shown as they were. */
-  const colonyLabel = (tag: "dt" | "span", row: MatchRow, colony: 0 | 1) => {
-    const name = colonyNamesOf(row)[colony];
+  const colonyLabel = (tag: "dt" | "span", row: MatchRow, colony: number) => {
+    const name = (row.colonyNames ?? COLONY_NAMES)[colony];
     const node = h(doc, tag, `d1p-colony d1p-c${colony}`, name);
     const note = row.colonyNames === undefined ? null : colonyNameNote(name);
     if (note) node.title = note;
     return node;
   };
-  /** The stacked rows' colonies: each colony's name in its ink over (or beside) its lines. */
-  const colonyList = (row: MatchRow, lines: readonly (readonly HTMLElement[])[]) => {
+  /** The stacked rows' colonies, and a four-colony row's Colonies cell: each colony's name in its ink over (or beside) its
+   * lines. */
+  const colonyList = (row: MatchRow, key: string) => {
     const list = h(doc, "dl", "d1p-colonies");
-    for (const colony of COLONIES) {
+    row.colonies.forEach((cell, colony) => {
       const block = h(doc, "dd");
-      block.append(...lines[colony]!);
+      block.append(...colonyLines(cell, colony, key));
       list.append(colonyLabel("dt", row, colony), block);
-    }
+    });
     return list;
   };
   /** One Matches list's card: its state line, then its tables and its stacked rows, both from the same rows. */
@@ -327,25 +338,30 @@ function rowParts(doc: Document) {
     const body: Node[] = [];
     if (spec.rows.length > 0 || spec.loading) {
       // Rows using the rated names sit under the rated names' heads, drawn exactly as a list of rated rows only; rows
-      // naming their own colonies sit under neutral heads, each cell naming its own colonies. A list holding both is
-      // drawn as consecutive tables, one per run of rows of one kind, in the list's order.
-      const runs: { ownNames: boolean; rows: MatchRow[] }[] = [];
+      // naming their own colonies sit under neutral heads, each cell naming its own colonies; rows of four colonies sit
+      // under one Colonies head across both colony columns, their one cell naming each colony. A list holding more than one
+      // kind is drawn as consecutive tables, one per run of rows of one kind, in the list's order.
+      type Kind = "rated" | "own" | "four";
+      const kindOf = (row: MatchRow): Kind => row.colonies.length > 2 ? "four" : row.colonyNames !== undefined ? "own" : "rated";
+      const runs: { kind: Kind; rows: MatchRow[] }[] = [];
       for (const row of spec.rows) {
-        const ownNames = row.colonyNames !== undefined, last = runs[runs.length - 1];
-        if (last?.ownNames === ownNames) last.rows.push(row); else runs.push({ ownNames, rows: [row] });
+        const kind = kindOf(row), last = runs[runs.length - 1];
+        if (last?.kind === kind) last.rows.push(row); else runs.push({ kind, rows: [row] });
       }
-      if (runs.length === 0) runs.push({ ownNames: false, rows: [] });
+      if (runs.length === 0) runs.push({ kind: "rated", rows: [] });
       const list = h(doc, "ul", "d1p-rows d1p-match-rows d1p-narrow");
       list.setAttribute("aria-labelledby", spec.titleId);
       if (spec.loading) list.hidden = true;
-      runs.forEach(({ ownNames, rows }, run) => {
+      runs.forEach(({ kind, rows }, run) => {
+        const ownNames = kind === "own";
         const table = h(doc, "table", `d1p-table d1p-match d1p-${spec.list} d1p-wide`);
         table.setAttribute("aria-labelledby", spec.titleId);
         columns(table, MATCH_COLUMNS);
         const head = h(doc, "thead"), labels = h(doc, "tr");
         labels.append(headCell(MATCH_HEADS[0], "c-start"), headCell(MATCH_HEADS[1], "c-type"));
         // A colony's ink is its name's, so the neutral heads over rows naming their own colonies take none.
-        for (const colony of COLONIES) labels.append(headCell(ownNames ? COLONY_HEADS[colony] : COLONY_NAMES[colony], ownNames ? "c-model" : `c-model d1p-c${colony}`));
+        if (kind === "four") { const both = headCell(FOUR_COLONY_HEAD, "c-model"); both.colSpan = 2; labels.append(both); }
+        else for (const colony of COLONIES) labels.append(headCell(ownNames ? COLONY_HEADS[colony] : COLONY_NAMES[colony], ownNames ? "c-model" : `c-model d1p-c${colony}`));
         labels.append(headCell(MATCH_HEADS[2], "c-status"), srHead(spec.actionHead, "c-go"));
         head.append(labels);
         const tbody = h(doc, "tbody");
@@ -360,7 +376,12 @@ function rowParts(doc: Document) {
           const type = h(doc, "td", "c-type");
           type.append(...typeNodes(row));
           line.append(startCell(row.when), type);
-          for (const colony of COLONIES) {
+          if (kind === "four") {
+            const cell = h(doc, "td", "c-model");
+            cell.colSpan = 2;
+            cell.append(colonyList(row, wide));
+            line.append(cell);
+          } else for (const colony of COLONIES) {
             const cell = h(doc, "td", "c-model");
             if (ownNames) cell.append(colonyLabel("span", row, colony));
             cell.append(...colonyLines(row.colonies[colony], colony, wide));
@@ -379,7 +400,7 @@ function rowParts(doc: Document) {
           const lead = h(doc, "p", "d1p-line is-lead");
           lead.append(...typeNodes(row), stampNode(row));
           item.append(startLine(row.when), lead);
-          item.append(colonyList(row, COLONIES.map(colony => colonyLines(row.colonies[colony], colony, narrow))));
+          item.append(colonyList(row, narrow));
           if (row.action) item.append(rowPill(row.action.text, row.action.href, row.action.label, narrow));
           list.append(item);
         }
@@ -401,8 +422,8 @@ const NOT_JOINED = "did not join";
 const NOT_RECORDED = "not recorded";
 
 /** A recorded colony's result: Abandoned on each colony that joined an abandoned match; Winner on the winning colony where
- * the record names one, never on a colony nobody joined; Draw on both colonies in a draw; none otherwise. */
-export function colonyResult(r: Pick<Recording, "winner" | "reason" | "decidedBy">, colony: 0 | 1, joined: boolean): ColonyResult | null {
+ * the record names one, never on a colony nobody joined; Draw on every colony in a draw; none otherwise. */
+export function colonyResult(r: Pick<Recording, "winner" | "reason" | "decidedBy">, colony: number, joined: boolean): ColonyResult | null {
   if (!joined) return null;
   if (r.reason === "abandoned") return "Abandoned";
   const winner = winnerOf(r);
@@ -413,8 +434,9 @@ export function colonyResult(r: Pick<Recording, "winner" | "reason" | "decidedBy
 /** A recording as the one row builder draws it: its start, its type, each colony's recorded players with their rating at
  * the match's start where stored and the colony's result, its record stamp, and Replay. */
 export function recordingMatchRow(r: Recording, row: ReturnType<typeof recordingRows>[number]): MatchRow {
-  const seats = colonySeats(r.seats);
-  const colony = (index: 0 | 1): ColonyCell => {
+  const count = recordedColonies(r);
+  const seats = colonySeats(r.seats, count);
+  const colony = (index: number): ColonyCell => {
     if (seats === null) return { lines: [], result: null, note: NOT_RECORDED };
     const entries = seats[index];
     if (entries === null) return { lines: [], result: null, note: NOT_JOINED };
@@ -422,10 +444,10 @@ export function recordingMatchRow(r: Recording, row: ReturnType<typeof recording
   };
   return {
     id: row.id, when: row.when, type: row.type, ...(row.type === null && seats === null ? { typeNote: NOT_RECORDED } : {}),
-    colonies: [colony(0), colony(1)],
+    colonies: Array.from({ length: count }, (_, index) => colony(index)),
     stamp: { text: stampWord(r.status), look: r.status },
     action: { text: PAGE_WORDS.replay, href: row.href, label: `Replay, recording started ${row.when}` },
-    ...(r.colonyNames ? { colonyNames: r.colonyNames } : {}),
+    ...ownNames(r, count),
   };
 }
 

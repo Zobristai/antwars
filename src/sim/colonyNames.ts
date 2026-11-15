@@ -112,16 +112,12 @@ export function colonyNamesOf(match: { readonly colonyNames?: readonly string[] 
 }
 
 /**
- * A colony's table row by its name, or by its id when the name is not one of the four (a match outside the table keeps
- * colony 0's and colony 1's own colours).
+ * Each colony's colour in a match named `names`, index = colony id, one per name: its name's table row's colour, or, for a
+ * name that is not one of the four, its colony's own table colour (a match outside the table keeps colony 0's and colony
+ * 1's own colours).
  */
-function rowOf(names: readonly string[], colony: 0 | 1): SupercolonyName {
-  return supercolony(names[colony]) ?? SUPERCOLONY_NAMES[colony];
-}
-
-/** Each colony's colour in a match named `names`, index = colony id. */
-export function colonyColours(names: readonly string[]): readonly [number, number] {
-  return [rowOf(names, 0).colour, rowOf(names, 1).colour];
+export function colonyColours(names: readonly string[]): number[] {
+  return names.map((name, colony) => (supercolony(name) ?? SUPERCOLONY_NAMES[colony]).colour);
 }
 
 /** A colour as CSS (#rrggbb). */
