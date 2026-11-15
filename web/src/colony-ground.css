@@ -11,7 +11,9 @@
   .aw-colony-name.c1, .aw-mark-colony.c1, .d2-name.c1 .d2-name-text, .d1-name.c1, .d1-fig.c1 > span:not(.d1-sr),
   .d1-mv.c1 > span:not(.d1-sr), .d1-hold-win.c1 .d1-hold-text, .d1-outcome.c1, .d1-result-head.c1, .d1-moment-what.c1,
   .d2-toast[data-colony="1"][data-kind="fall"] .d2-toast-what, .d1-caption[data-colony="1"][data-kind="fall"] .d1-cap-what
-) {
+),
+/* Colonies 2 and 3, only in a four-colony match: the replay marks' names. */
+:root[data-aw-ground~="2"] .aw-mark-colony.c2, :root[data-aw-ground~="3"] .aw-mark-colony.c3 {
   background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
   -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
