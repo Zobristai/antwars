@@ -185,7 +185,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   /** Nothing painted yet, so the first frame always writes the lane. */
   let captionKey = "\u0000";
   /** drawn: the match's drawn colony names (unrated), each then shown in its colony's colour with its source note. */
-  const paintCaption = (c: Caption | null, drawn: readonly [string, string] | undefined) => {
+  const paintCaption = (c: Caption | null, drawn: readonly string[] | undefined) => {
     const keyNow = c ? JSON.stringify([c, drawn ?? null]) : "";
     if (keyNow === captionKey) return;
     captionKey = keyNow;
