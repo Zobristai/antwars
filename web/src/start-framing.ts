@@ -6,14 +6,14 @@ import { isStartingQueen, visibleStartBoxes } from "./start-boxes.ts";
 
 type OpeningBoard = { setup: StreamSetup; queens?: readonly StreamQueen[]; result: unknown | null };
 
-/** Finalized tick zero is the only published opening phase. Loss/result always ends it. */
+/** Finalized tick zero is the only published opening phase, with every colony's box visible. Loss/result always ends it. */
 export function openingPhase(tick: number, board: OpeningBoard | null | undefined): board is OpeningBoard {
   return tick === 0 && board != null && board.result === null &&
     board.setup.startingQueenIds !== undefined && visibleStartBoxes(board.setup).length === board.setup.queens.length &&
     streamQueens(board).every(q => q.lostTick === null);
 }
 
-/** Union of authoritative rectangles and every starting nest's visible ground extent.
+/** Union of every colony's authoritative rectangle and every starting nest's visible ground extent.
  * Never clamp to the map: a nest marker can extend beyond its edge. Legacy metadata is not guessed.
  * extraRadius lets the 3D caller account for its existing queen mesh without resizing it.
  */

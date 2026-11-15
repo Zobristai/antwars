@@ -10,7 +10,6 @@ import type { StandardMaterial } from "@babylonjs/core/Materials/standardMateria
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import type { StreamQueen, StreamSetup } from "../../src/live/format.ts";
-import type { Colony } from "../../src/live/snapshot.ts";
 import { CORPSE_FADE_MS, Frame, type Board } from "../../web/src/buffer.ts";
 import { colonyTint } from "../../web/src/colony-palette.ts";
 import { Ants3D } from "../../web/src/board3d/ants3d.ts";
@@ -29,19 +28,18 @@ const RGB4 = [[1, 0xb0 / 255, 0], [0, 0xc2 / 255, 1], [1, 0x1e / 255, 0x1e / 255
 const COLONIES = [0, 1, 2, 3] as const;
 const W = 128, H = 96, SUB = 256;
 
-/** A nest in each quadrant, each with its start area around it. The stream types still read two colonies at this
- * commit, so the four-entry setup is cast; its shape is the agreed four-colony one (one entry per colony). */
+/** A nest in each quadrant, each with its start area around it: one entry per colony. */
 function setup4(): StreamSetup {
   const centres = [[24, 20], [104, 20], [24, 76], [104, 76]] as const;
   return {
     mapW: W, mapH: H, gridScale: 2, ticksPerSecond: 10, matchTicks: 1000, idleTicks: 100, overrunRadiusTiles: 4,
     queens: centres.map(([x, y]) => [(x + 0.5) * SUB, (y + 0.5) * SUB]),
     startBoxes: centres.map(([x, y]) => ({ x: x - 10, y: y - 8, width: 20, height: 16 })),
-    startingQueenIds: centres.map(() => [0]),
-  } as unknown as StreamSetup;
+    startingQueenIds: centres.map(() => [0]), colonies: 4,
+  };
 }
 function queens4(setup: StreamSetup): StreamQueen[] {
-  return setup.queens.map(([x, y], colony) => ({ id: 0, colony: colony as Colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 }));
+  return setup.queens.map(([x, y], colony) => ({ id: 0, colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 }));
 }
 function board4(): Board {
   const setup = setup4();
@@ -80,7 +78,7 @@ describe("a four-colony match on the 3D board", () => {
       f.id[i] = i + 1; f.x[i] = 10 + i * 4; f.y[i] = 10 + c * 20; f.alpha[i] = 1; f.agent[i] = -1;
       f.colony[i] = c; f.caste[i] = caste;
     });
-    f.corpses = COLONIES.map((c) => ({ antId: 100 + c, x: 30 + c * 10, y: 40, colony: c as Colony, heading: 0, ageMs: CORPSE_FADE_MS / 2 }));
+    f.corpses = COLONIES.map((c) => ({ antId: 100 + c, x: 30 + c * 10, y: 40, colony: c, heading: 0, ageMs: CORPSE_FADE_MS / 2 }));
     ants.update(f);
     for (const c of COLONIES) {
       count(`ants${c}`, c + 1);

@@ -1,5 +1,5 @@
 // Small DOM helpers for the spectator HUD's agent panel.
-import { colonyNameNote, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
 
 export function h<K extends keyof HTMLElementTagNameMap>(doc: Document, tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = doc.createElement(tag);
@@ -41,7 +41,7 @@ export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-
  * (ui.css), so hovering it shows its tooltip, and which keeps 4.5:1 on a dark ground where its colour needs one
  * (colony-ground.css).
  */
-export function setColonyText(doc: Document, node: HTMLElement, text: string, drawn: ColonyNamePair | undefined): void {
+export function setColonyText(doc: Document, node: HTMLElement, text: string, drawn: readonly string[] | undefined): void {
   if (!drawn) {
     // A name shown earlier in its colour (another match on this page) gives way to plain text.
     if (node.children.length > 0) node.textContent = text;

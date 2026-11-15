@@ -7,7 +7,6 @@ import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { SUB_TILE, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
-import type { Colony } from "../../../src/live/snapshot.ts";
 import { buildAntGeometry } from "./ants3d.ts";
 import type { Ground } from "./ground.ts";
 
@@ -38,7 +37,7 @@ export class Nests {
     this.hole = new StandardMaterial("entrance", scene);
     this.hole.diffuseColor = new Color3(0, 0, 0);
     this.hole.specularColor = new Color3(0, 0, 0);
-    this.update(setup.queens.map(([x, y], colony) => ({ id: 0, colony: colony as Colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 })));
+    this.update(setup.queens.map(([x, y], colony) => ({ id: 0, colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 })));
   }
 
   /** Follow the ants' current length after layout/refits, including queens founded later. */

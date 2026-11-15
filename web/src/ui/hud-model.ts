@@ -11,7 +11,7 @@ import { boardQueenHp } from "../variant.ts";
 import { isCountMark, markLabel, markReading } from "../words.ts";
 import { badge } from "./icons.ts";
 
-export type Colony = 0 | 1;
+export type Colony = number;
 const TPS_FALLBACK = 10;
 export const tps = (b: Board) => b.setup.ticksPerSecond || TPS_FALLBACK;
 

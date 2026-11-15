@@ -397,6 +397,39 @@ describe("matches page data: the facts the match rows need", () => {
   });
 });
 
+describe("matches page data: a four-colony (Quadrants) match", () => {
+  const QUADRANTS = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+  const player = (displayName: string) => [{ displayName, rating: null, rd: null, ratedMatches: null }];
+  const live = { lobbyId: "q", startedAt: 1, rated: false, delaySeconds: 60, colonies: [player("ann"), player("bob"), player("cat"), player("dan")],
+    colonyNames: QUADRANTS, matchType: { kind: "quadrants", size: 1 } };
+  const seat = (n: number, colony: number) => ({ seat: n, colony, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: `h${n}` });
+  const recorded = { ...saved(5), winner: 3, seats: [seat(0, 0), seat(1, 1), seat(2, 2), seat(3, 3)], colonyNames: QUADRANTS, matchType: { kind: "quadrants", size: 1 } };
+  const serve = (catalog: unknown, history: unknown) => async (path: RequestInfo | URL) => new Response(JSON.stringify(path === "/watch/catalog" ? catalog : history));
+
+  it("reads a live row of four colonies and a recording won by colony 3, with their four names and the mode", async () => {
+    const data = createMatchesData(serve({ matches: [live] }, { matches: [recorded], nextPageToken: null }), () => {});
+    data.refresh();
+    await vi.waitFor(() => expect([data.view.live.status, data.view.recordings.status]).toEqual(["ready", "ready"]));
+    expect(data.view.live.rows[0]).toMatchObject({ colonies: live.colonies, colonyNames: QUADRANTS, matchType: { kind: "quadrants", size: 1 } });
+    expect(data.view.recordings.rows[0]).toMatchObject({ winner: 3, colonyNames: QUADRANTS, matchType: { kind: "quadrants", size: 1 } });
+    expect(data.view.recordings.rows[0]!.seats.map(s => s.colony)).toEqual([0, 1, 2, 3]);
+    data.destroy();
+  });
+
+  it("refuses a live row of three colonies, and reads names that are neither two nor four as none", async () => {
+    const three = createMatchesData(serve({ matches: [{ ...live, colonies: live.colonies.slice(0, 3) }] }, { matches: [], nextPageToken: null }), () => {});
+    three.refresh();
+    await vi.waitFor(() => expect(three.view.live.status).toBe("error"));
+    three.destroy();
+    const data = createMatchesData(serve({ matches: [{ ...live, colonyNames: QUADRANTS.slice(0, 3) }] },
+      { matches: [{ ...recorded, colonyNames: [...QUADRANTS, "Fifth Colony"] }], nextPageToken: null }), () => {});
+    data.refresh();
+    await vi.waitFor(() => expect([data.view.live.status, data.view.recordings.status]).toEqual(["ready", "ready"]));
+    expect([data.view.live.rows[0]!.colonyNames, data.view.recordings.rows[0]!.colonyNames]).toEqual([null, null]);
+    data.destroy();
+  });
+});
+
 describe("matches page data: when each wait began", () => {
   it("keeps the sent start, and works one out from the seconds waited where a server sends none", async () => {
     const at = Date.parse("2026-11-11T05:00:00Z");
