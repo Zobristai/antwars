@@ -1,8 +1,10 @@
 /**
  * Ant-traffic trails in a four-colony match: every trail cell holds one channel per colony (setup.queens.length), so
  * each colony's trail stays in its own cell and its own channel through tick preparation, a colony's point of view
- * and both boards' texture uploads (colony c in channel c). A two-colony match's trails, and the bytes both boards
- * upload for them, are as they were. The quadrant map here is a test-only fixture.
+ * and both boards' texture uploads (colony c in channel c), and the 3D ground's four-colony code draws all four
+ * channels. A two-colony match's trails, the bytes both boards upload for them and the code that draws them are as
+ * they were (the two-colony shader text is pinned in ground3d-four-colonies.test.ts and colony-palette.test.ts). The
+ * quadrant map here is a test-only fixture.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
@@ -18,6 +20,8 @@ import { advance } from "../../src/sim/step.ts";
 import type { SimInput } from "../../src/sim/types.ts";
 import { Frame, TickPreparation, TRAIL_DECAY_PER_TICK, TRAIL_DEPOSIT, TRAIL_RES, trailTexels, type Board } from "../../web/src/buffer.ts";
 import { Ground } from "../../web/src/board3d/ground.ts";
+import { setBoardLook } from "../../web/src/board-look.ts";
+import { STEPPE_LOOK } from "../../web/src/ui/steppe-look.ts";
 import { Territory } from "../../web/src/territory.ts";
 import { TeamView } from "../../web/src/team-view.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
@@ -182,7 +186,7 @@ describe("trail texels", () => {
   });
 });
 
-describe("both boards upload a four-colony match's trails one colony per channel", () => {
+describe("both boards upload a four-colony match's trails one colony per channel, and the 3D ground draws them", () => {
   let engine: NullEngine;
   let scene: Scene;
   const browserAdapter = DOMAdapter.get();
@@ -192,7 +196,7 @@ describe("both boards upload a four-colony match's trails one colony per channel
     engine = new NullEngine();
     scene = new Scene(engine);
   });
-  afterEach(() => { vi.restoreAllMocks(); DOMAdapter.set(browserAdapter); scene.dispose(); engine.dispose(); });
+  afterEach(() => { vi.restoreAllMocks(); setBoardLook(null); DOMAdapter.set(browserAdapter); scene.dispose(); engine.dispose(); });
 
   /** A W x H frame whose board has `colonies` queens, every trail cell's every channel a different value. */
   function frame(W: number, H: number, colonies: number): Frame {
@@ -241,5 +245,27 @@ describe("both boards upload a four-colony match's trails one colony per channel
     twoColonyTexels(f.trails, before);
     expect(firstDifference(upload3d.mock.calls[0]![0] as Uint8Array, before)).toBe(-1);
     expect(firstDifference(territory.fill.shader!.resources.uTrail.resource as Uint8Array, before)).toBe(-1);
+  });
+
+  const diffuse3d = (g: Ground) => g.plugin.getCustomCode("fragment")!.CUSTOM_FRAGMENT_UPDATE_DIFFUSE!;
+  const TWO_3D_INK = "max(awTrail.r, awTrail.g)) * awStroke * uTrails;";
+  const FOUR_3D_INK = "max(max(awTrail.r, awTrail.g), max(awTrail.b, awTrail.a))) * awStroke * uTrails;";
+
+  it("on the 3D ground, plain and steppe: the trail ink takes the strongest of all four colonies' channels", () => {
+    for (const look of [null, STEPPE_LOOK]) {
+      setBoardLook(look);
+      const ground = new Ground(scene, 8, 4);
+      ground.update(frame(8, 4, 4), 0);
+      const four = diffuse3d(ground);
+      expect(four).toMatch(/  vec4 awTrail = texture2D\(uTrail, [^;]*\);\n/);
+      expect(four).not.toContain(").rg;");
+      expect(four).toContain(FOUR_3D_INK);
+      ground.update(frame(8, 4, 2), 1);
+      const two = diffuse3d(ground);
+      expect(two).toMatch(/  vec2 awTrail = texture2D\(uTrail, [^;]*\)\.rg;\n/);
+      expect(two).toContain(TWO_3D_INK);
+      expect(two).not.toContain("awTrail.b");
+      ground.mesh.dispose();
+    }
   });
 });

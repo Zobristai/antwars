@@ -56,8 +56,9 @@ export function groupMarks(events: readonly ReplayEvent[], duration: number, wid
  * The caller mounts only for explicit replays, never the live page's stand-in recording; the HUD places `el` (HudHost.replay).
  * Once the recording's marks are read (Recording.events), they stand on the slider's track as buttons: a click or tap
  * jumps there, marks too close to tell apart join a counted group that opens a list (replay-marks.css). Marks name
- * colonies by `names`, the match's own colony names, each in its colony's colour (replay-marks.css); a drawn name
- * (unrated) carries its one-line source note as its tooltip, and the pointer can reach it in a label and in a list. */
+ * colonies by `names`, the match's own colony names by colony id (two, or four), each in its colony's colour
+ * (replay-marks.css); a drawn name (unrated, or any of a four-colony match's) carries its one-line source note as its
+ * tooltip, and the pointer can reach it in a label and in a list. */
 export function mountReplayControls(doc: Document, recording: Recording, names: readonly string[] = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
   const el = doc.createElement("div");
   el.className = "aw-replay-controls";
@@ -141,7 +142,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
    * the name and its note; a label without one hides at once, as it always has. */
   let chipLeaveTimer: ReturnType<typeof setTimeout> | null = null;
   /** The match's drawn colony names, whose words carry their source notes; none for the rated names. */
-  const drawn = isClassicColonyNames(names) ? null : names;
+  const drawn = names.length === 2 && isClassicColonyNames(names) ? null : names;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
     const value = parseFloat(doc.defaultView?.getComputedStyle(el).getPropertyValue(name) ?? "");
