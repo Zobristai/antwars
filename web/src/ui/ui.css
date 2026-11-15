@@ -299,6 +299,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-agent-item { border-top: 1px solid var(--aw-line); box-shadow: inset 3px 0 0 var(--d2-side); }
 .d2-agent-item.c0 { --d2-side: var(--aw-k0, var(--aw-c0)); }
 .d2-agent-item.c1 { --d2-side: var(--aw-k1, var(--aw-c1)); }
+.d2-agent-item.c2 { --d2-side: var(--aw-k2); }
+.d2-agent-item.c3 { --d2-side: var(--aw-k3); }
 .d2-agent-item.is-first { border-top: 6px solid var(--aw-bg); }
 .d2-agent { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto auto; grid-template-areas: "badge name name name name" ". sub sub sub sub" ". said elo order idle"; align-items: center; column-gap: 6px; row-gap: 1px; width: 100%; min-height: 40px; margin: 0; padding: 5px 10px 5px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; cursor: pointer; }
 .d2-agent:hover, .d2-agent-item.is-open .d2-agent { background: var(--aw-raise); }

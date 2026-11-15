@@ -4,7 +4,9 @@
 // on the page root exactly as the palette sets it, and laid out in headless Chromium with the page's tokens
 // (web/index.html) and the client's stylesheets: the two colonies whose colours need a ground (Sweetwater, Lake Skinner)
 // get it, the two whose colours need none (Very Large, Lake Hodges) get none. The Matches page grounds a row's own
-// colonies from the row, so a row carrying all four is written out the same way. Not visual evidence.
+// colonies from the row, so a row carrying all four is written out the same way. Each agent row's colour stripe, on the
+// 2D board's agent list and the 3D deck's, is laid out the same way for each of the four colonies and drawn in its
+// colony's table colour. Not visual evidence.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
@@ -36,8 +38,8 @@ const texts = (c: number) => [
   `<div class="d1-caption" data-colony="${c}" data-kind="fall"><span class="d1-cap-what" data-t="3d fall">Queen 1 lost</span></div>`,
 ];
 
-/** The page as the palette sets its root for `names`, with every grounded text of each colony and a Matches row naming all four. */
-function page(names: readonly string[]) {
+/** The page root's style and attributes exactly as the palette sets them for `names`. */
+function rootFor(names: readonly string[]) {
   const props = new Map<string, string>(), attrs = new Map<string, string>();
   const documentElement = {
     style: { setProperty: (k: string, v: string) => props.set(k, v), removeProperty: (k: string) => props.delete(k) },
@@ -45,6 +47,12 @@ function page(names: readonly string[]) {
   };
   setMatchColonies(names, { documentElement } as unknown as Document);
   setMatchColonies(COLONY_NAMES);
+  return { props, attrs };
+}
+
+/** The page as the palette sets its root for `names`, with every grounded text of each colony and a Matches row naming all four. */
+function page(names: readonly string[]) {
+  const { props, attrs } = rootFor(names);
   const colours = colonyColours(names);
   const rowGround = colours.flatMap((rgb, c) => needsTextGround(rgb) ? [c] : []).join(" ");
   const rowStyle = [...colours.map((rgb, c) => `--aw-k${c}: ${colourCss(rgb)}`), `--aw-ink-ground: ${GROUND}`].join("; ");
@@ -88,6 +96,29 @@ describe("a four-colony match's coloured text", () => {
           expect(t.shadow, where).toBe("none");
         }
       }
+    } finally { await tab.close(); }
+  });
+});
+
+/** `rgb` as a computed style writes it. */
+const computed = (rgb: number) => `rgb(${(rgb >> 16) & 255}, ${(rgb >> 8) & 255}, ${rgb & 255})`;
+
+describe("a four-colony match's agent rows", () => {
+  it("draw each row's colour stripe in its colony's table colour, on the 2D board's agent list and the 3D deck's, for all four colonies", async () => {
+    const { props, attrs } = rootFor(FOUR);
+    const style = [...props].map(([k, v]) => `${k}: ${v}`).join("; ");
+    const root = [...attrs].map(([k, v]) => ` ${k}="${v}"`).join("");
+    const rows = FOUR.map((_, c) => `<ul class="d2-agent-list"><li class="d2-agent-item c${c}" data-c="${c}" data-t="2d"></li></ul>`
+      + `<ul class="d1-agents"><li class="d1-agent-item c${c}"><button class="d1-agent" data-c="${c}" data-t="3d">Agent</button></li></ul>`).join("");
+    const tab = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    try {
+      await tab.setContent(`<!doctype html><html${root} style="${style}"><head><style>${STYLES}</style></head><body>${rows}</body></html>`);
+      const found = await tab.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-t]")].map(el => ({
+        colony: Number(el.dataset.c), where: el.dataset.t!, shadow: getComputedStyle(el).boxShadow,
+      })));
+      expect(found).toHaveLength(8);
+      const colours = colonyColours(FOUR);
+      for (const t of found) expect(t.shadow, `colony ${t.colony} ${t.where} agent row`).toBe(`${computed(colours[t.colony]!)} 3px 0px 0px 0px inset`);
     } finally { await tab.close(); }
   });
 });
