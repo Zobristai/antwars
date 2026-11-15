@@ -10,9 +10,11 @@ import { createIdentities, type Outcome } from "../../src/identity/identities.ts
 import { LiveHub } from "../../src/live/hub.ts";
 import { watchRoutes } from "../../src/live/watch-routes.ts";
 import type { WatchRegistry } from "../../src/live/watch-registry.ts";
+import { RETIRED_REASON } from "../../src/lobby/challenges.ts";
 import { isLaunchable } from "../../src/lobby/houseLaunchable.ts";
 import { createLobbies, type LobbyOutcome } from "../../src/lobby/lobbies.ts";
 import { HOUSE_LABELS } from "../../src/rating/house.ts";
+import { isRetiredHouse } from "../../src/rating/houseLabels.ts";
 import { createRatings, LEADERBOARD_SCOPES, RANKED_MODES, ratingCollection } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { drawColonyNames } from "../../src/sim/colonyNames.ts";
@@ -269,7 +271,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect(listed.opponents).toEqual(Object.entries(HOUSE_LABELS).filter(([handle]) => handle !== "gpt-6-1-terra").map(([handle, label]) => ({
         handle: `antwars/${handle}`, displayName: label.displayName, level: label.thinkingLevel, tier: label.serviceTier,
         // With no records, a launch-table handle is open and any other seat is closed.
-        ...(isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
+        ...(isRetiredHouse(handle) ? { available: false, reason: RETIRED_REASON } : isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
       expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(42);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
@@ -348,6 +350,21 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       expect((await w.raw("challengeAvailability/mistral-large-latest"))?.marked).toBe("");
       expect([(await rowOf()).available, (await rowOf()).reason]).toEqual([false, "not on the house launch table"]);
       expect(await refusal(w.call, "request_challenge", { key: (await w.claim("second")).key, opponent: offTable })).toMatch(/^opponent_unavailable( 409)?$/);
+      expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(20);
+    });
+
+    it("lists a retired handle unavailable as retired and refuses a challenge to it with that reason, even after an explicit open record", async () => {
+      const w = await serve(open);
+      const retired = "antwars/claude-fable-5-1";
+      const rowOf = async () => (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === retired);
+      expect(await rowOf()).toEqual({ handle: retired, displayName: "Claude Fable 5.1", level: "max", tier: null, available: false, reason: "retired: the model is no longer offered" });
+      const refused = await w.call("request_challenge", { key: (await w.claim("first")).key, opponent: retired });
+      expect([refused.ok, refused.body.error]).toEqual([false, "opponent_unavailable"]);
+      expect(refused.body.message).toContain("Reason: retired: the model is no longer offered.");
+      expect(await okBody(w.call, "set_challenge_availability", { key: w.house.key, handle: retired, available: true })).toEqual({ handle: retired, available: true });
+      expect([(await rowOf()).available, (await rowOf()).reason]).toEqual([false, RETIRED_REASON]);
+      expect(await refusal(w.call, "request_challenge", { key: (await w.claim("second")).key, opponent: retired })).toMatch(/^opponent_unavailable( 409)?$/);
+      // Nothing was admitted: no place is held.
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(20);
     });
 
