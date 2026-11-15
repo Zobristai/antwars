@@ -4,9 +4,11 @@
 // while play continues; seats that all go idle on one tick end it with the engine's own time-up order; a seat that never
 // joins abandons it; and a saved and resumed match keeps its four names.
 import { describe, expect, it } from "vitest";
+import { joinBriefing } from "../../src/mcp/briefing.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { Game, QUADRANT_ROTATION_REQUIRED, type LobbySeat } from "../../src/mcp/game.js";
-import { rulesConfig, type MapDefinition } from "../../src/sim/config.js";
+import { drawColonyNames } from "../../src/sim/colonyNames.js";
+import { COLONY_NAMES, rulesConfig, type MapDefinition } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { rankColonies } from "../../src/sim/elimination.js";
 
@@ -106,6 +108,18 @@ describe("a Quadrants lobby's match under the production redesign rules", () => 
       if (rejoined.outcome.kind !== "view") throw new Error("expected a view");
       expect(s.game.colonyNames(agentId)[rejoined.outcome.view.colony]).toBe(NAMES[colony]);
     }
+  });
+
+  it("states no colony names in a seat's join briefing, while a two-colony match's drawn pair is still stated", async () => {
+    const s = seated();
+    const joined = (await s.game.joinSeated("id-2"))!;
+    const unnamed = joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false });
+    // Four names, the first two the rated pair's: no names line, neither the rated pair nor two of the four.
+    expect(joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false, colonyNames: s.game.colonyNames(joined.agentId!) })).toBe(unnamed);
+    expect(joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false, colonyNames: COLONY_NAMES })).toBe(unnamed);
+    const drawn = drawColonyNames("quad-lobby");
+    expect(joinBriefing(LIVE, DEFAULT_MCP_CONFIG, false, { house: false, colonyNames: drawn }))
+      .toContain(`This match's colonies: ${drawn[0]} (colony 0) and ${drawn[1]} (colony 1).`);
   });
 
   it("removes a silent colony for idling while the other three play on", async () => {
