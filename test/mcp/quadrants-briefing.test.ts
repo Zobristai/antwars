@@ -98,7 +98,7 @@ function expectQuadrantsText(text: string, config: SimConfig) {
     "colonies eliminated on the same tick rank among themselves by it",
     "on scores as they stood just before that tick's removal of ants and territory",
     "no enemy territory tiles, totals or share are shown",
-    "opponents, on every observe: the other three colonies in colony order",
+    "opponents, on every observe once the match has started: the other three colonies in colony order",
     "carries eliminated {tick,reason}",
     "winner (the winning colony's name, \"draw\" or \"abandoned\")",
     "the winner keeps that elimination tick in its eliminated and in the others' opponents, and is still the winner",

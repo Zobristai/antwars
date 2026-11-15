@@ -102,8 +102,8 @@ export const FOUR_COLONY_IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left be
 
 const FOUR_COLONY_ELIMINATION_TEXT = "A colony that loses its last queen, or whose seat goes idle, is eliminated on that tick: its ants are removed (no corpses, no kill credit), its territory turns neutral, and the match continues for the others.";
 
-/** The four-colony reply fields: the other three colonies on every observe, and the seat's own elimination on every reply. */
-const FOUR_COLONY_REPLY_TEXT = "opponents, on every observe: the other three colonies in colony order, [{colony,name,eliminated?:{tick,reason}}]; eliminated (reason queens_killed or idle) marks a colony that has left the match. Once your own colony is eliminated, every reply (join, rules, observe, commands, refusals) carries eliminated {tick,reason} and idleSecondsLeft is null; keep observing to follow the match to its result.";
+/** The four-colony reply fields: the other three colonies on every observe in play and after the end, and the seat's own elimination on every reply. */
+const FOUR_COLONY_REPLY_TEXT = "opponents, on every observe once the match has started: the other three colonies in colony order, [{colony,name,eliminated?:{tick,reason}}]; eliminated (reason queens_killed or idle) marks a colony that has left the match. Once your own colony is eliminated, every reply (join, rules, observe, commands, refusals) carries eliminated {tick,reason} and idleSecondsLeft is null; keep observing to follow the match to its result.";
 
 const FOUR_COLONY_POST_MATCH_TEXT = "Match over: matchOver:true, winner (the winning colony's name, \"draw\" or \"abandoned\"), result {winner,reason,decidedBy,tick}; no match clocks. When the last colonies are all eliminated on one tick, the winner keeps that elimination tick in its eliminated and in the others' opponents, and is still the winner.";
 
