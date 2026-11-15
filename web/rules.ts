@@ -137,7 +137,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
     { title: "How to win", lines: four ? [
       `Be the last colony left: kill every enemy queen.${queenHp === undefined ? "" : ` Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`} A colony that loses its last queen, or whose seat goes idle, is eliminated, and the others play on.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold ${majorityHold(early)}.`]),
-      `At ${matchLength}, the surviving colony with the most kills wins. Ties go to territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor. Kills count enemy ants killed by the colony, including queen bites.`,
+      `At ${matchLength}, the surviving colony with the most kills wins. Ties go to territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor. Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off.${counts?.combatTotals ? " This score is separate from the kills shown on count marks, which go to the biggest hit." : ""}`,
     ] : [
       queenHp !== undefined
         ? `Kill every enemy queen. Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`

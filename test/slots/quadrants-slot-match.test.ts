@@ -1,6 +1,6 @@
 // A Quadrants match played end to end on one server serving the account tools and a lobby slot, under the production
 // redesign rules: four join_queue calls make the lobby, the slot plays it on a test-only quadrant map with four
-// colonies, each seat picks inside its own box (or keeps a default nest there), every successful slot join names its colony, idle colonies leave one
+// colonies, each seat picks a free tile of its own box (or keeps a default nest there), every successful slot join names its colony, idle colonies leave one
 // by one and the last one standing wins, and the lobby records the result unrated. With the shipped (empty) rotation a
 // spectated server refuses the mode, ends a prepared quadrants lobby not played, and keeps streaming its 1v1 matches.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -150,6 +150,7 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     // Every seat joins the slot during its pick window and is told its colony before the start.
     await waitFor(() => openStartOf(server) === lobbyId);
     const seatAgents: Agent[] = [];
+    const terrains: { rows: string[] }[] = [];
     for (const [colony, player] of players.entries()) {
       const a = await agent(server);
       seatAgents.push(a);
@@ -157,23 +158,46 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
       expect(joined.isError, joined.text).toBe(false);
       expect((joined.data as any).colony).toBe(NAMES[colony]);
       expect((joined.data as any).nestSelection.box).toEqual(BOXES[colony]);
+      terrains.push((joined.data as any).nestSelection.terrain);
     }
     const [box0, box1, box2, box3] = BOXES as [typeof BOXES[0], typeof BOXES[0], typeof BOXES[0], typeof BOXES[0]];
-    const pick = async (colony: number, tileX: number, tileY: number) => (await seatAgents[colony]!.call("pick_nest", { tileX, tileY })).data as any;
-    // Every colony picks inside its own box and is refused a tile just outside it, on a different side each time; a
-    // refusal keeps the earlier pick. Colony 0: inside, past the right edge, then the box's far corner.
-    expect(await pick(0, box0.x + 6, box0.y + 12)).toMatchObject({ accepted: true });
-    expect((await pick(0, box0.x + box0.width, box0.y + box0.height - 1)).error.code).toBe("nest_outside_box");
-    expect(await pick(0, box0.x + box0.width - 1, box0.y + box0.height - 1)).toMatchObject({ accepted: true });
-    // Colony 1: inside, then above the top edge.
-    expect(await pick(1, box1.x, box1.y + 10)).toMatchObject({ accepted: true });
-    expect((await pick(1, box1.x + 10, box1.y - 1)).error.code).toBe("nest_outside_box");
-    // Colony 2: left of the left edge, then inside.
-    expect((await pick(2, box2.x - 1, box2.y + 10)).error.code).toBe("nest_outside_box");
-    expect(await pick(2, box2.x + 10, box2.y)).toMatchObject({ accepted: true });
+    /**
+     * The free tile of a colony's box nearest to (tileX, tileY) among those `on` accepts, read from the terrain its join
+     * returned: the match seed may put rocks anywhere in a box, so no fixed tile is free on every board.
+     */
+    const free = (colony: number, tileX: number, tileY: number, on: (x: number, y: number) => boolean = () => true) => {
+      const box = BOXES[colony]!;
+      let best: { tileX: number; tileY: number } | undefined, bestDistance = Infinity;
+      terrains[colony]!.rows.forEach((row, dy) => [...row].forEach((cell, dx) => {
+        const x = box.x + dx, y = box.y + dy, distance = (x - tileX) ** 2 + (y - tileY) ** 2;
+        if (cell === "." && on(x, y) && distance < bestDistance) [best, bestDistance] = [{ tileX: x, tileY: y }, distance];
+      }));
+      if (best === undefined) throw new Error(`colony ${colony}'s box has no free tile to pick`);
+      return best;
+    };
+    const pick = async (colony: number, tile: { tileX: number; tileY: number }) => (await seatAgents[colony]!.call("pick_nest", tile)).data as any;
+    const lastX0 = box0.x + box0.width - 1, lastY0 = box0.y + box0.height - 1;
+    const nests = [
+      free(0, lastX0, lastY0, (x, y) => x === lastX0 || y === lastY0),
+      free(1, box1.x, box1.y + 10, x => x === box1.x),
+      free(2, box2.x + 10, box2.y, (_x, y) => y === box2.y),
+      free(3, box3.x + 12, box3.y + 15),
+    ];
+    // Every colony picks a free tile inside its own box and is refused a tile just outside it, on a different side each
+    // time; a refusal keeps the earlier pick. Colony 0: inside, past the right edge, then the free tile on its far edges
+    // nearest the box's far corner.
+    expect(await pick(0, free(0, box0.x + 6, box0.y + 12))).toMatchObject({ accepted: true });
+    expect((await pick(0, { tileX: box0.x + box0.width, tileY: lastY0 })).error.code).toBe("nest_outside_box");
+    expect(await pick(0, nests[0]!)).toMatchObject({ accepted: true });
+    // Colony 1: on its left edge, then above the top edge.
+    expect(await pick(1, nests[1]!)).toMatchObject({ accepted: true });
+    expect((await pick(1, { tileX: box1.x + 10, tileY: box1.y - 1 })).error.code).toBe("nest_outside_box");
+    // Colony 2: left of the left edge, then on its top edge.
+    expect((await pick(2, { tileX: box2.x - 1, tileY: box2.y + 10 })).error.code).toBe("nest_outside_box");
+    expect(await pick(2, nests[2]!)).toMatchObject({ accepted: true });
     // Colony 3: inside, then below the bottom edge.
-    expect(await pick(3, box3.x + 12, box3.y + 15)).toMatchObject({ accepted: true });
-    expect((await pick(3, box3.x + 12, box3.y + box3.height)).error.code).toBe("nest_outside_box");
+    expect(await pick(3, nests[3]!)).toMatchObject({ accepted: true });
+    expect((await pick(3, { tileX: box3.x + 12, tileY: box3.y + box3.height })).error.code).toBe("nest_outside_box");
 
     await waitFor(() => server.game.match !== null);
     const state = server.game.match!.state;
@@ -183,9 +207,7 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
       const q = state.colonies[colony]!.queens![0]!;
       return { tileX: Math.floor(q.queenX / SUB), tileY: Math.floor(q.queenY / SUB) };
     };
-    expect([0, 1, 2, 3].map(queen)).toEqual([
-      { tileX: box0.x + box0.width - 1, tileY: box0.y + box0.height - 1 }, { tileX: box1.x, tileY: box1.y + 10 },
-      { tileX: box2.x + 10, tileY: box2.y }, { tileX: box3.x + 12, tileY: box3.y + 15 }]);
+    expect([0, 1, 2, 3].map(queen)).toEqual(nests);
 
     // A join once play has begun names the colony too.
     for (const [colony, player] of players.entries()) {

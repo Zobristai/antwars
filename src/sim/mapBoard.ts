@@ -49,13 +49,10 @@ export function hasOwnMapValues(map: MapDefinition): boolean {
   return map.board !== undefined || map.colonyCap !== undefined || map.matchTicks !== undefined;
 }
 
-/** A map with its own grid scale plays at that scale only; a map with its own board,
- * ant cap or match length plays at grid scale 2 only. Ant cap and match length are
- * positive whole numbers the stream, replay and record formats hold. A board map's size, nest,
- * water and food centres must fit its own board. A quadrant map plays in no rotation checked here,
- * so every two-colony match config refuses it. Refuse, never clamp. */
-export function validateMapBoard(map: MapDefinition, scale: number): void {
-  if (map.quadrant !== undefined) throw new RangeError(`${map.id}: a quadrant map plays only in a four-colony rotation`);
+/** Every map's own values, two-colony and quadrant alike: a map with its own grid scale plays at that scale only;
+ * a map with its own board, ant cap or match length plays at grid scale 2 only. Ant cap and match length are
+ * positive whole numbers the stream, replay and record formats hold. Refuse, never clamp. */
+export function validateMapValues(map: MapDefinition, scale: number): void {
   if (map.gridScale !== undefined && map.gridScale !== scale) {
     throw new RangeError(`${map.id}: plays only at grid scale ${map.gridScale}, not at grid scale ${scale}`);
   }
@@ -68,6 +65,13 @@ export function validateMapBoard(map: MapDefinition, scale: number): void {
   if (map.matchTicks !== undefined && !(Number.isSafeInteger(map.matchTicks) && map.matchTicks >= 1 && map.matchTicks <= MAX_MATCH_TICKS)) {
     throw new RangeError(`${map.id}: match length ${map.matchTicks} ticks must be a positive whole number of at most ${MAX_MATCH_TICKS} ticks (match record)`);
   }
+}
+
+/** A two-colony map's own values (validateMapValues), and a board map's size, nest, water and food centres, which must
+ * fit its own board. A quadrant map plays in no rotation checked here, so every two-colony match config refuses it. */
+export function validateMapBoard(map: MapDefinition, scale: number): void {
+  if (map.quadrant !== undefined) throw new RangeError(`${map.id}: a quadrant map plays only in a four-colony rotation`);
+  validateMapValues(map, scale);
   const board = map.board;
   if (board === undefined) return;
   const problem = boardSizeProblem(board.referenceWidth, board.referenceHeight, scale);
@@ -97,7 +101,8 @@ export function colonyCountOf(config: SimConfig): number {
 }
 
 /** Config validation for every map in the rotation. Recorded maps carry no board or grid scale and pass unchanged.
- * A four-colony rotation's quadrant maps are validated where its board is generated (src/sim/quadrantMap.ts). */
+ * A four-colony rotation's quadrant maps are validated, their own values included, where its board is generated
+ * (src/sim/quadrantMap.ts). */
 export function validateMapBoards(config: SimConfig): void {
   if (isQuadrantRotation(config)) return;
   for (const map of config.terrain?.maps ?? []) validateMapBoard(map, gridScaleOf(config));

@@ -188,7 +188,7 @@ export function listedNames(row: { readonly colonyNames?: readonly string[] | nu
 
 /** Known only from the record; null stays unknown, and a null winner is a draw only where the record says so. */
 export function recordingResult(r: Pick<Recording, "winner" | "reason" | "decidedBy"> & Partial<Pick<Recording, "colonyNames" | "seats" | "matchType">>): { result: string; how: string | null } {
-  const how = r.reason !== null && r.decidedBy !== null ? resultHow({ reason: r.reason, decidedBy: r.decidedBy }, true) : null;
+  const how = r.reason !== null && r.decidedBy !== null ? resultHow({ reason: r.reason, decidedBy: r.decidedBy }, true, recordedColonies(r)) : null;
   if (r.reason === "abandoned") return { result: "Abandoned", how };
   if (r.winner !== null) return { result: `${listedNames(r, recordedColonies(r))[r.winner]} won`, how };
   if (r.decidedBy === "draw") return { result: "Draw", how };

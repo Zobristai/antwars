@@ -84,6 +84,8 @@ describe("the public rules page in a four-colony match", () => {
       expect(text).toContain("An eliminated colony's territory no longer counts toward all owned territory.");
       // Time-up ranking, eliminated colonies below every survivor.
       expect(text).toContain("At time-up the surviving colonies rank by kills; ties go to more territory, then more living ants, then more food delivered. The top colony wins; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor, the latest eliminated highest.");
+      // Kill credit (src/sim/combat.ts): queens count, the finishing hit's colony scores, and it is not the count-mark telemetry.
+      expect(text).toContain("Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off. This score is separate from the kills shown on count marks, which go to the biggest hit.");
       // Same-tick cases, on scores just before that tick's removal.
       expect(text).toContain("When every remaining colony is eliminated on the same tick, by losing its last queen or going idle, the time-up order decides among them. Colonies eliminated on the same tick rank among themselves by the same order. Both read each colony's scores as they stood just before that tick's removal of ants and territory.");
       expect(text).toContain("If every remaining colony goes idle on the same tick, the time-up order decides among them.");

@@ -15,7 +15,7 @@ import { Game, type LobbySeat } from "../../src/mcp/game.js";
 import { createMcpHandler } from "../../src/mcp/http.js";
 import { rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.js";
 import { gridScaleOf, newMatchConfig } from "../../src/sim/gridScale.js";
-import { FOUR_COLONY_CELL_ENCODING } from "../../src/sim/view.js";
+import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../../src/sim/view.js";
 import { ruleSections } from "../../web/rules.js";
 
 /** Test-only quadrant geometry, not a production map (as in test/mcp/quadrants-lobby-match.test.ts). */
@@ -44,7 +44,7 @@ afterEach(async () => {
 });
 
 /** A slot server holding a seated Quadrants lobby; its clock moves only when a test moves it. */
-async function quadrantsSlot() {
+async function quadrantsSlot(seated = true) {
   const clock = { now: 1000 };
   let scheduled = false;
   const game: Game = new Game({
@@ -57,7 +57,8 @@ async function quadrantsSlot() {
       setImmediate(() => { scheduled = false; game.tick(); });
     },
   });
-  game.seatLobby("quad-lobby", SEATS, "quadrants");
+  const seatQuadrants = () => game.seatLobby("quad-lobby", SEATS, "quadrants");
+  if (seated) seatQuadrants();
   const handler = createMcpHandler(game, { now: () => clock.now });
   const server: Server = createServer((req, res) => void handler.handle(req, res));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", () => resolve()));
@@ -67,12 +68,14 @@ async function quadrantsSlot() {
     const client = new Client({ name: "quadrants-briefing-test", version: "0.0.0" });
     await client.connect(new StreamableHTTPClientTransport(url));
     closers.push(() => client.close());
-    return async (name: string, args: Record<string, unknown> = {}) => {
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
       const reply = await client.callTool({ name, arguments: args });
       return { isError: reply.isError === true, data: reply.structuredContent as any };
     };
+    // The tool descriptions this session is served (tools/list).
+    return Object.assign(call, { listTools: async () => (await client.listTools()).tools });
   };
-  return { game, clock, connect };
+  return { game, clock, connect, seatQuadrants };
 }
 
 /** The match's territory-win figures in the agents' units: seconds and original-size tile areas. */
@@ -93,6 +96,9 @@ function expectQuadrantsText(text: string, config: SimConfig) {
     "last colony with a living queen",
     "more than half of all owned territory", win.from, win.hold, win.floor,
     "surviving colonies rank by kills, then territory, ants alive and food delivered",
+    // Kill credit (src/sim/combat.ts): queens count, the finishing hit's colony scores, and it is not the count-mark telemetry.
+    "Kills: each enemy ant or queen killed is one kill for the colony whose hit takes it to zero HP (on one tick, ants' hits land before queens' bites); a kill is never shared",
+    "This score is not the count-mark kills in marks/myMarks, which credit the biggest hit.",
     "Eliminated colonies rank below every survivor",
     "When every remaining colony loses its last queen or goes idle on the same tick, this order decides among them",
     "colonies eliminated on the same tick rank among themselves by it",
@@ -154,6 +160,58 @@ describe("a Quadrants seat's rules and briefing through the MCP tools", () => {
     expect(rulesAfter.isError).toBe(false);
     expectQuadrantsText(rulesAfter.data.rules, drawn);
     expect(rulesAfter.data.rules).toContain(`- Territory win: ${territoryWin(drawn).from}, a colony holding more than half of all owned territory`);
+  });
+
+  it.each([["seated before the connection opens", true], ["seated after the connection opens", false]] as const)(
+    "advertises the four-colony observe contract in tools/list, and served cells decode by it: lobby %s", async (_when, seatedFirst) => {
+    const { game, clock, connect, seatQuadrants } = await quadrantsSlot(seatedFirst);
+    const seat = await connect();
+    if (!seatedFirst) {
+      // The session's tools are registered before the slot seats its Quadrants lobby.
+      expect((await seat.listTools()).find(tool => tool.name === "observe")!.description).toContain(CELL_ENCODING);
+      seatQuadrants();
+    }
+    expect((await seat("join", { key: "key-2" })).isError).toBe(false);
+    const closesAt = game.beginLobbyStart(4242);
+    for (const colony of [0, 1, 3]) await game.joinSeated(`id-${colony}`);
+    clock.now = closesAt;
+    game.finishLobbyStart();
+    game.tick();
+    const observeTool = (await seat.listTools()).find(tool => tool.name === "observe")!;
+    const advertised = observeTool.description!;
+    // The four-colony decoder and status, not the two-colony ones (hp=floor(k/6), even/odd colonies, both colonies idle).
+    expect(advertised).toContain(FOUR_COLONY_CELL_ENCODING);
+    expect(advertised).not.toContain(CELL_ENCODING);
+    expect(advertised).toContain("the idle seat's colony is eliminated and the match continues for the others");
+    for (const phrase of TWO_COLONY_PHRASES) expect(advertised, phrase).not.toContain(phrase);
+    // The finding's case: a colony-2 worker at 4000 milli-HP is served as k=48006.
+    const state = game.match!.state;
+    const worker = state.ants.find(ant => ant.colony === 2)!;
+    worker.hp = 4000; worker.caste = "worker";
+    const observed = await seat("observe");
+    expect(observed.isError).toBe(false);
+    const cells = observed.data.view.cells;
+    expect(advertised).toContain(cells.encoding);
+    // Decode every served ant by the advertised rule: n=colonies; hp=floor(k/(3n)), r=k%(3n); colony=r%n; caste=floor(r/n).
+    expect(advertised).toContain("n=colonies; hp=floor(k/(3n)), r=k%(3n); colony=r%n; caste=floor(r/n): 0=no caste, 1=worker, 2=soldier.");
+    const n: number = cells.colonies;
+    expect(n).toBe(4);
+    const decoded = new Map<number, { k: number; hp: number; colony: number; caste: number }>();
+    for (const row of (cells.data as string).split(";")) {
+      const body = row.split("*")[0]!.split(":")[1];
+      for (const record of body === undefined || body === "" ? [] : body.split("/")) {
+        const [antId, k] = record.split(".").map(value => parseInt(value, 36)) as [number, number];
+        const r = k % (3 * n);
+        decoded.set(antId, { k, hp: Math.floor(k / (3 * n)), colony: r % n, caste: Math.floor(r / n) });
+      }
+    }
+    expect(decoded.get(worker.id)).toEqual({ k: 48006, hp: 4000, colony: 2, caste: 1 });
+    expect(decoded.size).toBeGreaterThan(1);
+    for (const [antId, ant] of decoded) {
+      const live = state.ants.find(other => other.id === antId)!;
+      expect({ hp: ant.hp, colony: ant.colony, caste: ant.caste }, `ant ${antId}`)
+        .toEqual({ hp: live.hp, colony: live.colony, caste: live.caste === undefined ? 0 : live.caste === "worker" ? 1 : 2 });
+    }
   });
 
   it("states the same rules to a client that reads rules at the entry point without a seat", async () => {

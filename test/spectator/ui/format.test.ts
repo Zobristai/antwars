@@ -140,6 +140,15 @@ describe("matches rows", () => {
     expect(resultHeadline({ winner: 0, reason: "queens_killed" }, colonyNames)).toBe("Sweetwater Colony wins");
     expect(recordingModels([{ seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }], colonyNames)).toBe("Sweetwater Colony: m-a");
   });
+  it("words a four-colony recording's end without two sides, and a two-colony one as before", () => {
+    const quadrants = { matchType: { kind: "quadrants" as const, size: null } };
+    expect(recordingResult({ winner: 2, reason: "queens_killed", decidedBy: "queens_killed", ...quadrants }).how).toBe("Last colony standing · queens killed");
+    expect(recordingResult({ winner: 3, reason: "queens_killed", decidedBy: "kills", ...quadrants }).how).toBe("Queens killed · decided on kills");
+    expect(recordingResult({ winner: 1, reason: "idle", decidedBy: "idle", ...quadrants }).how).toBe("Last colony standing · seats inactive");
+    expect(recordingResult({ winner: null, reason: "idle", decidedBy: "draw", ...quadrants }).how).toBe("Seats inactive · decided on draw");
+    expect(recordingResult({ winner: 1, reason: "queens_killed", decidedBy: "kills" }).how).toBe("Queens killed on both sides · decided on kills");
+    expect(recordingResult({ winner: null, reason: "idle", decidedBy: "draw" }).how).toBe("Seats inactive on both sides");
+  });
   it("names recorded models by colony and never invents seats", () => {
     expect(recordingModels([])).toBe("Seats not recorded");
     expect(recordingModels([{ seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: null }, { seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }])).toBe("Very Large Colony: m-a · Lake Hodges Colony: model unknown");

@@ -84,6 +84,14 @@ describe("a Quadrants lobby's match under the production redesign rules", () => 
     expect(game.match).toBeNull();
   });
 
+  it("refuses a Quadrants map whose own ant cap, match length or grid scale no match can play, before any lobby is seated", () => {
+    for (const [change, message] of [[{ colonyCap: 0 }, "ant cap 0 must be a positive whole number"],
+      [{ matchTicks: 10_000_001 }, "match length 10000001 ticks must be a positive whole number of at most 10000000 ticks"],
+      [{ gridScale: 4 }, "plays only at grid scale 4, not at grid scale 2"]] as const) {
+      expect(() => seated([{ ...FIXTURE, ...change } as MapDefinition])).toThrow(`${FIXTURE.id}: ${message}`);
+    }
+  });
+
   it("names each seat's colony by its colony number, before the start and in play", async () => {
     const s = seated();
     expect(s.game.colonyNames()).toEqual(NAMES);

@@ -238,6 +238,32 @@ describe("quadrant map definitions", () => {
   });
 });
 
+describe("quadrant map ant cap, match length and grid scale", () => {
+  const live = newMatchConfig(rulesConfig("redesign"));
+  const rotation = (map: MapDefinition): SimConfig => ({ ...live, terrain: { ...live.terrain!, maps: [map] } });
+
+  it.each([
+    ["an ant cap of 0", { colonyCap: 0 }, "fixture-quadrants: ant cap 0 must be a positive whole number"],
+    ["a fractional ant cap", { colonyCap: 1.5 }, "fixture-quadrants: ant cap 1.5 must be a positive whole number"],
+    ["a match length of 0", { matchTicks: 0 }, "fixture-quadrants: match length 0 ticks must be a positive whole number"],
+    ["a match length past the match record's", { matchTicks: 10_000_001 },
+      "fixture-quadrants: match length 10000001 ticks must be a positive whole number of at most 10000000 ticks (match record)"],
+    ["a grid scale other than 2", { gridScale: 4 as never }, "fixture-quadrants: plays only at grid scale 4, not at grid scale 2"],
+  ])("refuses %s before a board, match config or match is derived from it", (_kind, change, message) => {
+    const map = { ...FIXTURE, ...change } as MapDefinition;
+    expect(() => validateQuadrantMap(map)).toThrow(message);
+    expect(() => generateQuadrantBoard(map, 1)).toThrow(message);
+    expect(() => matchConfigForMap(1, rotation(map))).toThrow(message);
+    expect(() => createMatch(1, rotation(map))).toThrow(message);
+  });
+
+  it("plays a valid own ant cap and match length, and an explicit grid scale of 2", () => {
+    const map: MapDefinition = { ...FIXTURE, colonyCap: 33, matchTicks: 10_000_000, gridScale: 2 };
+    expect(() => validateQuadrantMap(map)).not.toThrow();
+    expect(matchConfigForMap(1, rotation(map))).toMatchObject({ colonyCap: 33, matchTicks: 10_000_000 });
+  });
+});
+
 describe("generated quadrant boards", () => {
   it.each(SEEDS)("seed %i: nests, start areas, water, rocks and quadrant food map onto one another under both mirrors", seed => {
     const b = generateQuadrantBoard(FIXTURE, seed);

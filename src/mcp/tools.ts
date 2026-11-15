@@ -4,11 +4,12 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, type SimConfig } from "../sim/config.js";
 import type { ColonyNames } from "../sim/colonyNames.js";
+import { colonyCountOf } from "../sim/mapBoard.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
 import { EMPTY_SQUAD_COUNT_MARK, FOUNDING_CHECKS, LINE_FROM_END_NOT_VISIBLE, LINE_TO_END_NOT_VISIBLE, type FoundingCheck } from "../sim/agents.js";
-import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, FOOD_RADIX_TEXT, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText } from "./briefing.js";
+import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, foodRadixText, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText } from "./briefing.js";
 import { OBSERVE_REPLY_LIMITS, fitsReply, payload, pagedView, publicCountCaste, publicQueen, servedText, storedCall, type ServedText } from "./replies.js";
 import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
@@ -999,11 +1000,15 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     },
   );
 
-  server.registerTool(
+  // The observe text a match is served: a four-colony lobby gets the four-colony status and cell decoder its replies use.
+  const observeText = (config: SimConfig): string =>
+    `${observeDetailText(config, game.mcpConfig, { house: game.isHouseMatch(session.agentId) })} ${colonyVisibilityText(config)} ${foodRadixText(config)} ${CELL_PAGING_TEXT}${usesCompactAgentText(config) ? ` ${ENEMY_QUEENS_TEXT}` : ""} ${SEAT_NOTICE_TEXT} Full current view with lossless dense cells, squad, marks and territory counts. ${MY_MARKS_TEXT} Without since, eventsMode:current samples newest unseen events from the last command cycle, prioritizing pending own-queen and own mark/count-mark events; priorityEventsMore means priorities remain queued. Current count-mark acceptance notices omit message and availability; command replies and explicit history retain full details. Default sampling never advances eventCursor. For complete chronological history use since:0, then since:view.eventCursor while eventsMore; eventsMode:history may repeat sampled events. History and pending priorities survive reconnects. ${TERRITORY_TEXT} ${MARK_TABLE_TEXT} waitSeconds holds up to 10 s.`;
+  // Every other match keeps the text fixed when this session opened.
+  const baseObserveText = observeText(game.simConfig);
+  const observeTool = server.registerTool(
     "observe",
     {
-      description:
-        `${observeDetailText(game.simConfig, game.mcpConfig, { house: game.isHouseMatch(session.agentId) })} ${colonyVisibilityText(game.simConfig)} ${FOOD_RADIX_TEXT} ${CELL_PAGING_TEXT}${usesCompactAgentText(game.simConfig) ? ` ${ENEMY_QUEENS_TEXT}` : ""} ${SEAT_NOTICE_TEXT} Full current view with lossless dense cells, squad, marks and territory counts. ${MY_MARKS_TEXT} Without since, eventsMode:current samples newest unseen events from the last command cycle, prioritizing pending own-queen and own mark/count-mark events; priorityEventsMore means priorities remain queued. Current count-mark acceptance notices omit message and availability; command replies and explicit history retain full details. Default sampling never advances eventCursor. For complete chronological history use since:0, then since:view.eventCursor while eventsMore; eventsMode:history may repeat sampled events. History and pending priorities survive reconnects. ${TERRITORY_TEXT} ${MARK_TABLE_TEXT} waitSeconds holds up to 10 s.`,
+      description: baseObserveText,
       inputSchema: {
         cellsCursor: orNull(z.string().min(1).max(128).optional().describe("Omit to capture current colony sight, squad cells first. While view.cellsMore, pass view.cellsCursor to fetch the next frozen cellsTick page. A fresh observe replaces this cell snapshot; event since is independent.")),
         since: orNull(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional().describe("Omit for current-event sampling with own-queen/own-mark priority. Set 0 to replay every seat event from join, then continue with view.eventCursor while eventsMore. Explicit replay alone advances that cursor; it may repeat sampled events. History survives commands, refusals and reconnects for this match.")),
@@ -1031,6 +1036,12 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       return observeResult(game, game.configForAgent(agentId), outcome, map === true, since, nestFields(game, agentId, true), cellsCursor);
     },
   );
+  // Read at each tools/list, not fixed when this session opened: a slot can seat its Quadrants lobby after a session
+  // opened (the seat poll after the lobby takes the slot, or a successor server restoring a begun match).
+  Object.defineProperty(observeTool, "description", {
+    configurable: true, enumerable: true,
+    get: () => (colonyCountOf(game.undrawnConfig) === 4 ? observeText(game.undrawnConfig) : baseObserveText),
+  });
 
   const orderShape = {
     kind: orderKind(game.simConfig),

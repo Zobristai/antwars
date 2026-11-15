@@ -4,7 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { chooseJoinColony } from "../sim/agents.js";
 import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, withoutHousePausedMaps, type MapDefinition, type SimConfig } from "../sim/config.js";
 import { isClassicColonyNames, quadrantColonyNames, seatedColonyNames, type ColonyNames } from "../sim/colonyNames.js";
-import { isQuadrantRotation } from "../sim/mapBoard.js";
+import { isQuadrantRotation, OWN_VALUE_GRID_SCALE, validateMapValues } from "../sim/mapBoard.js";
 import { quadrantMatchMaps } from "../sim/mapShapes.js";
 import { newMatchConfig } from "../sim/gridScale.js";
 import { eliminationsAt, headerLine, tickLine } from "../sim/log.js";
@@ -432,6 +432,8 @@ export class Game {
     this.onReply = options.onReply ?? (() => {});
     this.slot = options.slot;
     this.quadrantMaps = options.quadrantMaps ?? quadrantMatchMaps();
+    // Briefings and the rules page state a Quadrants map's own ant cap and match length before any board is drawn.
+    for (const map of this.quadrantMaps) validateMapValues(map, OWN_VALUE_GRID_SCALE);
   }
 
   /** Slot servers: seat the lobby whose match is next; only its identities may join, each seat by its seat key. */

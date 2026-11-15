@@ -11,7 +11,7 @@
  * mirror), bottom-right (both). Two-colony rotations refuse quadrant maps (validateMapBoard).
  */
 import { ROCK_RULES, type FoodPatch, type MapDefinition, type QuadrantLayout, type WaterRect } from "./config.js";
-import { boardSizeProblem, OWN_VALUE_GRID_SCALE } from "./mapBoard.js";
+import { boardSizeProblem, OWN_VALUE_GRID_SCALE, validateMapValues } from "./mapBoard.js";
 import { nextUint32 } from "./rng.js";
 import type { Rock } from "./types.js";
 
@@ -178,6 +178,8 @@ export function validateQuadrantMap(map: MapDefinition): void {
 function checkedLayout(map: MapDefinition): Layout {
   const fail = (why: string): never => { throw new RangeError(`${map.id}: ${why}`); };
   const q = layoutOf(map);
+  // Its own ant cap, match length and grid scale, checked as a two-colony map's are, before anything uses them.
+  validateMapValues(map, OWN_VALUE_GRID_SCALE);
   if (map.board !== undefined) fail("a quadrant map carries no two-colony board");
   const { referenceWidth: width, referenceHeight: height } = q;
   const size = boardSizeProblem(width, height, OWN_VALUE_GRID_SCALE);
