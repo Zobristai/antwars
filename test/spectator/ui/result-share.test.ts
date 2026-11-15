@@ -112,7 +112,7 @@ describe("the post's text for a four-colony match", () => {
     expect(shareText(fourColonyFrame(three, { winner: 3, reason: "idle", decidedBy: "idle" }), URL_))
       .toBe(`marsh beat fennec and tidewater on Antwars — Last colony standing · seats inactive. Watch: ${URL_}`);
     expect(shareText(fourColonyFrame(three, { winner: null, reason: "idle", decidedBy: "draw" }), URL_))
-      .toBe(`fennec, tidewater and marsh drew on Antwars — Last seats inactive on the same tick · decided on draw. Watch: ${URL_}`);
+      .toBe(`fennec, tidewater and marsh drew on Antwars — Seats inactive · decided on draw. Watch: ${URL_}`);
     expect(shareText(fourColonyFrame(three, { winner: 2, reason: "time_up", decidedBy: "territory" }), URL_))
       .toBe(`Sweetwater Colony beat fennec, tidewater and marsh on Antwars — Time-up · decided on territory. Watch: ${URL_}`);
     expect(shareText(fourColonyFrame([agentOf(1, "tidewater")], { winner: 1, reason: "idle", decidedBy: "idle" }), URL_))
@@ -120,7 +120,7 @@ describe("the post's text for a four-colony match", () => {
   });
   it("names the time-up winner of a same-tick all-idle end as the winner", () => {
     expect(shareText(fourColonyFrame(seated, { winner: 1, reason: "idle", decidedBy: "territory" }), URL_))
-      .toBe(`tidewater beat fennec, GPT-6 Luna (max · Fast) and marsh & reed on Antwars — Last seats inactive on the same tick · decided on territory. Watch: ${URL_}`);
+      .toBe(`tidewater beat fennec, GPT-6 Luna (max · Fast) and marsh & reed on Antwars — Seats inactive · decided on territory. Watch: ${URL_}`);
   });
   it("names a colony with no player by its name, and two colonies as it always did", () => {
     expect(sideNames(seated, 2, QUADRANTS)).toBe("GPT-6 Luna (max · Fast)");

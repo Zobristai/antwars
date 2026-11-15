@@ -164,8 +164,8 @@ export function resultHow(r: { reason: StreamResult["reason"] | string; decidedB
   const on = r.decidedBy.replace(/_/g, " ");
   if (colonies > 2) {
     // One colony left standing, or every colony still in the match left on the same tick and they were ranked.
-    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? "Last colony standing · queens killed" : `Last queens killed on the same tick · decided on ${on}`;
-    if (reason === "idle") return r.decidedBy === "idle" ? "Last colony standing · seats inactive" : `Last seats inactive on the same tick · decided on ${on}`;
+    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? "Last colony standing · queens killed" : `Queens killed · decided on ${on}`;
+    if (reason === "idle") return r.decidedBy === "idle" ? "Last colony standing · seats inactive" : `Seats inactive · decided on ${on}`;
   }
   switch (reason) {
     case "queens_killed":

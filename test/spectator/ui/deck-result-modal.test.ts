@@ -176,7 +176,7 @@ describe("the match result as a modal over the screen", () => {
     const idleHead = idle.dialog.byClass("d1-result-head")[0]!;
     expect(idleHead.textContent).toBe("Lake Skinner Colony wins");
     expect((idleHead.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
-    expect(idle.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last seats inactive on the same tick · decided on territory");
+    expect(idle.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Seats inactive · decided on territory");
 
     const drawn = modal();
     drawn.show(ended(null, "time_up", "draw"));

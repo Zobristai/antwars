@@ -223,11 +223,11 @@ it("labels a four-colony end without two sides or one opponent, and a two-colony
   expect(how("queens_killed", "queens_killed", 4)).toBe("Last colony standing · queens killed");
   expect(how("idle", "idle", 4)).toBe("Last colony standing · seats inactive");
   // Every colony still in the match left on one tick, ranked: by a measure, or level through every one (a draw).
-  expect(how("queens_killed", "kills", 4)).toBe("Last queens killed on the same tick · decided on kills");
-  expect(how("queens_killed", "draw", 4)).toBe("Last queens killed on the same tick · decided on draw");
-  expect(how("idle", "territory", 4)).toBe("Last seats inactive on the same tick · decided on territory");
-  expect(how("idle", "food_delivered", 4)).toBe("Last seats inactive on the same tick · decided on food delivered");
-  expect(how("idle", "draw", 4)).toBe("Last seats inactive on the same tick · decided on draw");
+  expect(how("queens_killed", "kills", 4)).toBe("Queens killed · decided on kills");
+  expect(how("queens_killed", "draw", 4)).toBe("Queens killed · decided on draw");
+  expect(how("idle", "territory", 4)).toBe("Seats inactive · decided on territory");
+  expect(how("idle", "food_delivered", 4)).toBe("Seats inactive · decided on food delivered");
+  expect(how("idle", "draw", 4)).toBe("Seats inactive · decided on draw");
   // Time-up, the majority hold and an abandonment already name no side.
   for (const decidedBy of ["kills", "territory", "ants_alive", "food_delivered"]) {
     expect(how("time_up", decidedBy, 4)).toBe(`Time-up · decided on ${decidedBy.replace(/_/g, " ")}`);
