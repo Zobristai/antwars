@@ -1,5 +1,5 @@
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyNameNote, isClassicColonyNames, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNameNote, isClassicColonyNames } from "../../src/sim/colonyNames.ts";
 import { PLAYBACK_RATES, type PlaybackRate, type Recording } from "./recording.ts";
 import type { ReplayEvent } from "./replay-events.ts";
 import "./replay-marks.css";
@@ -142,7 +142,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
    * the name and its note; a label without one hides at once, as it always has. */
   let chipLeaveTimer: ReturnType<typeof setTimeout> | null = null;
   /** The match's drawn colony names, whose words carry their source notes; none for the rated names. */
-  const drawn = names.length === 2 && isClassicColonyNames(names as ColonyNamePair) ? null : names;
+  const drawn = names.length === 2 && isClassicColonyNames(names) ? null : names;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
     const value = parseFloat(doc.defaultView?.getComputedStyle(el).getPropertyValue(name) ?? "");

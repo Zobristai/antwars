@@ -298,9 +298,15 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
    grey fill. A row naming its own colonies sets --aw-k0 and --aw-k1 to its names' colours (matches.ts inkColonies). */
 .d1p-c0 { color: var(--aw-k0, var(--aw-c0)); }
 .d1p-c1 { color: var(--aw-k1, var(--aw-c1)); }
+/* Colonies 2 and 3 are only in a four-colony (Quadrants) row, which always inks its four names (matches.ts inkColonies). */
+.d1p-c2 { color: var(--aw-k2); }
+.d1p-c3 { color: var(--aw-k3); }
 .d1p-colony { font-weight: 600; }
 /* A colony name heading its own cell, in a row naming its own colonies (matches.ts colonyLabel). */
 td.c-model > .d1p-colony { display: block; }
+/* A four-colony row's one Colonies cell, across both colony columns: each colony's name in a label column with its seats
+   beside it, one colony a line, as a stacked row holds its colonies (below). */
+.d1p-match td.c-model > .d1p-colonies { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 0; }
 
 /* Status stamps, as the signed-off rows drawing draws them: a record's word (COMPLETE, PARTIAL, UNAVAILABLE) solid and
    light; a waiting row's (WAITING, STARTING, n OF m SEATS) dashed grey; LIVE red. */

@@ -283,7 +283,7 @@ describe("marks on the scrubber", () => {
 
   it("names and colours all four colonies of a four-colony match, each name with its source note", () => {
     const names = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
-    const mark = (kind: ReplayEvent["kind"], tick: number, colony: number) => ({ kind, tick, ms: tick * 100, colony }) as ReplayEvent;
+    const mark = (kind: ReplayEvent["kind"], tick: number, colony: number): ReplayEvent => ({ kind, tick, ms: tick * 100, colony });
     const events = [mark("food", 1000, 2), mark("nest", 3000, 3), mark("nest", 5000, 1), mark("food", 7000, 0), mark("nest", 7841, 2), mark("nest", 7841, 0)];
     expect(events.map(e => markWords(e, names)[1])).toEqual([names[2], names[3], names[1], names[0], names[2], names[0]]);
     const m = marked(events, 0, names);

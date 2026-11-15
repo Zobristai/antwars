@@ -5,23 +5,25 @@ import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
 import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
-import { NATURAL_OUTCOMES, type RankedMode } from "../rating/ratings.js";
+import { NATURAL_OUTCOMES } from "../rating/ratings.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
+import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
- * The lobby a recording was played in (src/lobby/lobbies.ts Lobby): its kind, agents per colony, ranked mode (null for a
- * player-created lobby), house challenge label where it has one, seated identities by colony, and how its match ended.
+ * The lobby a recording was played in (src/lobby/lobbies.ts Lobby): its kind, agents per colony, queue mode (a ranked mode
+ * or quadrants; null for a player-created lobby), house challenge label where it has one, seated identities by colony (two
+ * colonies, or four in a quadrants lobby), and how its match ended.
  */
 export interface RecordingLobby {
   readonly kind: "public" | "private";
   readonly size: 1 | 2 | 3 | 4;
-  readonly mode: RankedMode | null;
+  readonly mode: QueueMode | null;
   readonly challenge?: { readonly kind: "house" };
-  readonly colonies: readonly [readonly LobbySeat[], readonly LobbySeat[]];
+  readonly colonies: readonly (readonly LobbySeat[])[];
   /** The lobby's match time in milliseconds: startsAt, else createdAt. */
   readonly startsAt?: number | null;
   readonly createdAt?: number;
@@ -33,7 +35,8 @@ export interface RecordingLobby {
  * match is registered but the replay link has not published yet. A throw is a failed lookup.
  */
 export type RecordingLobbyLookup = (replayId: string) => Promise<RecordingLobby | null | "pending">;
-type ColonyHandles = readonly [string | null, string | null];
+/** One handle (or null) per colony, by colony. */
+type ColonyHandles = readonly (string | null)[];
 
 /**
  * Older history rows carry no seat handle (rows record it from now on). For a row with a seat lacking one, take each
@@ -56,7 +59,7 @@ export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPa
     const forget = () => { if (cache.get(replayId) === work) cache.delete(replayId); };
     const work = lookup(replayId).then((lobby): ColonyHandles | null => {
       if (lobby === "pending") { forget(); return null; }
-      return lobby === null || lobby.kind !== "public" ? null : [one(lobby.colonies[0]), one(lobby.colonies[1])];
+      return lobby === null || lobby.kind !== "public" ? null : lobby.colonies.map(one);
     });
     cache.set(replayId, work);
     work.catch(forget);
@@ -67,7 +70,7 @@ export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPa
     let handles: ColonyHandles | null;
     try { handles = await colonyHandles(row.id); } catch { return row; }
     if (handles === null) return row;
-    return { ...row, seats: row.seats.map(seat => seat.handle !== null ? seat : { ...seat, handle: handles[seat.colony] }) };
+    return { ...row, seats: row.seats.map(seat => seat.handle !== null ? seat : { ...seat, handle: handles[seat.colony] ?? null }) };
   }
   return async page => ({ ...page, matches: await Promise.all(page.matches.map(fill)) });
 }
@@ -118,11 +121,11 @@ export type TypedHistorySummary = HistorySummary & { readonly matchType: Recordi
 
 /**
  * A recording's match type, from its lobby where one was read (undefined: pending or failed this listing; null: it has
- * none). Lobby: a house-* mode is the Antwars Model Index, any other mode the ranked queue, a modeless lobby a house
- * challenge or else a player-made (unranked) lobby. Without a lobby, the record's own facts (recordedMatchType), the
- * same rule a replay applies to its opening snapshot.
+ * none). Lobby: the quadrants mode is Quadrants, a house-* mode the Antwars Model Index, any other mode the ranked queue,
+ * a modeless lobby a house challenge or else a player-made (unranked) lobby. Without a lobby, the record's own facts
+ * (recordedMatchType), the same rule a replay applies to its opening snapshot.
  */
-export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" | "modelIndex">,
+export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" | "modelIndex" | "colonyNames">,
   lobby: RecordingLobby | null | undefined): RecordingMatchType | null {
   if (lobby) return lobbyMatchType(lobby);
   return recordedMatchType(row);

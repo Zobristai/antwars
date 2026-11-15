@@ -5,7 +5,8 @@ import { Readable } from "node:stream";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountStores } from "../../src/accounts/service.ts";
-import type { Lobby } from "../../src/lobby/lobbies.ts";
+import { createLobbies, type Lobby } from "../../src/lobby/lobbies.ts";
+import { createIdentities } from "../../src/identity/identities.ts";
 import { RELAY_END_GRACE_MS, RELAY_LIMITS, RELAY_MAX_MS, watchRoutes } from "../../src/live/watch-routes.ts";
 import { RELAY_HEADER, relayKey, verifyRelay } from "../../src/live/relay-signature.ts";
 import type { CapLimits } from "../../src/net/admission.ts";
@@ -347,6 +348,34 @@ describe("shared spectator HTTP routes", () => {
     // One read per identity per match: the 2v2 match's in 2v2, the fixture's modeless match's in public 1v1.
     expect(reads.sort()).toEqual(["a:1v1", "a:2v2", "b:1v1", "b:2v2", "c:2v2"]);
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === third).colonies).toEqual([[], []]);
+  });
+
+  it("lists a live Quadrants match, read from the lobby document its queue pairing stores, with four colonies of seats, its four names and its type", async () => {
+    const f = await fixture("public");
+    // The lobby a quadrants pairing stores (four one-seat colonies, unrated, its four names), read back as the lobby store reads it.
+    const { store } = memoryWatchStore();
+    const lobbies = createLobbies(store, createIdentities(store));
+    const colonies = ["ann", "bob", "cat", "dan"].map(name => [{ id: name, displayName: name }]);
+    const made = await store.transaction(async read => {
+      const { writes, lobby: created } = await lobbies.queuedMatchWrites(read, { mode: "quadrants", colonies }, 0);
+      return { writes, result: created.id };
+    });
+    const stored = await lobbies.readLobby(made);
+    if (!stored.ok) throw new Error(stored.reason);
+    f.lobbies.set(second, { ...stored.value, id: second });
+    await f.registry.register({ lobbyId: second, visibility: "public", rated: false, mode: "quadrants", startedAt: 5, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
+    const response = await request(f.gatewayOrigin, "/watch/catalog");
+    expect(response.status).toBe(200);
+    const catalog = await response.json();
+    // A quadrants seat shows no rating (seatRating), and no label, level or tier before its slot publishes one.
+    const seat = (displayName: string) => ({ displayName, modelLabel: null, thinkingLevel: null, serviceTier: null, rating: null, rd: null, ratedMatches: null });
+    expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === second)).toEqual({ lobbyId: second, rated: false, startedAt: 5, delaySeconds: 60,
+      colonies: [[seat("ann")], [seat("bob")], [seat("cat")], [seat("dan")]], matchType: { kind: "quadrants", size: 1 },
+      colonyNames: ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"] });
+    // The two-colony match listed beside it keeps its row.
+    expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === id)).toEqual({ lobbyId: id, rated: true, startedAt: 0, delaySeconds: 300, colonies: [
+      [{ displayName: "alice", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
+    ], matchType: { kind: "unranked", size: 1 } });
   });
 });
 

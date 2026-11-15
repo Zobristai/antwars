@@ -111,7 +111,7 @@ export class ReplayEventScan {
     for (let colony = 0; colony < this.gathered.length; colony++) {
       const food = this.gathered[colony] ?? 0;
       total += food;
-      if (food > most) { next = most; most = food; top = colony as Colony; }
+      if (food > most) { next = most; most = food; top = colony; }
       else if (food > next) next = food;
     }
     return most - next > Math.max(FOOD_LEAD_MARGIN * total, FOOD_LEAD_FLOOR) ? top : null;

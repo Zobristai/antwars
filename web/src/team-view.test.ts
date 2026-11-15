@@ -7,7 +7,8 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CONFIG, type SimConfig } from "../../src/sim/config.ts";
+import { COLONY_NAMES, DEFAULT_CONFIG, type SimConfig } from "../../src/sim/config.ts";
+import { SUPERCOLONY_NAMES } from "../../src/sim/colonyNames.ts";
 import { withGridScale } from "../../src/sim/gridScale.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { createVisibility } from "../../src/sim/view.ts";
@@ -16,7 +17,7 @@ import { SpectatorRecorder } from "../../src/live/model.ts";
 import { SUB_TILE, decodeMessage, encodeMessage, type StreamAnts, type StreamMessage, type StreamSetup } from "../../src/live/format.ts";
 import { TICK_MS } from "../../src/live/snapshot.ts";
 import { Frame, Playback, TickPreparation, type Board } from "./buffer.ts";
-import { SIGHT_TILES, SMELL_TILES, TeamView, teamMasks, teamViewControl } from "./team-view.ts";
+import { SIGHT_TILES, SMELL_TILES, TEAM_VIEW_COPY, TeamView, teamMasks, teamViewControl } from "./team-view.ts";
 
 /** The packet's measured edge error is 0.009% of visible tile-ticks; one in a thousand bounds the stream's rounding. */
 const ROUNDING_LIMIT = 0.001;
@@ -128,6 +129,34 @@ function fixture(): Frame {
   return frame;
 }
 
+/** The four Quadrants names by colony id: the shared name table's order, as a four-colony setup carries them. */
+const QUADRANTS_NAMES = SUPERCOLONY_NAMES.map(n => n.label);
+
+/**
+ * The same scene as a four-colony match: ant 1 is colony 2's, ant 2 colony 3's (in its sight), ant 3 colony 0's (far
+ * outside it). Every colony holds one tile, has one mark and one queen; colony 3's queen stands in colony 2's sight.
+ */
+function fourColonyFixture(): Frame {
+  const frame = fixture(), source = frame.board!;
+  frame.ants!.colony.set([2, 3, 0]);
+  frame.colony.set([2, 3, 0]);
+  const territory = new Uint8Array(W * H);
+  territory.set([1, 2, 3, 4]);
+  const mark = (id: number, colony: number, tileX: number) => ({ id, agent: colony, colony, tileX: t(tileX), tileY: t(5), words: [0], laidTick: 0, answered: 0 });
+  const queen = (colony: number, x: number, y: number) => ({ id: 0, colony, x: sub(t(x)), y: sub(t(y)), foundedTick: 0, lostTick: null, overrun: 0 });
+  const board = {
+    ...source,
+    setup: { ...source.setup, colonyNames: QUADRANTS_NAMES, queens: [[sub(t(35)), sub(t(5))], [sub(t(35)), sub(t(15))], [sub(t(2)), sub(t(5))], [sub(t(2)), sub(t(15))]] },
+    territory, held: [1, 1, 1, 1], overrun: [0, 0, 0, 0], deaths: [0, 0, 0, 0],
+    marks: [mark(1, 2, 12), mark(2, 3, 8), mark(3, 0, 8), mark(4, 1, 8)],
+    queens: [queen(0, 35, 5), queen(1, 35, 15), queen(2, 2, 5), queen(3, 8, 8)],
+  } as unknown as Board;
+  frame.board = board;
+  frame.territoryA = frame.territoryB = territory;
+  frame.marks = board.marks.map(m => ({ mark: m, ageMs: 0 }));
+  return frame;
+}
+
 describe("a colony's view of the board", () => {
   it("Full view is the playback frame itself, with no fog", () => {
     const frame = fixture();
@@ -192,6 +221,45 @@ describe("a colony's view of the board", () => {
   });
 });
 
+describe("a colony's view in a four-colony match", () => {
+  it("colony 2 sees from its own ants: its own territory, marks and queens, enemies only in sight, and no trails", () => {
+    const frame = fourColonyFixture();
+    const view = new TeamView();
+    view.choice = 2;
+    const shown = view.apply(frame);
+    expect([...shown.id.subarray(0, shown.count)]).toEqual([1, 2]);
+    expect([...shown.colony.subarray(0, shown.count)]).toEqual([2, 3]);
+    expect([...shown.territoryA.subarray(0, 4)]).toEqual([0, 0, 3, 0]);
+    expect(shown.marks.map(m => m.mark.id)).toEqual([1]);
+    expect(shown.board!.queens!.map(q => q.colony)).toEqual([2, 3]);
+    // The stream's trails carry channels for colonies 0 and 1 only: colony 2's view shows none of theirs.
+    expect(shown.trails.some(v => v !== 0)).toBe(false);
+  });
+
+  it("colony 3 sees its own tile and ant, and Full view is still the frame itself", () => {
+    const frame = fourColonyFixture();
+    const view = new TeamView();
+    view.choice = 3;
+    const shown = view.apply(frame);
+    expect([...shown.id.subarray(0, shown.count)]).toEqual([1, 2]);
+    expect([...shown.territoryA.subarray(0, 4)]).toEqual([0, 0, 0, 4]);
+    expect(shown.marks.map(m => m.mark.id)).toEqual([2]);
+    expect(shown.trails.some(v => v !== 0)).toBe(false);
+    view.choice = "full";
+    expect(view.apply(frame)).toBe(frame);
+  });
+
+  it("colonies 0 and 1 keep their own trail channel in a four-colony match", () => {
+    const frame = fourColonyFixture();
+    const view = new TeamView();
+    view.choice = 1;
+    const shown = view.apply(frame);
+    expect(shown.trails[0]).toBe(0);
+    expect(shown.trails[1]).toBe(0.5);
+    expect([...shown.territoryA.subarray(0, 4)]).toEqual([0, 2, 0, 0]);
+  });
+});
+
 describe("live and recorded playback reach the same colony view", () => {
   it("worker-prepared ticks (the live route) filter exactly as recorded ticks", () => {
     const seed = 7, config = withGridScale(DEFAULT_CONFIG);
@@ -239,6 +307,7 @@ describe("the point-of-view selector's focus ring", () => {
       removeAttribute: (name: string) => void attrs.delete(name),
       hasAttribute: (name: string) => attrs.has(name),
       append: (o: unknown) => void select.options.push(o),
+      remove: (index: number) => void select.options.splice(index, 1),
       addEventListener: (type: string, fn: () => void) => void listeners.set(type, [...(listeners.get(type) ?? []), fn]),
       fire: (type: string) => listeners.get(type)?.forEach(fn => fn()),
     };
@@ -277,5 +346,75 @@ describe("the point-of-view selector's focus ring", () => {
       expect(css).toContain(`${root} :focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }`);
       expect(css.match(/aw-team-view[^{]*:focus-visible/g)).toEqual(["aw-team-view[data-pointer]:focus-visible"]);
     }
+  });
+});
+
+describe("the point-of-view picker lists every colony of the match by name", () => {
+  /** A select that keeps its options as values and texts, enough for teamViewControl. */
+  const picker = () => {
+    const listeners = new Map<string, Array<() => void>>();
+    const select = {
+      className: "", title: "", value: "", options: [] as { value: string; textContent: string }[],
+      setAttribute: () => undefined, removeAttribute: () => undefined,
+      append: (o: { value: string; textContent: string }) => void select.options.push(o),
+      remove: (index: number) => void select.options.splice(index, 1),
+      addEventListener: (type: string, fn: () => void) => void listeners.set(type, [...(listeners.get(type) ?? []), fn]),
+      fire: (type: string) => listeners.get(type)?.forEach(fn => fn()),
+    };
+    const doc = { createElement: (tag: string) => (tag === "select" ? select : { value: "", textContent: "" }) } as unknown as Document;
+    const shown = () => select.options.map(o => `${o.value}: ${o.textContent}`);
+    return { doc, select, shown };
+  };
+
+  it("a two-colony match offers Full view and its two colonies, renamed in place when its frames carry their names", () => {
+    const { doc, select, shown } = picker();
+    const view = new TeamView();
+    teamViewControl(doc, view);
+    expect(shown()).toEqual(["full: Full view", `0: ${COLONY_NAMES[0]}'s view`, `1: ${COLONY_NAMES[1]}'s view`]);
+    const options = [...select.options];
+    const frame = fixture();
+    frame.board = { ...frame.board!, setup: { ...frame.board!.setup, colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] } } as unknown as Board;
+    view.apply(frame);
+    expect(shown()).toEqual(["full: Full view", "0: Sweetwater Colony's view", "1: Lake Skinner Colony's view"]);
+    // The same three options, relabelled: a chosen view stays chosen.
+    expect(select.options.every((o, i) => o === options[i])).toBe(true);
+  });
+
+  it("a four-colony match lists all four colonies by name, and each can be chosen", () => {
+    const { doc, select, shown } = picker();
+    const view = new TeamView();
+    teamViewControl(doc, view);
+    view.apply(fourColonyFixture());
+    expect(shown()).toEqual([
+      "full: Full view",
+      "0: Very Large Colony's view",
+      "1: Lake Hodges Colony's view",
+      "2: Sweetwater Colony's view",
+      "3: Lake Skinner Colony's view",
+    ]);
+    expect(view.colonyNames).toEqual(QUADRANTS_NAMES);
+    for (const colony of [0, 1, 2, 3]) {
+      select.value = String(colony);
+      select.fire("change");
+      expect(view.choice).toBe(colony);
+      expect(TEAM_VIEW_COPY.colony(colony, view.colonyNames)).toBe(`${QUADRANTS_NAMES[colony]}'s view`);
+    }
+    select.value = "full";
+    select.fire("change");
+    expect(view.choice).toBe("full");
+  });
+
+  it("returns to two colonies, and to Full view, when the next match has two", () => {
+    const { doc, select, shown } = picker();
+    const view = new TeamView();
+    teamViewControl(doc, view);
+    view.apply(fourColonyFixture());
+    select.value = "3";
+    select.fire("change");
+    expect(view.choice).toBe(3);
+    view.apply(fixture());
+    expect(shown()).toEqual(["full: Full view", `0: ${COLONY_NAMES[0]}'s view`, `1: ${COLONY_NAMES[1]}'s view`]);
+    expect(view.choice).toBe("full");
+    expect(select.value).toBe("full");
   });
 });

@@ -128,11 +128,11 @@ describe("food lead", () => {
 
 describe("four colonies", () => {
   /** A four-colony match's queen, colony 0 to 3 (the stream's colony ids). */
-  const queen4 = (colony: number, id: number, lostTick: number | null = null) =>
-    ({ id, colony, x: 0, y: 0, foundedTick: 0, lostTick, overrun: 0 }) as StreamQueen;
+  const queen4 = (colony: number, id: number, lostTick: number | null = null): StreamQueen =>
+    ({ id, colony, x: 0, y: 0, foundedTick: 0, lostTick, overrun: 0 });
   /** Its first message: one nest per colony in its setup, so the colony count is four. */
   const quadrants = (): StreamMessage => opening({
-    setup: { queens: [[0, 0], [0, 0], [0, 0], [0, 0]] } as unknown as StreamFull["setup"],
+    setup: { queens: [[0, 0], [0, 0], [0, 0], [0, 0]] } as StreamFull["setup"],
     queens: [0, 1, 2, 3].map(c => queen4(c, 0)),
   });
   const lost = (colony: number, tick: number): StreamEvent => ({ kind: "queenLost", queen: queen4(colony, 0, tick - 1) });
