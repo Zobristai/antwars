@@ -826,9 +826,11 @@ function seatReport(game: Game, session: SessionState, data: Record<string, unkn
 
 /**
  * Adds seatReport's fields to every tool reply of the session's seated agent, whichever tool or path formed it, as
- * the seat is bound after the call. A reply the SDK formed itself (no structuredContent) is left as it is. Installed
- * beneath recordCalls, so the match recording keeps the reply the agent received; it wraps the same SDK tools/call
- * handler, for the reason recordCalls gives.
+ * the seat is bound after the call. A refusal the SDK formed itself (an unknown tool, arguments its schema refuses)
+ * has only its message as text; when there is something to add, it becomes an error of code sdk_error carrying that
+ * message, the code its recording already gives it. Every other reply, and every reply in a two-colony match, is
+ * left as it is. Installed beneath recordCalls, so the match recording keeps the reply the agent received; it wraps
+ * the same SDK tools/call handler, for the reason recordCalls gives.
  */
 function reportSeat(server: McpServer, game: Game, session: SessionState): void {
   const handlers = (server.server as unknown as { readonly _requestHandlers?: Map<string, RequestHandler> })._requestHandlers;
@@ -838,8 +840,11 @@ function reportSeat(server: McpServer, game: Game, session: SessionState): void 
   }
   handlers.set("tools/call", async (request, extra) => {
     const reply = await answer(request, extra) as CallToolResult;
-    const data = reply.structuredContent;
-    if (data === undefined || reply.content.length !== 1 || reply.content[0]!.type !== "text") return reply;
+    const [text, ...more] = reply.content;
+    if (text?.type !== "text" || more.length > 0) return reply;
+    const sdkRefusal = reply.structuredContent === undefined && reply.isError === true;
+    if (reply.structuredContent === undefined && !sdkRefusal) return reply;
+    const data = reply.structuredContent ?? { error: { code: SDK_ERROR, message: text.text } };
     const added = seatReport(game, session, data);
     if (Object.keys(added).length === 0) return reply;
     const fields = { ...data, ...added };
