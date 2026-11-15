@@ -1,11 +1,11 @@
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig } from "../sim/config.js";
-import { isClassicColonyNames, type ColonyNames } from "../sim/colonyNames.js";
+import { isClassicColonyNames, quadrantColonyNames, type ColonyNames } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
-import { undrawnBoardSize, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
+import { colonyCountOf, undrawnBoardSize, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
-import { CELL_ENCODING } from "../sim/view.js";
+import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../sim/view.js";
 import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
 import { USERNAME_RETENTION_TEXT } from "../identity/retention.js";
@@ -43,6 +43,11 @@ const HOUSE_MODE_GUIDANCE = "Index matches, modes house-1v1..house-4v4: only ant
 const REJOIN_GUIDANCE = "Lobby slot servers: join {key}, seated key; reuse to rejoin, no reconnectToken. Ranked 2v2-4v4, several seats: each session joins {key, seat}, seat 1..team size, one seat per session; rejoin with the same key and seat. seat may be omitted only when you hold one seat. Explicit private test harnesses only: rejoin with join {reconnectToken}; token is an alias. No join at the entry point.";
 
 export const FOOD_RADIX_TEXT = `Read cells.foodRadix anew per reply. ${CELL_ENCODING}`;
+
+/** The cell legend a match's replies use: four colonies pack colony and caste over the colony count. */
+function foodRadixText(config: SimConfig): string {
+  return fourColonies(config) ? `Read cells.foodRadix anew per reply. ${FOUR_COLONY_CELL_ENCODING}` : FOOD_RADIX_TEXT;
+}
 
 export const CELL_PAGING_TEXT = "First: all squad-visible cells, then colony cells if space. While cellsMore: observe {cellsCursor:view.cellsCursor}; event since is separate. cellsTick stays fixed. No cellsCursor replaces the snapshot. Reconnect keeps it; stale: restart.";
 
@@ -84,12 +89,61 @@ function callLimitText(config: McpConfig): string {
 /** Shared by the observe legend, briefings and spectator rules; the wire stays positional. */
 export const IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the seat goes idle and its colony loses (index match: the match is abandoned); null unseated or match ended";
 
+/**
+ * A four-colony (Quadrants) match: every map of its rotation is a quadrant map. Its rules and briefing take the
+ * four-colony sentences below (src/sim/elimination.ts); every two-colony config keeps its text unchanged.
+ */
+function fourColonies(config: SimConfig): boolean {
+  return colonyCountOf(config) === 4;
+}
+
+/** A four-colony match's idle countdown, in its briefings and on the rules page: the idle seat's colony is eliminated and the match goes on. */
+export const FOUR_COLONY_IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the seat goes idle and its colony is eliminated; null unseated, eliminated or match ended";
+
+const FOUR_COLONY_ELIMINATION_TEXT = "A colony that loses its last queen, or whose seat goes idle, is eliminated on that tick: its ants are removed (no corpses, no kill credit), its territory turns neutral, and the match continues for the others.";
+
+/** The four-colony reply fields: the other three colonies on every observe, and the seat's own elimination on every reply. */
+const FOUR_COLONY_REPLY_TEXT = "opponents, on every observe: the other three colonies in colony order, [{colony,name,eliminated?:{tick,reason}}]; eliminated (reason queens_killed or idle) marks a colony that has left the match. Once your own colony is eliminated, every reply (join, rules, observe, commands, refusals) carries eliminated {tick,reason} and idleSecondsLeft is null; keep observing to follow the match to its result.";
+
+const FOUR_COLONY_POST_MATCH_TEXT = "Match over: matchOver:true, winner (the winning colony's name, \"draw\" or \"abandoned\"), result {winner,reason,decidedBy,tick}; no match clocks. When the last colonies are all eliminated on one tick, the winner keeps that elimination tick in its eliminated and in the others' opponents, and is still the winner.";
+
+/** The four-colony time-up order and same-tick cases (rankColonies): `when` names the moment it applies. */
+function fourColonyTimeUpText(when: string): string {
+  return `${when}: surviving colonies rank by kills, then territory, ants alive and food delivered; the top colony wins, or the match is a draw if the top two are equal on all four. Eliminated colonies rank below every survivor, the latest eliminated highest. When every remaining colony loses its last queen or goes idle on the same tick, this order decides among them, and colonies eliminated on the same tick rank among themselves by it, on scores as they stood just before that tick's removal of ants and territory. Kills: enemy ants a colony killed, queen bites included; removed ants are no one's kills.`;
+}
+
+/** The four-colony territory win (majorityHold), every figure from the match's early-win rules. */
+function fourColonyTerritoryWinText(config: SimConfig, early: NonNullable<SimConfig["earlyWin"]>): string {
+  return `Territory win: from ${early.minTick / config.ticksPerSecond} s, a colony holding more than half of all owned territory (every colony's held territory added together) and at least ${early.minHeldTiles} ${tileAreaUnit(config)} continuously for ${early.holdTicks / config.ticksPerSecond} s wins immediately. Any interruption resets the clock. An eliminated colony's territory turns neutral and no longer counts. Eliminations are resolved first; otherwise time-up still applies.`;
+}
+
+/** The join briefing's four-colony How to win: both wins, elimination, time-up and the same-tick cases in one line. */
+function fourColonyJoinWinText(config: SimConfig): string {
+  const early = config.earlyWin;
+  return `How to win: be the last colony with a living queen: kill every enemy queen${early === undefined ? "" : `; or, from ${early.minTick / config.ticksPerSecond} s, hold more than half of all owned territory and at least ${early.minHeldTiles} ${tileAreaUnit(config)} for ${early.holdTicks / config.ticksPerSecond} s without a break`}. ${FOUR_COLONY_ELIMINATION_TEXT} ${fourColonyTimeUpText("Time-up")}`;
+}
+
+/** A quadrant board lays its own food: the seeded two-colony patches never apply (src/sim/quadrantMap.ts). */
+const FOUR_COLONY_FOOD_TEXT = "Food: every quadrant holds the same food patches, mirrored left to right and top to bottom, and the match seed places more food in the contested centre.";
+
+/** What a four-colony seat sees of the other colonies: its own territory only; enemies in sight by colony. */
+function fourColonySightText(config: SimConfig): string {
+  return `Territory: you see your own colony's only; no enemy territory tiles, totals or share are shown. Enemy ants and queens in sight carry their colony number (cells${usesCompactAgentText(config) ? ", view.enemyQueens colony" : ""}).`;
+}
+
 /** undrawn: the seed has not yet drawn the map, so config is the rotation's, not the match's.
  * local: the server serves no accounts (the local route), so no account, key or lobby text. */
 export interface BriefingContext {
   readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean;
   /** The match's colony names, index = colony id; COLONY_NAMES when absent (rated and non-lobby matches). */
   readonly colonyNames?: ColonyNames;
+}
+
+/** A four-colony match's colonies with their numbers: its four names, or the Quadrants names when the context carries none. */
+function fourColonyList(context: BriefingContext): string {
+  const names = context.colonyNames?.length === 4 ? context.colonyNames : quadrantColonyNames();
+  const named = names.map((name, colony) => `${name} (colony ${colony})`);
+  return `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
 }
 
 /** The board size a reply may state: the drawn match's, or before the draw the size every
@@ -135,6 +189,16 @@ export function houseIdleText(mcpConfig: McpConfig = DEFAULT_MCP_CONFIG): string
   return `Idle, every match: a seat with no accepted authenticated game-tool call (observe, rules, join count; refusals do not) for ${houseIdleSecondsOf(mcpConfig)} s is idle; no bot takeover. Index match (house-*), or a seat not joined by the limit from match start or an earlier end: match abandoned, unrated. Other matches: the idle seat's colony loses (rated if ranked); both colonies idle on one tick: draw.`;
 }
 
+/** A four-colony match's idle rule, with the live limit: never an index match, and elimination in place of a loss. */
+function fourColonyIdleText(mcpConfig: McpConfig): string {
+  return `Idle, every match: a seat with no accepted authenticated game-tool call (observe, rules, join count; refusals do not) for ${houseIdleSecondsOf(mcpConfig)} s is idle; no bot takeover. A seat not joined by the limit from match start or an earlier end: match abandoned, unrated. Otherwise the idle seat's colony is eliminated and the match continues for the others; every remaining colony idle on one tick: the time-up order decides.`;
+}
+
+/** The idle rule this match's briefings open with. */
+function idleRuleText(config: SimConfig, mcpConfig: McpConfig): string {
+  return fourColonies(config) ? fourColonyIdleText(mcpConfig) : houseIdleText(mcpConfig);
+}
+
 export const HOUSE_IDLE_PROMPT_TEXT = "Idle rule, every match: any seat with no accepted authenticated game-tool call (observe, rules and join included) for the server's configured idle limit is idle, with no bot takeover. In index matches an idle seat abandons the match, unrated; in any match a seat that has not joined by the idle limit, counted from match start, or by an earlier end, abandons the match, unrated; in every other match the idle seat's colony loses, and both colonies idle on the same tick is a draw. Read the live limit in briefing and observe.";
 
 export const POST_MATCH_OBSERVE_TEXT = "Match over: matchOver:true, winner/draw, result; no match clocks.";
@@ -144,7 +208,11 @@ export const IDLE_CLOCK_START_TEXT = "Idle clock and first-command window start 
 
 /** The briefings open with the idle rule, so they pass withIdleRule=false; the observe tool description keeps it. */
 export function observeDetailText(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_CONFIG, context: BriefingContext = { house: false }, withIdleRule = true): string {
-  return `observe status: [${context.house ? "idleSecondsLeft: seconds to abandonment, null unseated or match ended" : IDLE_COUNTDOWN_TEXT}, space-separated resetting tools${config.rules === "redesign" ? ", enemy share" : ""}]. Shares: whole-map permille (1000=map). territoryTiles counts original-size tile areas, not fine tiles.${config.rules === "redesign" ? " Enemy share: your tick/sight; enemy map fogged." : " Enemy share/map hidden."} ${POST_MATCH_OBSERVE_TEXT} houseIdleSeconds is the live server limit.${withIdleRule ? ` ${houseIdleText(mcpConfig)}` : ""}${config.countMarks?.combatTotals ? " Unspent colony food: view.queenFounding.foodStore. Each listed count mark in marks/myMarks shows lost (ants that died while claimed) and kills (enemy ants killed by its claimed ants), since the mark was laid. A kill is credited to one ant, never shared: the biggest hit on the death tick wins, lowest ant id on ties; a queen's bigger or equal hit wins instead. Only that ant's current mark gets the kill, even if the ant also dies. Released ants no longer add to that mark. Totals survive count/caste changes and observes, and end with expiry or replacement." : ""}${config.patrolLinkTiles === undefined ? "" : " Patrol marks: chain=oldest mark id; position=zero-based laid-order loop index."}`;
+  // A four-colony observe status has no enemy share; its replies add opponents and the seat's own elimination.
+  const status = fourColonies(config)
+    ? `observe status: [${FOUR_COLONY_IDLE_COUNTDOWN_TEXT}, space-separated resetting tools]. Shares: whole-map permille (1000=map). territoryTiles counts original-size tile areas, not fine tiles. ${fourColonySightText(config)} ${FOUR_COLONY_REPLY_TEXT} ${FOUR_COLONY_POST_MATCH_TEXT}`
+    : `observe status: [${context.house ? "idleSecondsLeft: seconds to abandonment, null unseated or match ended" : IDLE_COUNTDOWN_TEXT}, space-separated resetting tools${config.rules === "redesign" ? ", enemy share" : ""}]. Shares: whole-map permille (1000=map). territoryTiles counts original-size tile areas, not fine tiles.${config.rules === "redesign" ? " Enemy share: your tick/sight; enemy map fogged." : " Enemy share/map hidden."} ${POST_MATCH_OBSERVE_TEXT}`;
+  return `${status} houseIdleSeconds is the live server limit.${withIdleRule ? ` ${idleRuleText(config, mcpConfig)}` : ""}${config.countMarks?.combatTotals ? " Unspent colony food: view.queenFounding.foodStore. Each listed count mark in marks/myMarks shows lost (ants that died while claimed) and kills (enemy ants killed by its claimed ants), since the mark was laid. A kill is credited to one ant, never shared: the biggest hit on the death tick wins, lowest ant id on ties; a queen's bigger or equal hit wins instead. Only that ant's current mark gets the kill, even if the ant also dies. Released ants no longer add to that mark. Totals survive count/caste changes and observes, and end with expiry or replacement." : ""}${config.patrolLinkTiles === undefined ? "" : " Patrol marks: chain=oldest mark id; position=zero-based laid-order loop index."}`;
 }
 
 /** The line that starts the caste sentences (rules switch on only). */
@@ -315,17 +383,18 @@ export function balanceRuleLines(config: SimConfig, compact = false): string[] {
   const local = config.localAnts;
   const early = config.earlyWin;
   const concise = compact && usesCompactAgentText(config);
+  const four = fourColonies(config);
   return [
     ...softSpacingLines(config),
     ...(local?.soldierFrontSharePermille === undefined ? [] : [
       rules27FreeSoldierLine(config, local, concise),
-      `Food patches (left-half centres, mirrored on the right; food ceilings per original-size resource cell): ${config.foodPatches.map((p) => `(${p.tileX},${p.tileY}), radius ${p.radius}, ${p.perTile} food`).join("; ")}. ${config.foodLayout === undefined ? "The centre patch is smaller and poorer than the flanking patches." : "Positions, radii and richness are drawn from the match seed, with equal mirrored food on both sides."}`,
+      four ? FOUR_COLONY_FOOD_TEXT : `Food patches (left-half centres, mirrored on the right; food ceilings per original-size resource cell): ${config.foodPatches.map((p) => `(${p.tileX},${p.tileY}), radius ${p.radius}, ${p.perTile} food`).join("; ")}. ${config.foodLayout === undefined ? "The centre patch is smaller and poorer than the flanking patches." : "Positions, radii and richness are drawn from the match seed, with equal mirrored food on both sides."}`,
     ]),
     ...(local?.workerIdlePatchPatrol ? [
       localWorkerRulesText(config, compact),
     ] : []),
     // Rules 27: no queen-threat recall of seated free workers.
-    ...(early === undefined ? [] : [
+    ...(early === undefined ? [] : [four ? fourColonyTerritoryWinText(config, early) :
       `Early win: from ${early.minTick / config.ticksPerSecond} s, holding at least ${early.minHeldTiles} ${tileAreaUnit(config)} and at least ${early.territoryRatioPermille / 1000} times the opponent's territory continuously for ${early.holdTicks / config.ticksPerSecond} s wins immediately. Any interruption resets the clock. A zero-territory opponent counts as one ${tileAreaUnit(config, false)} for this comparison. Queen elimination is resolved first; otherwise time-up still applies.`,
     ]),
   ];
@@ -334,9 +403,11 @@ export function balanceRuleLines(config: SimConfig, compact = false): string[] {
 /** Queens with HP: the win line that replaces overrun. */
 function queenHpLine(config: SimConfig, s: (ticks: number) => number, hp: (milli: number) => number): string {
   const q = config.queenHp!;
+  // A four-colony colony with no living queen is eliminated, and the match goes on.
+  const four = fourColonies(config);
   const text = usesCompactAgentText(config)
-    ? `- Queens with HP: ${hp(q.hp)} HP; bite one adjacent enemy for ${hp(q.biteDamage)} HP/${s(q.biteIntervalTicks)} s from ${s(config.combatGraceTicks)} s. Non-carrying ant with no enemy ant in reach: normal damage to adjacent enemy queen, no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles: regain ${hp(q.regenHp)} HP/${s(q.regenIntervalTicks)} s. 0 HP: lost; colony loses when all queens are dead ("queens killed"). There is no overrun. observe: own queens' hp and maxHp in milli-HP; divide by 1000 for HP.`
-    : `- Queens with HP: each queen has ${hp(q.hp)} HP and bites one adjacent enemy for ${hp(q.biteDamage)} HP every ${s(q.biteIntervalTicks)} s (from ${s(config.combatGraceTicks)} s). A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at its normal damage, with no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles a queen regains ${hp(q.regenHp)} HP every ${s(q.regenIntervalTicks)} s. A queen at 0 HP is lost; a colony loses when all its queens are dead ("queens killed"). There is no overrun. observe shows your queens' hp and maxHp in milli-HP; divide by 1000 for HP.`;
+    ? `- Queens with HP: ${hp(q.hp)} HP; bite one adjacent enemy for ${hp(q.biteDamage)} HP/${s(q.biteIntervalTicks)} s from ${s(config.combatGraceTicks)} s. Non-carrying ant with no enemy ant in reach: normal damage to adjacent enemy queen, no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles: regain ${hp(q.regenHp)} HP/${s(q.regenIntervalTicks)} s. 0 HP: lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "colony loses when all queens are dead (\"queens killed\")"}. There is no overrun. observe: own queens' hp and maxHp in milli-HP; divide by 1000 for HP.`
+    : `- Queens with HP: each queen has ${hp(q.hp)} HP and bites one adjacent enemy for ${hp(q.biteDamage)} HP every ${s(q.biteIntervalTicks)} s (from ${s(config.combatGraceTicks)} s). A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at its normal damage, with no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles a queen regains ${hp(q.regenHp)} HP every ${s(q.regenIntervalTicks)} s. A queen at 0 HP is lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "a colony loses when all its queens are dead (\"queens killed\")"}. There is no overrun. observe shows your queens' hp and maxHp in milli-HP; divide by 1000 for HP.`;
   return `${text} Ant and queen bite reach is ${gridScaleForText(config)} tiles, including diagonals: one original-size tile's distance.`;
 }
 
@@ -357,7 +428,8 @@ function terrainLines(config: SimConfig): string[] {
     (hasDistinctMapLayouts(config.terrain)
       ? "Seed selects map. view.terrain: name, public water rectangles/legend. Water blocks ants/marks; food stays dry. Ants route around water; target land. Ants/food/enemy nests obey sight."
       : `Maps: ${config.terrain.maps.map(m => m.name).join(", ")}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ants and marks; food is on land. Ants route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight.`)
-      + (config.terrain.rocks === undefined ? "" : ` The seed also places ${config.terrain.rocks.minPairs}-${config.terrain.rocks.maxPairs} mirrored rock pairs (${config.terrain.rocks.minClusterTiles}-${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${gridScaleForText(config)}x${gridScaleForText(config)} fine tiles). view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid starting nests, food and water, keeping land connected.`),
+      // A quadrant board's rocks are mirrored into every quadrant, not placed in left-right pairs (src/sim/quadrantMap.ts).
+      + (config.terrain.rocks === undefined ? "" : fourColonies(config) ? " The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid nests, food, water and the centre, keeping land connected." : ` The seed also places ${config.terrain.rocks.minPairs}-${config.terrain.rocks.maxPairs} mirrored rock pairs (${config.terrain.rocks.minClusterTiles}-${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${gridScaleForText(config)}x${gridScaleForText(config)} fine tiles). view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid starting nests, food and water, keeping land connected.`),
   ];
 }
 
@@ -379,18 +451,23 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
   const bonus = Math.trunc((base * config.defenderBonusPermille) / 1000);
   const board = statedBoardSize(config, context);
   const names = context.colonyNames ?? COLONY_NAMES;
+  const four = fourColonies(config);
+  const quadrants = `Antwars Quadrants: four colonies, ${fourColonyList(context)}, each against the other three`;
+  const either = four ? "any" : "either";
   return [
-    houseIdleText(mcpConfig),
+    idleRuleText(config, mcpConfig),
     ...(compact && context.local !== true ? [IDENTITY_GUIDANCE, KEY_HANDLING_GUIDANCE, context.house ? HOUSE_MODE_GUIDANCE : LOBBY_GUIDANCE] : []),
     ...terrainLines(config),
-    compact ? `Antwars: ${names[0]} vs ${names[1]}; ${board === null ? `board ${boardSizeChoices(config)}, set by the seed's map; x 0 to width-1 left-right, y 0 to height-1 top-bottom (observe cells.width/height)` : `${board.width}x${board.height}, x 0-${board.width - 1} left-right, y 0-${board.height - 1} top-bottom`}. ${durationText}; ${config.ticksPerSecond} ticks/s.${antCapText(config, context)} ${config.localAnts === undefined ? "House bot: non-squad ants" : "Active colony seat: free ants act autonomously"}. Squad up to ${config.squadSize} ants; fewer/none if unavailable, refills as ants free up.` : `Antwars: two supercolonies, the ${names[0]} and the ${names[1]}, fight on a ${board === null ? `tile map whose size is set by the map the seed selects: ${boardSizeChoices(config)} (x 0 to width - 1 left to right, y 0 to height - 1 top to bottom; observe cells give width and height)` : `${board.width}x${board.height} tile map (x 0-${board.width - 1} left to right, y 0-${board.height - 1} top to bottom)`}. A match lasts ${durationText} at ${config.ticksPerSecond} ticks per second. ${config.localAnts === undefined ? "A house bot runs every ant outside agents' squads" : "Free ants act autonomously while your colony has an active seat"}; you command a squad of up to ${config.squadSize} ants (fewer, or none, when your colony has no spare ants; squads fill as ants become free).`,
-    compact ? `Non-lobby join: ${agentLimitText(mcpConfig)}` : agentLimitText(mcpConfig),
+    compact ? `${four ? quadrants : `Antwars: ${names[0]} vs ${names[1]}`}; ${board === null ? `board ${boardSizeChoices(config)}, set by the seed's map; x 0 to width-1 left-right, y 0 to height-1 top-bottom (observe cells.width/height)` : `${board.width}x${board.height}, x 0-${board.width - 1} left-right, y 0-${board.height - 1} top-bottom`}. ${durationText}; ${config.ticksPerSecond} ticks/s.${antCapText(config, context)} ${config.localAnts === undefined ? "House bot: non-squad ants" : "Active colony seat: free ants act autonomously"}. Squad up to ${config.squadSize} ants; fewer/none if unavailable, refills as ants free up.` : `${four ? `${quadrants},` : `Antwars: two supercolonies, the ${names[0]} and the ${names[1]},`} fight on a ${board === null ? `tile map whose size is set by the map the seed selects: ${boardSizeChoices(config)} (x 0 to width - 1 left to right, y 0 to height - 1 top to bottom; observe cells give width and height)` : `${board.width}x${board.height} tile map (x 0-${board.width - 1} left to right, y 0-${board.height - 1} top to bottom)`}. A match lasts ${durationText} at ${config.ticksPerSecond} ticks per second. ${config.localAnts === undefined ? "A house bot runs every ant outside agents' squads" : "Free ants act autonomously while your colony has an active seat"}; you command a squad of up to ${config.squadSize} ants (fewer, or none, when your colony has no spare ants; squads fill as ants become free).`,
+    // A four-colony match is joined only through its lobby slot, one seat per colony: no non-lobby join limits.
+    ...(four ? [] : [compact ? `Non-lobby join: ${agentLimitText(mcpConfig)}` : agentLimitText(mcpConfig)]),
     compact ? `Calls: ${mcpConfig.callsPerSecond}/agent/sliding 1s; join/reconnect/rules/observe/commands all count. call_rate: wait retryAfterMs; no idle reset.` : callLimitText(mcpConfig),
     observeDetailText(config, mcpConfig, context, false),
     CELL_PAGING_TEXT,
-    compact ? `MCP session closes after ${mcpConfig.sessionIdleMs / 60_000} minutes without requests; rejoin as described below.` : sessionExpiryText(mcpConfig), FOOD_RADIX_TEXT, SEAT_NOTICE_TEXT,
+    compact ? `MCP session closes after ${mcpConfig.sessionIdleMs / 60_000} minutes without requests; rejoin as described below.` : sessionExpiryText(mcpConfig), foodRadixText(config), SEAT_NOTICE_TEXT,
     ...localAntLines(config),
-    ...frontlineFoodLines(config).map((line) => `- ${line}`),
+    // A quadrant board lays its own food; the seeded two-colony frontline patches never apply.
+    ...(four ? [] : frontlineFoodLines(config)).map((line) => `- ${line}`),
     ...balanceRuleLines(config, true).map((line) => `- ${line}`),
     "",
     config.countMarks === undefined
@@ -415,7 +492,7 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
     ...countMarkLines(config, s),
     ...(config.countMarks ? [`  ${countMarkReplyText(config)}`] : []),
     ...(config.queenFounding === undefined ? [] : [
-      compact ? `- found_queen {tileX,tileY}: held tile (bit 1 in observe map:true territory). First extra queen: ${config.queenFounding.cost} stored food${(config.queenFounding.costMultiplier ?? 1) === 1 ? "" : `; price x${config.queenFounding.costMultiplier} per ${config.queenFounding.costBasis === "live" ? "additional live queen" : config.queenFounding.costBasis === "founded-live" ? "additional living founded queen; starting queens do not count" : "queen ever founded, including replacements"}`}. Colony cooldown: ${s(config.queenFounding.cooldownTicks)} s; opens tick ${config.queenFounding.firstFoundTick ?? 0} (${s(config.queenFounding.firstFoundTick ?? 0)} s). ${config.queenFounding.maxLiveQueens === undefined ? "" : `Max ${config.queenFounding.maxLiveQueens} live queens incl. first. `}Minimum Euclidean distance: ${config.queenFounding.minDistanceTiles} tiles from every ${config.queenFounding.standingNestsOnly ? `standing nest, either colony (${config.queenHp === undefined ? "overrun" : "dead"} queens excluded)` : "nest, either colony, including lost nests"}. Shares the ${config.wordMarksDisabled ? (config.countMarks === undefined ? "order" : "order/count_mark") : (config.countMarks === undefined ? "order/mark" : "order/mark/count_mark")} command limit. observe: own queens, next cost, stored food, nextFoundTick; enemyQueens: in-sight only (tile, hp).` : `- found_queen {tileX,tileY}: found a new nest on a tile your colony holds (# in observe map:true). The first extra queen costs ${config.queenFounding.cost} stored food${(config.queenFounding.costMultiplier ?? 1) === 1 ? "" : `; the price multiplies by ${config.queenFounding.costMultiplier} with each ${config.queenFounding.costBasis === "live" ? "additional live queen" : config.queenFounding.costBasis === "founded-live" ? "additional living founded queen; starting queens do not count" : "queen ever founded, including replacements"}`}. Colony-wide cooldown: ${s(config.queenFounding.cooldownTicks)} s. Opening: tick ${config.queenFounding.firstFoundTick ?? 0} (${s(config.queenFounding.firstFoundTick ?? 0)} s). ${config.queenFounding.maxLiveQueens === undefined ? "" : `At most ${config.queenFounding.maxLiveQueens} live queens, counting the first. `}Minimum Euclidean distance: ${config.queenFounding.minDistanceTiles} tiles from every ${config.queenFounding.standingNestsOnly ? `standing nest of either colony (${config.queenHp === undefined ? "overrun" : "dead"} queens no longer block spacing)` : "nest of either colony, including lost nests"}. Shares the ${config.wordMarksDisabled ? (config.countMarks === undefined ? "order" : "order/count_mark") : (config.countMarks === undefined ? "order/mark" : "order/mark/count_mark")} command limit. observe lists your queens, current next cost, stored food and nextFoundTick; enemy queens stay fogged outside sight.`,
+      compact ? `- found_queen {tileX,tileY}: held tile (bit 1 in observe map:true territory). First extra queen: ${config.queenFounding.cost} stored food${(config.queenFounding.costMultiplier ?? 1) === 1 ? "" : `; price x${config.queenFounding.costMultiplier} per ${config.queenFounding.costBasis === "live" ? "additional live queen" : config.queenFounding.costBasis === "founded-live" ? "additional living founded queen; starting queens do not count" : "queen ever founded, including replacements"}`}. Colony cooldown: ${s(config.queenFounding.cooldownTicks)} s; opens tick ${config.queenFounding.firstFoundTick ?? 0} (${s(config.queenFounding.firstFoundTick ?? 0)} s). ${config.queenFounding.maxLiveQueens === undefined ? "" : `Max ${config.queenFounding.maxLiveQueens} live queens incl. first. `}Minimum Euclidean distance: ${config.queenFounding.minDistanceTiles} tiles from every ${config.queenFounding.standingNestsOnly ? `standing nest, ${either} colony (${config.queenHp === undefined ? "overrun" : "dead"} queens excluded)` : `nest, ${either} colony, including lost nests`}. Shares the ${config.wordMarksDisabled ? (config.countMarks === undefined ? "order" : "order/count_mark") : (config.countMarks === undefined ? "order/mark" : "order/mark/count_mark")} command limit. observe: own queens, next cost, stored food, nextFoundTick; enemyQueens: in-sight only (tile, hp${four ? ", colony" : ""}).` : `- found_queen {tileX,tileY}: found a new nest on a tile your colony holds (# in observe map:true). The first extra queen costs ${config.queenFounding.cost} stored food${(config.queenFounding.costMultiplier ?? 1) === 1 ? "" : `; the price multiplies by ${config.queenFounding.costMultiplier} with each ${config.queenFounding.costBasis === "live" ? "additional live queen" : config.queenFounding.costBasis === "founded-live" ? "additional living founded queen; starting queens do not count" : "queen ever founded, including replacements"}`}. Colony-wide cooldown: ${s(config.queenFounding.cooldownTicks)} s. Opening: tick ${config.queenFounding.firstFoundTick ?? 0} (${s(config.queenFounding.firstFoundTick ?? 0)} s). ${config.queenFounding.maxLiveQueens === undefined ? "" : `At most ${config.queenFounding.maxLiveQueens} live queens, counting the first. `}Minimum Euclidean distance: ${config.queenFounding.minDistanceTiles} tiles from every ${config.queenFounding.standingNestsOnly ? `standing nest of ${either} colony (${config.queenHp === undefined ? "overrun" : "dead"} queens no longer block spacing)` : `nest of ${either} colony, including lost nests`}. Shares the ${config.wordMarksDisabled ? (config.countMarks === undefined ? "order" : "order/count_mark") : (config.countMarks === undefined ? "order/mark" : "order/mark/count_mark")} command limit. observe lists your queens, current next cost, stored food and nextFoundTick; enemy queens stay fogged outside sight.`,
       concise ? "  Every live queen hatches on its own interval; shares colony food/ant cap. Ants deliver/guard live nests. Reply adds new queen; refusal spends nothing. Own founded/lost events: colony-wide." : compact ? "  Every live queen hatches on its own interval, sharing colony food/ant cap; ants deliver to/guard live nests. Founding replies: tick, accepted/refusal, nextCommandTick, new queen; refusal spends nothing. Own founded/lost events are colony-wide." : "  Every live queen hatches on its own interval, using the shared colony food store and ant cap; ants deliver to and guard live nests. Founding replies give the tick, acceptance or refusal, nextCommandTick and the new queen; a refusal spends nothing. Your colony receives its own founded/lost events colony-wide.",
       ...(config.localAnts === undefined ? [`  House guards: ${config.queenFounding.guardsPerQueen ? "each live queen targets the full colony-size guard allotment" : "one colony-size guard allotment is shared among live queens"}; assignments are limited to existing non-squad ants${config.queenFounding.totalGuardSharePermille === undefined ? "" : ` and at most ${config.queenFounding.totalGuardSharePermille / 10}% of all live colony ants in total`}, shared evenly across live queens. Squad ants are never reassigned.${config.queenFounding.totalGuardSharePermille === undefined ? "" : ` At least ${100 - config.queenFounding.totalGuardSharePermille / 10}% remain outside house guard assignments.`}`] : []),
       concise ? `  House bots: after opening, ready cooldown, valid held tile, price+${config.queenFounding.houseReserveFood ?? 2 * Math.max(config.hatchCost, config.castes?.soldierCost ?? config.hatchCost)} food (reserve: house-only, not required of seated agents).` : compact ? `  House bots reserve ${config.queenFounding.houseReserveFood ?? 2 * Math.max(config.hatchCost, config.castes?.soldierCost ?? config.hatchCost)} food; found after opening with price+reserve, ready cooldown, valid held tile. Reserve: house strategy, not a seated-agent requirement.` : `  Turn surplus into growth after founding opens: house bots keep ${config.queenFounding.houseReserveFood ?? 2 * Math.max(config.hatchCost, config.castes?.soldierCost ?? config.hatchCost)} food in reserve, and found when food covers the current price plus that reserve, the cooldown is ready, and a held tile meets the distance rule. The reserve is house strategy, not an extra seated-agent command requirement.`,
@@ -429,11 +506,12 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
     compact && context.local !== true ? REJOIN_GUIDANCE : "Rejoin from any session with join {reconnectToken}; token is an alias.",
     "Rules for humans and agents: /rules on this server (same origin as your MCP address).",
     "How to win:",
+    ...(four ? [`- Quadrants: four colonies, each against the other three. The last colony with a living queen wins at once${config.earlyWin === undefined ? "" : ", and so does the territory win above"}. ${FOUR_COLONY_ELIMINATION_TEXT}`] : []),
     config.queenHp !== undefined ? queenHpLine(config, s, hp) : config.queenFounding === undefined ? `- Queen overrun: an enemy majority within ${config.overrunRadiusTiles} tiles of a queen for ${s(config.overrunTicks)} s wins at once. Overrun progress starts ${s(config.overrunGraceTicks)} s after match start for every queen.` : `- Queen overrun: an enemy majority within ${config.overrunRadiusTiles} tiles of a queen for ${s(config.overrunTicks)} s permanently loses that queen. A lost queen cannot hatch, receive food or be refounded. Your colony loses only when every queen has been overrun. Overrun progress cannot start before ${s(config.overrunGraceTicks)} s after match start; founded queens have no extra grace.`,
-    compact ? `- Territory: ant claims its aligned ${gridScaleForText(config)}x${gridScaleForText(config)} tile cell, excluding water and rocks; neutral ${s(config.territoryDecayTicks)} s after last colony visit. Ownership cannot change while an ant there has an enemy in combat reach. ${config.adjudication === "kills-first" ? `Time-up or both last queens lost same tick: kills>territory>ants alive>food delivered>draw.` : `Time-up (${minutes} minutes): the larger territory wins; ties: ants alive, then food delivered.`}` : `- Territory: an ant claims its aligned ${gridScaleForText(config)}x${gridScaleForText(config)} tile cell, excluding water and rocks; each claimed fine tile belongs to its colony and returns to neutral ${s(config.territoryDecayTicks)} s after that colony's last visit, but it never changes owner, to another colony or to neutral, while an ant on it has an enemy within combat reach. ${config.adjudication === "kills-first" ? `Time-up or both last queens lost same tick: kills>territory>ants alive>food delivered>draw.` : `At time-up (${minutes} minutes) the larger territory wins; ties go to more ants alive, then more food delivered.`}`,
+    compact ? `- Territory: ant claims its aligned ${gridScaleForText(config)}x${gridScaleForText(config)} tile cell, excluding water and rocks; neutral ${s(config.territoryDecayTicks)} s after last colony visit. Ownership cannot change while an ant there has an enemy in combat reach. ${four ? fourColonyTimeUpText(`Time-up (${minutes} minutes)`) : config.adjudication === "kills-first" ? `Time-up or both last queens lost same tick: kills>territory>ants alive>food delivered>draw.` : `Time-up (${minutes} minutes): the larger territory wins; ties: ants alive, then food delivered.`}` : `- Territory: an ant claims its aligned ${gridScaleForText(config)}x${gridScaleForText(config)} tile cell, excluding water and rocks; each claimed fine tile belongs to its colony and returns to neutral ${s(config.territoryDecayTicks)} s after that colony's last visit, but it never changes owner, to another colony or to neutral, while an ant on it has an enemy within combat reach. ${four ? fourColonyTimeUpText(`Time-up (${minutes} minutes)`) : config.adjudication === "kills-first" ? `Time-up or both last queens lost same tick: kills>territory>ants alive>food delivered>draw.` : `At time-up (${minutes} minutes) the larger territory wins; ties go to more ants alive, then more food delivered.`}`,
 
     compact ? `- Combat: non-carrying ants, any order, ${reachDefinedOnce(config) ? "with an enemy in reach" : `within ${gridScaleForText(config)} tiles of an enemy (diagonals too)`}, hit the lowest-HP enemy each tick. Ant: ${hp(config.antHp)} HP; ${hp(base * config.ticksPerSecond)} HP/s, ${hp(bonus * config.ticksPerSecond)} HP/s on own territory. Hits simultaneous; 0 HP -> dies, leaves ${config.corpseFood} food. No combat before ${s(config.combatGraceTicks)} s.` : `- Combat: whatever its order, every non-carrying ant within ${gridScaleForText(config)} tiles of an enemy (diagonals included) hits one of them, the one with the fewest HP, every tick. An ant has ${hp(config.antHp)} HP and deals ${hp(base * config.ticksPerSecond)} HP per second, or ${hp(bonus * config.ticksPerSecond)} HP per second while it stands on its own colony's territory. All hits land together; an ant at 0 HP dies and leaves ${config.corpseFood} food. No combat in the first ${s(config.combatGraceTicks)} s.`,
-    `- Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat.${lineMarksEnabled(config) ? "" : " Carriers do not count toward overrunning an enemy queen."}`,
+    `- Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat.${(four ? config.queenHp !== undefined : lineMarksEnabled(config)) ? "" : " Carriers do not count toward overrunning an enemy queen."}`,
     "- Food carried to the nest hatches new ants.",
     ...casteLines(config, hp, mcpConfig.callsPerSecond),
     "",
@@ -462,13 +540,15 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
 export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_CONFIG, nestWindow = false, context: BriefingContext = { house: false }): string {
   const compact = usesCompactAgentText(config);
   const board = statedBoardSize(config, context);
+  const four = fourColonies(config);
   return [
-    houseIdleText(mcpConfig),
+    idleRuleText(config, mcpConfig),
     ...(nestWindow ? ["Nest window: join/observe nestSelection.terrain maps your box; also check teammates' picks."] : []),
     ...(compact && context.local !== true ? [IDENTITY_GUIDANCE, KEY_HANDLING_GUIDANCE, context.house ? HOUSE_MODE_GUIDANCE : LOBBY_GUIDANCE] : []),
     `Antwars: ${config.rules ?? "default"}; ${board === null ? `${boardSizeChoices(config)} tiles, set by the seed's map; x 0 to width-1, y 0 to height-1 (observe cells.width/height)` : `${board.width}x${board.height} tiles, x 0-${board.width - 1}, y 0-${board.height - 1}`}; ${config.ticksPerSecond} ticks/s, match ${joinLengthText(config, context)}.${antCapText(config, context)} You command up to ${config.squadSize} ants.`,
-    // Only an unrated lobby's drawn pair is stated; a rated match's and a quadrants match's join briefing are unchanged.
-    ...(context.colonyNames === undefined || context.colonyNames.length !== 2 || isClassicColonyNames(context.colonyNames) ? []
+    // A four-colony match states its four colonies; of two-colony matches, only an unrated lobby's drawn pair is stated.
+    ...(four ? [`This match's colonies (Quadrants: four colonies, each against the other three): ${fourColonyList(context)}.`]
+      : context.colonyNames === undefined || context.colonyNames.length !== 2 || isClassicColonyNames(context.colonyNames) ? []
       : [`This match's colonies: ${context.colonyNames[0]} (colony 0) and ${context.colonyNames[1]} (colony 1).`]),
     ...(config.terrain === undefined ? [] : [
       config.terrain.rocks === undefined
@@ -476,16 +556,17 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
         : "No ants, marks or queens on water or rocks.\nAnts/food/enemy nests obey sight. See view.terrain.",
       ...mapLayoutLines(config, true),
     ]),
-    compact ? (`Non-lobby join. Agent limits: ${mcpConfig.maxAgentsPerMatch}/match, ${mcpConfig.maxAgentsPerMatch / 2}/colony. Named colony: if full, the join is refused, never moved. Omit colony to balance (0 on ties).`) : (`Agent limits: ${mcpConfig.maxAgentsPerMatch}/match, ${mcpConfig.maxAgentsPerMatch / 2}/colony. Named colony: if full, the join is refused, never moved. Omit colony to balance (0 on ties).`),
+    // A four-colony match is joined only through its lobby slot, one seat per colony: no non-lobby join limits.
+    ...(four ? [] : [compact ? (`Non-lobby join. Agent limits: ${mcpConfig.maxAgentsPerMatch}/match, ${mcpConfig.maxAgentsPerMatch / 2}/colony. Named colony: if full, the join is refused, never moved. Omit colony to balance (0 on ties).`) : (`Agent limits: ${mcpConfig.maxAgentsPerMatch}/match, ${mcpConfig.maxAgentsPerMatch / 2}/colony. Named colony: if full, the join is refused, never moved. Omit colony to balance (0 on ties).`)]),
     `Calls/agent/sliding 1s: ${mcpConfig.callsPerSecond}; join/reconnect/rules/observe/commands count. call_rate: retry after retryAfterMs; no idle reset.`,
     observeDetailText(config, mcpConfig, context, false),
     CELL_PAGING_TEXT,
-    compact ? `MCP session closes after ${mcpConfig.sessionIdleMs / 60_000} minutes without requests; rejoin as described below.` : sessionExpiryText(mcpConfig), colonyVisibilityText(config), FOOD_RADIX_TEXT, SEAT_NOTICE_BRIEF,
+    compact ? `MCP session closes after ${mcpConfig.sessionIdleMs / 60_000} minutes without requests; rejoin as described below.` : sessionExpiryText(mcpConfig), colonyVisibilityText(config), foodRadixText(config), SEAT_NOTICE_BRIEF,
     compact && context.local !== true ? (`${REJOIN_GUIDANCE} If your nest window is open, call pick_nest first, then read rules. A legal repick replaces yours. /rules here for humans/agents.`) : ("Any session: join {reconnectToken}; token is an alias. If your nest window is open, call pick_nest first, then read rules. A legal repick replaces yours. /rules here for humans/agents."),
-    compact ? `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen bites.` : "time-up: the larger territory wins; ties: more ants alive, then more food delivered."}` : `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen bites.` : "time-up: territory, ants alive, delivered food."}`,
+    four ? fourColonyJoinWinText(config) : compact ? `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen bites.` : "time-up: the larger territory wins; ties: more ants alive, then more food delivered."}` : `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen bites.` : "time-up: territory, ants alive, delivered food."}`,
     commandLimitText(config),
     "Carriers never bite ants or queens; free, squad and count-mark carriers deliver home past enemies instead of stopping for combat.",
-    ...frontlineFoodLines(config),
+    ...(four ? [] : frontlineFoodLines(config)),
     ...(config.softSeparation === undefined ? [] : [`Soft space: push${config.softSeparation.radius}${config.softSeparation.soldierRadius === undefined ? "" : `/soldier${config.softSeparation.soldierRadius}`}/step${config.softSeparation.maxStep}/link${config.softSeparation.arrivalLinkRadius} subunits. Fresh links, contact/queens: rules.${config.pointArrival === undefined ? "" : ` Point arrival ${config.pointArrival.variant}, pitch ${config.pointArrival.pitch} subunits: own resting place, both castes; fill the area then nearest walkable overflow, combat area unchanged. Details: rules.`}`]),
     compact ? ("observe events: newest unseen, last command cycle; priorities first, overflow: priorityEventsMore. History: since:0 then since:view.eventCursor while eventsMore; may repeat samples. Sampling keeps eventCursor. since:notice.detailsSince: full count-mark details. History/priorities survive reconnects/match end for this match.") : ("observe events: newest unseen, last command cycle; priorities first, overflow: priorityEventsMore. History: since:0 then since:view.eventCursor while eventsMore; may repeat samples. Sampling keeps eventCursor. since:notice.detailsSince: full count-mark details. History/priorities survive reconnects/match end."),
     `observe waitSeconds (max ${MAX_OBSERVE_WAIT_SECONDS}): wait, then get the current view.`,

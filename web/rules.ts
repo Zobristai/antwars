@@ -1,7 +1,7 @@
 import { COUNT_MARK_MAX_COUNT_TEXT, type QueenHpRules, type QueenRules, type SimConfig } from "../src/sim/config.js";
 import { countMarkVerbs, lineMarksEnabled } from "../src/sim/patrol.js";
 import { WORDS } from "../src/sim/types.js";
-import { frontlineFoodLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
+import { frontlineFoodLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, FOUR_COLONY_IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
 import { DEFAULT_HOUSE_IDLE_SECONDS, DEFAULT_MCP_CONFIG } from "../src/mcp/config.js";
 import { createTerrain } from "../src/sim/terrain.js";
 import { mapLayoutDescription } from "../src/sim/mapShapes.js";
@@ -55,9 +55,6 @@ function relayLifetimeText(config: SimConfig): string {
 export function queensRoute(queenHp: QueenHpRules | undefined, founding: QueenRules | undefined): string {
   return queenHp !== undefined ? "all queens killed" : founding === undefined ? "the enemy queen overrun" : "every enemy queen overrun";
 }
-
-/** A four-colony match's idle countdown (src/sim/elimination.ts): the idle seat's colony is eliminated, and the match goes on. */
-const FOUR_COLONY_IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the seat goes idle and its colony is eliminated; null unseated, eliminated or match ended";
 
 /**
  * The Maps section of a four-colony match: every map is a quadrant board, mirrored left to right and top to bottom
