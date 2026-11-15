@@ -518,11 +518,15 @@ describe("2D dry-interior regression locks", () => {
     // Exactly one rock-discard line changes the complete front; all other front bytes stay locked.
     expect(hash(front)).toBe("aa71a0fcb3c45f524ce993e317c63cb09ccf4c2aa32fdd4486a0fa091c18964e");
   });
-  it("preserves encodings, front bounds, viewport geometry, controls and uploads apart from the water mask", () => {
+  it("preserves encodings, front bounds, viewport geometry, controls and uploads apart from the water mask and trail packing", () => {
     expect(hash(source.slice(source.indexOf("export function frontBounds")))).toBe("3a10df087f97171b350d7b4292233fbfc9c4ecd3e47174950b42cd75d40614c5");
     expect(hash(source.slice(source.indexOf("  setView(view:"), source.indexOf("  update(frame:")))).toBe("a55fac54e0f66a0dfef300451a587e1ce9866d169420a6bcb2c0f2958ae8ea31");
+    // Trails gained a channel per colony: the packing call stands in for the two-colony loop, whose bytes it keeps
+    // (trails-four-colonies.test.ts); every other upload byte stays locked.
     const uploads = source.slice(source.indexOf("  update(frame:"), source.indexOf("/**\n * The tile rectangle"))
-      .replace("    if (this.water.update(frame.board?.setup.terrain)) this.waterTex.source.update();\n", "");
+      .replace("    if (this.water.update(frame.board?.setup.terrain)) this.waterTex.source.update();\n", "")
+      .replace("      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);\n",
+        "      for (let i = 0, n = t.length / 2; i < n; i++) {\n        d[i * 4] = t[i * 2]! * 255;\n        d[i * 4 + 1] = t[i * 2 + 1]! * 255;\n      }\n");
     expect(hash(uploads)).toBe("903dcbaa345b3d31a90cb0e895548abf5fdf37bedf4baa7850bf018dd4168ac5");
   });
 });
