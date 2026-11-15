@@ -14,7 +14,7 @@ import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { Game, type LobbySeat } from "../../src/mcp/game.js";
 import { createMcpHandler } from "../../src/mcp/http.js";
 import { rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.js";
-import { newMatchConfig } from "../../src/sim/gridScale.js";
+import { gridScaleOf, newMatchConfig } from "../../src/sim/gridScale.js";
 import { FOUR_COLONY_CELL_ENCODING } from "../../src/sim/view.js";
 import { ruleSections } from "../../web/rules.js";
 
@@ -112,32 +112,43 @@ function expectQuadrantsText(text: string, config: SimConfig) {
 describe("a Quadrants seat's rules and briefing through the MCP tools", () => {
   it("states the four-colony rules in the rules tool and the slot join briefing, before and after the draw", async () => {
     const { game, clock, connect } = await quadrantsSlot();
-    const closesAt = game.beginLobbyStart(4242);
     const seat = await connect();
+    const listed = NAMES.map((name, colony) => `${name} (colony ${colony})`);
+    const allFour = `${listed.slice(0, 3).join(", ")} and ${listed[3]}`;
 
-    // Before the draw: the seat is told its colony and the briefing, and reads the rules.
+    // Before the draw (no pick window yet): the seat is told its colony and the briefing, and reads the rules.
     const queued = await seat("join", { key: "key-2" });
     expect(queued.isError).toBe(false);
     expect(queued.data.colony).toBe(NAMES[2]);
+    expect(game.mapDrawnFor(queued.data.agentId)).toBe(false);
     const undrawn = game.undrawnConfig;
     expectQuadrantsText(queued.data.briefing, undrawn);
-    expect(queued.data.briefing).toContain(`This match's colonies (Quadrants: four colonies, each against the other three): ${NAMES.map((name, colony) => `${name} (colony ${colony})`).slice(0, 3).join(", ")} and ${NAMES[3]} (colony 3).`);
+    expect(queued.data.briefing).toContain(`This match's colonies (Quadrants: four colonies, each against the other three): ${allFour}.`);
     const rulesBefore = await seat("rules");
     expect(rulesBefore.isError).toBe(false);
     expectQuadrantsText(rulesBefore.data.rules, undrawn);
-    expect(rulesBefore.data.rules).toContain(`Antwars Quadrants: four colonies, ${NAMES.map((name, colony) => `${name} (colony ${colony})`).slice(0, 3).join(", ")} and ${NAMES[3]} (colony 3), each against the other three`);
+    expect(rulesBefore.data.rules).toContain(`Antwars Quadrants: four colonies, ${allFour}, each against the other three`);
+    // The board a quadrant map plays on, not the two-colony rotation's size.
+    const board = `${FIXTURE.quadrant!.referenceWidth * gridScaleOf(LIVE)}x${FIXTURE.quadrant!.referenceHeight * gridScaleOf(LIVE)}`;
+    expect(queued.data.briefing).toContain(`; ${board} tiles,`);
+    expect(rulesBefore.data.rules).toContain(`each against the other three; ${board},`);
 
-    // After the draw: the match plays on the drawn quadrant board; a rejoin and the rules read the same rules.
+    // The pick window draws the map; then the match plays on the drawn quadrant board, and a rejoin and the rules read
+    // the same rules with the drawn match's figures.
+    const closesAt = game.beginLobbyStart(4242);
+    expect(game.mapDrawnFor(queued.data.agentId)).toBe(true);
     for (const colony of [0, 1, 3]) await game.joinSeated(`id-${colony}`);
     clock.now = closesAt;
     game.finishLobbyStart();
     game.tick();
     const drawn = game.match!.state.config;
     expect(game.match!.state.terrain!.mapId).toBe(FIXTURE.id);
+    expect(`${drawn.mapWidth}x${drawn.mapHeight}`).toBe(board);
     const rejoined = await seat("join", { key: "key-2" });
     expect(rejoined.isError).toBe(false);
     expect(rejoined.data.colony).toBe(NAMES[2]);
     expectQuadrantsText(rejoined.data.briefing, drawn);
+    expect(rejoined.data.briefing).toContain(`This match's colonies (Quadrants: four colonies, each against the other three): ${allFour}.`);
     expect(rejoined.data.view.cells.encoding).toBe(FOUR_COLONY_CELL_ENCODING);
     const rulesAfter = await seat("rules");
     expect(rulesAfter.isError).toBe(false);

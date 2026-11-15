@@ -3,7 +3,7 @@ import { isClassicColonyNames, quadrantColonyNames, type ColonyNames } from "../
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
-import { colonyCountOf, undrawnBoardSize, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
+import { colonyCountOf, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../sim/view.js";
 import { TERRITORY_TEXT } from "./territory.js";
@@ -146,10 +146,22 @@ function fourColonyList(context: BriefingContext): string {
   return `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
 }
 
+/** Before the draw, the distinct sizes the seed can select. A quadrant map plays on its own board, mirrored from its
+ * quadrant (src/sim/quadrantMatch.ts), not at the rotation's size. */
+function undrawnSizes(config: SimConfig): readonly BoardSize[] {
+  if (!fourColonies(config)) return undrawnBoardSizes(config);
+  const terrain = config.terrain!, scale = gridScaleForText(config);
+  const sizes = terrain.maps.filter(map => terrain.mapId === undefined || map.id === terrain.mapId)
+    .map(map => ({ width: map.quadrant!.referenceWidth * scale, height: map.quadrant!.referenceHeight * scale }));
+  return sizes.filter((size, i) => sizes.findIndex(other => other.width === size.width && other.height === size.height) === i);
+}
+
 /** The board size a reply may state: the drawn match's, or before the draw the size every
  * selectable map shares. Null when those sizes differ: no single size is stated. */
 export function statedBoardSize(config: SimConfig, context: Pick<BriefingContext, "undrawn"> = {}): BoardSize | null {
-  return context.undrawn === true ? undrawnBoardSize(config) : { width: config.mapWidth, height: config.mapHeight };
+  if (context.undrawn !== true) return { width: config.mapWidth, height: config.mapHeight };
+  const sizes = undrawnSizes(config);
+  return sizes.length === 1 ? sizes[0]! : null;
 }
 
 /** The ant cap a reply may state: the drawn match's, or before the draw the cap every
@@ -181,7 +193,7 @@ function joinLengthText(config: SimConfig, context: Pick<BriefingContext, "undra
 
 /** Before the draw, when maps differ in size: every size the seed can select. */
 export function boardSizeChoices(config: SimConfig): string {
-  return undrawnBoardSizes(config).map(size => `${size.width}x${size.height}`).join(" or ");
+  return undrawnSizes(config).map(size => `${size.width}x${size.height}`).join(" or ");
 }
 
 /** The one idle rule of every live match, with the live limit. */
