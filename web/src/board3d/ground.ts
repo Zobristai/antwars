@@ -21,11 +21,12 @@ import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines.
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { TRAIL_RES, type Frame } from "../buffer.ts";
+import { TRAIL_RES, trailTexels, type Frame } from "../buffer.ts";
 import { FOG_ALPHA } from "../team-view.ts";
 import { boardLook } from "../board-look.ts";
 import { colonyRgb } from "../colony-palette.ts";
 import { heightAt, soilAt } from "./noise.ts";
+import { COLONY_LEVEL, NEUTRAL_LEVEL, laterColonies } from "./owner-levels.ts";
 import { WATER_GLSL, WaterMask, mirrorAxis } from "../terrain.ts";
 
 /** The rated names' colours (colony-palette.ts gives the match's own). */
@@ -72,8 +73,11 @@ function gridIndex(axis: readonly number[], value: number): number {
   return lo + (value - axis[lo]!) / (axis[hi]! - axis[lo]!);
 }
 
-/** GLSL-100: R owner, G opposing-edge bits (left/right/up/down), B owned coverage, A opaque. */
-const DEFS = /* glsl */ `
+/**
+ * GLSL-100: R owner, G opposing-edge bits (left/right/up/down), B owned coverage, A opaque. For a match of two colonies
+ * the code is exactly the two-colony ground's; a four-colony match's also colours colonies 2 and 3.
+ */
+const defs = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 uniform sampler2D uA;
 uniform sampler2D uB;
@@ -83,7 +87,7 @@ uniform sampler2D uWater;
 uniform sampler2D uFog;
 ${WATER_GLSL}
 vec3 awColony(vec4 s) {
-  return mix(uC1, uC0 * 0.85, step(0.75, s.r));
+${colonies > 2 ? laterColonies("uC2", "uC3") : ""}  return mix(uC1, uC0 * 0.85, step(0.75, s.r));
 }
 vec3 awFill(vec4 s, vec3 soil) {
   // Reuse the mip-filtered, baked sub-tile grain: a scalar keeps colony hue intact.
@@ -105,7 +109,12 @@ vec3 awBorderColour(vec4 s) {
 #endif
 `;
 
-const DIFFUSE = /* glsl */ `
+/**
+ * The ground's colour before lighting. The trail ink marks any colony's traffic alike: a four-colony match takes the
+ * strongest of its four colonies' channels (channel c of the trail texture is colony c's); a two-colony match's code is
+ * unchanged.
+ */
+const diffuse = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 vec2 awTile = vec2(vPositionW.x, uMap.y - vPositionW.z);
 vec2 awUV = awTile / uMap;
@@ -130,9 +139,9 @@ if (awUV.x >= 0.0 && awUV.y >= 0.0 && awUV.x < 1.0 && awUV.y < 1.0) {
   vec2 awTrailCell = clamp(floor(awTile * ${TRAIL_RES.toFixed(1)}), vec2(0.0), uMap * ${TRAIL_RES.toFixed(1)} - 1.0);
   vec2 awTrailUV = (awTrailCell + 0.5) / (uMap * ${TRAIL_RES.toFixed(1)});
   vec2 awTrailLocal = awTile * ${TRAIL_RES.toFixed(1)} - awTrailCell - 0.5;
-  vec2 awTrail = texture2D(uTrail, awTrailUV).rg;
+${colonies > 2 ? "  vec4 awTrail = texture2D(uTrail, awTrailUV);" : "  vec2 awTrail = texture2D(uTrail, awTrailUV).rg;"}
   float awStroke = 1.0 - smoothstep(0.28, ${(TRAIL_CELL_WIDTH / 2).toFixed(2)}, max(abs(awTrailLocal.x), abs(awTrailLocal.y)));
-  float awInk = smoothstep(0.04, 0.32, max(awTrail.r, awTrail.g)) * awStroke * uTrails;
+  float awInk = smoothstep(0.04, 0.32, ${colonies > 2 ? "max(max(awTrail.r, awTrail.g), max(awTrail.b, awTrail.a))" : "max(awTrail.r, awTrail.g)"}) * awStroke * uTrails;
   awCol *= 1.0 - 0.42 * awInk;
 
   // The light front is last, so trails cannot obscure it. No emissive band or broad bloom source.
@@ -183,10 +192,12 @@ class GroundPlugin extends MaterialPluginBase {
   soilMargin: number;
   /** The in-bounds mean soil colour, derived again whenever the soil is baked again (Ground.relook). */
   offboardSoil: readonly [number, number, number];
+  /** The match's colony count, from its setup (Ground.update): 2, or 4 in a four-colony match. */
+  colonies = 2;
 
   constructor(material: Material, textures: GroundPlugin["textures"], map: [number, number], margin: number, soilMargin: number, offboardSoil: readonly [number, number, number]) {
-    // AW_LOOK: the board look's id (board-look.ts), so a change of look builds a new shader.
-    super(material, "AntwarGround", 200, { AW_GROUND: false, AW_LOOK: 0 });
+    // AW_LOOK: the board look's id (board-look.ts), so a change of look builds a new shader; AW_COLONIES likewise.
+    super(material, "AntwarGround", 200, { AW_GROUND: false, AW_LOOK: 0, AW_COLONIES: 2 });
     this.textures = textures;
     this.map = map;
     this.margin = margin;
@@ -198,6 +209,7 @@ class GroundPlugin extends MaterialPluginBase {
   override prepareDefines(defines: MaterialDefines): void {
     defines.AW_GROUND = true;
     defines.AW_LOOK = boardLook()?.id ?? 0;
+    defines.AW_COLONIES = this.colonies;
   }
 
   override getClassName(): string {
@@ -221,11 +233,13 @@ class GroundPlugin extends MaterialPluginBase {
         { name: "uFogOn", size: 1, type: "float" },
         { name: "uC0", size: 3, type: "vec3" },
         { name: "uC1", size: 3, type: "vec3" },
+        { name: "uC2", size: 3, type: "vec3" },
+        { name: "uC3", size: 3, type: "vec3" },
         { name: "uOffboardSoil", size: 3, type: "vec3" },
       ],
       fragment: `#ifdef AW_GROUND
 uniform vec2 uMap; uniform float uMargin; uniform float uSoilMargin; uniform float uBlend; uniform float uTrails; uniform float uTime;
-uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1; uniform vec3 uOffboardSoil;
+uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3; uniform vec3 uOffboardSoil;
 #endif`,
     };
   }
@@ -242,6 +256,8 @@ uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1
     ubo.updateFloat("uFrontOn", v.front);
     ubo.updateFloat3("uC0", ...colonyRgb(0), "");
     ubo.updateFloat3("uC1", ...colonyRgb(1), "");
+    ubo.updateFloat3("uC2", ...colonyRgb(2), "");
+    ubo.updateFloat3("uC3", ...colonyRgb(3), "");
     ubo.updateFloat3("uOffboardSoil", ...this.offboardSoil, "");
     ubo.setTexture("uA", this.textures.a);
     ubo.setTexture("uB", this.textures.b);
@@ -254,10 +270,11 @@ uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
     if (shaderType !== "fragment") return null;
     const look = boardLook()?.board3d;
+    const n = this.colonies, definitions = defs(n);
     if (look) {
-      return { CUSTOM_FRAGMENT_DEFINITIONS: look.ground("definitions", DEFS), CUSTOM_FRAGMENT_UPDATE_DIFFUSE: look.ground("diffuse", DIFFUSE), CUSTOM_FRAGMENT_BEFORE_FOG: look.ground("beforeFog", EMISSIVE) };
+      return { CUSTOM_FRAGMENT_DEFINITIONS: look.ground("definitions", definitions, n), CUSTOM_FRAGMENT_UPDATE_DIFFUSE: look.ground("diffuse", diffuse(n), n), CUSTOM_FRAGMENT_BEFORE_FOG: look.ground("beforeFog", EMISSIVE, n) };
     }
-    return { CUSTOM_FRAGMENT_DEFINITIONS: DEFS, CUSTOM_FRAGMENT_UPDATE_DIFFUSE: DIFFUSE, CUSTOM_FRAGMENT_BEFORE_FOG: EMISSIVE };
+    return { CUSTOM_FRAGMENT_DEFINITIONS: definitions, CUSTOM_FRAGMENT_UPDATE_DIFFUSE: diffuse(n), CUSTOM_FRAGMENT_BEFORE_FOG: EMISSIVE };
   }
 }
 
@@ -466,22 +483,26 @@ export class Ground {
     return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
   }
 
-  /** 3D-only tile data: ownership, exact opponent-edge bits, owned coverage, opaque alpha. */
+  /**
+   * 3D-only tile data: the owner's level (COLONY_LEVEL), exact edge bits against any other colony's tiles, owned
+   * coverage, opaque alpha. Owners: 0 neutral, colony + 1.
+   */
   private writeTerritory(out: Uint8Array, owners: Uint8Array): void {
     const W = this.mapW;
     const H = this.mapH;
+    // Another colony's tile; neutral ground is never a front.
+    const rival = (j: number, owner: number) => owners[j] !== 0 && owners[j] !== owner;
     for (let i = 0; i < W * H; i++) {
       const owner = owners[i]!;
       const x = i % W;
-      const other = 3 - owner;
       let edges = 0;
       if (owner !== 0) {
-        if (x > 0 && owners[i - 1] === other) edges |= 1;
-        if (x + 1 < W && owners[i + 1] === other) edges |= 2;
-        if (i >= W && owners[i - W] === other) edges |= 4;
-        if (i + W < W * H && owners[i + W] === other) edges |= 8;
+        if (x > 0 && rival(i - 1, owner)) edges |= 1;
+        if (x + 1 < W && rival(i + 1, owner)) edges |= 2;
+        if (i >= W && rival(i - W, owner)) edges |= 4;
+        if (i + W < W * H && rival(i + W, owner)) edges |= 8;
       }
-      out[i * 4] = owner === 1 ? 255 : owner === 2 ? 0 : 128;
+      out[i * 4] = owner === 0 ? NEUTRAL_LEVEL : COLONY_LEVEL[owner - 1]!;
       out[i * 4 + 1] = edges;
       out[i * 4 + 2] = owner === 0 ? 0 : 255;
       out[i * 4 + 3] = 255;
@@ -492,6 +513,12 @@ export class Ground {
     const v = this.plugin.values;
     v.blend = frame.blend;
     v.time = timeMs / 1000;
+    // The colony count is the setup's (2, or 4 in a four-colony match); a change builds the ground's shader again.
+    const colonies = frame.board?.setup.queens.length;
+    if (colonies !== undefined && colonies !== this.plugin.colonies) {
+      this.plugin.colonies = colonies;
+      this.mesh.material?.markAsDirty(Material.MiscDirtyFlag);
+    }
     if (this.water.update(frame.board?.setup.terrain)) this.waterTex.update(this.water.data);
     if (this.keyA !== frame.territoryA || this.keyB !== frame.territoryB) {
       this.writeTerritory(this.dataA, frame.territoryA);
@@ -511,10 +538,7 @@ export class Ground {
     if (this.keyTrail !== frame.trails) {
       const t = frame.trails;
       const d = this.trailData;
-      for (let i = 0, n = t.length / 2; i < n; i++) {
-        d[i * 4] = t[i * 2]! * 255;
-        d[i * 4 + 1] = t[i * 2 + 1]! * 255;
-      }
+      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);
       this.trailTex.update(d);
       this.keyTrail = t;
     }

@@ -15,17 +15,22 @@ const liveSeat = z.union([
 // (src/replays/recorded-match-type.ts); null where the server could not tell, absent from a server that sends none. A value
 // this page does not know reads null rather than failing the page: the badge is display only.
 const matchType = z.object({
-  kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated"]),
+  kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated", "quadrants"]),
   size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
 }).nullable().optional().catch(null);
 // An unrated match's own colony names, index = colony id; absent or null where it uses the rated names. Display only:
 // a malformed pair reads null.
 const colonyNames = z.tuple([z.string().min(1), z.string().min(1)]).nullable().optional().catch(null);
+const colonyName = z.string().min(1);
+// A listed match's colony names, as colonyNames, but two or, for a four-colony (Quadrants) match, four.
+const listedNames = z.union([z.tuple([colonyName, colonyName]), z.tuple([colonyName, colonyName, colonyName, colonyName])])
+  .nullable().optional().catch(null);
 const liveRow = z.object({
   lobbyId: z.string().min(1), startedAt: z.number().finite(), rated: z.boolean(), delaySeconds: z.union([z.literal(0), z.literal(60), z.literal(300)]),
-  colonies: z.tuple([z.array(liveSeat), z.array(liveSeat)]),
+  // Each colony's seats, index = colony id: two colonies, or four in a Quadrants match.
+  colonies: z.union([z.tuple([z.array(liveSeat), z.array(liveSeat)]), z.tuple([z.array(liveSeat), z.array(liveSeat), z.array(liveSeat), z.array(liveSeat)])]),
   matchType,
-  colonyNames,
+  colonyNames: listedNames,
 });
 // A rating as a list row shows it: the figure, its RD and rated-match count. A malformed one reads null (no badge).
 const shownRating = z.object({ rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() })
@@ -34,10 +39,11 @@ export type LiveSeat = z.infer<typeof liveSeat>;
 export type ShownRating = NonNullable<z.infer<typeof shownRating>>;
 const recordingRow = z.object({
   id: z.string().min(1), startedAt: z.string(), endedAt: z.string().nullable(), simulationEndedAt: z.string().nullable(),
-  winner: z.union([z.literal(0), z.literal(1), z.null()]), reason: z.string().nullable(), decidedBy: z.string().nullable(),
+  // The winning colony: 0 or 1, or up to 3 in a four-colony (Quadrants) match; null for none.
+  winner: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.null()]), reason: z.string().nullable(), decidedBy: z.string().nullable(),
   // Each seat's self-reported thinking level and service tier, and its seated identity's owner/handle, as recorded; a row
   // from before any of them was recorded reads null.
-  seats: z.array(z.object({ seat: z.number().int().nonnegative(), colony: z.union([z.literal(0), z.literal(1)]), modelLabel: z.string().nullable(),
+  seats: z.array(z.object({ seat: z.number().int().nonnegative(), colony: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]), modelLabel: z.string().nullable(),
     thinkingLevel: z.string().nullable().optional().transform(value => value ?? null),
     serviceTier: z.string().nullable().optional().transform(value => value ?? null),
     handle: z.string().nullable().optional().transform(value => value ?? null),
@@ -45,7 +51,7 @@ const recordingRow = z.object({
     startRating: shownRating })),
   status: z.enum(["complete", "partial", "unavailable"]), unavailable: z.array(z.string()),
   matchType,
-  colonyNames,
+  colonyNames: listedNames,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
 // An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode, whole seconds waited

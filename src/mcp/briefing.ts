@@ -1,5 +1,5 @@
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig } from "../sim/config.js";
-import { isClassicColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
+import { isClassicColonyNames, type ColonyNames } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
@@ -89,7 +89,7 @@ export const IDLE_COUNTDOWN_TEXT = "idleSecondsLeft: seconds left before the sea
 export interface BriefingContext {
   readonly house: boolean; readonly undrawn?: boolean; readonly local?: boolean;
   /** The match's colony names, index = colony id; COLONY_NAMES when absent (rated and non-lobby matches). */
-  readonly colonyNames?: ColonyNamePair;
+  readonly colonyNames?: ColonyNames;
 }
 
 /** The board size a reply may state: the drawn match's, or before the draw the size every
@@ -467,8 +467,8 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
     ...(nestWindow ? ["Nest window: join/observe nestSelection.terrain maps your box; also check teammates' picks."] : []),
     ...(compact && context.local !== true ? [IDENTITY_GUIDANCE, KEY_HANDLING_GUIDANCE, context.house ? HOUSE_MODE_GUIDANCE : LOBBY_GUIDANCE] : []),
     `Antwars: ${config.rules ?? "default"}; ${board === null ? `${boardSizeChoices(config)} tiles, set by the seed's map; x 0 to width-1, y 0 to height-1 (observe cells.width/height)` : `${board.width}x${board.height} tiles, x 0-${board.width - 1}, y 0-${board.height - 1}`}; ${config.ticksPerSecond} ticks/s, match ${joinLengthText(config, context)}.${antCapText(config, context)} You command up to ${config.squadSize} ants.`,
-    // Only an unrated lobby's drawn names are stated; a rated match's join briefing is unchanged.
-    ...(context.colonyNames === undefined || isClassicColonyNames(context.colonyNames) ? []
+    // Only an unrated lobby's drawn pair is stated; a rated match's and a quadrants match's join briefing are unchanged.
+    ...(context.colonyNames === undefined || context.colonyNames.length !== 2 || isClassicColonyNames(context.colonyNames) ? []
       : [`This match's colonies: ${context.colonyNames[0]} (colony 0) and ${context.colonyNames[1]} (colony 1).`]),
     ...(config.terrain === undefined ? [] : [
       config.terrain.rocks === undefined

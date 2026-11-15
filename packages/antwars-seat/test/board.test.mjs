@@ -211,3 +211,83 @@ describe("readable view", () => {
     expect(header.recent).toEqual([...items(12), "…8 more"]);
   });
 });
+
+/** A small reply as seen by `colony`, its cell table built by the server's encoder for `colonies` colonies. */
+function seatReply(cells, colony, colonies, top = {}) {
+  return { ...top, view: { tick: 10, agentId: "agent-1", colony, colonyName: "red", idle: false,
+    squad: [{ antId: 1, tileX: 10, tileY: 20, hp: 4000, caste: "worker" }],
+    queens: [{ queenId: 1, tileX: 10, tileY: 20, lostTick: null, hp: 30000 }],
+    cells: denseCells(cells, W, H, colonies), cellsTick: 10, cellsMore: false, cellsCursor: null } };
+}
+
+const FOOD_RUN = [5, 6, 7].map((tileX) => ({ tileX, tileY: 2, food: 3, ants: [] }));
+
+describe("readable view: enemy colonies", () => {
+  it("prints a two-colony reply exactly as before, key line included", () => {
+    const cells = [...FOOD_RUN,
+      { tileX: 10, tileY: 20, food: 0, ants: [{ antId: 1, colony: 0, hp: 4000, caste: "worker" }], queen: 0, queenHp: 30000 },
+      { tileX: 117, tileY: 20, food: 2, ants: [{ antId: 9, colony: 1, hp: 3500, caste: "soldier" }, { antId: 10, colony: 0, hp: 1 }], queen: 1, queenHp: 21500 },
+      { tileX: 118, tileY: 20, food: 0, ants: [], queen: 1 }];
+    const data = seatReply(cells, 0, 2, { matchOver: true, winner: "red", result: { winner: 0, reason: "queens_killed", decidedBy: "queens_killed", tick: 10 } });
+    expect(data.view.cells.colonies).toBeUndefined();
+    expect(renderView(data)).toBe([
+      '{"matchOver":true,"winner":"red","result":{"winner":0,"reason":"queens_killed","decidedBy":"queens_killed","tick":10},"view":{"tick":10,"agentId":"agent-1","colony":0,"colonyName":"red","idle":false}}',
+      "squad (1):",
+      '{"antId":1,"tileX":10,"tileY":20,"hp":4000,"caste":"worker"}',
+      "queens (1):",
+      '{"queenId":1,"tileX":10,"tileY":20,"lostTick":null,"hp":30000}',
+      "cells tick 10: 6 tiles (complete)",
+      "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier a=none, lowercase own UPPERCASE enemy; hp in HP",
+      "y2: 5-7f3",
+      "y20: 10Qown30:1w4 117f2Qenemy21.5:9S3.5,10a0.001 118Qenemy",
+      "territory: not in this reply (observe with map:true)",
+    ].join("\n"));
+  });
+
+  // Every colony's ants and queens, with and without caste and queen hp.
+  const fourColonyCells = [...FOOD_RUN,
+    { tileX: 10, tileY: 20, food: 0, ants: [{ antId: 1, colony: 0, hp: 4000, caste: "worker" }], queen: 0, queenHp: 30000 },
+    { tileX: 117, tileY: 20, food: 2, ants: [{ antId: 9, colony: 1, hp: 3500, caste: "soldier" }, { antId: 10, colony: 0, hp: 1 }], queen: 1, queenHp: 21500 },
+    { tileX: 118, tileY: 20, food: 0, ants: [], queen: 2 },
+    { tileX: 10, tileY: 80, food: 0, ants: [{ antId: 20, colony: 3, hp: 4000, caste: "worker" }, { antId: 21, colony: 2, hp: 2000 }], queen: 3, queenHp: 0 },
+    { tileX: 11, tileY: 80, food: 1, ants: [{ antId: 22, colony: 1, hp: 1234, caste: "worker" }, { antId: 23, colony: 2, hp: 4000, caste: "soldier" }, { antId: 24, colony: 3, hp: 3000, caste: "soldier" }] }];
+  const keyLine = (own) => "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier a=none, lowercase own UPPERCASE enemy; hp in HP"
+    + `; @<n> ends each enemy ant and enemy queen: the colony it belongs to, 0-3 (yours is ${own})`;
+  const cellPart = (text) => text.split("\n").slice(text.split("\n").findIndex((line) => line.startsWith("cells ")), -1);
+
+  it("labels enemy ants and queens of colonies 1-3 by colony from colony 0's view", () => {
+    const data = seatReply(fourColonyCells, 0, 4);
+    expect(data.view.cells.colonies).toBe(4);
+    expect(cellPart(renderView(data))).toEqual([
+      "cells tick 10: 8 tiles (complete)",
+      keyLine(0),
+      "y2: 5-7f3",
+      "y20: 10Qown30:1w4 117f2Qenemy21.5@1:9S3.5@1,10a0.001 118Qenemy@2",
+      "y80: 10Qenemy0@3:20W4@3,21A2@2 11f1:22W1.234@1,23S4@2,24S3@3",
+    ]);
+  });
+
+  it("labels enemy ants and queens of colonies 0-2 by colony from colony 3's view", () => {
+    expect(cellPart(renderView(seatReply(fourColonyCells, 3, 4)))).toEqual([
+      "cells tick 10: 8 tiles (complete)",
+      keyLine(3),
+      "y2: 5-7f3",
+      "y20: 10Qenemy30@0:1W4@0 117f2Qenemy21.5@1:9S3.5@1,10A0.001@0 118Qenemy@2",
+      "y80: 10Qown0:20w4,21A2@2 11f1:22W1.234@1,23S4@2,24s3",
+    ]);
+  });
+
+  it("keeps the opponents list, the seat's elimination and the final result whole", () => {
+    const opponents = [{ colony: 0, name: "Amber" }, { colony: 1, name: "Birch", eliminated: { tick: 2500, reason: "queens_killed" } }, { colony: 3, name: "Dune", eliminated: { tick: 2900, reason: "idle" } }];
+    const eliminated = { tick: 3000, reason: "idle" };
+    const playing = renderView(seatReply(fourColonyCells, 2, 4, { opponents, eliminated }));
+    const header = JSON.parse(playing.split("\n")[0]);
+    expect(header.opponents).toEqual(opponents);
+    expect(header.eliminated).toEqual(eliminated);
+    expect(playing).toContain("y80: 10Qenemy0@3:20W4@3,21a2 11f1:22W1.234@1,23s4,24S3@3");
+    const result = { winner: 0, reason: "queens_killed", decidedBy: "queens_killed", tick: 4000 };
+    const over = JSON.parse(renderView(seatReply(fourColonyCells, 2, 4, { opponents, eliminated, matchOver: true, winner: "Amber", result })).split("\n")[0]);
+    expect({ opponents: over.opponents, eliminated: over.eliminated, matchOver: over.matchOver, winner: over.winner, result: over.result })
+      .toEqual({ opponents, eliminated, matchOver: true, winner: "Amber", result });
+  });
+});

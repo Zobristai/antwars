@@ -35,6 +35,7 @@ import {
   type Checkpoint, type Findings, type NoEffectEntry, type PageSpec, type RecordScan, type RefusedEntry, type SeatElement,
 } from "./postMortemRecord.js";
 import type { VersionSource } from "./postMortemVersion.js";
+import type { ColonyId } from "../sim/types.js";
 
 export const POST_MORTEM_TOOL = "match_post_mortem";
 /** A reply waits at most this long for a record scan, well inside a seat client's 30 s. */
@@ -158,7 +159,7 @@ interface Base {
   readonly colonies: readonly number[];
   readonly identity: RecordIdentity;
   readonly source: "calls" | "commands";
-  readonly seats: readonly { seat: number; colony: 0 | 1 }[];
+  readonly seats: readonly { seat: number; colony: ColonyId }[];
   readonly ownedPositions: readonly [number, number][];
   readonly ownedAgents: readonly [string, number][];
   readonly omitted: readonly [number, number][];
@@ -214,13 +215,14 @@ export const CONTINUATION_MAX = 16 * 1024;
 export const READ_GUARD_MS = 5 * 60_000;
 
 /**
- * The colonies the caller owns: those whose lobby seats name the caller's identity and no other. A colony of several
- * identities is not served to any of them; no name or handle is read. Empty when the caller owns none.
+ * The colonies the caller owns, of every colony the lobby records (two, or four in a quadrants lobby): those whose lobby
+ * seats name the caller's identity and no other. A colony of several identities is not served to any of them; no name
+ * or handle is read. Empty when the caller owns none.
  */
-export function ownedColonies(lobby: Pick<Lobby, "colonies">, identityId: string): Set<0 | 1> {
+export function ownedColonies(lobby: Pick<Lobby, "colonies">, identityId: string): Set<ColonyId> {
   const seats = lobbySeats(lobby.colonies);
-  const owned = new Set<0 | 1>();
-  for (const colony of [0, 1] as const) {
+  const owned = new Set<ColonyId>();
+  for (let colony: ColonyId = 0; colony < lobby.colonies.length; colony++) {
     const identities = new Set(seats.filter(seat => seat.colony === colony).map(seat => seat.identityId));
     if (identities.size === 1 && identities.has(identityId)) owned.add(colony);
   }
@@ -401,7 +403,7 @@ export function createPostMortem(deps: PostMortemDeps) {
   /** One owner's view of a record from its first pass. */
   function baseOf(initial: Initial, replayId: string, visibility: "public" | "private", lobbyId: string, colonies: ReadonlySet<number>): Base {
     const ownedPositions: [number, number][] = [];
-    const seats = new Map<number, 0 | 1>();
+    const seats = new Map<number, ColonyId>();
     initial.elements.forEach((element, position) => {
       if (!colonies.has(element.colony)) return;
       ownedPositions.push([position, element.seat]);
@@ -532,7 +534,7 @@ export function createPostMortem(deps: PostMortemDeps) {
    * The caller's record id, lobby and owned colonies, once ownership is proven from the lobby alone: before any cache,
    * scan or record is read. A refusal otherwise.
    */
-  async function authorize(query: PostMortemQuery): Promise<PostMortemReply | { lobby: Lobby; replayId: string; visibility: "public" | "private"; colonies: Set<0 | 1> }> {
+  async function authorize(query: PostMortemQuery): Promise<PostMortemReply | { lobby: Lobby; replayId: string; visibility: "public" | "private"; colonies: Set<ColonyId> }> {
     let identityId: string;
     try {
       const resolved = await deps.identities.resolveKey(query.key);
@@ -606,7 +608,7 @@ export function createPostMortem(deps: PostMortemDeps) {
     if (refusedCursor && noEffectCursor && !sameIdentity(refusedCursor.base.identity, noEffectCursor.base.identity)) return refuse("start_again");
     let timer: NodeJS.Timeout | undefined;
     try {
-      return await Promise.race([answer(replayId, visibility, lobby.id, colonies, query, refusedCursor, noEffectCursor, stopped, scope),
+      return await Promise.race([answer(replayId, visibility, lobby.id, lobby.colonies.length, colonies, query, refusedCursor, noEffectCursor, stopped, scope),
         new Promise<never>((_, reject) => { timer = setTimeout(() => { timedOut = true; reject(new StillReading()); }, scanWaitMs); })]);
     } catch (error) {
       if (error instanceof StillReading || error instanceof Stopped) return refuse("still_reading");
@@ -626,7 +628,7 @@ export function createPostMortem(deps: PostMortemDeps) {
    * the reply is shaped. A first pass already asked for runs on in the scan pool, under its own guard, and is kept for
    * the next caller.
    */
-  async function answer(replayId: string, visibility: "public" | "private", lobbyId: string, colonies: ReadonlySet<number>, query: PostMortemQuery,
+  async function answer(replayId: string, visibility: "public" | "private", lobbyId: string, colonyCount: number, colonies: ReadonlySet<number>, query: PostMortemQuery,
     refusedCursor: Cursor | undefined, noEffectCursor: Cursor | undefined, stopped: () => boolean, scope: ResponseScope | undefined): Promise<PostMortemReply> {
     let initial: Initial | undefined;
     let base: Base;
@@ -634,6 +636,8 @@ export function createPostMortem(deps: PostMortemDeps) {
     if (carried !== undefined) base = carried.base;
     else {
       initial = await shared(initialKey(replayId), "initial", () => initialPass(replayId, visibility, lobbyId));
+      // A record seat in a colony its lobby does not have: the record does not read as this match's.
+      if (initial.elements.some(element => element.colony >= colonyCount)) throw new RecordReadError();
       base = baseOf(initial, replayId, visibility, lobbyId, colonies);
     }
     if (stopped()) throw new Stopped();

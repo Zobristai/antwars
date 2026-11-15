@@ -1,11 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import type { Identities } from "../../src/identity/identities.ts";
 import { LAUNCHABLE_HANDLES } from "../../src/lobby/houseLaunchable.ts";
-import { createChallengeSteps, heldDays, type ChallengeLobbyRules, type ChallengeOutcome, type LaunchOutcome } from "../../src/lobby/challenges.ts";
+import { createChallengeSteps, heldDays, RETIRED_REASON, type ChallengeLobbyRules, type ChallengeOutcome, type LaunchOutcome } from "../../src/lobby/challenges.ts";
 import { createLobbies, type LobbyOutcome, type LobbySettings } from "../../src/lobby/lobbies.ts";
 import { HOUSE_LABELS } from "../../src/rating/house.ts";
+import { isRetiredHouse } from "../../src/rating/houseLabels.ts";
 import { newWaitToken } from "../../src/lobby/waits.ts";
 import { createFirestore, type Store } from "../../src/store/firestore.ts";
 
@@ -832,14 +833,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 43 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 42 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(43);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(43);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(42);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(42);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -856,12 +857,48 @@ describe("the house handle list", () => {
     for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
-    expect(opponents.filter(o => o.available).map(o => o.handle).sort()).toEqual([...onTable].sort());
+    // A retired handle is closed as retired, on the launch table or off it; every other launch-table handle is open.
+    expect(opponents.filter(o => o.available).map(o => o.handle).sort()).toEqual([...onTable].filter(handle => !isRetiredHouse(handle)).sort());
     for (const o of opponents) {
-      expect([o.handle, o.available, o.reason]).toEqual(onTable.has(o.handle) ? [o.handle, true, null] : [o.handle, false, "not on the house launch table"]);
+      expect([o.handle, o.available, o.reason]).toEqual(isRetiredHouse(o.handle) ? [o.handle, false, RETIRED_REASON]
+        : onTable.has(o.handle) ? [o.handle, true, null] : [o.handle, false, "not on the house launch table"]);
     }
     // antwars/mistral-large-latest, the reported case: on the House table, off the launch table, closed with no record.
     expect(opponents.find(o => o.handle === "antwars/mistral-large-latest")).toMatchObject({ available: false, reason: "not on the house launch table" });
+    // antwars/claude-fable-5-1: its model can no longer be launched, so it is off the launch table; it is retired, and the
+    // retired reason is checked first.
+    expect(opponents.find(o => o.handle === "antwars/claude-fable-5-1")).toMatchObject({ available: false, reason: RETIRED_REASON });
+  });
+});
+
+describe("a retired house handle", () => {
+  const empty = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
+    (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
+  const builder = { resolveKey: async () => ({ ok: true, value: { id: "builder", displayName: "builder" } }) } as unknown as Identities;
+
+  it("stays listed with its name and level, unavailable as retired, while its successor stays open", async () => {
+    const steps = createChallengeSteps(empty, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
+    const opponents = (await steps.listOpponents()).opponents;
+    expect(RETIRED_REASON).toBe("retired: the model is no longer offered");
+    expect(opponents.find(o => o.handle === "antwars/claude-fable-5-1")).toEqual({ handle: "antwars/claude-fable-5-1", displayName: "Claude Fable 5.1",
+      level: "max", tier: null, available: false, reason: RETIRED_REASON });
+    expect(opponents.find(o => o.handle === "antwars/claude-fable-5-2")).toMatchObject({ available: true, reason: null });
+  });
+
+  it("refuses a challenge to it as opponent_unavailable with the retired reason, before any lobby, even with an open record", async () => {
+    const open = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, Record<string, string> | null>>) => Promise<{ result: unknown; writes: unknown[] }>) => {
+      const { result, writes } = await step(async paths => new Map(paths.map(path => [path, path.startsWith("challengeAvailability/") ? { marked: "", lastLaunch: "" } : null])));
+      expect(writes).toEqual([]);
+      return result;
+    } } as unknown as Store;
+    const lobbyWrites = vi.fn();
+    for (const store of [empty, open]) {
+      const steps = createChallengeSteps(store, builder, { now: () => Date.UTC(2026, 10, 4), challengeLobbyWrites: lobbyWrites } as unknown as ChallengeLobbyRules);
+      for (const opponent of ["antwars/claude-fable-5-1", "ANTWARS/Claude-Fable-5-1", "claude-fable-5-1"]) {
+        expect(await steps.requestChallenge("key", opponent), opponent).toEqual({ ok: false, reason: "opponent_unavailable", detail: RETIRED_REASON });
+      }
+    }
+    expect(lobbyWrites).not.toHaveBeenCalled();
   });
 });
 

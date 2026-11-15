@@ -105,6 +105,22 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     expect(ratings.textContent).not.toContain("antwars/");
   });
 
+  it("shows a four-colony winner by name, in its colour, with how it ended, in the shared modal", () => {
+    const { dialogs, show } = mount();
+    const f = frameOf({ ended: true });
+    const b = f.board!;
+    b.setup = { ...b.setup, queens: [[8, 8], [56, 8], [8, 40], [56, 40]].map(([x, y]) => [x! * SUB_TILE, y! * SUB_TILE]),
+      colonyNames: ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"] } as unknown as Board["setup"];
+    b.result = { winner: 3, reason: "queens_killed", decidedBy: "queens_killed", tick: END, nextStartMs: null } as unknown as Board["result"];
+    show(f);
+    const dialog = dialogs()[0]!;
+    expect(dialog.open).toBe(true);
+    const head = dialog.byClass("d1-result-head")[0]!;
+    expect(head.textContent).toBe("Lake Skinner Colony wins");
+    expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
+    expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last colony standing · queens killed");
+  });
+
   it("closes with no frame and leaves with the HUD", () => {
     const { host, hud, dialogs, show } = mount();
     show(frameOf({ ended: true }));

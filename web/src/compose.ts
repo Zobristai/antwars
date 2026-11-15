@@ -7,7 +7,8 @@
 
 import type { StreamAgent, StreamResult } from "../../src/live/format.ts";
 import { HOUSE_USERNAME } from "../../src/identity/houseOwnership.ts";
-import { houseLabel } from "../../src/rating/houseLabels.ts";
+import { houseLabel, isRetiredHouse } from "../../src/rating/houseLabels.ts";
+import { benchmarkLabel } from "./leaderboard-page/view.ts";
 import { nameParts, recordedIdentity, type NameParts } from "./pages/model.ts";
 
 /** "name #seat": one identity holding several seats (src/live/watch-controller.ts seatIdentities). Names hold no space or "#". */
@@ -37,12 +38,16 @@ export function rowName(name: string, thinkingLevel: string | undefined): RowNam
 /**
  * The HUD's model for an agent: the display name plus its level and tier
  * badges, as Recordings names a seat (pages/model.ts recordedIdentity, a house handle by its own row), never the
- * provider/model key; null where the agent reported no model.
+ * provider/model key; null where the agent reported no model, except a retired house seat, which shows its house
+ * name with only the retired badge (the label is optional, the retired mark is not).
  */
 export function agentModel(a: Pick<StreamAgent, "modelLabel" | "thinkingLevel" | "serviceTier" | "identity">): NameParts | null {
-  if (!a.modelLabel) return null;
   const name = a.identity?.displayName;
   const handle = name === undefined ? null : SEAT.exec(name)?.[1] ?? name;
+  if (!a.modelLabel) {
+    if (handle === null || !isBenchmark(handle) || !isRetiredHouse(handle)) return null;
+    return { ...benchmarkLabel({ displayName: handle, thinkingLevel: null, serviceTier: null }), quiet: null };
+  }
   return recordedIdentity({ modelLabel: a.modelLabel, thinkingLevel: a.thinkingLevel ?? null, serviceTier: a.serviceTier ?? null, handle });
 }
 

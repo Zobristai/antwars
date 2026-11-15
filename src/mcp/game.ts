@@ -2,8 +2,10 @@
 import { randomUUID } from "node:crypto";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { chooseJoinColony } from "../sim/agents.js";
-import { COLONY_NAMES, PUBLIC_CONFIG, withoutHousePausedMaps, type SimConfig } from "../sim/config.js";
-import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
+import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, withoutHousePausedMaps, type MapDefinition, type SimConfig } from "../sim/config.js";
+import { isClassicColonyNames, quadrantColonyNames, seatedColonyNames, type ColonyNames } from "../sim/colonyNames.js";
+import { isQuadrantRotation } from "../sim/mapBoard.js";
+import { quadrantMatchMaps } from "../sim/mapShapes.js";
 import { newMatchConfig } from "../sim/gridScale.js";
 import { eliminationsAt, headerLine, tickLine } from "../sim/log.js";
 import { cloneState, createMatch } from "../sim/map.js";
@@ -20,6 +22,9 @@ import { startPickWindowMsFor, type StartPickError, type StartTerrain } from "..
 import { agentsPerColony, DEFAULT_MCP_CONFIG, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { keepsStub, replyLine, stubLine, STUBS_PER_WINDOW, textLine, type ReplyEntry, type StubCall } from "../replays/recording.js";
 import type { ServedText } from "./replies.js";
+
+/** Why a seated quadrants lobby's start is refused: its rotation is not a four-colony (quadrant) rotation. */
+export const QUADRANT_ROTATION_REQUIRED = "a quadrants lobby starts only on a quadrant map rotation";
 
 /** A call answered not_applied while its server hands the match over may be made again after this long. */
 export const NOT_APPLIED_RETRY_MS = 1000;
@@ -40,7 +45,7 @@ export interface FinalResultReceipt {
   readonly result: MatchResult | null;
   readonly notPlayed?: true;
   /** The colony names of the receipt's match, so its result is named as that match named it after its record is gone. */
-  readonly colonyNames?: ColonyNamePair;
+  readonly colonyNames?: ColonyNames;
 }
 
 /** One seat of the lobby whose match this slot server plays. An identity may hold several seats of its colony. */
@@ -114,7 +119,7 @@ export type Outcome = (
       /** An ended match's result, for a refused call that produced no view. */
       readonly result?: MatchResult | null;
       /** With result: the colony names of that result's match. */
-      readonly colonyNames?: ColonyNamePair;
+      readonly colonyNames?: ColonyNames;
       readonly timing?: CallTiming;
     }) & { readonly observeInfo?: ObserveInfo };
 
@@ -198,6 +203,8 @@ export interface GameOptions {
   readonly onReply?: (seq: number, line: string) => void;
   /** Set only on a slot server: joins are by lobby key, never by token or colony. */
   readonly slot?: SlotAccess;
+  /** The quadrants map rotation: quadrantMatchMaps() unless a test supplies one. A quadrants lobby starts only on a quadrant rotation. */
+  readonly quadrantMaps?: readonly MapDefinition[];
 }
 
 /**
@@ -260,7 +267,7 @@ interface AgentRecord {
   callTimes: number[];
   /** Sessions keep only this receipt, not a retired record's events or match state. */
   /** colonyNames: this agent's match's names, captured at admission and taken from the lobby again on resume. */
-  readonly finalResult: { result: MatchResult | null; notPlayed?: true; readonly colonyNames: ColonyNamePair };
+  readonly finalResult: { result: MatchResult | null; notPlayed?: true; readonly colonyNames: ColonyNames };
   /** Slot servers: the lobby and seat key this seat belongs to, its rejoin key. */
   readonly seatKey: string | null;
   /** Slot servers: the identity holding this seat, whose join activity is recorded. */
@@ -307,6 +314,7 @@ export class Game {
   private readonly houseIdleSeconds: number;
   private readonly now: () => number;
   private readonly startPickWindowMs: number | undefined;
+  private readonly quadrantMaps: readonly MapDefinition[];
   private readonly onLogLine: (line: string) => void;
   private readonly onInputQueued: () => void;
   private readonly onReply: (seq: number, line: string) => void;
@@ -349,7 +357,7 @@ export class Game {
    */
   private lobby: { readonly id: string; readonly mode: QueueMode | null; readonly seats: ReadonlyMap<string, LobbySeat>; notPlayed: boolean; matchSeq: number | null; start: FinishedStart | null;
     /** Its match's colony names, decided once when it is seated and carried by its handover saves. */
-    readonly names: ColonyNamePair } | null = null;
+    readonly names: ColonyNames } | null = null;
   /** Slot servers: the identities of the last lobby whose match was not played here. */
   private notPlayed: { readonly lobbyId: string; readonly identities: ReadonlySet<string> } | null = null;
   readonly slot: SlotAccess | undefined;
@@ -405,13 +413,14 @@ export class Game {
     this.onInputQueued = options.onInputQueued ?? (() => {});
     this.onReply = options.onReply ?? (() => {});
     this.slot = options.slot;
+    this.quadrantMaps = options.quadrantMaps ?? quadrantMatchMaps();
   }
 
   /** Slot servers: seat the lobby whose match is next; only its identities may join, each seat by its seat key. */
   seatLobby(lobbyId: string, seats: readonly LobbySeat[], mode: QueueMode | null = null): void {
     this.starting = null;
     this.lobby = { id: lobbyId, mode, seats: new Map(seats.map((seat) => [seatKeyOf(seat), seat])), notPlayed: false, matchSeq: null, start: null,
-      names: lobbyColonyNames(lobbyId, mode !== null) };
+      names: seatedColonyNames(lobbyId, mode) };
     // An earlier lobby's seat queued for a match that never started was not played; it never joins this lobby's match.
     const started = this.current?.seq ?? 0;
     for (const rec of this.records.values()) {
@@ -421,7 +430,9 @@ export class Game {
 
   /** The seated lobby's pre-draw config, before its seed draws a map: house modes leave out the paused maps. */
   get undrawnConfig(): SimConfig {
-    return this.lobby?.mode?.startsWith("house-") === true ? withoutHousePausedMaps(this.simConfig) : this.simConfig;
+    const mode = this.lobby?.mode;
+    if (mode === "quadrants") return { ...this.simConfig, terrain: { ...(this.simConfig.terrain ?? TERRAIN_RULES), maps: this.quadrantMaps } };
+    return mode?.startsWith("house-") === true ? withoutHousePausedMaps(this.simConfig) : this.simConfig;
   }
 
   /** A seated house lobby whose match has not started: its pre-draw config, which the rules page shows
@@ -438,8 +449,11 @@ export class Game {
       throw new Error("No seated lobby to start");
     }
     if (this.starting !== null) throw new Error("Lobby pick window already open");
+    const quadrants = this.lobby.mode === "quadrants";
+    // A quadrants lobby starts only on a four-colony rotation; on any other, its start is refused here with this reason.
+    if (quadrants && !isQuadrantRotation(this.undrawnConfig)) throw new Error(QUADRANT_ROTATION_REQUIRED);
     // Picks are per seat: the starting roster is keyed by seat key, never by identity.
-    const roster = [...this.lobby.seats].map(([key, seat]) => ({ identityId: key, colony: asTwoColony(seat.colony) }));
+    const roster = [...this.lobby.seats].map(([key, seat]) => ({ identityId: key, colony: quadrants ? seat.colony : asTwoColony(seat.colony) }));
     const window = new LobbyStart(seed, this.undrawnConfig, roster, this.now(), this.nestWindowMs(), this.lobby.mode?.startsWith("house-") === true);
     this.starting = { seed, window };
     this.setNextStart({ kind: "scheduled", at: new Date(window.closesAt) });
@@ -818,7 +832,7 @@ export class Game {
     // A save with no names (an older server's) began its match, and its spectator stream, with the rated names; it keeps them.
     this.lobby = lobby === null ? null : { id: lobby.id, mode: lobby.mode, seats: new Map(lobby.seats.map(seat => [seatKeyOf(seat), seat])),
       notPlayed: false, matchSeq: seq, start: lobby.startingQueens === null ? null : finishedStart(new Map(lobby.startingQueens)),
-      names: lobby.colonyNames ?? COLONY_NAMES };
+      names: lobby.colonyNames ?? (lobby.mode === "quadrants" ? quadrantColonyNames() : COLONY_NAMES) };
     this.notPlayed = restored.notPlayed === null ? null : { lobbyId: restored.notPlayed.lobbyId, identities: new Set(restored.notPlayed.identities) };
     this.restoreRecords(restored.records, seq);
     this.restoreHeldReplies(restored.replies, seq);
@@ -865,7 +879,7 @@ export class Game {
     // A match not yet begun has no stream: an older server's save, with no names, draws them as this server would have.
     this.lobby = { id: restored.lobby.id, mode: restored.lobby.mode, seats: new Map(restored.lobby.seats.map(seat => [seatKeyOf(seat), seat])),
       notPlayed: false, matchSeq: null, start: null,
-      names: restored.lobby.colonyNames ?? lobbyColonyNames(restored.lobby.id, restored.lobby.mode !== null) };
+      names: restored.lobby.colonyNames ?? seatedColonyNames(restored.lobby.id, restored.lobby.mode) };
     this.starting = { seed: restored.seed, window };
     this.notPlayed = restored.notPlayed === null ? null : { lobbyId: restored.notPlayed.lobbyId, identities: new Set(restored.notPlayed.identities) };
     this.restoreRecords(restored.records, seq);
@@ -1458,15 +1472,26 @@ export class Game {
    * The colony names a seat's match uses: an unrated lobby's drawn pair, otherwise COLONY_NAMES
    * (rated lobbies and matches outside a lobby).
    */
-  private seatColonyNames(seatKey: string | null): ColonyNamePair {
+  private seatColonyNames(seatKey: string | null): ColonyNames {
     const lobby = this.lobby;
     return seatKey === null || lobby === null || !seatKey.startsWith(`${lobby.id}/`) ? COLONY_NAMES : lobby.names;
   }
 
   /** Unjoined callers see the seated lobby's names (COLONY_NAMES outside a lobby); joined callers keep their own match's. */
-  colonyNames(agentId: string | null = null): ColonyNamePair {
+  colonyNames(agentId: string | null = null): ColonyNames {
     const rec = agentId === null ? undefined : this.records.get(agentId);
     return rec?.finalResult.colonyNames ?? this.lobby?.names ?? COLONY_NAMES;
+  }
+
+  /**
+   * A seated quadrants seat's colony name, from the names and colony its record captured at admission (only a
+   * quadrants match has four), so a reply answered after the slot seats its next lobby still names it; undefined in
+   * every other mode.
+   */
+  quadrantSeatColony(agentId: string): string | undefined {
+    const rec = this.records.get(agentId);
+    if (rec === undefined || rec.seat === null || rec.finalResult.colonyNames.length !== 4) return undefined;
+    return rec.finalResult.colonyNames[rec.seat.colony];
   }
 
   /** Unjoined callers see the slot mode; joined callers retain their own mode. */
@@ -1559,8 +1584,8 @@ function savedResult({ colonyNames: _names, ...result }: AgentRecord["finalResul
 }
 
 /** A lobby's drawn colony names as its save carries them; the rated names are left implicit. */
-function savedNames(names: ColonyNamePair): { colonyNames?: readonly [string, string] } {
-  return isClassicColonyNames(names) ? {} : { colonyNames: [names[0], names[1]] };
+function savedNames(names: ColonyNames): { colonyNames?: readonly [string, string] } {
+  return names.length !== 2 || isClassicColonyNames([names[0]!, names[1]!]) ? {} : { colonyNames: [names[0]!, names[1]!] };
 }
 
 function savedRecord(rec: AgentRecord): SavedAgentRecord {

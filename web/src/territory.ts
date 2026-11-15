@@ -9,19 +9,25 @@
  *
  * Each snapshot's ownership grid becomes a W x H texture: R = ownership
  * (1 colony 0, 0 colony 1, 0.5 neutral), G = closeness to the front (1 at a tile
- * bordering the other colony, falling to 0 over FRONT_REACH tiles). A shader
+ * bordering another colony, falling to 0 over FRONT_REACH tiles). A shader
  * blends the two bracketing snapshots' textures by the playback fraction, so a
  * tile that changes hands fades between them; noise roughens the edges. The
  * front line is a second mesh over the same textures, drawing a bright band where
  * the colonies meet inside a soft glow drawn by the same shader (the bloom), sized
  * each frame to the tiles the front spans. Trails are a finer grid
  * (TRAIL_RES cells per tile) sampled by the ground pass as thin, faint paths.
+ *
+ * A four-colony match (four queens in its setup) draws with the four-colony
+ * passes: each snapshot also gets a holdings texture, one channel per colony,
+ * and at each point the passes read ownership between the two colonies holding
+ * most of the ground there (COMMON_FOUR), so any two colonies' ground meets as
+ * colonies 0 and 1's does. A two-colony match keeps the two-colony passes.
  */
-import { BufferImageSource, Container, Geometry, Mesh, Shader, Texture, type RenderTexture } from "pixi.js";
+import { BufferImageSource, Container, Geometry, Mesh, Shader, Texture, UniformGroup, type RenderTexture } from "pixi.js";
 import { boardLook } from "./board-look.ts";
 import { colonyRgb } from "./colony-palette.ts";
 import { NOISE_GLSL, QUAD_VERTEX, quadGeometry } from "./soil.ts";
-import { TRAIL_RES, type Frame } from "./buffer.ts";
+import { TRAIL_RES, trailTexels, type Frame } from "./buffer.ts";
 import { BOUNDARY_TILES, ROCK_GLSL, WATER_GLSL, WaterMask } from "./terrain.ts";
 
 /** Tiles over which the territory tint fades from the front inward. */
@@ -92,7 +98,22 @@ float ownership(vec2 uv, out vec4 s) {
   return r;
 }`;
 
-const FILL_FRAGMENT = /* glsl */ `${COMMON}
+/** The ground pass's dry land in a two-colony match: the territory tint over the soil, and trails. */
+const LAND_TWO = /* glsl */ `  vec4 s;
+  float r = ownership(vUV, s);
+  float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
+  float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
+  // A light tint over the soil, strongest near the front and fading inward.
+  float tint = (0.04 + 0.2 * s.g * s.g) * (w0 + w1);
+  vec3 hue = (uC0 * 0.85 * w0 + uC1 * w1) / max(w0 + w1, 0.001);
+  vec3 col = mix(soil, hue * 0.55 + soil * 0.45, tint);
+  // Thin, faint paths: a slight lightening in each colony's hue.
+  vec2 tr = texture(uTrail, vUV).rg * uTrails;
+  col += (uC0 * 0.85 * tr.x + uC1 * tr.y) * 0.2;
+`;
+
+/** The ground pass over the prelude: soil, water and rocks, with land (LAND_TWO or LAND_FOUR) over dry ground. */
+const fillFragment = (prelude: string, land: string) => /* glsl */ `${prelude}
 in vec2 vScreen;
 uniform sampler2D uSoil;
 uniform sampler2D uTrail;
@@ -109,34 +130,24 @@ void main() {
     finalColor = vec4(awBoundary(awRockColour(vUV * uMap, rockMask), vUV), 1.0);
     return;
   }
-  vec4 s;
-  float r = ownership(vUV, s);
-  float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
-  float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
-  // A light tint over the soil, strongest near the front and fading inward.
-  float tint = (0.04 + 0.2 * s.g * s.g) * (w0 + w1);
-  vec3 hue = (uC0 * 0.85 * w0 + uC1 * w1) / max(w0 + w1, 0.001);
-  vec3 col = mix(soil, hue * 0.55 + soil * 0.45, tint);
-  // Thin, faint paths: a slight lightening in each colony's hue.
-  vec2 tr = texture(uTrail, vUV).rg * uTrails;
-  col += (uC0 * 0.85 * tr.x + uC1 * tr.y) * 0.2;
-  col = awBoundary(col, vUV);
+${land}  col = awBoundary(col, vUV);
   finalColor = vec4(col, 1.0);
 }`;
+
+const FILL_FRAGMENT = fillFragment(COMMON, LAND_TWO);
 
 /**
  * The front line with its bloom drawn in one pass (a shader-drawn glow stands
  * in for the bloom filter): a narrow bright band where the colonies meet,
- * inside a wider, soft glow that falls off from it.
+ * inside a wider, soft glow that falls off from it. read sets s and r as
+ * ownership() does and discards away from the front; side is the colour of
+ * the colony on each side of the band.
  */
-const FRONT_FRAGMENT = /* glsl */ `${COMMON}
+const frontFragment = (prelude: string, read: string, side: string) => /* glsl */ `${prelude}
 void main() {
   if (awWaterAt(vUV) > 0.5) discard;
   if (awRockAt(vUV) > 0.5) discard;
-  vec4 s;
-  float r = ownership(vUV, s);
-  if (s.g < 0.45) discard;
-  float d = abs(r - 0.5);
+${read}  float d = abs(r - 0.5);
   float near = smoothstep(0.45, 0.9, s.g);
   float band = (1.0 - smoothstep(0.0, 0.15, d)) * near;
   float glow = (1.0 - smoothstep(0.0, 0.5, d)) * near;
@@ -144,7 +155,7 @@ void main() {
   if (band + glow < 0.01) discard;
   vec2 tile = vUV * uMap;
   float flicker = 0.85 + 0.15 * vnoise(tile * 2.3 + vec2(uTime * 0.7, -uTime * 0.4));
-  vec3 side = uC0 * clamp(r * 2.0 - 0.5, 0.0, 1.0) + uC1 * clamp(1.5 - r * 2.0, 0.0, 1.0);
+  vec3 side = ${side};
   vec3 hot = mix(vec3(1.0, 0.96, 0.86), side, 0.7);
   float a = min(1.0, band * flicker);
   float g = glow * flicker;
@@ -155,6 +166,84 @@ void main() {
   finalColor = vec4(col, min(1.0, a * 0.8 + g * 0.5));
   finalColor *= awBoundaryWeight(vUV);
 }`;
+
+const FRONT_FRAGMENT = frontFragment(
+  COMMON,
+  "  vec4 s;\n  float r = ownership(vUV, s);\n  if (s.g < 0.45) discard;\n",
+  "uC0 * clamp(r * 2.0 - 0.5, 0.0, 1.0) + uC1 * clamp(1.5 - r * 2.0, 0.0, 1.0)",
+);
+
+/**
+ * The prelude of a four-colony match's passes: the two-colony prelude, with each
+ * tile's holdings (uWA and uWB, the bracketing snapshots' encodeHoldings) and
+ * colonies 2 and 3's colours. Its passes read ownership4 where a two-colony
+ * match's read ownership(), and colonyColour(c) where they read uC0 and uC1.
+ */
+const COMMON_FOUR = /* glsl */ `${COMMON}
+uniform sampler2D uWA;
+uniform sampler2D uWB;
+uniform vec3 uC2;
+uniform vec3 uC3;
+// Colony c's colour, 0 to 3.
+vec3 colonyColour(int c) { return c == 0 ? uC0 : c == 1 ? uC1 : c == 2 ? uC2 : uC3; }
+float holding(vec4 v, int c) { return c == 0 ? v.r : c == 1 ? v.g : c == 2 ? v.b : v.a; }
+// ownership() between ca and cb, the two colonies that hold most of the ground at uv
+// (ca the lower id; the lower id leads among equals): 1 colony ca, 0 colony cb, 0.5
+// neither, with the same warp, snapshot blend and noisy edge near the front. cb is
+// -1 where no other colony holds any of it, so r falls toward 0.5 over unheld
+// ground, and ca is -1 too where no colony does. s.g is closeness to the front.
+float ownership4(vec2 uv, out vec4 s, out int ca, out int cb) {
+  vec2 tile = uv * uMap;
+  float n = vnoise(tile * 0.6) - 0.5;
+  vec2 warp = vec2(n, -n) * 0.9 / uMap;
+  s = mix(texture(uA, uv + warp), texture(uB, uv + warp), uBlend);
+  vec4 v = mix(texture(uWA, uv + warp), texture(uWB, uv + warp), uBlend);
+  int lead = -1;
+  int next = -1;
+  for (int c = 0; c < 4; c++) {
+    float h = holding(v, c);
+    if (h <= 0.0) continue;
+    if (lead < 0 || h > holding(v, lead)) { next = lead; lead = c; }
+    else if (next < 0 || h > holding(v, next)) next = c;
+  }
+  ca = next < 0 || lead < next ? lead : next;
+  cb = next < 0 ? -1 : lead < next ? next : lead;
+  if (ca < 0) return 0.5;
+  float r = 0.5 + 0.5 * (holding(v, ca) - (cb < 0 ? 0.0 : holding(v, cb)));
+  if (s.g > 0.3) r += (fbm3(tile * 1.9) - 0.44) * 0.3 * s.g;
+  return r;
+}`;
+
+/**
+ * LAND_TWO for four colonies: the same tint, each side of a meeting in its own colony's colour, and each colony's
+ * trail (channel c of the trail texture is colony c's) in its own colour.
+ */
+const LAND_FOUR = /* glsl */ `  vec4 s;
+  int ca;
+  int cb;
+  float r = ownership4(vUV, s, ca, cb);
+  float w0 = ca < 0 ? 0.0 : clamp(r * 2.0 - 1.0, 0.0, 1.0);
+  float w1 = cb < 0 ? 0.0 : clamp(1.0 - r * 2.0, 0.0, 1.0);
+  // A light tint over the soil, strongest near the front and fading inward; colony 0's shade as in a two-colony match.
+  float tint = (0.04 + 0.2 * s.g * s.g) * (w0 + w1);
+  vec3 hue = (colonyColour(ca) * (ca == 0 ? 0.85 : 1.0) * w0 + colonyColour(cb) * (cb == 0 ? 0.85 : 1.0) * w1) / max(w0 + w1, 0.001);
+  vec3 col = mix(soil, hue * 0.55 + soil * 0.45, tint);
+  // Thin, faint paths: a slight lightening in each colony's hue.
+  vec4 tr = texture(uTrail, vUV) * uTrails;
+  col += (uC0 * 0.85 * tr.r + uC1 * tr.g + uC2 * tr.b + uC3 * tr.a) * 0.2;
+`;
+
+const FILL_FOUR = fillFragment(COMMON_FOUR, LAND_FOUR);
+
+/**
+ * The front line of a four-colony match, between the two colonies leading at each point: drawn only where two colonies
+ * hold ground, so a colony's edge against unheld ground (an eliminated colony's former ground among it) draws none.
+ */
+const FRONT_FOUR = frontFragment(
+  COMMON_FOUR,
+  "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || cb < 0) discard;\n",
+  "colonyColour(ca) * clamp(r * 2.0 - 0.5, 0.0, 1.0) + colonyColour(cb) * clamp(1.5 - r * 2.0, 0.0, 1.0)",
+);
 
 export class Territory {
   readonly fill: Mesh<Geometry, Shader>;
@@ -172,7 +261,14 @@ export class Territory {
   private keyA: object | null = null;
   private keyB: object | null = null;
   private keyTrail: object | null = null;
-  private uniforms: { uniforms: Record<string, unknown> };
+  private uniforms: UniformGroup;
+  /** Each snapshot's holdings (encodeHoldings), uploaded only while the passes are four-colony. */
+  private holdTexA: Texture<BufferImageSource>;
+  private holdTexB: Texture<BufferImageSource>;
+  private holdA: Uint8Array;
+  private holdB: Uint8Array;
+  /** The colony count the passes draw: 4 from a four-colony match's first frame, otherwise 2. */
+  private colonies: 2 | 4 = 2;
   private frontGeometry: Geometry;
   private ground: Geometry;
   private screen: { w: number; h: number };
@@ -193,33 +289,28 @@ export class Territory {
     this.dataB = new Uint8Array(mapW * mapH * 4);
     this.texA = makeTexture(this.dataA, mapW, mapH);
     this.texB = makeTexture(this.dataB, mapW, mapH);
+    this.holdA = new Uint8Array(mapW * mapH * 4);
+    this.holdB = new Uint8Array(mapW * mapH * 4);
+    this.holdTexA = makeTexture(this.holdA, mapW, mapH);
+    this.holdTexB = makeTexture(this.holdB, mapW, mapH);
     this.trailData = new Uint8Array(mapW * TRAIL_RES * mapH * TRAIL_RES * 4);
     this.trailTex = makeTexture(this.trailData, mapW * TRAIL_RES, mapH * TRAIL_RES);
     this.water = new WaterMask(mapW, mapH);
     this.waterTex = makeTexture(this.water.data, mapW, mapH);
-    const uniformDefs = {
+    // Both meshes read the same uniform group, so one write updates both.
+    this.uniforms = new UniformGroup({
       uBlend: { value: 0, type: "f32" },
       uMap: { value: [mapW, mapH], type: "vec2<f32>" },
       uTrails: { value: 1, type: "f32" },
       uTime: { value: 0, type: "f32" },
       uC0: { value: [...colonyRgb(0)], type: "vec3<f32>" },
       uC1: { value: [...colonyRgb(1)], type: "vec3<f32>" },
-    };
-    // The board look (board-look.ts) gives both passes its own code; none keeps the plain code.
-    const look = boardLook()?.board2d;
-    const fillShader = Shader.from({
-      gl: { vertex: GROUND_VERTEX, fragment: look ? look.fill(COMMON) : FILL_FRAGMENT },
-      resources: { terr: uniformDefs, uA: this.texA.source, uB: this.texB.source, uSoil: soil.source, uTrail: this.trailTex.source, uWater: this.waterTex.source },
+      uC2: { value: [...colonyRgb(2)], type: "vec3<f32>" },
+      uC3: { value: [...colonyRgb(3)], type: "vec3<f32>" },
     });
-    this.fillShader = fillShader;
     this.soil = soil;
-    // Both meshes read the same uniform group, so one write updates both.
-    const group = fillShader.resources.terr;
-    const frontShader = Shader.from({
-      gl: { vertex: QUAD_VERTEX, fragment: look ? look.front(COMMON) : FRONT_FRAGMENT },
-      resources: { terr: group, uA: this.texA.source, uB: this.texB.source, uWater: this.waterTex.source },
-    });
-    this.uniforms = group;
+    const [fillShader, frontShader] = this.shaders();
+    this.fillShader = fillShader;
     // Ground quad: the whole screen, in tile units, with map uv and screen uv; setView keeps it on screen as the camera moves.
     this.screen = { w: screen.w, h: screen.h };
     const ground = new Geometry({
@@ -236,19 +327,31 @@ export class Territory {
   }
 
   /**
+   * Both passes' shaders for the board look (board-look.ts) and colony count: the look's code, or the plain code with
+   * none, over the shared textures and uniforms; a four-colony pass also reads the holdings.
+   */
+  private shaders(): [Shader, Shader] {
+    const look = boardLook()?.board2d;
+    const four = this.colonies === 4;
+    const prelude = four ? COMMON_FOUR : COMMON;
+    const holdings = four ? { uWA: this.holdTexA.source, uWB: this.holdTexB.source } : {};
+    const fill = Shader.from({
+      gl: { vertex: GROUND_VERTEX, fragment: look ? look.fill(prelude, this.colonies) : four ? FILL_FOUR : FILL_FRAGMENT },
+      resources: { terr: this.uniforms, uA: this.texA.source, uB: this.texB.source, uSoil: this.soil.source, uTrail: this.trailTex.source, uWater: this.waterTex.source, ...holdings },
+    });
+    const front = Shader.from({
+      gl: { vertex: QUAD_VERTEX, fragment: look ? look.front(prelude, this.colonies) : four ? FRONT_FOUR : FRONT_FRAGMENT },
+      resources: { terr: this.uniforms, uA: this.texA.source, uB: this.texB.source, uWater: this.waterTex.source, ...holdings },
+    });
+    return [fill, front];
+  }
+
+  /**
    * The board look changed (board-look.ts): both passes take its code, or the plain code
    * with none, over the same textures and uniforms. The caller then bakes the matching soil and passes it to resize.
    */
   relook() {
-    const look = boardLook()?.board2d;
-    const fill = Shader.from({
-      gl: { vertex: GROUND_VERTEX, fragment: look ? look.fill(COMMON) : FILL_FRAGMENT },
-      resources: { terr: this.uniforms, uA: this.texA.source, uB: this.texB.source, uSoil: this.soil.source, uTrail: this.trailTex.source, uWater: this.waterTex.source },
-    });
-    const front = Shader.from({
-      gl: { vertex: QUAD_VERTEX, fragment: look ? look.front(COMMON) : FRONT_FRAGMENT },
-      resources: { terr: this.uniforms, uA: this.texA.source, uB: this.texB.source, uWater: this.waterTex.source },
-    });
+    const [fill, front] = this.shaders();
     const old = [this.fill.shader, this.front.shader];
     this.fill.shader = fill;
     this.front.shader = front;
@@ -307,11 +410,25 @@ export class Territory {
     u.uBlend = frame.blend;
     u.uTime = timeMs / 1000;
     if (this.water.update(frame.board?.setup.terrain)) this.waterTex.source.update();
+    // A match's colony count is its setup's queen count (2 or 4); a change of count rebuilds both passes.
+    const colonies = (frame.board?.setup.queens.length ?? 2) > 2 ? 4 : 2;
+    if (colonies !== this.colonies) {
+      this.colonies = colonies;
+      this.relook();
+      this.keyA = null;
+      this.keyB = null;
+    }
     if (this.keyA !== frame.territoryA || this.keyB !== frame.territoryB) {
       this.dataA.set(encodeTerritory(frame.territoryA, this.mapW, this.mapH));
       this.dataB.set(encodeTerritory(frame.territoryB, this.mapW, this.mapH));
       this.texA.source.update();
       this.texB.source.update();
+      if (colonies === 4) {
+        this.holdA.set(encodeHoldings(frame.territoryA, this.mapW, this.mapH));
+        this.holdB.set(encodeHoldings(frame.territoryB, this.mapW, this.mapH));
+        this.holdTexA.source.update();
+        this.holdTexB.source.update();
+      }
       this.keyA = frame.territoryA;
       this.keyB = frame.territoryB;
       this.fitFront(frame.territoryA, frame.territoryB);
@@ -319,16 +436,13 @@ export class Territory {
     if (this.keyTrail !== frame.trails) {
       const t = frame.trails;
       const d = this.trailData;
-      for (let i = 0, n = t.length / 2; i < n; i++) {
-        d[i * 4] = t[i * 2]! * 255;
-        d[i * 4 + 1] = t[i * 2 + 1]! * 255;
-      }
+      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);
       this.trailTex.source.update();
       this.keyTrail = t;
     }
   }
 
-  /** Limit the front mesh to the tiles where the colonies meet, in both snapshots, plus a margin. */
+  /** Limit the front mesh to the tiles where any two colonies meet, in both snapshots, plus a margin. */
   private fitFront(a: Uint8Array, b: Uint8Array) {
     const box = frontBounds([a, b], this.mapW, this.mapH, 3);
     this.front.visible = box !== null;
@@ -346,10 +460,10 @@ export class Territory {
 }
 
 /**
- * The tile rectangle [x0, x1) x [y0, y1) covering every boundary between the two
+ * The tile rectangle [x0, x1) x [y0, y1) covering every boundary between two
  * colonies in any of the grids, counting both left/right and top/bottom
- * neighbours, grown by margin tiles and clamped to the map; null when the
- * colonies meet nowhere. Neutral tiles (0) border no one.
+ * neighbours, grown by margin tiles and clamped to the map; null when no
+ * colonies meet. Neutral tiles (0) border no one.
  */
 export function frontBounds(grids: Uint8Array[], W: number, H: number, margin: number): { x0: number; y0: number; x1: number; y1: number } | null {
   let x0 = W;
@@ -396,9 +510,10 @@ function makeTexture(data: Uint8Array, w: number, h: number): Texture<BufferImag
 const encoded = new WeakMap<Uint8Array, Uint8Array>();
 
 /**
- * RGBA per tile: R ownership (255 colony 0, 0 colony 1, 128 neutral), G closeness
- * to the front (distance to the nearest tile bordering the other colony, by a
- * breadth-first search). Cached per snapshot grid, so each is encoded once.
+ * RGBA per tile: R ownership (255 colony 0, 0 colony 1, 128 neutral or colonies
+ * 2 and 3), G closeness to the front (distance to the nearest tile bordering
+ * another colony, by a breadth-first search). Cached per snapshot grid, so each
+ * is encoded once.
  */
 export function encodeTerritory(owners: Uint8Array, W: number, H: number): Uint8Array {
   const hit = encoded.get(owners);
@@ -408,12 +523,13 @@ export function encodeTerritory(owners: Uint8Array, W: number, H: number): Uint8
   const queue = new Int32Array(n);
   let head = 0;
   let tail = 0;
+  // Tile j is held by a colony other than o: neither neutral (0) nor o.
+  const rival = (j: number, o: number) => owners[j] !== 0 && owners[j] !== o;
   for (let i = 0; i < n; i++) {
     const o = owners[i]!;
     if (o === 0) continue;
     const x = i % W;
-    const other = 3 - o;
-    if ((x > 0 && owners[i - 1] === other) || (x < W - 1 && owners[i + 1] === other) || (i >= W && owners[i - W] === other) || (i + W < n && owners[i + W] === other)) {
+    if ((x > 0 && rival(i - 1, o)) || (x < W - 1 && rival(i + 1, o)) || (i >= W && rival(i - W, o)) || (i + W < n && rival(i + W, o))) {
       dist[i] = 0;
       queue[tail++] = i;
     }
@@ -437,5 +553,25 @@ export function encodeTerritory(owners: Uint8Array, W: number, H: number): Uint8
     out[i * 4 + 3] = 255;
   }
   encoded.set(owners, out);
+  return out;
+}
+
+const held = new WeakMap<Uint8Array, Uint8Array>();
+
+/**
+ * RGBA per tile for a four-colony match's holdings texture: one channel per
+ * colony (R colony 0, G colony 1, B colony 2, A colony 3), 255 on the colony's
+ * tiles and 0 elsewhere, so a neutral tile, an eliminated colony's former tile
+ * among them, is 0 in every channel. Cached per snapshot grid.
+ */
+export function encodeHoldings(owners: Uint8Array, W: number, H: number): Uint8Array {
+  const hit = held.get(owners);
+  if (hit) return hit;
+  const out = new Uint8Array(W * H * 4);
+  for (let i = 0; i < W * H; i++) {
+    const o = owners[i]!;
+    if (o >= 1 && o <= 4) out[i * 4 + o - 1] = 255;
+  }
+  held.set(owners, out);
   return out;
 }
