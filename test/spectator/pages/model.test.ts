@@ -242,6 +242,13 @@ describe("Matches", () => {
     expect(seatModelName("openai/gpt-6.1-terra", "openai")).toBe("openai");
     expect(seatModelName("openai/gpt-6.1-terra", "kestrel-harness")).toBe("GPT-6.1 Terra");
     expect(recordedIdentity(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol")).name).toBe("GPT-6.1 Sol");
+    // A recorded seat of a retired house handle carries the retired badge after its level; a current one, a builder on
+    // the same model, or a builder handle spelled like it carries none.
+    expect(recordedIdentity(seat(0, "anthropic/claude-fable-5.1", "antwars/claude-fable-5-1"))).toEqual({ name: "Claude Fable 5.1", badges: ["max", "retired"], quiet: null });
+    expect(recordedPlayer(seat(0, "anthropic/claude-fable-5.1", "antwars/claude-fable-5-1"))).toEqual({ user: null, model: "Claude Fable 5.1", badges: ["max", "retired"] });
+    expect(recordedIdentity(seat(0, "anthropic/claude-fable-5.2", "antwars/claude-fable-5-2")).badges).toEqual(["max"]);
+    expect(recordedPlayer(seat(0, "anthropic/claude-fable-5.1", "kite")).badges).not.toContain("retired");
+    expect(recordedIdentity(seat(0, null, "claude-fable-5-1")).badges).toEqual([]);
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
     expect(seatGroups(groups)).toEqual([{ parts: { user: "omp-dolphin", model: null, badges: [] }, seats: 2 }, { parts: { user: "coffeebot-ant", model: null, badges: [] }, seats: 1 }]);
     // Seats group only where they show alike and are one player: one username and one label.

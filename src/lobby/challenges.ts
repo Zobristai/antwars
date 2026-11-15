@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isLaunchable } from "./houseLaunchable.js";
 import type { Identities } from "../identity/identities.js";
 import { HOUSE_LABELS, HOUSE_USERNAME } from "../rating/house.js";
+import { isRetiredHouse } from "../rating/houseLabels.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { queueStatusStep } from "./queue.js";
 import { lobbyWaitWrites, replacedWaitWrites, waitIndexes } from "./waits.js";
@@ -192,11 +193,16 @@ export function stateOf(request: Fields, lobby: Fields | null | undefined, at: n
   return { state: "finished" };
 }
 
+/** Why a retired handle is listed unavailable and refused. */
+export const RETIRED_REASON = "retired: the model is no longer offered";
+
 /**
- * A handle is challengeable only once it is on the house launch table: off the table it is closed whatever
+ * A retired handle (isRetiredHouse) is closed first, with RETIRED_REASON, whether or not it is on the launch table.
+ * Otherwise a handle is challengeable only once it is on the house launch table: off the table it is closed whatever
  * its availability record says. A launch-table handle is open unless marked unavailable or its last launch failed.
  */
 function availabilityOf(handle: string, fields: Fields | null | undefined): { available: boolean; reason: string | null } {
+  if (isRetiredHouse(handle)) return { available: false, reason: RETIRED_REASON };
   if (!isLaunchable(handle)) return { available: false, reason: "not on the house launch table" };
   if (fields?.marked === "unavailable") return { available: false, reason: "marked unavailable by the house owner" };
   if (fields?.lastLaunch === "failed") return { available: false, reason: fields.failureReason || "last launch failed" };
