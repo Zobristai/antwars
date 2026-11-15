@@ -17,7 +17,7 @@ import { OFFER_TEXT } from "../../replay.ts";
 import { D1_ICON } from "./icons.ts";
 import { mountResultModal } from "./result-modal.ts";
 import {
-  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyName, colonyNote, history as gameHistory, roster, selected,
+  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyCount, colonyName, colonyNote, history as gameHistory, roster, selected,
   type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Player, type Row, type Selected,
 } from "./model.ts";
 
@@ -559,6 +559,10 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       const frame: Frame | null = view.frame;
       const b = frame?.board ?? null;
       writeNames(b?.setup ?? null);
+      // The containers are a two-colony match's two sides; a four-colony match's deck names its colonies in the score
+      // (deck.ts), and nothing picked opens a card here.
+      const four = b !== null && colonyCount(b.setup) > 2;
+      for (const team of teamNodes) setHidden(team.section, four);
       selectedAgent = view.selectedAgent;
       const none = !frame || !b || b.agents.length === 0;
       // With no agents, or no match, the footer holds the recording's offer, once; while connecting, nothing yet.
@@ -592,7 +596,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         lastSeed = seed;
         for (const colony of COLONIES) writeHistory(colony, gameHistory(frame, colony, seed));
       }
-      const sel = selected(frame, view.selected, view.selectedAgent);
+      const sel = four ? NOTHING : selected(frame, view.selected, view.selectedAgent);
       if (sel.kind !== "agent" || sel.index !== targetFor) { if (targetFor >= 0) { targetFor = -1; light(-1); } }
       writeSelected(sel);
       // A row chosen opens its card with the focus in it; a pick on the board leaves the focus where it is.

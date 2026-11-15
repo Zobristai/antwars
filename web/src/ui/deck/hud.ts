@@ -19,7 +19,7 @@ import { setBoardLook } from "../../board-look.ts";
 import { STEPPE_LOOK } from "../steppe-look.ts";
 import { navigation } from "../nav.ts";
 import { boardHref, keep } from "../format.ts";
-import { h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
+import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
 import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
@@ -34,7 +34,6 @@ import { caption, legend, type Caption, type Legend } from "./model.ts";
 const BUTTON_IN_BAR = "(min-width: 520px)";
 /** From this width the deck stands over the board; narrower, the stacked deck is too tall to come before it. */
 const DECK_FIRST = "(min-width: 760px)";
-const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
@@ -192,7 +191,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     cap.dataset.kind = c?.kind ?? "none";
     setHidden(capBar, c === null);
     if (!c) { setText(capWhat, ""); setText(capWhen, ""); setText(capWho, ""); return; }
-    cap.style.setProperty("--d1-side", COLONY_CSS[c.colony]);
+    cap.style.setProperty("--d1-side", COLONY_INK[c.colony]!);
     // A drawn colony's id, for the fall headline's ground where its colour needs one (colony-ground.css).
     if (drawn) cap.dataset.colony = String(c.colony);
     else delete cap.dataset.colony;
