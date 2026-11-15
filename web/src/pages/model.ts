@@ -226,12 +226,13 @@ export function recordedPlayer(seat: Pick<Recording["seats"][number], "modelLabe
   return { user: seat.handle, model, badges: model === null ? [] : recordedIdentity(seat).badges };
 }
 
-/** Each colony's recorded seats, seat order, each with who holds it (its handle and its model label, so neither two
- * builders on one model nor two unlabelled players group as one), its player line (recordedPlayer) and its rating at the
- * match's start where its record stores one; a colony with no recorded seat null; null when no seat was recorded. */
-export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatEntry[] | null, readonly SeatEntry[] | null] | null {
+/** Each of a match's `colonies` colonies' recorded seats (two, or four in a Quadrants match), seat order, each with who
+ * holds it (its handle and its model label, so neither two builders on one model nor two unlabelled players group as one),
+ * its player line (recordedPlayer) and its rating at the match's start where its record stores one; a colony with no
+ * recorded seat null; null when no seat was recorded. */
+export function colonySeats(seats: Recording["seats"], colonies = 2): readonly (readonly SeatEntry[] | null)[] | null {
   if (seats.length === 0) return null;
-  const entries = (colony: 0 | 1) => {
+  const entries = (colony: number) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
       .map((seat): SeatEntry => {
         const parts = recordedPlayer(seat);
@@ -239,7 +240,7 @@ export function colonySeats(seats: Recording["seats"]): readonly [readonly SeatE
       });
     return list.length ? list : null;
   };
-  return [entries(0), entries(1)];
+  return Array.from({ length: colonies }, (_, colony) => entries(colony));
 }
 
 /** Each colony's recorded models, seat order; a colony with no recorded seat null; null when no seat was recorded. */
@@ -284,7 +285,7 @@ export function seatGroups<P extends SeatParts>(seats: readonly SeatEntry<P>[]):
 export const stampWord = (status: Recording["status"]): string => RECORD_LABEL[status].replace(/^Record /, "");
 
 /** A winner shown in its colony's ink only where the record names one and the match was not abandoned. */
-export const winnerOf = (r: Pick<Recording, "winner" | "reason">): 0 | 1 | null => r.reason === "abandoned" ? null : r.winner;
+export const winnerOf = (r: Pick<Recording, "winner" | "reason">): Recording["winner"] => r.reason === "abandoned" ? null : r.winner;
 
 /** The list Matches' Load more continues. */
 export const RECORDINGS_LIST = "recordings";

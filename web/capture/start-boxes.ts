@@ -81,7 +81,7 @@ export function inspectStartRecording(messages: readonly StreamMessage[], mapId:
       assert(x >= box.x && x < box.x + box.width && y >= box.y && y < box.y + box.height, "starting nest outside box");
     }
   }
-  let founding: { tick: number; colony: 0 | 1; id: number } | undefined;
+  let founding: { tick: number; colony: number; id: number } | undefined;
   for (let i = 1; i < messages.length; i++) {
     const message = messages[i]!;
     assert.equal(message.tick, first.tick + i, "recording must have continuous ticks");
