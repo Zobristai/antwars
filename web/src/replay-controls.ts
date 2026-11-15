@@ -1,5 +1,5 @@
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { colonyNameNote, isClassicColonyNames, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNameNote, isClassicColonyNames } from "../../src/sim/colonyNames.ts";
 import { PLAYBACK_RATES, type PlaybackRate, type Recording } from "./recording.ts";
 import type { ReplayEvent } from "./replay-events.ts";
 import "./replay-marks.css";
@@ -31,7 +31,7 @@ const glyphMarkup = (kind: ReplayEvent["kind"]) =>
   `<svg class="aw-mark-glyph" viewBox="-8 -8 16 16" aria-hidden="true" focusable="false">${GLYPHS[kind]}</svg>`;
 
 /** The words a mark is read by: its kind, its colony by the match's own name where it has one, and its match time. */
-export function markWords(e: ReplayEvent, names: ColonyNamePair = COLONY_NAMES): string[] {
+export function markWords(e: ReplayEvent, names: readonly string[] = COLONY_NAMES): string[] {
   return [KIND_NAMES[e.kind], ...(e.colony === null ? [] : [names[e.colony]]), replayTime(e.ms)];
 }
 
@@ -56,9 +56,10 @@ export function groupMarks(events: readonly ReplayEvent[], duration: number, wid
  * The caller mounts only for explicit replays, never the live page's stand-in recording; the HUD places `el` (HudHost.replay).
  * Once the recording's marks are read (Recording.events), they stand on the slider's track as buttons: a click or tap
  * jumps there, marks too close to tell apart join a counted group that opens a list (replay-marks.css). Marks name
- * colonies by `names`, the match's own colony names, each in its colony's colour (replay-marks.css); a drawn name
- * (unrated) carries its one-line source note as its tooltip, and the pointer can reach it in a label and in a list. */
-export function mountReplayControls(doc: Document, recording: Recording, names: ColonyNamePair = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
+ * colonies by `names`, the match's own colony names by colony id (two, or four), each in its colony's colour
+ * (replay-marks.css); a drawn name (unrated, or any of a four-colony match's) carries its one-line source note as its
+ * tooltip, and the pointer can reach it in a label and in a list. */
+export function mountReplayControls(doc: Document, recording: Recording, names: readonly string[] = COLONY_NAMES): { el: HTMLDivElement; update(): void; close(): void } {
   const el = doc.createElement("div");
   el.className = "aw-replay-controls";
   el.setAttribute("role", "group");
@@ -141,7 +142,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
    * the name and its note; a label without one hides at once, as it always has. */
   let chipLeaveTimer: ReturnType<typeof setTimeout> | null = null;
   /** The match's drawn colony names, whose words carry their source notes; none for the rated names. */
-  const drawn = isClassicColonyNames(names) ? null : names;
+  const drawn = names.length === 2 && isClassicColonyNames(names) ? null : names;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   const px = (name: string, fallback: number) => {
     const value = parseFloat(doc.defaultView?.getComputedStyle(el).getPropertyValue(name) ?? "");
