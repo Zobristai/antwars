@@ -156,11 +156,17 @@ export function significant(story: readonly StoryEntry[], now: number, tps = 10)
  * How the match ended, as the result card labels it under the winner (labels, not sentences):
  * the ends this client knows by name, and any other end main may add (an early end with one side
  * clearly ahead) by the stream's own name for it, with what it was decided on; such an end is never told as a
- * colony falling.
+ * colony falling. `colonies` is the match's colony count (setup.queens.length): with more than two, an end where the
+ * last colonies left the match is told without naming two sides or one opponent (src/sim/elimination.ts).
  */
-export function resultHow(r: { reason: StreamResult["reason"] | string; decidedBy: StreamResult["decidedBy"] | string }, multipleQueens: boolean): string {
+export function resultHow(r: { reason: StreamResult["reason"] | string; decidedBy: StreamResult["decidedBy"] | string }, multipleQueens: boolean, colonies = 2): string {
   const reason: string = r.reason;
   const on = r.decidedBy.replace(/_/g, " ");
+  if (colonies > 2) {
+    // One colony left standing, or every colony still in the match left on the same tick and they were ranked.
+    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? "Last colony standing · queens killed" : `Queens killed · decided on ${on}`;
+    if (reason === "idle") return r.decidedBy === "idle" ? "Last colony standing · seats inactive" : `Seats inactive · decided on ${on}`;
+  }
   switch (reason) {
     case "queens_killed":
       return r.decidedBy === "queens_killed" ? "Queens killed" : `Queens killed on both sides · decided on ${on}`;

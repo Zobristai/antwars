@@ -231,6 +231,40 @@ describe("text in a colony's colour keeps 4.5:1 on what it sits on", () => {
     }
   }
 
+  // A four-colony match's result: each colony as the winner, its name in the heading and in the moment.
+  const FOUR = SUPERCOLONY_NAMES.map(n => n.label);
+  const fourColonyResult = (winner: number) => {
+    const port = dom({ search: "" });
+    setMatchColonies(FOUR, port.doc);
+    const host = port.doc.createElement("div") as unknown as ElementPort;
+    port.body.append(host);
+    const f = frameOf(undefined, { winner: 0 });
+    const b = f.board!;
+    b.setup = { ...b.setup, rated: false, colonyNames: FOUR, queens: [[8, 8], [56, 8], [8, 40], [56, 40]].map(([x, y]) => [x! * SUB_TILE, y! * SUB_TILE]) } as unknown as Board["setup"];
+    b.result = { winner, reason: "queens_killed", decidedBy: "queens_killed", tick: TICK, nextStartMs: null } as unknown as Board["result"];
+    f.story = [{ id: 1, kind: "overrun", queenId: 0, tick: TICK - 20, colony: winner, agent: -1, x: 50, y: 20 }];
+    const modal = mountResultModal(port.doc);
+    host.append(modal.dialog as unknown as ElementPort);
+    modal.update(f);
+    const html = port.html as ElementPort;
+    const style = [...(html.style as unknown as { properties: Map<string, [string, string]> }).properties].map(([k, [v]]) => `${k}: ${v}`).join("; ");
+    const attrs = Object.entries(html.attrs).map(([k, v]) => ` ${k}="${v}"`).join("");
+    return { ground: html.attrs["data-aw-ground"] ?? null, page: `<!doctype html><html${attrs} style="${style}"><head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>` };
+  };
+  for (const winner of [0, 1, 2, 3]) {
+    for (const width of [1280, 390]) {
+      it(`a four-colony match: result, ${FOUR[winner]} wins, at ${width}px`, async () => {
+        const { ground, page } = fourColonyResult(winner);
+        const rows = await measured(page, width);
+        const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
+        // The heading in the winner's own colour.
+        expect(rows.find(r => r.text === `${FOUR[winner]} wins`)?.rgb).toBe(rgb(COLOURS[winner]!));
+        for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
+        expect(ground).toBe("2 3");
+      });
+    }
+  }
+
   it("grounds exactly the two colours that fall short on a raised row, and never the rated colours", () => {
     const grounds = PAIRS.map(pair => mounted(pair, "result", { winner: 0 }).ground);
     expect(grounds).toEqual(["0 1", "0 1", null, "1", "1"]);
