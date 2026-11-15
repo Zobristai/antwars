@@ -4,7 +4,7 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
@@ -23,8 +23,8 @@ import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type Agent
 import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped, territoryShares } from "../format.ts";
 import { badge } from "../icons.ts";
 
+export type Colony = number;
 /** The two sides of a two-colony match's deck: its score's mirrored rows, its economies and its team containers. */
-export type Colony = 0 | 1;
 export const COLONIES = [0, 1] as const;
 
 /** A match's colony count: one start per colony in its setup, 2, or 4 in a four-colony match. */
@@ -251,7 +251,7 @@ export function colonyRows(frame: Frame | null): ColonyRows | null {
   const fallen: readonly boolean[] = fallenColonies(b);
   const winner = b.result?.winner ?? null;
   const rows = Array.from({ length: n }, (_, colony): ColonyRow => ({
-    colony, name: names[colony]!, note: colonyNameNote(names[colony]!) ?? "",
+    colony, name: names[colony], note: colonyNameNote(names[colony]) ?? "",
     share: share ? `${share[colony]}%` : "", eliminated: fallen[colony] === true && colony !== winner,
   }));
   return { rows, noneHeld: share === null };
@@ -631,7 +631,7 @@ export function resultView(frame: Frame | null): ResultView | null {
  * player holding every seat is named once), a Benchmark's level and Fast in brackets after its name, joined with "&".
  */
 export function sideNames(agents: readonly Pick<StreamAgent, "identity" | "colony" | "modelLabel" | "thinkingLevel" | "serviceTier">[], colony: Colony,
-  colonyNames: ColonyNamePair = COLONY_NAMES): string {
+  colonyNames: readonly string[] = COLONY_NAMES): string {
   const names: string[] = [];
   agents.forEach((a, index) => {
     if (a.colony !== colony) return;

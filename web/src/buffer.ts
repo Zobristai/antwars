@@ -47,7 +47,7 @@ import { Pivots } from "./pivot.ts";
 import { isStartingQueen } from "./start-boxes.ts";
 import { gridScale } from "./grid-scale.ts";
 
-export type Colony = 0 | 1;
+export type Colony = number;
 
 export const RENDER_DELAY_MS = 250;
 export const SPAWN_FADE_MS = 400;

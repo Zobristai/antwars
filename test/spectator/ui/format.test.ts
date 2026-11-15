@@ -2,9 +2,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, liveRow, liveState,
-  neverJoined, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
+  listedNames, neverJoined, recordedColonies, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
 } from "../../../web/src/ui/format.ts";
-import { EARLY_WIN_RULES } from "../../../src/sim/config.ts";
+import { COLONY_NAMES, EARLY_WIN_RULES } from "../../../src/sim/config.ts";
 import type { MatchesView, Recording } from "../../../web/src/matches-page/data.ts";
 
 const run = (...events: Parameters<typeof drawers>[1][]): Drawers => events.reduce(drawers, CLOSED);
@@ -152,6 +152,35 @@ describe("matches rows", () => {
     expect(all.map(neverJoined)).toEqual([false, true, true, false, true, false, false]);
     const view = { recordings: { status: "ready", rows: [onlySecond, unrecorded, nobody, played, nobodyPartial, onlyFirst, onlyFirstPartial] } } as const;
     expect(recordingRows(view, "").map(r => r.id)).toEqual([played.id, unrecorded.id, nobodyPartial.id, onlyFirstPartial.id]);
+  });
+  describe("a four-colony (Quadrants) recording", () => {
+    const QUADRANTS = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+    const seat = (n: number, colony: 0 | 1 | 2 | 3) => ({ seat: n, colony, modelLabel: `m-${n}`, thinkingLevel: null, serviceTier: null, handle: null });
+    const four = [seat(0, 0), seat(1, 1), seat(2, 2), seat(3, 3)];
+    it("is known by its type, its four names, its winner or a seat of colony 2 or 3, and a two-colony record by none", () => {
+      expect([
+        recordedColonies({ matchType: { kind: "quadrants", size: 1 } }), recordedColonies({ colonyNames: QUADRANTS as [string, string, string, string] }),
+        recordedColonies({ winner: 3 }), recordedColonies({ seats: [seat(0, 2)] }),
+      ]).toEqual([4, 4, 4, 4]);
+      expect([recordedColonies(recording()), recordedColonies(recording({ winner: 1, seats: [seat(0, 0), seat(1, 1)], matchType: { kind: "unranked", size: 1 },
+        colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] }))]).toEqual([2, 2]);
+    });
+    it("names its winner and each colony's models by its four names, or by the table's four where it carries none", () => {
+      const named = recording({ winner: 2, reason: "queens_killed", decidedBy: "queens_killed", seats: four, matchType: { kind: "quadrants", size: 1 },
+        colonyNames: ["Lake Skinner Colony", "Sweetwater Colony", "Lake Hodges Colony", "Very Large Colony"] });
+      expect(recordingRow(named, "")).toMatchObject({ result: "Lake Hodges Colony won", type: "Quadrants",
+        models: "Lake Skinner Colony: m-0 · Sweetwater Colony: m-1 · Lake Hodges Colony: m-2 · Very Large Colony: m-3" });
+      const unnamed = recording({ winner: 3, reason: "queens_killed", decidedBy: "queens_killed", seats: four, matchType: { kind: "quadrants", size: 1 } });
+      expect(recordingRow(unnamed, "")).toMatchObject({ result: "Lake Skinner Colony won", models: QUADRANTS.map((name, n) => `${name}: m-${n}`).join(" · ") });
+      expect(listedNames({}, 4)).toEqual(QUADRANTS);
+      expect(listedNames({}, 2)).toBe(COLONY_NAMES);
+    });
+    it("is not listed where a complete record lacks one of its four colonies, and is listed with all four", () => {
+      const played = recording({ seats: four, matchType: { kind: "quadrants", size: 1 } });
+      const short = recording({ seats: four.slice(0, 3), matchType: { kind: "quadrants", size: 1 } });
+      const shortPartial = { ...short, status: "partial" as const };
+      expect([played, short, shortPartial].map(neverJoined)).toEqual([false, true, false]);
+    });
   });
   it("words each recording's match type as its badge, never a mode slug, and gives no badge without a type", () => {
     expect(recordingType({ kind: "index", size: 2 })).toBe("Index · 2v2");

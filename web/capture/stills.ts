@@ -284,7 +284,7 @@ export function withModelLabelFixture(messages: readonly StreamMessage[], offset
     '<img src=x onerror="alert(1)">',
     "GLM-5", "Claude Opus", "Gemini 3", "Kimi K2", "DeepSeek V4", "Qwen3", "Grok 4.7", "Meta/Llama-4",
   ];
-  const labelFor = (agent: number, colony: 0 | 1): string => {
+  const labelFor = (agent: number, colony: number): string => {
     const key = `${colony}:${agent}`;
     if (!assigned.has(key)) {
       const index = counts[colony]!++;
