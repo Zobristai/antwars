@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Frame, type Board, type CommandEntry, type StoryEntry } from "../../../web/src/buffer.ts";
 import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
 import { modeCopy, setFallback, type Fallback } from "../../../web/src/replay.ts";
-import { linkLine, modelLine } from "../../../web/src/compose.ts";
+import { agentModel, linkLine, modelLine } from "../../../web/src/compose.ts";
 import { MODEL_LABEL, agentCard } from "../../../web/src/overlays.ts";
 import { recordedIdentity } from "../../../web/src/pages/model.ts";
 import { squadTipText } from "../../../web/src/squads.ts";
@@ -656,6 +656,34 @@ describe("no house slug or provider/model key in the HUD", () => {
     expect(selected(f, null, 3)).toMatchObject({ title: "GPT-6.1 Sol", model: "", badges: ["high", "Fast"] });
     expect(agentEntries(f).map(e => e.model)).toEqual(["Abliterated GLM-5.3 (max)", "Unlisted model", "Claude Opus 5.5 (xhigh)", "GPT-6.1 Sol (high · Fast)"]);
     for (const shown of [roster(f), [0, 1, 2, 3].map(i => selected(f, null, i)), agentEntries(f)]) expect(JSON.stringify(shown)).not.toMatch(KEY);
+  });
+});
+
+// ANT-310: a retired house seat is marked retired on the watch/replay surfaces whether or not it reported a model label.
+describe("a retired house seat without a model label", () => {
+  const board = (b: Board) => {
+    b.agents = [
+      agent(0, "antwars/claude-fable-5-1", 1500, ""),
+      agent(0, "antwars/claude-fable-5-1 #2", 1500, "anthropic/claude-fable-5.1"),
+      agent(1, "antwars/claude-sonnet-5-5", 1500, ""),
+      agent(1, "claude-fable-5-1", 1500, ""),
+    ];
+  };
+  it("shows its house name with only the retired badge in the agent list and the selected-agent card", () => {
+    const f = frameOf(board);
+    expect(agentModel(f.board!.agents[0]!)).toEqual({ name: "Claude Fable 5.1", badges: ["retired"], quiet: null });
+    expect(agentEntries(f)[0]).toMatchObject({ name: "Claude Fable 5.1", model: "Claude Fable 5.1 (retired)" });
+    expect(selected(f, null, 0)).toMatchObject({ title: "Claude Fable 5.1", model: "Claude Fable 5.1", badges: ["retired"] });
+    // With its label it keeps the badges it already had.
+    expect(selected(f, null, 1)).toMatchObject({ badges: ["max", "retired"] });
+  });
+  it("leaves every other seat without a model label as before: no model and no badges", () => {
+    const f = frameOf(board);
+    for (const i of [2, 3]) {
+      expect(agentModel(f.board!.agents[i]!)).toBeNull();
+      expect(agentEntries(f)[i]!.model).toBe("");
+      expect(selected(f, null, i)).toMatchObject({ model: "", badges: [] });
+    }
   });
 });
 
