@@ -98,9 +98,9 @@ export function lobbyColonyNames(lobbyId: string, rated: boolean): ColonyNamePai
   return rated ? COLONY_NAMES : drawColonyNames(lobbyId);
 }
 
-/** Whether a pair is the rated names, which streams and records leave implicit. */
+/** Whether a match's names are the rated pair, which streams and records leave implicit; four names never are. */
 export function isClassicColonyNames(names: readonly string[]): boolean {
-  return names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
+  return names.length === 2 && names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
 }
 
 /**

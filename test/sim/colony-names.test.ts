@@ -70,6 +70,14 @@ describe("the colony names", () => {
     expect(colonyNamesOf({})).toBe(COLONY_NAMES);
     expect(colonyNamesOf({ colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] })).toEqual(["Sweetwater Colony", "Lake Skinner Colony"]);
   });
+
+  it("carry a four-colony match's four names by colony id, which are never the rated pair", () => {
+    expect(colonyNamesOf({ colonyNames: LABELS })).toEqual(LABELS);
+    // Its first two names are the rated pair's, in the rated order, but four names are not the rated pair.
+    expect(isClassicColonyNames(LABELS)).toBe(false);
+    expect(isClassicColonyNames(COLONY_NAMES)).toBe(true);
+    expect(isClassicColonyNames([COLONY_NAMES[0]])).toBe(false);
+  });
 });
 
 describe("the colony colours", () => {
