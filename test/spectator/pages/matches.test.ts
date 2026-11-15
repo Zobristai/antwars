@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
-import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
+import { colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import type { LiveMatch, MatchesView, Recording, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
@@ -366,6 +366,77 @@ describe("Recordings rows", () => {
     const { p, recordings } = show({ recordings: { status: "ready", rows: [never, recording] } });
     expect(bodyRows(recordings.table)).toHaveLength(1);
     p.mounted.destroy();
+  });
+});
+
+describe("a four-colony (Quadrants) match, live and recorded", () => {
+  const QUADRANTS = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"] as const;
+  const player = (displayName: string) => [{ displayName, rating: null, rd: null, ratedMatches: null }];
+  const liveQuadrants: LiveMatch = { ...live("lobby-q"), rated: false, matchType: { kind: "quadrants", size: 1 },
+    colonies: [player("ann"), player("bob"), player("cat"), player("dan")], colonyNames: [...QUADRANTS] };
+  const quadSeat = (n: number, colony: 0 | 1 | 2 | 3, handle: string) => ({ seat: n, colony, modelLabel: null, thinkingLevel: null, serviceTier: null, handle });
+  const recordedQuadrants: Recording = { ...recording, id: "2026-11-14T09-00-00-000Z-1", startedAt: "2026-11-14T09:00:00.000Z", winner: 2, reason: "queens_killed",
+    decidedBy: "queens_killed", seats: [quadSeat(0, 0, "ann"), quadSeat(1, 1, "bob"), quadSeat(2, 2, "cat"), quadSeat(3, 3, "dan")],
+    matchType: { kind: "quadrants", size: 1 }, colonyNames: [...QUADRANTS] };
+  const heads = (table: ElementPort) => table.querySelector("thead")!.children[0]!.children.map(node => [node.className, node.textContent, node.colSpan]);
+  const inks = (node: ElementPort) => [0, 1, 2, 3].map(colony => node.style.getPropertyValue(`--aw-k${colony}`));
+  const named = (scope: ElementPort) => scope.byClass("d1p-colony").map(node => [node.textContent, node.title, node.classes().filter(c => /^d1p-c\d$/.test(c))[0]]);
+  const NAMED = QUADRANTS.map((name, colony) => [name, colonyNameNote(name), `d1p-c${colony}`]);
+
+  it("lists each with the mode name Quadrants, its four names in their colours with their sources, and the recorded result", () => {
+    const { p, live: liveList, recordings } = show({ live: { status: "ready", rows: [liveQuadrants] }, recordings: { status: "ready", rows: [recordedQuadrants] } });
+    for (const [list, action, stamp] of [[liveList, "Watch", "Status Live"], [recordings, "Replay", "Status complete"]] as const) {
+      // One Colonies head across both colony columns, over one cell holding the four colonies; the column grid is unchanged.
+      expect(heads(list.table)).toEqual([["c-start", "Time", 1], ["c-type", "Game type", 1], ["c-model", "Colonies", 2], ["c-status", "Status", 1], ["c-go", action, 1]]);
+      expect(list.table.querySelector("colgroup")!.children.map(col => col.className)).toEqual(["c-start", "c-type", "c-model", "c-model", "c-status", "c-go"]);
+      const [row] = bodyRows(list.table);
+      const [item] = list.list.querySelectorAll("li");
+      expect(row!.children.map(cell => [cell.className, cell.colSpan])).toEqual([["c-start", 1], ["c-type", 1], ["c-model", 2], ["c-status", 1], ["c-go", 1]]);
+      for (const scope of [row!, item!]) {
+        expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Quadrants"]);
+        expect(named(scope)).toEqual(NAMED);
+        expect(inks(scope)).toEqual(colonyColours(QUADRANTS).map(colourCss));
+        // Sweetwater's and Lake Skinner's words take the dark ground they need for 4.5:1; the rated colours take none.
+        expect(scope.getAttribute("data-aw-ground")).toBe("2 3");
+        expect(scope.byClass("d1p-stamp")[0]!.textContent).toBe(stamp);
+      }
+      expect(colonies(item!).map(([name]) => name)).toEqual([...QUADRANTS]);
+    }
+    // Live: each colony's player, no result. Recorded: Winner on the winning colony's line alone, in its ink.
+    expect(colonies(liveList.list.querySelectorAll("li")[0]!)).toEqual(QUADRANTS.map((name, colony) => [name, [["ann", "bob", "cat", "dan"][colony]]]));
+    expect(liveList.card.byClass("d1p-result-tag")).toEqual([]);
+    for (const layout of [recordings.table, recordings.list]) {
+      expect(layout.byClass("d1p-model").map(line => line.textContent)).toEqual(["ann", "bob", "catWinner", "dan"]);
+      expect(layout.byClass("d1p-result-tag").map(tag => tag.classes())).toEqual([["d1p-tag", "d1p-result-tag", "d1p-c2"]]);
+    }
+    p.mounted.destroy();
+  });
+
+  it("puts Draw or Abandoned on every colony, and says which colony did not join a partial record", () => {
+    const draw = { ...recordedQuadrants, id: "q-draw", winner: null, reason: "time_up", decidedBy: "draw" };
+    const abandoned = { ...recordedQuadrants, id: "q-ab", startedAt: "2026-11-14T08:00:00.000Z", winner: null, reason: "abandoned", decidedBy: null };
+    const partial = { ...recordedQuadrants, id: "q-partial", startedAt: "2026-11-14T07:00:00.000Z", status: "partial" as const, winner: null, reason: null, decidedBy: null,
+      seats: recordedQuadrants.seats.slice(0, 3) };
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [draw, abandoned, partial] } });
+    expect(bodyRows(recordings.table).map(row => row.byClass("d1p-model").map(line => line.textContent))).toEqual([
+      ["annDraw", "bobDraw", "catDraw", "danDraw"], ["annAbandoned", "bobAbandoned", "catAbandoned", "danAbandoned"], ["ann", "bob", "cat", "did not join"]]);
+    p.mounted.destroy();
+  });
+
+  it("draws the two-colony rows beside it exactly as without it", () => {
+    const ratedLive = { ...live("lobby-r"), matchType: { kind: "index", size: 1 } as const, colonies: [player("eve"), player("fay")] as LiveMatch["colonies"] };
+    const drawnLive: LiveMatch = { ...ratedLive, lobbyId: "lobby-d", rated: false, matchType: { kind: "unranked", size: 1 }, colonyNames: ["Lake Skinner Colony", "Sweetwater Colony"] };
+    const drawnRecording: Recording = { ...recording, id: "2026-10-27T10-00-00-000Z-2", startedAt: "2026-10-27T10:00:00.000Z", colonyNames: ["Sweetwater Colony", "Very Large Colony"] };
+    const rows = (card: ElementPort) => [...card.byClass("d1p-wide").flatMap(bodyRows).map(row => drawnTree(row.parent!.parent!)), ...card.byClass("d1p-narrow")[0]!.children.map(drawnTree)];
+    const without = show({ live: { status: "ready", rows: [ratedLive, drawnLive] }, recordings: { status: "ready", rows: [drawnRecording, recording] } });
+    const alone = [rows(without.live.card), rows(without.recordings.card)];
+    without.p.mounted.destroy();
+    const withIt = show({ live: { status: "ready", rows: [ratedLive, liveQuadrants, drawnLive] }, recordings: { status: "ready", rows: [recordedQuadrants, drawnRecording, recording] } });
+    const besideLive = rows(withIt.live.card), besideRec = rows(withIt.recordings.card);
+    // The Quadrants row is its own table and its own stacked row; every other table and stacked row is drawn as before.
+    expect([besideLive.length, besideRec.length]).toEqual([6, 6]);
+    expect([[besideLive[0], besideLive[2], besideLive[3], besideLive[5]], [besideRec[1], besideRec[2], besideRec[4], besideRec[5]]]).toEqual(alone);
+    withIt.p.mounted.destroy();
   });
 });
 

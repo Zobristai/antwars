@@ -158,7 +158,8 @@ export function noteContact(state: SimState, ant: Ant, grid?: Grid): boolean {
     // Ants of one colony on one tile pick the same enemy, and no position or HP changes while one grid is current.
     let memo = contactMemo.get(grid);
     if (memo === undefined) { memo = new Map(); contactMemo.set(grid, memo); }
-    const key = (ty * state.config.mapWidth + tx) * 2 + ant.colony;
+    // The key leaves room for four colonies per tile.
+    const key = (ty * state.config.mapWidth + tx) * 4 + ant.colony;
     let best = memo.get(key);
     if (best === undefined) { best = weakestEnemyNear(state, grid, ant.colony, tx, ty, reach); memo.set(key, best); }
     if (best === null) return false;

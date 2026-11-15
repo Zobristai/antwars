@@ -10,7 +10,7 @@ import { parseArgs } from "node:util";
 import { COLONY_NAMES, PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.ts";
 import { foundQueen } from "../../src/sim/agents.ts";
 import { cloneState, createMatch, newAnt, queenFoundingCost } from "../../src/sim/map.ts";
-import type { ColonyId, SimState } from "../../src/sim/types.ts";
+import { asTwoColony, type ColonyId, type SimState } from "../../src/sim/types.ts";
 import { observeBytes } from "../tools/colonyScale.ts";
 import type { AgentView } from "../../src/sim/view.ts";
 import { startHarness, TEST_MCP_CONFIG } from "./harness.ts";
@@ -72,7 +72,7 @@ export async function measureQueenObserve(state: SimState, colonies: readonly Co
 /** Same played snapshot and colony through both existing measurement adapters. */
 export async function compareObserveMethods(state: SimState, colony: ColonyId) {
   const http = await measureQueenObserve(state, [colony]);
-  const memory = await observeBytes(state, colony);
+  const memory = await observeBytes(state, asTwoColony(colony));
   return { sourceTick: state.tick, colony, http, memory,
     comparison: memory.results.map((m) => {
       const h = http.find((item) => item.map === m.map)!;

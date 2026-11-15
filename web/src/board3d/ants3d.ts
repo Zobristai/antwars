@@ -309,11 +309,12 @@ export class Ants3D {
   private soldiers: Herd[];
   private crumbs: Herd;
   private dead: Herd[];
+  /** Live workers then soldiers, one herd per colony each: index colony + caste * colonies. */
   private readonly herds: Herd[];
-  private readonly counts = new Uint32Array(4);
-  private readonly at = new Uint32Array(4);
-  private readonly corpseCounts = new Uint32Array(2);
-  private readonly corpseAt = new Uint32Array(2);
+  private readonly counts: Uint32Array;
+  private readonly at: Uint32Array;
+  private readonly corpseCounts: Uint32Array;
+  private readonly corpseAt: Uint32Array;
   /** Rings under the highlighted squad's ants (one thin-instanced torus, unlit, tinted per instance). */
   private rings: Herd;
   /** Per ant id: last position (tiles) and walk phase. */
@@ -324,9 +325,15 @@ export class Ants3D {
   /** Ant length in tiles. */
   lengthTiles: number;
 
+  /** colonyRgb: one colour per colony of the match, index = colony id. */
   constructor(scene: Scene, ground: Ground, lengthTiles: number, colonyRgb: readonly (readonly number[])[], segments = 10) {
     this.ground = ground;
     this.lengthTiles = lengthTiles;
+    const colonies = colonyRgb.length;
+    this.counts = new Uint32Array(2 * colonies);
+    this.at = new Uint32Array(2 * colonies);
+    this.corpseCounts = new Uint32Array(colonies);
+    this.corpseAt = new Uint32Array(colonies);
     const mk = (name: string, specular: number) => {
       const m = new StandardMaterial(name, scene);
       m.diffuseColor = new Color3(1, 1, 1);
@@ -347,8 +354,8 @@ export class Ants3D {
     deadMat.disableDepthWrite = true;
     const W = ground.mapW;
     const H = ground.mapH;
-    this.live = [0, 1].map((c) => new Herd(scene, `ants${c}`, buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), liveMat, W, H, true));
-    this.soldiers = [0, 1].map((c) => new Herd(scene, `soldiers${c}`, buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), true), liveMat, W, H, true));
+    this.live = colonyRgb.map((rgb, c) => new Herd(scene, `ants${c}`, buildAntGeometry(scene, rgb, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), liveMat, W, H, true));
+    this.soldiers = colonyRgb.map((rgb, c) => new Herd(scene, `soldiers${c}`, buildAntGeometry(scene, rgb, false, Math.min(segments, LITE_SEGMENTS), true), liveMat, W, H, true));
     this.herds = [...this.live, ...this.soldiers];
     // One batched faceted green crumb, held in front of a worker's head; soldiers never carry.
     const cvd = buildCrumbGeometry(0.16, 0.48, 0.24);
@@ -372,7 +379,7 @@ export class Ants3D {
     tvd.colors = new Array((tvd.positions!.length / 3) * 4).fill(1);
     (tvd as unknown as { aLeg: number[] }).aLeg = new Array((tvd.positions!.length / 3) * 2).fill(0);
     this.rings = new Herd(scene, "rings", tvd, ringMat, W, H, true);
-    this.dead = [0, 1].map((c) => new Herd(scene, `corpses${c}`, buildAntGeometry(scene, colonyRgb[c]!, true, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), deadMat, W, H, true));
+    this.dead = colonyRgb.map((rgb, c) => new Herd(scene, `corpses${c}`, buildAntGeometry(scene, rgb, true, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), deadMat, W, H, true));
     for (const h of this.dead) h.mesh.hasVertexAlpha = true;
   }
 
@@ -396,11 +403,11 @@ export class Ants3D {
     const n = frame.count;
     this.bites.update(frame);
     let ringCount = 0;
-    const counts = this.counts;
+    const counts = this.counts, colonies = this.live.length;
     counts.fill(0);
     let carrying = 0;
     for (let i = 0; i < n; i++) {
-      counts[frame.colony[i]! + (frame.caste[i] === 1 ? 2 : 0)]!++;
+      counts[frame.colony[i]! + (frame.caste[i] === 1 ? colonies : 0)]!++;
       if (frame.caste[i] !== 1 && frame.carrying[i]) carrying++;
       if (highlight >= 0 && frame.agent[i] === highlight) ringCount++;
     }
@@ -415,7 +422,7 @@ export class Ants3D {
     for (let i = 0; i < n; i++) {
       const c = frame.colony[i]!;
       const caste = frame.caste[i] === 1 ? 1 : 0;
-      const group = c + caste * 2;
+      const group = c + caste * colonies;
       const herd = herds[group]!;
       const k = at[group]!++;
       const size = L * (caste ? SOLDIER_SCALE : 1);
@@ -484,8 +491,7 @@ export class Ants3D {
     const cc = this.corpseCounts;
     cc.fill(0);
     for (const k of frame.corpses) if (k.ageMs >= 0 && k.ageMs < CORPSE_FADE_MS) cc[k.colony]!++;
-    this.dead[0]!.ensure(cc[0]!);
-    this.dead[1]!.ensure(cc[1]!);
+    for (let c = 0; c < colonies; c++) this.dead[c]!.ensure(cc[c]!);
     const ca = this.corpseAt;
     ca.fill(0);
     for (const k of frame.corpses) {
@@ -506,8 +512,7 @@ export class Ants3D {
       color[ci] = color[ci + 1] = color[ci + 2] = 1;
       color[ci + 3] = 0.9 * (1 - t);
     }
-    this.dead[0]!.commit(cc[0]!);
-    this.dead[1]!.commit(cc[1]!);
+    for (let c = 0; c < colonies; c++) this.dead[c]!.commit(cc[c]!);
     this.bites.publishContacts(L, "3d");
   }
 }

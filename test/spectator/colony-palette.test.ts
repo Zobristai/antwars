@@ -4,10 +4,10 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { COLONY_NAMES } from "../../src/sim/config.ts";
-import { SUPERCOLONY_NAMES, colourCss } from "../../src/sim/colonyNames.ts";
+import { SUPERCOLONY_NAMES, colonyNamesOf, colourCss } from "../../src/sim/colonyNames.ts";
 import { COLONY_TINT } from "../../web/src/ants.ts";
 import { COLONY_RGB } from "../../web/src/territory.ts";
-import { TEXT_GROUND, colonyRgb, colonyTint, colonyWash, setMatchColonies } from "../../web/src/colony-palette.ts";
+import { TEXT_GROUND, colonyRgb, colonyRgbs, colonyTint, colonyWash, needsTextGround, setMatchColonies } from "../../web/src/colony-palette.ts";
 import { agentShade } from "../../web/src/squads.ts";
 import { STEPPE_LOOK } from "../../web/src/ui/steppe-look.ts";
 
@@ -27,6 +27,9 @@ afterEach(() => setMatchColonies(COLONY_NAMES));
 // The two added colours, read from the table: the one place they are set.
 const SWEETWATER = SUPERCOLONY_NAMES[2].colour, LAKE_SKINNER = SUPERCOLONY_NAMES[3].colour;
 const channels = (rgb: number) => [((rgb >> 16) & 255) / 255, ((rgb >> 8) & 255) / 255, (rgb & 255) / 255];
+/** A four-colony match's names by colony id: the four, in the shared table's order. */
+const FOUR = SUPERCOLONY_NAMES.map(n => n.label);
+const COLONIES = [0, 1, 2, 3];
 
 describe("the page's colony colours", () => {
   it("are the rated colours and steppe shaders, byte for byte, while the match carries no names, with every agent in its colony's colour", () => {
@@ -60,6 +63,14 @@ describe("the page's colony colours", () => {
     expect(attrs.size).toBe(0);
   });
 
+  it("give a four-colony match's page all four colony CSS colours, and the dark ground to each colony whose colour needs one", () => {
+    const { props, attrs, doc } = fakeDocument();
+    setMatchColonies(SUPERCOLONY_NAMES.map(n => n.label), doc);
+    expect(props).toEqual(new Map([["--aw-k0", "#ffb000"], ["--aw-k1", "#00c2ff"], ["--aw-k2", colourCss(SWEETWATER)],
+      ["--aw-k3", colourCss(LAKE_SKINNER)], ["--aw-ink-ground", colourCss(TEXT_GROUND)]]));
+    expect(attrs).toEqual(new Map([["data-aw-ground", "2 3"]]));
+  });
+
   it("keep a colony's own colour for a name outside the table", () => {
     setMatchColonies(["Some Colony", "Lake Skinner Colony"]);
     expect([colonyTint(0), colonyTint(1)]).toEqual([0xffb000, LAKE_SKINNER]);
@@ -80,5 +91,50 @@ describe("the page's colony colours", () => {
     expect(STEPPE_LOOK.board2d.fill("")).toBe(classic.fill);
     expect(STEPPE_LOOK.board2d.front("")).toBe(classic.front);
     expect(STEPPE_LOOK.board3d.ground("definitions", "")).toBe(classic.ground);
+  });
+
+  it("give each of a four-colony match's colonies its own name's colour: tints, washes, CSS colours and the dark ground", () => {
+    const classicWash = [colonyWash(0), colonyWash(1)];
+    const { props, attrs, doc } = fakeDocument();
+    setMatchColonies(colonyNamesOf({ colonyNames: FOUR }), doc);
+    const table = SUPERCOLONY_NAMES.map(n => n.colour);
+    expect(COLONIES.map(c => colonyTint(c))).toEqual(table);
+    expect(COLONIES.map(c => colonyRgb(c))).toEqual(table.map(channels));
+    expect(colonyRgbs()).toEqual(table.map(channels));
+    // Very Large and Lake Hodges keep the rated washes; Sweetwater and Lake Skinner wash in their own colour, darkened.
+    expect([colonyWash(0), colonyWash(1)]).toEqual(classicWash);
+    for (const c of [2, 3]) expect(colonyWash(c)).toEqual({ hue: channels(table[c]!).map(v => v * 0.92), depth: 1.2 });
+    // One CSS colour per colony, and the dark ground under the text of the two whose colours need one on a raised row.
+    expect(COLONIES.filter(c => needsTextGround(table[c]!))).toEqual([2, 3]);
+    expect(props).toEqual(new Map([
+      ["--aw-k0", "#ffb000"], ["--aw-k1", "#00c2ff"], ["--aw-k2", colourCss(SWEETWATER)], ["--aw-k3", colourCss(LAKE_SKINNER)],
+      ["--aw-ink-ground", colourCss(TEXT_GROUND)],
+    ]));
+    expect(attrs).toEqual(new Map([["data-aw-ground", "2 3"]]));
+    // A two-colony match after it: its two colours only, and its own ground, as before.
+    setMatchColonies(["Lake Skinner Colony", "Very Large Colony"], doc);
+    expect(props).toEqual(new Map([["--aw-k0", colourCss(LAKE_SKINNER)], ["--aw-k1", "#ffb000"], ["--aw-ink-ground", colourCss(TEXT_GROUND)]]));
+    expect(attrs).toEqual(new Map([["data-aw-ground", "0"]]));
+    expect(colonyRgbs()).toEqual([channels(LAKE_SKINNER), channels(0xffb000)]);
+    setMatchColonies(COLONY_NAMES, doc);
+    expect(props).toEqual(new Map([["--aw-k0", "#ffb000"], ["--aw-k1", "#00c2ff"]]));
+    expect(attrs.size).toBe(0);
+    expect(colonyRgbs()).toEqual(COLONY_RGB);
+  });
+
+  it("follow each of four names wherever it stands, and keep a colony's own table colour for a name outside the table", () => {
+    const [veryLargeWash, lakeHodgesWash] = [colonyWash(0), colonyWash(1)];
+    setMatchColonies(["Lake Skinner Colony", "Sweetwater Colony", "Lake Hodges Colony", "Very Large Colony"]);
+    expect(COLONIES.map(c => colonyTint(c))).toEqual([LAKE_SKINNER, SWEETWATER, 0x00c2ff, 0xffb000]);
+    expect([colonyWash(2), colonyWash(3)]).toEqual([lakeHodgesWash, veryLargeWash]);
+    setMatchColonies(["Very Large Colony", "Lake Hodges Colony", "Some Colony", "toString"]);
+    expect(COLONIES.map(c => colonyTint(c))).toEqual(SUPERCOLONY_NAMES.map(n => n.colour));
+  });
+
+  it("read any colony id outside the match as colony 0, as they always have", () => {
+    expect([2, 3, -1, 0.5].map(c => colonyTint(c))).toEqual([0xffb000, 0xffb000, 0xffb000, 0xffb000]);
+    expect(colonyRgbs()).toHaveLength(2);
+    setMatchColonies(FOUR);
+    expect([4, -1, 1.5].map(c => colonyTint(c))).toEqual([0xffb000, 0xffb000, 0xffb000]);
   });
 });

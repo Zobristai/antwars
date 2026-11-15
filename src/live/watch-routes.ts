@@ -16,12 +16,12 @@ import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { harnessPhaseAt, isIndexMode } from "../rating/harnessPhase.js";
 import type { WatchMatch, WatchRegistry } from "./watch-registry.js";
 import type { Lobby, UnstartedLobby, WaitingAgent } from "../lobby/lobbies.js";
-import type { ColonyNamePair } from "../sim/colonyNames.js";
 import { lobbySeats, seatDisplayNames } from "./watch-controller.js";
 import { createAdmissionCap, type CapLimits } from "../net/admission.js";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
 import { clientSource } from "../server/clientSource.js";
 import { RELAY_HEADER, signRelay } from "./relay-signature.js";
+import { asTwoColony } from "../sim/types.js";
 
 function reply(res: ServerResponse, status: number, value?: unknown): void {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", "referrer-policy": "no-referrer", vary: "x-antwar-invite" });
@@ -225,37 +225,40 @@ async function queueRatings(accounts: AccountStores, agents: readonly WaitingAge
 }
 
 /**
- * A listed match's players and type from its lobby. Each seat carries its stream display name (watch-controller
- * seatDisplayNames) and the model label, thinking level and service tier its slot published for it once spectators saw it
- * join (each null otherwise). Each seat's rating is read fresh, by the rule the match stream shows it by (seatRating), so an
- * unrated match's seats show theirs too; a seat that shows none in the stream shows none here.
+ * A listed match's players and type from its lobby, one seat list per colony of the lobby (four in a Quadrants match). Each
+ * seat carries its stream display name (watch-controller seatDisplayNames) and the model label, thinking level and service
+ * tier its slot published for it once spectators saw it join (each null otherwise). Each seat's rating is read fresh, by the
+ * rule the match stream shows it by (seatRating), so an unrated match's seats show theirs too; a seat that shows none in the
+ * stream shows none here.
  */
 async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "thinkingLevels" | "serviceTiers">):
-  Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null; colonyNames?: ColonyNamePair }> {
+  Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null; colonyNames?: readonly string[] }> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
   if (!lobby.ok) return { colonies: [[], []], matchType: null };
   const seats = lobbySeats(lobby.value.colonies), names = seatDisplayNames(seats);
   const { challenge } = lobby.value;
-  const held = (colony: 0 | 1) => challenge !== undefined && colony === challenge.heldColony;
+  const held = (colony: number) => challenge !== undefined && colony === challenge.heldColony;
   // One read per identity and rule: an identity holding seats in both colonies of a house challenge is read for each.
   const reads = new Map<string, Promise<Rating | null>>();
-  const ratingOf = (identityId: string, colony: 0 | 1) => {
+  const ratingOf = (identityId: string, colony: number) => {
     const key = JSON.stringify([identityId, held(colony)]);
     if (!reads.has(key)) reads.set(key, seatRating((id, mode) => accounts.ratings.readRating(id, mode), identityId, match.mode ?? null, held(colony)));
     return reads.get(key)!;
   };
   const ratings = await Promise.all(seats.map(seat => ratingOf(seat.identityId, seat.colony)));
-  const colonies: [PublicSeat[], PublicSeat[]] = [[], []];
+  const colonies: PublicSeat[][] = lobby.value.colonies.map(() => []);
   seats.forEach((seat, index) => {
     const rating = ratings[index]!, displayName = names[index]!;
     const own = (map: Readonly<Record<string, string>> | undefined) => map !== undefined && Object.hasOwn(map, displayName) ? map[displayName]! : null;
     const named = { displayName, modelLabel: own(match.modelLabels), thinkingLevel: own(match.thinkingLevels), serviceTier: own(match.serviceTiers) };
-    colonies[seat.colony].push(rating === null
+    colonies[seat.colony]!.push(rating === null
       ? { ...named, rating: null, rd: null, ratedMatches: null }
       : { ...named, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
   });
-  // The names the match plays under, as its lobby records them: absent where they are the rated names.
-  return { colonies, matchType: lobbyMatchType(lobby.value), ...(lobby.value.colonyNames === undefined ? {} : { colonyNames: lobby.value.colonyNames }) };
+  // The names the match plays under, as its lobby records them, one per colony (a Quadrants match's four): absent where they
+  // are the rated names.
+  const drawn = lobby.value.colonyNames;
+  return { colonies, matchType: lobbyMatchType(lobby.value), ...(drawn?.length === colonies.length ? { colonyNames: [...drawn] } : {}) };
 }
 
 /**
@@ -271,7 +274,7 @@ async function storedRatings(accounts: AccountStores, lobby: Lobby): Promise<{ c
   const seats = lobbySeats(lobby.colonies), names = seatDisplayNames(seats);
   const rows = seats.map((seat, index) => {
     const change = changes.find(row => row.identityId === seat.identityId);
-    return change && { colony: seat.colony, displayName: names[index]!, before: change.before, after: change.after };
+    return change && { colony: asTwoColony(seat.colony), displayName: names[index]!, before: change.before, after: change.after };
   });
   return rows.every(row => row !== undefined) ? rows : [];
 }

@@ -199,6 +199,34 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-hud[data-plate="stacked"] .d2-cells { gap: 1.5px; }
 .d2-hud[data-plate="stacked"] .d2-cell { flex-basis: 11px; }
 
+/* Four colonies (a Quadrants match, hud.ts): the clock, then one row a colony in the plate's own four rows: its name in
+   its colour, its share of the held ground as a track and a figure, or the Eliminated mark in the track's place. The
+   heading over the figures says Territory, or that no territory is held. Colonies 2 and 3 have no classic colour: they
+   play only in a match that names them (colony-palette.ts). */
+.d2-hud:not([data-plate="stacked"]) .d2-plate.is-quad .d2-clock { grid-column: 2; }
+.d2-qheading { grid-column: 3; justify-self: end; min-width: 0; color: var(--aw-ink-2); white-space: nowrap; }
+.d2-qrow { display: grid; grid-template-columns: 196px minmax(0, 1fr) 68px; grid-template-areas: "name track fig"; align-items: center; column-gap: 12px; min-width: 0; }
+.d2-qrow.c0 { --d2-q: var(--aw-k0, var(--aw-c0)); }
+.d2-qrow.c1 { --d2-q: var(--aw-k1, var(--aw-c1)); }
+.d2-qrow.c2 { --d2-q: var(--aw-k2); }
+.d2-qrow.c3 { --d2-q: var(--aw-k3); }
+/* The name carries its source note, so it takes the pointer, though the rows take none. */
+.d2-qname { grid-area: name; justify-self: start; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 700; white-space: nowrap; color: var(--d2-q); pointer-events: auto; }
+.d2-qtrack { grid-area: track; position: relative; height: 16px; border-radius: 4px; background: rgba(233, 239, 240, 0.12); }
+.d2-qfill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; border-radius: 4px; background: var(--d2-q); transition: width 0.25s linear; }
+.d2-qmark { grid-area: track; justify-self: start; color: var(--aw-ink-2); white-space: nowrap; }
+.d2-qfig { grid-area: fig; min-width: 0; font-weight: 700; color: var(--aw-ink-bright); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d2-qrow.is-fallen :is(.d2-qname, .d2-qfig) { opacity: 0.6; }
+/* A name whose colour needs the dark ground keeps 4.5:1 on it, as colony-ground.css grounds the two-colony names. */
+:root[data-aw-ground~="0"] .d2-qrow.c0 .d2-qname, :root[data-aw-ground~="1"] .d2-qrow.c1 .d2-qname,
+:root[data-aw-ground~="2"] .d2-qrow.c2 .d2-qname, :root[data-aw-ground~="3"] .d2-qrow.c3 .d2-qname {
+  background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
+}
+/* The phone form: the name, the mark and the figure on a row's first line, the track under them. */
+.d2-hud[data-plate="stacked"] .d2-qheading { grid-area: c1; }
+.d2-hud[data-plate="stacked"] .d2-qrow { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: 24px 16px; grid-template-areas: "name mark fig" "track track track"; row-gap: 4px; column-gap: 8px; }
+.d2-hud[data-plate="stacked"] .d2-qmark { grid-area: mark; }
+
 /* The drawers drop from under their halves, side by side, edged in their colony's colour: the next hatch first, at the
    colony's outer edge, then the five pairs. The right drawer mirrors the left by column, as the plate does. */
 .d2-drawer { container-type: inline-size; position: absolute; top: calc(100% + 4px); width: calc(50% - 2px); padding: 7px 12px 6px; border-top: 3px solid currentColor; border-radius: 0 0 12px 12px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 6px 18px rgba(0, 0, 0, 0.4); font-size: 16px; line-height: 24px; animation: d2-drop 180ms var(--aw-ease); }
@@ -271,6 +299,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-agent-item { border-top: 1px solid var(--aw-line); box-shadow: inset 3px 0 0 var(--d2-side); }
 .d2-agent-item.c0 { --d2-side: var(--aw-k0, var(--aw-c0)); }
 .d2-agent-item.c1 { --d2-side: var(--aw-k1, var(--aw-c1)); }
+.d2-agent-item.c2 { --d2-side: var(--aw-k2); }
+.d2-agent-item.c3 { --d2-side: var(--aw-k3); }
 .d2-agent-item.is-first { border-top: 6px solid var(--aw-bg); }
 .d2-agent { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto auto; grid-template-areas: "badge name name name name" ". sub sub sub sub" ". said elo order idle"; align-items: center; column-gap: 6px; row-gap: 1px; width: 100%; min-height: 40px; margin: 0; padding: 5px 10px 5px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; line-height: 16px; text-align: left; cursor: pointer; }
 .d2-agent:hover, .d2-agent-item.is-open .d2-agent { background: var(--aw-raise); }
@@ -369,7 +399,7 @@ button.d2-history-button:hover .d2-said { text-decoration: underline; text-under
   .d2 *, .d2 *::before, .d2 *::after { animation: none !important; }
   .d2-toast, .d2-toast[data-state="shown"] { transform: translate(-50%, 0); }
   /* The spawn ring steps in quarters (hud.ts), never sweeping; the tracks, cells and rings jump to each reading. */
-  .d2-hud :is(.d2-plate-wrap, .d2-foot, .d2-pane, .d2-cluster, .d2-transport), .d2-chevron, .d2-tfill, .d2-soldiers, .d2-cell-fill, .d2-pie { transition: none; }
+  .d2-hud :is(.d2-plate-wrap, .d2-foot, .d2-pane, .d2-cluster, .d2-transport), .d2-chevron, .d2-tfill, .d2-qfill, .d2-soldiers, .d2-cell-fill, .d2-pie { transition: none; }
 }
 
 /* The board's point-of-view choice: Full view or one colony's fog-of-war view, first in the window's controls. */

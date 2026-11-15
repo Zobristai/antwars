@@ -184,7 +184,7 @@ const DRAWN: ReplayEvent[] = [
 const DRAWN_MS = 784_100;
 
 describe("marks on the scrubber", () => {
-  function marked(events: readonly ReplayEvent[] | null = DRAWN, position = 391_600, names?: ColonyNamePair) {
+  function marked(events: readonly ReplayEvent[] | null = DRAWN, position = 391_600, names?: readonly string[]) {
     const seeks: number[] = [];
     const recording = { rate: 1, duration: DRAWN_MS, position, error: null, durationError: null, seeking: false, events,
       setRate() {}, seek(ms: number) { seeks.push(ms); } } as unknown as Recording;
@@ -281,6 +281,31 @@ describe("marks on the scrubber", () => {
     m.controls.close();
   });
 
+  it("names and colours all four colonies of a four-colony match, each name with its source note", () => {
+    const names = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+    const mark = (kind: ReplayEvent["kind"], tick: number, colony: number): ReplayEvent => ({ kind, tick, ms: tick * 100, colony });
+    const events = [mark("food", 1000, 2), mark("nest", 3000, 3), mark("nest", 5000, 1), mark("food", 7000, 0), mark("nest", 7841, 2), mark("nest", 7841, 0)];
+    expect(events.map(e => markWords(e, names)[1])).toEqual([names[2], names[3], names[1], names[0], names[2], names[0]]);
+    const m = marked(events, 0, names);
+    expect(m.marks.map(b => [b.className, b.attrs["aria-label"]])).toEqual([
+      ["aw-mark food c2", "Food lead, Sweetwater Colony, 1:40"],
+      ["aw-mark nest c3", "Nest lost, Lake Skinner Colony, 5:00"],
+      ["aw-mark nest c1", "Nest lost, Lake Hodges Colony, 8:20"],
+      ["aw-mark food c0", "Food lead, Very Large Colony, 11:40"],
+      ["aw-mark group", "2 marks, 13:04 to 13:04"],
+    ]);
+    const colonyWords = (node: Element): Element[] => node.className.startsWith("aw-mark-colony") ? [node] : node.children.flatMap(colonyWords);
+    for (const [i, c] of [[0, 2], [1, 3], [2, 1], [3, 0]] as const) {
+      m.marks[i]!.onclick!({ detail: 1 });
+      expect(colonyWords(m.chip!).map(w => [w.className, w.textContent, w.attrs.title])).toEqual([[`aw-mark-colony c${c}`, names[c], colonyNameNote(names[c]!)]]);
+    }
+    m.marks[4]!.onclick!({ detail: 1 });
+    expect(m.list!.children.flatMap(colonyWords).map(w => [w.className, w.textContent, w.attrs.title])).toEqual([
+      ["aw-mark-colony c2", names[2], colonyNameNote(names[2]!)], ["aw-mark-colony c0", names[0], colonyNameNote(names[0]!)],
+    ]);
+    m.controls.close();
+  });
+
   it("gives a drawn name its source note in labels and list lines, keeps a pointed label for the mouse to reach it, and leaves rated marks as they were", () => {
     vi.useFakeTimers();
     try {
@@ -333,6 +358,11 @@ describe("marks on the scrubber", () => {
       const ink = `color: var(--aw-k${c}, var(--aw-c${c}));`;
       expect(css).toContain(`:is(.aw-mark, .aw-mark-icon).c${c} { ${ink} }`);
       expect(css).toContain(`.aw-mark-colony.c${c} { ${ink} }`);
+    }
+    // Colonies 2 and 3, only in a four-colony match, take their names' colours.
+    for (const c of [2, 3]) {
+      expect(css).toContain(`:is(.aw-mark, .aw-mark-icon).c${c} { color: var(--aw-k${c}); }`);
+      expect(css).toContain(`.aw-mark-colony.c${c} { color: var(--aw-k${c}); }`);
     }
     // No mark rule names a colony's classic colour on its own any more.
     expect(css).not.toMatch(/color: var\(--aw-c[01]\)/);

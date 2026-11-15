@@ -1,4 +1,5 @@
 import type { EndType, MatchRecord } from "./match.js";
+import { asTwoColony } from "../../src/sim/types.js";
 
 export interface Check {
   readonly label: string;
@@ -52,7 +53,7 @@ function marginFor(record: MatchRecord, colony: 0 | 1): number {
 
 /** Territory margin, queen overruns and squad deaths per minute, from the agent colony's side. */
 export function agentSideLines(records: readonly MatchRecord[]): string[] {
-  const margins = records.map((r) => marginFor(r, r.agentColony ?? 0));
+  const margins = records.map((r) => marginFor(r, asTwoColony(r.agentColony ?? 0)));
   const overrunByAgents = records.filter((r) => r.endType === "overrun" && r.result.winner === r.agentColony).length;
   const overrunByHouse = records.filter((r) => r.endType === "overrun" && r.result.winner !== r.agentColony).length;
   const deathsPerMin = records.map((r) => {
@@ -84,7 +85,7 @@ export function houseMirrorLines(records: readonly MatchRecord[]): { lines: stri
     else wins[r.result.winner] += 1;
   }
   const overruns = records.filter((r) => r.endType === "overrun").length;
-  const winnerMargins = records.filter((r) => r.result.winner !== null).map((r) => marginFor(r, r.result.winner!));
+  const winnerMargins = records.filter((r) => r.result.winner !== null).map((r) => marginFor(r, asTwoColony(r.result.winner!)));
   const absMargins = records.map((r) => Math.abs(r.tiles[0] - r.tiles[1]));
   const lasting = records.map((r) => r.lastingLeadTick).filter((t): t is number => t !== null);
   const lastingNone = records.length - lasting.length;

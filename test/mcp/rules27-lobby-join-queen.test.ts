@@ -10,7 +10,7 @@ import { tileCentre } from "../../src/sim/geometry.js";
 import { createMatch } from "../../src/sim/map.js";
 import { StartPlacement } from "../../src/sim/startPlacement.js";
 import { isRockTile, isWaterTile } from "../../src/sim/terrain.js";
-import type { SimInput } from "../../src/sim/types.js";
+import { asTwoColony, type SimInput } from "../../src/sim/types.js";
 import { TEST_MCP_CONFIG } from "./harness.js";
 import { playable } from "../playable.ts";
 
@@ -111,7 +111,7 @@ async function playLobby(config: SimConfig) {
 
 describe("rules-27 lobby seats join with their starting queen", () => {
   it("LobbyStart keeps each seat key's queenId as StartPlacement.finish assigned it", () => {
-    const roster = SEATS.map(seat => ({ identityId: seat.identityId, colony: seat.colony }));
+    const roster = SEATS.map(seat => ({ identityId: seat.identityId, colony: asTwoColony(seat.colony) }));
     const lobby = new LobbyStart(SEED, RULES_27, roster, 0, 10);
     const placement = new StartPlacement(lobby.config, roster, 0, () => null, 10);
     expect(lobby.queenIdOf("ann")).toBeUndefined();

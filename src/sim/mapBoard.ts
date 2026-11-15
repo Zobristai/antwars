@@ -52,8 +52,10 @@ export function hasOwnMapValues(map: MapDefinition): boolean {
 /** A map with its own grid scale plays at that scale only; a map with its own board,
  * ant cap or match length plays at grid scale 2 only. Ant cap and match length are
  * positive whole numbers the stream, replay and record formats hold. A board map's size, nest,
- * water and food centres must fit its own board. Refuse, never clamp. */
+ * water and food centres must fit its own board. A quadrant map plays in no rotation checked here,
+ * so every two-colony match config refuses it. Refuse, never clamp. */
 export function validateMapBoard(map: MapDefinition, scale: number): void {
+  if (map.quadrant !== undefined) throw new RangeError(`${map.id}: a quadrant map plays only in a four-colony rotation`);
   if (map.gridScale !== undefined && map.gridScale !== scale) {
     throw new RangeError(`${map.id}: plays only at grid scale ${map.gridScale}, not at grid scale ${scale}`);
   }
@@ -82,8 +84,22 @@ export function validateMapBoard(map: MapDefinition, scale: number): void {
   }
 }
 
-/** Config validation for every map in the rotation. Recorded maps carry no board or grid scale and pass unchanged. */
+/** A four-colony rotation: every map in it is a quadrant map. A rotation that mixes quadrant and two-colony
+ * maps is a two-colony rotation here, and validateMapBoards refuses its quadrant maps. */
+export function isQuadrantRotation(config: SimConfig): boolean {
+  const maps = config.terrain?.maps ?? [];
+  return maps.length > 0 && maps.every(map => map.quadrant !== undefined);
+}
+
+/** Colonies in a match on this config: four on a quadrant rotation, otherwise two. */
+export function colonyCountOf(config: SimConfig): number {
+  return isQuadrantRotation(config) ? 4 : 2;
+}
+
+/** Config validation for every map in the rotation. Recorded maps carry no board or grid scale and pass unchanged.
+ * A four-colony rotation's quadrant maps are validated where its board is generated (src/sim/quadrantMap.ts). */
 export function validateMapBoards(config: SimConfig): void {
+  if (isQuadrantRotation(config)) return;
   for (const map of config.terrain?.maps ?? []) validateMapBoard(map, gridScaleOf(config));
 }
 

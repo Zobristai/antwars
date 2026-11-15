@@ -7,12 +7,12 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports this module.
 import { domIcon, textIcon } from "../icons/dom.ts";
-import { setColonyText } from "./dom.ts";
+import { COLONY_INK, setColonyText } from "./dom.ts";
 import "./ui.css";
 import type { HudHost, HudView, Mounted } from "./types.ts";
 import type { Rect } from "../words.ts";
 import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../../src/sim/config.ts";
-import { colonyNameNote, colonyNamesOf, type ColonyNamePair } from "../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../src/sim/colonyNames.ts";
 import { streamQueens, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type Frame } from "../buffer.ts";
 import {
@@ -29,12 +29,12 @@ import { mountAgents } from "./agents.ts";
 import { mountResultModal } from "./deck/result-modal.ts";
 import { homeLink } from "./deck/brand.ts";
 import {
-  CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, shares, spawnFill, stepped, withUnits, withoutCasteGlyph,
-  type DrawerEvent, type Drawers,
+  CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, shares, spawnFill, stepped, territoryShares, withUnits,
+  withoutCasteGlyph, type DrawerEvent, type Drawers,
 } from "./format.ts";
 import { navigation } from "./nav.ts";
 
-type Colony = 0 | 1;
+type Colony = number;
 const COLONIES = [0, 1] as const;
 /** Wide from this width (or any landscape screen from 560 px): the window beside a standing pane. */
 const WIDE_MIN_PX = 860;
@@ -53,7 +53,7 @@ export const OVERVIEW_LABEL = "Whole board, from above";
 
 /** New words this HUD adds; every other string is the page's own. */
 export const D2_COPY = {
-  details: (colony: Colony, names: ColonyNamePair = COLONY_NAMES) => `${names[colony]} details`,
+  details: (colony: Colony, names: readonly string[] = COLONY_NAMES) => `${names[colony]} details`,
   board: "Board",
   kills: "Kills",
   /** The clock's time left, as the score panel draws it: "29:20 · 0:40 left". */
@@ -65,7 +65,13 @@ export const D2_COPY = {
   to2d: "Show the 2D board",
   noMatch: "No live match",
   closeCard: "Close ant details",
+  /** Four colonies: the mark on a colony out of the match, and the territory heading while every tile is neutral. */
+  eliminated: "Eliminated",
+  noTerritory: "No territory held",
 } as const;
+
+/** A match's colony count: one start per colony (2, or 4 in a Quadrants match). */
+const colonyCount = (setup: { readonly queens: readonly unknown[] }): number => setup.queens.length;
 
 /** A 20 px line icon in a 24 px box and the current ink, as the score panel draws them. */
 const lineIcon = (d: string) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
@@ -286,13 +292,14 @@ export function mountHud(context: HudHost): Mounted<HudView> {
   listen(plateWrap, "keydown", e => { if ((e as KeyboardEvent).key === "Escape") dispatch({ kind: "close" }); });
   function paintDrawers() {
     for (const colony of COLONIES) {
-      const on = isShown(state, colony) && !ended;
+      const on = !quadShown && isShown(state, colony) && !ended;
       show(drawerEls[colony]!.drawer, on);
       attr(halves[colony]!, "aria-expanded", String(on));
       flag(plate, `open-${colony}`, on);
       flag(drawerEls[colony]!.drawer, "is-pinned", state.pinned[colony]);
     }
-    if (frameNow?.board) paintDrawerValues(frameNow, frameNow.board);
+    // A four-colony plate has no drawer to fill, and its ants are counted by no colony pair.
+    if (frameNow?.board && !quadShown) paintDrawerValues(frameNow, frameNow.board);
   }
   // The shared no-match notice floats under the score and under any open drawer, never over either: its top follows the
   // plate and the drawers whenever either changes size, opening and closing included.
@@ -307,6 +314,73 @@ export function mountHud(context: HudHost): Mounted<HudView> {
   if (noticeObserver) {
     for (const target of [plateWrap, drawerEls[0]!.drawer, drawerEls[1]!.drawer]) noticeObserver.observe(target);
     listeners.push(() => noticeObserver.disconnect());
+  }
+
+  // ---------------------------------------------------------------- four colonies (a Quadrants match)
+  // No colony has one opponent to be set against, so the plate keeps its clock and names each colony on its own row: its
+  // name in its colour with its source note, its share of the held ground, and the mark of a colony out of the match.
+  // The rows that set one colony against the other (Kills, Queens, Ants) and the halves' drawers are not drawn. Built
+  // on the first four-colony frame, so a two-colony plate is the plate it always was.
+  interface QuadRow { node: HTMLElement; name: HTMLElement; track: HTMLElement; fill: HTMLElement; mark: HTMLElement; figure: HTMLElement }
+  let quad: { heading: HTMLElement; rows: QuadRow[] } | null = null;
+  let quadShown = false;
+  const quadOf = (count: number) => {
+    if (!quad) {
+      quad = { heading: el("span", "d2-qheading"), rows: [] };
+      plateHead.append(quad.heading);
+    }
+    while (quad.rows.length < count) {
+      const colony = quad.rows.length;
+      const node = el("div", `d2-qrow c${colony}`);
+      const name = el("span", "d2-qname");
+      const track = el("span", "d2-qtrack");
+      track.setAttribute("aria-hidden", "true");
+      const fill = el("span", "d2-qfill");
+      track.append(fill);
+      const mark = el("span", "d2-qmark", D2_COPY.eliminated);
+      mark.hidden = true;
+      const figure = el("span", "d2-qfig");
+      node.append(name, track, mark, figure);
+      node.hidden = !quadShown;
+      rows.append(node);
+      quad.rows.push({ node, name, track, fill, mark, figure });
+    }
+    return quad;
+  };
+  /** Shows the four-colony plate, or the two-colony one, as the match's colony count asks. */
+  function plateFor(colonies: number) {
+    const four = colonies > 2;
+    const q = four ? quadOf(colonies) : quad;
+    if (four === quadShown) return;
+    quadShown = four;
+    // A four-colony plate opens no drawer: a pinned one goes with the halves.
+    if (four) state = CLOSED;
+    for (const node of [names[0]!, names[1]!, kills.node, territory.node, queens.node, ants.node, halves[0]!, halves[1]!]) show(node, !four);
+    if (q) { show(q.heading, four); for (const r of q.rows) show(r.node, four); }
+    flag(plate, "is-quad", four);
+  }
+  function paintQuad(b: Board) {
+    const count = colonyCount(b.setup);
+    const q = quadOf(count);
+    const named: readonly string[] = colonyNamesOf(b.setup);
+    const held: readonly number[] = b.held;
+    const pct = territoryShares(Array.from({ length: count }, (_, c) => held[c] ?? 0));
+    // Every colony the recorded facts eliminate is marked, the result's winner included where a same-tick all-idle end
+    // loses its queens too; the result's headline still names it the winner.
+    const fallen: readonly boolean[] = fallenColonies(b);
+    text(q.heading, pct ? SCORE_COPY.territory : D2_COPY.noTerritory);
+    for (let c = 0; c < count; c++) {
+      const r = q.rows[c]!;
+      const name = named[c] ?? "";
+      text(r.name, name);
+      attr(r.name, "title", colonyNameNote(name));
+      const out = fallen[c] === true;
+      flag(r.node, "is-fallen", out);
+      show(r.mark, out);
+      show(r.track, !out);
+      width(r.fill, pct ? `${pct[c]}%` : "0%");
+      text(r.figure, pct ? `${pct[c]}%` : "");
+    }
   }
 
   // ---------------------------------------------------------------- the window: the board, its controls and its toast
@@ -508,6 +582,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     const time = matchClock(tick, b.setup, b.result !== null);
     const left = b.result !== null ? time.left : D2_COPY.left(clockTime(Math.ceil(Math.max(0, b.setup.matchTicks - tick) / tps) * tps, tps));
     text(clock, `${time.elapsed} · ${left}`);
+    if (quadShown) { paintQuad(b); return; }
     const fallen = fallenColonies(b);
     // Kills: every death is the other colony's kill (src/sim/territory.ts decideTimeUp).
     const killed: [number, number] = [b.deaths[1], b.deaths[0]];
@@ -670,7 +745,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     toast.dataset.state = lines ? "shown" : "hidden";
     if (!lines) return;
     toast.dataset.kind = lines.kind;
-    toast.style.color = lines.colony === 0 ? "var(--aw-k0, var(--aw-c0))" : "var(--aw-k1, var(--aw-c1))";
+    toast.style.color = COLONY_INK[lines.colony];
     // A drawn colony's id, for the fall headline's ground where its colour needs one (colony-ground.css).
     if (drawn) toast.dataset.colony = String(lines.colony);
     else delete toast.dataset.colony;
@@ -690,7 +765,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     if (keyNow === cardKey) return;
     cardKey = keyNow;
     cardTitle.textContent = lines[0]!;
-    card.style.borderColor = ant.colony === 0 ? "var(--aw-k0, var(--aw-c0))" : "var(--aw-k1, var(--aw-c1))";
+    card.style.borderColor = COLONY_INK[ant.colony];
     cardLines.replaceChildren(el("p", "d2-card-line", lines[1]));
   }
 
@@ -705,6 +780,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     ended = !!(b && frame && b.result !== null && frame.targetMs >= resultShownAt(b.result, frame.endShown ?? undefined));
     // The result tells the ending: open drawers go with it, held or not.
     if (ended && !wasEnded) state = CLOSED;
+    plateFor(b ? colonyCount(b.setup) : 2);
     paintDrawers();
     paintNames(b?.setup ?? null);
     paintPlate(frame, b);
