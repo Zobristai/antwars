@@ -6,7 +6,7 @@
 import { COLONY_NAMES } from "../../../../src/sim/config.ts";
 import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type StreamMark, type StreamQueen, type StreamResult } from "../../../../src/live/format.ts";
-import { fallWindow, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
+import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
 import {
   MODEL_LABEL, cardSubject, colonyStats, headline, matchTime, nextAntCells, nextAntState, nextHatchCaste, orderTarget,
@@ -20,11 +20,15 @@ import { boardQueenHp } from "../../variant.ts";
 import type { ModeCopy } from "../../replay.ts";
 import { WAITING_COPY } from "../../waiting.ts";
 import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type AgentLineModel } from "../hud-model.ts";
-import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped } from "../format.ts";
+import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped, territoryShares } from "../format.ts";
 import { badge } from "../icons.ts";
 
 export type Colony = number;
+/** The two sides of a two-colony match's deck: its score's mirrored rows, its economies and its team containers. */
 export const COLONIES = [0, 1] as const;
+
+/** A match's colony count: one start per colony in its setup, 2, or 4 in a four-colony match. */
+export const colonyCount = (setup: { readonly queens: readonly unknown[] }): number => setup.queens.length;
 
 /**
  * The words the deck adds; every other string is the page's own.
@@ -56,6 +60,10 @@ export const D1_COPY = {
   onArrival: "On arrival",
   /** Before an arrival row's newest live mark. */
   arrivalMark: "mark",
+  /** A four-colony match's territory list while every tile is neutral: one line, in place of the shares. */
+  noTerritory: "No territory held",
+  /** Beside a four-colony match's colony once every one of its queens is lost. */
+  eliminated: "Eliminated",
 } as const;
 
 /** Words the page already has, in the one place the deck reads them. */
@@ -206,6 +214,47 @@ export function balance(frame: Frame | null): Balance {
     lead: shown ? leadLine(early.territoryRatioPermille) : null,
     leadText: shown ? D1_COPY.leadLine(String(early.territoryRatioPermille / 1000)) : "",
   };
+}
+
+// ---------------------------------------------------------------- a four-colony match: each colony, its territory and its elimination
+
+export interface ColonyRow {
+  readonly colony: number;
+  readonly name: string;
+  /** The name's one-line source note, its tooltip. */
+  readonly note: string;
+  /** Its whole-percent share of the held ground ("34%"); "" while no tile is held. */
+  readonly share: string;
+  /** Every one of its queens is lost; the result's winner never is. */
+  readonly eliminated: boolean;
+}
+export interface ColonyRows {
+  /** One per colony, in colony order. */
+  readonly rows: readonly ColonyRow[];
+  /** No tile is held: the rows show no share and the deck says so once. */
+  readonly noneHeld: boolean;
+}
+
+/**
+ * A four-colony match's colonies, in place of the two-colony rows that compare one colony with its one opponent
+ * (Kills, Territory and Ants): each colony's name, its share of the held ground, the shares adding to 100, and whether it
+ * is eliminated (buffer.ts fallenColonies), which the result's winner never is, even where its queens are all lost at
+ * the tick it wins. Null for a two-colony match, or no board.
+ */
+export function colonyRows(frame: Frame | null): ColonyRows | null {
+  const b = frame?.board;
+  if (!b || colonyCount(b.setup) <= 2) return null;
+  const n = colonyCount(b.setup);
+  const names = colonyNamesOf(b.setup);
+  const held: readonly number[] = b.held;
+  const share = territoryShares(Array.from({ length: n }, (_, c) => held[c] ?? 0));
+  const fallen: readonly boolean[] = fallenColonies(b);
+  const winner = b.result?.winner ?? null;
+  const rows = Array.from({ length: n }, (_, colony): ColonyRow => ({
+    colony, name: names[colony], note: colonyNameNote(names[colony]) ?? "",
+    share: share ? `${share[colony]}%` : "", eliminated: fallen[colony] === true && colony !== winner,
+  }));
+  return { rows, noneHeld: share === null };
 }
 
 // ---------------------------------------------------------------- win conditions: queens and a territory hold
