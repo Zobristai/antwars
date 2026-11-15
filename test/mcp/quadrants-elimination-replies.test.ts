@@ -5,11 +5,14 @@
 // seats' records are retired to their final-result receipts; and in a same-tick all-idle end the winner is told its win
 // and its own elimination together. That holds for every reply the seat gets: refusals of every kind, including the
 // SDK's own (an unknown tool) and a call-rate refusal answered after the slot has seated a differently named lobby.
-// A two-colony match's replies carry no elimination and are as before.
+// A two-colony match's replies carry no elimination and are as before. Across slot reuse in either direction (a Quadrants
+// match then a two-colony lobby, or a two-colony match then a Quadrants lobby), the observe cell decoder each session's
+// tools/list advertises is the one its observe cells are served in.
 import { afterEach, describe, expect, it } from "vitest";
 import { rulesConfig, type MapDefinition } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import type { SimState } from "../../src/sim/types.js";
+import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../../src/sim/view.js";
 import { startHarness, TEST_MCP_CONFIG, type Harness, type TestAgent } from "./harness.js";
 
 /** Test-only quadrant geometry, not a production map. */
@@ -112,6 +115,39 @@ async function everyCall(seat: TestAgent, colony: number): Promise<[string, Repl
   return replies;
 }
 
+/**
+ * The observe cell decoder this session's tools/list advertises is the one its observe serves: the description carries
+ * exactly one decoder, the encoding the served cells declare, and every served ant decodes by it to that ant in `match`
+ * (hp, colony, caste). Returns how many ants were decoded.
+ */
+async function advertisedDecoderFits(seat: TestAgent, match: SimState, why: string): Promise<number> {
+  const advertised = (await seat.client.listTools()).tools.find(tool => tool.name === "observe")!.description!;
+  const four = advertised.includes(FOUR_COLONY_CELL_ENCODING);
+  expect([four, advertised.includes(CELL_ENCODING)], `${why}: one advertised decoder`).toEqual([four, !four]);
+  const observed = await call(seat, "observe");
+  const cells = observed.data.view?.cells;
+  expect(cells, `${why}: ${observed.text}`).toBeDefined();
+  expect(advertised, `${why}: advertised decoder vs served encoding`).toContain(cells.encoding);
+  // Two colonies: hp=floor(k/6), kind=k%6, even/odd colony, kind 0/1, 2/3, 4/5 = no caste, worker, soldier.
+  // Four colonies: n=colonies; hp=floor(k/(3n)), r=k%(3n); colony=r%n; caste=floor(r/n).
+  const n: number = four ? cells.colonies : 2;
+  let decoded = 0;
+  for (const row of (cells.data as string).split(";")) {
+    const body = row.split("*")[0]!.split(":")[1];
+    for (const record of body === undefined || body === "" ? [] : body.split("/")) {
+      const [antId, k] = record.split(".").map(value => parseInt(value, 36)) as [number, number];
+      const r = k % (3 * n);
+      const ant = four ? { hp: Math.floor(k / (3 * n)), colony: r % n, caste: Math.floor(r / n) }
+        : { hp: Math.floor(k / 6), colony: (k % 6) % 2, caste: Math.floor((k % 6) / 2) };
+      const live = match.ants.find(other => other.id === antId);
+      expect(ant, `${why}: ant ${antId}`).toEqual({ hp: live?.hp, colony: live?.colony,
+        caste: live?.caste === undefined ? 0 : live.caste === "worker" ? 1 : 2 });
+      decoded += 1;
+    }
+  }
+  return decoded;
+}
+
 /** The engine's record of a colony's elimination, as a reply states it: tick and reason, never scores. */
 function engineElimination(state: SimState, colony: number) {
   const eliminated = state.colonies[colony]!.eliminated!;
@@ -186,15 +222,24 @@ describe("a Quadrants match's end, for every seated agent", () => {
     };
     await ended();
     for (const agentId of agentIds) expect(h.game.finalResultReceipt(agentId)?.result).toEqual(result);
+    const quadrants = state();
 
     // Two later matches on this slot (a lobby whose one seat never joins, so each ends abandoned) retire these seats'
     // records; each session keeps only its final-result receipt.
     for (const [index, seed] of [7, 8].entries()) {
       h.game.seatLobby(`later-${index}`, [{ identityId: `later-${index}`, displayName: "Later", colony: 0 }]);
-      h.game.startMatch(seed);
+      if (index === 1) h.game.startMatch(seed);
       if (index === 0) {
-        // The slot now plays a two-colony lobby, named its own way, while these seats' records remain: a call over the
-        // seat's rate limit still names its own match's winner.
+        // The slot now plays a two-colony lobby, named its own way, while these seats' records remain: each session is
+        // still told the four-colony decoder its observe cells use (before and after the slot's next match starts), and a
+        // call over the seat's rate limit still names its own match's winner.
+        h.clock.now += 1000;
+        let decoded = 0;
+        for (const [colony, seat] of seats.entries()) decoded += await advertisedDecoderFits(seat, quadrants, `colony ${colony}, next lobby seated`);
+        expect(decoded).toBeGreaterThan(0);
+        h.game.startMatch(seed);
+        h.clock.now += 1000;
+        for (const [colony, seat] of seats.entries()) await advertisedDecoderFits(seat, quadrants, `colony ${colony}, next match started`);
         expect(h.game.colonyNames()).toHaveLength(2);
         expect(h.game.colonyNames()[1]).not.toBe(NAMES[3]);
         for (const [colony, seat] of seats.entries()) {
@@ -282,5 +327,48 @@ describe("a two-colony match", () => {
         if (label === "unknown tool") expect(reply.structured).toBe(false);
       }
     }
+  });
+
+  it("keeps advertising the two-colony decoder its cells use once the slot seats a Quadrants lobby and starts its match", async () => {
+    const h = await startHarness({ simConfig: LIVE, start: false, quadrantMaps: [FIXTURE], mcpConfig: MCP,
+      slot: { identityOf: async key => (key.startsWith("key-") ? key.slice(4) : undefined), locate: async () => undefined } });
+    harnesses.push(h);
+    const pair = [0, 1].map(colony => ({ identityId: `pair-${colony}`, displayName: `Pair ${colony}`, colony }));
+    h.game.seatLobby("pair-lobby", pair);
+    const seats: TestAgent[] = [];
+    for (const seat of pair) {
+      seats.push(await h.connect());
+      expect((await seats[seat.colony]!.call("join", { key: `key-${seat.identityId}` })).isError).toBe(false);
+    }
+    h.game.startMatch(SEED);
+    h.advance(1);
+    expect(h.game.match!.state.colonies).toHaveLength(2);
+    for (const [colony, seat] of seats.entries()) await advertisedDecoderFits(seat, h.game.match!.state, `colony ${colony}, live`);
+    await play(h, seats, () => [0], () => h.game.match!.state.result !== null);
+    const twoColony = h.game.match!.state;
+
+    // The slot seats a Quadrants lobby: these sessions keep their two-colony match's decoder, before and after its
+    // match starts, while the Quadrants seats are told the four-colony one.
+    h.game.seatLobby("quad-lobby", SEATS, "quadrants");
+    h.clock.now += 1000;
+    let decoded = 0;
+    for (const [colony, seat] of seats.entries()) decoded += await advertisedDecoderFits(seat, twoColony, `colony ${colony}, Quadrants lobby seated`);
+    expect(decoded).toBeGreaterThan(0);
+    const closesAt = h.game.beginLobbyStart(SEED);
+    const quadrantSeats: TestAgent[] = [];
+    for (const seat of SEATS) {
+      quadrantSeats.push(await h.connect());
+      expect((await quadrantSeats[seat.colony]!.call("join", { key: keyOf(seat.colony) })).isError).toBe(false);
+    }
+    h.clock.now = closesAt;
+    h.game.finishLobbyStart();
+    h.advance(1);
+    const quadrants = h.game.match!.state;
+    expect(quadrants.colonies).toHaveLength(4);
+    h.clock.now += 1000;
+    for (const [colony, seat] of seats.entries()) await advertisedDecoderFits(seat, twoColony, `colony ${colony}, Quadrants match started`);
+    decoded = 0;
+    for (const [colony, seat] of quadrantSeats.entries()) decoded += await advertisedDecoderFits(seat, quadrants, `Quadrants colony ${colony}`);
+    expect(decoded).toBeGreaterThan(0);
   });
 });

@@ -1036,11 +1036,16 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       return observeResult(game, game.configForAgent(agentId), outcome, map === true, since, nestFields(game, agentId, true), cellsCursor);
     },
   );
-  // Read at each tools/list, not fixed when this session opened: a slot can seat its Quadrants lobby after a session
-  // opened (the seat poll after the lobby takes the slot, or a successor server restoring a begun match).
+  // Read at each tools/list from the config observe encodes this session's cells with: its seat's own match once it has
+  // joined (kept when the slot seats a lobby of the other mode), else the seated lobby it would join. A slot can seat its
+  // Quadrants lobby after a session opened (the seat poll after the lobby takes the slot, or a successor server
+  // restoring a begun match).
   Object.defineProperty(observeTool, "description", {
     configurable: true, enumerable: true,
-    get: () => (colonyCountOf(game.undrawnConfig) === 4 ? observeText(game.undrawnConfig) : baseObserveText),
+    get: () => {
+      const config = session.agentId === null ? game.undrawnConfig : game.configForAgent(session.agentId);
+      return colonyCountOf(config) === 4 ? observeText(config) : baseObserveText;
+    },
   });
 
   const orderShape = {
