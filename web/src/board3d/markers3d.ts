@@ -12,13 +12,14 @@ import { reducedMotion } from "../camera.ts";
 import { EMBLEM_BAR, QUEEN_EMBLEM, STORY_MARK_MS, crownPolygon, emblemState, mixColour } from "../effects.ts";
 import { visibleStory } from "../story.ts";
 
-const COLONIES = [0, 1] as const;
+/** One queen emblem per colony, index = colony id; a match has at most four colonies. */
+const QUEEN_KINDS = ["queen0", "queen1", "queen2", "queen3"] as const;
 
 export type Project = (x: number, y: number) => [number, number];
 export interface ScreenPoint { x: number; y: number }
 export type ProjectToRef = (x: number, y: number, out: ScreenPoint) => void;
 export interface MarkerParticle {
-  kind: "ring" | "dot" | "line" | "queen0" | "queen1";
+  kind: "ring" | "dot" | "line" | (typeof QUEEN_KINDS)[number];
   x: number;
   y: number;
   scaleX: number;
@@ -37,6 +38,8 @@ export const MARKER_FRAMES: Readonly<Record<MarkerParticle["kind"], MarkerFrame>
   line: { x: 262, y: 60, width: 116, height: 8 },
   queen0: { x: 434, y: 50, width: 28, height: 28 },
   queen1: { x: 562, y: 50, width: 28, height: 28 },
+  queen2: { x: 690, y: 50, width: 28, height: 28 },
+  queen3: { x: 818, y: 50, width: 28, height: 28 },
 };
 
 /** Screen-space specs, reused between frames including after a temporary empty board.
@@ -101,7 +104,7 @@ export class MarkerSpecs3D {
         const radius = QUEEN_EMBLEM.r + 1 + 7 * (1 - s.flash);
         this.put("ring", this.point.x, this.point.y, radius / 30, radius / 30, 0xffffff, 0.9 * s.flash);
       }
-      this.put(colony === 0 ? "queen0" : "queen1", this.point.x, this.point.y, s.scale, s.scale, mixColour(0xffffff, colonyTint(colony), 0.5 * s.flash), s.alpha);
+      this.put(QUEEN_KINDS[colony]!, this.point.x, this.point.y, s.scale, s.scale, mixColour(0xffffff, colonyTint(colony), 0.5 * s.flash), s.alpha);
       if (s.zone > 0 && s.bar !== null) {
         const y = this.point.y + QUEEN_EMBLEM.r + EMBLEM_BAR.gap + 1;
         this.put("line", this.point.x, y, EMBLEM_BAR.w / 112, 1.5, 0x111111, s.zone);
@@ -141,7 +144,6 @@ export function markerParticles(frame: Pick<Frame, "board" | "story" | "targetMs
 }
 
 const CELL = 128;
-const KINDS = ["ring", "dot", "line", "queen0", "queen1"] as const;
 
 export class BoardMarkers3D {
   readonly layer: ParticleContainer;
@@ -152,7 +154,8 @@ export class BoardMarkers3D {
 
   private crownTexture: Texture | undefined;
   private crownSecondTexture: Texture | undefined;
-  constructor(private readonly renderer: Renderer) {
+  /** colonies: the match's colony count; the atlas carries one queen emblem per colony. */
+  constructor(private readonly renderer: Renderer, private readonly colonies = 2) {
     this.textures = this.makeTextures();
     this.crownTexture = iconTexture("crown");
     this.crownSecondTexture = iconMasks().get("crown")?.second?.texture;
@@ -167,16 +170,17 @@ export class BoardMarkers3D {
     g.circle(CELL + 64, 64, 5).fill({ color: 0xffffff }).stroke({ width: 1, color: 0x000000 });
     g.rect(2 * CELL + 8, 62, 112, 4).fill({ color: 0x000000, alpha: 0.55 });
     g.rect(2 * CELL + 8, 63, 112, 2).fill({ color: 0xffffff });
-    for (const c of [0, 1] as const) {
+    for (let c = 0; c < this.colonies; c++) {
       const x = (3 + c) * CELL + 64;
       g.circle(x, 64, QUEEN_EMBLEM.r).fill({ color: 0x0b0907, alpha: 0.85 }).stroke({ width: QUEEN_EMBLEM.ringW, color: colonyTint(c) });
       if (!crowns.draw("crown", x - QUEEN_EMBLEM.crown, 64 - QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, colonyTint(c))) g.poly(crownPolygon(QUEEN_EMBLEM.crown).map((v, i) => v + (i % 2 === 0 ? x : 64))).fill({ color: colonyTint(c) });
     }
     const holder = new Container();
     holder.addChild(g, crowns.layer);
-    const atlas = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, CELL * KINDS.length, CELL), resolution: renderer.resolution, antialias: true });
+    const kinds = ["ring", "dot", "line", ...QUEEN_KINDS.slice(0, this.colonies)] as const;
+    const atlas = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, CELL * kinds.length, CELL), resolution: renderer.resolution, antialias: true });
     atlas.source.scaleMode = "linear";
-    const textures = Object.fromEntries(KINDS.map((kind) => {
+    const textures = Object.fromEntries(kinds.map((kind) => {
       const f = MARKER_FRAMES[kind];
       return [kind, new Texture({ source: atlas.source, frame: new Rectangle(f.x, f.y, f.width, f.height) })];
     })) as Record<MarkerParticle["kind"], Texture>;

@@ -54,7 +54,7 @@ import { TOUCH_RADIUS_PX, linkLine } from "../compose.ts";
 import { excerptEnded, modeCopy } from "../replay.ts";
 import type { AntwarApi, ClientInfo, FrameResult } from "../main.ts";
 import { CLEAR_RGB, Ground } from "./ground.ts";
-import { colonyRgbs, setMatchColonies } from "../colony-palette.ts";
+import { colonyRgb, setMatchColonies } from "../colony-palette.ts";
 import { boardLook, type BoardLook } from "../board-look.ts";
 import { Ants3D } from "./ants3d.ts";
 import { Battles3D } from "./effects3d.ts";
@@ -245,12 +245,14 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     const bounds = openingBoard ? openingBounds(openingBoard, extent) : null;
     return bounds ? fitOpeningPose(base, bounds, H, w, h, overlays.boardArea(w, h), scale, extent) : base;
   };
-  const ants = new Ants3D(scene, ground, antScale(), colonyRgbs());
+  // One colour per colony of the match (setup.queens has one entry per colony), index = colony id.
+  const colours = setup.queens.map((_, colony) => colonyRgb(colony));
+  const ants = new Ants3D(scene, ground, antScale(), colours);
   const battles = new Battles3D(scene, ground);
   const food = new Food3D(scene, ground);
   const rocks = new Rocks3D(scene, ground);
-  const startBoxes = new StartBoxes3D(scene, ground, colonyRgbs());
-  const nests = new Nests(scene, ground, setup, ants.lengthTiles, colonyRgbs());
+  const startBoxes = new StartBoxes3D(scene, ground, colours);
+  const nests = new Nests(scene, ground, setup, ants.lengthTiles, colours);
   nests.update(streamQueens(head.full!));
 
   // Light: a warm low key from the west-north-west (upper left on screen) with a shadow map, and a cool sky fill.
@@ -402,7 +404,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   pixi.canvas.addEventListener("webglcontextlost", () => giveUp("the overlay's WebGL context was lost"));
   const words = new Words({ w, h });
   const squads = new Squads(pixi.renderer, w);
-  const markers = new BoardMarkers3D(pixi.renderer);
+  const markers = new BoardMarkers3D(pixi.renderer, setup.queens.length);
   squadsRef = squads;
   wordsRef = words;
   markersRef = markers;
