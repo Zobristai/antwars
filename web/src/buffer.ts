@@ -214,14 +214,12 @@ export function queenLossAge(q: Pick<StreamQueen, "lostTick">, targetMs: number,
 /**
  * The colonies that have fallen: every queen the stream lists for the colony is lost. One entry per colony id from 0
  * to the highest colony with a queen, at least two; nothing fallen on a stream that lists no queens. In a four-colony
- * match a fallen colony is an eliminated one, and the result's winner, whose queens retire with the losers' in a
- * same-tick end, never reads as fallen.
+ * match a fallen colony is an eliminated one, as the queens record it whoever won: in a same-tick all-idle end the
+ * result's winner is eliminated with the colonies it outlasted, and the result alone names it the winner.
  */
-export function fallenColonies(b: Pick<Board, "queens"> & { readonly result?: Pick<StreamResult, "winner"> | null }): boolean[] {
+export function fallenColonies(b: Pick<Board, "queens">): boolean[] {
   const queens = b.queens ?? [];
-  const colonies = Math.max(2, ...queens.map((q) => q.colony + 1));
-  const winner = colonies > 2 ? b.result?.winner ?? null : null;
-  return queenless(queens, colonies).map((lost, c) => lost && c !== winner);
+  return queenless(queens, Math.max(2, ...queens.map((q) => q.colony + 1)));
 }
 
 /** Each colony with queens listed, all of them lost, by colony id. */
@@ -560,8 +558,9 @@ function zoneAttacker(ants: StreamAnts, tx: number, ty: number, r: number, defen
 }
 
 /**
- * Whether a queen's loss is the result's winner retiring with the losers in a four-colony match's same-tick end, not
- * a loss: the winner is never told as lost.
+ * Whether a queen's loss is the result's winner retiring with the losers in a four-colony match's same-tick end. She
+ * is told as lost, as recorded, but no attack or attempt on her is told as taking her: the match ended under it, and
+ * nothing frames the winner as the loser.
  */
 function retiredWinner(q: Pick<StreamQueen, "colony" | "lostTick">, board: Pick<Board, "setup" | "result">): boolean {
   const r = board.result;
@@ -712,20 +711,20 @@ class Story {
     // Queen history also comes with full reconnect snapshots, so a lost delta loses no landmark or event line.
     for (const q of board.queens ?? []) {
       const key = `${q.colony}:${q.id}`;
-      // The winner's queens retiring in a four-colony match's same-tick end are not lost.
-      const lostTick = retiredWinner(q, board) ? null : q.lostTick;
       for (const kind of ["queen_founded", "queen_lost"] as const) {
-        const tick = kind === "queen_founded" ? (isStartingQueen(board.setup, q) ? null : q.foundedTick) : lostTick;
+        const tick = kind === "queen_founded" ? (isStartingQueen(board.setup, q) ? null : q.foundedTick) : q.lostTick;
         if (tick === null || this.queenSeen.has(`${key}:${kind}`)) continue;
         this.queenSeen.add(`${key}:${kind}`);
         // A loss is told from the message that carried it, as its collapse plays (Frame.lossShown), never from before.
         this.add({ kind, tick: kind === "queen_lost" ? Math.max(tick + 1, m.tick) : tick + 1, colony: q.colony, queenId: q.id, agent: -1, x: q.x / SUB_TILE, y: q.y / SUB_TILE });
       }
       const open = this.queenOpen.get(key);
-      if (open && (lostTick !== null || board.result !== null)) {
-        open.endTick = lostTick === null ? m.tick : lostTick + 1;
-        open.outcome = lostTick === null ? "unfinished" : "took";
-        if (lostTick !== null) open.peak = open.required;
+      // The winner's queens retiring in a four-colony match's same-tick end were not taken: the match ended under the attempt.
+      const takenTick = retiredWinner(q, board) ? null : q.lostTick;
+      if (open && (takenTick !== null || board.result !== null)) {
+        open.endTick = takenTick === null ? m.tick : takenTick + 1;
+        open.outcome = takenTick === null ? "unfinished" : "took";
+        if (takenTick !== null) open.peak = open.required;
         this.queenOpen.delete(key);
       }
     }

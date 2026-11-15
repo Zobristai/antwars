@@ -156,23 +156,24 @@ describe("four colonies", () => {
       { kind: "nest", tick: 1250, ms: 25_000, colony: 0 },
     ]);
   });
-  it("makes no nest-lost mark for the winner in a same-tick all-idle end, and marks the colonies it outlasted", () => {
+  it("marks the winner's nest lost in a same-tick all-idle end, with those of the colonies it outlasted, once each", () => {
     const by = new Map<number, StreamEvent[]>();
     add(by, 1100, lost(2, 1100));
     add(by, 1300, lost(0, 1300), lost(1, 1300), lost(3, 1300), end(3, 1300));
-    // A later full snapshot repeats the winner's queen as lost: still no mark.
+    // A later full snapshot repeats every lost queen, the winner's included: no second mark.
     const after: StreamMessage = { ...delta(1301), full: { queens: [queen4(0, 0, 1299), queen4(1, 0, 1299), queen4(2, 0, 1099), queen4(3, 0, 1299)] } as StreamFull };
     const s = new ReplayEventScan();
     s.push(quadrants());
     for (let t = START + 1; t <= 1300; t++) s.push(delta(t, by.get(t) ?? []));
     s.push(after);
-    expect(s.events().map(e => [e.kind, e.tick, e.colony])).toEqual([["nest", 1100, 2], ["nest", 1300, 0], ["nest", 1300, 1]]);
+    expect(s.events().map(e => [e.kind, e.tick, e.colony])).toEqual([["nest", 1100, 2], ["nest", 1300, 0], ["nest", 1300, 1], ["nest", 1300, 3]]);
   });
-  it("makes no nest-lost mark for the winner for a nest it lost before its result either", () => {
+  it("keeps a nest the winner lost before its result marked after a time-up win", () => {
     const by = new Map<number, StreamEvent[]>();
     add(by, 1100, { kind: "queenLost", queen: queen4(1, 4, 1099) });
-    add(by, 1300, lost(0, 1300), lost(2, 1300), lost(3, 1300), end(1, 1300, "queens_killed"));
-    expect(scan(by, 1300, quadrants()).map(e => [e.tick, e.colony])).toEqual([[1300, 0], [1300, 2], [1300, 3]]);
+    add(by, 1200, lost(0, 1200));
+    add(by, 1300, end(1, 1300, "time_up"));
+    expect(scan(by, 1300, quadrants()).map(e => [e.kind, e.tick, e.colony])).toEqual([["nest", 1100, 1], ["nest", 1200, 0]]);
   });
   it("keeps a two-colony winner's nest lost in its result's message marked, as before", () => {
     const by = new Map<number, StreamEvent[]>();
@@ -209,7 +210,7 @@ describe("a four-colony match as the recorder sends it", () => {
   const CONFIG: SimConfig = { ...LIVE, terrain: { ...LIVE.terrain!, maps: [QUADRANTS] } };
   const JOINS: SimInput[] = [0, 1, 2, 3].map(c => ({ type: "join", agentId: `a${c}`, modelLabel: `model ${c}` }));
 
-  it("marks the nest of a colony eliminated for idleness, and of every colony the winner outlasted, and none of the winner's", () => {
+  it("marks the nest of every eliminated colony at its elimination, the winner's included in a same-tick all-idle end", () => {
     const state = createMatch(404, CONFIG);
     const recorder = new SpectatorRecorder(state);
     const opening = recorder.initial();
@@ -223,14 +224,15 @@ describe("a four-colony match as the recorder sends it", () => {
     // Colony 2 is ended idle: the engine retires its queen with no queen loss of its own.
     const idle = play([], { idle: [2] });
     for (let t = 0; t < 10; t++) play();
-    // Colonies 0, 1 and 3 go idle on one tick: the result names a winner among them, whose queen is lost with theirs.
+    // Colonies 0, 1 and 3 go idle on one tick: the result names a winner among them, eliminated with them.
     const end = play([], { idle: [0, 1, 3] });
     const winner = state.result!.winner!;
     expect([0, 1, 3]).toContain(winner);
+    expect(state.colonies[winner]!.eliminated?.tick).toBe(state.result!.tick);
 
     const scan = new ReplayEventScan();
     for (const m of messages) scan.push(m);
     const nests = scan.events().filter(e => e.kind === "nest").map(e => [e.tick, e.colony]);
-    expect(nests).toEqual([[idle, 2], ...[0, 1, 3].filter(c => c !== winner).map(c => [end, c])]);
+    expect(nests).toEqual([[idle, 2], [end, 0], [end, 1], [end, 3]]);
   });
 });
