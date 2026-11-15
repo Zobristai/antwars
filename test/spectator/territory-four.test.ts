@@ -3,12 +3,22 @@
  * ownership bytes and both passes' shader text exactly; a four-colony match (four queens in its setup) also uploads
  * each colony's holdings and draws with the four-colony passes, each colony in its own colour and wash, its front where
  * any two colonies meet, and an eliminated colony's former tiles neutral. Pixi's program objects compile no GLSL here:
- * the browser check is the pixel proof.
+ * the browser check is the pixel proof. A recorded four-colony match reaches the layer through the stream as the page
+ * plays it: recorder, wire encoding and decoding, playback.
  */
 import { createHash } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RenderTexture } from "pixi.js";
-import { Frame } from "../../web/src/buffer.ts";
+import { decodeMessage, encodePublicMessage, type StreamMessage } from "../../src/live/format.ts";
+import { SpectatorRecorder } from "../../src/live/model.ts";
+import { TICK_MS } from "../../src/live/snapshot.ts";
+import { rulesConfig, SUB, type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
+import { newMatchConfig } from "../../src/sim/gridScale.ts";
+import { createMatch } from "../../src/sim/map.ts";
+import { advance } from "../../src/sim/step.ts";
+import type { SimInput, SimState } from "../../src/sim/types.ts";
+import { addAnt } from "../sim/fixtures.ts";
+import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { setBoardLook } from "../../web/src/board-look.ts";
 import { colonyRgb, colonyWash } from "../../web/src/colony-palette.ts";
 import { encodeHoldings, encodeTerritory, frontBounds, type Territory } from "../../web/src/territory.ts";
@@ -215,5 +225,70 @@ describe("the 2D territory passes", () => {
       expect(fragment).toContain("ownership4(vUV, s, ca, cb)");
     }
     expect(fragments(t)[0]).toContain(depth);
+  });
+
+  /** Test-only quadrant geometry (as in test/live/four-colony-recorder.test.ts). */
+  const QUADRANTS: MapDefinition = {
+    id: "fixture-quadrants", name: "Fixture Quadrants",
+    water: [{ x: 16, y: 2, width: 3, height: 9 }, { x: 4, y: 24, width: 10, height: 2 }],
+    quadrant: {
+      referenceWidth: 64, referenceHeight: 64, centreHalfWidth: 8, centreHalfHeight: 6, nestTileX: 7, nestTileY: 11,
+      startArea: { x: 2, y: 4, width: 12, height: 15 },
+      foodPatches: [{ tileX: 10, tileY: 20, radius: 2, perTile: 3 }, { tileX: 20, tileY: 14, radius: 1, perTile: 5 }],
+      centreFood: [{ radius: 2, perTile: 4 }, { radius: 1, perTile: 2 }],
+    },
+  };
+  const LIVE = newMatchConfig(rulesConfig("redesign"));
+  const CONFIG: SimConfig = { ...LIVE, combatGraceTicks: 0, queenHp: { ...LIVE.queenHp!, shieldTicks: 0 }, terrain: { ...LIVE.terrain!, maps: [QUADRANTS] } };
+  const JOINS: SimInput[] = [0, 1, 2, 3].map(c => ({ type: "join", agentId: `a${c}`, modelLabel: `model ${c}` }));
+
+  /** A four-colony match whose every message crosses the wire into the page's playback, as a recording plays. */
+  function recorded(state: SimState) {
+    const recorder = new SpectatorRecorder(state);
+    const wire = (m: StreamMessage) => decodeMessage(encodePublicMessage(m));
+    const playback = new Playback();
+    playback.push(wire({ ...recorder.initial(), full: recorder.initialFull() }), state.tick * TICK_MS);
+    const play = (inputs: readonly SimInput[] = []) => {
+      const rec = recorder.record(advance(state, inputs, undefined, undefined, undefined, false, true));
+      playback.push(wire({ tick: rec.tick, ants: rec.ants, full: null, events: rec.events }), rec.tick * TICK_MS);
+    };
+    const shown = () => {
+      const f = new Frame();
+      expect(playback.sample(state.tick * TICK_MS + RENDER_DELAY_MS, f)).toBe(true);
+      return f;
+    };
+    return { play, shown };
+  }
+
+  it("draw a recorded four-colony match with the four-colony passes, and its eliminated colony's ground as neutral", () => {
+    const state = createMatch(404, CONFIG);
+    const { play, shown } = recorded(state);
+    for (let t = 0; t < 200; t++) play(t === 0 ? JOINS : []);
+    const before = shown();
+    const { mapW, mapH } = before.board!.setup;
+    expect(before.board!.setup.queens).toHaveLength(4);
+    expect(new Set(before.territoryA)).toEqual(new Set([0, 1, 2, 3, 4]));
+    const t = new TerritoryClass(mapW, mapH, RT.create({ width: 8, height: 6 }), { w: 80, h: 60, ox: 0, oy: 0, tilePx: 5 });
+    t.update(before, 0);
+    const [fill, front] = passes(t);
+    for (const m of [fill, front]) expect(m.shader.glProgram.fragment).toContain("ownership4(vUV, s, ca, cb)");
+    const holdings = () => (fill.shader.resources.uWA as { resource: Uint8Array }).resource;
+    expect(holdings()).toEqual(encodeHoldings(before.territoryA, mapW, mapH));
+    const held = (h: Uint8Array, c: number) => h.some((v, i) => i % 4 === c && v === 255);
+    for (const c of [0, 1, 2, 3]) expect(held(holdings(), c)).toBe(true);
+    // Colony 1's only queen, one bite from death, with colony 0's ants on her tile (as the recorder test eliminates it).
+    const queen = state.colonies[1]!.queens![0]!;
+    const [qx, qy] = [Math.floor(queen.queenX / SUB), Math.floor(queen.queenY / SUB)];
+    queen.hp = 1;
+    state.ants = state.ants.filter(a => a.colony !== 1 || Math.abs(Math.floor(a.x / SUB) - qx) > 8 || Math.abs(Math.floor(a.y / SUB) - qy) > 8);
+    for (let i = 0; i < 4; i++) addAnt(state, 0, qx, qy, { hp: 100_000 });
+    for (let k = 0; k < 6; k++) play();
+    expect(state.colonies[1]!.eliminated).toMatchObject({ reason: "queens_killed" });
+    const after = shown();
+    expect(after.territoryA.includes(2)).toBe(false);
+    t.update(after, 16);
+    expect(holdings()).toEqual(encodeHoldings(after.territoryA, mapW, mapH));
+    expect(held(holdings(), 1)).toBe(false);
+    for (const c of [0, 2, 3]) expect(held(holdings(), c)).toBe(true);
   });
 });
