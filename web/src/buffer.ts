@@ -48,7 +48,13 @@ import { Pivots } from "./pivot.ts";
 import { isStartingQueen } from "./start-boxes.ts";
 import { gridScale } from "./grid-scale.ts";
 
-export type Colony = 0 | 1;
+/** A colony id: 0 and 1 in a two-colony match, 0 to 3 in a four-colony one. */
+export type Colony = number;
+
+/** How many colonies the match has: one start queen per colony in its setup (2 or 4). */
+function colonyCount(setup: Pick<StreamSetup, "queens">): number {
+  return setup.queens.length;
+}
 
 export const RENDER_DELAY_MS = 250;
 export const SPAWN_FADE_MS = 400;
@@ -69,11 +75,23 @@ export const RESULT_BEAT_MS = 2500;
 export const ATTACK_LULL_S = 15;
 /**
  * Ant-traffic trail: a grid TRAIL_RES cells per tile side, so paths come out thin;
- * per-tick decay and per-ant deposit, per colony.
+ * per-tick decay and per-ant deposit, per colony. Each trail cell holds one channel per colony of the match
+ * (setup.queens.length: 2, or 4 in a four-colony match), at cell * colonies + colony.
  */
 export const TRAIL_RES = 4;
 export const TRAIL_DECAY_PER_TICK = 0.975;
 export const TRAIL_DEPOSIT = 0.06;
+
+/**
+ * Trails as an RGBA texture's bytes, one texel per trail cell: colony c's intensity in channel c (red, green, blue,
+ * alpha), channels of colonies the match does not have 0. colonies is the board's colony count, setup.queens.length.
+ */
+export function trailTexels(trails: Float32Array, colonies: number, out: Uint8Array): void {
+  for (let i = 0, n = trails.length / colonies; i < n; i++) {
+    for (let c = 0; c < 4; c++) out[i * 4 + c] = c < colonies ? trails[i * colonies + c]! * 255 : 0;
+  }
+}
+
 /** A colony leads the tug-of-war once it holds this share of owned tiles more than the other. */
 export const LEAD_MARGIN = 0.02;
 
@@ -82,37 +100,43 @@ export interface Board {
   setup: StreamSetup;
   territoryWin?: StreamTerritoryWin;
   queens?: readonly StreamQueen[];
-  /** Tile owners: 0 neutral, 1 colony 0, 2 colony 1. */
+  /** Tile owners: 0 neutral, c + 1 colony c. */
   territory: Uint8Array;
-  /** Tiles held by each colony. */
-  held: [number, number];
+  /** Tiles held by each colony, one entry per colony, index = colony id. */
+  held: number[];
   marks: readonly StreamMark[];
   agents: readonly StreamAgent[];
-  overrun: [number, number];
+  /** One entry per colony, index = colony id, as are deaths and hatched. */
+  overrun: number[];
   overrunRequired: number;
-  deaths: [number, number];
+  deaths: number[];
   /** Cumulative births from the v5 stream, unknown in older recordings. */
-  hatched?: readonly [number, number];
+  hatched?: readonly number[];
   result: StreamResult | null;
   /** Food on each tile, row-major. */
   food: Uint32Array;
   /** The sim's hatch rule; null when the sender gave none. */
   hatch: StreamHatch | null;
   /** Each colony's food store and the first sim tick its queen may hatch again. */
-  stores: readonly [StreamStore, StreamStore];
+  stores: readonly StreamStore[];
 }
 
-const NO_STORES: readonly [StreamStore, StreamStore] = [
+const NO_STORES: readonly StreamStore[] = [
   { food: 0, nextHatchTick: 0, nextCost: 0 },
   { food: 0, nextHatchTick: 0, nextCost: 0 },
 ];
+
+/** Empty stores for a stream that sends none, one per colony. */
+function noStores(colonies: number): readonly StreamStore[] {
+  return colonies === NO_STORES.length ? NO_STORES : Array.from({ length: colonies }, () => ({ food: 0, nextHatchTick: 0, nextCost: 0 }));
+}
 
 interface Held {
   tick: number;
   ants: StreamAnts;
   /** id -> index in ants. */
   index: Map<number, number>;
-  /** Trail intensity, two floats (colony 0, colony 1) per trail cell, 0..1. */
+  /** Trail intensity, 0..1: one float per colony in each trail cell, at cell * colonies + colony (TRAIL_RES). */
   trails: Float32Array;
   board: Board;
   /** Event-confirmed combat at this message's tick, independent of ground effects. */
@@ -203,15 +227,29 @@ export function queenLossAge(q: Pick<StreamQueen, "lostTick">, targetMs: number,
   return q.lostTick === null ? null : targetMs - Math.max(q.lostTick + 1, shownTick) * TICK_MS;
 }
 
-/** The colonies that have fallen: every queen the stream lists for the colony is lost. Nothing on a stream that lists no queens. */
-export function fallenColonies(b: Pick<Board, "queens">): [boolean, boolean] {
+/**
+ * The colonies that have fallen: every queen the stream lists for the colony is lost. One entry per colony id from 0
+ * to the highest colony with a queen, at least two; nothing fallen on a stream that lists no queens. In a four-colony
+ * match a fallen colony is an eliminated one, as the queens record it whoever won: in a same-tick all-idle end the
+ * result's winner is eliminated with the colonies it outlasted, and the result alone names it the winner.
+ */
+export function fallenColonies(b: Pick<Board, "queens">): boolean[] {
   const queens = b.queens ?? [];
-  return [0, 1].map((c) => queens.some((q) => q.colony === c) && queens.every((q) => q.colony !== c || q.lostTick !== null)) as [boolean, boolean];
+  return queenless(queens, Math.max(2, ...queens.map((q) => q.colony + 1)));
 }
 
-/** The queen whose loss felled her colony (fallenColonies): its last lost, or null while both colonies stand. */
+/** Each colony with queens listed, all of them lost, by colony id. */
+function queenless(queens: readonly Pick<StreamQueen, "colony" | "lostTick">[], colonies: number): boolean[] {
+  return Array.from({ length: colonies }, (_, c) => queens.some((q) => q.colony === c) && queens.every((q) => q.colony !== c || q.lostTick !== null));
+}
+
+/**
+ * The queen whose loss felled her colony (fallenColonies): its last lost, or null while both colonies stand. Null in a
+ * four-colony match, where a fallen colony is eliminated and the match plays on: its fall is not the match's.
+ */
 export function fallenQueen(b: Pick<Board, "queens">): StreamQueen | null {
   const fallen = fallenColonies(b);
+  if (fallen.length > 2) return null;
   let felled: StreamQueen | null = null;
   for (const q of b.queens ?? []) if (fallen[q.colony] && q.lostTick !== null && (felled === null || q.lostTick > felled.lostTick!)) felled = q;
   return felled;
@@ -220,11 +258,14 @@ export function fallenQueen(b: Pick<Board, "queens">): StreamQueen | null {
 /**
  * The colonies whose fall the board is showing: fallen, with the result card not yet up — the
  * beat from the last queen's death to the card, in which the board dims the colony's ants; after the card, neither.
+ * Never in a four-colony match: an elimination is not the match's fall. One entry per colony, as fallenColonies.
  */
-export function fallWindow(frame: Pick<Frame, "board" | "targetMs" | "endShown">): [boolean, boolean] {
+export function fallWindow(frame: Pick<Frame, "board" | "targetMs" | "endShown">): boolean[] {
   const b = frame.board;
-  if (!b || (b.result !== null && frame.targetMs >= resultShownAt(b.result, frame.endShown ?? undefined))) return [false, false];
-  return fallenColonies(b);
+  if (!b) return [false, false];
+  const fallen = fallenColonies(b);
+  if (fallen.length > 2 || (b.result !== null && frame.targetMs >= resultShownAt(b.result, frame.endShown ?? undefined))) return fallen.map(() => false);
+  return fallen;
 }
 
 /** Ground framed around a fallen colony's nest zones, in tiles, beyond the zones' own radius. */
@@ -232,7 +273,8 @@ export const FALL_FRAME_PAD = 4;
 
 /**
  * The box the fall window frames: the fallen colony's nests, its queens'
- * tiles with their zone radius and FALL_FRAME_PAD tiles around; null while both colonies stand.
+ * tiles with their zone radius and FALL_FRAME_PAD tiles around; null while both colonies stand, and in a four-colony
+ * match, whose eliminations are not framed (fallenQueen).
  */
 export function fallenNests(b: Pick<Board, "queens" | "setup">): { x0: number; y0: number; x1: number; y1: number } | null {
   const felled = fallenQueen(b);
@@ -263,7 +305,7 @@ export const FALL_EMBLEM_PX = 12.25;
 /**
  * The fallen queens' box: the box around every queen of the fallen colony (fallenQueen's), each her tile and
  * QUEEN_FRAME_TILES around, in tiles — one fallen queen's own box where the colony had one (the fall
- * frames every fallen queen whole); null while both colonies stand. Its callers are the 3D fall's framing (fallPose) and the 2D one (camera.ts fallView), which never cuts it.
+ * frames every fallen queen whole); null while both colonies stand, and in a four-colony match. Its callers are the 3D fall's framing (fallPose) and the 2D one (camera.ts fallView), which never cuts it.
  */
 export function fallenQueenBox(b: Pick<Board, "queens">): { x0: number; y0: number; x1: number; y1: number } | null {
   const felled = fallenQueen(b);
@@ -288,6 +330,11 @@ export interface StoryEntry {
   tick: number;
   /** The colony that acted: the first to strike, the new leader, or the attacker; for a queen attacked, her own colony. */
   colony: Colony;
+  /**
+   * An overrun attempt in a four-colony match: the colony whose queen it is on. Absent in a two-colony match, where
+   * that is always the other colony (1 - colony).
+   */
+  target?: Colony;
   /** The squad involved (its agent index), or -1. */
   agent: number;
   /** Where on the board, in tiles. */
@@ -379,7 +426,7 @@ export class Frame {
   mapH = 0;
   territoryA: Uint8Array = new Uint8Array(0);
   territoryB: Uint8Array = new Uint8Array(0);
-  /** Trails of the earlier message; they fade slowly, so they are not blended. */
+  /** Trails of the earlier message, one channel per colony in each cell (TRAIL_RES); they fade slowly, so they are not blended. */
   trails: Float32Array = new Float32Array(0);
   id = new Uint32Array(0);
   /** Positions in tiles. */
@@ -459,15 +506,14 @@ export class Frame {
 
 const TAU = Math.PI * 2;
 
-function heldTiles(territory: Uint8Array): [number, number] {
-  let a = 0;
-  let b = 0;
+/** Each colony's held tiles, by colony id: owner c + 1 is colony c's, 0 is neutral. */
+function heldTiles(territory: Uint8Array, colonies: number): number[] {
+  const held = Array.from({ length: colonies }, () => 0);
   for (let i = 0; i < territory.length; i++) {
     const o = territory[i]!;
-    if (o === 1) a++;
-    else if (o === 2) b++;
+    if (o > 0 && o <= colonies) held[o - 1]!++;
   }
-  return [a, b];
+  return held;
 }
 
 function cloneFull(f: StreamFull): StreamFull {
@@ -476,17 +522,17 @@ function cloneFull(f: StreamFull): StreamFull {
     setup: f.setup,
     ...(f.territoryWin === undefined ? {} : { territoryWin: { ...f.territoryWin } }),
     ...(f.queens === undefined ? {} : { queens: f.queens.map((q) => ({ ...q })) }),
-    ...(f.hatched === undefined ? {} : { hatched: [...f.hatched] as [number, number] }),
+    ...(f.hatched === undefined ? {} : { hatched: [...f.hatched] }),
     territory: f.territory.slice(),
     marks: f.marks.map((m) => ({ ...m, words: m.words.slice() })),
     agents: f.agents.map((a) => ({ ...a })),
-    overrun: [f.overrun[0], f.overrun[1]],
+    overrun: [...f.overrun],
     overrunRequired: f.overrunRequired,
-    deaths: [f.deaths[0], f.deaths[1]],
+    deaths: [...f.deaths],
     result: f.result,
     ...(f.food !== undefined ? { food: f.food.slice() } : {}),
     ...(f.hatch !== undefined ? { hatch: { ...f.hatch } } : {}),
-    ...(f.stores !== undefined ? { stores: [{ ...f.stores[0] }, { ...f.stores[1] }] as [StreamStore, StreamStore] } : {}),
+    ...(f.stores !== undefined ? { stores: f.stores.map((s) => ({ ...s })) } : {}),
   };
 }
 
@@ -514,6 +560,34 @@ export function squadsInQueenZone(ants: StreamAnts, setup: StreamSetup, defender
     if (Math.max(Math.abs(dx), Math.abs(dy)) <= r) counts.set(agent, (counts.get(agent) ?? 0) + 1);
   }
   return [...counts].sort((p, q) => q[1] - p[1] || p[0] - q[0]).map(([agent]) => agent);
+}
+
+/**
+ * The colony attacking the queen zone of a defender's queen at tile (tx, ty), radius r: in a two-colony match the
+ * other colony; in a four-colony one the colony with the most ants in the zone (ties to the lower id), else the
+ * first other colony.
+ */
+function zoneAttacker(ants: StreamAnts, tx: number, ty: number, r: number, defender: Colony, colonies: number): Colony {
+  if (colonies === 2) return 1 - defender;
+  const counts = Array.from({ length: colonies }, () => 0);
+  for (let i = 0; i < ants.count; i++) {
+    const c = ants.colony[i]!;
+    if (c === defender || c >= colonies) continue;
+    if (Math.max(Math.abs(Math.floor(ants.x[i]! / SUB_TILE) - tx), Math.abs(Math.floor(ants.y[i]! / SUB_TILE) - ty)) <= r) counts[c]!++;
+  }
+  let best = defender === 0 ? 1 : 0;
+  for (let c = 0; c < colonies; c++) if (c !== defender && counts[c]! > counts[best]!) best = c;
+  return best;
+}
+
+/**
+ * Whether a queen's loss is the result's winner retiring with the losers in a four-colony match's same-tick end. She
+ * is told as lost, as recorded, but no attack or attempt on her is told as taking her: the match ended under it, and
+ * nothing frames the winner as the loser.
+ */
+function retiredWinner(q: Pick<StreamQueen, "colony" | "lostTick">, board: Pick<Board, "setup" | "result">): boolean {
+  const r = board.result;
+  return colonyCount(board.setup) > 2 && r !== null && r.winner === q.colony && q.lostTick !== null && q.lostTick >= r.tick;
 }
 
 /**
@@ -550,7 +624,8 @@ class Story {
   private chatMarks: Board["marks"] | null = null;
   private contact = false;
   private leader: Colony | null = null;
-  private open: [StoryEntry | null, StoryEntry | null] = [null, null];
+  /** Each defending colony's open colony-level overrun attempt, by colony id. */
+  private open: (StoryEntry | null)[] = [];
   private nextId = 1;
   private queenOpen = new Map<string, StoryEntry>();
   private queenSeen = new Set<string>();
@@ -603,6 +678,9 @@ class Story {
         this.add({ kind: "contact", tick: m.tick, ...pick });
       }
     }
+    const colonies = colonyCount(board.setup);
+    // The colony an attempt is on, recorded only where it is not simply the attacker's one other colony.
+    const target = (defender: Colony) => (colonies > 2 ? { target: defender } : {});
     for (const e of m.events) {
       if (e.kind === "queenOverrun") {
         const key = `${e.colony}:${e.queenId}`;
@@ -610,7 +688,8 @@ class Story {
         if (!q) continue;
         let open = this.queenOpen.get(key);
         if (e.progress > 0 && !open) {
-          open = this.add({ kind: "overrun", queenId: q.id, tick: m.tick, colony: (1 - q.colony) as Colony, agent: -1, x: q.x / SUB_TILE, y: q.y / SUB_TILE, peak: e.progress, required: e.required });
+          const colony = zoneAttacker(ants, Math.floor(q.x / SUB_TILE), Math.floor(q.y / SUB_TILE), board.setup.overrunRadiusTiles, q.colony, colonies);
+          open = this.add({ kind: "overrun", queenId: q.id, tick: m.tick, colony, ...target(q.colony), agent: -1, x: q.x / SUB_TILE, y: q.y / SUB_TILE, peak: e.progress, required: e.required });
           this.queenOpen.set(key, open);
         } else if (open) {
           open.peak = Math.max(open.peak ?? 0, e.progress);
@@ -618,11 +697,15 @@ class Story {
         }
       } else if (e.kind === "overrun") {
         const defender = e.colony;
-        const open = this.open[defender];
+        const open = this.open[defender] ?? null;
         if (e.progress > 0 && open === null) {
           const squads = squadsInQueenZone(ants, board.setup, defender);
           const [qx, qy] = board.setup.queens[defender];
-          const entry = this.add({ kind: "overrun", tick: m.tick, colony: (1 - defender) as Colony, agent: squads[0] ?? -1, x: qx / SUB_TILE, y: qy / SUB_TILE });
+          const zone = queenZone(board.setup, defender);
+          // With more than two colonies the attacker is the leading squad's colony, else the colony most present.
+          const squadColony = squads[0] === undefined ? undefined : board.agents[squads[0]]?.colony;
+          const colony = colonies > 2 && squadColony !== undefined ? squadColony : zoneAttacker(ants, zone.tx, zone.ty, zone.r, defender, colonies);
+          const entry = this.add({ kind: "overrun", tick: m.tick, colony, ...target(defender), agent: squads[0] ?? -1, x: qx / SUB_TILE, y: qy / SUB_TILE });
           entry.peak = e.progress;
           entry.required = e.required;
           this.open[defender] = entry;
@@ -635,8 +718,8 @@ class Story {
           }
         }
       } else if (e.kind === "end") {
-        for (const defender of [0, 1] as const) {
-          const open = this.open[defender];
+        for (let defender = 0; defender < this.open.length; defender++) {
+          const open = this.open[defender] ?? null;
           if (open === null) continue;
           open.endTick = m.tick;
           // Only an overrun ending takes the queen; any other end under an open attempt (time-up, or an end main may add) leaves it unfinished.
@@ -659,18 +742,24 @@ class Story {
         this.add({ kind, tick: kind === "queen_lost" ? Math.max(tick + 1, m.tick) : tick + 1, colony: q.colony, queenId: q.id, agent: -1, x: q.x / SUB_TILE, y: q.y / SUB_TILE });
       }
       const open = this.queenOpen.get(key);
-      if (open && (q.lostTick !== null || board.result !== null)) {
-        open.endTick = q.lostTick === null ? m.tick : q.lostTick + 1;
-        open.outcome = q.lostTick === null ? "unfinished" : "took";
-        if (q.lostTick !== null) open.peak = open.required;
+      // The winner's queens retiring in a four-colony match's same-tick end were not taken: the match ended under the attempt.
+      const takenTick = retiredWinner(q, board) ? null : q.lostTick;
+      if (open && (takenTick !== null || board.result !== null)) {
+        open.endTick = takenTick === null ? m.tick : takenTick + 1;
+        open.outcome = takenTick === null ? "unfinished" : "took";
+        if (takenTick !== null) open.peak = open.required;
         this.queenOpen.delete(key);
       }
     }
     this.entries.sort((a, b) => a.tick - b.tick || a.id - b.id);
-    // Lead changes in the tug-of-war: only a change from one colony to the other counts.
-    const [a, b] = board.held;
-    const total = Math.max(1, a + b);
-    const lead: Colony | null = a - b >= LEAD_MARGIN * total ? 0 : b - a >= LEAD_MARGIN * total ? 1 : null;
+    // Lead changes in the tug-of-war: only a change from one colony to another counts. A colony leads while it holds
+    // LEAD_MARGIN of the owned tiles more than the next colony.
+    const held = board.held;
+    const total = Math.max(1, held.reduce((s, n) => s + n, 0));
+    let top = 0;
+    for (let c = 1; c < held.length; c++) if (held[c]! > held[top]!) top = c;
+    const next = Math.max(0, ...held.filter((_, c) => c !== top));
+    const lead: Colony | null = held[top]! - next >= LEAD_MARGIN * total ? top : null;
     if (lead !== null && lead !== this.leader) {
       if (this.leader !== null) {
         const flipped = m.events.flatMap((e) => (e.kind === "territory" ? e.tiles.filter((_, k) => e.owners[k] === lead + 1) : []));
@@ -722,7 +811,8 @@ class Story {
         this.attackLast.delete(key);
       };
       if (q === undefined) continue;
-      if (q.lostTick !== null) {
+      // The winner's queens retiring at a four-colony same-tick end were not taken: the match ended under the attack.
+      if (q.lostTick !== null && !retiredWinner(q, board)) {
         open.lowHp = 0;
         end(q.lostTick + 1, "took");
       } else if (board.result !== null) end(m.tick, "unfinished");
@@ -839,7 +929,8 @@ export class TickPreparation {
     const ants = m.ants;
     for (let i = 0; i < ants.count; i++) index.set(ants.id[i]!, i);
     const tw = board.setup.mapW * TRAIL_RES;
-    const size = tw * board.setup.mapH * TRAIL_RES * 2;
+    const colonies = board.setup.queens.length;
+    const size = tw * board.setup.mapH * TRAIL_RES * colonies;
     if (this.trailSeed.length !== size) this.trailSeed = new Float32Array(size);
     else if (prev) {
       const decay = TRAIL_DECAY_PER_TICK ** (m.tick - prev.tick);
@@ -848,7 +939,7 @@ export class TickPreparation {
     for (let i = 0; i < ants.count; i++) {
       const tx = Math.floor(ants.x[i]! * TRAIL_RES / SUB_TILE);
       const ty = Math.floor(ants.y[i]! * TRAIL_RES / SUB_TILE);
-      const k = (ty * tw + tx) * 2 + ants.colony[i]!;
+      const k = (ty * tw + tx) * colonies + ants.colony[i]!;
       this.trailSeed[k] = Math.min(1, this.trailSeed[k]! + TRAIL_DEPOSIT);
     }
     // Retain one reusable seed; transfer the tick's copy without detaching future preparation.
@@ -866,7 +957,8 @@ export class TickPreparation {
   private nextBoard(m: StreamMessage, f: StreamFull, prev: Board | null): Board {
     // Read the received full on reconnect and the spectator model on deltas; never infer totals.
     const source = m.full ?? f;
-    const hatched = source.hatched ? [source.hatched[0], source.hatched[1]] as const : undefined;
+    const hatched = source.hatched ? [...source.hatched] : undefined;
+    const colonies = colonyCount(f.setup);
     if (prev === null) {
       const territory = f.territory.slice();
       return {
@@ -874,17 +966,17 @@ export class TickPreparation {
         ...(f.territoryWin === undefined ? {} : { territoryWin: { ...f.territoryWin } }),
         ...(f.queens === undefined ? {} : { queens: f.queens.map((q) => ({ ...q })) }),
         territory,
-        held: heldTiles(territory),
+        held: heldTiles(territory, colonies),
         marks: f.marks.map((x) => ({ ...x })),
         agents: f.agents.map((a) => ({ ...a })),
-        overrun: [f.overrun[0], f.overrun[1]],
+        overrun: [...f.overrun],
         overrunRequired: f.overrunRequired,
-        deaths: [f.deaths[0], f.deaths[1]],
+        deaths: [...f.deaths],
         hatched,
         result: f.result,
         food: f.food?.slice() ?? new Uint32Array(f.setup.mapW * f.setup.mapH),
         hatch: f.hatch ? { ...f.hatch } : null,
-        stores: f.stores ? [{ ...f.stores[0] }, { ...f.stores[1] }] : NO_STORES,
+        stores: f.stores ? f.stores.map((s) => ({ ...s })) : noStores(colonies),
       };
     }
     const kinds = new Set(m.events.map((e) => e.kind));
@@ -900,17 +992,17 @@ export class TickPreparation {
       territoryWin: f.territoryWin === undefined ? undefined : kinds.has("territoryWin") ? { ...f.territoryWin } : prev.territoryWin,
       ...(f.queens === undefined ? {} : { queens: queensChanged ? f.queens.map((q) => ({ ...q })) : prev.queens }),
       territory,
-      held: territory === prev.territory ? prev.held : heldTiles(territory),
+      held: territory === prev.territory ? prev.held : heldTiles(territory, colonies),
       marks: marksChanged ? f.marks.map((x) => ({ ...x })) : prev.marks,
       agents: agentsChanged ? f.agents.map((a) => ({ ...a })) : prev.agents,
-      overrun: overrunChanged ? [f.overrun[0], f.overrun[1]] : prev.overrun,
+      overrun: overrunChanged ? [...f.overrun] : prev.overrun,
       overrunRequired: f.overrunRequired,
-      deaths: deathsChanged ? [f.deaths[0], f.deaths[1]] : prev.deaths,
+      deaths: deathsChanged ? [...f.deaths] : prev.deaths,
       hatched,
       result: f.result,
       food: kinds.has("food") && f.food ? f.food.slice() : prev.food,
       hatch: prev.hatch,
-      stores: kinds.has("store") && f.stores ? [{ ...f.stores[0] }, { ...f.stores[1] }] : prev.stores,
+      stores: kinds.has("store") && f.stores ? f.stores.map((s) => ({ ...s })) : prev.stores,
     };
   }
 
@@ -1013,9 +1105,12 @@ export class Playback {
         const id = ants.id[i]!;
         if (!prev.index.has(id) && !this.births.has(id)) this.births.set(id, m.tick);
       }
+      // An eliminated colony's ants are removed from a four-colony match, not killed: they leave no corpse.
+      const colonies = colonyCount(board.setup);
+      const removed = colonies > 2 ? queenless(board.queens ?? [], colonies) : null;
       for (let i = 0; i < p.count; i++) {
         const id = p.id[i]!;
-        if (!index.has(id)) this.addDeath(id, m.tick, p.x[i]!, p.y[i]!, p.colony[i]! as Colony);
+        if (!index.has(id) && removed?.[p.colony[i]!] !== true) this.addDeath(id, m.tick, p.x[i]!, p.y[i]!, p.colony[i]! as Colony);
       }
     }
     const bites = this.queenBites(m, board);

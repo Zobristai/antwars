@@ -25,7 +25,7 @@ describe("generated seat codec", () => {
 describe("conformance fixtures", () => {
   it("the server encoders reproduce every encoded payload", () => {
     // A flyer match's table states the flyer grammar in its encoding.
-    for (const { encoded, decoded } of FIXTURES.cells) expect(denseCells(decoded, encoded.width, encoded.height, encoded.encoding === FLYER_CELL_ENCODING)).toEqual(encoded);
+    for (const { encoded, decoded } of FIXTURES.cells) expect(denseCells(decoded, encoded.width, encoded.height, encoded.colonies ?? 2, encoded.encoding === FLYER_CELL_ENCODING)).toEqual(encoded);
     expect(FIXTURES.cells.some(({ encoded }) => encoded.encoding === FLYER_CELL_ENCODING)).toBe(true);
     for (const { encoded, decoded } of FIXTURES.territory) expect(packTerritory(decoded, encoded.width, encoded.height)).toEqual(encoded);
     for (const { encoded, decoded } of FIXTURES.marks) if (!Array.isArray(encoded)) expect(packMarks(decoded)).toEqual(encoded);

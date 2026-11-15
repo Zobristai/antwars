@@ -342,19 +342,19 @@ export class Ants3D {
   private soldiers: Herd[];
   private crumbs: Herd;
   private dead: Herd[];
-  /** Workers and soldiers, the shadow casters. */
+  /** Live workers then soldiers, one herd per colony each: index colony + caste * colonies. The shadow casters. */
   private readonly herds: Herd[];
-  /** Flyers by wing pose and colony: landed 0 and 1 (grounded or locked out), flying 0 and 1, hovering 0 and 1. */
+  /** Flyers by wing pose and colony: landed (grounded or locked out), flying, hovering, each one herd per colony. */
   private readonly flyers: Herd[];
   /** herds then flyers, indexed by each ant's group. */
   private readonly bodies: Herd[];
   /** A dark disc on the ground under each airborne flyer, where the ant actually is. */
   private readonly shadows: Herd;
   private groups = new Uint8Array(0);
-  private readonly counts = new Uint32Array(10);
-  private readonly at = new Uint32Array(10);
-  private readonly corpseCounts = new Uint32Array(2);
-  private readonly corpseAt = new Uint32Array(2);
+  private readonly counts: Uint32Array;
+  private readonly at: Uint32Array;
+  private readonly corpseCounts: Uint32Array;
+  private readonly corpseAt: Uint32Array;
   /** Rings under the highlighted squad's ants (one thin-instanced torus, unlit, tinted per instance). */
   private rings: Herd;
   /** Per ant id: last position (tiles) and walk phase. */
@@ -365,9 +365,16 @@ export class Ants3D {
   /** Ant length in tiles. */
   lengthTiles: number;
 
+  /** colonyRgb: one colour per colony of the match, index = colony id. */
   constructor(scene: Scene, ground: Ground, lengthTiles: number, colonyRgb: readonly (readonly number[])[], segments = 10) {
     this.ground = ground;
     this.lengthTiles = lengthTiles;
+    const colonies = colonyRgb.length;
+    // Workers and soldiers, then flyers in three wing poses: five herds per colony.
+    this.counts = new Uint32Array(5 * colonies);
+    this.at = new Uint32Array(5 * colonies);
+    this.corpseCounts = new Uint32Array(colonies);
+    this.corpseAt = new Uint32Array(colonies);
     const mk = (name: string, specular: number) => {
       const m = new StandardMaterial(name, scene);
       m.diffuseColor = new Color3(1, 1, 1);
@@ -388,11 +395,11 @@ export class Ants3D {
     deadMat.disableDepthWrite = true;
     const W = ground.mapW;
     const H = ground.mapH;
-    this.live = [0, 1].map((c) => new Herd(scene, `ants${c}`, buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), liveMat, W, H, true));
-    this.soldiers = [0, 1].map((c) => new Herd(scene, `soldiers${c}`, buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), true), liveMat, W, H, true));
+    this.live = colonyRgb.map((rgb, c) => new Herd(scene, `ants${c}`, buildAntGeometry(scene, rgb, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), liveMat, W, H, true));
+    this.soldiers = colonyRgb.map((rgb, c) => new Herd(scene, `soldiers${c}`, buildAntGeometry(scene, rgb, false, Math.min(segments, LITE_SEGMENTS), true), liveMat, W, H, true));
     this.herds = [...this.live, ...this.soldiers];
     // A flyer's caste is worker: the worker body, with wings.
-    this.flyers = (["folded", "swept", "spread"] as const).flatMap((wings) => [0, 1].map((c) =>
+    this.flyers = (["folded", "swept", "spread"] as const).flatMap((wings) => colonyRgb.map((_, c) =>
       new Herd(scene, `flyers-${wings === "folded" ? "landed" : wings === "swept" ? "flying" : "hovering"}${c}`,
         buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS, wings), liveMat, W, H, true)));
     this.bodies = [...this.herds, ...this.flyers];
@@ -434,7 +441,7 @@ export class Ants3D {
     tvd.colors = new Array((tvd.positions!.length / 3) * 4).fill(1);
     (tvd as unknown as { aLeg: number[] }).aLeg = new Array((tvd.positions!.length / 3) * 2).fill(0);
     this.rings = new Herd(scene, "rings", tvd, ringMat, W, H, true);
-    this.dead = [0, 1].map((c) => new Herd(scene, `corpses${c}`, buildAntGeometry(scene, colonyRgb[c]!, true, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), deadMat, W, H, true));
+    this.dead = colonyRgb.map((rgb, c) => new Herd(scene, `corpses${c}`, buildAntGeometry(scene, rgb, true, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), deadMat, W, H, true));
     for (const h of this.dead) h.mesh.hasVertexAlpha = true;
   }
 
@@ -458,19 +465,19 @@ export class Ants3D {
     const n = frame.count;
     this.bites.update(frame);
     let ringCount = 0;
-    const counts = this.counts;
+    const counts = this.counts, colonies = this.live.length;
     counts.fill(0);
     let carrying = 0, airborne = 0;
     if (this.groups.length < n) this.groups = new Uint8Array(Math.max(n, this.groups.length * 2));
     const groups = this.groups;
     for (let i = 0; i < n; i++) {
-      // Workers and soldiers 0..3 (colony + 2 for a soldier); flyers 4 + 2 per wing pose + colony.
+      // Workers 0..n-1 and soldiers n..2n-1 (colony + n for a soldier); flyers 2n + n per wing pose + colony.
       const flyer = flyerOf(frame, i);
       const wings = flyer === null ? -1 : flyer.state === "flying" ? 1 : flyer.state === "hovering" ? 2 : 0;
-      const group = wings < 0 ? frame.colony[i]! + (frame.caste[i] === 1 ? 2 : 0) : 4 + wings * 2 + frame.colony[i]!;
+      const group = wings < 0 ? frame.colony[i]! + (frame.caste[i] === 1 ? colonies : 0) : 2 * colonies + wings * colonies + frame.colony[i]!;
       groups[i] = group;
       counts[group]!++;
-      if (group >= 6) airborne++;
+      if (group >= 3 * colonies) airborne++;
       if (frame.caste[i] !== 1 && frame.carrying[i]) carrying++;
       if (highlight >= 0 && frame.agent[i] === highlight) ringCount++;
     }
@@ -487,7 +494,7 @@ export class Ants3D {
       const c = frame.colony[i]!;
       const caste = frame.caste[i] === 1 ? 1 : 0;
       const group = groups[i]!;
-      const aloft = group >= 6;
+      const aloft = group >= 3 * colonies;
       const herd = herds[group]!;
       const k = at[group]!++;
       const size = L * (caste ? SOLDIER_SCALE : 1);
@@ -561,8 +568,7 @@ export class Ants3D {
     const cc = this.corpseCounts;
     cc.fill(0);
     for (const k of frame.corpses) if (k.ageMs >= 0 && k.ageMs < CORPSE_FADE_MS) cc[k.colony]!++;
-    this.dead[0]!.ensure(cc[0]!);
-    this.dead[1]!.ensure(cc[1]!);
+    for (let c = 0; c < colonies; c++) this.dead[c]!.ensure(cc[c]!);
     const ca = this.corpseAt;
     ca.fill(0);
     for (const k of frame.corpses) {
@@ -583,8 +589,7 @@ export class Ants3D {
       color[ci] = color[ci + 1] = color[ci + 2] = 1;
       color[ci + 3] = 0.9 * (1 - t);
     }
-    this.dead[0]!.commit(cc[0]!);
-    this.dead[1]!.commit(cc[1]!);
+    for (let c = 0; c < colonies; c++) this.dead[c]!.commit(cc[c]!);
     this.bites.publishContacts(L, "3d");
   }
 }

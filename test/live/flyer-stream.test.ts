@@ -1,4 +1,4 @@
-// Flyers on the spectator stream (version 28). Live is the recorder fed step outputs; recorded is the same messages
+// Flyers on the spectator stream (version 29). Live is the recorder fed step outputs; recorded is the same messages
 // decoded from the bytes a recording stores. The flights are scripted step outputs that follow the flight engine's
 // phase timing: a flyer taking off on tick t is airborne on t, one landing on t is on the ground on t with
 // takeOffTick t + its lockout, and a tick is processed once the state's tick has passed it.
@@ -354,7 +354,7 @@ describe("messages without flyers", () => {
     const takeoff = encodeMessage({ tick: 1, ants: emptyAnts(), full: null, events: [{ kind: "takeoff", antId: 1, colony: 0, x: 5, y: 5 }] });
     expect(takeoff[2]).toBe(FLYER_STREAM_VERSION);
     const older = takeoff.slice(); older[2] = RULES28_STREAM_VERSION;
-    expect(() => decodeMessage(older)).toThrow("take-off and landing events need version 28");
+    expect(() => decodeMessage(older)).toThrow(`take-off and landing events need version ${FLYER_STREAM_VERSION}`);
     const mark: StreamMark = { id: 1, agent: 0, colony: 0, tileX: 2, tileY: 2, words: [], laidTick: 0, answered: 0, verb: "GATHER", count: 1, caste: "flyer" };
     const flyerMark = encodeMessage({ tick: 1, ants: emptyAnts(), full: null, events: [{ kind: "mark", mark }] });
     const olderMark = flyerMark.slice(); olderMark[2] = RULES28_STREAM_VERSION;
@@ -366,6 +366,36 @@ describe("messages without flyers", () => {
     expect(() => encodeMessage({ tick: 1, ants, full: null, events: [] })).toThrow("stream flyer fields do not match its state flying");
     const lockedOut = { ...emptyAnts(1), flyers: [{ state: "grounded" as const, takeOffTick: 4 }] };
     expect(() => encodeMessage({ tick: 1, ants: lockedOut, full: null, events: [] })).toThrow("stream flyer fields do not match its state grounded");
+  });
+});
+
+describe("the flyer layout beside four colonies", () => {
+  /** Four ants, one per colony, in id order; three of them flyers. */
+  const ants = (): StreamMessage["ants"] => ({ ...emptyAnts(4), colony: Uint8Array.from([0, 1, 2, 3]),
+    flyers: [{ state: "grounded" }, { state: "flying", destX: 300, destY: 400 }, null, { state: "lockedOut", takeOffTick: 9 }] });
+
+  it("marks a flyer with ant bit 5, leaving bit 4 to a colony's high bit", () => {
+    const message: StreamMessage = { tick: 1, ants: ants(), full: null, events: [] };
+    const bytes = encodeMessage(message);
+    expect(bytes[2]).toBe(FLYER_STREAM_VERSION);
+    // Magic (2), version, flags, tick (1), count (1), four id steps, x and y (u16 each), headings: then the bits bytes.
+    const bits = 2 + 1 + 1 + 1 + 1 + 4 + 4 * 2 + 4 * 2 + 4;
+    expect(Array.from(bytes.subarray(bits, bits + 4))).toEqual([32, 1 | 32, 16, 16 | 1 | 32]);
+    const decoded = decodeMessage(bytes);
+    expect(Array.from(decoded.ants.colony)).toEqual([0, 1, 2, 3]);
+    expect(decoded.ants.flyers).toEqual(message.ants.flyers);
+    expect(encodeMessage(decoded)).toEqual(bytes);
+  });
+
+  it("sends take-off and landing as event codes 21 and 22, beside eliminated at 20", () => {
+    // Magic (2), version, flags, tick (1), no ants (1), one event (1): then its code, byte 7.
+    const code = (event: StreamEvent) => encodeMessage({ tick: 1, ants: emptyAnts(), full: null, events: [event] })[7];
+    expect(code({ kind: "eliminated", colony: 2, tick: 1 })).toBe(20);
+    expect(code({ kind: "takeoff", antId: 7, colony: 3, x: 5, y: 6 })).toBe(21);
+    expect(code({ kind: "landing", antId: 7, colony: 3, x: 5, y: 6 })).toBe(22);
+    const events: StreamEvent[] = [{ kind: "takeoff", antId: 7, colony: 3, x: 5, y: 6 }, { kind: "landing", antId: 8, colony: 2, x: 9, y: 10 },
+      { kind: "eliminated", colony: 1, tick: 1 }];
+    expect(decodeMessage(encodeMessage({ tick: 1, ants: ants(), full: null, events })).events).toEqual(events);
   });
 });
 

@@ -1,7 +1,6 @@
 import { isHouseMatch, isPublicMatch, spectatorDelaySeconds, type MatchAccess } from "./match-access.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import type { RecordingMatchType } from "../replays/recorded-match-type.js";
-import type { ColonyNamePair } from "../sim/colonyNames.js";
 
 /** Match identity is its lobby, not the slot or whichever sequence runs there next. */
 export interface CatalogMatch extends MatchAccess {
@@ -30,8 +29,8 @@ export type PublicSeat = {
 } & (
   | { readonly rating: number; readonly rd: number; readonly ratedMatches: number }
   | { readonly rating: null; readonly rd: null; readonly ratedMatches: null });
-/** A live match's seats by colony. */
-export type PublicColonies = readonly [readonly PublicSeat[], readonly PublicSeat[]];
+/** A live match's seats, one list per colony by colony id: two colonies, or four in a Quadrants match. */
+export type PublicColonies = readonly (readonly PublicSeat[])[];
 
 /** What the HUD's match directory reads of a listed match (web/src/match-directory.ts). */
 export interface PublicMatchEntry {
@@ -42,14 +41,17 @@ export interface PublicMatchEntry {
 }
 /** A listed match as the catalog sends it: with its players, which the Matches page shows. */
 export interface PublicLiveMatch extends PublicMatchEntry {
-  /** Both empty when the match's lobby could not be read. */
+  /** Two empty lists when the match's lobby could not be read. */
   readonly colonies: PublicColonies;
   /** The match's type by its lobby, as a recording's (lobbyMatchType); null when the lobby could not be read. */
   readonly matchType: RecordingMatchType | null;
   /** Present only on a Model Index match: its harness phase by its start (src/rating/harnessPhase.ts). */
   readonly harnessPhase?: HarnessPhase;
-  /** Present only on a match playing under drawn names, as its lobby records them; absent means the rated names. */
-  readonly colonyNames?: ColonyNamePair;
+  /**
+   * Present only on a match playing under drawn names, as its lobby records them, one per colony by colony id (a Quadrants
+   * match's four); absent means the rated names.
+   */
+  readonly colonyNames?: readonly string[];
 }
 export interface PublicLobbyEntry {
   readonly id: string;
@@ -86,7 +88,7 @@ export function matchWatchStatus(match: MatchAccess, phase: "waiting" | "started
  */
 export function publicMatchCatalog(
   matches: readonly CatalogMatch[], lobbies: readonly CatalogLobby[], players: ReadonlyMap<string, PublicColonies> = new Map(),
-  types: ReadonlyMap<string, RecordingMatchType> = new Map(), names: ReadonlyMap<string, ColonyNamePair> = new Map(),
+  types: ReadonlyMap<string, RecordingMatchType> = new Map(), names: ReadonlyMap<string, readonly string[]> = new Map(),
 ): PublicLiveCatalog {
   return {
     matches: listedMatches(matches).map(match => ({
@@ -102,8 +104,8 @@ export function publicMatchCatalog(
 }
 
 /** An explicit copy of a match's drawn names, as its lobby (Lobby.colonyNames) records them; none where it records none. */
-function drawnNames(names: ColonyNamePair | undefined): { colonyNames?: ColonyNamePair } {
-  return names === undefined ? {} : { colonyNames: [names[0], names[1]] };
+function drawnNames(names: readonly string[] | undefined): { colonyNames?: readonly string[] } {
+  return names === undefined ? {} : { colonyNames: [...names] };
 }
 
 /** The matches discovery lists, oldest first: public, with playback not yet finished. Only these have players read. */
@@ -117,7 +119,10 @@ function publicType(type: RecordingMatchType | undefined): RecordingMatchType | 
   return type === undefined ? null : { kind: type.kind, size: type.size };
 }
 
-/** An explicit copy of each seat's seven public fields; anything else a caller attached is dropped. */
+/**
+ * An explicit copy of each seat's seven public fields, one list per colony given and never fewer than two; anything else a
+ * caller attached is dropped.
+ */
 function publicColonies(colonies: PublicColonies | undefined): PublicColonies {
   const seats = (list: readonly PublicSeat[] | undefined): PublicSeat[] => (list ?? []).map(seat => {
     const named = { displayName: seat.displayName, modelLabel: seat.modelLabel ?? null, thinkingLevel: seat.thinkingLevel ?? null, serviceTier: seat.serviceTier ?? null };
@@ -125,5 +130,5 @@ function publicColonies(colonies: PublicColonies | undefined): PublicColonies {
       ? { ...named, rating: null, rd: null, ratedMatches: null }
       : { ...named, rating: seat.rating, rd: seat.rd, ratedMatches: seat.ratedMatches };
   });
-  return [seats(colonies?.[0]), seats(colonies?.[1])];
+  return Array.from({ length: Math.max(2, colonies?.length ?? 0) }, (_, colony) => seats(colonies?.[colony]));
 }

@@ -17,6 +17,7 @@ export function expandCells(table) {
     return parsed;
   };
   if (!Number.isSafeInteger(table.foodRadix) || table.foodRadix < 1) throw new RangeError("Invalid food radix");
+  const colonies = table.colonies ?? 2, kinds = 3 * colonies;
   const flyerStates = new Map(Object.entries(SIGHTED_FLYER_CODES).map(([state, code]) => [code, state]));
   const cells = [];
   let previousIndex = 0;
@@ -32,9 +33,9 @@ export function expandCells(table) {
       const [antId, packed] = [n(antIdText ?? ""), n(packedText ?? "")];
       const flyer = flyerCode === undefined ? undefined : flyerStates.get(flyerCode);
       if (extra.length > 0 || (flyerCode !== undefined && flyer === undefined)) throw new RangeError("Invalid cell ant record");
-      const hp = Math.floor(packed / 6), kind = packed % 6;
-      return { antId, hp, colony: (kind % 2),
-        ...(kind < 2 ? {} : { caste: (kind < 4 ? "worker" : "soldier") }), ...(flyer === undefined ? {} : { flyer }) };
+      const hp = Math.floor(packed / kinds), kind = packed % kinds, caste = Math.floor(kind / colonies);
+      return { antId, hp, colony: (kind % colonies),
+        ...(caste === 0 ? {} : { caste: (caste === 1 ? "worker" : "soldier") }), ...(flyer === undefined ? {} : { flyer }) };
     });
     for (let i = 0; i < count; i++) {
       const index = previousIndex + delta;

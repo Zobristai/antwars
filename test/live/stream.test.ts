@@ -35,7 +35,7 @@ interface Truth {
   agentOf: number[];
   carrying: number[];
   food: Uint32Array;
-  stores: [StreamStore, StreamStore];
+  stores: StreamStore[];
 }
 
 interface Run {

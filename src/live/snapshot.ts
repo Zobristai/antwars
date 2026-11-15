@@ -23,7 +23,8 @@ export function adjacentWithSlack(ax: number, ay: number, bx: number, by: number
   return near(ax, bx) && near(ay, by);
 }
 
-export type Colony = 0 | 1;
+/** A colony id: 0 and 1 in a two-colony match, 0 to 3 in a four-colony one. */
+export type Colony = number;
 
 /** A recorded match: messages concatenated, each prefixed with its u32 byte length. */
 export function packMessages(messages: Uint8Array[]): Uint8Array {

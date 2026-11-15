@@ -233,6 +233,29 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* The map, under Territory hold on the rows' label axis: its label, then its name. */
 .d1-map { display: flex; justify-content: center; align-items: baseline; gap: 8px; min-width: 0; min-height: 26px; margin: 0; padding-top: 4px; }
 .d1-map-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); }
+/* A four-colony match's colonies, in place of Balance and Win conditions (deck.ts): a row per colony, its name in its
+   colour, Eliminated once its queens are all lost, and its share of the held ground at the row's end; one line instead
+   of the shares while no tile is held. */
+.d1-colonies { display: grid; min-width: 0; }
+/* Balance and Win conditions give way; with no team container beside it (pane.ts), the score's dividers would stand
+   beside empty space. */
+.d1-score.is-four > :is(.d1-kicker, .d1-gauge, .d1-win) { display: none; }
+.d1-score.is-four { border-inline-color: transparent; }
+.d1-colonies > .d1-kicker { margin-top: 6px; text-align: center; }
+.d1-crow { display: grid; grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr) 48px; grid-template-areas: "name out . share"; align-items: center; column-gap: 8px; min-width: 0; min-height: 26px; }
+.d1-crow-name { grid-area: name; min-width: 0; font-size: 13px; font-weight: 700; line-height: 18px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.d1-crow.c0 .d1-crow-name { color: var(--aw-k0, var(--aw-c0)); }
+.d1-crow.c1 .d1-crow-name { color: var(--aw-k1, var(--aw-c1)); }
+.d1-crow.c2 .d1-crow-name { color: var(--aw-k2); }
+.d1-crow.c3 .d1-crow-name { color: var(--aw-k3); }
+.d1-crow-out { grid-area: out; }
+.d1-crow-share { grid-area: share; justify-self: end; font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-crows-none { min-height: 26px; padding-top: 4px; text-align: center; font-size: 13px; color: var(--aw-ink-2); }
+/* A colony name whose colour needs a dark ground to keep 4.5:1 (colony-palette.ts sets data-aw-ground; colony-ground.css). */
+:root[data-aw-ground~="0"] .d1-crow.c0 .d1-crow-name, :root[data-aw-ground~="1"] .d1-crow.c1 .d1-crow-name,
+:root[data-aw-ground~="2"] .d1-crow.c2 .d1-crow-name, :root[data-aw-ground~="3"] .d1-crow.c3 .d1-crow-name {
+  background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
+}
 
 /* ---------------------------------------------------------------- a team's agents and its history */
 /* Agents: one small row each under the
@@ -241,6 +264,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-agents { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; max-height: 88px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
 .d1-agent-item { --d1-side: var(--aw-k0, var(--aw-c0)); min-width: 0; }
 .d1-agent-item.c1 { --d1-side: var(--aw-k1, var(--aw-c1)); }
+.d1-agent-item.c2 { --d1-side: var(--aw-k2); }
+.d1-agent-item.c3 { --d1-side: var(--aw-k3); }
 .d1-agent {
   display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; align-items: center; width: 100%; min-height: 22px; margin: 0; padding: 0 6px 0 9px;
   border: 0; border-radius: 6px; background: none; box-shadow: inset 3px 0 0 var(--d1-side); font-size: 11.5px; line-height: 16px; text-align: left; cursor: pointer;
@@ -457,6 +482,11 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-legend { display: block; left: 6px; max-width: calc(100% - 12px); white-space: normal; }
   .d1-dot { display: inline-block; vertical-align: 0; }
   .d1-legend-rest { overflow: visible; }
+  /* A four-colony match's legend breaks only between its clauses: the mode word, each "· clause" and the link stay whole,
+     and the link's gap stays with the clause before it, so a link starting a line is not indented. */
+  .d1-legend.is-four :is(.d1-mode, .d1-clause, .d1-back) { white-space: nowrap; }
+  .d1-legend.is-four:has(> .d1-back:not([hidden])) .d1-clause:last-of-type { margin-right: 10px; }
+  .d1-legend.is-four > .d1-back { margin-left: 0; }
   .d1-window { border-radius: 0; }
   .d1-lane { padding: 0 4px 0 10px; border-radius: 0; gap: 8px; }
   /* A replay's controls take their own row over the event and the board controls (as today's HUD does, ui.css), so

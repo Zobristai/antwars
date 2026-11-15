@@ -2,9 +2,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED, boardHref, drawers, holdProgress, isShown, keep, leadLine, liveQueens, liveRow, liveState,
-  neverJoined, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
+  listedNames, neverJoined, recordedColonies, recordingModels, recordingResult, recordingRow, recordingRows, recordingsState, recordingType, resultHeadline, shares, spawnFill, stepped, territoryShares, utcStamp, withUnits, withoutCasteGlyph, type Drawers,
 } from "../../../web/src/ui/format.ts";
-import { EARLY_WIN_RULES } from "../../../src/sim/config.ts";
+import { COLONY_NAMES, EARLY_WIN_RULES } from "../../../src/sim/config.ts";
 import type { MatchesView, Recording } from "../../../web/src/matches-page/data.ts";
 
 const run = (...events: Parameters<typeof drawers>[1][]): Drawers => events.reduce(drawers, CLOSED);
@@ -41,6 +41,24 @@ describe("score plate: progress toward each way to win", () => {
     expect(shares(3, 1)).toEqual([75, 25]);
     expect(shares(0, 4)).toEqual([0, 100]);
     expect(shares(0, 0)).toBeNull();
+  });
+  it("gives four colonies whole-percent shares of the held ground that add to exactly 100, and none when nothing is held", () => {
+    expect(territoryShares([30, 30, 30, 10])).toEqual([30, 30, 30, 10]);
+    // Thirds: the one point left goes to the lowest colony id among equal remainders.
+    expect(territoryShares([1, 1, 1, 0])).toEqual([34, 33, 33, 0]);
+    expect(territoryShares([0, 1, 1, 1])).toEqual([0, 34, 33, 33]);
+    // Largest remainders first: 2/7, 2/7, 2/7, 1/7 are 28.57, 28.57, 28.57, 14.29.
+    expect(territoryShares([2, 2, 2, 1])).toEqual([29, 29, 28, 14]);
+    // An eliminated colony's tiles are neutral: it holds nothing and shows 0, never a point of the rounding.
+    expect(territoryShares([999, 1, 0, 0])).toEqual([100, 0, 0, 0]);
+    expect(territoryShares([1, 0, 0, 0])).toEqual([100, 0, 0, 0]);
+    expect(territoryShares([0, 0, 0, 0])).toBeNull();
+    for (const held of [[1, 2, 3, 4], [7, 7, 7, 7], [1, 1, 1, 1], [3, 3, 3, 0], [123, 456, 789, 1011], [1, 1, 98, 0], [5, 0, 5, 1]]) {
+      const pct = territoryShares(held)!;
+      expect(pct.reduce((a, b) => a + b, 0), held.join(",")).toBe(100);
+      expect(pct.every(Number.isInteger), held.join(",")).toBe(true);
+      pct.forEach((p, i) => expect(Math.abs(p - (100 * held[i]!) / held.reduce((a, b) => a + b, 0)), held.join(",")).toBeLessThan(1));
+    }
   });
   it("puts the six-to-one line where the sim's early win needs the leader's share", () => {
     const line = leadLine(EARLY_WIN_RULES.territoryRatioPermille);
@@ -122,6 +140,15 @@ describe("matches rows", () => {
     expect(resultHeadline({ winner: 0, reason: "queens_killed" }, colonyNames)).toBe("Sweetwater Colony wins");
     expect(recordingModels([{ seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }], colonyNames)).toBe("Sweetwater Colony: m-a");
   });
+  it("words a four-colony recording's end without two sides, and a two-colony one as before", () => {
+    const quadrants = { matchType: { kind: "quadrants" as const, size: null } };
+    expect(recordingResult({ winner: 2, reason: "queens_killed", decidedBy: "queens_killed", ...quadrants }).how).toBe("Last colony standing · queens killed");
+    expect(recordingResult({ winner: 3, reason: "queens_killed", decidedBy: "kills", ...quadrants }).how).toBe("Queens killed · decided on kills");
+    expect(recordingResult({ winner: 1, reason: "idle", decidedBy: "idle", ...quadrants }).how).toBe("Last colony standing · seats inactive");
+    expect(recordingResult({ winner: null, reason: "idle", decidedBy: "draw", ...quadrants }).how).toBe("Seats inactive · decided on draw");
+    expect(recordingResult({ winner: 1, reason: "queens_killed", decidedBy: "kills" }).how).toBe("Queens killed on both sides · decided on kills");
+    expect(recordingResult({ winner: null, reason: "idle", decidedBy: "draw" }).how).toBe("Seats inactive on both sides");
+  });
   it("names recorded models by colony and never invents seats", () => {
     expect(recordingModels([])).toBe("Seats not recorded");
     expect(recordingModels([{ seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: null }, { seat: 0, colony: 0, modelLabel: "m-a", thinkingLevel: null, serviceTier: null, handle: null }])).toBe("Very Large Colony: m-a · Lake Hodges Colony: model unknown");
@@ -152,6 +179,35 @@ describe("matches rows", () => {
     expect(all.map(neverJoined)).toEqual([false, true, true, false, true, false, false]);
     const view = { recordings: { status: "ready", rows: [onlySecond, unrecorded, nobody, played, nobodyPartial, onlyFirst, onlyFirstPartial] } } as const;
     expect(recordingRows(view, "").map(r => r.id)).toEqual([played.id, unrecorded.id, nobodyPartial.id, onlyFirstPartial.id]);
+  });
+  describe("a four-colony (Quadrants) recording", () => {
+    const QUADRANTS = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+    const seat = (n: number, colony: 0 | 1 | 2 | 3) => ({ seat: n, colony, modelLabel: `m-${n}`, thinkingLevel: null, serviceTier: null, handle: null });
+    const four = [seat(0, 0), seat(1, 1), seat(2, 2), seat(3, 3)];
+    it("is known by its type, its four names, its winner or a seat of colony 2 or 3, and a two-colony record by none", () => {
+      expect([
+        recordedColonies({ matchType: { kind: "quadrants", size: 1 } }), recordedColonies({ colonyNames: QUADRANTS as [string, string, string, string] }),
+        recordedColonies({ winner: 3 }), recordedColonies({ seats: [seat(0, 2)] }),
+      ]).toEqual([4, 4, 4, 4]);
+      expect([recordedColonies(recording()), recordedColonies(recording({ winner: 1, seats: [seat(0, 0), seat(1, 1)], matchType: { kind: "unranked", size: 1 },
+        colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] }))]).toEqual([2, 2]);
+    });
+    it("names its winner and each colony's models by its four names, or by the table's four where it carries none", () => {
+      const named = recording({ winner: 2, reason: "queens_killed", decidedBy: "queens_killed", seats: four, matchType: { kind: "quadrants", size: 1 },
+        colonyNames: ["Lake Skinner Colony", "Sweetwater Colony", "Lake Hodges Colony", "Very Large Colony"] });
+      expect(recordingRow(named, "")).toMatchObject({ result: "Lake Hodges Colony won", type: "Quadrants",
+        models: "Lake Skinner Colony: m-0 · Sweetwater Colony: m-1 · Lake Hodges Colony: m-2 · Very Large Colony: m-3" });
+      const unnamed = recording({ winner: 3, reason: "queens_killed", decidedBy: "queens_killed", seats: four, matchType: { kind: "quadrants", size: 1 } });
+      expect(recordingRow(unnamed, "")).toMatchObject({ result: "Lake Skinner Colony won", models: QUADRANTS.map((name, n) => `${name}: m-${n}`).join(" · ") });
+      expect(listedNames({}, 4)).toEqual(QUADRANTS);
+      expect(listedNames({}, 2)).toBe(COLONY_NAMES);
+    });
+    it("is not listed where a complete record lacks one of its four colonies, and is listed with all four", () => {
+      const played = recording({ seats: four, matchType: { kind: "quadrants", size: 1 } });
+      const short = recording({ seats: four.slice(0, 3), matchType: { kind: "quadrants", size: 1 } });
+      const shortPartial = { ...short, status: "partial" as const };
+      expect([played, short, shortPartial].map(neverJoined)).toEqual([false, true, false]);
+    });
   });
   it("words each recording's match type as its badge, never a mode slug, and gives no badge without a type", () => {
     expect(recordingType({ kind: "index", size: 2 })).toBe("Index · 2v2");

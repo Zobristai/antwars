@@ -507,7 +507,7 @@ describe("air route on the public live and recorded stream", () => {
     return frame;
   };
 
-  it("carries the flyer marks with their caste on the public stream, which names no rules, at stream version 28", () => {
+  it("carries the flyer marks with their caste on the public stream, which names no rules, at the flyer stream version", () => {
     expect(includeComparisonSetup).toBeUndefined();
     for (const full of [decoded[0]!.full!, joining[0]!.full!]) for (const field of ["rules", "seed", "players"]) expect(full.setup).not.toHaveProperty(field);
     expect(payloads[4]![2]).toBe(FLYER_STREAM_VERSION);

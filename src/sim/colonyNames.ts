@@ -57,6 +57,9 @@ export type SupercolonyLabel = (typeof SUPERCOLONY_NAMES)[number]["label"];
 /** A match's two colony labels, index = colony id. */
 export type ColonyNamePair = readonly [string, string];
 
+/** A match's colony labels, index = colony id: two in most matches, four in a quadrants match. */
+export type ColonyNames = readonly string[];
+
 /** Every pair of the four, unordered: all are mutually hostile, so any can be drawn. */
 export const HOSTILE_PAIRS: readonly (readonly [SupercolonyLabel, SupercolonyLabel])[] = SUPERCOLONY_NAMES.flatMap((a, i) =>
   SUPERCOLONY_NAMES.slice(i + 1).map(b => [a.label, b.label] as const));
@@ -98,27 +101,36 @@ export function lobbyColonyNames(lobbyId: string, rated: boolean): ColonyNamePai
   return rated ? COLONY_NAMES : drawColonyNames(lobbyId);
 }
 
-/** Whether a pair is the rated names, which streams and records leave implicit. */
-export function isClassicColonyNames(names: ColonyNamePair): boolean {
-  return names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
+/** A quadrants match's four colony names, by colony: the table's four labels in table order. */
+export function quadrantColonyNames(): string[] {
+  return SUPERCOLONY_NAMES.map(name => name.label);
 }
 
-/** A match's names from what it carries (a stream setup, a listed row): its drawn pair, or COLONY_NAMES when it carries none. */
-export function colonyNamesOf(match: { readonly colonyNames?: readonly [string, string] | null } | null | undefined): ColonyNamePair {
+/** A seated lobby's colony names: a quadrants lobby's four, otherwise lobbyColonyNames (rated for any queue mode). */
+export function seatedColonyNames(lobbyId: string, mode: string | null): ColonyNames {
+  return mode === "quadrants" ? quadrantColonyNames() : lobbyColonyNames(lobbyId, mode !== null);
+}
+
+/** Whether a match's names are the rated pair, which streams and records leave implicit; four names never are. */
+export function isClassicColonyNames(names: readonly string[]): boolean {
+  return names.length === 2 && names[0] === COLONY_NAMES[0] && names[1] === COLONY_NAMES[1];
+}
+
+/**
+ * A match's names from what it carries (a stream setup, a listed row), index = colony id: its own names, or
+ * COLONY_NAMES when it carries none.
+ */
+export function colonyNamesOf(match: { readonly colonyNames?: readonly string[] | null } | null | undefined): readonly string[] {
   return match?.colonyNames ?? COLONY_NAMES;
 }
 
 /**
- * A colony's table row by its name, or by its id when the name is not one of the four (a match outside the table keeps
- * colony 0's and colony 1's own colours).
+ * Each colony's colour in a match named `names`, index = colony id, one per name: its name's table row's colour, or, for a
+ * name that is not one of the four, its colony's own table colour (a match outside the table keeps colony 0's and colony
+ * 1's own colours).
  */
-function rowOf(names: ColonyNamePair, colony: 0 | 1): SupercolonyName {
-  return supercolony(names[colony]) ?? SUPERCOLONY_NAMES[colony];
-}
-
-/** Each colony's colour in a match named `names`, index = colony id. */
-export function colonyColours(names: ColonyNamePair): readonly [number, number] {
-  return [rowOf(names, 0).colour, rowOf(names, 1).colour];
+export function colonyColours(names: readonly string[]): number[] {
+  return names.map((name, colony) => (supercolony(name) ?? SUPERCOLONY_NAMES[colony]).colour);
 }
 
 /** A colour as CSS (#rrggbb). */

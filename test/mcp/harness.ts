@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { SimConfig } from "../../src/sim/config.js";
+import type { MapDefinition, SimConfig } from "../../src/sim/config.js";
 import { playable } from "../playable.ts";
 import { HISTORICAL_DEFAULT_CONFIG } from "../sim/fixtures.js";
 import { DEFAULT_MCP_CONFIG, type McpConfig } from "../../src/mcp/config.js";
@@ -76,7 +76,7 @@ export interface Harness {
 }
 
 export async function startHarness(
-  options: { simConfig?: SimConfig; mcpConfig?: McpConfig; seed?: number; state?: SimState; start?: boolean; slot?: SlotAccess; perSourceInitializeLimit?: boolean; extraTools?: (server: McpServer) => void } = {},
+  options: { simConfig?: SimConfig; mcpConfig?: McpConfig; seed?: number; state?: SimState; start?: boolean; slot?: SlotAccess; perSourceInitializeLimit?: boolean; extraTools?: (server: McpServer) => void; quadrantMaps?: readonly MapDefinition[] } = {},
 ): Promise<Harness> {
   const log: string[] = [];
   const replies: { seq: number; line: string }[] = [];
@@ -85,6 +85,7 @@ export async function startHarness(
   const game: Game = new Game({
     simConfig: playable(options.simConfig ?? TEST_CONFIG),
     slot: options.slot,
+    ...(options.quadrantMaps === undefined ? {} : { quadrantMaps: options.quadrantMaps }),
     mcpConfig: options.mcpConfig ?? TEST_MCP_CONFIG,
     now: () => clock.now,
     onLogLine: (line) => log.push(line),

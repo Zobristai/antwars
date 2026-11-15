@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { expect, it } from "vitest";
-import { RULES28_STREAM_VERSION, Writer, decodeMessage, encodeMessage, encodePublicMessage, encodeReplayMessage, type StreamMessage, type StreamRules28Figures } from "../../src/live/format.ts";
+import { COLONY_NAMES_STREAM_VERSION, RULES28_STREAM_VERSION, Writer, decodeMessage, encodeMessage, encodePublicMessage, encodeReplayMessage, type StreamMessage, type StreamRules28Figures } from "../../src/live/format.ts";
 import { SpectatorRecorder, setupOf } from "../../src/live/model.ts";
 import { step } from "../../src/sim/step.ts";
 import { unpackMessages } from "../../src/live/snapshot.ts";
@@ -105,13 +105,18 @@ it("a composed rules-28 snapshot round-trips every section; the marker and its f
     expect(decoded.full!.marks).toEqual(marked.full!.marks);
     expect(decoded.full!.territoryWin).toEqual({ colony: 0, startTick: 6000, winTick: 8999 });
     expect(decoded.full!.agents[0]!.identity).toEqual({ displayName: "owner/agent", elo: 1234.5, rd: 61 });
-    // The unmarked twin is the highest earlier version (colony names); only the version byte, the marker and its figures differ.
-    expect(plain[2]).toBe(RULES28_STREAM_VERSION - 1);
+    // The unmarked twin is the highest earlier two-colony version (colony names). Only the version byte, the colony
+    // count every setup states from the four-colony version on (2, before the queen positions), the marker and its
+    // figures differ.
+    expect(plain[2]).toBe(COLONY_NAMES_STREAM_VERSION);
     const figures = figureBytes(RULES28_FIGURES);
-    expect(bytes.length).toBe(plain.length + 1 + figures.length);
-    let at = 3; while (bytes[at] === plain[at]) at++;
-    expect(Array.from(bytes.slice(at, at + 1 + figures.length))).toEqual([1, ...figures]);
-    expect([...bytes.slice(0, 2), ...bytes.slice(3, at), ...bytes.slice(at + 1 + figures.length)]).toEqual([...plain.slice(0, 2), ...plain.slice(3)]);
+    expect(bytes.length).toBe(plain.length + 1 + 1 + figures.length);
+    let count = 3; while (bytes[count] === plain[count]) count++;
+    expect(bytes[count]).toBe(2);
+    const uncounted = [...bytes.slice(0, count), ...bytes.slice(count + 1)];
+    let at = count; while (uncounted[at] === plain[at]) at++;
+    expect(uncounted.slice(at, at + 1 + figures.length)).toEqual([1, ...figures]);
+    expect([...uncounted.slice(0, 2), ...uncounted.slice(3, at), ...uncounted.slice(at + 1 + figures.length)]).toEqual([...plain.slice(0, 2), ...plain.slice(3)]);
   }
 });
 

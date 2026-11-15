@@ -97,7 +97,7 @@ export function applySoftSeparation(state: SimState, origins: ReadonlyMap<number
   let nearCount = 0;
   const marks = new Map(state.marks.map(m => [m.id, m]));
   const next: Vec[] = new Array(ants.length);
-  const colonies = [0, 1].map((): SoftMetrics => ({ antTicks: 0, pushedAntTicks: 0,
+  const colonies = state.colonies.map((): SoftMetrics => ({ antTicks: 0, pushedAntTicks: 0,
     increasedNativeDisplacement: 0, exceededNativeSpeed: 0, maxAddedDisplacement: 0,
     maxTotalDisplacement: 0, maxCorrection: 0, neighbourChecks: 0 }));
   for (let i = 0; i < ants.length; i++) {

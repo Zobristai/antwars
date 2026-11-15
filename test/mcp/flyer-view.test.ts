@@ -255,13 +255,13 @@ describe("the cell table's flyer field", () => {
       { tileX: 3, tileY: 1, food: 0, ants: [{ antId: 7, colony: 1, hp: 2000, caste: "worker", flyer: "hovering" }, { antId: 9, colony: 0, hp: 2000, caste: "worker" }] },
       { tileX: 5, tileY: 2, food: 2, ants: [{ antId: 11, colony: 0, hp: 1500, caste: "worker", flyer: "flying" }, { antId: 12, colony: 1, hp: 2000, caste: "worker", flyer: "grounded" }] },
     ];
-    const table = denseCells(cells, 64, 48, true);
+    const table = denseCells(cells, 64, 48, 2, true);
     expect(table.encoding).toBe(FLYER_CELL_ENCODING);
     expect(table.encoding.startsWith(CELL_ENCODING)).toBe(true);
     expect(table.data.split(/[:/;]/).filter(part => /\.[gfh]$/.test(part))).toEqual([`7.${(2000 * 6 + 3).toString(36)}.h`, `${(11).toString(36)}.${(1500 * 6 + 2).toString(36)}.f`, `${(12).toString(36)}.${(2000 * 6 + 3).toString(36)}.g`]);
     expect(expandCells(table)).toEqual(cells);
     const plain = cells.map(cell => ({ ...cell, ants: cell.ants.map(({ flyer: _flyer, ...ant }) => ant) }));
-    expect(denseCells(plain, 64, 48)).toEqual({ ...denseCells(plain, 64, 48, true), encoding: CELL_ENCODING });
+    expect(denseCells(plain, 64, 48)).toEqual({ ...denseCells(plain, 64, 48, 2, true), encoding: CELL_ENCODING });
     const one = { width: 64, height: 48, encoding: FLYER_CELL_ENCODING, foodRadix: 1 };
     expect(expandCells({ ...one, data: "0:1.8.h" })).toEqual([{ tileX: 0, tileY: 0, food: 0, ants: [{ antId: 1, colony: 0, hp: 1, caste: "worker", flyer: "hovering" }] }]);
     for (const data of ["0:1.8.l", "0:1.8.h.3", "0:1.8."]) expect(() => expandCells({ ...one, data }), data).toThrow(RangeError);

@@ -9,7 +9,7 @@ import type { ModeCopy } from "./replay.ts";
  * hover and pointed order for the board, with the board's area and what the board labels keep clear of.
  */
 import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../src/sim/config.ts";
-import { colonyNamesOf, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
+import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { SUB_TILE, streamQueens, type StreamQueen, type StreamAgent, type StreamHatch, type StreamMark, type StreamStore } from "../../src/live/format.ts";
 import type { Board, Frame, StoryEntry } from "./buffer.ts";
 import { MODEL_LABEL, agentShade } from "./squads.ts";
@@ -62,7 +62,7 @@ const ORDER_TEXT: Record<string, string> = { go_to: "go to", forage: "forage", h
 /** The target's identity stays separate from its words, so guard never depends on parsing a label. */
 export interface OrderTarget {
   readonly label: string;
-  readonly colony: 0 | 1;
+  readonly colony: number;
   readonly liveQueen: boolean;
 }
 
@@ -88,7 +88,7 @@ export function orderText(a: Pick<StreamAgent, "colony" | "order" | "orderX" | "
  * the colony with more territory wins (the Rules page), so it reads "match ends in" with the time left to match end.
  * The countdown never runs past the match's end.
  */
-function territoryWin(b: Pick<Board, "territoryWin" | "result" | "setup">, tick: number): { leader: 0 | 1; label: string; figure: string } | null {
+function territoryWin(b: Pick<Board, "territoryWin" | "result" | "setup">, tick: number): { leader: number; label: string; figure: string } | null {
   const lead = b.territoryWin;
   if (lead === undefined || b.result !== null || tick < lead.startTick + 1) return null;
   const tps = b.setup.ticksPerSecond;
@@ -109,7 +109,7 @@ export function territoryWinText(b: Pick<Board, "territoryWin" | "result" | "set
  * figure with the colony it favours, else no countdown and the colony holding more territory (none when level or none
  * is held); nothing once the result is in, which the result card tells.
  */
-export function headline(b: Pick<Board, "territoryWin" | "result" | "setup" | "held">, tick: number): { leader: 0 | 1 | null; label: string; figure: string } {
+export function headline(b: Pick<Board, "territoryWin" | "result" | "setup" | "held">, tick: number): { leader: number | null; label: string; figure: string } {
   if (b.result !== null) return { leader: null, label: "", figure: "" };
   const win = territoryWin(b, tick);
   if (win !== null) return win;
@@ -161,7 +161,7 @@ export function storyWhen(e: Pick<StoryEntry, "kind" | "tick" | "endTick" | "out
  * and the result card, where it is history.
  */
 export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: number, queens: readonly StreamQueen[] = [], past = false,
-  names: ColonyNamePair = COLONY_NAMES): { what: string; who: string } {
+  names: readonly string[] = COLONY_NAMES): { what: string; who: string } {
   const colony = names[e.colony];
   const squad = e.agent >= 0 ? ` — squad ${agentHandle(e.agent)}` : "";
   const who = `${colony}${squad}`;
@@ -186,7 +186,7 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
       return { what: `${queen} — repelled at ${hpText(e.lowHp ?? 0)}`, who: colony };
     }
     case "overrun": {
-      const target = names[(1 - e.colony) as 0 | 1];
+      const target = names[e.target ?? 1 - e.colony];
       if (e.endTick === undefined || e.endTick > now) return { what: `Overrun attempt on the ${target} queen — under way`, who };
       const pct = Math.round((100 * (e.peak ?? 0)) / Math.max(1, e.required ?? 1));
       if (e.outcome === "took") return { what: `Overrun attempt on the ${target} queen — took the queen`, who };
@@ -203,7 +203,7 @@ export function storyText(e: StoryEntry, _agents: readonly StreamAgent[], now: n
  * coordinates: the board lights the order's tile while the card is pointed at.
  */
 export function agentCard(agent: number, a: StreamAgent, marks: readonly StreamMark[], now: number, tps: number, target: OrderTarget | null = null,
-  names: ColonyNamePair = COLONY_NAMES): string[] {
+  names: readonly string[] = COLONY_NAMES): string[] {
   const last = marks.filter((m) => m.agent === agent).sort((x, y) => y.laidTick - x.laidTick)[0];
   return [
     `${playerLabel(agent, a)} · ${names[a.colony]}`,
@@ -271,7 +271,7 @@ export function hatchIntervalTicks(b: Pick<Board, "setup">, hatch: StreamHatch, 
 }
 
 /** Soonest eligibility from delayed playback, never a promise of a future birth. */
-export function scoreHatchStatus(b: Pick<Board, "setup" | "queens" | "hatch" | "stores" | "result" | "overrun" | "overrunRequired">, colony: 0 | 1, living: number, tick: number): { text: string; description: string } {
+export function scoreHatchStatus(b: Pick<Board, "setup" | "queens" | "hatch" | "stores" | "result" | "overrun" | "overrunRequired">, colony: number, living: number, tick: number): { text: string; description: string } {
   const label = (text: string, detail = text) => ({ text, description: `${colonyNamesOf(b.setup)[colony]}: ${detail}` });
   if (b.result !== null || tick >= b.setup.matchTicks) return label("Ended", "Match ended; no upcoming hatch");
   if (!streamQueens(b).some(q => q.colony === colony && q.lostTick === null && !(boardQueenHp(b) === undefined && b.overrunRequired > 0 && q.overrun >= b.overrunRequired))) return label("No queens", "No live queens; no upcoming hatch");
@@ -324,9 +324,10 @@ export function livingAnts(stats: Pick<ColonyStats, "workers" | "soldiers" | "fl
   return stats.workers + stats.soldiers + stats.flyers;
 }
 
-/** Counts living ants at the board's delayed tick, excluding corpse/fade effects. */
-export function colonyStats(frame: Pick<Frame, "board" | "count" | "colony" | "caste" | "id" | "ants">): [ColonyStats, ColonyStats] {
-  const stats = ([0, 1] as const).map((c) => ({ hatched: frame.board?.hatched?.[c] ?? null, lost: frame.board?.deaths[c] ?? 0, workers: 0, soldiers: 0, flyers: 0 })) as [ColonyStats, ColonyStats];
+/** Counts living ants at the board's delayed tick, excluding corpse/fade effects: one entry per colony of the match. */
+export function colonyStats(frame: Pick<Frame, "board" | "count" | "colony" | "caste" | "id" | "ants">): ColonyStats[] {
+  const colonies = frame.board?.setup.queens.length ?? 2;
+  const stats = Array.from({ length: colonies }, (_, c): ColonyStats => ({ hatched: frame.board?.hatched?.[c] ?? null, lost: frame.board?.deaths[c] ?? 0, workers: 0, soldiers: 0, flyers: 0 }));
   for (let i = 0; i < frame.count; i++) {
     const colony = stats[frame.colony[i]!]!;
     if (flyerOf(frame, i) !== null) colony.flyers++;
@@ -365,7 +366,7 @@ export function colonyCardLines(ledger: ReturnType<typeof colonyLedger>, stats: 
  */
 export function queensUnderAttack(story: readonly StoryEntry[], now: number): Set<string> {
   const keys = new Set<string>();
-  for (const e of story) if (underWay(e, now)) keys.add(`${e.kind === "overrun" ? 1 - e.colony : e.colony}:${e.queenId ?? 0}`);
+  for (const e of story) if (underWay(e, now)) keys.add(`${e.kind === "overrun" ? e.target ?? 1 - e.colony : e.colony}:${e.queenId ?? 0}`);
   return keys;
 }
 

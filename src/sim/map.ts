@@ -1,12 +1,13 @@
-import { checkRulesGeneration, DEFAULT_CONFIG, hatchIntervalOf, SUB, type QueenRules, type SimConfig } from "./config.js";
+import { checkRulesGeneration, DEFAULT_CONFIG, hatchIntervalOf, SUB, type InitialQueen, type QueenRules, type SimConfig } from "./config.js";
 import { tileCentre, withinTiles } from "./geometry.js";
 import { addRocks, createTerrain, isBlockedTile, isWaterTile, landBirthPosition, passableMask, selectMap } from "./terrain.js";
-import { startBoxes } from "./startPlacement.js";
+import { startBoxes, type StartBox } from "./startPlacement.js";
 import { generateFoodLayout, referenceFoodConfig } from "./foodLayout.js";
 import { gridScaleOf, scaledFoodPatch, scaledTileCentre, withGridScale } from "./gridScale.js";
-import { validateMapBoards } from "./mapBoard.js";
+import { isQuadrantRotation, validateMapBoards } from "./mapBoard.js";
+import { createQuadrantMatch, quadrantConfigForMap } from "./quadrantMatch.js";
 import { nextUint32 } from "./rng.js";
-import type { Ant, Caste, ColonyId, ColonyState, QueenState, SimState, Terrain, TileOwner } from "./types.js";
+import type { Ant, Caste, ColonyId, ColonyState, MatchStats, QueenState, SimState, Terrain, TileOwner } from "./types.js";
 
 /** Row-major tile index. */
 export function tileIndex(config: SimConfig, tx: number, ty: number): number {
@@ -169,6 +170,8 @@ export function newAnt(
  */
 export function matchConfigForMap(seed: number, config: SimConfig): SimConfig {
   if (config.terrain === undefined) return config;
+  // A four-colony rotation draws its quadrant board (src/sim/quadrantMatch.ts).
+  if (isQuadrantRotation(config)) return quadrantConfigForMap(seed, config);
   // Every map in the rotation must play at this grid scale and fit its own board.
   validateMapBoards(config);
   const map = selectMap(seed, config.terrain);
@@ -186,33 +189,45 @@ export function matchConfigForMap(seed: number, config: SimConfig): SimConfig {
     foodPatches: patches, ...(config.foodLayout === undefined ? {} : { foodLayout: { ...config.foodLayout, patches } }) };
 }
 
+/** A colony at match start with its first nest at (queenX, queenY), in sub-tile units. */
+export function newColony(config: SimConfig, id: ColonyId, queenX: number, queenY: number): ColonyState {
+  return {
+    id,
+    queenX,
+    queenY,
+    foodStore: 0,
+    lastHatchTick: -hatchIntervalOf(config, "worker"),
+    overrunTicks: 0,
+    ...(config.castes === undefined ? {} : { mixedNext: "worker" as const }),
+    ...(config.queenFounding === undefined ? {} : {
+      queens: [{ id: 0, ...(config.queenFounding.costBasis === "founded-live" ? { starting: true as const } : {}), queenX, queenY, foundedTick: 0,
+        lastHatchTick: -hatchIntervalOf(config, "worker"), overrunTicks: 0, lostTick: null,
+        ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, ...("biteIntervalTicks" in config.queenHp ? { lastBiteTick: -config.queenHp.biteIntervalTicks } : {}), regenFromTick: 0 }) }],
+      lastQueenFoundedTick: -config.queenFounding.cooldownTicks,
+    }),
+    ...(config.localAnts === undefined ? {} : { seenFood: [] as number[] }),
+  };
+}
+
+/** Match statistics at match start for this many colonies. */
+export function newStats(colonyCount: number): MatchStats {
+  const zeros = (): number[] => Array.from({ length: colonyCount }, () => 0);
+  return { delivered: zeros(), hatched: zeros(), deaths: zeros(), fights: 0, ownerChanges: 0, bonusHits: zeros() };
+}
+
 /** Create a match at tick 0. Queued agents join through inputs on the first step. */
 export function createMatch(seed: number, config: SimConfig = withGridScale(DEFAULT_CONFIG)): SimState {
   checkRulesGeneration(config);
+  if (isQuadrantRotation(config)) return createQuadrantMatch(seed, config);
   config = matchConfigForMap(seed, config);
   let terrain = createTerrain(seed, config);
   if (config.foodLayout !== undefined) config = { ...config,
     foodPatches: generateFoodLayout(config, seed, terrain === undefined ? undefined : passableMask(config, terrain)) };
   const tiles = config.mapWidth * config.mapHeight;
-  const colonies = ([0, 1] as const).map((id): ColonyState => {
+  const colonies = [0, 1].map((id): ColonyState => {
     const { tx, ty } = nestTile(config, id);
-    return {
-      id,
-      queenX: startX(config, id, tx),
-      queenY: tileCentre(ty),
-      foodStore: 0,
-      lastHatchTick: -hatchIntervalOf(config, "worker"),
-      overrunTicks: 0,
-      ...(config.castes === undefined ? {} : { mixedNext: "worker" as const }),
-      ...(config.queenFounding === undefined ? {} : {
-        queens: [{ id: 0, ...(config.queenFounding.costBasis === "founded-live" ? { starting: true as const } : {}), queenX: startX(config, id, tx), queenY: tileCentre(ty), foundedTick: 0,
-          lastHatchTick: -hatchIntervalOf(config, "worker"), overrunTicks: 0, lostTick: null,
-          ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, ...("biteIntervalTicks" in config.queenHp ? { lastBiteTick: -config.queenHp.biteIntervalTicks } : {}), regenFromTick: 0 }) }],
-        lastQueenFoundedTick: -config.queenFounding.cooldownTicks,
-      }),
-      ...(config.localAnts === undefined ? {} : { seenFood: [] as number[] }),
-    };
-  }) as [ColonyState, ColonyState];
+    return newColony(config, id, startX(config, id, tx), tileCentre(ty));
+  });
 
   const ants: Ant[] = [];
   let nextAntId = 1;
@@ -254,14 +269,7 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
     foodCap: laid.food.slice(),
     owner: new Array<TileOwner>(tiles).fill(-1),
     lastVisit: new Array<number>(tiles).fill(0),
-    stats: {
-      delivered: [0, 0],
-      hatched: [0, 0],
-      deaths: [0, 0],
-      fights: 0,
-      ownerChanges: 0,
-      bonusHits: [0, 0],
-    },
+    stats: newStats(2),
     result: null,
     agents: [],
     marks: [],
@@ -272,28 +280,40 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
   return state;
 }
 
-/** Apply only after map generation: picks must never change the board they were made on. */
-function installInitialQueens(state: SimState): void {
-  const { config } = state, layout = config.initialQueens!;
-  if (config.queenFounding === undefined || layout.length !== 2 || layout.some(team => team.length === 0)) {
+/**
+ * Refuse a lobby nest layout unless there are queen rules and one nonempty list per start box, and every
+ * nest is a whole tile inside its colony's box, on land without food, and used once.
+ */
+export function checkInitialQueens(config: SimConfig, terrain: Terrain | undefined, food: readonly number[], boxes: readonly StartBox[]): void {
+  const layout = config.initialQueens!;
+  if (config.queenFounding === undefined || layout.length !== boxes.length || layout.some(team => team.length === 0)) {
     throw new Error("Initial queen layout requires queen rules and two nonempty teams");
   }
-  const boxes = startBoxes(config), used = new Set<number>();
-  for (const colony of [0, 1] as const) {
-    const box = boxes[colony];
+  const used = new Set<number>();
+  boxes.forEach((box, colony) => {
     for (const { tileX, tileY } of layout[colony]) {
       const index = tileIndex(config, tileX, tileY);
       if (!Number.isSafeInteger(tileX) || !Number.isSafeInteger(tileY) || tileX < box.x || tileX >= box.x + box.width
-        || tileY < box.y || tileY >= box.y + box.height || isBlockedTile(state.terrain, tileX, tileY)
-        || state.food[index] > 0 || used.has(index)) throw new Error("Invalid initial queen tile");
+        || tileY < box.y || tileY >= box.y + box.height || isBlockedTile(terrain, tileX, tileY)
+        || food[index] > 0 || used.has(index)) throw new Error("Invalid initial queen tile");
       used.add(index);
     }
-  }
+  });
+}
+
+/** A colony's starting queens, one per lobby nest in order, each a copy of its first queen at that tile's centre. */
+export function startingQueens(template: QueenState, nests: readonly InitialQueen[]): QueenState[] {
+  return nests.map(({ tileX, tileY }, id): QueenState => ({
+    ...template, id, starting: true, queenX: tileCentre(tileX), queenY: tileCentre(tileY),
+  }));
+}
+
+/** Apply only after map generation: picks must never change the board they were made on. */
+function installInitialQueens(state: SimState): void {
+  const { config } = state, layout = config.initialQueens!;
+  checkInitialQueens(config, state.terrain, state.food, startBoxes(config));
   for (const colony of [0, 1] as const) {
-    const before = state.colonies[colony], template = before.queens![0];
-    const queens = layout[colony].map(({ tileX, tileY }, id): QueenState => ({
-      ...template, id, starting: true, queenX: tileCentre(tileX), queenY: tileCentre(tileY),
-    }));
+    const before = state.colonies[colony], queens = startingQueens(before.queens![0], layout[colony]);
     state.colonies[colony] = { ...before, queens, queenX: queens[0].queenX, queenY: queens[0].queenY };
     // Preserve population, identities and offset pattern. Distribute the same ants
     // across starting nests; unlike map generation this consumes no random draws.
@@ -518,8 +538,11 @@ const bucketCounts = new WeakMap<Grid, readonly [Int32Array, Int32Array]>();
 /**
  * Each colony's ant count per tile (colony 0, colony 1) on this grid's buckets: kept by the tracker for a
  * TrackedGrid, counted once for a buildGrid grid; undefined for any other Map. Valid while the buckets are.
+ * The counts cover two colonies only, so a match with any other number of colonies gets undefined and its
+ * callers take their per-ant paths.
  */
-export function gridColonyCounts(grid: Grid): readonly [Int32Array, Int32Array] | undefined {
+export function gridColonyCounts(grid: Grid, state: SimState): readonly [Int32Array, Int32Array] | undefined {
+  if (state.colonies.length !== 2) return undefined;
   if (grid instanceof TrackedGrid) return grid.colonyCounts();
   const dense = denseBuckets.get(grid);
   if (dense === undefined) return undefined;
@@ -544,7 +567,7 @@ export function gridColonyCounts(grid: Grid): readonly [Int32Array, Int32Array] 
 const colonyAreas = new WeakMap<Grid, readonly [Int32Array, Int32Array]>();
 
 export function colonyAreaCounts(state: SimState, grid: Grid): readonly [Int32Array, Int32Array] | undefined {
-  const tiles = gridColonyCounts(grid);
+  const tiles = gridColonyCounts(grid, state);
   if (tiles === undefined) return undefined;
   const cached = colonyAreas.get(grid);
   if (cached !== undefined) return cached;
@@ -582,7 +605,7 @@ function noneNear(state: SimState, tiles: Int32Array, tx: number, ty: number, r:
 
 /** Whether no ant of the other colony stands within Chebyshev distance r of tile (tx, ty); false when unknown. */
 export function noEnemyNear(state: SimState, grid: Grid, colony: ColonyId, tx: number, ty: number, r: number): boolean {
-  const counts = gridColonyCounts(grid);
+  const counts = gridColonyCounts(grid, state);
   return counts !== undefined && Number.isInteger(r) && noneNear(state, counts[colony === 0 ? 1 : 0], tx, ty, r);
 }
 
@@ -626,7 +649,7 @@ export function forEachNear(
  */
 export function hasAdjacentEnemy(state: SimState, grid: Grid, ant: Ant): boolean {
   const tx = Math.floor(ant.x / SUB), ty = Math.floor(ant.y / SUB), r = gridScaleOf(state.config);
-  const counts = gridColonyCounts(grid);
+  const counts = gridColonyCounts(grid, state);
   if (counts !== undefined) {
     if (noneNear(state, counts[ant.colony === 0 ? 1 : 0], tx, ty, r)) return false;
     // Without flyers every ant is on the ground, so any enemy in reach is one it fights.
@@ -646,7 +669,7 @@ export function cloneState(state: SimState): SimState {
     ...state,
     ...(state.earlyWinProgress === undefined ? {} : { earlyWinProgress: { ...state.earlyWinProgress } }),
     ants: state.ants.map((ant) => ({ ...ant })),
-    colonies: state.colonies.map((c) => ({ ...c, ...(c.queens === undefined ? {} : { queens: c.queens.map((q) => ({ ...q })) }), ...(c.seenFood === undefined ? {} : { seenFood: c.seenFood.slice() }) })) as [ColonyState, ColonyState],
+    colonies: state.colonies.map((c) => ({ ...c, ...(c.queens === undefined ? {} : { queens: c.queens.map((q) => ({ ...q })) }), ...(c.seenFood === undefined ? {} : { seenFood: c.seenFood.slice() }) })),
     food: state.food.slice(),
     owner: state.owner.slice(),
     lastVisit: state.lastVisit.slice(),

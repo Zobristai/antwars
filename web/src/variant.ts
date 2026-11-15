@@ -19,7 +19,7 @@ function variant(board: RuleBoard): SimConfig | null {
 
 /**
  * The redesign figures the renderer needs beyond the board's streamed hatch. A rules-28 match streams its own with its
- * setup marker (stream version 27); a board without the marker was recorded under rules 27 or earlier, whose figures
+ * setup marker (stream version 28); a board without the marker was recorded under rules 27 or earlier, whose figures
  * the stream never carried and are frozen here.
  */
 export interface RedesignFigures { readonly workerCost: number; readonly soldierCost: number; readonly queenHp: number }

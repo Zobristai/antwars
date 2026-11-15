@@ -6,8 +6,8 @@ import type { Frame } from "../../buffer.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
 import { D1_ICON, RING } from "./icons.ts";
 import {
-  COLONIES, D1_COPY, PAGE_WORDS, balance, clock, colonyName, dials, mapName, resultShown, winConditions,
-  type Colony, type Dial, type Gauge, type Lamp, type NextAntView,
+  COLONIES, D1_COPY, PAGE_WORDS, balance, clock, colonyName, colonyRows, dials, mapName, resultShown, winConditions,
+  type Colony, type ColonyRows, type Dial, type Gauge, type Lamp, type NextAntView,
 } from "./model.ts";
 import { SCORE_COPY } from "../../story.ts";
 
@@ -106,6 +106,15 @@ export function mountDeck(doc: Document): Deck {
   mapRow.append(h(doc, "span", "d1-glabel", D1_COPY.map), h(doc, "span", "d1-sr", ": "), mapNameEl);
   setHidden(mapRow, true);
   score.append(clockEl, h(doc, "h3", "d1-kicker", D1_COPY.balance), kills.row, territory.row, ants.row, winGroup, mapRow);
+  // A four-colony match's colonies, in place of Balance and Win conditions, whose rows compare one colony with its one
+  // opponent (is-four, deck.css): each colony's name in its colour with its source note as its tooltip, its share of the
+  // held ground and, once every one of its queens is lost, Eliminated. Hidden in a two-colony match.
+  const coloniesEl = h(doc, "div", "d1-colonies");
+  const colonyList = h(doc, "ol", "d1-crows");
+  const noTerritory = h(doc, "p", "d1-crows-none", D1_COPY.noTerritory);
+  coloniesEl.append(h(doc, "h3", "d1-kicker", SCORE_COPY.territory), colonyList, noTerritory);
+  setHidden(coloniesEl, true);
+  score.insertBefore(coloniesEl, winGroup);
 
   // ---------------------------------------------------------------- each colony's economy: a cell per measure
   // Flyers only where the board's rules have them (Dial.flyers): a sixth cell, the economy then has-flyers.
@@ -177,6 +186,37 @@ export function mountDeck(doc: Document): Deck {
     setText(n.said, said);
   };
 
+  /** Each colony's row, made once per colony and written again only when what it shows changes. */
+  const colonyNodes: { li: HTMLLIElement; name: HTMLElement; out: HTMLElement; share: HTMLElement; key: string }[] = [];
+  const paintColonies = (view: ColonyRows | null) => {
+    const four = view !== null;
+    flag(score, "is-four", four);
+    setHidden(coloniesEl, !four);
+    if (!view) return;
+    setHidden(noTerritory, !view.noneHeld);
+    const items = view.rows.map(row => {
+      let node = colonyNodes[row.colony];
+      if (!node) {
+        const li = h(doc, "li", `d1-crow c${row.colony}`);
+        const name = h(doc, "span", "d1-crow-name"), out = h(doc, "span", "d1-tag d1-crow-out", D1_COPY.eliminated);
+        const share = h(doc, "span", "d1-crow-share");
+        li.append(name, h(doc, "span", "d1-sr", ", "), out, h(doc, "span", "d1-sr", " "), share);
+        node = colonyNodes[row.colony] = { li, name, out, share, key: "" };
+      }
+      const key = [row.name, row.note, row.share, row.eliminated].join("|");
+      if (node.key !== key) {
+        node.key = key;
+        setText(node.name, row.name);
+        setAttr(node.name, "title", row.note === "" ? null : row.note);
+        setHidden(node.out, !row.eliminated);
+        setText(node.share, row.share);
+        setHidden(node.share, row.share === "");
+      }
+      return node.li;
+    });
+    if (items.length !== colonyList.childElementCount || items.some((li, i) => colonyList.children[i] !== li)) colonyList.replaceChildren(...items);
+  };
+
   let shownNames = `${colonyName(0)}\n${colonyName(1)}`;
   const writeNames = (setup: Parameters<typeof colonyName>[1]) => {
     const names = `${colonyName(0, setup)}\n${colonyName(1, setup)}`;
@@ -199,6 +239,7 @@ export function mountDeck(doc: Document): Deck {
       paintGauge(ants, bal.ants, null);
       // The lead line's plain words, on hover over its row; no legend line of its own.
       setAttr(territory.row, "title", bal.leadText === "" ? null : bal.leadText);
+      paintColonies(colonyRows(frame));
       const win = winConditions(frame);
       for (const c of COLONIES) {
         setText(counts[c]!.value, win.standing[c]);

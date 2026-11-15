@@ -243,16 +243,19 @@ export const SOLDIER_SCALE = 2;
 const SOLDIER_W = CELL_W * SOLDIER_SCALE;
 const SOLDIER_H = CELL_H * SOLDIER_SCALE;
 /**
- * The atlas: two rows of worker cells (three walk frames and a corpse), two rows of
- * workers carrying a crumb, then two rows of soldier walk frames.
+ * The atlas, for a match of n colonies: n rows of worker cells (three walk frames and a corpse), n rows of
+ * workers carrying a crumb, then n rows of soldier walk frames, each set in colony order.
  * Each row also holds closed/open bite frames: worker columns 4/5, soldier 3/4.
  * Then two rows of worker-sized flyer cells per colony: the grounded walk frames,
  * flying, hovering and the shadow; then closed/open bite frames for each look.
+ * A two-colony match's atlas is laid out as it always was.
  */
 const ATLAS_W = Math.max(CELL_W * 6, SOLDIER_W * 5);
-const SOLDIER_Y = CELL_H * 4;
-const FLYER_ROW = (SOLDIER_Y + SOLDIER_H * 2) / CELL_H;
-const ATLAS_H = (FLYER_ROW + 4) * CELL_H;
+function atlasLayout(colonies: number): { readonly soldierY: number; readonly flyerRow: number; readonly height: number } {
+  const soldierY = CELL_H * 2 * colonies;
+  const flyerRow = (soldierY + SOLDIER_H * colonies) / CELL_H;
+  return { soldierY, flyerRow, height: (flyerRow + 2 * colonies) * CELL_H };
+}
 
 /** Every ant outside the selected squad is multiplied by this while a squad is selected, so the squad leads. */
 export const DIM_TINT = 0x77706a;
@@ -314,36 +317,41 @@ export class Ants {
   /** Ids of the selected squad's ants this frame, drawn undimmed in its hue (none while no squad is selected). */
   readonly tinted: number[] = [];
 
-  /** antPx: on-screen ant length in CSS pixels; tilePx: CSS pixels per tile. */
-  constructor(renderer: Renderer, antPx: number, tilePx: number) {
+  /**
+   * antPx: on-screen ant length in CSS pixels; tilePx: CSS pixels per tile; colonies: the match's colony count
+   * (setup.queens.length), each colony's frames baked in its own colour (colony-palette.ts colonyTint).
+   */
+  constructor(renderer: Renderer, antPx: number, tilePx: number, colonies = 2) {
+    const ids = Array.from({ length: colonies }, (_, colony) => colony);
+    const { soldierY, flyerRow, height } = atlasLayout(colonies);
     const g = new Graphics();
-    for (const colony of [0, 1]) {
+    for (const colony of ids) {
       for (let f = 0; f < 3; f++) drawAnt(g, f * CELL_W, colony * CELL_H, f, false, colonyTint(colony));
       drawAnt(g, 3 * CELL_W, colony * CELL_H, 0, true, colonyTint(colony));
     }
-    // Workers carrying a crumb, in rows 2 and 3: their own drawing, so the plain workers' stays as it was.
+    // Workers carrying a crumb, in the rows after the plain workers': their own drawing, so the plain workers' stays as it was.
     const c = new Graphics();
-    for (const colony of [0, 1]) {
-      for (let f = 0; f < 3; f++) drawAnt(c, f * CELL_W, (2 + colony) * CELL_H, f, false, colonyTint(colony), true);
+    for (const colony of ids) {
+      for (let f = 0; f < 3; f++) drawAnt(c, f * CELL_W, (colonies + colony) * CELL_H, f, false, colonyTint(colony), true);
     }
     // Soldiers are drawn in worker units and scaled up as they are baked, so they stay crisp at their size.
     const s = new Graphics();
-    s.position.set(0, SOLDIER_Y);
+    s.position.set(0, soldierY);
     s.scale.set(SOLDIER_SCALE);
-    for (const colony of [0, 1]) {
+    for (const colony of ids) {
       for (let f = 0; f < 3; f++) drawSoldier(s, f * CELL_W, colony * CELL_H, f, colonyTint(colony));
       for (let jaw = 0; jaw < 2; jaw++) drawSoldier(s, (3 + jaw) * CELL_W, colony * CELL_H, 1, colonyTint(colony), jaw);
     }
     // Keep the existing worker walk/corpse drawing untouched. Biting workers
     // have their own cells and explicit mandibles, not a changed walking pose.
     const b = new Graphics();
-    for (const colony of [0, 1]) for (const carrying of [0, 1]) for (let jaw = 0; jaw < 2; jaw++) {
-      drawAnt(b, (4 + jaw) * CELL_W, (colony + 2 * carrying) * CELL_H, 1, false, colonyTint(colony), !!carrying, jaw);
+    for (const colony of ids) for (const carrying of [0, 1]) for (let jaw = 0; jaw < 2; jaw++) {
+      drawAnt(b, (4 + jaw) * CELL_W, (colony + colonies * carrying) * CELL_H, 1, false, colonyTint(colony), !!carrying, jaw);
     }
     // Flyers, after every other drawing, in two rows per colony.
     const fl = new Graphics();
-    for (const colony of [0, 1]) {
-      const row = (FLYER_ROW + 2 * colony) * CELL_H;
+    for (const colony of ids) {
+      const row = (flyerRow + 2 * colony) * CELL_H;
       for (let f = 0; f < 3; f++) drawFlyer(fl, f * CELL_W, row, f, FLYER_GROUND, colonyTint(colony));
       drawFlyer(fl, 3 * CELL_W, row, 1, FLYER_FLYING, colonyTint(colony));
       drawFlyer(fl, 4 * CELL_W, row, 1, FLYER_HOVERING, colonyTint(colony));
@@ -356,7 +364,7 @@ export class Ants {
     holder.addChild(g, s, c, b, fl);
     const atlas = renderer.generateTexture({
       target: holder,
-      frame: new Rectangle(0, 0, ATLAS_W, ATLAS_H),
+      frame: new Rectangle(0, 0, ATLAS_W, height),
       // Baked at the size it is drawn, so ants stay crisp rather than downsampled.
       resolution: (antPx / CELL_W) * renderer.resolution,
       antialias: true,
@@ -364,18 +372,18 @@ export class Ants {
     atlas.source.scaleMode = "linear";
     const cell = (i: number, row: number) => new Texture({ source: atlas.source, frame: new Rectangle(i * CELL_W, row * CELL_H, CELL_W, CELL_H) });
     const soldierCell = (i: number, colony: number) =>
-      new Texture({ source: atlas.source, frame: new Rectangle(i * SOLDIER_W, SOLDIER_Y + colony * SOLDIER_H, SOLDIER_W, SOLDIER_H) });
+      new Texture({ source: atlas.source, frame: new Rectangle(i * SOLDIER_W, soldierY + colony * SOLDIER_H, SOLDIER_W, SOLDIER_H) });
     this.walkFrames = [
-      [0, 1].map((c) => [0, 1].map((carrying) => [0, 1, 2].map((f) => cell(f, c + 2 * carrying)))),
+      ids.map((c) => [0, 1].map((carrying) => [0, 1, 2].map((f) => cell(f, c + colonies * carrying)))),
       // A soldier never carries: both carrying slots hold its own frames.
-      [0, 1].map((c) => {
+      ids.map((c) => {
         const frames = [0, 1, 2].map((f) => soldierCell(f, c));
         return [frames, frames];
       }),
     ];
     this.biteFrames = [
-      [0, 1].map((c) => [0, 1].map((carrying) => [0, 1].map((jaw) => cell(4 + jaw, c + 2 * carrying)))),
-      [0, 1].map((c) => {
+      ids.map((c) => [0, 1].map((carrying) => [0, 1].map((jaw) => cell(4 + jaw, c + colonies * carrying)))),
+      ids.map((c) => {
         const frames = [0, 1].map((jaw) => soldierCell(3 + jaw, c));
         return [frames, frames];
       }),
@@ -392,13 +400,13 @@ export class Ants {
     const crop = (heads: boolean) => this.biteFrames.map((colonies, caste) => colonies.map((slots) => slots.map((frames) => frames.map((t) => piece(t, heads, caste)))));
     this.biteBodies = crop(false); this.biteHeads = crop(true);
     const looks = [FLYER_GROUND, FLYER_FLYING, FLYER_HOVERING] as const;
-    this.flyerFrames = looks.map((look) => [0, 1].map((c) =>
-      look === FLYER_GROUND ? [0, 1, 2].map((f) => cell(f, FLYER_ROW + 2 * c)) : [cell(2 + look, FLYER_ROW + 2 * c)]));
-    const flyerBites = looks.map((look) => [0, 1].map((c) => [0, 1].map((jaw) => cell(2 * look + jaw, FLYER_ROW + 2 * c + 1))));
+    this.flyerFrames = looks.map((look) => ids.map((c) =>
+      look === FLYER_GROUND ? [0, 1, 2].map((f) => cell(f, flyerRow + 2 * c)) : [cell(2 + look, flyerRow + 2 * c)]));
+    const flyerBites = looks.map((look) => ids.map((c) => [0, 1].map((jaw) => cell(2 * look + jaw, flyerRow + 2 * c + 1))));
     this.flyerBiteBodies = flyerBites.map((colonies) => colonies.map((frames) => frames.map((t) => piece(t, false, 0))));
     this.flyerBiteHeads = flyerBites.map((colonies) => colonies.map((frames) => frames.map((t) => piece(t, true, 0))));
-    this.shadowFrame = cell(5, FLYER_ROW);
-    this.corpseFrame = [cell(3, 0), cell(3, 1)];
+    this.shadowFrame = cell(5, flyerRow);
+    this.corpseFrame = ids.map((c) => cell(3, c));
     this.scale = antPx / tilePx / CELL_W;
     const props = { position: true, rotation: true, color: true, uvs: true, vertex: false };
     this.antLayer = new ParticleContainer({ dynamicProperties: props, texture: this.walkFrames[0]![0]![0]![0] });
