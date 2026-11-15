@@ -302,9 +302,10 @@ export interface ColonyStats {
   soldiers: number;
 }
 
-/** Counts living ants at the board's delayed tick, excluding corpse/fade effects. */
-export function colonyStats(frame: Pick<Frame, "board" | "count" | "colony" | "caste">): [ColonyStats, ColonyStats] {
-  const stats = ([0, 1] as const).map((c) => ({ hatched: frame.board?.hatched?.[c] ?? null, lost: frame.board?.deaths[c] ?? 0, workers: 0, soldiers: 0 })) as [ColonyStats, ColonyStats];
+/** Counts living ants at the board's delayed tick, excluding corpse/fade effects: one entry per colony of the match. */
+export function colonyStats(frame: Pick<Frame, "board" | "count" | "colony" | "caste">): ColonyStats[] {
+  const colonies = frame.board?.setup.queens.length ?? 2;
+  const stats = Array.from({ length: colonies }, (_, c): ColonyStats => ({ hatched: frame.board?.hatched?.[c] ?? null, lost: frame.board?.deaths[c] ?? 0, workers: 0, soldiers: 0 }));
   for (let i = 0; i < frame.count; i++) {
     const colony = stats[frame.colony[i]!]!;
     if (frame.caste?.[i] === 1) colony.soldiers++;
