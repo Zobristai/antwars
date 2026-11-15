@@ -1,7 +1,7 @@
 /**
  * A four-colony match through the shared live and replay playback: each colony's held tiles, an elimination read
  * from the colony's queens that the match plays on past, and a same-tick end whose winner's queens retire with the
- * losers' and are never told as lost. Messages are built decoded, as the stream format reads them back.
+ * losers': eliminated as recorded, never told as taken. Messages are built decoded, as the stream format reads them back.
  */
 import { describe, expect, it } from "vitest";
 import type { StreamEvent, StreamFull, StreamMessage, StreamQueen, StreamResult } from "../../src/live/format.ts";
@@ -132,14 +132,15 @@ describe("four-colony playback", () => {
     ]);
   });
 
-  it("never tells the winner of a same-tick end as lost or eliminated", () => {
+  it("knows a same-tick end's winner eliminated as its queens record, and never tells its queen as taken", () => {
     // One more message lets playback reach the tick after the end, where the losses on it are told.
     const end = recorded([...match(), delta(6, [])]).at(-1)!;
     expect(end.board.result).toEqual(RESULT);
-    expect(fallenColonies(end.board)).toEqual([true, true, false, true]);
+    // Every colony's queens are lost on tick 5, the winner's included: each is eliminated, whoever won.
+    expect(fallenColonies(end.board)).toEqual([true, true, true, true]);
     expect(fallWindow(end.frame)).toEqual([false, false, false, false]);
     const story = end.frame.story;
-    expect(story.filter((e) => e.kind === "queen_lost").map((e) => e.colony)).toEqual([1, 0, 3]);
+    expect(story.filter((e) => e.kind === "queen_lost").map((e) => [e.colony, e.tick])).toEqual([[1, 3], [0, 6], [2, 6], [3, 6]]);
     // The attack on the winner's queen was under way at the end: unfinished, not a queen taken.
     expect(story.find((e) => e.kind === "queen_attack" && e.colony === 2)).toMatchObject({ endTick: 5, outcome: "unfinished" });
     expect(decisive(story, RESULT.reason, RESULT.winner).map((e) => e.colony)).toEqual([1]);
@@ -155,7 +156,7 @@ describe("four-colony playback", () => {
       live.pushPrepared(preparation.prepare(m)!, m.tick * TICK_MS);
       expect(reading(live.latestBoard!)).toEqual(reading(replay.latestBoard!));
     }
-    expect(reading(live.latestBoard!)).toMatchObject({ colonies: 4, held: [0, 0, 0, 0], fallen: [true, true, false, true], result: RESULT });
+    expect(reading(live.latestBoard!)).toMatchObject({ colonies: 4, held: [0, 0, 0, 0], fallen: [true, true, true, true], result: RESULT });
   });
 
   it("names an overrun attempt's target colony where it is not simply the other colony", () => {
@@ -168,9 +169,9 @@ describe("four-colony playback", () => {
 
 describe("two-colony fall unchanged", () => {
   it("reads both colonies fallen when both last queens die on one tick, winner or not", () => {
-    const queens = [queen(0, 9), queen(1, 9)];
     const result: StreamResult = { winner: 0, reason: "queens_killed", decidedBy: "kills", tick: 9, nextStartMs: null };
-    expect(fallenColonies({ queens, result })).toEqual([true, true]);
+    const board: Pick<Board, "queens" | "result"> = { queens: [queen(0, 9), queen(1, 9)], result };
+    expect(fallenColonies(board)).toEqual([true, true]);
     expect(fallenColonies({ queens: [queen(0)] })).toEqual([false, false]);
   });
 });
