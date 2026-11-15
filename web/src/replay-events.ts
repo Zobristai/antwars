@@ -27,9 +27,10 @@ export const FOOD_LEAD_FLOOR = 50;
 /** Fed every message of one recording in order; `events()` returns its marks, in tick order.
  * - Fight: a run of ticks with bites, ending after FIGHT_QUIET_TICKS with none, marked at its first bite when
  *   at least FIGHT_MIN_DEATHS ants died from that bite until the run ended.
- * - Nest lost: each queen lost, at the message that reports it. Recordings without a queen list: the overrun end.
- *   A four-colony match's winner gets none, once its result is read: in a same-tick all-idle end its queens are lost
- *   with the colonies it outlasted, yet it won. An elimination's retired queens each come with their own queen loss.
+ * - Nest lost: each queen lost, in every colony, the result's winner included, at the message that reports it.
+ *   An elimination's retired queens each come with their own queen loss, so every elimination is marked at its tick,
+ *   the winner's too (in a same-tick all-idle end its queens are lost with the colonies it outlasted).
+ *   Recordings without a queen list: the overrun end.
  * - Food lead: the colony that has gathered the most food so far changes, by more than the margin over the runner-up
  *   (of every colony in the match; with two, simply the other). Food gathered is
  *   food delivered home: an ant whose carrying flag clears while it lives (the only way a carrier puts food down).
@@ -44,19 +45,13 @@ export class ReplayEventScan {
   private readonly gathered: number[] = [0, 0];
   private leader: Colony | null = null;
   private queenList = false;
-  /** The match's colony count, from its first message's setup (two when that message carries none). */
-  private colonies = 2;
-  /** A four-colony match's winner, once the message carrying its result is read: events() leaves out its nest marks. */
-  private winner: Colony | null = null;
   private readonly lost = new Set<string>();
 
   push(m: StreamMessage): void {
     if (this.first === null) {
       this.first = m.tick;
       this.queenList = m.full?.queens !== undefined;
-      this.colonies = m.full?.setup.queens.length ?? 2;
     }
-    if (this.colonies > 2) for (const e of m.events) if (e.kind === "end" && e.result.winner !== null) this.winner = e.result.winner;
     this.deliveries(m);
     for (const q of m.full?.queens ?? []) if (q.lostTick !== null) this.nest(q.colony, q.id, m.tick);
     if (this.run && m.tick - this.run.last > FIGHT_QUIET_TICKS) this.closeRun();
@@ -120,7 +115,7 @@ export class ReplayEventScan {
   /** The marks so far, closing a fight still running at the recording's end. */
   events(): ReplayEvent[] {
     this.closeRun();
-    return this.out.filter(e => e.kind !== "nest" || e.colony !== this.winner).sort((x, y) => x.tick - y.tick);
+    return [...this.out].sort((x, y) => x.tick - y.tick);
   }
 
   private closeRun(): void {
