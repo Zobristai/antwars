@@ -28,7 +28,10 @@ export const FOOD_LEAD_FLOOR = 50;
  * - Fight: a run of ticks with bites, ending after FIGHT_QUIET_TICKS with none, marked at its first bite when
  *   at least FIGHT_MIN_DEATHS ants died from that bite until the run ended.
  * - Nest lost: each queen lost, at the message that reports it. Recordings without a queen list: the overrun end.
- * - Food lead: the colony that has gathered more food so far changes, by more than the margin. Food gathered is
+ *   A four-colony match's winner gets none, once its result is read: in a same-tick all-idle end its queens are lost
+ *   with the colonies it outlasted, yet it won. An elimination's retired queens each come with their own queen loss.
+ * - Food lead: the colony that has gathered the most food so far changes, by more than the margin over the runner-up
+ *   (of every colony in the match; with two, simply the other). Food gathered is
  *   food delivered home: an ant whose carrying flag clears while it lives (the only way a carrier puts food down).
  *   Read from the ants, not the store, so a hatch spending food in the same tick hides no delivery and ground
  *   income is not counted. The match's first lead is not a change. Recordings without carrying flags have none. */
@@ -37,16 +40,23 @@ export class ReplayEventScan {
   private readonly out: ReplayEvent[] = [];
   private run: { start: number; last: number; deaths: number } | null = null;
   private carried: { id: Uint32Array; carrying: Uint8Array; count: number } | null = null;
-  private readonly gathered: [number, number] = [0, 0];
+  /** Food gathered so far, index = colony id; a colony with none delivered yet may have no entry. */
+  private readonly gathered: number[] = [0, 0];
   private leader: Colony | null = null;
   private queenList = false;
+  /** The match's colony count, from its first message's setup (two when that message carries none). */
+  private colonies = 2;
+  /** A four-colony match's winner, once the message carrying its result is read: events() leaves out its nest marks. */
+  private winner: Colony | null = null;
   private readonly lost = new Set<string>();
 
   push(m: StreamMessage): void {
     if (this.first === null) {
       this.first = m.tick;
       this.queenList = m.full?.queens !== undefined;
+      this.colonies = m.full?.setup.queens.length ?? 2;
     }
+    if (this.colonies > 2) for (const e of m.events) if (e.kind === "end" && e.result.winner !== null) this.winner = e.result.winner;
     this.deliveries(m);
     for (const q of m.full?.queens ?? []) if (q.lostTick !== null) this.nest(q.colony, q.id, m.tick);
     if (this.run && m.tick - this.run.last > FIGHT_QUIET_TICKS) this.closeRun();
@@ -57,6 +67,7 @@ export class ReplayEventScan {
       else if (e.kind === "death") deaths++;
       else if (e.kind === "queenLost") this.nest(e.queen.colony, e.queen.id, m.tick);
       else if (e.kind === "end" && !this.queenList) {
+        // Recordings without a queen list predate four-colony matches: their end names colonies 0 and 1.
         const { reason, winner } = e.result;
         if (reason === "double_overrun") for (const c of [0, 1] as const) this.nest(c, 0, m.tick);
         else if (reason === "overrun" && winner !== null) this.nest(winner === 0 ? 1 : 0, 0, m.tick);
@@ -67,9 +78,7 @@ export class ReplayEventScan {
       else this.run = { start: m.tick, last: m.tick, deaths: 0 };
     }
     if (this.run) this.run.deaths += deaths;
-    const [a, b] = this.gathered;
-    const need = Math.max(FOOD_LEAD_MARGIN * (a + b), FOOD_LEAD_FLOOR);
-    const lead: Colony | null = a - b > need ? 0 : b - a > need ? 1 : null;
+    const lead = this.foodLead();
     if (lead !== null && lead !== this.leader) {
       if (this.leader !== null) this.add("food", m.tick, lead);
       this.leader = lead;
@@ -87,16 +96,31 @@ export class ReplayEventScan {
         if (carrying[i]) continue;
         const ant = id[i]!;
         while (j < prev.count && prev.id[j]! < ant) j++;
-        if (j < prev.count && prev.id[j] === ant && prev.carrying[j]) this.gathered[colony[i] as Colony] += 1;
+        if (j < prev.count && prev.id[j] === ant && prev.carrying[j]) {
+          const c = colony[i]!;
+          this.gathered[c] = (this.gathered[c] ?? 0) + 1;
+        }
       }
     }
     this.carried = { id, carrying, count };
   }
 
+  /** The colony that has gathered the most, when it is ahead of every other by more than the margin; else none. */
+  private foodLead(): Colony | null {
+    let top: Colony | null = null, most = 0, next = 0, total = 0;
+    for (let colony = 0; colony < this.gathered.length; colony++) {
+      const food = this.gathered[colony] ?? 0;
+      total += food;
+      if (food > most) { next = most; most = food; top = colony; }
+      else if (food > next) next = food;
+    }
+    return most - next > Math.max(FOOD_LEAD_MARGIN * total, FOOD_LEAD_FLOOR) ? top : null;
+  }
+
   /** The marks so far, closing a fight still running at the recording's end. */
   events(): ReplayEvent[] {
     this.closeRun();
-    return [...this.out].sort((x, y) => x.tick - y.tick);
+    return this.out.filter(e => e.kind !== "nest" || e.colony !== this.winner).sort((x, y) => x.tick - y.tick);
   }
 
   private closeRun(): void {

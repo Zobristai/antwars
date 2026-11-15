@@ -66,11 +66,23 @@ export const RESULT_BEAT_MS = 2500;
 export const ATTACK_LULL_S = 15;
 /**
  * Ant-traffic trail: a grid TRAIL_RES cells per tile side, so paths come out thin;
- * per-tick decay and per-ant deposit, per colony.
+ * per-tick decay and per-ant deposit, per colony. Each trail cell holds one channel per colony of the match
+ * (setup.queens.length: 2, or 4 in a four-colony match), at cell * colonies + colony.
  */
 export const TRAIL_RES = 4;
 export const TRAIL_DECAY_PER_TICK = 0.975;
 export const TRAIL_DEPOSIT = 0.06;
+
+/**
+ * Trails as an RGBA texture's bytes, one texel per trail cell: colony c's intensity in channel c (red, green, blue,
+ * alpha), channels of colonies the match does not have 0. colonies is the board's colony count, setup.queens.length.
+ */
+export function trailTexels(trails: Float32Array, colonies: number, out: Uint8Array): void {
+  for (let i = 0, n = trails.length / colonies; i < n; i++) {
+    for (let c = 0; c < 4; c++) out[i * 4 + c] = c < colonies ? trails[i * colonies + c]! * 255 : 0;
+  }
+}
+
 /** A colony leads the tug-of-war once it holds this share of owned tiles more than the other. */
 export const LEAD_MARGIN = 0.02;
 
@@ -109,7 +121,7 @@ interface Held {
   ants: StreamAnts;
   /** id -> index in ants. */
   index: Map<number, number>;
-  /** Trail intensity, two floats (colony 0, colony 1) per trail cell, 0..1. */
+  /** Trail intensity, 0..1: one float per colony in each trail cell, at cell * colonies + colony (TRAIL_RES). */
   trails: Float32Array;
   board: Board;
   /** Event-confirmed combat at this message's tick, independent of ground effects. */
@@ -363,7 +375,7 @@ export class Frame {
   mapH = 0;
   territoryA: Uint8Array = new Uint8Array(0);
   territoryB: Uint8Array = new Uint8Array(0);
-  /** Trails of the earlier message; they fade slowly, so they are not blended. */
+  /** Trails of the earlier message, one channel per colony in each cell (TRAIL_RES); they fade slowly, so they are not blended. */
   trails: Float32Array = new Float32Array(0);
   id = new Uint32Array(0);
   /** Positions in tiles. */
@@ -816,7 +828,8 @@ export class TickPreparation {
     const ants = m.ants;
     for (let i = 0; i < ants.count; i++) index.set(ants.id[i]!, i);
     const tw = board.setup.mapW * TRAIL_RES;
-    const size = tw * board.setup.mapH * TRAIL_RES * 2;
+    const colonies = board.setup.queens.length;
+    const size = tw * board.setup.mapH * TRAIL_RES * colonies;
     if (this.trailSeed.length !== size) this.trailSeed = new Float32Array(size);
     else if (prev) {
       const decay = TRAIL_DECAY_PER_TICK ** (m.tick - prev.tick);
@@ -825,7 +838,7 @@ export class TickPreparation {
     for (let i = 0; i < ants.count; i++) {
       const tx = Math.floor(ants.x[i]! * TRAIL_RES / SUB_TILE);
       const ty = Math.floor(ants.y[i]! * TRAIL_RES / SUB_TILE);
-      const k = (ty * tw + tx) * 2 + ants.colony[i]!;
+      const k = (ty * tw + tx) * colonies + ants.colony[i]!;
       this.trailSeed[k] = Math.min(1, this.trailSeed[k]! + TRAIL_DEPOSIT);
     }
     // Retain one reusable seed; transfer the tick's copy without detaching future preparation.

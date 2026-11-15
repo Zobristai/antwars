@@ -153,9 +153,14 @@ function fourColonyFixture(): Frame {
   } as unknown as Board;
   frame.board = board;
   frame.territoryA = frame.territoryB = territory;
+  // Four trail channels per cell, colony 0 to 3; each colony's channel holds its own value, (colony + 1) / 10.
+  frame.trails = Float32Array.from({ length: W * H * 4 }, (_, i) => (i % 4 + 1) / 10);
   frame.marks = board.marks.map(m => ({ mark: m, ageMs: 0 }));
   return frame;
 }
+
+/** The trail channels a view keeps: every index with a value. */
+const kept = (trails: Float32Array) => [...trails.keys()].filter(i => trails[i] !== 0);
 
 describe("a colony's view of the board", () => {
   it("Full view is the playback frame itself, with no fog", () => {
@@ -222,7 +227,7 @@ describe("a colony's view of the board", () => {
 });
 
 describe("a colony's view in a four-colony match", () => {
-  it("colony 2 sees from its own ants: its own territory, marks and queens, enemies only in sight, and no trails", () => {
+  it("colony 2 sees from its own ants: its own territory, marks, queens and trails, enemies only in sight", () => {
     const frame = fourColonyFixture();
     const view = new TeamView();
     view.choice = 2;
@@ -232,8 +237,9 @@ describe("a colony's view in a four-colony match", () => {
     expect([...shown.territoryA.subarray(0, 4)]).toEqual([0, 0, 3, 0]);
     expect(shown.marks.map(m => m.mark.id)).toEqual([1]);
     expect(shown.board!.queens!.map(q => q.colony)).toEqual([2, 3]);
-    // The stream's trails carry channels for colonies 0 and 1 only: colony 2's view shows none of theirs.
-    expect(shown.trails.some(v => v !== 0)).toBe(false);
+    // Every cell's colony 2 channel, and no other colony's.
+    expect(kept(shown.trails)).toEqual([...frame.trails.keys()].filter(i => i % 4 === 2));
+    expect(shown.trails[2]).toBe(frame.trails[2]);
   });
 
   it("colony 3 sees its own tile and ant, and Full view is still the frame itself", () => {
@@ -244,7 +250,7 @@ describe("a colony's view in a four-colony match", () => {
     expect([...shown.id.subarray(0, shown.count)]).toEqual([1, 2]);
     expect([...shown.territoryA.subarray(0, 4)]).toEqual([0, 0, 0, 4]);
     expect(shown.marks.map(m => m.mark.id)).toEqual([2]);
-    expect(shown.trails.some(v => v !== 0)).toBe(false);
+    expect(kept(shown.trails)).toEqual([...frame.trails.keys()].filter(i => i % 4 === 3));
     view.choice = "full";
     expect(view.apply(frame)).toBe(frame);
   });
@@ -254,8 +260,8 @@ describe("a colony's view in a four-colony match", () => {
     const view = new TeamView();
     view.choice = 1;
     const shown = view.apply(frame);
-    expect(shown.trails[0]).toBe(0);
-    expect(shown.trails[1]).toBe(0.5);
+    expect(kept(shown.trails)).toEqual([...frame.trails.keys()].filter(i => i % 4 === 1));
+    expect(shown.trails[1]).toBe(frame.trails[1]);
     expect([...shown.territoryA.subarray(0, 4)]).toEqual([0, 2, 0, 0]);
   });
 });
