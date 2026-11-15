@@ -57,16 +57,17 @@ export function openingOutlineWidth(box: VisibleStartBox, base: number, projecti
 }
 
 export class StartBoxes3D {
-  readonly meshes: readonly [Mesh, Mesh];
+  /** One border per colony, index = colony id. */
+  readonly meshes: readonly Mesh[];
   boxes: readonly VisibleStartBox[] = [];
   private setup: StartBoxSetup | undefined;
   private projectionKey: string | undefined;
 
+  /** colonyRgb: one colour per colony of the match, index = colony id. */
   constructor(scene: Scene, private readonly ground: Pick<Ground, "heightAt">,
     colonyRgb: readonly (readonly number[])[]) {
-    this.meshes = [0, 1].map((colony) => {
+    this.meshes = colonyRgb.map((rgb, colony) => {
       const mesh = new Mesh(`start-box-${colony}`, scene);
-      const rgb = colonyRgb[colony]!;
       const material = new StandardMaterial(`start-box-${colony}`, scene);
       material.emissiveColor = new Color3(rgb[0]!, rgb[1]!, rgb[2]!);
       material.disableLighting = true;
@@ -76,7 +77,7 @@ export class StartBoxes3D {
       mesh.isPickable = false;
       mesh.setEnabled(false);
       return mesh;
-    }) as [Mesh, Mesh];
+    });
   }
 
   update(frame: { board: { setup: StartBoxSetup } | null }, projection?: OutlineProjection): void {
