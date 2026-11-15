@@ -17,6 +17,8 @@ export const SUB = 1000;
  * generations were removed). Bump it when a rule changes so a log of other rules is refused.
  */
 export const RULES_VERSION = 27;
+/** The rules generation a config marked rules28 plays; its match logs carry this version. */
+export const RULES28_VERSION = 28;
 
 /** The rules-generation markers every config carries, with their one value each (SimConfig.rules25 and on). */
 export const RULES_MARKERS = {
@@ -38,6 +40,8 @@ export interface HatchTimingRules {
 }
 
 export const SOLDIER_HATCH_TIMING: HatchTimingRules = { soldierIntervalMultiplier: 2 };
+export interface HatchRateRules { readonly foodPerSecond: number; }
+export const HATCH_RATE: HatchRateRules = { foodPerSecond: 2 };
 
 /** Queen founding changes no food, hatch or match-length tuning. */
 export interface QueenRules {
@@ -282,6 +286,8 @@ export interface SimConfig {
   readonly hatchIntervalTicks: number;
   /** Each soldier takes this many base hatch intervals at its queen. */
   readonly hatchTiming?: HatchTimingRules;
+  readonly hatchRate?: HatchRateRules;
+  readonly rules28?: true;
   readonly corpseFood: number;
   readonly sightTiles: number;
   readonly smellTiles: number;
@@ -357,7 +363,20 @@ export interface SimConfig {
   readonly localAnts?: LocalAntRules;
   /** Queens with HP instead of the overrun timer; redesign only. */
   readonly queenHp?: QueenHpRules;
+  /** The flyer caste; present exactly on the served rules-28 configuration. */
+  readonly flyers?: FlyerRules;
 }
+
+/** Flyer numbers: hp and damage in milli-HP (damage before the own-ground bonus), speed in the match map's tiles, never grid-scaled. */
+export interface FlyerRules {
+  readonly hp: number;
+  readonly damagePerSecond: number;
+  readonly cost: number;
+  readonly speedTilesPerSecond: number;
+  readonly lockoutTicks: number;
+}
+
+export const FLYER_RULES: FlyerRules = { hp: 2000, damagePerSecond: 5000, cost: 12, speedTilesPerSecond: 8, lockoutTicks: 30 };
 
 /** ANTWAR_RULES values. */
 export const RULES_NAMES = ["v4", "count-marks", "redesign"] as const;
@@ -420,10 +439,8 @@ export interface LocalAntRules {
 }
 
 /** Queen HP numbers, in milli-HP and ticks. */
-export interface QueenHpRules {
+interface QueenHpBase {
   readonly hp: number;
-  readonly biteDamage: number;
-  readonly biteIntervalTicks: number;
   readonly regenHp: number;
   readonly regenIntervalTicks: number;
   /** She regains HP only while no enemy is within this many tiles. */
@@ -431,6 +448,11 @@ export interface QueenHpRules {
   /** She takes no damage before this tick. */
   readonly shieldTicks: number;
 }
+/** Rules 27 and earlier: she bites one adjacent enemy for biteDamage once every biteIntervalTicks. */
+export interface QueenBiteRules extends QueenHpBase { readonly biteDamage: number; readonly biteIntervalTicks: number }
+/** Rules 28: she strikes one adjacent enemy every tick, damagePerSecond spread evenly over the second. */
+export interface QueenPerTickRules extends QueenHpBase { readonly damagePerSecond: number }
+export type QueenHpRules = QueenBiteRules | QueenPerTickRules;
 
 /**
  * The largest count a count mark may request. A count claims only free living ants of one colony, which never
@@ -450,7 +472,7 @@ export const BALANCED_LOCAL_ANT_RULES: LocalAntRules = {
 export const EARLY_WIN_RULES: EarlyWinRules = {
   minTick: 10 * 60 * 10, holdTicks: 5 * 60 * 10, territoryRatioPermille: 6000, minHeldTiles: 100,
 };
-export const QUEEN_HP_RULES: QueenHpRules = {
+export const QUEEN_HP_RULES: QueenBiteRules = {
   hp: 40_000,
   biteDamage: 4_000,
   biteIntervalTicks: 20,
@@ -582,14 +604,14 @@ export function rulesConfig(value: string | undefined): SimConfig {
     case "count-marks":
       return { ...PUBLIC_CONFIG, rules: "count-marks", countMarks: COUNT_MARK_RULES };
     case "redesign":
-      return { ...PUBLIC_CONFIG, rules: "redesign", wordMarksDisabled: true, pointArrival: POINT_ARRIVAL_RULES, forageReachArrival: true, softSeparation: { soldierRadius: 800, guardSettle: true, restPass: true, radius: 100, strength: 1600, maxStep: 200, arrivalSubunits: 300, epsilon: 1, arrivalLinkRadius: 150 }, hatchTiming: SOLDIER_HATCH_TIMING,
+      return { ...PUBLIC_CONFIG, rules: "redesign", wordMarksDisabled: true, pointArrival: POINT_ARRIVAL_RULES, forageReachArrival: true, softSeparation: { soldierRadius: 800, guardSettle: true, restPass: true, radius: 100, strength: 1600, maxStep: 200, arrivalSubunits: 300, epsilon: 1, arrivalLinkRadius: 150 }, rules28: true, hatchRate: HATCH_RATE, antHp: 2000, hatchCost: 2, castes: { soldierCost: 6, soldierHpPermille: 5000, soldierDamagePermille: 3000 }, flyers: FLYER_RULES,
         // The near-home patch is visible to the opening block's northern ants at the sight boundary.
         // Its nearest edge is row 15, so collecting food takes workers outside the lane, not just to row 19.
         foodPatches: LIVE_REDESIGN_FOOD_PATCHES,
         foodLayout: foodLayoutRules(LIVE_REDESIGN_FOOD_PATCHES, 452, 1026),
         countMarks: { ...COUNT_MARK_RULES, recruitColonyWide: true, placement: "colony_sight", reportClaimAvailability: true },
         patrolLinkTiles: 6,
-        localAnts: { ...BALANCED_LOCAL_ANT_RULES, workerGuardSettle: true, everyColony: true }, queenHp: QUEEN_HP_RULES,
+        localAnts: { ...BALANCED_LOCAL_ANT_RULES, workerGuardSettle: true, everyColony: true }, queenHp: { hp: 100_000, damagePerSecond: 10_000, regenHp: 1_000, regenIntervalTicks: 100, regenClearTiles: 3, shieldTicks: 3000 },
         earlyWin: EARLY_WIN_RULES, commandIdleTicks: 180 * PUBLIC_CONFIG.ticksPerSecond };
     default:
       throw new Error(`ANTWAR_RULES must be unset or redesign; got ${JSON.stringify(value)}`);
@@ -617,4 +639,50 @@ export function speedPerTick(config: SimConfig): number {
 /** Per-tick damage in milli-HP before any bonus. */
 export function damagePerTick(config: SimConfig): number {
   return Math.trunc(config.damagePerSecond / config.ticksPerSecond);
+}
+
+/** The rules version a config plays and its match logs record: 28 with the rules-28 marker, otherwise 27. */
+export function rulesVersionOf(config: SimConfig): number {
+  return config.rules28 === true ? RULES28_VERSION : RULES_VERSION;
+}
+
+/**
+ * A config plays one rules generation whole, so its log never names one generation while it plays another's mechanics.
+ * The rules-28 marker is true or absent. A marked config has a striking queen (queen HP with damagePerSecond and neither
+ * bite field), one hatch rate and castes; an unmarked one has no hatch rate, and any queen HP it has bites (biteDamage
+ * and biteIntervalTicks, no damagePerSecond). Anything else is refused.
+ */
+export function checkRulesGeneration(config: SimConfig): void {
+  const marker: unknown = config.rules28;
+  if (marker !== undefined && marker !== true) throw new RangeError(`rules28 must be true or absent, not ${JSON.stringify(marker)}`);
+  const queen = config.queenHp, has = (field: string) => queen !== undefined && field in queen;
+  const strikes = has("damagePerSecond") && !has("biteDamage") && !has("biteIntervalTicks");
+  const bites = has("biteDamage") && has("biteIntervalTicks") && !has("damagePerSecond");
+  if (marker === true) {
+    const lacks = [...(strikes ? [] : ["a striking queen (queenHp with damagePerSecond and no bite fields)"]),
+      ...(config.hatchRate === undefined ? ["hatchRate"] : []), ...(config.castes === undefined ? ["castes"] : [])];
+    if (lacks.length > 0) throw new RangeError(`a rules-28 config needs ${lacks.join(", ")}`);
+  } else if ((queen !== undefined && !bites) || config.hatchRate !== undefined) {
+    throw new RangeError("a config without the rules-28 marker plays rules 27: any queen HP bites (biteDamage and biteIntervalTicks, no damagePerSecond) and it has no hatchRate");
+  }
+}
+
+/**
+ * The starting queen's first hatch ticks: her clock starts one worker interval early (createMatch), so a worker can hatch
+ * at once, and a soldier one soldier interval after that start, or at once where a soldier's interval is the shorter.
+ */
+export function firstHatchTicks(config: SimConfig): { readonly worker: number; readonly soldier: number } {
+  return { worker: 0, soldier: Math.max(0, hatchIntervalOf(config, "soldier") - hatchIntervalOf(config, "worker")) };
+}
+
+/**
+ * Ticks between a queen's hatches of one caste. Under one hatch rate: the caste's cost over the rate (a flyer's is
+ * flyers.cost); otherwise the stored interval, a soldier taking its multiplier.
+ */
+export function hatchIntervalOf(config: SimConfig, caste: "worker" | "soldier" | "flyer" | undefined): number {
+  if (config.hatchRate !== undefined) {
+    const cost = caste === "flyer" ? config.flyers!.cost : caste === "soldier" ? config.castes!.soldierCost : config.hatchCost;
+    return Math.ceil((cost * config.ticksPerSecond) / config.hatchRate.foodPerSecond);
+  }
+  return config.hatchIntervalTicks * (caste === "soldier" ? config.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
 }

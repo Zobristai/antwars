@@ -8,15 +8,19 @@
  * sways and the antennae sweep, with each ant's phase advanced by the distance it actually
  * moved, so feet keep pace with the ground. Squad ants are tinted toward their agent's hue at all
  * times and free ants stay plain; the roster's hovered squad has a ring under each of its ants and
- * every other ant is dimmed, as on the 2D board.
+ * every other ant is dimmed, as on the 2D board. A flyer has the worker's body with pale wings, in
+ * herds of their own by wing pose: folded on its back when grounded or locked out, raised and swept
+ * back when flying, spread to the sides when hovering. An airborne flyer is drawn above the ground,
+ * legs still, over a dark shadow disc where it actually is.
  */
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo.js";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
 import { Color3 } from "@babylonjs/core/Maths/math.color.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { FresnelParameters } from "@babylonjs/core/Materials/fresnelParameters.js";
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
+import { CreateDisc } from "@babylonjs/core/Meshes/Builders/discBuilder.js";
 import { CreateSphere } from "@babylonjs/core/Meshes/Builders/sphereBuilder.js";
 import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder.js";
 import { CreateTube } from "@babylonjs/core/Meshes/Builders/tubeBuilder.js";
@@ -30,6 +34,8 @@ import { CORPSE_FADE_MS, type Frame } from "../buffer.ts";
 import { DIM_TINT, FALLEN_TINT, NO_FALLEN, NO_HUES, SOLDIER_SCALE } from "../ants.ts";
 import { FOOD, FOOD_SHADE } from "../food.ts";
 import { Bites } from "../bite.ts";
+import { AIR_LIFT_3D_TILES } from "../flyer-lift.ts";
+import { flyerOf } from "../flyer-state.ts";
 import type { Ground } from "./ground.ts";
 
 const HIP_Y = 0.17;
@@ -138,8 +144,25 @@ interface Part {
 export const LITE_SEGMENTS = 4;
 export const LITE_TUBE_SEGMENTS = 3;
 
-/** One ant along +x, one unit long, feet at y 0: vertex colours, and per-vertex part tags in aLeg. */
-export function buildAntGeometry(scene: Scene, accent: readonly number[], dull: boolean, segments = 10, soldier = false, tubeSegments = soldier ? LITE_TUBE_SEGMENTS : 5): VertexData {
+/**
+ * A flyer's wings: folded flat along its back on the ground, raised and swept back in flight, spread out to the sides
+ * while hovering, so each state has its own outline from any camera angle.
+ */
+export type WingPose = "folded" | "swept" | "spread";
+
+/** Per pose, fore- and hindwing: [length, width, angle out from the body's rear axis, rise above level], in ant lengths and radians. */
+const WINGS: Record<WingPose, readonly (readonly [number, number, number, number])[]> = {
+  folded: [[0.55, 0.17, 0.1, 0.06], [0.42, 0.13, 0.18, 0.06]],
+  swept: [[0.55, 0.17, 0.45, 0.3], [0.42, 0.13, 0.6, 0.25]],
+  spread: [[0.55, 0.17, 1.7, 0.15], [0.42, 0.13, 1.25, 0.15]],
+};
+const WING_COLOR: [number, number, number] = [0.9, 0.95, 1];
+
+/**
+ * One ant along +x, one unit long, feet at y 0: vertex colours, and per-vertex part tags in aLeg.
+ * wings: a flyer's wings in that pose, rooted on the thorax; null for a worker or soldier.
+ */
+export function buildAntGeometry(scene: Scene, accent: readonly number[], dull: boolean, segments = 10, soldier = false, tubeSegments = soldier ? LITE_TUBE_SEGMENTS : 5, wings: WingPose | null = null): VertexData {
   const parts: Part[] = [];
   const chitin: [number, number, number] = [0.86, 0.81, 0.73];
   const chitinShade: [number, number, number] = [0.62, 0.57, 0.5];
@@ -179,6 +202,16 @@ export function buildAntGeometry(scene: Scene, accent: readonly number[], dull: 
   // Abdomen bands: a slightly larger dark ring segment reads as segmentation.
   parts[1]!.mesh.scaling.set(0.35, 1, 1);
   parts[1]!.mesh.position.x = -0.16;
+  // Wings: thin ellipsoids from a root on the thorax, long axis a, flat face up as near as a allows.
+  if (wings) for (const side of [-1, 1]) for (const [length, width, out, rise] of WINGS[wings]) {
+    const m = CreateSphere("wing", { diameterX: length, diameterY: 0.012, diameterZ: width, segments }, scene);
+    const a = new Vector3(-Math.cos(rise) * Math.cos(out), Math.sin(rise), side * Math.cos(rise) * Math.sin(out));
+    const b = new Vector3(0, 1, 0).subtract(a.scale(a.y)).normalize();
+    const c = Vector3.Cross(a, b);
+    const t = new Vector3(0.06, 0.34, side * 0.03).add(a.scale(length / 2));
+    m.bakeTransformIntoVertices(Matrix.FromValues(a.x, a.y, a.z, 0, b.x, b.y, b.z, 0, c.x, c.y, c.z, 0, t.x, t.y, t.z, 1));
+    parts.push({ mesh: m, color: WING_COLOR, leg: [0, 0] });
+  }
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -309,9 +342,17 @@ export class Ants3D {
   private soldiers: Herd[];
   private crumbs: Herd;
   private dead: Herd[];
+  /** Workers and soldiers, the shadow casters. */
   private readonly herds: Herd[];
-  private readonly counts = new Uint32Array(4);
-  private readonly at = new Uint32Array(4);
+  /** Flyers by wing pose and colony: landed 0 and 1 (grounded or locked out), flying 0 and 1, hovering 0 and 1. */
+  private readonly flyers: Herd[];
+  /** herds then flyers, indexed by each ant's group. */
+  private readonly bodies: Herd[];
+  /** A dark disc on the ground under each airborne flyer, where the ant actually is. */
+  private readonly shadows: Herd;
+  private groups = new Uint8Array(0);
+  private readonly counts = new Uint32Array(10);
+  private readonly at = new Uint32Array(10);
   private readonly corpseCounts = new Uint32Array(2);
   private readonly corpseAt = new Uint32Array(2);
   /** Rings under the highlighted squad's ants (one thin-instanced torus, unlit, tinted per instance). */
@@ -350,6 +391,27 @@ export class Ants3D {
     this.live = [0, 1].map((c) => new Herd(scene, `ants${c}`, buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS), liveMat, W, H, true));
     this.soldiers = [0, 1].map((c) => new Herd(scene, `soldiers${c}`, buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), true), liveMat, W, H, true));
     this.herds = [...this.live, ...this.soldiers];
+    // A flyer's caste is worker: the worker body, with wings.
+    this.flyers = (["folded", "swept", "spread"] as const).flatMap((wings) => [0, 1].map((c) =>
+      new Herd(scene, `flyers-${wings === "folded" ? "landed" : wings === "swept" ? "flying" : "hovering"}${c}`,
+        buildAntGeometry(scene, colonyRgb[c]!, false, Math.min(segments, LITE_SEGMENTS), false, LITE_TUBE_SEGMENTS, wings), liveMat, W, H, true)));
+    this.bodies = [...this.herds, ...this.flyers];
+    const shadowMat = new StandardMaterial("flyer-shadow", scene);
+    shadowMat.disableLighting = true;
+    shadowMat.diffuseColor = new Color3(0, 0, 0);
+    shadowMat.emissiveColor = new Color3(0.05, 0.04, 0.03);
+    shadowMat.alpha = 0.4;
+    shadowMat.zOffset = -1;
+    shadowMat.disableDepthWrite = true;
+    shadowMat.backFaceCulling = false;
+    const disc = CreateDisc("flyer-shadow-geo", { radius: 0.4, tessellation: 20 }, scene);
+    disc.rotation.x = Math.PI / 2;
+    disc.bakeCurrentTransformIntoVertices();
+    const dvd = VertexData.ExtractFromMesh(disc);
+    disc.dispose();
+    dvd.colors = Array.from({ length: (dvd.positions!.length / 3) * 4 }, () => 1);
+    (dvd as unknown as { aLeg: number[] }).aLeg = Array.from({ length: (dvd.positions!.length / 3) * 2 }, () => 0);
+    this.shadows = new Herd(scene, "flyer-shadows", dvd, shadowMat, W, H);
     // One batched faceted green crumb, held in front of a worker's head; soldiers never carry.
     const cvd = buildCrumbGeometry(0.16, 0.48, 0.24);
     cvd.colors = new Array((cvd.positions!.length / 3) * 4).fill(1);
@@ -378,7 +440,7 @@ export class Ants3D {
 
   /** All ant meshes, including visible corpses; used by the ants layer toggle. */
   get meshes(): Mesh[] {
-    return [...this.live.map((h) => h.mesh), ...this.soldiers.map((h) => h.mesh), ...this.dead.map((h) => h.mesh)];
+    return [...this.live.map((h) => h.mesh), ...this.soldiers.map((h) => h.mesh), ...this.flyers.map((h) => h.mesh), ...this.dead.map((h) => h.mesh)];
   }
 
   /** Only live workers and soldiers cast shadows; corpses remain in the visible layer. */
@@ -387,7 +449,7 @@ export class Ants3D {
   }
 
   setVisible(on: boolean) {
-    for (const m of [...this.meshes, this.rings.mesh, this.crumbs.mesh]) m.isVisible = on;
+    for (const m of [...this.meshes, this.rings.mesh, this.crumbs.mesh, this.shadows.mesh]) m.isVisible = on;
   }
 
   /** highlight: agent whose squad leads and is ringed, every other ant dimmed (-1 none); hues: each agent's hue by index (squads.ts agentHues); fallen: the colonies whose ants are dimmed as fallen. */
@@ -398,24 +460,34 @@ export class Ants3D {
     let ringCount = 0;
     const counts = this.counts;
     counts.fill(0);
-    let carrying = 0;
+    let carrying = 0, airborne = 0;
+    if (this.groups.length < n) this.groups = new Uint8Array(Math.max(n, this.groups.length * 2));
+    const groups = this.groups;
     for (let i = 0; i < n; i++) {
-      counts[frame.colony[i]! + (frame.caste[i] === 1 ? 2 : 0)]!++;
+      // Workers and soldiers 0..3 (colony + 2 for a soldier); flyers 4 + 2 per wing pose + colony.
+      const flyer = flyerOf(frame, i);
+      const wings = flyer === null ? -1 : flyer.state === "flying" ? 1 : flyer.state === "hovering" ? 2 : 0;
+      const group = wings < 0 ? frame.colony[i]! + (frame.caste[i] === 1 ? 2 : 0) : 4 + wings * 2 + frame.colony[i]!;
+      groups[i] = group;
+      counts[group]!++;
+      if (group >= 6) airborne++;
       if (frame.caste[i] !== 1 && frame.carrying[i]) carrying++;
       if (highlight >= 0 && frame.agent[i] === highlight) ringCount++;
     }
     this.rings.ensure(ringCount);
     this.crumbs.ensure(carrying);
-    const herds = this.herds;
+    this.shadows.ensure(airborne);
+    const herds = this.bodies;
     for (let i = 0; i < herds.length; i++) herds[i]!.ensure(counts[i]!);
     const at = this.at;
     at.fill(0);
-    let r = 0, carried = 0;
+    let r = 0, carried = 0, shade = 0;
     this.stamp++;
     for (let i = 0; i < n; i++) {
       const c = frame.colony[i]!;
       const caste = frame.caste[i] === 1 ? 1 : 0;
-      const group = c + caste * 2;
+      const group = groups[i]!;
+      const aloft = group >= 6;
       const herd = herds[group]!;
       const k = at[group]!++;
       const size = L * (caste ? SOLDIER_SCALE : 1);
@@ -438,8 +510,12 @@ export class Ants3D {
       const drawX = position?.x ?? x, drawY = position?.y ?? y;
       const rotation = pose?.rotation ?? frame.drawRotation?.[i] ?? frame.rotation[i]!;
       const gy = this.ground.heightAt(drawX, drawY);
-      writeMatrix(herd.matrices, k * 16, size * grow, rotation, drawX, gy + 0.02, this.ground.mapH - drawY, false);
-      herd.walk[k] = g.ph;
+      // An airborne flyer is drawn AIR_LIFT_3D_TILES above the ground at its position, legs still, its shadow below.
+      const ly = aloft ? gy + AIR_LIFT_3D_TILES : gy;
+      const by = aloft ? ly : gy + 0.02;
+      writeMatrix(herd.matrices, k * 16, size * grow, rotation, drawX, by, this.ground.mapH - drawY, false);
+      herd.walk[k] = aloft ? 0 : g.ph;
+      if (aloft) writeMatrix(this.shadows.matrices, shade++ * 16, size * grow, rotation, drawX, gy + 0.03, this.ground.mapH - drawY, false);
       herd.bite[k] = pose?.jawOpen ?? 0;
       herd.head[k * 2] = (pose?.headOffset ?? 0) / (size * grow);
       herd.head[k * 2 + 1] = -(pose?.headSideOffset ?? 0) / (size * grow);
@@ -459,7 +535,7 @@ export class Ants3D {
       if (!caste && frame.carrying[i]) {
         const crumbX = drawX + Math.cos(rotation) * (pose?.headOffset ?? 0) - Math.sin(rotation) * (pose?.headSideOffset ?? 0);
         const crumbY = drawY + Math.sin(rotation) * (pose?.headOffset ?? 0) + Math.cos(rotation) * (pose?.headSideOffset ?? 0);
-        writeMatrix(this.crumbs.matrices, carried * 16, size * grow, rotation, crumbX, gy + 0.02, this.ground.mapH - crumbY, false);
+        writeMatrix(this.crumbs.matrices, carried * 16, size * grow, rotation, crumbX, by, this.ground.mapH - crumbY, false);
         const crumbColor = this.crumbs.color!;
         const ci = carried * 4, hi = k * 4;
         crumbColor[ci] = col[hi]!;
@@ -469,7 +545,7 @@ export class Ants3D {
         carried++;
       }
       if (lit) {
-        writeMatrix(this.rings.matrices, r * 16, size, 0, drawX, gy + 0.08, this.ground.mapH - drawY, false);
+        writeMatrix(this.rings.matrices, r * 16, size, 0, drawX, ly + 0.08, this.ground.mapH - drawY, false);
         const ringColor = this.rings.color!, ri = r * 4;
         for (let ch = 0; ch < 3; ch++) ringColor[ri + ch] = (hue === undefined ? 1 : ((hue >> (16 - 8 * ch)) & 255) / 255) * 1.35;
         ringColor[ri + 3] = 1;
@@ -479,6 +555,7 @@ export class Ants3D {
     for (let i = 0; i < herds.length; i++) herds[i]!.commit(counts[i]!);
     this.crumbs.commit(carried);
     this.rings.commit(r);
+    this.shadows.commit(shade);
     if (this.stamp % 64 === 0) for (const [id, g] of this.gait) if (this.stamp - g.seen > 64) this.gait.delete(id);
 
     const cc = this.corpseCounts;

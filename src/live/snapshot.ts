@@ -14,6 +14,15 @@ export const TICK_MS = 1000 / TICK_HZ;
 
 export const OWNER_NONE = 0;
 
+/** One raw stream rounding unit either side of each coordinate (sub-tile units). This tests
+ * possible tiles within the match's bite reach, not an extra whole tile. */
+export function adjacentWithSlack(ax: number, ay: number, bx: number, by: number, reach = 1): boolean {
+  const near = (a: number, b: number) => Math.max(0,
+    Math.floor((a - 1) / SUB_TILE) - Math.floor((b + 1) / SUB_TILE),
+    Math.floor((b - 1) / SUB_TILE) - Math.floor((a + 1) / SUB_TILE)) <= reach;
+  return near(ax, bx) && near(ay, by);
+}
+
 export type Colony = 0 | 1;
 
 /** A recorded match: messages concatenated, each prefixed with its u32 byte length. */

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { SimConfig } from "../sim/config.js";
 import type { AgentView, ViewCell } from "../sim/view.js";
-import { VISIBLE_EVENT_KINDS, denseCells } from "../sim/view.js";
+import { VISIBLE_EVENT_KINDS, denseCells, denseFlyers } from "../sim/view.js";
 import type { Game, ObserveEvent } from "./game.js";
 import { packTerritory } from "./territory.js";
 import { packMarks } from "./markTable.js";
@@ -35,9 +35,9 @@ export function payload(data: Record<string, unknown>, isError = false): CallToo
 }
 
 /** Only explicit caste restrictions cross the MCP boundary. Never mutate the sim view or history. */
-export function publicCountCaste<T extends { readonly caste?: string }>(value: T): Omit<T, "caste"> & { caste?: "worker" | "soldier" } {
+export function publicCountCaste<T extends { readonly caste?: string }>(value: T): Omit<T, "caste"> & { caste?: "worker" | "soldier" | "flyer" } {
   const { caste, ...fields } = value;
-  return caste === "worker" || caste === "soldier" ? { ...fields, caste } : fields;
+  return caste === "worker" || caste === "soldier" || caste === "flyer" ? { ...fields, caste } : fields;
 }
 
 /** Rules 27: a queen entry names her owner as the caller reads it, never as an agentId:
@@ -87,6 +87,7 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
   extra: Record<string, unknown> = {}, since?: number, limits: ReplyLimits = DEFAULT_REPLY_LIMITS, cellsCursor?: string, freshCells = true): CallToolResult {
   // The sim names colonies by id; the match may have drawn its own names (an unrated lobby).
   const publicView = { ...view, colonyName: game.colonyNames(view.agentId)[view.colony], marks: view.marks.map(publicCountCaste), myMarks: view.myMarks.map(publicCountCaste),
+    ...(view.flyers === undefined ? {} : { flyers: denseFlyers(view.flyers) }),
     ...(view.queens === undefined ? {} : { queens: view.queens.map(queen => publicQueen(game, view.agentId, queen)) }) };
   const page = game.cellsFor(view, config, cellsCursor, freshCells);
   const cellError = (code: string, message: string) => payload({ error: { code, message, howToFix: "Omit cellsCursor to start a fresh cell traversal; keep event since separate." }, tick: view.tick }, true);

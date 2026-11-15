@@ -5,11 +5,12 @@
  * panel and "Bring your agent" button. web/src/main.ts loads this module only when starting 3D.
  *
  * Drawn: lit ground with relief carrying the territory, trails and the glowing front
- * (ground.ts); 3D ants with a walk cycle, and corpses (ants3d.ts); fights (effects3d.ts); the
+ * (ground.ts); 3D ants with a walk cycle, and corpses (ants3d.ts); fights, and flyers' take-offs and landings (effects3d.ts); the
  * nests and queens (nests.ts); a warm key light with shadows, a cool fill, bloom and vignette.
- * The marks' markers and the squads' badges are the 2D board's own (web/src/words.ts,
- * web/src/squads.ts), drawn on a transparent Pixi canvas over the 3D one that takes no pointer
- * events, placed from the 3D camera's projection and re-placed whenever the camera moves.
+ * The marks' markers, the squads' badges and a landed flyer's lockout dial are the 2D board's own
+ * (web/src/words.ts, web/src/squads.ts, web/src/flyer-lockout.ts), drawn on a transparent Pixi canvas
+ * over the 3D one that takes no pointer events, placed from the 3D camera's projection and re-placed
+ * whenever the camera moves.
  *
  * Camera (view.ts): the prototype's tilted hero angle by default, or top-down, switched from the
  * bottom bar; drag to orbit, right-drag or two fingers to pan, wheel or pinch to zoom.
@@ -57,11 +58,14 @@ import { CLEAR_RGB, Ground } from "./ground.ts";
 import { colonyRgbs, setMatchColonies } from "../colony-palette.ts";
 import { boardLook, type BoardLook } from "../board-look.ts";
 import { Ants3D } from "./ants3d.ts";
-import { Battles3D } from "./effects3d.ts";
+import { Battles3D, FlightMoments3D } from "./effects3d.ts";
 import { Food3D } from "./food3d.ts";
 import { Rocks3D } from "./rocks.ts";
 import { StartBoxes3D, phoneOpeningOutline } from "./start-boxes.ts";
 import { BoardMarkers3D, type ScreenPoint } from "./markers3d.ts";
+import { FlightLines } from "../flight-lines.ts";
+import { AIR_LIFT_3D_TILES } from "../flyer-lift.ts";
+import { LockoutDials } from "../flyer-lockout.ts";
 import { Nests } from "./nests.ts";
 import { gridScale } from "../grid-scale.ts";
 import { FOV, MIN_RADIUS, antTiles, fallPose, lerpPose, pickNearest, poseAfterResize, viewPose, viewTilePx, type Pose, type ViewName } from "./view.ts";
@@ -247,6 +251,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   };
   const ants = new Ants3D(scene, ground, antScale(), colonyRgbs());
   const battles = new Battles3D(scene, ground);
+  const flights = new FlightMoments3D(scene, ground);
   const food = new Food3D(scene, ground);
   const rocks = new Rocks3D(scene, ground);
   const startBoxes = new StartBoxes3D(scene, ground, colonyRgbs());
@@ -403,10 +408,14 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   const words = new Words({ w, h });
   const squads = new Squads(pixi.renderer, w);
   const markers = new BoardMarkers3D(pixi.renderer);
+  const destinationLines = new FlightLines();
+  const lockoutDials = new LockoutDials();
   squadsRef = squads;
   wordsRef = words;
   markersRef = markers;
-  // The markers and badges; the tooltips are the page's own, above every panel.
+  // Each airborne flyer's line to its destination on the ground and each landed flyer's lockout dial, under the
+  // markers and badges; the tooltips are the page's own, above every panel.
+  pixi.stage.addChild(destinationLines.layer, lockoutDials.layer);
   pixi.stage.addChild(markers.layer, words.layer, squads.layer);
 
   // Tile -> screen through the 3D camera; recomputed every frame before anything is placed.
@@ -416,6 +425,16 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   const out = new Vector3();
   const toScreen = (tx: number, ty: number): [number, number] => {
     tmp.set(tx, ground.heightAt(tx, ty), H - ty);
+    Vector3.ProjectToRef(tmp, Matrix.IdentityReadOnly, vp, viewport, out);
+    return [out.x, out.y];
+  };
+  // The flight lines' and flyer LINE marks' air segments' projection: no screen point for ground at or behind the
+  // camera's near plane, which ProjectToRef would mirror onto the screen or throw far off it. The projected point's clip
+  // w is its depth in front of the camera. lift tiles above the ground: where an airborne flyer's body is.
+  const toScreenInFront = (tx: number, ty: number, lift = 0): [number, number] => {
+    tmp.set(tx, ground.heightAt(tx, ty) + lift, H - ty);
+    const m = vp.m;
+    if (!(tmp.x * m[3]! + tmp.y * m[7]! + tmp.z * m[11]! + m[15]! > cam.minZ)) return [NaN, NaN];
     Vector3.ProjectToRef(tmp, Matrix.IdentityReadOnly, vp, viewport, out);
     return [out.x, out.y];
   };
@@ -709,8 +728,13 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     while (nestCasters < nests.casters.length) shadows.addShadowCaster(nests.casters[nestCasters++]!, false);
     food.update(shown, tilePx);
     battles.update(shown, tilePx);
+    flights.update(shown, tilePx);
+    // A landed flyer's lockout, around it at the ants' length where it stands.
+    lockoutDials.update(shown, toScreen, (tx, ty) => ants.lengthTiles * tilePxAt(tx, ty));
     markers.update(shown, toScreenRef);
-    words.update(shown, toScreen, blocked, `${viewKey()}:${overlaysOn}`, squads.anchors(shown, toScreen), squads.badgeR);
+    // A hovering flyer's line starts at its body, drawn AIR_LIFT_3D_TILES above the ground (Ants3D.update).
+    destinationLines.update(shown, toScreenInFront, teamView.choice === "full" ? null : teamView.choice, { x0: 0, y0: 0, x1: w, y1: h }, (tx, ty) => toScreenInFront(tx, ty, AIR_LIFT_3D_TILES));
+    words.update(shown, toScreen, blocked, `${viewKey()}:${overlaysOn}`, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront);
     squads.updateBadges(shown, toScreen, words.badges);
     if (board?.result) endedAt ??= now;
     else endedAt = null;
@@ -800,7 +824,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
       if (o.trails !== undefined) ground.plugin.values.trails = o.trails ? 1 : 0;
       if (o.front !== undefined) ground.plugin.values.front = o.front ? 1 : 0;
       if (o.ants !== undefined) ants.setVisible(o.ants);
-      if (o.battles !== undefined) battles.setVisible(o.battles);
+      if (o.battles !== undefined) { battles.setVisible(o.battles); flights.setVisible(o.battles); }
       if (o.words !== undefined) {
         wordsOn = o.words;
         words.layer.visible = squads.layer.visible = o.words;
@@ -856,6 +880,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
       return out;
     },
     markers: () => (words.layer.visible ? words.markers() : []),
+    flightLines: () => destinationLines.drawn(),
     markLabels: () => (words.layer.visible ? words.drawnLabels() : []),
     zoomAt: (f) => (cam.radius = Math.min(cam.upperRadiusLimit ?? Infinity, Math.max(cam.lowerRadiusLimit ?? 0, cam.radius / f))),
     panBy(dx, dy) {

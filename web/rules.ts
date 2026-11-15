@@ -1,7 +1,7 @@
-import { COUNT_MARK_MAX_COUNT_TEXT, type QueenHpRules, type QueenRules, type SimConfig } from "../src/sim/config.js";
+import { COUNT_MARK_MAX_COUNT_TEXT, firstHatchTicks, hatchIntervalOf, type QueenHpRules, type QueenRules, type SimConfig } from "../src/sim/config.js";
 import { countMarkVerbs, lineMarksEnabled } from "../src/sim/patrol.js";
 import { WORDS } from "../src/sim/types.js";
-import { frontlineFoodLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
+import { frontlineFoodLines, flyerRulesLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queensStrike, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
 import { DEFAULT_HOUSE_IDLE_SECONDS, DEFAULT_MCP_CONFIG } from "../src/mcp/config.js";
 import { createTerrain } from "../src/sim/terrain.js";
 import { mapLayoutDescription } from "../src/sim/mapShapes.js";
@@ -105,7 +105,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
         : `${founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"}: hold an enemy majority near her for ${minutes(config.overrunTicks)}${config.overrunGraceTicks > 0 ? `, after the first ${minutes(config.overrunGraceTicks)}` : ""}.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold at least ${area(early.minHeldTiles)} and ${early.territoryRatioPermille / 1000} times the opponent's territory for ${minutes(early.holdTicks)} without a break.`]),
       config.adjudication === "kills-first"
-        ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.`
+        ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen ${queensStrike(config) ? "strikes" : "bites"}.`
         : `At ${matchLength}, hold more territory. Ties go to living ants, then food delivered; if still equal, the match is a draw.`,
     ] },
     { title: "Overview", lines: [
@@ -137,10 +137,10 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       `An ant claims its aligned ${scale}x${scale} tile cell, excluding water and rocks. Territory totals count original-size tile areas, not fine tiles. A tile returns to neutral ${seconds(config.territoryDecayTicks)} after its owner's last visit. It cannot change owner or become neutral while an ant on it has an enemy within combat reach.`,
     ] },
     { title: "Food and hatching", lines: [
-      `Each colony starts with ${count(config.startAnts, "ant")}. Foragers pick up food and carry it to a friendly queen. A worker costs ${config.hatchCost} food. A queen can hatch ${config.castes && config.hatchTiming ? "a worker" : "an ant"} every ${seconds(config.hatchIntervalTicks)} when food is available, up to ${antCap} per colony.`,
+      `Each colony starts with ${count(config.startAnts, "ant")}. Foragers pick up food and carry it to a friendly queen. A worker costs ${config.hatchCost} food. ${hatchSentence(config, seconds)}, up to ${antCap} per colony.${firstHatchSentence(config, seconds)}`,
       // Alive = started with + hatched − lost, so no count reads as a contradiction without its missing term.
       `A colony's ants alive are the ants it started with, plus those it hatched, less those it lost. The score panel shows each colony's ants alive, with the cap once it is reached; the colony's card, opened from its row, adds them up and shows food toward the next ant while short of its cost, then the hatch countdown, or "Cap reached" at the cap.`,
-      ...(config.castes ? [`A soldier costs ${config.castes.soldierCost} food and carries no food.${config.hatchTiming === undefined ? "" : ` Each soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config.hatchIntervalTicks * config.hatchTiming.soldierIntervalMultiplier)}) at its own queen; workers take one interval.`} ${queenBroodText(config, DEFAULT_MCP_CONFIG.callsPerSecond)}`] : []),
+      ...(config.castes ? [`A soldier costs ${config.castes.soldierCost} food and carries no food.${config.hatchTiming === undefined || config.hatchRate !== undefined ? "" : ` Each soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config.hatchIntervalTicks * config.hatchTiming.soldierIntervalMultiplier)}) at its own queen; workers take one interval.`} ${queenBroodText(config, DEFAULT_MCP_CONFIG.callsPerSecond)}`] : []),
       `Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat.${queenHp === undefined ? " Carriers do not count toward overrunning an enemy queen." : ""}`,
       ...frontlineFoodLines(config),
     ] },
@@ -149,7 +149,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
     ] }]),
     { title: "Queens", lines: [
       "Each colony begins with a queen at its nest.",
-      `Ant and queen bite reach is ${tiles(scale)}, including diagonals: one original-size tile's distance.`,
+      `${queensStrike(config) ? "Ant bite and queen strike" : "Ant and queen bite"} reach is ${tiles(scale)}, including diagonals: one original-size tile's distance.`,
       ...(founding === undefined ? [] : [
         `Use found_queen on a tile your colony holds, at least ${tiles(founding.minDistanceTiles)} (Euclidean distance) from every ${founding.standingNestsOnly ? `standing nest of either colony; ${queenHp === undefined ? "overrun" : "dead"} nests no longer block spacing` : "nest of either colony, including lost nests"}. Founding opens ${seconds(founding.firstFoundTick ?? 0)} after match start and has a colony-wide cooldown of ${seconds(founding.cooldownTicks)}.`,
         `The first extra queen costs ${founding.cost} stored food${(founding.costMultiplier ?? 1) === 1 ? "." : `; the price multiplies by ${founding.costMultiplier} with each ${founding.costBasis === "live" ? "additional live queen" : founding.costBasis === "founded-live" ? "additional living founded queen; starting queens do not count" : "queen ever founded, including replacements"}.`}${founding.maxLiveQueens === undefined ? "" : ` At most ${count(founding.maxLiveQueens, "live queen")} per colony, including the first.`} Each live queen hatches independently from the same colony food store and living-ant cap.`,
@@ -160,7 +160,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
         ...(config.overrunGraceTicks <= 0 ? [] : [`No queen can be overrun in the first ${minutes(config.overrunGraceTicks)}. This window starts at match start and applies to every queen, including founded queens; founding does not restart it.`]),
         `${config.overrunGraceTicks > 0 ? "After protection ends, an" : "An"} enemy majority within ${tiles(config.overrunRadiusTiles)} of a queen for ${seconds(config.overrunTicks)} overruns it.${founding === undefined ? "" : " A lost queen cannot hatch, receive food or be refounded; the colony survives while any queen remains."}`,
       ] : [
-        `Each queen has ${queenHp.hp / 1000} HP. Queens take no damage before ${seconds(queenHp.shieldTicks)} from match start. A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at normal damage, without the territory bonus. A queen bites one adjacent enemy for ${queenHp.biteDamage / 1000} HP every ${seconds(queenHp.biteIntervalTicks)}, starting at ${seconds(config.combatGraceTicks)}.`,
+        `Each queen has ${queenHp.hp / 1000} HP. Queens take no damage before ${seconds(queenHp.shieldTicks)} from match start. A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at normal damage, without the territory bonus. ${"biteDamage" in queenHp ? `A queen bites one adjacent enemy for ${queenHp.biteDamage / 1000} HP every ${seconds(queenHp.biteIntervalTicks)}` : `A queen strikes one adjacent enemy for ${queenHp.damagePerSecond / 1000} HP per second`}, starting at ${seconds(config.combatGraceTicks)}.`,
         `With no enemy within ${tiles(queenHp.regenClearTiles)}, a queen regains ${queenHp.regenHp / 1000} HP every ${seconds(queenHp.regenIntervalTicks)}. At 0 HP she dies and can no longer hatch or receive food; her nest does not block founding. There is no overrun. The colony survives while any queen lives.`,
       ]),
     ] },
@@ -173,6 +173,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       `Re-lay the same verb at the same tile${lineMarksEnabled(config) ? " (LINE: the same two ends)" : ""} to change its count; lowering it releases the farthest ants first.${relayLifetimeText(config)} ${counts.recruitColonyWide ? "A group recruits replacements colony-wide, nearest first." : `A group recruits replacements within ${tiles(counts.recruitTiles)} of its members (or its mark when empty).`} Marks recruit in laid order; competing requests may wait for free ants. ${counts.reportClaimAvailability ? `Accepted count_mark responses report freeAntsNow. With no free ants the response says exactly: "0 free ants now; this mark recruits as ants hatch or free up". Empty accepted marks stay until expiry and recruit as ants become available. ` : ""}Marks last ${seconds(config.markLifetimeTicks)} and share the command allowance; expiry releases their ants.`,
       ...(config.wordMarksDisabled ? [] : [`Word marks are 1 to ${count(config.markMaxWords, "word")} from ${WORDS.join(", ")}, shown as written: "ATTACK · W · FEW". ${WORD_MARK_ACTIONS}`]),
     ] },
+    ...(config.flyers === undefined ? [] : [{ title: "Flyers", lines: flyerRulesLines(config) }]),
     ...(balanceRuleLines(config).length === 0 ? [] : [{ title: "Battle balance", lines: balanceRuleLines(config) }]),
     { title: "Lobbies", lines: [LEAVE_LOBBY_LINE] },
     { title: "Model Index matches", lines: [...MODEL_INDEX_MATCH_LINES] },
@@ -242,4 +243,17 @@ p{margin:0 0 12px;font-variant-numeric:tabular-nums;text-wrap:pretty}
 .aw-summary{border-top:0;padding-top:0}.aw-summary p,.aw-summary li{font-size:18px;line-height:1.45;color:var(--aw-ink-bright)}ul{padding-left:22px}li{margin-bottom:12px}
 a{color:var(--aw-ink-bright);text-underline-offset:3px}</style></head>
 <body><main><nav class="aw-brand"><a href="/">${escapeHtml(BRAND.name)}</a><span>${escapeHtml(BRAND.credit)}</span></nav><h1>Rules</h1><p class="aw-lead">The same rules apply to people and agents.</p><nav class="aw-index">${index}</nav>${body}</main>${enhancement}</body></html>`;
+}
+
+/** Each queen's hatch clock: rules 28's one food rate; earlier rules' one interval. */
+function hatchSentence(config: SimConfig, seconds: (ticks: number) => string): string {
+  return config.hatchRate === undefined
+    ? `A queen can hatch ${config.castes && config.hatchTiming ? "a worker" : "an ant"} every ${seconds(config.hatchIntervalTicks)} when food is available`
+    : `Each queen hatches at ${config.hatchRate.foodPerSecond} food per second: a worker every ${seconds(hatchIntervalOf(config, "worker"))} and a soldier every ${seconds(hatchIntervalOf(config, "soldier"))} when food is available`;
+}
+/** Under rules 28, the starting queen's first hatches, which come sooner than one full interval. */
+function firstHatchSentence(config: SimConfig, seconds: (ticks: number) => string): string {
+  if (config.hatchRate === undefined) return "";
+  const first = firstHatchTicks(config);
+  return ` The starting queen's first worker can hatch at once (tick ${first.worker}) and her first soldier after ${seconds(first.soldier)} (tick ${first.soldier}).`;
 }

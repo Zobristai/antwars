@@ -6,6 +6,7 @@ import { step } from "../../src/sim/step.js";
 import type { Agent, SimInput, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 // Every match plays at grid scale 2: the reference template is built at grid scale 2 by
 // emptyMatch and playable. An ant at reference tile t stands at its centre, fine tile 2t + 0.5.
@@ -19,13 +20,13 @@ function withoutAccounting(state: SimState): SimState {
     marks: state.marks.map(({ antsLost: _lost, enemiesKilled: _killed, ...mark }) => mark) };
 }
 
-it("accounting on/off preserves every tick's complete gameplay bytes and events through claimed combat and queen bites", () => {
-  const base = rulesConfig("redesign");
+/** Two squads and claimed free ants fight beside colony 0's queen; returns every tick's state with accounting on, checked against off. */
+function playAccounting(base: SimConfig, queenHp: NonNullable<SimConfig["queenHp"]>) {
   const config: SimConfig = { ...base, terrain: undefined, foodLayout: undefined, startAnts: 0,
     antSpeedTilesPerSecond: 0, hatchIntervalTicks: 1_000_000, combatGraceTicks: 0,
-    defenderBonusPermille: 1000, commandFloorTicks: 1, squadSize: 1,
-    queenHp: { ...base.queenHp!, biteDamage: 100, biteIntervalTicks: 2, shieldTicks: 0 } };
+    defenderBonusPermille: 1000, commandFloorTicks: 1, squadSize: 1, queenHp };
   let on = emptyMatch(2000, config);
+  let besideQueen = -1;
   for (const colony of [0, 1] as const) {
     const id = `script-${colony}`;
     const squad = put(on, colony, 30 + colony, 20, { squad: id });
@@ -34,13 +35,15 @@ it("accounting on/off preserves every tick's complete gameplay bytes and events 
       joinedTick: 2000, idle: false, pendingEvents: [] };
     on.agents.push(agent);
     put(on, colony, 30 + colony, 23, { hp: 100, caste: "worker" });
-    // Both free ants by colony 0's queen are claimed; the queen's bite joins their simultaneous hits.
-    // The colony-1 ant stands in the reference tile beside the queen's, in the fine tile within her two-tile bite reach.
-    addAnt(on, colony, colony === 0 ? 16.5 : 18, 48.5, { hp: 1000, caste: "worker" });
+    // Both free ants by colony 0's queen are claimed; the queen's hit joins their simultaneous hits.
+    // The colony-1 ant stands in the reference tile beside the queen's, in the fine tile within her two-tile reach.
+    const ant = addAnt(on, colony, colony === 0 ? 16.5 : 18, 48.5, { hp: 1000, caste: "worker" });
+    if (colony === 1) besideQueen = ant.id;
   }
   let off = withoutAccounting(structuredClone(on));
-  let deaths = 0, countedLosses = 0, countedKills = 0, queenBit = false;
+  let deaths = 0, countedLosses = 0, countedKills = 0;
   const original = JSON.stringify(on);
+  const states: SimState[] = [];
   for (let tick = 0; tick < 100; tick++) {
     const inputs: SimInput[] = tick === 0 ? ([0, 1] as const).map(colony => ({
       type: "count_mark", agentId: `script-${colony}`, verb: "GATHER", count: 3,
@@ -55,13 +58,28 @@ it("accounting on/off preserves every tick's complete gameplay bytes and events 
     deaths += a.events.filter(e => e.type === "death").length;
     countedLosses = Math.max(countedLosses, ...a.state.marks.map(m => m.antsLost ?? 0));
     countedKills = Math.max(countedKills, ...a.state.marks.map(m => m.enemiesKilled ?? 0));
-    queenBit ||= a.state.colonies[0].queens!.some(q => (q.lastBiteTick ?? -1) >= 2000);
+    states.push(a.state);
     on = a.state; off = b.state;
   }
   expect(original).not.toContain('"antsLost"');
   expect(deaths).toBeGreaterThan(0);
   expect(countedLosses).toBeGreaterThan(0); expect(countedKills).toBeGreaterThan(0);
-  expect(queenBit).toBe(true);
+  return { states, besideQueen };
+}
+
+it("accounting on/off preserves every tick's complete gameplay bytes and events through claimed combat and queen bites", () => {
+  const base = rules27Redesign();
+  const { states } = playAccounting(base, { ...base.queenHp!, biteDamage: 100, biteIntervalTicks: 2, shieldTicks: 0 } as NonNullable<SimConfig["queenHp"]>);
+  expect(states.some(state => state.colonies[0].queens!.some(q => (q.lastBiteTick ?? -1) >= 2000))).toBe(true);
+});
+
+it("accounting on/off preserves every tick's complete gameplay bytes and events through claimed combat and a rules-28 queen's per-tick hits", () => {
+  const base = rulesConfig("redesign");
+  expect(base.queenHp).toMatchObject({ damagePerSecond: 10_000 });
+  const { states, besideQueen } = playAccounting(base, { ...base.queenHp!, shieldTicks: 0 });
+  // The queen's 1 HP a tick kills the 1-HP enemy beside her on the first tick; the ants' hits alone take several ticks.
+  expect(states[0]!.ants.some(ant => ant.id === besideQueen)).toBe(false);
+  expect(states.every(state => state.colonies.every(colony => colony.queens!.every(q => q.lastBiteTick === undefined)))).toBe(true);
 });
 
 it("replays a flagged count-mark log to the same complete state including totals, without rewriting old configs", () => {

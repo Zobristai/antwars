@@ -42,8 +42,9 @@ function within(sample: { chars: number; bytes: number }, limits: ReplyLimits, l
 describe("rules-27 statement texts", () => {
   it("name set_brood, its choices and the call limit, ownership with no colony vote, and the owner-only spawn point", () => {
     const brood = queenBroodText(RULES_27, DEFAULT_MCP_CONFIG.callsPerSecond);
-    expect(brood).toBe("Each agent owns its queens and sets each one's brood with set_brood: workers, soldiers or mixed (alternates per queen; unset breeds mixed), queenId only if you own more than one; there is no colony vote. A newly founded queen breeds mixed until her owner calls set_brood for her. set_brood counts toward the 2-calls-per-second limit, not the command allowance.");
-    expect(brood).toHaveLength(360);
+    // The served rules list flyers among the broods.
+    expect(brood).toBe("Each agent owns its queens and sets each one's brood with set_brood: workers, soldiers, flyers or mixed (alternates worker and soldier per queen, never flyers; unset breeds mixed), queenId only if you own more than one; there is no colony vote. A newly founded queen breeds mixed until her owner calls set_brood for her. set_brood counts toward the 2-calls-per-second limit, not the command allowance.");
+    expect(brood).toHaveLength(401);
     expect(queenSpawnOwnerText(RULES_27)).toBe("Only a queen's owner sets, moves or clears her spawn point.");
     expect(queenSpawnOwnerText(RULES_27)).toHaveLength(59);
   });

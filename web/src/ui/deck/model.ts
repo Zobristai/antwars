@@ -16,7 +16,7 @@ import { OPEN_COPY, PAGE_COPY, SCORE_COPY, clockTime, decisive, resultHow, signi
 import { CONNECTING_LINE, ENDED_LINE, SEAT, agentHandle, agentModel, isBenchmark, namedText, ratingResultRows, rowName, type RatingRow, type RowName } from "../../compose.ts";
 import { agentShade, cssColour } from "../../squads.ts";
 import { seatModelName } from "../../pages/model.ts";
-import { boardQueenHp } from "../../variant.ts";
+import { boardQueenHp, redesignSoldierIntervalTicks } from "../../variant.ts";
 import type { ModeCopy } from "../../replay.ts";
 import { WAITING_COPY } from "../../waiting.ts";
 import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type AgentLineModel } from "../hud-model.ts";
@@ -332,7 +332,9 @@ function nextAnt(b: Board, colony: Colony, living: number, tick: number): NextAn
     // Due now: the full ring at no wait, never a word such as "eligible".
     case "ready": return { kind: "waiting", caste, fill: 1 };
     case "waiting": {
-      const interval = hatch.intervalTicks * (caste === "soldier" ? boardRules(b)?.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
+      const rules = boardRules(b);
+      const interval = caste !== "soldier" ? hatch.intervalTicks : rules?.rules === "redesign" ? redesignSoldierIntervalTicks(b, hatch.intervalTicks)
+        : hatch.intervalTicks * (rules?.hatchTiming?.soldierIntervalMultiplier ?? 1);
       // Every change is a cut: the ring steps in quarters.
       return { kind: "waiting", caste, fill: stepped(spawnFill(state, store.nextHatchTick, interval, tick)) };
     }

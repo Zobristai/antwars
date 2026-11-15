@@ -13,6 +13,7 @@ import { comparisonOptions } from "../../src/server.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import type { Agent, Ant, CountMarkVerb, Mark, Order, SimEvent, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+import { rules27Redesign } from "../rules27.ts";
 
 type Group = "free" | "squad" | "count mark";
 const groups: Group[] = ["free", "squad", "count mark"];
@@ -20,8 +21,7 @@ const orders: Order[] = [{ kind: "hold" }, { kind: "go_to", tileX: 30, tileY: 24
   { kind: "attack", tileX: 20, tileY: 24 }, { kind: "forage" }, { kind: "follow_trail" }];
 const verbs: CountMarkVerb[] = ["ATTACK", "DEFEND", "GATHER", "FORAGE", "PATROL"];
 
-function scene(group: Group = "free", soft = true) {
-  const base = rulesConfig("redesign");
+function scene(group: Group = "free", soft = true, base: SimConfig = rulesConfig("redesign")) {
   const config: SimConfig = { ...base,
     terrain: undefined, foodLayout: undefined, foodPatches: [], startAnts: 0,
     softSeparation: soft ? base.softSeparation : undefined, squadSize: group === "squad" ? 1 : 0,
@@ -70,13 +70,14 @@ describe(`carrier combat under rules 27`, () => {
       expect(events.some(event => event.type === "fight" && event.antId === carrier.id)).toBe(false);
     });
     it.each([false, true])("carrying=%s gates queen damage while queens can still bite", carrying => {
-      const { state, carrier } = scene(group);
+      const { state, carrier } = scene(group, true, rules27Redesign());
       carrier.carrying = carrying;
       carrier.lastTargetId = 123;
       const queen = enemyQueen(state), before = queen.hp!;
       resolveCombat(state, buildGrid(state), state.tick, []);
       expect(queen.hp).toBe(before - (carrying ? 0 : damagePerTick(state.config)));
-      expect(carrier.hp).toBe(100_000 - state.config.queenHp!.biteDamage);
+      const queenHp = state.config.queenHp!;
+      expect(carrier.hp).toBe(100_000 - ("biteDamage" in queenHp ? queenHp.biteDamage : 0));
       expect(carrier.lastTargetId).toBe(-1);
     });
   });

@@ -207,7 +207,7 @@ it.each(["worker", "soldier", "any", undefined])("advertises caste and returns t
   const agent = await h.connect();
   await agent.call("join", { colony: COLONY_NAMES[0] });
   const tool = (await agent.client.listTools()).tools.find(tool => tool.name === "count_mark")!;
-  expect(tool.inputSchema.properties!.caste).toMatchObject({ enum: ["any", "worker", "soldier"] });
+  expect(tool.inputSchema.properties!.caste).toMatchObject({ enum: ["any", "worker", "soldier", "flyer"] });
   expect(tool.inputSchema.required).not.toContain("caste");
   const reply = await agent.call("count_mark", { verb: "GATHER", count: 2, tileX: 8, tileY: 24,
     ...(caste === undefined ? {} : { caste }) });

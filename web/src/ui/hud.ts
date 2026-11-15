@@ -19,7 +19,7 @@ import {
   cardSubject, colonyLedger, colonyCardLines, colonyStats, headline, matchTime, nextAntCells, nextAntState, nextHatchCaste,
   queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText,
 } from "../overlays.ts";
-import { boardQueenHp } from "../variant.ts";
+import { boardQueenHp, redesignSoldierIntervalTicks } from "../variant.ts";
 import { INSPIRED_BY_URL, PAGE_COPY, SCORE_COPY, clockTime, matchClock, significant } from "../story.ts";
 import { ZOOM_STEP } from "../camera.ts";
 import { setBoardLook } from "../board-look.ts";
@@ -638,7 +638,8 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     text(next.words, full ? D2_COPY.full : withoutCasteGlyph(withUnits(status.text)));
     const caste = nextHatchCaste(b, store.nextCost) ?? "";
     if (next.caste !== caste) { next.caste = caste; next.iconBox.innerHTML = caste === "worker" ? ICONS.worker : caste === "soldier" ? ICONS.soldier : ""; }
-    const interval = hatch.intervalTicks * (caste === "soldier" ? config?.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
+    const interval = caste !== "soldier" ? hatch.intervalTicks : config?.rules === "redesign" ? redesignSoldierIntervalTicks(b, hatch.intervalTicks)
+      : hatch.intervalTicks * (config?.hatchTiming?.soldierIntervalMultiplier ?? 1);
     const at = spawnFill(state, store.nextHatchTick, interval, tick);
     setFill(next, reducedMotion?.matches ? stepped(at) : at);
   }

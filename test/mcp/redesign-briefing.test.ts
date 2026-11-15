@@ -6,6 +6,7 @@ import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { startHarness } from "./harness.js";
 import { HISTORICAL_CONFIG } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 const redesign = playable(rulesConfig("redesign"));
 
@@ -21,7 +22,7 @@ function changedRules(): SimConfig {
     markLifetimeTicks: 2460,
     localAnts: { defendTiles: 7 },
     countMarks: { recruitTiles: 11, defendTiles: 6 },
-    queenHp: { hp: 77_000, biteDamage: 3_000, biteIntervalTicks: 60, regenHp: 2_000, regenIntervalTicks: 180, regenClearTiles: 8, shieldTicks: 2200 },
+    queenHp: { hp: 77_000, damagePerSecond: 3_000, regenHp: 2_000, regenIntervalTicks: 180, regenClearTiles: 8, shieldTicks: 2200 },
   };
 }
 
@@ -55,12 +56,18 @@ describe("redesign briefing teaches decisions, not just command syntax", () => {
     }
   });
 
-  it("teaches both hatch intervals from config without changing historical briefing", () => {
-    expect(briefing(redesign)).toContain("a worker takes one hatch interval (1 s), a soldier takes 2 hatch intervals (2 s)");
-    const changed = { ...redesign, ticksPerSecond: 20, hatchIntervalTicks: 30,
-      hatchTiming: { soldierIntervalMultiplier: 3 } };
+  it("teaches the one hatch rate and the starting queen's first hatches; rules 27 keeps its intervals", () => {
+    expect(briefing(redesign)).toContain("each queen hatches at 2 food per second: a worker every 1 s (10 ticks), a soldier every 3 s (30 ticks); "
+      + "the starting queen's first worker can hatch at tick 0 and her first soldier at tick 20");
+    expect(briefing(redesign)).not.toContain("hatch interval");
+    expect(briefing({ ...redesign, hatchRate: { foodPerSecond: 3 } })).toContain("a worker every 0.7 s (7 ticks), a soldier every 2 s (20 ticks); "
+      + "the starting queen's first worker can hatch at tick 0 and her first soldier at tick 13");
+    const rules27 = playable(rules27Redesign());
+    expect(briefing(rules27)).toContain("a worker takes one hatch interval (1 s), a soldier takes 2 hatch intervals (2 s)");
+    expect(briefing(rules27)).not.toContain("first worker can hatch");
+    const changed = { ...rules27, ticksPerSecond: 20, hatchIntervalTicks: 30, hatchTiming: { soldierIntervalMultiplier: 3 } };
     expect(briefing(changed)).toContain("a worker takes one hatch interval (1.5 s), a soldier takes 3 hatch intervals (4.5 s)");
-    expect(briefing({ ...redesign, hatchTiming: undefined })).not.toContain("hatch intervals (");
+    expect(briefing({ ...rules27, hatchTiming: undefined })).not.toContain("hatch intervals (");
   });
   it("distinguishes verb, requested count, answered claims and squad steering", () => {
     const text = briefing(redesign);
@@ -117,7 +124,7 @@ describe("redesign briefing teaches decisions, not just command syntax", () => {
     expect(text).toContain("Place a count mark on a tile where one of your own squad ants stands");
     expect(text).toContain("hold within 7 tiles of where they became free");
     expect(text).toContain("each queen has 77 HP");
-    expect(text).toContain("for 3 HP every 3 s");
+    expect(text).toContain("strikes one adjacent enemy for 3 HP per second");
     expect(text).toContain("queens take no damage before 110 s");
     expect(text).toContain("With no enemy within 8 tiles a queen regains 2 HP every 9 s");
     expect(text).toContain('count_mark {"verb":"FORAGE","count":4}');
@@ -239,7 +246,7 @@ it("Wording cuts keep every cut fact stated once", () => {
   const shipped = newMatchConfig(rulesConfig("redesign"));
   const text = briefing(shipped);
   // Bite reach: defined once, referenced as "in reach".
-  expect(text).toContain("Ant and queen bite reach is 2 tiles, including diagonals");
+  expect(text).toContain("Ant bite and queen strike reach is 2 tiles, including diagonals");
   expect(text).toContain("attack (tileX,tileY): march to target. Enemy in reach: stand and fight;");
   expect(text).toContain("- Combat: non-carrying ants, any order, with an enemy in reach, hit the lowest-HP enemy each tick.");
   // FORAGE workers-only: stated once on the caste line; recruitment still includes workers already foraging.
@@ -279,7 +286,7 @@ describe("configured soft personal space and physical interactions", () => {
     for (const fact of ["each ant steers itself", "no minimum distance/hard blocks", "ants squeeze past",
       "Water/rocks impassable", "same-goal/colony", "rooted at an ant in reach",
       "Displaced DEFEND/ATTACK soldiers return inside mark", "friends/enemies push alike, may overlap",
-      "incl. diagonals; combat/queen-bite reach unchanged", "of live friendly queen",
+      "incl. diagonals; combat/queen-strike reach unchanged", "of live friendly queen",
       "Native terrain-safe hatch; no crowd reservation/spacing deferral"]) expect(full).toContain(fact);
   });
 

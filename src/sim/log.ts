@@ -1,4 +1,4 @@
-import { RULES_MARKERS, RULES_VERSION, type SimConfig } from "./config.js";
+import { checkRulesGeneration, RULES_MARKERS, RULES_VERSION, rulesVersionOf, type SimConfig } from "./config.js";
 import { createMatch } from "./map.js";
 import { gridScaleOf } from "./gridScale.js";
 import { HOLD_BEHAVIOUR, parseHoldBehaviour, type HoldBehaviour } from "./holdBehaviour.js";
@@ -35,7 +35,7 @@ export interface LogTick {
 }
 
 export function headerLine(seed: number, config: SimConfig): string {
-  const header: LogHeader = { type: "header", rulesVersion: RULES_VERSION, seed, config, holdBehaviour: HOLD_BEHAVIOUR };
+  const header: LogHeader = { type: "header", rulesVersion: rulesVersionOf(config), seed, config, holdBehaviour: HOLD_BEHAVIOUR };
   return JSON.stringify(header);
 }
 
@@ -61,8 +61,10 @@ export function parseLog(lines: readonly string[]): ParsedLog {
   if (header.type !== "header") throw new Error("match log must start with its header");
   // Every match plays at grid scale 2: a header without it, or at scale 1 or 4, is refused.
   try { gridScaleOf(header.config); } catch (error) { throw new RangeError(`match log header: ${(error as Error).message}`); }
-  // Only the current rules generation plays: its version, generation markers and hold behaviour.
-  if (header.rulesVersion !== RULES_VERSION) throw new Error(`match log rules version ${header.rulesVersion} is not ${RULES_VERSION}, the only rules this build plays`);
+  // Only the current rules generations play: a coherent generation (rules28 true or absent), its version, markers and hold behaviour.
+  try { checkRulesGeneration(header.config); } catch (error) { throw new RangeError(`match log header: ${(error as Error).message}`); }
+  const expected = rulesVersionOf(header.config);
+  if (header.rulesVersion !== expected) throw new Error(`match log rules version ${header.rulesVersion} is not ${expected}, the only rules this build plays`);
   const missing = Object.entries(RULES_MARKERS).filter(([key, value]) => (header.config as unknown as Record<string, unknown>)[key] !== value).map(([key]) => key);
   if (missing.length > 0) throw new Error(`match log header config lacks the rules ${RULES_VERSION} markers: ${missing.join(", ")}`);
   parseHoldBehaviour(header.holdBehaviour);

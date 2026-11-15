@@ -2,8 +2,9 @@
  * Drawing offsets never change stream/simulation coordinates. Missing hit attribution stays missing. */
 import type { Frame } from "./buffer.ts";
 import { SUB_TILE, type StreamMessage } from "../../src/live/format.ts";
-import { TICK_MS } from "../../src/live/snapshot.ts";
+import { adjacentWithSlack, TICK_MS } from "../../src/live/snapshot.ts";
 import { gridScale } from "./grid-scale.ts";
+import { flyerOf, isAirborne } from "./flyer-state.ts";
 
 export interface Engagement {
   readonly a: number;
@@ -15,14 +16,7 @@ export interface Engagement {
   readonly caste?: number;
 }
 
-/** One raw stream rounding unit either side of each coordinate. This tests
- * possible tiles within the match's bite reach, not an extra whole tile. */
-export function adjacentWithSlack(ax: number, ay: number, bx: number, by: number, reach = 1): boolean {
-  const near = (a: number, b: number) => Math.max(0,
-    Math.floor((a - 1) / SUB_TILE) - Math.floor((b + 1) / SUB_TILE),
-    Math.floor((b - 1) / SUB_TILE) - Math.floor((a + 1) / SUB_TILE)) <= reach;
-  return near(ax, bx) && near(ay, by);
-}
+export { adjacentWithSlack };
 
 export class EngagementTracker {
   private pairs = new Map<number, Engagement>();
@@ -92,12 +86,52 @@ interface Lean {
   x: number; y: number; at: number; since: number;
   fromX: number; fromY: number; event: string | null;
 }
-const drawnContacts = new WeakMap<Frame, { renderMs: number; points: readonly { x: number; y: number }[] }>();
+const drawnContacts = new WeakMap<Frame, {
+  renderMs: number; points: readonly { x: number; y: number }[]; pairs: readonly (readonly [number, number])[]; workerLength: number;
+}>();
 /** The ant renderer publishes its exact head contacts before the battle layer draws. */
 export function renderedBiteContacts(frame: Frame): readonly { x: number; y: number }[] {
   const drawn = drawnContacts.get(frame);
   return drawn?.renderMs === frame.renderMs ? drawn.points : [];
 }
+/** The biting pair (attacker, target) of each of renderedBiteContacts' contacts, index-aligned with them. */
+export function renderedBiteContactPairs(frame: Frame): readonly (readonly [number, number])[] {
+  const drawn = drawnContacts.get(frame);
+  return drawn?.renderMs === frame.renderMs ? drawn.pairs : [];
+}
+/** The worker body length, in tiles, the ant renderer drew this frame at; null when it has not drawn it. */
+export function renderedWorkerLength(frame: Frame): number | null {
+  const drawn = drawnContacts.get(frame);
+  return drawn?.renderMs === frame.renderMs ? drawn.workerLength : null;
+}
+
+/** One key for a biting pair, whichever of the two bit. */
+export const fightPairKey = (a: number, b: number): string => a < b ? `${a}:${b}` : `${b}:${a}`;
+/** A fight between two airborne flyers, one per pair, at the ground point midway between the two at their positions this frame. */
+export interface AirFight { a: number; b: number; x: number; y: number }
+/**
+ * This frame's air fights, by fightPairKey: its event-confirmed pairs (Frame.engagements) whose two fighters are on the
+ * frame and airborne. An airborne flyer bites only an airborne enemy, so an engaged pair that is airborne is biting in the
+ * air, whether its bite began there or on the ground before both took off. The stream names a bite only when it begins
+ * (on a new target), and a pair goes on biting for as long as it stays engaged, so an air fight lasts as long as that.
+ */
+export function airFights(frame: Frame): Map<string, AirFight> {
+  const out = new Map<string, AirFight>();
+  let index: Map<number, number> | null = null;
+  for (const p of frame.engagements) {
+    const key = fightPairKey(p.a, p.b);
+    if (out.has(key)) continue;
+    if (!index) {
+      index = new Map();
+      for (let i = 0; i < frame.count; i++) index.set(frame.id[i]!, i);
+    }
+    const i = index.get(p.a), j = index.get(p.b);
+    if (i === undefined || j === undefined || !isAirborne(flyerOf(frame, i)) || !isAirborne(flyerOf(frame, j))) continue;
+    out.set(key, { a: p.a, b: p.b, x: (frame.x[i]! + frame.x[j]!) / 2, y: (frame.y[i]! + frame.y[j]!) / 2 });
+  }
+  return out;
+}
+
 const smooth = (t: number) => t * t * (3 - 2 * t);
 export const headFront = (model: BiteModel, caste: number) => model === "2d" ? (caste ? 20.3 : 22.8) / 64 : caste ? 0.41 : 0.37;
 
@@ -267,16 +301,20 @@ export class Bites {
   }
 
   publishContacts(workerLength: number, model: BiteModel): void {
-    if (this.frame) drawnContacts.set(this.frame, { renderMs: this.frame.renderMs, points: this.contacts(workerLength, model) });
+    if (!this.frame) return;
+    const pairs: [number, number][] = [];
+    drawnContacts.set(this.frame, { renderMs: this.frame.renderMs, points: this.contacts(workerLength, model, pairs), pairs, workerLength });
   }
 
-  contacts(workerLength: number, model: BiteModel): readonly { x: number; y: number }[] {
+  /** pairs, when given, receives each contact's biting pair (attacker, target), index-aligned with the contacts. */
+  contacts(workerLength: number, model: BiteModel, pairs?: [number, number][]): readonly { x: number; y: number }[] {
     this.build(workerLength, model);
     const out: { x: number; y: number }[] = [];
     for (const [id, p] of this.poses) if (p.contacting) {
       const target = this.pairs.get(id)!.b;
       if (this.pairs.get(target)?.b === id && id > target) continue;
       out.push(p.contact);
+      pairs?.push([id, target]);
     }
     return out;
   }

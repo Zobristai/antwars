@@ -6,6 +6,7 @@ import { createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
 import type { Agent, ColonyId, InputError, QueenState, SimInput, SimState, StepOutput } from "../../src/sim/types.js";
 import { sevenMapRotation } from "./seven-map-rotation.js";
+import { rules27Redesign } from "../rules27.ts";
 
 /**
  * The rules-27 set_brood input. Queen owners are
@@ -16,8 +17,7 @@ import { sevenMapRotation } from "./seven-map-rotation.js";
 
 type SetBrood = Extract<SimInput, { type: "set_brood" }>;
 
-function rules27(patch: Partial<SimConfig> = {}): SimConfig {
-  const base = rulesConfig("redesign");
+function rules27(patch: Partial<SimConfig> = {}, base: SimConfig = rulesConfig("redesign")): SimConfig {
   // Pinned to the seven-map rotation this was written for, which holds the old two.
   return sevenMapRotation(newMatchConfig({ ...base, rules27: true, startAnts: 0, squadSize: 0, commandFloorTicks: 100, hatchIntervalTicks: 1_000_000,
     terrain: { ...base.terrain!, mapId: "three-crossings" }, ...patch }));
@@ -116,7 +116,8 @@ describe("rules 27 set_brood", () => {
 
   it("refuses an unknown brood without changing any queen", () => {
     const out = step(scene(), [setBrood("a", "drones")]);
-    expect(errorOf(out)).toEqual({ code: "bad_brood", message: "brood is one of workers, soldiers, mixed." });
+    // The served rules list flyers among the broods.
+    expect(errorOf(out)).toEqual({ code: "bad_brood", message: "brood is one of workers, soldiers, mixed, flyers." });
     expect(queen(out.state, 0).brood).toBeUndefined();
   });
 
@@ -159,7 +160,8 @@ describe("rules 27 set_brood", () => {
   });
 
   it("is refused without castes, changing nothing an observe would not", () => {
-    const state = scene(rules27({ castes: undefined }));
+    // A config without castes plays rules 27: a rules-28 config always has castes.
+    const state = scene(rules27({ castes: undefined }, rules27Redesign()));
     const out = step(state, [setBrood("a", "soldiers")]);
     expect(errorOf(out)).toEqual({ code: "bad_brood", message: "set_brood is not available in these rules." });
     expect(stateHash(out.state)).toBe(stateHash(step(state, [{ type: "observe", agentId: "a" }]).state));

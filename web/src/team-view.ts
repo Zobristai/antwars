@@ -190,7 +190,10 @@ export class TeamView {
     // Effects only where the colony sees; its own queens' foundings and losses wherever they are.
     out.corpses = frame.corpses.filter(c => c.colony === colony || seen(c.x, c.y));
     out.fights = frame.fights.filter(f => seen(f.x, f.y));
+    out.flights = frame.flights.filter(f => f.colony === colony || seen(f.x, f.y));
     out.marks = frame.marks.filter(m => m.mark.colony === colony && masks.smell[m.mark.tileY * mapW + m.mark.tileX] === 1);
+    // Only the marks shown are filtered: a patrol chain still links from the whole board, so a route draws only legs it flies.
+    out.chainMarks = board.marks;
     const ownQueenEvent = (kind: string, c: Colony) => c === colony && (kind === "queen_founded" || kind === "queen_lost");
     out.story = frame.story.filter(e => ownQueenEvent(e.kind, e.colony) || seen(e.x, e.y));
     return out;

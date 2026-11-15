@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, append
 import { join, resolve } from "node:path";
 import { BALANCE_FOUNDING_POLICY, BALANCE_STRATEGIES, SOLDIER_HEAVY_DEFINITION, balanceActivityTable, balanceSummary, configDigest, earlyCandidates, playBalanceMatch } from "./balance.ts";
 import { MAPS, rulesConfig } from "../../src/sim/config.ts";
-import { parseHatchArm, selectHatchArm } from "./hatchVariants.ts";
+import { hatchArmConfig, hatchArmLabel, parseHatchArm } from "./hatchVariants.ts";
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i === -1 ? fallback : process.argv[i + 1]; };
 const integer = (name, fallback, max) => {
@@ -16,6 +16,7 @@ const integer = (name, fallback, max) => {
 };
 if (process.argv.includes("--help")) {
   console.log("node --import ./src/ts-resolve.mjs test/tools/balance-sweep.mjs --phase preliminary|acceptance --workers 32 --seeds 7001,7002,7003,7004 --expected-head FULL_SHA --out DIRECTORY [--floor-sha FULL_SHA] [--match-timeout-seconds 3600] [--map open-field|three-crossings|central-lake] [--hatch-arm main|A] [--founding shared|off] [--new-match-config]");
+  console.log("Without --hatch-arm the sweep plays the committed rules. --hatch-arm main|A is the paired rules-27 soldier-timing experiment: it plays that arm on the frozen rules-27 redesign config, since the rules-28 spawn rate leaves neither arm any effect.");
   console.log("All seven strategies and both sides run for every requested seed. The match horizon is always 18000 ticks; natural queen elimination remains a terminal result and is reported at its real tick. Final acceptance requires the merged floor SHA (--floor-sha) and eight matches per pairing. Outputs: manifest.json, matches.jsonl, per-match/*.json, failures/*.json, summary.json, table.md, done.json.");
   console.log("--phase diagnostic --diagnose-existing DIRECTORY replays only anomalous records from a completed sweep using its recorded config; add --diagnose-comebacks to replay all lopsided starts instead. It must reproduce each original result and metric and can never establish acceptance.");
 } else if (process.argv.includes("--single")) {
@@ -49,17 +50,18 @@ if (process.argv.includes("--help")) {
     if (!/^[0-9a-f]{40}$/.test(floorSha ?? "")) throw new Error("Acceptance requires the exact merged floor SHA (--floor-sha)");
     execFileSync("git", ["merge-base", "--is-ancestor", floorSha, head]);
   }
-  const sourceFiles = [...readdirSync("src/sim").filter((f) => f.endsWith(".ts")).map((f) => `src/sim/${f}`), "test/tools/balance.ts", "test/tools/hatchVariants.ts", "test/tools/balance-sweep.mjs"];
+  const sourceFiles = [...readdirSync("src/sim").filter((f) => f.endsWith(".ts")).map((f) => `src/sim/${f}`), "test/tools/balance.ts", "test/tools/hatchVariants.ts", "test/rules27.ts", "test/tools/balance-sweep.mjs"];
   // The sweep must run committed bytes, not a dirty checkout with a matching label.
   execFileSync("git", ["diff", "--quiet", "HEAD", "--", ...sourceFiles]);
   const manifest = () => Object.fromEntries(sourceFiles.map((path) => [path, createHash("sha256").update(readFileSync(path)).digest("hex")]));
   const source = manifest();
-  const hatchArm = parseHatchArm(arg("hatch-arm", "A"));
+  const hatchArmArg = arg("hatch-arm", null);
+  const hatchArm = hatchArmArg === null ? null : parseHatchArm(hatchArmArg);
   if (phase === "diagnostic" && process.argv.includes("--hatch-arm")) throw new Error("Diagnostic replay uses its recorded config, not --hatch-arm");
   let founding = arg("founding", "shared");
   if (!["shared", "off"].includes(founding)) throw new Error("--founding must be shared or off");
   if (phase === "diagnostic" && process.argv.includes("--founding")) throw new Error("Diagnostic replay uses its recorded founding policy, not --founding");
-  let config = selectHatchArm(rulesConfig("redesign"), hatchArm);
+  let config = hatchArmConfig(rulesConfig("redesign"), hatchArm);
   const mapId = arg("map", null);
   if (mapId !== null) {
     if (!MAPS.some(map => map.id === mapId)) throw new Error(`Unknown --map ${mapId}`);
@@ -118,7 +120,7 @@ if (process.argv.includes("--help")) {
   mkdirSync(join(out, "failures"));
   writeFileSync(join(out, "manifest.json"), JSON.stringify({ phase, head, floorSha, startedAt: new Date().toISOString(), workers, seeds,
     horizonTicks: 18000, naturalEliminationEndsEarlier: true, minuteTenPopulationFloor: 50, earlyEliminationMinuteTen: "not applicable; excluded from off-lane measurements", soldierHeavy: SOLDIER_HEAVY_DEFINITION,
-    source, config, newMatchDefaults, founding, foundingPolicy: BALANCE_FOUNDING_POLICY, mapId, hatchArm: phase === "diagnostic" ? null : hatchArm, configDigest: configDigest(config), diagnosticSource, expectedMatches: plan.length, plan }, null, 2));
+    source, config, newMatchDefaults, founding, foundingPolicy: BALANCE_FOUNDING_POLICY, mapId, hatchArm: phase === "diagnostic" ? null : hatchArmLabel(hatchArm), configDigest: configDigest(config), diagnosticSource, expectedMatches: plan.length, plan }, null, 2));
   const started = performance.now();
   const records = new Array(plan.length);
   const failures = [];
@@ -129,7 +131,7 @@ if (process.argv.includes("--help")) {
   const checkpoint = (state) => {
     const collected = records.filter(Boolean);
     const summary = { phase, head, floorSha, disposition: state, endedAt: state === "running" ? null : new Date().toISOString(),
-      elapsedSeconds: (performance.now() - started) / 1000, workers, seeds, mapId, hatchArm: phase === "diagnostic" ? null : hatchArm, expectedMatches: plan.length, completed: collected.length,
+      elapsedSeconds: (performance.now() - started) / 1000, workers, seeds, mapId, hatchArm: phase === "diagnostic" ? null : hatchArmLabel(hatchArm), expectedMatches: plan.length, completed: collected.length,
       sourceUnchanged: cleanSource(), failures, config, founding, foundingPolicy: BALANCE_FOUNDING_POLICY, diagnosticSource, ...balanceSummary(collected, config) };
     writeFileSync(join(out, "summary.json"), JSON.stringify(summary, null, 2));
     const table = ["# Battle balance sweep", "", `Head: ${head}`, `Phase: ${phase}; disposition: ${state}; completed: ${collected.length}/${plan.length}.`,
@@ -141,7 +143,7 @@ if (process.argv.includes("--help")) {
         const cell = summary.cells.find((cell) => cell.row === row && cell.column === column);
         return `${cell.wins}/${cell.played}`;
       }).join(" | ") + " |"), "",
-      `Hatch arm: ${phase === "diagnostic" ? "recorded config" : hatchArm}. Dominant strategies (>6/8 against every other): ${JSON.stringify(summary.dominatedBy)}. Complete 8-match cells: ${summary.complete}.`,
+      `Hatch arm: ${phase === "diagnostic" ? "recorded config" : hatchArmLabel(hatchArm)}. Dominant strategies (>6/8 against every other): ${JSON.stringify(summary.dominatedBy)}. Complete 8-match cells: ${summary.complete}.`,
       `Strategy win shares: ${JSON.stringify(summary.strategyWins)}.`,
       `Founding: ${founding}. ${BALANCE_FOUNDING_POLICY}`,
       `Founding exposure: ${summary.hatchExperiment.founding.measuredMatches} regular matches measured, ${summary.hatchExperiment.founding.unmeasuredMatches} unmeasured. Per-colony attempts, refusals, live queen histories and additional-queen hatches are retained in summary.json hatchExperiment.founding.colonies and each match's founding field. Zero additional-queen hatches means the founding policy did not exercise extra nests.`,

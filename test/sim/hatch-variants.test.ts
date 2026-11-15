@@ -8,6 +8,7 @@ import type { Agent, Brood, SimEvent, SimState } from "../../src/sim/types.js";
 import { selectHatchArm, type HatchArm } from "../tools/hatchVariants.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 const base: SimConfig = { ...PUBLIC_CONFIG, terrain: undefined, foodLayout: undefined, startAnts: 0 };
 function prepared(arm: HatchArm, brood: Brood = "soldiers") {
@@ -29,8 +30,10 @@ function at(state: SimState, tick: number) {
 }
 
 describe("chosen soldier hatch timing", () => {
-  it("takes the live timing in the redesign and removes only timing in the main arm", () => {
-    const live = rulesConfig("redesign");
+  it("takes the rules-27 redesign timing and removes only timing in the main arm", () => {
+    // Rules 28 replaces the soldier multiplier with one food rate; the experiment compares rules-27 timings.
+    expect(rulesConfig("redesign").hatchRate).toEqual({ foodPerSecond: 2 });
+    const live = rules27Redesign();
     expect(live.hatchTiming).toEqual({ soldierIntervalMultiplier: 2 });
     expect(selectHatchArm(live, "main")).not.toHaveProperty("hatchTiming");
   });

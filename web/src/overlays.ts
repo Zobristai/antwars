@@ -17,7 +17,7 @@ import { markAge, markReading, type Rect } from "./words.ts";
 import { agentHandle, modelLine, playerLabel } from "./compose.ts";
 import { OPEN_COPY, SCORE_COPY, clockTime, underWay } from "./story.ts";
 import { Tooltip } from "./tip.ts";
-import { boardQueenHp } from "./variant.ts";
+import { boardQueenHp, redesignFigures } from "./variant.ts";
 
 /** Under the log's heading, in one line; the Rules page carries the whole explainer. */
 export { LOG_EXPLAINER, VISUAL_KEY } from "../rules.ts";
@@ -249,9 +249,10 @@ export function nextHatchCaste(b: Pick<Board, "setup" | "queens" | "hatch">, cos
   const name = b.setup.rules ?? (boardQueenHp(b) !== undefined ? "redesign" : null);
   if (name === null || !(RULES_NAMES as readonly string[]).includes(name) || b.hatch === null) return null;
   const config = rulesConfig(name);
-  const worker = b.hatch.cost, soldier = config.castes?.soldierCost;
+  const figures = name === "redesign" ? redesignFigures(b) : null;
+  const worker = b.hatch.cost, soldier = figures?.soldierCost ?? config.castes?.soldierCost;
   // A different base cost is not proof this recording used today's caste prices.
-  if (worker !== config.hatchCost || soldier === undefined || worker === soldier) return null;
+  if (worker !== (figures?.workerCost ?? config.hatchCost) || soldier === undefined || worker === soldier) return null;
   return cost === worker ? "worker" : cost === soldier ? "soldier" : null;
 }
 

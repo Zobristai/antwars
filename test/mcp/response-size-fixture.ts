@@ -247,6 +247,8 @@ export async function worstMarkObserve(mapId = "open-field", kind: "word" | "cou
     const reply = await caller.client.callTool(tool === "observe" ? { name: "observe", arguments: { map: true } }
       : { name: "join", arguments: { token: seats[0]!.token } }) as CallToolResult;
     captureTotals(reply);
+    // Population after the one real tick the measured reply was rendered from, before any page replays it.
+    const antsAfterTick = [0, 1].map(colony => h.game.match!.state.ants.filter(a => a.colony === colony).length);
     const currentPages = [reply];
     for (let attempt = 0; attempt < 32; attempt++) {
       const last = currentPages.at(-1)!.structuredContent as { view: { priorityEventsMore: boolean } };
@@ -302,7 +304,9 @@ export async function worstMarkObserve(mapId = "open-field", kind: "word" | "cou
     const maximumActual = { textChars: Math.max(...allSizes.map(size => size.textChars)),
       completeBytes: Math.max(...allSizes.map(size => size.completeBytes)) };
     return { maximumActual, currentPages, currentMarkIds, historyReplies, combatTotal, counterBound, expectedTotals, replayedMarkIds, historySizes, historyPages, fixture: { colonySeats: state.agents.filter(a => a.colony === 0).length,
-        antsPerColony: [0, 1].map(colony => state.ants.filter(a => a.colony === colony).length),
+        // Prepared population, before the measured tick.
+        antsPerColony: [0, 1].map(colony => snapshot.ants.filter(a => a.colony === colony).length),
+        antsAfterTick,
         marksPerSeat: state.agents.map(a => state.marks.filter(m => m.agentId === a.id).length) },
       mapId, kind, tool, page: kind === "word" ? "32-event three-word mark_laid backlog" : "32-event soldier count_mark_accepted backlog", reply, unpagedReply,
       actual: sizes(reply), unpaged: sizes(unpagedReply), expectedEvents: page.length };

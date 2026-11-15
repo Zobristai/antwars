@@ -5,7 +5,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder.js";
 import { DOMAdapter, RenderTexture } from "pixi.js";
-import { MAPS, rulesConfig } from "../../src/sim/config.ts";
+import { MAPS, rulesConfig, type SimConfig } from "../../src/sim/config.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { decodeMessage, encodeMessage, GRID_SCALE_STREAM_VERSION, type StreamSetup } from "../../src/live/format.ts";
@@ -17,6 +17,7 @@ import { ROCK_GLSL, WaterMask } from "../../web/src/terrain.ts";
 import { Territory } from "../../web/src/territory.ts";
 import { dryControls, terrainPhaseFixture, terrainRecordingName } from "../../web/capture/terrain.ts";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 let engine: NullEngine, scene: Scene;
 const adapter = DOMAdapter.get();
@@ -26,8 +27,8 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); DOMAdapter.set(adapter); scene.dispose(); engine.dispose(); });
 
-function fixture(mapId: string) {
-  const base = rulesConfig("redesign"), state = createMatch(7001, playable({ ...base, terrain: { ...base.terrain!, mapId } }));
+function fixture(mapId: string, base: SimConfig = rulesConfig("redesign")) {
+  const state = createMatch(7001, playable({ ...base, terrain: { ...base.terrain!, mapId } }));
   const recorder = new SpectatorRecorder(state);
   const message = decodeMessage(encodeMessage({ ...recorder.initial(), full: recorder.initialFull() }));
   const playback = new Playback(), frame = new Frame();
@@ -39,7 +40,7 @@ describe.each(MAPS)("$name rocks on both boards", map => {
   // Every stream setup carries grid scale 2 and so encodes at the grid-scale stream version: a pre-rocks
   // (version 10/11) baseline reading of the projection is no longer possible. The water-only projection keeps that format.
   it("encodes a water-only projection without changing any candidate bytes or non-rock state", () => {
-    const original = fixture(map.id).message;
+    const original = fixture(map.id, rules27Redesign()).message;
     for (const lead of [undefined, { colony: 0 as const, startTick: 0, winTick: 100 }]) {
       const message = { ...original, full: { ...original.full!, territoryWin: lead } };
       const candidateBytes = encodeMessage(message), untouched = structuredClone(message);

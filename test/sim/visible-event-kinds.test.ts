@@ -21,6 +21,8 @@ const SIGHTED_BY_KIND = {
   order: false,
   squad_filled: false,
   squad_released: false,
+  flyer_takeoff: false,
+  flyer_landing: false,
 } as const satisfies Record<SimEvent["type"], boolean>;
 
 /* Compile-time tie. Vitest does not type-check: `npx tsc --noEmit`

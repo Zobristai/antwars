@@ -8,7 +8,7 @@ import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
 import { EMPTY_SQUAD_COUNT_MARK, FOUNDING_CHECKS, LINE_FROM_END_NOT_VISIBLE, LINE_TO_END_NOT_VISIBLE, type FoundingCheck } from "../sim/agents.js";
-import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, FOOD_RADIX_TEXT, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText } from "./briefing.js";
+import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, FOOD_RADIX_TEXT, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText, broodChoices, countCasteChoices } from "./briefing.js";
 import { OBSERVE_REPLY_LIMITS, fitsReply, payload, pagedView, publicCountCaste, publicQueen, servedText, storedCall, type ServedText } from "./replies.js";
 import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
@@ -143,6 +143,8 @@ function expected(path: string, config: SimConfig, schema?: z.ZodObject): string
   if (field === "verb" && config.patrolLinkTiles !== undefined) return `one of ${[...countMarkVerbs(config), ...SPAWN_REMOVE_VERBS].join(", ")}`;
   // Rules 27: a queenId names a live queen the caller owns.
   if (field === "queenId") return "a number: the queenId of a live queen you own";
+  if (field === "brood" && config.flyers !== undefined) return `one of ${broodChoices(config).join(", ")}`;
+  if (field === "caste" && config.flyers !== undefined) return `one of ${countCasteChoices(config).join(", ")}; omitted means any`;
   return EXPECTED[field] ?? "a value of the advertised type";
 }
 
@@ -256,7 +258,7 @@ function fixText(game: Game, config: SimConfig, code: GameErrorCode, view: Agent
     queen_food: ["Your colony has too little stored food.", `Required stored food: ${view?.queenFounding?.cost ?? config.queenFounding?.cost ?? 0}; available: ${view?.queenFounding?.foodStore ?? "shown by observe"}. Forage and deliver food.${foundingChecksAfter(config, "queen_food")}`],
     no_active_queen: ["Your colony has lost every queen.", "Call observe for the match result, then join the next match."],
     bad_brood: config.castes === undefined ? ["set_brood is not available in these rules.", "Play using the commands in this match's briefing."]
-      : ["Bad brood.", `Send set_brood with brood ${BROODS.join(", ")}, and queenId when you own more than one live queen (observe queens). Nothing changed; set_brood never uses the command allowance.`],
+      : ["Bad brood.", `Send set_brood with brood ${broodChoices(config).join(", ")}, and queenId when you own more than one live queen (observe queens). Nothing changed; set_brood never uses the command allowance.`],
     no_owned_queen: ["You own no live queen with that queenId.", "set_brood sets only a live queen you own (observe queens). Found a queen of your own with found_queen. Nothing changed; set_brood never uses the command allowance."],
     unknown_agent: ["You have not joined this match.", "Call join."],
     duplicate_agent: ["That agent has already joined.", "Call join with your reconnectToken."],
@@ -326,6 +328,13 @@ export function spawnRemoveReply(config: SimConfig, input: SimInput | undefined)
   return input.verb === "REMOVE" ? { removedMark: { markId: input.markId } } : {};
 }
 
+/** An accepted move of one of the caller's flyer marks: the mark as it now stands. */
+function movedMarkReply(config: SimConfig, input: SimInput | undefined, view: AgentView): Record<string, unknown> {
+  if (config.flyers === undefined || input?.type !== "count_mark" || input.markId === undefined || SPAWN_REMOVE_VERBS.includes(input.verb)) return {};
+  const mark = view.myMarks.find(m => m.markId === input.markId);
+  return mark === undefined ? {} : { movedMark: publicCountCaste(mark) };
+}
+
 /** Outcome and this command's own changes only, never the general event list. */
 function commandResult(game: Game, config: SimConfig, outcome: Outcome, input?: SimInput, intentLength?: number): CallToolResult {
   switch (outcome.kind) {
@@ -344,6 +353,7 @@ function commandResult(game: Game, config: SimConfig, outcome: Outcome, input?: 
           claimed: view.myMarks.find(mark => mark.markId === notice.markId)?.claimed ?? 0,
           ...notice.availability, message: notice.message }) } : {}),
         ...spawnRemoveReply(config, input),
+        ...movedMarkReply(config, input, view),
         ...(outcome.broodSet === undefined ? {} : { queenId: outcome.broodSet.queenId, brood: outcome.broodSet.brood }),
         ...(newQueen === undefined ? {} : { queen: publicQueen(game, view.agentId, newQueen), foodStore: view.queenFounding?.foodStore, nextFoundTick: view.queenFounding?.nextFoundTick,
           ...(config.castes !== undefined ? { broodNote: NEW_QUEEN_BROOD_TEXT } : {}) }) };
@@ -951,7 +961,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     "observe",
     {
       description:
-        `${observeDetailText(game.simConfig, game.mcpConfig, { house: game.isHouseMatch(session.agentId) })} ${colonyVisibilityText(game.simConfig)} ${FOOD_RADIX_TEXT} ${CELL_PAGING_TEXT}${usesCompactAgentText(game.simConfig) ? ` ${ENEMY_QUEENS_TEXT}` : ""} ${SEAT_NOTICE_TEXT} Full current view with lossless dense cells, squad, marks and territory counts. ${MY_MARKS_TEXT} Without since, eventsMode:current samples newest unseen events from the last command cycle, prioritizing pending own-queen and own mark/count-mark events; priorityEventsMore means priorities remain queued. Current count-mark acceptance notices omit message and availability; command replies and explicit history retain full details. Default sampling never advances eventCursor. For complete chronological history use since:0, then since:view.eventCursor while eventsMore; eventsMode:history may repeat sampled events. History and pending priorities survive reconnects. ${TERRITORY_TEXT} ${MARK_TABLE_TEXT} waitSeconds holds up to 10 s.`,
+        `${observeDetailText(game.simConfig, game.mcpConfig, { house: game.isHouseMatch(session.agentId) })} ${colonyVisibilityText(game.simConfig)} ${FOOD_RADIX_TEXT} ${CELL_PAGING_TEXT}${usesCompactAgentText(game.simConfig) ? ` ${ENEMY_QUEENS_TEXT}` : ""} ${SEAT_NOTICE_TEXT} Full current view with lossless dense cells, squad, marks and territory counts. ${MY_MARKS_TEXT} Without since, eventsMode:current samples newest unseen events from the last command cycle, prioritizing pending own-queen and own mark/count-mark events; priorityEventsMore means priorities remain queued. Current count-mark acceptance notices omit message and availability; command replies and explicit history retain full details. Default sampling never advances eventCursor. For complete chronological history use since:0, then since:view.eventCursor while eventsMore; eventsMode:history may repeat sampled events. History and pending priorities survive reconnects. ${TERRITORY_TEXT} ${MARK_TABLE_TEXT}${game.simConfig.flyers === undefined ? "" : " view.flyers {encoding,data}: your colony's flyers, each with its tile and state; decode data by view.flyers.encoding."} waitSeconds holds up to 10 s.`,
       inputSchema: {
         cellsCursor: orNull(z.string().min(1).max(128).optional().describe("Omit to capture current colony sight, squad cells first. While view.cellsMore, pass view.cellsCursor to fetch the next frozen cellsTick page. A fresh observe replaces this cell snapshot; event since is independent.")),
         since: orNull(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional().describe("Omit for current-event sampling with own-queen/own-mark priority. Set 0 to replay every seat event from join, then continue with view.eventCursor while eventsMore. Explicit replay alone advances that cursor; it may repeat sampled events. History survives commands, refusals and reconnects for this match.")),
@@ -1065,7 +1075,9 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     {
       description: `Set the brood of one live queen you own. ${queenBroodText(game.simConfig, game.mcpConfig.callsPerSecond)} ${queenSpawnOwnerText(game.simConfig)} Accepted at any tick: it neither waits for nor moves nextCommandTick. Replies with tick, accepted or the refusal and how to fix it, the queenId and brood set, and nextCommandTick.`,
       inputSchema: {
-        brood: orNull(z.enum(BROODS).describe(`workers (${game.simConfig.hatchCost} food, carry food), soldiers (${castes.soldierCost} food, stronger, carry nothing) or mixed (this queen alternates worker and soldier).`)),
+        brood: orNull(z.enum(broodChoices(game.simConfig) as [string, ...string[]]).describe(game.simConfig.flyers === undefined
+          ? `workers (${game.simConfig.hatchCost} food, carry food), soldiers (${castes.soldierCost} food, stronger, carry nothing) or mixed (this queen alternates worker and soldier).`
+          : `workers (${game.simConfig.hatchCost} food, carry food), soldiers (${castes.soldierCost} food, stronger, carry nothing), flyers (${game.simConfig.flyers.cost} food, fly; only flyer count marks order them) or mixed (this queen alternates worker and soldier, never flyers).`)),
         queenId: orNull(z.number().optional().describe("The queenId of the live queen you own whose brood this sets (observe queens); needed only when you own more than one.")),
       },
     },
@@ -1105,19 +1117,22 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
   if (countRules !== undefined) server.registerTool(
     "count_mark",
     {
-      description: `Lay a count mark: a verb and a requested whole count of 1 or more, at most ${COUNT_MARK_MAX_COUNT_TEXT}, of free ants; a larger count is refused, not reduced. ${countMarkJobText(game.simConfig)} Re-lay the same verb on the same tile${lineMarksEnabled(game.simConfig) ? " (LINE: the same two ends)" : ""} to change the count; claimed ants stay.${relayLifetimeText(game.simConfig)}${countRules.casteSelection ? ` Optional caste is ${COUNT_CASTES.join(", ")}; omitted means any. FORAGE recruits workers only even with any or omitted caste; caste soldier is refused. Only the chosen caste recruits. Changing caste releases only ants it excludes; keeping or raising the count retains the others.` : ""} ${countRules.placement === "colony_sight" ? `Place it on a whole-number tile currently within ${game.simConfig.sightTiles} tiles of any living ant of your colony${game.simConfig.wordMarksDisabled ? "." : "; word marks still need your own squad ant standing on the tile."}` : "Place it on a tile where one of your squad ants stands."}${lineMarksEnabled(game.simConfig) ? " LINE: both ends must be in reach under that same placement rule, each like a single tile." : ""} Omit both coordinates to use your squad's position, if it has ants. Shares the command allowance; marks last ${game.simConfig.markLifetimeTicks / game.simConfig.ticksPerSecond} seconds. Replies give tick, accepted or refusal, recovery guidance, nextCommandTick and this command's changes.${countRules.reportClaimAvailability ? ` Accepted responses give freeAntsNow and a zero-free-pool explanation; the mark stays to recruit as ants hatch or free up.` : ""} ${countMarkReplyText(game.simConfig)} ${spawnRemoveText(game.simConfig)} Accepted SPAWN replies give spawnPoint {queenId,tileX,tileY} or {queenId,cleared:true}; REMOVE gives removedMark {markId}.${queenBrood === "" ? "" : ` ${queenBrood}`}`,
+      description: `Lay a count mark: a verb and a requested whole count of 1 or more, at most ${COUNT_MARK_MAX_COUNT_TEXT}, of free ants; a larger count is refused, not reduced. ${countMarkJobText(game.simConfig)} Re-lay the same verb on the same tile${lineMarksEnabled(game.simConfig) ? " (LINE: the same two ends)" : ""} to change the count; claimed ants stay.${relayLifetimeText(game.simConfig)}${countRules.casteSelection ? ` Optional caste is ${COUNT_CASTES.join(", ")}; omitted means any. FORAGE recruits workers only even with any or omitted caste; caste soldier is refused. Only the chosen caste recruits. Changing caste releases only ants it excludes; keeping or raising the count retains the others.` : ""}${game.simConfig.flyers === undefined ? "" : ` Flyers: only caste flyer orders them, and FORAGE refuses it; a flyer mark goes on a land tile in current colony sight${lineMarksEnabled(game.simConfig) ? " (LINE: both ends)" : ""}. To move one of your flyer marks, send its markId with its own verb, a count and the new tile${lineMarksEnabled(game.simConfig) ? " (LINE: both new ends)" : ""}; it keeps its id, members, lifetime and laid order. Flight, hovering and landing are in rules.`} ${countRules.placement === "colony_sight" ? `Place it on a whole-number tile currently within ${game.simConfig.sightTiles} tiles of any living ant of your colony${game.simConfig.wordMarksDisabled ? "." : "; word marks still need your own squad ant standing on the tile."}` : "Place it on a tile where one of your squad ants stands."}${lineMarksEnabled(game.simConfig) ? " LINE: both ends must be in reach under that same placement rule, each like a single tile." : ""} Omit both coordinates to use your squad's position, if it has ants. Shares the command allowance; marks last ${game.simConfig.markLifetimeTicks / game.simConfig.ticksPerSecond} seconds. Replies give tick, accepted or refusal, recovery guidance, nextCommandTick and this command's changes.${countRules.reportClaimAvailability ? ` Accepted responses give freeAntsNow and a zero-free-pool explanation; the mark stays to recruit as ants hatch or free up.` : ""} ${countMarkReplyText(game.simConfig)} ${spawnRemoveText(game.simConfig)} Accepted SPAWN replies give spawnPoint {queenId,tileX,tileY} or {queenId,cleared:true}; REMOVE gives removedMark {markId}.${queenBrood === "" ? "" : ` ${queenBrood}`}`,
       inputSchema: {
         tileX: orNull(markTile("column")),
         tileY: orNull(markTile("row")),
         verb: orNull(z.string().describe(`One of ${countMarkVerbs(game.simConfig).join(", ")}. Or SPAWN (set, move or clear a queen's spawn point) or REMOVE (remove your own count mark).`)),
         count: orNull(z.number().optional().describe(`Whole number of ants, 1 or more, at most ${COUNT_MARK_MAX_COUNT_TEXT}; not needed for SPAWN or REMOVE.`)),
-        ...(countRules.casteSelection ? { caste: orNull(z.enum(COUNT_CASTES).optional().describe("Which caste to recruit; omitted means any. FORAGE recruits workers only; soldier is refused.")) } : {}),
+        ...(countRules.casteSelection ? { caste: orNull(z.enum(countCasteChoices(game.simConfig) as [string, ...string[]]).optional().describe(game.simConfig.flyers === undefined
+          ? "Which caste to recruit; omitted means any. FORAGE recruits workers only; soldier is refused."
+          : "Which caste to recruit; omitted means any. FORAGE recruits workers only; soldier is refused. flyer recruits only flyers, and only it does; FORAGE refuses it.")) } : {}),
         ...(lineMarksEnabled(game.simConfig) ? {
           toTileX: orNull(tile("column").optional().describe("LINE only: the second end's whole tile column; other verbs refuse it.")),
           toTileY: orNull(tile("row").optional().describe("LINE only: the second end's whole tile row; other verbs refuse it.")),
         } : {}),
         queenId: orNull(z.number().optional().describe("SPAWN only: the queenId of a live queen you own (observe queens).")),
-        markId: orNull(z.number().optional().describe("REMOVE only: the markId of your own count mark (myMarks).")),
+        markId: orNull(z.number().optional().describe(game.simConfig.flyers === undefined ? "REMOVE only: the markId of your own count mark (myMarks)."
+          : "REMOVE: the markId of your own count mark (myMarks). With the flyer mark's own verb, a count and a new tile: moves that flyer mark of yours.")),
       },
     },
     async (args, extra) => {

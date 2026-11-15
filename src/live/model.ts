@@ -9,11 +9,12 @@
  * mark's answered count, tile food and the colonies' stores are read
  * as differences between consecutive states.
  */
-import { SUB } from "../sim/config.js";
+import { hatchIntervalOf, SUB } from "../sim/config.js";
+import { flyerState, type FlyerState } from "../sim/flyers.js";
 import { gridScaleOf } from "../sim/gridScale.js";
 import { activeQueens, cloneState, queensOf } from "../sim/map.js";
 import { startBoxes } from "../sim/startPlacement.js";
-import { nextCaste, queenNextCaste } from "../sim/forage.js";
+import { nextHatchOf } from "../sim/forage.js";
 import type { SimEvent, SimState, StepOutput } from "../sim/types.js";
 import { WORDS } from "../sim/types.js";
 import {
@@ -22,6 +23,7 @@ import {
   type StreamAgent,
   type StreamAnts,
   type StreamEvent,
+  type StreamFlyer,
   type StreamFull,
   type StreamHatch,
   type StreamIdentity,
@@ -33,6 +35,7 @@ import {
   type StreamStore,
   type StreamTerritoryWin,
 } from "./format.js";
+import { adjacentWithSlack } from "./snapshot.js";
 
 /** What one tick contributes to the stream: every ant, and the events of the step that completed it. */
 export interface TickRecord {
@@ -77,6 +80,12 @@ function toSubTile(v: number, tiles: number): number {
   return s < 0 ? 0 : s > tiles * SUB_TILE - 1 ? tiles * SUB_TILE - 1 : s;
 }
 
+/** A flyer's state on the stream: its destination converted to sub-tile units as ant positions are. */
+export function streamFlyer(f: FlyerState, mapW: number, mapH: number): StreamFlyer {
+  return { state: f.state, ...(f.takeOffTick === undefined ? {} : { takeOffTick: f.takeOffTick }),
+    ...(f.destX === undefined || f.destY === undefined ? {} : { destX: toSubTile(f.destX, mapW), destY: toSubTile(f.destY, mapH) }) };
+}
+
 export function setupOf(state: SimState): StreamSetup {
   const c = state.config;
   const queen = (i: 0 | 1): [number, number] => [toSubTile(state.colonies[i].queenX, c.mapWidth), toSubTile(state.colonies[i].queenY, c.mapHeight)];
@@ -97,6 +106,8 @@ export function setupOf(state: SimState): StreamSetup {
     ...(c.commandIdleTicks === undefined ? {} : { commandIdleTicks: c.commandIdleTicks }),
     overrunRadiusTiles: c.overrunRadiusTiles,
     queens: [queen(0), queen(1)],
+    ...(c.rules28 === true ? { rules28: true as const, rules28Figures: { queenHp: c.queenHp!.hp, workerCost: c.hatchCost,
+      soldierCost: c.castes!.soldierCost, soldierIntervalTicks: hatchIntervalOf(c, "soldier") } } : {}),
     // Comparison runs carry their rules, seed and player count in the live header.
     ...(c.rules === undefined ? {} : { rules: c.rules, seed: state.seed, ...(c.players === undefined ? {} : { players: c.players }) }),
   };
@@ -104,34 +115,33 @@ export function setupOf(state: SimState): StreamSetup {
 
 export function hatchOf(state: SimState): StreamHatch {
   const c = state.config;
-  return { cost: c.hatchCost, intervalTicks: c.hatchIntervalTicks, cap: c.colonyCap };
+  return { cost: c.hatchCost, intervalTicks: hatchIntervalOf(c, "worker"), cap: c.colonyCap };
 }
 
 /**
- * Each colony's food store, the first sim tick a queen may hatch again (the sim's own
- * hatch interval rule) and the food that hatch needs: hatchCost, or with the rules switch
- * on the cost of the caste the sim picks, as hatch() charges it. With queens, the earliest
- * live queen gives both, ties to the first in array order as hatch() visits them; her
- * caste is queenNextCaste's, which is the colony's nextCaste except for a rules-27 colony
- * with an agent, where each queen hatches her own brood.
+ * Each colony's food store, the first sim tick a queen may hatch again and the food that
+ * hatch needs, both from the next hatch hatch() itself charges and times (nextHatchOf):
+ * a worker's, a soldier's or, for a queen on flyer brood, a flyer's. With queens, the
+ * earliest live queen gives both, ties to the first in array order as hatch() visits them.
  */
 export function storesOf(state: SimState): [StreamStore, StreamStore] {
   const { config } = state;
-  const intervalOf = (soldier: boolean) => config.hatchIntervalTicks * (soldier ? config.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
   const store = (i: 0 | 1): StreamStore => {
     const colony = state.colonies[i];
-    let soldier = config.castes !== undefined && nextCaste(state, colony) === "soldier";
-    let nextHatchTick = colony.lastHatchTick + intervalOf(soldier);
+    let next = nextHatchOf(state, colony);
+    let nextHatchTick = colony.lastHatchTick + next.interval;
     if (colony.queens !== undefined) {
       let earliest = Infinity;
       for (const queen of activeQueens(colony)) {
-        const own = config.castes !== undefined && queenNextCaste(state, colony, queen) === "soldier";
-        const ready = queen.lastHatchTick + intervalOf(own);
-        if (ready < earliest) { earliest = ready; soldier = own; }
+        const own = nextHatchOf(state, colony, queen);
+        const ready = queen.lastHatchTick + own.interval;
+        if (ready < earliest) { earliest = ready; next = own; }
       }
       nextHatchTick = Math.min(earliest, config.matchTicks);
     }
-    return { food: colony.foodStore, nextHatchTick, nextCost: soldier ? config.castes!.soldierCost : config.hatchCost };
+    // A starting queen's clock starts one worker interval early: where a soldier's interval is the shorter she is due
+    // before tick 0, which the forecast states as tick 0, the first tick she can hatch.
+    return { food: colony.foodStore, nextHatchTick: Math.max(0, nextHatchTick), nextCost: next.cost };
   };
   return [store(0), store(1)];
 }
@@ -391,7 +401,15 @@ export class SpectatorRecorder {
         return { kind: "death", antId: e.antId, colony: e.colony, x, y };
       }
       case "fight":
-        return { kind: "fight", antId: e.antId, targetId: e.targetId, colony: e.colony, tileX: e.tileX, tileY: e.tileY };
+        return { kind: "fight", antId: e.antId, targetId: e.targetId, colony: e.colony, tileX: e.tileX, tileY: e.tileY, ...(e.air === true ? { air: true as const } : {}) };
+      case "flyer_takeoff":
+      case "flyer_landing": {
+        // Where the flyer stands at the end of the step, converted as the ants are; its tile's centre if it has gone.
+        const ant = state.ants.find((a) => a.id === e.antId);
+        const [x, y] = ant === undefined ? [e.tileX * SUB_TILE + SUB_TILE / 2, e.tileY * SUB_TILE + SUB_TILE / 2]
+          : [toSubTile(ant.x, state.config.mapWidth), toSubTile(ant.y, state.config.mapHeight)];
+        return { kind: e.type === "flyer_takeoff" ? "takeoff" : "landing", antId: e.antId, colony: e.colony, x, y };
+      }
       case "mark_laid": {
         const mark = marks.get(e.markId);
         return mark === undefined ? null : { kind: "mark", mark };
@@ -474,6 +492,14 @@ export class SpectatorRecorder {
     }
     // Castes ride only when a soldier is present, as the decoder reads them (format.ts StreamAnts.caste).
     if (list.some((a) => a.caste === "soldier")) out.caste = Uint8Array.from(list, (a) => (a.caste === "soldier" ? 1 : 0));
+    // Flyers ride only when a flyer is present, so a match without flyers writes no flyer field. A message's tick
+    // counts completed ticks, so its last processed tick is state.tick - 1.
+    if (list.some((a) => a.flyer === true)) {
+      out.flyers = list.map((a) => {
+        const f = flyerState(a, state.tick - 1);
+        return f === null ? null : streamFlyer(f, W, H);
+      });
+    }
     for (const id of this.heading.keys()) if (!lastPos.has(id)) this.heading.delete(id);
     this.lastPos = lastPos;
     return out;
@@ -489,14 +515,22 @@ export class SpectatorState {
   tick: number;
   ants: StreamAnts;
   readonly full: StreamFull;
+  /**
+   * Each ant's bite as last named, by biting ant: the fight event that began it. The stream names a bite only when it
+   * begins (on a new target), so the full message restates those under way between two flyers for a viewer who joins.
+   */
+  private readonly bites = new Map<number, Extract<StreamEvent, { kind: "fight" }>>();
 
-  constructor(full: StreamFull, tick: number, ants: StreamAnts) {
+  /** events: those of the handover-saved message the board was read from (savedMessage), each bite it remembered. */
+  constructor(full: StreamFull, tick: number, ants: StreamAnts, events: readonly StreamEvent[] = []) {
     this.full = full;
     this.tick = tick;
     this.ants = ants;
+    this.noteBites(events);
   }
 
   apply(rec: { tick: number; ants: StreamAnts; events: readonly StreamEvent[] }): void {
+    this.noteBites(rec.events);
     const f = this.full;
     const t = rec.tick - 1;
     for (const e of rec.events) {
@@ -624,9 +658,60 @@ export class SpectatorState {
     this.ants = rec.ants;
   }
 
-  /** The full message for the current tick. It carries no events: its state already includes them. */
+  /**
+   * The full message for the current tick. Its state already includes every event, so it carries none, except that it
+   * restates each bite under way between two flyers as the fight event that began it, with the air flag when both are
+   * airborne. A bite between two grounded flyers goes on in the air with no new event when both take off together, so
+   * a viewer who joins before then needs it as much as one who joins after. Without one, nothing in the message has
+   * changed.
+   */
   message(): StreamMessage {
-    return { tick: this.tick, ants: this.ants, full: this.full, events: [] };
+    return { tick: this.tick, ants: this.ants, full: this.full, events: this.flyerBitesUnderWay() };
+  }
+
+  /**
+   * The full message a handover saves: as message(), but restating every bite remembered, ground and air, as it was
+   * named, so the next server's board remembers a ground bite that goes on in the air once both flyers take off. It is
+   * read back only by the next server, never sent to a viewer.
+   */
+  savedMessage(): StreamMessage {
+    return { tick: this.tick, ants: this.ants, full: this.full, events: [...this.bites.values()].map((bite) => ({ ...bite })) };
+  }
+
+  private noteBites(events: readonly StreamEvent[]): void {
+    for (const e of events) {
+      if (e.kind === "fight") this.bites.set(e.antId, { ...e });
+      else if (e.kind === "death") {
+        for (const [id, bite] of this.bites) if (id === e.antId || bite.targetId === e.antId) this.bites.delete(id);
+      }
+    }
+  }
+
+  /**
+   * The bites between two flyers here, both airborne or both on the ground, and within bite reach of each other, by the
+   * viewer's own test of every streamed bite, in the order they were named. An airborne flyer bites only an airborne
+   * enemy in reach and a grounded one only a ground enemy, and a bite is named again whenever its target changes, so
+   * such a pair is still biting, wherever its bite began; a pair that has drifted apart, or of which one is airborne
+   * and the other on the ground, has stopped. Bites of other ants are not restated, so a message without flyers keeps
+   * its bytes.
+   */
+  private flyerBitesUnderWay(): StreamEvent[] {
+    const flyers = this.ants.flyers, ants = this.ants;
+    if (this.bites.size === 0 || flyers === undefined) return [];
+    const flyerAt = new Map<number, { readonly i: number; readonly airborne: boolean }>();
+    for (let i = 0; i < ants.count; i++) {
+      const state = flyers[i]?.state;
+      if (state !== undefined) flyerAt.set(ants.id[i]!, { i, airborne: state === "flying" || state === "hovering" });
+    }
+    const reach = gridScaleOf(this.full.setup), out: StreamEvent[] = [];
+    for (const [id, bite] of this.bites) {
+      const a = flyerAt.get(id), b = flyerAt.get(bite.targetId);
+      if (a === undefined || b === undefined || a.airborne !== b.airborne) continue;
+      if (!adjacentWithSlack(ants.x[a.i]!, ants.y[a.i]!, ants.x[b.i]!, ants.y[b.i]!, reach)) continue;
+      const { air: _air, ...named } = bite;
+      out.push(a.airborne ? { ...named, air: true } : named);
+    }
+    return out;
   }
 }
 

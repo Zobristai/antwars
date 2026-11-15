@@ -18,6 +18,7 @@ import {
   type InputOutcome,
 } from "./agents.js";
 import { resolveCombat } from "./combat.js";
+import { awaitsFlight, flyFlyers, freeFlyerDirection, heldFlyers, keepOnHoldTiles, liftAnts, mergeAnts } from "./flyers.js";
 import { foodTiles, hatch, pickupAndDeliver, regrow, retargetClusterForager } from "./forage.js";
 import { enforceQueenGuardCap, houseDirection, houseFounding, localDirection, localSoldierAssignments, rebalanceRoles, rememberWorkerGuards, type HouseFoundingObserver } from "./houseBot.js";
 import { buildGrid, cloneState, GridTracker, type Grid } from "./map.js";
@@ -48,6 +49,11 @@ function housePhase(state: SimState, gridOf: (state: SimState) => Grid = buildGr
   rememberWorkerGuards(state, soldiers);
   for (const ant of state.ants) {
     if (ant.squad !== null || ant.claim !== undefined) continue;
+    // A free flyer holds its tile; one still in the air is the flight's to move.
+    if (ant.flyer === true) {
+      if (ant.air === undefined) house.set(ant.id, freeFlyerDirection(state, ant));
+      continue;
+    }
     const walk = spawnWalkDirection(state, ant, local[ant.colony] === true);
     if (walk !== null) {
       house.set(ant.id, walk);
@@ -284,6 +290,11 @@ function tickInPlace(
   claimCountMarks(state, tick, observers);
   for (const ant of unmarked) {
     if (ant.squad !== null || ant.claim !== undefined || !localRulesSide(state, ant.colony)) continue;
+    // A released flyer holds its tile; one still in the air flies on and lands first.
+    if (ant.flyer === true) {
+      if (ant.air === undefined) house.set(ant.id, freeFlyerDirection(state, ant));
+      continue;
+    }
     // A released ant never resumes a spawn walk; it ends at claim time.
     delete ant.spawnWalk;
     const own = localDirection(state, startGrid, ant, soldiers ?? undefined);
@@ -313,6 +324,16 @@ function tickInPlace(
   const markById = new Map(state.marks.map((m) => [m.id, m]));
   const patrol = config.patrolLinkTiles === undefined ? undefined : patrolChains(state);
   if (config.patrolLinkTiles !== undefined) clearReleasedPatrolWaypoints(state);
+  // Flyers take off, fly, hover and land here, before any ground ant moves and before combat.
+  // A flyer in the air this tick has already moved: it sits out ground directions, soft
+  // separation, point rests and local arrival, and is back in state.ants before combat.
+  const flown = config.flyers === undefined ? [] : flyFlyers(state, markById, patrol, tick, events);
+  for (const ant of flown) {
+    foraging.delete(ant.id);
+    if (softMode) clearLocalGoal(state, ant);
+  }
+  liftAnts(state, flown);
+  const held = config.flyers === undefined ? [] : heldFlyers(state);
   for (const ant of state.ants) {
     let dir: Vec;
     if (ant.squad !== null) {
@@ -320,10 +341,17 @@ function tickInPlace(
       if (squadForaging.has(ant.id)) foraging.add(ant.id);
       else foraging.delete(ant.id);
     } else if (ant.claim !== undefined) {
-      const claimed = countMarkDirection(state, startGrid, food, ant, markById.get(ant.claim)!, patrol);
-      dir = claimed.dir;
-      if (claimed.foraging) foraging.add(ant.id);
-      else foraging.delete(ant.id);
+      const mark = markById.get(ant.claim)!;
+      if (ant.flyer === true && awaitsFlight(ant, mark)) {
+        // A grounded flyer its order sends into the air (locked out, or with no LINE spot yet) waits where it stands.
+        dir = ZERO;
+        foraging.delete(ant.id);
+      } else {
+        const claimed = countMarkDirection(state, startGrid, food, ant, mark, patrol);
+        dir = claimed.dir;
+        if (claimed.foraging) foraging.add(ant.id);
+        else foraging.delete(ant.id);
+      }
     } else {
       dir = house.get(ant.id) ?? ZERO;
     }
@@ -340,6 +368,8 @@ function tickInPlace(
     const frame = advanceSoftAnts(state, dirs, foraging, patrol, preparedPointRests, false);
     observers?.settledLocalGuards?.({ tick, antIds: frame.settledLocalGuards });
   }
+  keepOnHoldTiles(held);
+  mergeAnts(state, flown);
 
   // 6. Combat on the moved positions.
   resolveCombat(state, liveGrid(state), tick, events);

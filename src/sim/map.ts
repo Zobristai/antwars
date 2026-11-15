@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, SUB, type QueenRules, type SimConfig } from "./config.js";
+import { checkRulesGeneration, DEFAULT_CONFIG, hatchIntervalOf, SUB, type QueenRules, type SimConfig } from "./config.js";
 import { tileCentre, withinTiles } from "./geometry.js";
 import { addRocks, createTerrain, isBlockedTile, isWaterTile, landBirthPosition, passableMask, selectMap } from "./terrain.js";
 import { startBoxes } from "./startPlacement.js";
@@ -188,6 +188,7 @@ export function matchConfigForMap(seed: number, config: SimConfig): SimConfig {
 
 /** Create a match at tick 0. Queued agents join through inputs on the first step. */
 export function createMatch(seed: number, config: SimConfig = withGridScale(DEFAULT_CONFIG)): SimState {
+  checkRulesGeneration(config);
   config = matchConfigForMap(seed, config);
   let terrain = createTerrain(seed, config);
   if (config.foodLayout !== undefined) config = { ...config,
@@ -200,13 +201,13 @@ export function createMatch(seed: number, config: SimConfig = withGridScale(DEFA
       queenX: startX(config, id, tx),
       queenY: tileCentre(ty),
       foodStore: 0,
-      lastHatchTick: -config.hatchIntervalTicks,
+      lastHatchTick: -hatchIntervalOf(config, "worker"),
       overrunTicks: 0,
       ...(config.castes === undefined ? {} : { mixedNext: "worker" as const }),
       ...(config.queenFounding === undefined ? {} : {
         queens: [{ id: 0, ...(config.queenFounding.costBasis === "founded-live" ? { starting: true as const } : {}), queenX: startX(config, id, tx), queenY: tileCentre(ty), foundedTick: 0,
-          lastHatchTick: -config.hatchIntervalTicks, overrunTicks: 0, lostTick: null,
-          ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, lastBiteTick: -config.queenHp.biteIntervalTicks, regenFromTick: 0 }) }],
+          lastHatchTick: -hatchIntervalOf(config, "worker"), overrunTicks: 0, lostTick: null,
+          ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, ...("biteIntervalTicks" in config.queenHp ? { lastBiteTick: -config.queenHp.biteIntervalTicks } : {}), regenFromTick: 0 }) }],
         lastQueenFoundedTick: -config.queenFounding.cooldownTicks,
       }),
       ...(config.localAnts === undefined ? {} : { seenFood: [] as number[] }),

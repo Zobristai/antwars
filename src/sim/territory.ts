@@ -36,6 +36,8 @@ export function updateTerritory(state: SimState, grid: Grid | undefined, tick: n
   let cells = 0;
   for (let i = 0; i < n; i++) {
     const ant = ants[i]!;
+    // An airborne flyer takes no part: it holds, refreshes and locks no tile.
+    if (ant.air !== undefined) continue;
     const x = Math.floor(ant.x / (SUB * scale)) * scale;
     const y = Math.floor(ant.y / (SUB * scale)) * scale;
     const index = y * width + x;

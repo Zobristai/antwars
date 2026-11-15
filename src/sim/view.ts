@@ -6,7 +6,8 @@ import { activeQueens, hasAdjacentEnemy, nextQueenFoundingTick, queenFoundingCos
 import { trailMark } from "./marks.js";
 import { patrolChains, type PatrolChains } from "./patrol.js";
 import { terrainView } from "./terrain.js";
-import type { Agent, Ant, Brood, Caste, ColonyId, CountCaste, CountMarkVerb, MatchResult, Order, SimEvent, SimState, VisibleEvent, Word } from "./types.js";
+import { flyerState, type FlyerStateName } from "./flyers.js";
+import type { Agent, Ant, Caste, ColonyId, CountMarkCaste, CountMarkVerb, MatchResult, Order, QueenBrood, SimEvent, SimState, VisibleEvent, Word } from "./types.js";
 
 export interface ViewCell {
   readonly tileX: number;
@@ -24,7 +25,7 @@ interface CountMarkFields {
   readonly verb?: CountMarkVerb;
   readonly count?: number;
   readonly claimed?: number;
-  readonly caste?: CountCaste;
+  readonly caste?: CountMarkCaste;
   /** Cumulative combat totals since laying, not reset by observing or changing count/caste. */
   readonly lost?: number;
   readonly kills?: number;
@@ -40,6 +41,18 @@ export interface ViewMark extends CountMarkFields {
   readonly tileY: number;
   readonly ticksLeft: number;
   readonly mine: boolean;
+}
+
+/** One of the colony's living flyers (rules with flyers only): its tile and state, as flyerState reads it for the
+ * view's last completed tick. takeOffTick only while locked out; destTileX/destTileY only while airborne. */
+export interface ViewFlyer {
+  readonly antId: number;
+  readonly tileX: number;
+  readonly tileY: number;
+  readonly state: FlyerStateName;
+  readonly takeOffTick?: number;
+  readonly destTileX?: number;
+  readonly destTileY?: number;
 }
 
 export interface AgentView {
@@ -66,7 +79,7 @@ export interface AgentView {
     readonly caste?: Caste;
   }[];
   /** Own nests are known even outside colony sight; enemy nests remain fogged. */
-  readonly queens?: readonly { readonly queenId: number; readonly tileX: number; readonly tileY: number; readonly foundedTick: number; readonly lostTick: number | null; readonly overrunTicks: number; readonly hp?: number; readonly maxHp?: number; readonly owner?: string; readonly brood?: Brood }[];
+  readonly queens?: readonly { readonly queenId: number; readonly tileX: number; readonly tileY: number; readonly foundedTick: number; readonly lostTick: number | null; readonly overrunTicks: number; readonly hp?: number; readonly maxHp?: number; readonly owner?: string; readonly brood?: QueenBrood }[];
   readonly queenFounding?: { readonly cost: number; readonly cooldownTicks: number; readonly minDistanceTiles: number; readonly foodStore: number; readonly nextFoundTick: number; readonly maxLiveQueens?: number; readonly slotsRemaining?: number; readonly firstFoundTick?: number };
   readonly order: Order;
   readonly orderStatus: string;
@@ -79,6 +92,8 @@ export interface AgentView {
   /** Each of the agent's own live marks, wherever it lies, with the squad ants following it under follow_trail now.
    * tileX/tileY is the mark's tile; a LINE mark adds its second end as toTileX/toTileY. */
   readonly myMarks: readonly (CountMarkFields & { readonly markId: number; readonly steering: number; readonly tileX: number; readonly tileY: number; readonly toTileX?: number; readonly toTileY?: number })[];
+  /** Rules with flyers only: every living flyer of the agent's colony, ascending antId. */
+  readonly flyers?: readonly ViewFlyer[];
   /** The colony's own territory: one string per map row, '#' own tile, '.' otherwise. */
   readonly territoryRows: readonly string[];
   /** Original-tile physical area; fine terrain may leave a fractional boundary cell. */
@@ -93,7 +108,7 @@ export interface AgentView {
 /** How each agent-visible event kind reaches agents. Exhaustive over VisibleEvent:
  * adding a kind to VisibleEvent without classifying it here fails compilation.
  * sighted: recordSightings queues it into agents' events while within colony sight.
- * publicCaste: observe replies drop a caste other than worker/soldier (publicCountCaste). */
+ * publicCaste: observe replies drop a caste other than worker/soldier/flyer (publicCountCaste). */
 export interface VisibleEventKind {
   readonly sighted: boolean;
   readonly publicCaste: boolean;
@@ -390,12 +405,27 @@ export function takeView(state: SimState, grid: Grid, agent: Agent, visibility =
     marks,
     myMarks: state.marks.filter((m) => m.agentId === agent.id).map((m) => ({ markId: m.id, steering: m.steering, tileX: m.tileX, tileY: m.tileY,
       ...(m.toTileX === undefined || m.toTileY === undefined ? {} : { toTileX: m.toTileX, toTileY: m.toTileY }), ...countOf(state, m, patrol) })),
+    ...(config.flyers === undefined ? {} : { flyers: flyersOf(state, agent.colony) }),
     territoryRows: rows,
     territoryTiles: own / physicalTileArea(config),
     territorySharePermille: Math.trunc((own * 1000) / (config.mapWidth * config.mapHeight)),
     events,
     result: state.result,
   };
+}
+
+/** The colony's living flyers, ascending id, each with its state after the last completed tick (state.tick - 1). */
+function flyersOf(state: SimState, colony: ColonyId): ViewFlyer[] {
+  const flyers: ViewFlyer[] = [];
+  for (const ant of state.ants) {
+    if (ant.colony !== colony || ant.hp <= 0) continue;
+    const flyer = flyerState(ant, state.tick - 1);
+    if (flyer === null) continue;
+    flyers.push({ antId: ant.id, tileX: Math.floor(ant.x / SUB), tileY: Math.floor(ant.y / SUB), state: flyer.state,
+      ...(flyer.takeOffTick === undefined ? {} : { takeOffTick: flyer.takeOffTick }),
+      ...(flyer.destX === undefined || flyer.destY === undefined ? {} : { destTileX: Math.floor(flyer.destX / SUB), destTileY: Math.floor(flyer.destY / SUB) }) });
+  }
+  return flyers.sort((a, b) => a.antId - b.antId);
 }
 
 /** A count mark's current claims and optional cumulative combat totals; nothing for a word mark. */
@@ -480,4 +510,36 @@ export function expandCells(table: DenseCells): ViewCell[] {
     }
   }
   return cells;
+}
+
+/** The MCP form of view.flyers: one short record per flyer, ascending antId, so a colony at its ant cap fits a reply. */
+export interface DenseFlyers {
+  readonly encoding: string;
+  readonly data: string;
+}
+
+export const FLYER_ENCODING = "Your colony's living flyers, ascending antId, records separated by ;. Each record is decimal integers and one letter joined by dots: antId.tileX.tileY.state, state g grounded, f flying, h hovering, l locked out. f and h add .destTileX.destTileY, the tile it flies to or hovers over; l adds .takeOffTick, the first tick it may take off again. Empty data means no flyers.";
+
+const FLYER_STATE_CODES: Readonly<Record<FlyerStateName, string>> = { grounded: "g", flying: "f", hovering: "h", lockedOut: "l" };
+
+export function denseFlyers(flyers: readonly ViewFlyer[]): DenseFlyers {
+  return { encoding: FLYER_ENCODING, data: flyers.map(flyer => [flyer.antId, flyer.tileX, flyer.tileY, FLYER_STATE_CODES[flyer.state],
+    ...(flyer.state === "lockedOut" ? [flyer.takeOffTick] : flyer.state === "flying" || flyer.state === "hovering" ? [flyer.destTileX, flyer.destTileY] : [])].join(".")).join(";") };
+}
+
+/** Reference decoder for the flyer records, not a second simulation view. */
+export function expandFlyers(table: DenseFlyers): ViewFlyer[] {
+  if (table.data === "") return [];
+  const states = Object.fromEntries(Object.entries(FLYER_STATE_CODES).map(([state, code]) => [code, state as FlyerStateName]));
+  return table.data.split(";").map(record => {
+    const [antId, tileX, tileY, code, ...rest] = record.split(".");
+    const state = states[code ?? ""];
+    const n = (value: string | undefined): number => {
+      if (value === undefined || !/^-?[0-9]+$/.test(value)) throw new RangeError("Invalid flyer record");
+      return Number(value);
+    };
+    if (state === undefined || rest.length !== (state === "lockedOut" ? 1 : state === "grounded" ? 0 : 2)) throw new RangeError("Invalid flyer record");
+    return { antId: n(antId), tileX: n(tileX), tileY: n(tileY), state,
+      ...(state === "lockedOut" ? { takeOffTick: n(rest[0]) } : state === "grounded" ? {} : { destTileX: n(rest[0]), destTileY: n(rest[1]) }) };
+  });
 }

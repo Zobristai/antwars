@@ -22,6 +22,7 @@ import { scriptedInputs, type ScriptOptions } from "../../src/live/record.ts";
 import { delivered, ManualClock, RecordedServer, served, SseClient } from "./helpers.ts";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 // Seed 6007 since squads start on forage: with new squads starting on forage and marks steering no free ants,
 // seed 6006 ends by overrun at tick 921, before the mid-match connect below (tick 950 or later).
 const SCRIPT: ScriptOptions = { seed: 6007, config: playable(DEFAULT_CONFIG), agents: 10, ticks: DEFAULT_CONFIG.matchTicks, attack: true };
@@ -478,7 +479,7 @@ describe("Each ant's caste on the stream (bit 2)", () => {
 
 describe("caste-correct hatch countdown", () => {
   it.each([undefined, 2, 3])("streams the same ready tick as a real soldier hatch with multiplier %s", multiplier => {
-    const config = { ...rulesConfig("redesign"), terrain: undefined, foodLayout: undefined, startAnts: 0,
+    const config = { ...rules27Redesign(), terrain: undefined, foodLayout: undefined, startAnts: 0,
       hatchIntervalTicks: 10, hatchTiming: multiplier === undefined ? undefined : { soldierIntervalMultiplier: multiplier } };
     const state = createMatch(7001, playable(config));
     const colony = state.colonies[0];
@@ -500,6 +501,33 @@ describe("caste-correct hatch countdown", () => {
     expect(storesOf(state)[0].nextHatchTick).toBe(15);
     colony.queens![1]!.lostTick = expected;
     expect(storesOf(state)[0].nextHatchTick).toBe(expected + 10);
+  });
+});
+
+describe("rules-28 hatch forecast: one food rate, and the starting queen's head start", () => {
+  const config = { ...rulesConfig("redesign"), terrain: undefined, foodLayout: undefined, startAnts: 0 };
+  const hatchesAt = (state: SimState, tick: number) => {
+    const events: Parameters<typeof hatch>[2] = [];
+    hatch(state, tick, events);
+    return events.filter(event => event.type === "hatch" && event.colony === 0);
+  };
+  const streamed = (state: SimState) => {
+    const recorder = new SpectatorRecorder(state);
+    return decodeMessage(encodeMessage({ ...recorder.initial(), full: recorder.initialFull() })).full!.stores![0];
+  };
+
+  it.each([["worker", 0, 30], ["soldier", 20, 30]] as const)("a starting queen whose first ant is a %s streams and hatches it at tick %s, then the other caste at tick %s", (caste, first, next) => {
+    expect(config.rules28).toBe(true);
+    const state = createMatch(7001, playable(config));
+    const colony = state.colonies[0];
+    colony.foodStore = 100;
+    colony.mixedNext = caste;
+    const cost = caste === "soldier" ? config.castes!.soldierCost : config.hatchCost;
+    expect(streamed(state)).toEqual({ food: 100, nextHatchTick: first, nextCost: cost });
+    if (first > 0) expect(hatchesAt(state, first - 1)).toEqual([]);
+    expect(hatchesAt(state, first)).toMatchObject([{ tick: first, caste }]);
+    // Mixed brood flips caste; the next ant waits its own caste's interval from this hatch.
+    expect(storesOf(state)[0].nextHatchTick).toBe(next);
   });
 });
 
@@ -572,7 +600,7 @@ describe("Set_brood on the stream", () => {
   });
 
   it("writes a set_brood call as index 7 in the same bytes and version an observe call takes, and reads it back", () => {
-    const r = new SpectatorRecorder(createMatch(6007, playable(rulesConfig("redesign"))));
+    const r = new SpectatorRecorder(createMatch(6007, playable(rules27Redesign())));
     const opening = { ...r.initial(), full: r.initialFull() };
     const delta: StreamMessage = { tick: 3, full: null, ants: opening.ants, events: [] };
     const cases: [StreamMessage, Extract<StreamEvent, { kind: "call" }>, number][] = [

@@ -10,6 +10,7 @@ import { step } from "../../src/sim/step.js";
 import { type Agent, type SimEvent, type SimInput, type SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 function fixture(colonyWide: boolean): SimState {
   const config = rulesConfig("redesign");
@@ -114,15 +115,15 @@ it.each([DEFAULT_CONFIG, RULES_V4_CONFIG, PUBLIC_CONFIG, ...[undefined, "v4", "c
   newMatchConfig(rulesConfig("redesign"))].map(playable))("stores shared rules25 on every new-match config (%#)", config => {
   expect(config.rules25).toBe(true);
   const header = parseLog([headerLine(426, config)]).header;
-  expect(header.rulesVersion).toBe(27);
+  expect(header.rulesVersion).toBe(config.rules28 === true ? 28 : 27);
   expect(JSON.stringify(header.config)).toBe(JSON.stringify(config));
   expect(createMatch(426, header.config).config.rules25).toBe(true);
 });
 
 it("refuses and replays actual FORAGE soldier input", () => {
-  const config: SimConfig = { ...rulesConfig("redesign"),
+  const config: SimConfig = { ...rules27Redesign(),
     startAnts: 20, squadSize: 1, matchTicks: 30, commandFloorTicks: 1, antSpeedTilesPerSecond: 0,
-    hatchCost: 0, castes: { ...rulesConfig("redesign").castes!, soldierCost: 0 },
+    hatchCost: 0, castes: { ...rules27Redesign().castes!, soldierCost: 0 },
     hatchIntervalTicks: 1, hatchTiming: { soldierIntervalMultiplier: 1 } };
   const played = playable(config);
   let state = createMatch(426, played);
