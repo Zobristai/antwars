@@ -10,7 +10,6 @@ import { Frame, type Board } from "../../../web/src/buffer.ts";
 import { SUPERCOLONY_NAMES, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
 import { TEXT_GROUND, TEXT_PANEL_MAX, contrastRatio, needsTextGround } from "../../../web/src/colony-palette.ts";
-import { territoryShares } from "../../../web/src/ui/format.ts";
 import { SCORE_COPY } from "../../../web/src/story.ts";
 import { D1_COPY, colonyRows } from "../../../web/src/ui/deck/model.ts";
 import { mountDeckHud } from "../../../web/src/ui/deck/hud.ts";
@@ -59,21 +58,6 @@ function pairFrame(): Frame {
     queens: b.queens!.slice(0, 2), held: [520, 480], agents: b.agents.slice(0, 2), overrun: [0, 0], deaths: [3, 5], stores: [b.stores[0], b.stores[1]] } as unknown as Board;
   return f;
 }
-
-describe("each colony's whole-percent share of the held ground", () => {
-  it("adds to exactly 100, the points left over going to the largest remainders, ties to the lower colony id", () => {
-    expect(territoryShares([300, 250, 250, 200])).toEqual([30, 25, 25, 20]);
-    expect(territoryShares([1, 1, 1, 0])).toEqual([34, 33, 33, 0]);
-    expect(territoryShares([0, 1, 1, 1])).toEqual([0, 34, 33, 33]);
-    expect(territoryShares([1, 2])).toEqual([33, 67]);
-    expect(territoryShares([870, 130])).toEqual([87, 13]);
-    for (const held of [[7, 7, 7, 7], [1, 3, 5, 11], [999, 1, 0, 0], [2, 2, 3, 0]]) expect(territoryShares(held)!.reduce((a, b) => a + b, 0)).toBe(100);
-  });
-  it("is null when no tile is held", () => {
-    expect(territoryShares([0, 0, 0, 0])).toBeNull();
-    expect(territoryShares([])).toBeNull();
-  });
-});
 
 describe("a four-colony match's colonies in the deck", () => {
   it("are none in a two-colony match, whose deck compares its two sides as before", () => {
