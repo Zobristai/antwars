@@ -1,17 +1,20 @@
 // The 3D view's deck in a four-colony match: each colony named in its colour with its source note, its share of the held
-// ground (adding to 100), one line while no tile is held, and Eliminated once its queens are all lost, never on the
-// result's winner; the two-colony rows that compare one colony with its one opponent give way. The deck is mounted on the
-// test port, then written out as markup and laid out in headless Chromium with the page's tokens and the client's
-// stylesheets, where each name is checked for its colour, its ground, its tooltip and its one line. Not visual evidence.
+// ground (adding to 100), one line while no tile is held, and Eliminated once its queens are all lost, the result's winner
+// included, while the result still names it the winner; the two-colony rows that compare one colony with its one opponent
+// give way. A recorded match is also played through the live and replay playback into the deck, a same-tick end's winner
+// marked Eliminated as its queens record. The deck is mounted on the test port, then written out as markup and laid out
+// in headless Chromium with the page's tokens and the client's stylesheets, where each name is checked for its colour,
+// its ground, its tooltip and its one line. Not visual evidence.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
-import { Frame, type Board } from "../../../web/src/buffer.ts";
+import { Frame, Playback, RESULT_BEAT_MS, TickPreparation, type Board } from "../../../web/src/buffer.ts";
 import { SUPERCOLONY_NAMES, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
-import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
+import { SUB_TILE, type StreamAgent, type StreamEvent, type StreamFull, type StreamMessage, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
+import { TICK_MS } from "../../../src/live/snapshot.ts";
 import { TEXT_GROUND, TEXT_PANEL_MAX, contrastRatio, needsTextGround } from "../../../web/src/colony-palette.ts";
 import { SCORE_COPY } from "../../../web/src/story.ts";
-import { D1_COPY, colonyRows } from "../../../web/src/ui/deck/model.ts";
+import { D1_COPY, colonyRows, resultView } from "../../../web/src/ui/deck/model.ts";
 import { mountDeckHud } from "../../../web/src/ui/deck/hud.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
@@ -82,10 +85,15 @@ describe("a four-colony match's colonies in the deck", () => {
 
   it("mark a colony eliminated once every one of its queens is lost", () => {
     expect(colonyRows(quadFrame({ lost: [1] }))!.rows.map(r => r.eliminated)).toEqual([false, true, false, false]);
+    expect(colonyRows(quadFrame({ lost: [1, 2, 3], winner: 0 }))!.rows.map(r => r.eliminated)).toEqual([false, true, true, true]);
   });
 
-  it("never mark the result's winner eliminated, even where its queens are all lost at the tick it wins", () => {
-    expect(colonyRows(quadFrame({ lost: [0, 1], winner: 0 }))!.rows.map(r => r.eliminated)).toEqual([false, true, false, false]);
+  it("mark the result's winner eliminated where its queens are all lost at the tick it wins, and the result still names it the winner", () => {
+    const frame = quadFrame({ lost: [0, 1], winner: 0 });
+    expect(colonyRows(frame)!.rows.map(r => r.eliminated)).toEqual([true, true, false, false]);
+    const shown = resultView(frame)!;
+    expect(shown.winner).toBe(0);
+    expect(shown.headline).toBe(`${NAMES[0]} wins`);
   });
 });
 
@@ -134,10 +142,10 @@ describe("the deck's score in a four-colony match", () => {
     expect(host.byClass("d1-crow-share").map(s => shownIn(s) ? s.textContent : null)).toEqual(["100%", "0%", "0%", "0%"]);
   });
 
-  it("marks an eliminated colony Eliminated, and never the result's winner", () => {
+  it("marks every eliminated colony Eliminated, the result's winner included", () => {
     const { host, hud } = mounted();
     hud.update(view(quadFrame({ lost: [0, 1], winner: 0 })));
-    expect(host.byClass("d1-crow-out").map(out => shownIn(out))).toEqual([false, true, false, false]);
+    expect(host.byClass("d1-crow-out").map(out => shownIn(out))).toEqual([true, true, false, false]);
     expect(one(host, "d1-crow-out").textContent).toBe(D1_COPY.eliminated);
   });
 
@@ -155,6 +163,83 @@ describe("the deck's score in a four-colony match", () => {
     expect(one(host, "d1-score").classes()).not.toContain("is-four");
     for (const node of [...host.byClass("d1-gauge"), ...host.byClass("d1-win"), ...host.byClass("d1-team")]) expect(shownIn(node)).toBe(true);
   });
+});
+
+// A recorded four-colony match, built decoded as the stream format reads it back: colony 1's queen is killed on tick 2
+// and the match plays on; on tick 5 the other three leave idle at once, colony 2 ranked the winner.
+const W = 16, H = 16, HP = 5000;
+const NESTS = [[2, 2], [13, 2], [2, 13], [13, 13]] as const;
+const at = (tile: number) => tile * SUB_TILE + SUB_TILE / 2;
+const streamQueen = (colony: number, lostTick: number | null = null, hp = HP): StreamQueen =>
+  ({ id: 0, colony, x: at(NESTS[colony]![0]), y: at(NESTS[colony]![1]), foundedTick: 0, lostTick, overrun: 0, hp });
+const ants = (colonies: readonly number[]): StreamMessage["ants"] => {
+  const list = colonies.map(c => ({ id: c + 1, colony: c, x: at(NESTS[c]![0] + 1), y: at(NESTS[c]![1]) }));
+  return { count: list.length, id: Uint32Array.from(list.map(a => a.id)), x: Uint16Array.from(list.map(a => a.x)), y: Uint16Array.from(list.map(a => a.y)),
+    heading: new Uint8Array(list.length), colony: Uint8Array.from(list.map(a => a.colony)), agent: new Int16Array(list.length).fill(-1) };
+};
+const END: StreamResult = { winner: 2, reason: "idle", decidedBy: "kills", tick: 5, nextStartMs: null };
+const lost = (colony: number, tick: number, hp: number): StreamEvent => ({ kind: "queenLost", queen: streamQueen(colony, tick, hp) });
+const delta = (tick: number, colonies: readonly number[], events: StreamEvent[] = []): StreamMessage => ({ tick, ants: ants(colonies), full: null, events });
+function recording(): StreamMessage[] {
+  const territory = new Uint8Array(W * H);
+  territory.set([1, 1, 1, 2, 2, 3, 3, 4]);
+  const full: StreamFull = {
+    match: 7,
+    setup: { mapW: W, mapH: H, ticksPerSecond: 10, matchTicks: 600, idleTicks: 300, overrunRadiusTiles: 2,
+      queens: NESTS.map(([x, y]): [number, number] => [at(x), at(y)]), colonies: 4, colonyNames: NAMES, rated: false },
+    queens: [0, 1, 2, 3].map(c => streamQueen(c)), hatched: [0, 0, 0, 0], territory,
+    marks: [], agents: [], overrun: [0, 0, 0, 0], overrunRequired: 100, deaths: [0, 0, 0, 0], result: null,
+    stores: [0, 1, 2, 3].map(() => ({ food: 0, nextHatchTick: 0, nextCost: 10 })), eliminations: [],
+  };
+  return [
+    { tick: 0, ants: ants([0, 1, 2, 3]), full, events: [] },
+    delta(2, [0, 2, 3], [{ kind: "queenHp", colony: 1, queenId: 0, hp: 0 }, lost(1, 2, 0), { kind: "eliminated", colony: 1, tick: 2 }]),
+    delta(5, [], [lost(0, 5, HP), lost(2, 5, HP), lost(3, 5, HP), { kind: "eliminated", colony: 0, tick: 5 },
+      { kind: "eliminated", colony: 2, tick: 5 }, { kind: "eliminated", colony: 3, tick: 5 }, { kind: "end", result: END }]),
+    // Playback reaches the result's beat, where the deck shows it.
+    delta(END.tick + 1 + Math.ceil(RESULT_BEAT_MS / TICK_MS), []),
+  ];
+}
+
+/**
+ * The recording through the replay's playback or the live page's prepared ticks, every message in, drawn as the page
+ * draws it, one frame per tick of client time from its first message until well past the result's beat.
+ */
+function played(live: boolean): Frame[] {
+  const playback = new Playback(live ? { live: true } : undefined);
+  const preparation = new TickPreparation();
+  const messages = recording();
+  for (const m of messages) {
+    if (live) playback.pushPrepared(preparation.prepare(m)!, m.tick * TICK_MS);
+    else playback.push(m, m.tick * TICK_MS);
+  }
+  const frames: Frame[] = [];
+  for (let now = 0; now <= messages.at(-1)!.tick * TICK_MS + 10_000; now += TICK_MS) {
+    const frame = new Frame();
+    if (playback.sample(now, frame)) frames.push(frame);
+  }
+  return frames;
+}
+
+describe("a recorded four-colony match in the deck, through playback", () => {
+  for (const live of [false, true]) {
+    it(`marks each colony Eliminated as its queens are lost, a same-tick end's winner included, and still names it the winner (${live ? "live" : "replay"})`, () => {
+      const frames = played(live);
+      // Each state the deck's rows pass through as the match plays, in order.
+      const states = frames.map(f => JSON.stringify(colonyRows(f)!.rows.map(r => r.eliminated))).filter((s, i, all) => s !== all[i - 1]);
+      expect(states.map(s => JSON.parse(s))).toEqual([
+        [false, false, false, false],
+        [false, true, false, false],
+        [true, true, true, true],
+      ]);
+      const end = frames.at(-1)!;
+      expect(end.board!.result).toEqual(END);
+      expect(resultView(end)).toMatchObject({ winner: 2, headline: `${NAMES[2]} wins` });
+      const { host, hud } = mounted();
+      hud.update(view(end));
+      expect(host.byClass("d1-crow-out").map(out => shownIn(out))).toEqual([true, true, true, true]);
+    });
+  }
 });
 
 let browser: Browser;
@@ -209,6 +294,21 @@ describe("in a browser, a four-colony match's colony names", () => {
           const under = needsTextGround(colour) ? TEXT_GROUND : TEXT_PANEL_MAX;
           expect(contrastRatio(colour, under), NAMES[c]).toBeGreaterThanOrEqual(4.5);
         }
+      } finally { await page.close(); }
+    });
+
+    it(`mark Eliminated on every eliminated colony's row, the result's winner included, each row on one line, at ${width}px`, async () => {
+      const { host, hud } = mounted(width >= 760);
+      hud.update(view(quadFrame({ lost: [0, 1], winner: 0 })));
+      const page = await browser.newPage({ viewport: { width, height: 844 } });
+      try {
+        await page.setContent(`<!doctype html>${root()}<head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>`);
+        const rows = await page.evaluate(() => [...document.querySelectorAll(".d1-crow")].map(row => {
+          const out = row.querySelector(".d1-crow-out")!;
+          return { out: getComputedStyle(out).display !== "none" ? out.textContent : null, height: row.getBoundingClientRect().height };
+        }));
+        expect(rows.map(r => r.out)).toEqual([D1_COPY.eliminated, D1_COPY.eliminated, null, null]);
+        for (const row of rows) expect(row.height).toBeLessThanOrEqual(26);
       } finally { await page.close(); }
     });
   }

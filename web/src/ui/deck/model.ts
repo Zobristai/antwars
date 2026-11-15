@@ -225,7 +225,7 @@ export interface ColonyRow {
   readonly note: string;
   /** Its whole-percent share of the held ground ("34%"); "" while no tile is held. */
   readonly share: string;
-  /** Every one of its queens is lost; the result's winner never is. */
+  /** Every one of its queens is lost, as recorded, whoever won: a winner eliminated at the tick it wins included. */
   readonly eliminated: boolean;
 }
 export interface ColonyRows {
@@ -238,8 +238,8 @@ export interface ColonyRows {
 /**
  * A four-colony match's colonies, in place of the two-colony rows that compare one colony with its one opponent
  * (Kills, Territory and Ants): each colony's name, its share of the held ground, the shares adding to 100, and whether it
- * is eliminated (buffer.ts fallenColonies), which the result's winner never is, even where its queens are all lost at
- * the tick it wins. Null for a two-colony match, or no board.
+ * is eliminated (buffer.ts fallenColonies), the result's winner included where its queens are all lost at the tick it
+ * wins; the result still names it the winner (resultView). Null for a two-colony match, or no board.
  */
 export function colonyRows(frame: Frame | null): ColonyRows | null {
   const b = frame?.board;
@@ -249,10 +249,9 @@ export function colonyRows(frame: Frame | null): ColonyRows | null {
   const held: readonly number[] = b.held;
   const share = territoryShares(Array.from({ length: n }, (_, c) => held[c] ?? 0));
   const fallen: readonly boolean[] = fallenColonies(b);
-  const winner = b.result?.winner ?? null;
   const rows = Array.from({ length: n }, (_, colony): ColonyRow => ({
     colony, name: names[colony], note: colonyNameNote(names[colony]) ?? "",
-    share: share ? `${share[colony]}%` : "", eliminated: fallen[colony] === true && colony !== winner,
+    share: share ? `${share[colony]}%` : "", eliminated: fallen[colony] === true,
   }));
   return { rows, noneHeld: share === null };
 }
