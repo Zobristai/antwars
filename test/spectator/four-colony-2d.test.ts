@@ -85,7 +85,7 @@ describe("ants on the board", () => {
       f.id[i] = i + 1; f.colony[i] = colony; f.caste[i] = kind === 2 ? 1 : 0; f.carrying[i] = kind === 1 ? 1 : 0;
       f.x[i] = 10 + i; f.y[i] = 10; f.alpha[i] = 1; f.agent[i] = -1; f.walk[i] = 1;
     }
-    f.corpses = Array.from({ length: colonies }, (_, colony) => ({ antId: 100 + colony, x: 5, y: 5 + colony, colony: colony as 0 | 1, heading: 0, ageMs: 0 }));
+    f.corpses = Array.from({ length: colonies }, (_, colony) => ({ antId: 100 + colony, x: 5, y: 5 + colony, colony, heading: 0, ageMs: 0 }));
     return f;
   }
 
@@ -112,10 +112,9 @@ function fourColonies() {
   const nests = [at(16, 16), at(111, 16), at(16, 111), at(111, 111)];
   const boxes: StreamStartBox[] = [{ x: 4, y: 4, width: 24, height: 24 }, { x: 100, y: 4, width: 24, height: 24 },
     { x: 4, y: 100, width: 24, height: 24 }, { x: 100, y: 100, width: 24, height: 24 }];
-  // Typed through unknown: four entries where the stream's two-colony declarations name two.
-  const setup = { mapW, mapH, gridScale: scale, ticksPerSecond: 10, matchTicks: 1000, idleTicks: 100, overrunRadiusTiles: 2 * scale,
-    queens: nests, startBoxes: boxes, startingQueenIds: [[0], [0], [0], [0]] } as unknown as StreamSetup;
-  const queens = nests.map(([x, y], colony) => ({ id: 0, colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 }) as unknown as StreamQueen);
+  const setup: StreamSetup = { mapW, mapH, gridScale: scale, ticksPerSecond: 10, matchTicks: 1000, idleTicks: 100, overrunRadiusTiles: 2 * scale,
+    colonies: 4, queens: nests, startBoxes: boxes, startingQueenIds: [[0], [0], [0], [0]] };
+  const queens: StreamQueen[] = nests.map(([x, y], colony) => ({ id: 0, colony, x, y, foundedTick: 0, lostTick: null, overrun: 0 }));
   return { setup, boxes, queens, result: null };
 }
 

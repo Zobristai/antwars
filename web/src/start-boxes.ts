@@ -18,7 +18,7 @@ export function visibleStartBoxes(setup: StartBoxSetup | undefined): VisibleStar
     if (![box.x, box.y, box.width, box.height].every(Number.isSafeInteger) ||
         box.x < 0 || box.y < 0 || box.width <= 0 || box.height <= 0 ||
         box.x + box.width > setup.mapW || box.y + box.height > setup.mapH) return;
-    result.push({ ...box, colony: colony as Colony });
+    result.push({ ...box, colony });
   });
   return result;
 }
