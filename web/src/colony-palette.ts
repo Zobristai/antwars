@@ -46,18 +46,18 @@ export function needsTextGround(rgb: number): boolean {
 }
 
 /**
- * Sets the page's match; with a document, also its colony CSS colours (--aw-k0, --aw-k1) and, for each colony whose
- * colour needs one, the dark ground under its coloured text: the root's data-aw-ground lists those colonies ("0", "1")
- * and --aw-ink-ground is the ground's colour (colony-ground.css). A match that needs none carries neither.
+ * Sets the page's match; with a document, also its colony CSS colours (--aw-k0 to --aw-k3, one per colony) and, for
+ * each colony whose colour needs one, the dark ground under its coloured text: the root's data-aw-ground lists those
+ * colonies ("0" to "3") and --aw-ink-ground is the ground's colour (colony-ground.css). A match that needs none carries
+ * neither.
  */
 export function setMatchColonies(pair: readonly string[], doc?: Document): void {
   names = pair;
   if (!doc) return;
   const root = doc.documentElement;
   const colours = colonyColours(pair);
-  root.style.setProperty("--aw-k0", colourCss(colours[0]));
-  root.style.setProperty("--aw-k1", colourCss(colours[1]));
-  const grounded = ([0, 1] as const).filter(c => needsTextGround(colours[c]));
+  colours.forEach((colour, c) => root.style.setProperty(`--aw-k${c}`, colourCss(colour)));
+  const grounded = colours.flatMap((colour, c) => needsTextGround(colour) ? [c] : []);
   if (grounded.length > 0) {
     root.setAttribute("data-aw-ground", grounded.join(" "));
     root.style.setProperty("--aw-ink-ground", colourCss(TEXT_GROUND));
