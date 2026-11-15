@@ -1,17 +1,19 @@
 import type { LeaderboardPage, LeaderboardRow, LeaderboardTally } from "../leaderboard.ts";
-import { houseDisplayName } from "../../../src/rating/houseLabels.ts";
+import { houseDisplayName, isRetiredHouse } from "../../../src/rating/houseLabels.ts";
 import { C } from "./copy.ts";
 
 /**
  * A Benchmark model's shown name and badges, derived, never a rename: the handle's display name from
  * the fixed per-handle table (or "Unlisted model" when unlisted, never the handle), a badge for its fixed level
  * when it has one, and a Fast badge when its fixed tier is fast. A Benchmark row's level and tier are its handle's
- * fixed values; other tiers add no badge.
+ * fixed values; other tiers add no badge. A retired handle (isRetiredHouse) adds a retired badge last; it never changes
+ * the name, the row or its place.
  */
 export function benchmarkLabel(row: Pick<LeaderboardRow, "displayName" | "thinkingLevel" | "serviceTier">): { readonly name: string; readonly badges: readonly string[] } {
   const badges: string[] = [];
   if (row.thinkingLevel != null) badges.push(row.thinkingLevel);
   if (row.serviceTier?.toLowerCase() === "fast") badges.push(C.fastBadge);
+  if (isRetiredHouse(row.displayName)) badges.push(C.retiredBadge);
   return { name: houseDisplayName(row.displayName), badges };
 }
 

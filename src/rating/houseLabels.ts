@@ -76,6 +76,21 @@ export const HOUSE_LABELS: Readonly<Record<string, HouseLabel>> = Object.freeze(
   "gpt-6-1-terra": label("GPT-6.1 Terra"),
 });
 
+/**
+ * The handles whose model is no longer offered, keyed like HOUSE_LABELS (without the antwars/ owner prefix). A retired
+ * handle keeps its HOUSE_LABELS row, its name, rating and recordings; the site marks it retired and it cannot be
+ * challenged. Kept by hand: retiring another handle is one line. Read by presentation and unrated challenges only.
+ */
+export const RETIRED_HOUSE_HANDLES: ReadonlySet<string> = new Set([
+  "claude-fable-5-1",
+]);
+
+/** Whether a bare handle or an antwars/<handle> name is retired, compared case-insensitively like canonical names. */
+export function isRetiredHouse(name: string): boolean {
+  const lower = name.toLowerCase(), prefix = `${HOUSE_USERNAME}/`;
+  return RETIRED_HOUSE_HANDLES.has(lower.startsWith(prefix) ? lower.slice(prefix.length) : lower);
+}
+
 /** The listed entry for an owner/handle display name, compared case-insensitively like canonical names. */
 function listed(displayName: string): HouseLabel | undefined {
   const name = displayName.toLowerCase(), prefix = `${HOUSE_USERNAME}/`;
