@@ -28,7 +28,7 @@ import { mountDeck } from "./deck.ts";
 import { deckBrand } from "./brand.ts";
 import { mountTeams } from "./pane.ts";
 import { mountAgentDialog } from "./dialog.ts";
-import { caption, legend, type Caption, type Legend } from "./model.ts";
+import { caption, colonyCount, legend, type Caption, type Legend } from "./model.ts";
 
 /** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end. */
 const BUTTON_IN_BAR = "(min-width: 520px)";
@@ -167,16 +167,33 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
-  const paintLegend = (l: Legend) => {
-    const keyNow = `${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
+  /** Whether the rest is written as clauses (a four-colony match), so a later plain write replaces them. */
+  let restClauses = false;
+  /** four: a four-colony match, whose phone legend breaks only between clauses (deck.css). */
+  const paintLegend = (l: Legend, four: boolean) => {
+    const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
     if (keyNow === legendKey) return;
     legendKey = keyNow;
     frameEl.dataset.rule = l.rule;
+    if (legendEl.classList.contains("is-four") !== four) legendEl.classList.toggle("is-four", four);
     setHidden(dot, l.dot === null);
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");
     // A no-break space opens the rest: its own leading space would be trimmed beside the mode word.
-    setText(rest, l.words.length > 1 ? `\u00a0· ${l.words.slice(1).join(" · ")}` : "");
+    const restText = l.words.length > 1 ? `\u00a0· ${l.words.slice(1).join(" · ")}` : "";
+    if (four) {
+      // The same text, each "· clause" its own unbreakable span; the line may break at the spaces between them, and
+      // before the link (wbr).
+      rest.textContent = "";
+      l.words.slice(1).forEach((word, i) => rest.append(i === 0 ? "\u00a0" : " ", h(doc, "span", "d1-clause", `· ${word}`)));
+      if (l.words.length > 1 && l.back) rest.append(h(doc, "wbr"));
+      restClauses = true;
+    } else if (restClauses) {
+      rest.textContent = restText;
+      restClauses = false;
+    } else {
+      setText(rest, restText);
+    }
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
   };
@@ -217,7 +234,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     const frame = view.frame;
     const b = frame?.board ?? null;
     paintBoardToggle(view.board);
-    paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled));
+    paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled), b !== null && colonyCount(b.setup) > 2);
     paintCaption(caption(frame), frame?.board?.setup.colonyNames);
     deck.update(frame);
     teams.update(view, b === null && /connecting/i.test(view.connection));

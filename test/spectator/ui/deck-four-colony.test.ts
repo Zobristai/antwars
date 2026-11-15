@@ -313,3 +313,55 @@ describe("in a browser, a four-colony match's colony names", () => {
     });
   }
 });
+
+describe("a four-colony recording's legend", () => {
+  /** A stored replay's mode line, as the page computes it, with its way back to live; `last` the detail's last clause. */
+  const recording = (frame: Frame, last: string): HudView => ({ ...view(frame), mode: { label: "RECORDING · not live", detail: `4 agents · ${last}`,
+    link: { text: "Back to live", href: "/?watch=1" } } } as HudView);
+  /** The legend's text; the agent count is the frame's. */
+  const TEXT = (last: string, agents = 4) => `RECORDING\u00a0· not live · ${agents} agents · ${last}Back to live`;
+
+  it("keeps its text, each clause its own span, and a two-colony legend's text stays one plain run", () => {
+    const four = mounted(false);
+    four.hud.update(recording(quadFrame(), "15 Nov 2026"));
+    expect(one(four.host, "d1-legend").textContent).toBe(TEXT("15 Nov 2026"));
+    expect(four.host.byClass("d1-clause").map(c => c.textContent)).toEqual(["· not live", "· 4 agents", "· 15 Nov 2026"]);
+    const pair = mounted(false);
+    pair.hud.update(recording(pairFrame(), "15 Nov 2026"));
+    expect(one(pair.host, "d1-legend").textContent).toBe(TEXT("15 Nov 2026", 2));
+    expect(one(pair.host, "d1-legend").classes()).toEqual(["d1-legend"]);
+    expect(one(pair.host, "d1-legend-rest").children).toEqual([]);
+    // A page that moves from one to the other writes the legend that match's way.
+    four.hud.update(recording(pairFrame(), "15 Nov 2026"));
+    expect(one(four.host, "d1-legend-rest").children).toEqual([]);
+    expect(one(four.host, "d1-legend").classes()).toEqual(["d1-legend"]);
+    expect(one(four.host, "d1-legend").textContent).toBe(TEXT("15 Nov 2026", 2));
+  });
+
+  for (const width of [390, 320]) {
+    for (const last of ["15 Nov 2026", "Recording ended"]) {
+      it(`breaks only between clauses on a phone, never inside a clause or the link, at ${width}px (${last})`, async () => {
+        const { host, hud } = mounted(false);
+        hud.update(recording(quadFrame(), last));
+        const page = await browser.newPage({ viewport: { width, height: 844 } });
+        try {
+          await page.setContent(`<!doctype html>${root()}<head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>`);
+          const legend = await page.evaluate(() => {
+            const el = document.querySelector(".d1-legend")!;
+            const box = el.getBoundingClientRect();
+            return { text: el.textContent, height: box.height, right: box.right,
+              pieces: [...el.querySelectorAll(".d1-mode, .d1-clause, .d1-back")].map(n => ({ text: n.textContent, lines: n.getClientRects().length, right: n.getBoundingClientRect().right })) };
+          });
+          expect(legend.text).toBe(TEXT(last));
+          expect(legend.pieces.map(p => p.text)).toEqual(["RECORDING", "· not live", "· 4 agents", `· ${last}`, "Back to live"]);
+          for (const piece of legend.pieces) {
+            expect(piece.lines, piece.text!).toBe(1);
+            expect(piece.right, piece.text!).toBeLessThanOrEqual(legend.right);
+          }
+          // At these widths the legend takes more than one line, so the breaks are tested.
+          expect(legend.height).toBeGreaterThan(16);
+        } finally { await page.close(); }
+      });
+    }
+  }
+});

@@ -481,6 +481,11 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-legend { display: block; left: 6px; max-width: calc(100% - 12px); white-space: normal; }
   .d1-dot { display: inline-block; vertical-align: 0; }
   .d1-legend-rest { overflow: visible; }
+  /* A four-colony match's legend breaks only between its clauses: the mode word, each "· clause" and the link stay whole,
+     and the link's gap stays with the clause before it, so a link starting a line is not indented. */
+  .d1-legend.is-four :is(.d1-mode, .d1-clause, .d1-back) { white-space: nowrap; }
+  .d1-legend.is-four:has(> .d1-back:not([hidden])) .d1-clause:last-of-type { margin-right: 10px; }
+  .d1-legend.is-four > .d1-back { margin-left: 0; }
   .d1-window { border-radius: 0; }
   .d1-lane { padding: 0 4px 0 10px; border-radius: 0; gap: 8px; }
   /* A replay's controls take their own row over the event and the board controls (as today's HUD does, ui.css), so
