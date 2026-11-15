@@ -258,7 +258,42 @@ function matchesPage(names: ColonyNamePair | undefined) {
   return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
 }
 
+/** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
+function quadrantsPage() {
+  const port = dom({ search: "" });
+  const host = port.doc.createElement("div") as unknown as ElementPort;
+  port.body.append(host);
+  const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
+  const handles = ["alice", "bob", "cat", "dan"];
+  const seats = handles.map((handle, colony) => ({ seat: colony, colony: colony as 0 | 1 | 2 | 3, modelLabel: null, thinkingLevel: null, serviceTier: null, handle }));
+  const recording = (winner: 0 | 1 | 2 | 3): MatchRecording => ({ id: `2026-11-14T09-00-00-000Z-${winner}`, startedAt: "2026-11-14T09:00:00.000Z", endedAt: null,
+    simulationEndedAt: null, winner, reason: "queens_killed", decidedBy: null, seats, status: "complete", unavailable: [], matchType: { kind: "quadrants", size: 1 }, colonyNames: names });
+  const live: LiveMatch = { lobbyId: "lobby-q", startedAt: Date.parse("2026-11-14T10:00:00Z"), rated: false, delaySeconds: 60, matchType: { kind: "quadrants", size: 1 },
+    colonies: [[{ displayName: "fennec", rating: null, rd: null, ratedMatches: null }], [{ displayName: "tidewater", rating: null, rd: null, ratedMatches: null }],
+      [{ displayName: "sugar-ant", rating: null, rd: null, ratedMatches: null }], [{ displayName: "kite", rating: null, rd: null, ratedMatches: null }]], colonyNames: names };
+  const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
+  mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [live] },
+    recordings: { status: "ready", rows: ([0, 1, 2, 3] as const).map(recording) }, next: null });
+  const body = markup(host);
+  mounted.destroy();
+  return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
+}
+
 describe("the Matches page's text in a colony's colour keeps 4.5:1 on what it sits on", () => {
+  for (const width of [1280, 390]) {
+    it(`a four-colony (Quadrants) match: Matches at ${width}px`, async () => {
+      const { page } = quadrantsPage();
+      const rows = await measured(page, width, 2400);
+      expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
+      for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
+      const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
+      // Each colony's name in its own colour, on the live row and on each recording; each recording's Winner in its winner's.
+      for (const { label, colour } of SUPERCOLONY_NAMES) expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual(Array(5).fill(rgb(colour)));
+      expect(rows.filter(r => r.text === "Winner").map(r => r.rgb).sort()).toEqual(COLOURS.map(rgb).sort());
+    });
+  }
+
+
   for (const pair of [...PAIRS, undefined]) {
     for (const width of [1280, 390]) {
       it(`${pair ? pair.join(" against ") : "rated"}: Matches at ${width}px`, async () => {

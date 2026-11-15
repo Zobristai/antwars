@@ -7,7 +7,7 @@ import { parseLog, terminalAt, type ParsedLog } from "../sim/log.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
 import { createMatch } from "../sim/map.js";
 import { advance } from "../sim/step.js";
-import { asTwoColony, type ColonyId, type SimInput } from "../sim/types.js";
+import type { ColonyId, SimInput, SimState } from "../sim/types.js";
 import { SpectatorRecorder, cutUtf8, LABEL_BYTES, SERVICE_TIER_BYTES, THINKING_LEVEL_BYTES } from "../live/model.js";
 
 export interface CommandRecord {
@@ -20,7 +20,8 @@ export interface CommandRecord {
 }
 export interface SeatRecord {
   seat: number;
-  colony: 0 | 1;
+  /** The seat's colony: 0 or 1 in a two-colony match, 0 to 3 in a four-colony match. */
+  colony: number;
   modelLabel: string | null;
   /** null when omitted, including recordings made before this metadata existed. */
   thinkingLevel: string | null;
@@ -60,6 +61,12 @@ export interface MatchRecord {
   seats: SeatRecord[];
   /** Events as recorded, with simulation-step ticks; no invented causal attribution. */
   events: { tick: number; event: StreamEvent }[];
+  /**
+   * A four-colony record only: each colony that left the match, with the simulation-step tick it left on, as its
+   * recording's eliminated events carried them, in their recorded order (by tick, then colony). The engine's rule
+   * holds: in a same-tick all-idle end the winner is listed too, and result still names it the winner.
+   */
+  eliminations?: { colony: number; tick: number }[];
   /**
    * Full commit the game server ran this match on (the record input's codeVersion), added by the record service; absent
    * in records built before it was carried.
@@ -174,6 +181,8 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
       const { seed: _seed, players: _players, ...setup } = message.full.setup;
       record.setup = setup;
       record.result = message.full.result;
+      // Eliminations before a recording's first message are in its opening snapshot.
+      if (setup.colonies === 4) record.eliminations = (message.full.eliminations ?? []).map(({ colony, tick }) => ({ colony, tick }));
       record.seats = message.full.agents.map((agent, seat) => ({ seat, colony: agent.colony, modelLabel: agent.modelLabel || null, thinkingLevel: agent.thinkingLevel ?? null,
         serviceTier: agent.serviceTier ?? null, handle: seatHandle(agent.identity),
         joinedTick: agent.joinTick, commands: [], ...startOf(agent.identity) }));
@@ -190,6 +199,10 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
         const seat = record.seats[event.agent];
         if (seat === undefined) throw new Error("replay call has no seat");
         seat.commands.push({ tick, type: event.call, accepted: event.accepted, request: null, error: null });
+      }
+      if (event.kind === "eliminated") {
+        if (record.eliminations === undefined) throw new Error("replay elimination outside a four-colony match");
+        record.eliminations.push({ colony: event.colony, tick: event.tick });
       }
       if (event.kind === "end") {
         const { nextStartMs: _next, ...result } = event.result;
@@ -216,6 +229,12 @@ export function binaryRecord(input: HistoryInput): MatchRecord {
   if (input.endedAt !== undefined) record.endedAt = new Date(input.endedAt).toISOString();
   else record.unavailable.push("Actual wall-clock end time was not retained; simulationEndedAt is an estimate.");
   return record;
+}
+
+/** The colonies a state shows having left the match, by tick then colony; none in a two-colony match. */
+function eliminationsOf(state: SimState): { colony: number; tick: number }[] {
+  return state.colonies.flatMap(colony => colony.eliminated === undefined ? [] : [{ colony: colony.id, tick: colony.eliminated.tick }])
+    .sort((a, b) => a.tick - b.tick || a.colony - b.colony);
 }
 
 /** A parsed log's seed and server control ticks, in tick order; houseActive as inclusive tick ranges. */
@@ -281,7 +300,7 @@ export function matchRecord(input: HistoryInput): MatchRecord {
     for (const event of out.events) {
       if (event.type === "agent_join") {
         seatIds.set(event.agentId, seats.length);
-        seats.push({ seat: seats.length, colony: asTwoColony(event.colony), modelLabel: event.modelLabel, thinkingLevel: event.thinkingLevel ?? null,
+        seats.push({ seat: seats.length, colony: event.colony, modelLabel: event.modelLabel, thinkingLevel: event.thinkingLevel ?? null,
           serviceTier: event.serviceTier ?? null, handle: null, joinedTick: event.tick, commands: [] });
       }
     }
@@ -300,6 +319,8 @@ export function matchRecord(input: HistoryInput): MatchRecord {
   // never produces. They are left out of this comparison only; the record keeps them.
   const { ratingChanges: _ratings, ...recordedResult } = record.result;
   if (JSON.stringify(state.result) !== JSON.stringify(recordedResult)) throw new Error("log result does not match binary under recorded rules");
+  // A record verified against its log publishes eliminations the log's re-run reaches, not only the binary's.
+  if (JSON.stringify(eliminationsOf(state)) !== JSON.stringify(record.eliminations ?? [])) throw new Error("log eliminations do not match binary under recorded rules");
   const callFacts = (list: readonly SeatRecord[]) => list.map(seat => ({ seat: seat.seat, colony: seat.colony,
     modelLabel: cutUtf8(seat.modelLabel ?? "", LABEL_BYTES),
     thinkingLevel: cutUtf8(seat.thinkingLevel ?? "", THINKING_LEVEL_BYTES),
