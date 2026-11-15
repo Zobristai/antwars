@@ -72,20 +72,6 @@ function carried(messages: readonly StreamMessage[]) {
 
 const decoded = (input: HistoryInput) => unpackMessages(new Uint8Array(gunzipSync(input.binary))).map(bytes => decodeMessage(bytes));
 
-/**
- * Whether this tree's spectator recorder and stream format describe a four-colony match: the opening message of one
- * records and encodes. Until both do, the four-colony cases below cannot run and are reported skipped, never passed.
- */
-function recordsFourColonies(): boolean {
-  try {
-    const recorder = new SpectatorRecorder(createMatch(SEED, CONFIG));
-    encodePublicMessage({ ...recorder.initial(), full: recorder.initialFull() });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const CASES = [
   { name: "the last colony standing", idle: { 5: [3], 8: [2], 12: [1] },
     result: { winner: 0, reason: "idle", decidedBy: "idle", tick: 12 }, eliminations: [{ colony: 3, tick: 5 }, { colony: 2, tick: 8 }, { colony: 1, tick: 12 }] },
@@ -99,7 +85,7 @@ const CASES = [
     eliminations: [{ colony: 0, tick: 3 }, { colony: 1, tick: 3 }, { colony: 2, tick: 3 }, { colony: 3, tick: 3 }] },
 ] as const;
 
-describe.skipIf(!recordsFourColonies()).each(CASES)("a Quadrants match ending in $name", ({ idle, result, eliminations }) => {
+describe.each(CASES)("a Quadrants match ending in $name", ({ idle, result, eliminations }) => {
   let played: Played;
   beforeAll(() => { played = play(idle); });
 
