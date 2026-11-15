@@ -3,20 +3,13 @@
 // where the recorded facts eliminate it, with the result still naming it the winner. The HUD is mounted on the test
 // port; colours and pointer reach are read from ui.css's rules. Not visual evidence.
 import { readFileSync } from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Frame, type Board } from "../../../web/src/buffer.ts";
 import { SUB_TILE, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
 import { SUPERCOLONY_NAMES, colonyNameNote } from "../../../src/sim/colonyNames.ts";
 import { D2_COPY, mountHud } from "../../../web/src/ui/hud.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
-
-// The plate reads playback's eliminations (buffer.ts fallenColonies): every colony whose queens are all lost, as
-// recorded, whoever won. Fed exactly that here, so the plate is tested against it whatever the result names.
-vi.mock("../../../web/src/buffer.ts", async original => {
-  const real = await original<typeof import("../../../web/src/buffer.ts")>();
-  return { ...real, fallenColonies: (b: Board) => real.fallenColonies({ queens: b.queens, result: null }) };
-});
 
 const CSS = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 /** Each rule's selectors and body, comments removed. */
