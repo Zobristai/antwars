@@ -21,7 +21,7 @@ import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines.
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { TRAIL_RES, type Frame } from "../buffer.ts";
+import { TRAIL_RES, trailTexels, type Frame } from "../buffer.ts";
 import { FOG_ALPHA } from "../team-view.ts";
 import { boardLook } from "../board-look.ts";
 import { colonyRgb } from "../colony-palette.ts";
@@ -511,10 +511,7 @@ export class Ground {
     if (this.keyTrail !== frame.trails) {
       const t = frame.trails;
       const d = this.trailData;
-      for (let i = 0, n = t.length / 2; i < n; i++) {
-        d[i * 4] = t[i * 2]! * 255;
-        d[i * 4 + 1] = t[i * 2 + 1]! * 255;
-      }
+      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);
       this.trailTex.update(d);
       this.keyTrail = t;
     }
