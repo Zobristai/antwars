@@ -1,15 +1,17 @@
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
 
 /** What kind of match a recording was; the web words it (web/src/ui/format.ts), so no mode slug is ever shown. */
-export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" | "unrated";
+export type RecordingMatchKind = "index" | "ranked" | "unranked" | "challenge" | "unrated" | "quadrants";
 /** A recording's match type and agents per colony; size null where neither the lobby nor recorded seats tell it. */
 export interface RecordingMatchType { readonly kind: RecordingMatchKind; readonly size: 1 | 2 | 3 | 4 | null }
 
 /**
- * A match's type from its lobby: a house-* mode is the Antwars Model Index, any other mode the ranked queue, a modeless
- * lobby a house challenge or else a player-made (unranked) lobby. Recordings and Live now type a match by this one rule.
+ * A match's type from its lobby: the quadrants mode is a Quadrants match of one agent per colony, a house-* mode the
+ * Antwars Model Index, any other mode the ranked queue, a modeless lobby a house challenge or else a player-made (unranked)
+ * lobby. Recordings and Live now type a match by this one rule.
  */
 export function lobbyMatchType(lobby: { readonly mode: string | null; readonly size: 1 | 2 | 3 | 4; readonly challenge?: { readonly kind: string } }): RecordingMatchType {
+  if (lobby.mode === "quadrants") return { kind: "quadrants", size: 1 };
   const kind = lobby.mode !== null ? (lobby.mode.startsWith("house-") ? "index" : "ranked")
     : lobby.challenge?.kind === "house" ? "challenge" : "unranked";
   return { kind, size: lobby.size };
@@ -17,25 +19,29 @@ export function lobbyMatchType(lobby: { readonly mode: string | null; readonly s
 
 /** The recorded facts a recording with no readable lobby is typed by. */
 export interface RecordedMatch {
-  readonly seats: readonly { readonly colony: 0 | 1; readonly handle: string | null }[];
+  readonly seats: readonly { readonly colony: number; readonly handle: string | null }[];
   /** The record's setup.rated: false where its setup omits it, null (or absent) where it has no setup. */
   readonly rated?: boolean | null;
   /** The record's setup.modelIndex marker. */
   readonly modelIndex?: boolean;
+  /** The record's setup.colonyNames: four names exactly on a four-colony record, whose setup says colonies 4. */
+  readonly colonyNames?: readonly string[];
 }
 
 const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.startsWith(`${HOUSE_USERNAME}/`);
 
 /**
- * A recording's match type from its own recorded facts, for a recording whose lobby cannot be read: its Model Index
- * marker, then unrated; rated with every seat handle an antwars one is the Index, rated with any other handle is Ranked.
- * Null (no badge) where that cannot be told: a rated record with no marker, no non-house handle and a blank handle (never
- * "Ranked" on the rated flag alone), and a record with no setup, whose rated flag is unknown.
+ * A recording's match type from its own recorded facts, for a recording whose lobby cannot be read: a four-colony record
+ * is Quadrants, one agent per colony whatever seats it recorded; else its Model Index marker, then unrated; rated with
+ * every seat handle an antwars one is the Index, rated with any other handle is Ranked. Null (no badge) where that cannot
+ * be told: a rated record with no marker, no non-house handle and a blank handle (never "Ranked" on the rated flag alone),
+ * and a record with no setup, whose rated flag is unknown.
  */
 export function recordedMatchType(record: RecordedMatch): RecordingMatchType | null {
   const perColony = Math.max(...([0, 1] as const).map(colony => record.seats.filter(seat => seat.colony === colony).length));
   const size = perColony >= 1 && perColony <= 4 ? perColony as 1 | 2 | 3 | 4 : null;
   if (record.rated == null) return null;
+  if (record.colonyNames?.length === 4) return { kind: "quadrants", size: 1 };
   if (record.modelIndex) return { kind: "index", size };
   if (!record.rated) return { kind: "unrated", size };
   const handles = record.seats.map(seat => seat.handle);

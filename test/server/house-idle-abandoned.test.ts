@@ -26,6 +26,7 @@ import { step } from "../../src/sim/step.js";
 import type { MatchInputs } from "../../src/records/handoff.js";
 import { ManualClock } from "../live/helpers.js";
 import { HISTORICAL_CONFIG } from "../sim/fixtures.js";
+import { asTwoColony } from "../../src/sim/types.js";
 import { playable } from "../playable.ts";
 
 const HOUSE = [[1, "house-1v1"], [2, "house-2v2"], [3, "house-3v3"], [4, "house-4v4"]] as const;
@@ -110,7 +111,7 @@ it("abandoned logs replay identically through sim, stream, match record and play
   const record = matchRecord({ id: "2026-10-25T09-42-00-000Z-429", binary: packMessages(messages), logLines: logs });
   expect(record).toMatchObject({ status: "complete", result: { reason: "abandoned" }, setup: { rated: false } });
   // Full reconnect messages carrying abandonment also select 19; ordinary fulls keep their old version.
-  const full = { ...decoded[0]!.full!, result: { ...terminal.result!, nextStartMs: null } };
+  const full = { ...decoded[0]!.full!, result: { ...terminal.result!, winner: terminal.result!.winner === null ? null : asTwoColony(terminal.result!.winner), nextStartMs: null } };
   const reconnect = encodeMessage({ ...decoded[0]!, full });
   expect(reconnect[2]).toBe(19);
   expect(decodeMessage(reconnect).full!.result!.reason).toBe("abandoned");

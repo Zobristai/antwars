@@ -503,26 +503,34 @@ describe("2D dry-interior regression locks", () => {
   // Only that plumbing and those guarded branches are unlocked, not land ownership,
   // trails, temporal blending, front colour/shape, viewport geometry or encodings.
   // These hashes were measured before editing, on main 1eb159791a01dfefd4999024a8970ebe1305d1b7.
+  // Four-colony matches moved the fill's land and the front into templates shared with their four-colony passes, and
+  // widened the front search to any two colonies: the ownership and land hashes still match those bytes where they now
+  // sit; the front, encodings and uploads were re-measured then. A two-colony match's encoding and both passes' whole
+  // shader text are pinned against the baseline in territory-four.test.ts.
   const source = readFileSync(new URL("../../web/src/territory.ts", import.meta.url), "utf8");
   const hash = (s: string) => createHash("sha256").update(s).digest("hex");
   it("preserves ownership noise and the complete dry interior fill/trails/blend calculation", () => {
-    expect(hash(source.slice(source.indexOf("// Ownership at uv"), source.indexOf("const FILL_FRAGMENT")))).toBe("c6bccbe988a6f6712159cc6e0e76ec28d1ae1f4077d1b0bd680c6110e1d412fb");
-    const land = source.slice(source.indexOf("  vec4 s;", source.indexOf("const FILL_FRAGMENT")), source.indexOf("  col = awBoundary(col, vUV);"));
+    expect(hash(source.slice(source.indexOf("// Ownership at uv"), source.indexOf("/** The ground pass's dry land in a two-colony match")))).toBe("c6bccbe988a6f6712159cc6e0e76ec28d1ae1f4077d1b0bd680c6110e1d412fb");
+    const land = source.slice(source.indexOf("  vec4 s;", source.indexOf("const LAND_TWO")), source.indexOf("`;", source.indexOf("const LAND_TWO")));
     expect(hash(land)).toBe("05e4110ad1ad497509a367463e112b02ce8cbecefbb35fcd6d82b1c5ebfba4c9");
   });
   it("preserves the complete front shader apart from water discard and boundary fade", () => {
-    const front = source.slice(source.indexOf("const FRONT_FRAGMENT"), source.indexOf("export class Territory"))
+    const front = source.slice(source.indexOf("const frontFragment"), source.indexOf("/**\n * The prelude of a four-colony match's passes"))
       .replace("  if (awWaterAt(vUV) > 0.5) discard;\n", "")
       .replace("  finalColor *= awBoundaryWeight(vUV);\n", "");
     // Compared with main ff2979e629abff609b521ddd3502623dfc3c5562.
     // Exactly one rock-discard line changes the complete front; all other front bytes stay locked.
-    expect(hash(front)).toBe("aa71a0fcb3c45f524ce993e317c63cb09ccf4c2aa32fdd4486a0fa091c18964e");
+    expect(hash(front)).toBe("4e6ecaad164bd27e9f31852d08d170e83b4782bc8f8c9267960936986108f15f");
   });
-  it("preserves encodings, front bounds, viewport geometry, controls and uploads apart from the water mask", () => {
-    expect(hash(source.slice(source.indexOf("export function frontBounds")))).toBe("3a10df087f97171b350d7b4292233fbfc9c4ecd3e47174950b42cd75d40614c5");
+  it("preserves encodings, front bounds, viewport geometry, controls and uploads apart from the water mask and trail packing", () => {
+    expect(hash(source.slice(source.indexOf("export function frontBounds")))).toBe("558152add55b86995f8f47b496637fc185455dd1ff87e4e336d416cd739396e3");
     expect(hash(source.slice(source.indexOf("  setView(view:"), source.indexOf("  update(frame:")))).toBe("a55fac54e0f66a0dfef300451a587e1ce9866d169420a6bcb2c0f2958ae8ea31");
+    // Trails gained a channel per colony: the packing call stands in for the two-colony loop, whose bytes it keeps
+    // (trails-four-colonies.test.ts); every other upload byte stays locked.
     const uploads = source.slice(source.indexOf("  update(frame:"), source.indexOf("/**\n * The tile rectangle"))
-      .replace("    if (this.water.update(frame.board?.setup.terrain)) this.waterTex.source.update();\n", "");
-    expect(hash(uploads)).toBe("903dcbaa345b3d31a90cb0e895548abf5fdf37bedf4baa7850bf018dd4168ac5");
+      .replace("    if (this.water.update(frame.board?.setup.terrain)) this.waterTex.source.update();\n", "")
+      .replace("      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);\n",
+        "      for (let i = 0, n = t.length / 2; i < n; i++) {\n        d[i * 4] = t[i * 2]! * 255;\n        d[i * 4 + 1] = t[i * 2 + 1]! * 255;\n      }\n");
+    expect(hash(uploads)).toBe("6359b84d701bde11b0be407cbd0980e1afa19b767fc1ddf5e3ae1bdf997e6ca6");
   });
 });

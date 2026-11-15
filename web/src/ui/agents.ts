@@ -12,10 +12,8 @@ import { OFFER_TEXT } from "../replay.ts";
 import type { HudActions } from "./types.ts";
 import { agentDetail, agentEntries, boardRules, openAgent, tps, type AgentEntry, type AgentLineModel } from "./hud-model.ts";
 import { ICON, crownIcon, markIcon, orderIcon } from "./icons.ts";
-import { h, setAttr, setHidden, setMarkup, setText } from "./dom.ts";
+import { COLONY_INK, h, setAttr, setHidden, setMarkup, setText } from "./dom.ts";
 import { keep } from "./format.ts";
-
-const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
 
 interface Row {
   index: number;
@@ -145,7 +143,7 @@ export function mountAgents(doc: Document, actions: HudActions, hooks: AgentPane
     setText(row.title, e.name ?? e.model);
     setText(row.sub, e.name ? e.model : "");
     setText(row.elo, e.elo ?? "");
-    setMarkup(row.order, orderIcon(e.order.kind, e.order.guard) + (e.order.target === null ? "" : crownIcon(COLONY_CSS[e.order.target])));
+    setMarkup(row.order, orderIcon(e.order.kind, e.order.guard) + (e.order.target === null ? "" : crownIcon(COLONY_INK[e.order.target])));
     setAttr(row.order, "title", e.order.text);
     setHidden(row.idle, !e.idle);
     writeLine(row.latestIcon, row.latestText, latest, e.shade);

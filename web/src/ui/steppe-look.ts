@@ -9,6 +9,7 @@ import { NOISE_GLSL } from "../soil.ts";
 import { TRAIL_RES } from "../buffer.ts";
 import type { BoardLook, Rgb } from "../board-look.ts";
 import { colonyWash } from "../colony-palette.ts";
+import { laterColonies } from "../board3d/owner-levels.ts";
 
 /** sRGB albedo, a little darker than sand so the pale ants and both colony hues stand out on it. */
 export const EARTH_LIGHT: Rgb = [0.70, 0.61, 0.46];
@@ -19,7 +20,7 @@ export const GRAVEL_LIGHT: Rgb = [0.65, 0.63, 0.58];
 export const GRAVEL_DARK: Rgb = [0.53, 0.51, 0.47];
 export const PEBBLE: Rgb = [0.41, 0.37, 0.31];
 /** A colony's territory wash: its name's colour pushed so it reads on warm earth (colony-palette.ts WASH). */
-const hue = (colony: 0 | 1): Rgb => colonyWash(colony).hue;
+const hue = (colony: number): Rgb => colonyWash(colony).hue;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -164,8 +165,55 @@ vec3 d1Water(vec2 tile, float time) {
 }
 `;
 
+/** A GLSL choice by colony id c, 0 to 3, of each colony's value. */
+const byColony = (value: (colony: number) => string) => `c == 0 ? ${value(0)} : c == 1 ? ${value(1)} : c == 2 ? ${value(2)} : ${value(3)}`;
+
+/** A four-colony match's 2D wash hue and depth by colony id, 0 to 3, as a two-colony match's are for colonies 0 and 1. */
+const washes2d = () => /* glsl */ `vec3 d1Wash(int c) { return ${byColony(c => vec3(hue(c)))}; }
+float d1Depth(int c) { return ${byColony(c => colonyWash(c).depth.toFixed(1))}; }
+`;
+
+/** The 2D territory in a two-colony match: each colony's wash, read with ownership(). */
+const territory2d = () => /* glsl */ `  vec4 s;
+  float r = ownership(vUV, s);
+  float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
+  float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
+  float own = max(w0, w1);
+  vec3 hue = w0 >= w1 ? ${vec3(hue(0))} : ${vec3(hue(1))};
+  // Cyan on warm earth greys sooner than amber does, so its wash is a little deeper.
+  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * (w0 >= w1 ? ${colonyWash(0).depth.toFixed(1)} : ${colonyWash(1).depth.toFixed(1)});
+  col = mix(col, mix(col, hue, 0.6), wash);
+  float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
+  col = mix(col, hue * 0.5, rim * 0.75);
+`;
+
+/** The same in a four-colony match, read with ownership4: the colony leading on each side of a meeting in its own wash. */
+const TERRITORY_2D_FOUR = /* glsl */ `  vec4 s;
+  int ca;
+  int cb;
+  float r = ownership4(vUV, s, ca, cb);
+  float w0 = ca < 0 ? 0.0 : clamp(r * 2.0 - 1.0, 0.0, 1.0);
+  float w1 = cb < 0 ? 0.0 : clamp(1.0 - r * 2.0, 0.0, 1.0);
+  float own = max(w0, w1);
+  int cw = w0 >= w1 ? ca : cb;
+  vec3 hue = d1Wash(cw);
+  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * d1Depth(cw);
+  col = mix(col, mix(col, hue, 0.6), wash);
+  float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
+  col = mix(col, hue * 0.5, rim * 0.75);
+`;
+
+/**
+ * The 2D trails: every colony's traffic compacts the ground alike. A four-colony match sums all four of its colonies'
+ * channels (channel c of the trail texture is colony c's); a two-colony match's code is unchanged.
+ */
+const trails2d = (four: boolean) => four
+  ? "  vec4 tr = texture(uTrail, vUV) * uTrails;\n  col *= 1.0 - 0.18 * clamp(tr.r + tr.g + tr.b + tr.a, 0.0, 1.0);\n"
+  : "  vec2 tr = texture(uTrail, vUV).rg * uTrails;\n  col *= 1.0 - 0.18 * clamp(tr.x + tr.y, 0.0, 1.0);\n";
+
 /** The 2D ground pass: the baked steppe, water, boulders with their shadows, the territory wash and trails. */
-function fill2d(prelude: string): string {
+function fill2d(prelude: string, colonies: 2 | 4 = 2): string {
+  const four = colonies === 4;
   return /* glsl */ `${prelude}
 in vec2 vScreen;
 uniform sampler2D uSoil;
@@ -174,7 +222,7 @@ vec4 d1Cell(vec2 cell) { return texture(uWater, (clamp(cell, vec2(0.0), uMap - 1
 bool d1On(vec2 c) { return c.x >= 0.0 && c.y >= 0.0 && c.x < uMap.x && c.y < uMap.y; }
 float d1Wet(vec2 c) { return d1On(c) ? step(0.5, d1Cell(c).r) : 0.0; }
 float d1Stone(vec2 c) { return d1On(c) ? step(0.5 / 255.0, d1Cell(c).g) : 0.0; }
-${WATER_2D("d1Wet")}
+${WATER_2D("d1Wet")}${four ? washes2d() : ""}
 // A boulder over its streamed footprint: a rounded stone lit from the upper left with lichen on it, and scree in the
 // footprint's corners, so the whole blocked footprint still reads as rock.
 vec3 d1Boulder(vec2 tile, vec4 mask, vec3 ground) {
@@ -224,52 +272,50 @@ void main() {
     col *= mix(0.7, 1.0, smoothstep(0.0, 0.45, dr));
   }
   // Territory: a wash of the colony's hue, deeper toward the front, edged where it meets unheld ground.
-  vec4 s;
-  float r = ownership(vUV, s);
-  float w0 = clamp(r * 2.0 - 1.0, 0.0, 1.0);
-  float w1 = clamp(1.0 - r * 2.0, 0.0, 1.0);
-  float own = max(w0, w1);
-  vec3 hue = w0 >= w1 ? ${vec3(hue(0))} : ${vec3(hue(1))};
-  // Cyan on warm earth greys sooner than amber does, so its wash is a little deeper.
-  float wash = (0.28 + 0.18 * s.g * s.g) * smoothstep(0.5, 0.78, own) * (w0 >= w1 ? ${colonyWash(0).depth.toFixed(1)} : ${colonyWash(1).depth.toFixed(1)});
-  col = mix(col, mix(col, hue, 0.6), wash);
-  float rim = (1.0 - smoothstep(0.0, 0.16, abs(own - 0.5))) * step(0.02, own);
-  col = mix(col, hue * 0.5, rim * 0.75);
-  // Trails: ground compacted by traffic, a little darker.
-  vec2 tr = texture(uTrail, vUV).rg * uTrails;
-  col *= 1.0 - 0.18 * clamp(tr.x + tr.y, 0.0, 1.0);
-  // The playable edge: a crisp darker lip just inside it.
+${four ? TERRITORY_2D_FOUR : territory2d()}  // Trails: ground compacted by traffic, a little darker.
+${trails2d(four)}  // The playable edge: a crisp darker lip just inside it.
   vec2 lip = min(vUV, 1.0 - vUV) * uMap;
   col *= mix(0.7, 1.0, smoothstep(0.0, 0.8, min(lip.x, lip.y)));
   finalColor = vec4(col, 1.0);
 }`;
 }
 
-/** Where the colonies meet: a dark seam with each colony's hue glowing on its own side, premultiplied. */
-function front2d(prelude: string): string {
+/**
+ * Where the colonies meet: a dark seam with each colony's hue glowing on its own side, premultiplied. In a four-colony
+ * match, between the two colonies leading at each point, and only where two colonies hold ground, so a colony's edge
+ * against unheld ground draws none.
+ */
+function front2d(prelude: string, colonies: 2 | 4 = 2): string {
+  const four = colonies === 4;
+  const read = four
+    ? "  vec4 s;\n  int ca;\n  int cb;\n  float r = ownership4(vUV, s, ca, cb);\n  if (s.g < 0.45 || cb < 0) discard;\n"
+    : "  vec4 s;\n  float r = ownership(vUV, s);\n  if (s.g < 0.45) discard;\n";
+  const side = four ? "d1Wash(r > 0.5 ? ca : cb)" : `r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))}`;
   return /* glsl */ `${prelude}
-void main() {
+${four ? washes2d() : ""}void main() {
   if (awWaterAt(vUV) > 0.5 || awRockAt(vUV) > 0.5) discard;
-  vec4 s;
-  float r = ownership(vUV, s);
-  if (s.g < 0.45) discard;
-  float d = abs(r - 0.5);
+${read}  float d = abs(r - 0.5);
   float near = smoothstep(0.45, 0.9, s.g);
   float seam = (1.0 - smoothstep(0.02, 0.09, d)) * near;
   float glow = (1.0 - smoothstep(0.0, 0.4, d)) * near * 0.4;
   if (seam + glow < 0.01) discard;
-  vec3 side = r > 0.5 ? ${vec3(hue(0))} : ${vec3(hue(1))};
+  vec3 side = ${side};
   float a = clamp(seam * 0.8 + glow * 0.45, 0.0, 1.0);
   vec3 col = vec3(0.10, 0.08, 0.06) * seam * 0.8 + side * glow * 0.45;
   finalColor = vec4(col, a) * awBoundaryWeight(vUV);
 }`;
 }
 
-/** The 3D ground's added helpers, after Current's (board3d/ground.ts DEFS), in the match's colony washes. */
-const definitions3d = () => /* glsl */ `
+/**
+ * The 3D ground's added helpers, after Current's (board3d/ground.ts defs), in the match's colony washes: for two
+ * colonies exactly the two-colony helpers; a four-colony match's also wash colonies 2 and 3.
+ */
+const definitions3d = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 ${NOISE_GLSL}
-vec3 d1Hue(vec4 s) { return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r)); }
+${colonies > 2
+    ? `vec3 d1Hue(vec4 s) {\n${laterColonies(vec3(hue(2)), vec3(hue(3)))}  return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r));\n}`
+    : `vec3 d1Hue(vec4 s) { return mix(${vec3(hue(1))}, ${vec3(hue(0))}, step(0.75, s.r)); }`}
 vec3 d1Owned(vec4 s, vec3 soil) { return mix(soil, mix(soil, d1Hue(s), 0.6), 0.45 * s.b); }
 float d1WetCell(vec2 c) {
   if (c.x < 0.0 || c.y < 0.0 || c.x >= uMap.x || c.y >= uMap.y) return 1.0;
@@ -281,9 +327,11 @@ ${WATER_2D("d1WetCell")}
 
 /**
  * The 3D ground's colour before lighting, in place of the plain code: the baked steppe, the wash, trails, the seam,
- * water. Beyond the playable bounds the ground is one plain shade, the steppe's in-bounds mean (ground.ts).
+ * water. Beyond the playable bounds the ground is one plain shade, the steppe's in-bounds mean (ground.ts). The trail
+ * ink marks any colony's traffic alike: a four-colony match takes the strongest of its four colonies' channels (channel
+ * c of the trail texture is colony c's); a two-colony match's code is unchanged.
  */
-const DIFFUSE_3D = /* glsl */ `
+const diffuse3d = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 vec2 awTile = vec2(vPositionW.x, uMap.y - vPositionW.z);
 vec2 awUV = awTile / uMap;
@@ -300,10 +348,10 @@ if (awUV.x >= 0.0 && awUV.y >= 0.0 && awUV.x < 1.0 && awUV.y < 1.0) {
   vec4 awB = texture2D(uB, awCentre);
   awCol = mix(d1Owned(awA, awSoil), d1Owned(awB, awSoil), uBlend);
   vec2 awTrailCell = clamp(floor(awTile * ${TRAIL_RES.toFixed(1)}), vec2(0.0), uMap * ${TRAIL_RES.toFixed(1)} - 1.0);
-  vec2 awTrail = texture2D(uTrail, (awTrailCell + 0.5) / (uMap * ${TRAIL_RES.toFixed(1)})).rg;
+${colonies > 2 ? "  vec4 awTrail = texture2D(uTrail, (awTrailCell + 0.5) / (uMap * " + TRAIL_RES.toFixed(1) + "));" : "  vec2 awTrail = texture2D(uTrail, (awTrailCell + 0.5) / (uMap * " + TRAIL_RES.toFixed(1) + ")).rg;"}
   vec2 awTrailLocal = awTile * ${TRAIL_RES.toFixed(1)} - awTrailCell - 0.5;
   float awStroke = 1.0 - smoothstep(0.28, 0.4, max(abs(awTrailLocal.x), abs(awTrailLocal.y)));
-  awCol *= 1.0 - 0.3 * smoothstep(0.04, 0.32, max(awTrail.r, awTrail.g)) * awStroke * uTrails;
+  awCol *= 1.0 - 0.3 * smoothstep(0.04, 0.32, ${colonies > 2 ? "max(max(awTrail.r, awTrail.g), max(awTrail.b, awTrail.a))" : "max(awTrail.r, awTrail.g)"}) * awStroke * uTrails;
   float awLine = awBorder(awA, awLocal) * (1.0 - uBlend) + awBorder(awB, awLocal) * uBlend;
   awCol = mix(awCol, vec3(0.11, 0.09, 0.07), clamp(awLine, 0.0, 1.0) * 0.75 * uFrontOn);
   if (awWet > 0.5) awCol = d1Water(awMirror, uTime);
@@ -319,7 +367,7 @@ export const STEPPE_LOOK: BoardLook = {
   board2d: { soil: SOIL_2D, fill: fill2d, front: front2d },
   board3d: {
     soil: steppe,
-    ground: (point, current) => point === "definitions" ? current + definitions3d() : point === "diffuse" ? DIFFUSE_3D : current,
+    ground: (point, current, colonies = 2) => point === "definitions" ? current + definitions3d(colonies) : point === "diffuse" ? diffuse3d(colonies) : current,
     rock: [0.56, 0.53, 0.48],
     // Neutral daylight from the same quarter as Current's warm key, so the ground shows its own colour.
     light: {

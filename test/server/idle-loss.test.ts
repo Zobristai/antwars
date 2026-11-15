@@ -27,6 +27,7 @@ import { step } from "../../src/sim/step.js";
 import { startHarness } from "../mcp/harness.js";
 import { memoryWatchStore } from "../live/watch-fixtures.js";
 import { HISTORICAL_CONFIG as HISTORICAL_TEMPLATE } from "../sim/fixtures.js";
+import { asTwoColony } from "../../src/sim/types.js";
 import { connect, tempDir, waitFor, type Agent } from "./helpers.js";
 
 // Every match plays at grid scale 2: main's templates are built through the one constructor.
@@ -342,7 +343,7 @@ describe("idle-end logs replay through every consumer", () => {
     expect(messages.slice(0, -1).every(message => message[2] !== 23)).toBe(true);
     const record = matchRecord({ id: "2026-10-27T07-00-00-000Z-429", binary: packMessages(messages), logLines: logs });
     expect(record).toMatchObject({ status: "complete", result: { reason: "idle", winner: terminal.result!.winner } });
-    const full = { ...decoded[0]!.full!, result: { ...terminal.result!, nextStartMs: null } };
+    const full = { ...decoded[0]!.full!, result: { ...terminal.result!, winner: terminal.result!.winner === null ? null : asTwoColony(terminal.result!.winner), nextStartMs: null } };
     const reconnect = encodeMessage({ ...decoded[0]!, full });
     expect(reconnect[2]).toBe(23);
     expect(decodeMessage(reconnect).full!.result).toMatchObject({ reason: "idle", decidedBy: terminal.result!.decidedBy });

@@ -25,8 +25,8 @@ function world() {
   return { ids, lobbies };
 }
 
-/** Every public ranked mode the queue accepts: each row whose house flag is false. */
-const publicModes = Object.entries(QUEUE_MODES).filter(([, row]) => row !== undefined && !row.house).map(([mode]) => mode).sort();
+/** Every public ranked mode the queue accepts: each row whose house flag is false, less the unrated quadrants. */
+const publicModes = Object.entries(QUEUE_MODES).filter(([mode, row]) => row !== undefined && !row.house && mode !== "quadrants").map(([mode]) => mode).sort();
 
 describe.skipIf(!host)("public ranked modes never pair two antwars-owned handles", { timeout: 60_000 }, () => {
   it("covers the public 1v1 mode", () => {

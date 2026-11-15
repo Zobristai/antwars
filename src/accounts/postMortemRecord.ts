@@ -19,6 +19,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, type Gunzip } from "node:zlib";
 import { entryCode } from "../replays/recording.js";
+import type { ColonyId } from "../sim/types.js";
 
 /** One element of events, replies or a seat's commands longer than this fails the read, except a replies text line. */
 export const ELEMENT_CAP_BYTES = 256 * 1024;
@@ -38,7 +39,7 @@ export interface RefusedEntry { readonly seat: number; readonly tick: number | n
 export interface NoEffectEntry { readonly seat: number; readonly index: number; readonly tick: number; readonly type: string }
 
 /** What one pass learnt of who holds which seat: by seat element position, and the record's agent map. */
-export interface SeatMap { readonly positions: readonly ({ seat: number; colony: 0 | 1 } | null)[]; readonly agentSeats: Readonly<Record<string, unknown>> }
+export interface SeatMap { readonly positions: readonly ({ seat: number; colony: ColonyId } | null)[]; readonly agentSeats: Readonly<Record<string, unknown>> }
 
 /** A reproduced re-run's findings: [seat, its recorded commands] and one bit per command (postMortemChild.ts packFindings). */
 export interface Findings { readonly counts: readonly (readonly [number, number])[]; readonly bits: Uint8Array }
@@ -87,7 +88,7 @@ export interface PageResult<T> {
 }
 
 /** What a first pass learnt of the record's seats and refused calls, before any page is read. */
-export interface SeatElement { readonly seat: number; readonly colony: 0 | 1; readonly commands: number; readonly refused: number }
+export interface SeatElement { readonly seat: number; readonly colony: ColonyId; readonly commands: number; readonly refused: number }
 export interface Survey {
   readonly source: "calls" | "commands";
   /** Seat elements in record order, each with its commands and refused commands. */
@@ -142,7 +143,7 @@ export interface ReducedCommand {
 
 export interface ReducedSeat {
   readonly seat: number;
-  readonly colony: 0 | 1;
+  readonly colony: ColonyId;
   readonly handle: string | null;
   /** Rerun mode only; null otherwise or where the record has none. */
   readonly joinedTick: number | null;
@@ -262,6 +263,8 @@ interface Capture {
 
 const ROOT_KEPT = new Set(["id", "status", "rules", "result", "rerun", "codeVersion", "agentSeats", "setup"]);
 const SEAT_KEPT = new Set(["seat", "colony", "handle", "joinedTick"]);
+/** The colonies a seat element may name: 0 and 1, and 2 and 3 in a four-colony match. */
+const RECORD_COLONIES: readonly ColonyId[] = [0, 1, 2, 3];
 /** Arrays read one element at a time: the separators between their elements are not charged to OTHER_CAP_BYTES. */
 const STREAMED = new Set<Role>(["events", "replies", "commands"]);
 const WHITESPACE = new Set([0x20, 0x09, 0x0a, 0x0d]);
@@ -517,9 +520,9 @@ export function recordScanner(mode: ScanMode = "refused", options: ScannerOption
     countOther(1);
     if (frame.role === "seat" && !page) {
       const s = frame.seat!;
-      if (!Number.isSafeInteger(s.seat) || (s.colony !== 0 && s.colony !== 1)) fail();
-      elements[s.position] = { seat: s.seat as number, colony: s.colony as 0 | 1, commands: s.count, refused: s.refused };
-      seats.push({ seat: s.seat as number, colony: s.colony as 0 | 1, handle: typeof s.handle === "string" ? s.handle : null,
+      if (!Number.isSafeInteger(s.seat) || !RECORD_COLONIES.includes(s.colony as ColonyId)) fail();
+      elements[s.position] = { seat: s.seat as number, colony: s.colony as ColonyId, commands: s.count, refused: s.refused };
+      seats.push({ seat: s.seat as number, colony: s.colony as ColonyId, handle: typeof s.handle === "string" ? s.handle : null,
         joinedTick: mode === "rerun" && Number.isSafeInteger(s.joinedTick) ? s.joinedTick as number : null, commands: s.commands });
     }
     if (stack.length === 0) finished = true;

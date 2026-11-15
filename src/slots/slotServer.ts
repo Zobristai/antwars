@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { randomUUID } from "node:crypto";
-import type { InstanceClaim, Lobbies, MatchOutcome, SlotHolder } from "../lobby/lobbies.js";
+import type { InstanceClaim, Lobbies, MatchOutcome, MatchResult, SlotHolder } from "../lobby/lobbies.js";
 import type { LobbySeat } from "../mcp/game.js";
 import type { ModelLabels, ServiceTiers, ThinkingLevels } from "../rating/ratings.js";
 import type { ColonyNamePair } from "../sim/colonyNames.js";
@@ -109,7 +109,7 @@ export interface SlotHost<S extends SaveIdentity = SaveIdentity> {
   /** A lobby's match was not played; its seated identities are told so when they join or call. */
   notPlayed(lobbyId: string, identityIds: readonly string[]): void;
   /** The names the seated or restored match plays under, recorded on its lobby when it begins or is adopted; omitted, none are recorded. */
-  colonyNames?(): ColonyNamePair;
+  colonyNames?(): ColonyNamePair | undefined;
 }
 
 export interface SlotRunnerOptions<S extends SaveIdentity = SaveIdentity> {
@@ -146,7 +146,7 @@ export interface SlotRunner {
    * whose seat never joined when that abandoned it.
    */
   ended(outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers, modelLabels?: ModelLabels,
-    absentColonies?: readonly ColonyId[]): void;
+    absentColonies?: readonly ColonyId[], result?: MatchResult): void;
   /** Stops polling; publishes no outcome (a restart's successor records it). */
   close(): void;
 }
@@ -167,7 +167,7 @@ const seatsOf = (holder: SlotHolder): LobbySeat[] => {
   return holder.colonies.flatMap((seats, colony) => seats.map((seat) => {
     const ordinal = (held.get(seat.id) ?? 0) + 1;
     held.set(seat.id, ordinal);
-    return { identityId: seat.id, displayName: seat.displayName, colony: colony as 0 | 1, seat: ordinal };
+    return { identityId: seat.id, displayName: seat.displayName, colony, seat: ordinal };
   }));
 };
 
@@ -184,7 +184,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
   /** An ending not yet recorded; kept until its release commits. */
   let pending: { readonly lobbyId: string; readonly outcome: MatchOutcome;
     readonly thinkingLevels?: ThinkingLevels; readonly serviceTiers?: ServiceTiers; readonly modelLabels?: ModelLabels;
-    readonly absentColonies?: readonly ColonyId[]; readonly identityIds?: readonly string[] } | null = null;
+    readonly absentColonies?: readonly ColonyId[]; readonly result?: MatchResult; readonly identityIds?: readonly string[] } | null = null;
   /** A save this run restored and has not yet adopted: its lobby, the run it takes the match over from, and the lobby's seated identities. */
   let restored: { readonly lobbyId: string; readonly fromRunId: string; readonly identityIds: readonly string[] } | null = null;
   /** The earlier run whose save this run is waiting for, so the wait is logged once. */
@@ -306,7 +306,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
     if ((await lobbies.resolveSlot(slot))?.runId !== runId) return supersede();
     if (pending !== null) {
       const released = await lobbies.endMatch(pending.lobbyId, runId, pending.outcome, pending.thinkingLevels, pending.serviceTiers, pending.modelLabels,
-        pending.absentColonies);
+        pending.absentColonies, pending.result);
       if (!released.ok && released.reason === "superseded") return supersede();
       // Released, or already released by an earlier attempt whose reply was lost.
       if (pending.identityIds !== undefined) host.notPlayed(pending.lobbyId, pending.identityIds);
@@ -375,11 +375,12 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
     get superseded() {
       return superseded;
     },
-    ended(outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies) {
+    ended(outcome, thinkingLevels, serviceTiers, modelLabels, absentColonies, result) {
       if (superseded || current === null) return;
       // Snapshot metadata with the outcome: retries must not read a later match's agents.
       pending = { lobbyId: current, outcome, thinkingLevels: thinkingLevels && { ...thinkingLevels }, serviceTiers: serviceTiers && { ...serviceTiers },
-        modelLabels: modelLabels && { ...modelLabels }, ...(absentColonies?.length ? { absentColonies: [...absentColonies] } : {}) };
+        modelLabels: modelLabels && { ...modelLabels }, ...(absentColonies?.length ? { absentColonies: [...absentColonies] } : {}),
+        ...(result === undefined ? {} : { result: { reason: result.reason, eliminations: result.eliminations.map(e => ({ ...e })) } }) };
     },
     close() {
       closed = true;

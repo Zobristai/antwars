@@ -19,7 +19,7 @@ import { setBoardLook } from "../../board-look.ts";
 import { STEPPE_LOOK } from "../steppe-look.ts";
 import { navigation } from "../nav.ts";
 import { boardHref, keep } from "../format.ts";
-import { h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
+import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
 import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
@@ -28,13 +28,12 @@ import { mountDeck } from "./deck.ts";
 import { deckBrand } from "./brand.ts";
 import { mountTeams } from "./pane.ts";
 import { mountAgentDialog } from "./dialog.ts";
-import { caption, legend, type Caption, type Legend } from "./model.ts";
+import { caption, colonyCount, legend, type Caption, type Legend } from "./model.ts";
 
 /** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end. */
 const BUTTON_IN_BAR = "(min-width: 520px)";
 /** From this width the deck stands over the board; narrower, the stacked deck is too tall to come before it. */
 const DECK_FIRST = "(min-width: 760px)";
-const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
@@ -168,16 +167,33 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
-  const paintLegend = (l: Legend) => {
-    const keyNow = `${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
+  /** Whether the rest is written as clauses (a four-colony match), so a later plain write replaces them. */
+  let restClauses = false;
+  /** four: a four-colony match, whose phone legend breaks only between clauses (deck.css). */
+  const paintLegend = (l: Legend, four: boolean) => {
+    const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
     if (keyNow === legendKey) return;
     legendKey = keyNow;
     frameEl.dataset.rule = l.rule;
+    if (legendEl.classList.contains("is-four") !== four) legendEl.classList.toggle("is-four", four);
     setHidden(dot, l.dot === null);
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");
     // A no-break space opens the rest: its own leading space would be trimmed beside the mode word.
-    setText(rest, l.words.length > 1 ? `\u00a0· ${l.words.slice(1).join(" · ")}` : "");
+    const restText = l.words.length > 1 ? `\u00a0· ${l.words.slice(1).join(" · ")}` : "";
+    if (four) {
+      // The same text, each "· clause" its own unbreakable span; the line may break at the spaces between them, and
+      // before the link (wbr).
+      rest.textContent = "";
+      l.words.slice(1).forEach((word, i) => rest.append(i === 0 ? "\u00a0" : " ", h(doc, "span", "d1-clause", `· ${word}`)));
+      if (l.words.length > 1 && l.back) rest.append(h(doc, "wbr"));
+      restClauses = true;
+    } else if (restClauses) {
+      rest.textContent = restText;
+      restClauses = false;
+    } else {
+      setText(rest, restText);
+    }
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
   };
@@ -185,14 +201,14 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   /** Nothing painted yet, so the first frame always writes the lane. */
   let captionKey = "\u0000";
   /** drawn: the match's drawn colony names (unrated), each then shown in its colony's colour with its source note. */
-  const paintCaption = (c: Caption | null, drawn: readonly [string, string] | undefined) => {
+  const paintCaption = (c: Caption | null, drawn: readonly string[] | undefined) => {
     const keyNow = c ? JSON.stringify([c, drawn ?? null]) : "";
     if (keyNow === captionKey) return;
     captionKey = keyNow;
     cap.dataset.kind = c?.kind ?? "none";
     setHidden(capBar, c === null);
     if (!c) { setText(capWhat, ""); setText(capWhen, ""); setText(capWho, ""); return; }
-    cap.style.setProperty("--d1-side", COLONY_CSS[c.colony]);
+    cap.style.setProperty("--d1-side", COLONY_INK[c.colony]!);
     // A drawn colony's id, for the fall headline's ground where its colour needs one (colony-ground.css).
     if (drawn) cap.dataset.colony = String(c.colony);
     else delete cap.dataset.colony;
@@ -218,7 +234,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     const frame = view.frame;
     const b = frame?.board ?? null;
     paintBoardToggle(view.board);
-    paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled));
+    paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled), b !== null && colonyCount(b.setup) > 2);
     paintCaption(caption(frame), frame?.board?.setup.colonyNames);
     deck.update(frame);
     teams.update(view, b === null && /connecting/i.test(view.connection));

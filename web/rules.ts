@@ -1,11 +1,12 @@
 import { COUNT_MARK_MAX_COUNT_TEXT, type QueenHpRules, type QueenRules, type SimConfig } from "../src/sim/config.js";
 import { countMarkVerbs, lineMarksEnabled } from "../src/sim/patrol.js";
 import { WORDS } from "../src/sim/types.js";
-import { frontlineFoodLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
+import { frontlineFoodLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, FOUR_COLONY_IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
 import { DEFAULT_HOUSE_IDLE_SECONDS, DEFAULT_MCP_CONFIG } from "../src/mcp/config.js";
 import { createTerrain } from "../src/sim/terrain.js";
 import { mapLayoutDescription } from "../src/sim/mapShapes.js";
-import { mapBoardSize, undrawnColonyCaps, undrawnMatchTicks } from "../src/sim/mapBoard.js";
+import { colonyCountOf, mapBoardSize, undrawnColonyCaps, undrawnMatchTicks } from "../src/sim/mapBoard.js";
+import { generateQuadrantBoard } from "../src/sim/quadrantMap.js";
 
 /**
  * The spectator page's wordmark and credit (web/src/story.ts PAGE_COPY), written here as well: the image holds
@@ -55,6 +56,31 @@ export function queensRoute(queenHp: QueenHpRules | undefined, founding: QueenRu
   return queenHp !== undefined ? "all queens killed" : founding === undefined ? "the enemy queen overrun" : "every enemy queen overrun";
 }
 
+/**
+ * The Maps section of a four-colony match: every map is a quadrant board, mirrored left to right and top to bottom
+ * (src/sim/quadrantMap.ts). Board size and water come from the board each map generates; neither depends on the
+ * seed, which places only rocks and centre food.
+ */
+function quadrantMapLines(config: SimConfig, context: { readonly undrawn?: boolean }, tiles: (n: number) => string, scale: number): string[] {
+  const terrain = config.terrain;
+  const maps = terrain?.maps ?? [];
+  const boards = maps.map(map => ({ map, board: generateQuadrantBoard(map, 0) }));
+  const fine = (n: number) => n * scale;
+  const selectable = boards.filter(({ map }) => terrain?.mapId === undefined || map.id === terrain.mapId);
+  // Before the draw, every size the selectable maps play at; after it, the drawn match's.
+  const sizes = context.undrawn === true
+    ? selectable.map(({ board }) => ({ width: fine(board.width), height: fine(board.height) }))
+    : [{ width: config.mapWidth, height: config.mapHeight }];
+  const distinct = sizes.filter((size, i) => sizes.findIndex(other => other.width === size.width && other.height === size.height) === i);
+  return [
+    distinct.length === 1 ? `The playable board is ${tiles(distinct[0]!.width)} wide and ${tiles(distinct[0]!.height)} high.`
+      : `The map the seed selects sets the playable board: ${distinct.map(size => `${size.width}x${size.height}`).join(" or ")} tiles, width by height.`,
+    `${count(maps.length, "map")} mirrored left to right and top to bottom into four quadrants, one colony starting in each, around a contested centre. ${terrain?.mapId === undefined ? "The match seed selects the map." : `Selected map: ${maps.find((map) => map.id === terrain.mapId)?.name}.`} Water is impassable to ants and marks; ants route around it.`,
+    `The match seed also places rocks, each with a mirror image in every quadrant. Both boards show faceted grey boulders. Rocks are impassable to ants and marks, and queens cannot be founded on them. Ants route around rocks the same way as water. Rocks never overlap water, food or a nest, never lie in the centre, and keep the four nests, the centre and every start area connected by land.`,
+    ...boards.map(({ map, board }) => `${map.name}: ${mapLayoutDescription(map, terrain!.referenceWidth, terrain!.referenceHeight)}. Its board is ${tiles(fine(board.width))} wide and ${tiles(fine(board.height))} high. ${board.water.length === 0 ? "Open land, with no water" : `Water rectangles (top-left tile, width and height): ${board.water.map((r) => `(${fine(r.x)}, ${fine(r.y)}), ${tiles(fine(r.width))} wide and ${tiles(fine(r.height))} high`).join("; ")}`}.`),
+  ];
+}
+
 /** The Lobbies section: how a seated agent leaves a lobby before its match starts (leave_lobby, src/accounts/service.ts). */
 export const LEAVE_LOBBY_LINE = "An agent seated in a lobby can leave it with leave_lobby (its key and the lobby's id) at any time before the match starts, with no rating change and no charge to a challenge allowance. When the last seated agent leaves, the lobby closes. The match starts when the lobby stops accepting joins: its last seat fills or its creator starts it. After that, leaving is refused.";
 
@@ -93,13 +119,26 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
   const sameTickEnd = queenHp !== undefined ? "queens killed" : "double overrun or queens killed";
   const route = queenHp !== undefined ? `${queensRoute(queenHp, founding)}: a colony loses when every one of its queens is dead` : queensRoute(queenHp, founding);
   const earlyRoute = early === undefined ? [] : [`a sustained territory lead: from ${minutes(early.minTick)}, holding at least ${area(early.minHeldTiles)} and ${early.territoryRatioPermille / 1000} times the opponent's territory for ${minutes(early.holdTicks)} without a break`];
+  // A four-colony match (src/sim/elimination.ts): elimination, the last colony with a living queen, the majority
+  // hold and the time-up ranking replace the two-colony routes; every two-colony config keeps the lines below.
+  const four = colonyCountOf(config) === 4;
+  const elimination = "A colony is eliminated when it loses its last queen or its seat goes idle: its ants are removed, its territory turns neutral, and the match continues for the other colonies.";
+  const majorityHold = (rules: NonNullable<SimConfig["earlyWin"]>) =>
+    `more than half of all owned territory, and at least ${area(rules.minHeldTiles)}, for ${minutes(rules.holdTicks)} without a break`;
+  const fourRoutes = ["the last colony with a living queen wins", ...(early === undefined ? [] : [`a sustained territory lead: from ${minutes(early.minTick)}, holding ${majorityHold(early)}`]),
+    `time up: after ${matchLength} the surviving colony with the most kills wins, with territory breaking a tie`];
+  const timeUpOrder = "ties go to more territory, then more living ants, then more food delivered";
   const example = counts === undefined && config.wordMarksDisabled
     ? 'For example, order {"kind":"hold"} keeps the squad in place.'
     : counts === undefined
     ? `For example, mark ATTACK W FEW lays a scent mark on a tile where one of the agent's squad ants stands; the page shows a mark's words as written, "ATTACK · W · FEW".`
     : `For example, count_mark DEFEND 15 at tile 30, 32 asks 15 ants outside squads to ${counts.defendHolds ? `walk to that tile, hold there and bite only enemies within ${scale} tiles (incl. diagonals), never chasing` : `hold and pursue enemies within ${tiles(counts.defendTiles)} of that tile`}; the board and the feed read "DEFEND · ${counts.casteSelection ? "any · " : ""}15 requested · 12 answered" once 12 have answered.`;
   return [
-    { title: "How to win", lines: [
+    { title: "How to win", lines: four ? [
+      `Be the last colony left: kill every enemy queen.${queenHp === undefined ? "" : ` Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`} A colony that loses its last queen, or whose seat goes idle, is eliminated, and the others play on.`,
+      ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold ${majorityHold(early)}.`]),
+      `At ${matchLength}, the surviving colony with the most kills wins. Ties go to territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor. Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off.${counts?.combatTotals ? " This score is separate from the kills shown on count marks, which go to the biggest hit." : ""}`,
+    ] : [
       queenHp !== undefined
         ? `Kill every enemy queen. Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`
         : `${founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"}: hold an enemy majority near her for ${minutes(config.overrunTicks)}${config.overrunGraceTicks > 0 ? `, after the first ${minutes(config.overrunGraceTicks)}` : ""}.`,
@@ -108,28 +147,39 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
         ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.`
         : `At ${matchLength}, hold more territory. Ties go to living ants, then food delivered; if still equal, the match is a draw.`,
     ] },
-    { title: "Overview", lines: [
+    // The spectator display's share line and key are left out of a four-colony page: they describe the two-colony display.
+    { title: "Overview", lines: four ? [
+      "AI agents command four ant colonies, each against the other three. Each colony's ants hold territory, carry food home and bite enemies; its agents direct squads and lay marks.",
+      `${fourRoutes.length === 3 ? "Three" : "Two"} ways a match ends: ${fourRoutes.join("; ")}. ${elimination}`,
+    ] : [
       "AI agents command two ant colonies. Each colony's ants hold territory, carry food home and bite enemies; its agents direct squads and lay marks.",
       `Three ways a match ends: ${[route, ...earlyRoute, `time up: after ${matchLength} ${config.adjudication === "kills-first" ? "the colony with more kills wins, with territory breaking a tie" : "the colony holding more territory wins"}`].join("; ")}. ${config.adjudication === "kills-first" ? "The same scoring order applies if both colonies lose their last queen on the same tick. " : ""}Territory held: Share of colony-held tiles · the two colonies add to 100%.`,
       `Key: ${VISUAL_KEY}.`,
     ] },
-    { title: "Winning", lines: [
+    { title: "Winning", lines: four ? [
+      `A match lasts ${matchLength}. Four colonies play, each against the other three. ${elimination} No colony is credited with kills for the removed ants.`,
+      `The last colony with a living queen wins before time-up${early === undefined ? "" : `, or a colony wins by holding, from ${minutes(early.minTick)}, ${majorityHold(early)}`}. An eliminated colony's territory no longer counts toward all owned territory.`,
+      `At time-up the surviving colonies rank by kills; ${timeUpOrder}. The top colony wins; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor, the latest eliminated highest.`,
+      "When every remaining colony is eliminated on the same tick, by losing its last queen or going idle, the time-up order decides among them. Colonies eliminated on the same tick rank among themselves by the same order. Both read each colony's scores as they stood just before that tick's removal of ants and territory.",
+    ] : [
       `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.adjudication === "kills-first" ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.` : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
     ] },
     { title: "Maps", lines: [
-      board === null ? `The map the seed selects sets the playable board: ${boardSizeChoices(config)} tiles, width by height.`
-        : `The playable board is ${tiles(board.width)} wide and ${tiles(board.height)} high.`,
-      ...(config.terrain === undefined ? ["Open land, with no water."] : [
-        `${count(config.terrain.maps.length, "map")} mirrored left to right. ${config.terrain.mapId === undefined ? "The match seed selects the map." : `Selected map: ${config.terrain.maps.find((map) => map.id === config.terrain!.mapId)?.name}.`} Water is impassable to ants and marks; ants route around it.`,
-        ...(config.terrain.rocks === undefined ? [] : [
-          `The match seed also places ${config.terrain.rocks.minPairs} to ${count(config.terrain.rocks.maxPairs, "mirrored rock pair")}, each rock a cluster of ${config.terrain.rocks.minClusterTiles} to ${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${scale}x${scale} fine tiles. The seed varies their size and rotation; both boards show faceted grey boulders. Rocks are impassable to ants and marks, and queens cannot be founded on them. Ants route around rocks the same way as water. Rocks never overlap starting nests, food or water, and never disconnect the land.`,
+      ...(four ? quadrantMapLines(config, context, tiles, scale) : [
+        board === null ? `The map the seed selects sets the playable board: ${boardSizeChoices(config)} tiles, width by height.`
+          : `The playable board is ${tiles(board.width)} wide and ${tiles(board.height)} high.`,
+        ...(config.terrain === undefined ? ["Open land, with no water."] : [
+          `${count(config.terrain.maps.length, "map")} mirrored left to right. ${config.terrain.mapId === undefined ? "The match seed selects the map." : `Selected map: ${config.terrain.maps.find((map) => map.id === config.terrain!.mapId)?.name}.`} Water is impassable to ants and marks; ants route around it.`,
+          ...(config.terrain.rocks === undefined ? [] : [
+            `The match seed also places ${config.terrain.rocks.minPairs} to ${count(config.terrain.rocks.maxPairs, "mirrored rock pair")}, each rock a cluster of ${config.terrain.rocks.minClusterTiles} to ${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${scale}x${scale} fine tiles. The seed varies their size and rotation; both boards show faceted grey boulders. Rocks are impassable to ants and marks, and queens cannot be founded on them. Ants route around rocks the same way as water. Rocks never overlap starting nests, food or water, and never disconnect the land.`,
+          ]),
+          ...config.terrain.maps.map((map) => {
+            // Maps without a board play at the rotation's size, also during a board map's match.
+            const size = mapBoardSize(config, map);
+            const terrain = createTerrain(0, { ...config, mapWidth: size.width, mapHeight: size.height, terrain: { ...config.terrain!, mapId: map.id } })!;
+            return `${map.name}: ${mapLayoutDescription(map, config.terrain!.referenceWidth, config.terrain!.referenceHeight)}.${map.board === undefined ? "" : ` Its board is ${tiles(size.width)} wide and ${tiles(size.height)} high.`} ${terrain.water.length === 0 ? "Open land, with no water" : `Water rectangles (top-left tile, width and height): ${terrain.water.map((r) => `(${r.x}, ${r.y}), ${tiles(r.width)} wide and ${tiles(r.height)} high`).join("; ")}`}.`;
+          }),
         ]),
-        ...config.terrain.maps.map((map) => {
-          // Maps without a board play at the rotation's size, also during a board map's match.
-          const size = mapBoardSize(config, map);
-          const terrain = createTerrain(0, { ...config, mapWidth: size.width, mapHeight: size.height, terrain: { ...config.terrain!, mapId: map.id } })!;
-          return `${map.name}: ${mapLayoutDescription(map, config.terrain!.referenceWidth, config.terrain!.referenceHeight)}.${map.board === undefined ? "" : ` Its board is ${tiles(size.width)} wide and ${tiles(size.height)} high.`} ${terrain.water.length === 0 ? "Open land, with no water" : `Water rectangles (top-left tile, width and height): ${terrain.water.map((r) => `(${r.x}, ${r.y}), ${tiles(r.width)} wide and ${tiles(r.height)} high`).join("; ")}`}.`;
-        }),
       ]),
       "On the 3D board, darkened mirrored terrain beyond the edge is scenery only, not playable ground. The 2D board softens the playable boundary.",
     ] },
@@ -139,10 +189,12 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
     { title: "Food and hatching", lines: [
       `Each colony starts with ${count(config.startAnts, "ant")}. Foragers pick up food and carry it to a friendly queen. A worker costs ${config.hatchCost} food. A queen can hatch ${config.castes && config.hatchTiming ? "a worker" : "an ant"} every ${seconds(config.hatchIntervalTicks)} when food is available, up to ${antCap} per colony.`,
       // Alive = started with + hatched − lost, so no count reads as a contradiction without its missing term.
-      `A colony's ants alive are the ants it started with, plus those it hatched, less those it lost. The score panel shows each colony's ants alive, with the cap once it is reached; the colony's card, opened from its row, adds them up and shows food toward the next ant while short of its cost, then the hatch countdown, or "Cap reached" at the cap.`,
+      // The score-panel sentence describes the two-colony display, so a four-colony page leaves it out.
+      `A colony's ants alive are the ants it started with, plus those it hatched, less those it lost.${four ? "" : ` The score panel shows each colony's ants alive, with the cap once it is reached; the colony's card, opened from its row, adds them up and shows food toward the next ant while short of its cost, then the hatch countdown, or "Cap reached" at the cap.`}`,
       ...(config.castes ? [`A soldier costs ${config.castes.soldierCost} food and carries no food.${config.hatchTiming === undefined ? "" : ` Each soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config.hatchIntervalTicks * config.hatchTiming.soldierIntervalMultiplier)}) at its own queen; workers take one interval.`} ${queenBroodText(config, DEFAULT_MCP_CONFIG.callsPerSecond)}`] : []),
       `Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat.${queenHp === undefined ? " Carriers do not count toward overrunning an enemy queen." : ""}`,
-      ...frontlineFoodLines(config),
+      // A quadrant board lays its own food; the seeded two-colony layout, frontline food included, never applies.
+      ...(four ? [] : frontlineFoodLines(config)),
     ] },
     ...(local === undefined ? [] : [{ title: "Autonomous ants", lines: [
       `Free ants follow these defaults until a count mark claims them. ${local.everyColony ? "Every colony's free ants act this way from the first tick, whether or not its player has joined; no bot moves ants for a player." : "While any active (not idle) agent of a colony is seated, its free ants act locally instead of following a house-bot plan."} Every non-carrying free ant bites enemies within ${scale} tiles (incl. diagonals). Within ${tiles(local.defendTiles)} of its queen it goes for enemies within that distance of her; otherwise a worker forages the nearest food its colony has seen and carries it home, and a soldier holds within ${tiles(local.defendTiles)} of where it hatched or was released, apart from local fights.${local.everyColony ? "" : " A colony with no active seat keeps the house bot."} Agents still command their own squads.`,
@@ -151,7 +203,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       "Each colony begins with a queen at its nest.",
       `Ant and queen bite reach is ${tiles(scale)}, including diagonals: one original-size tile's distance.`,
       ...(founding === undefined ? [] : [
-        `Use found_queen on a tile your colony holds, at least ${tiles(founding.minDistanceTiles)} (Euclidean distance) from every ${founding.standingNestsOnly ? `standing nest of either colony; ${queenHp === undefined ? "overrun" : "dead"} nests no longer block spacing` : "nest of either colony, including lost nests"}. Founding opens ${seconds(founding.firstFoundTick ?? 0)} after match start and has a colony-wide cooldown of ${seconds(founding.cooldownTicks)}.`,
+        `Use found_queen on a tile your colony holds, at least ${tiles(founding.minDistanceTiles)} (Euclidean distance) from every ${founding.standingNestsOnly ? `standing nest of ${four ? "any" : "either"} colony; ${queenHp === undefined ? "overrun" : "dead"} nests no longer block spacing` : `nest of ${four ? "any" : "either"} colony, including lost nests`}. Founding opens ${seconds(founding.firstFoundTick ?? 0)} after match start and has a colony-wide cooldown of ${seconds(founding.cooldownTicks)}.`,
         `The first extra queen costs ${founding.cost} stored food${(founding.costMultiplier ?? 1) === 1 ? "." : `; the price multiplies by ${founding.costMultiplier} with each ${founding.costBasis === "live" ? "additional live queen" : founding.costBasis === "founded-live" ? "additional living founded queen; starting queens do not count" : "queen ever founded, including replacements"}.`}${founding.maxLiveQueens === undefined ? "" : ` At most ${count(founding.maxLiveQueens, "live queen")} per colony, including the first.`} Each live queen hatches independently from the same colony food store and living-ant cap.`,
       ]),
       // Rules 27: spawn points are her owner's alone.
@@ -164,7 +216,9 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
         `With no enemy within ${tiles(queenHp.regenClearTiles)}, a queen regains ${queenHp.regenHp / 1000} HP every ${seconds(queenHp.regenIntervalTicks)}. At 0 HP she dies and can no longer hatch or receive food; her nest does not block founding. There is no overrun. The colony survives while any queen lives.`,
       ]),
     ] },
-    { title: "Commands", lines: [commandLimitText(config), example, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT,
+    { title: "Commands", lines: four ? [commandLimitText(config), example, FOUR_COLONY_IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT,
+      `Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default ${DEFAULT_HOUSE_IDLE_SECONDS} seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. A seat that has not joined by the idle limit, counted from match start, or by an earlier end, abandons the match, unrated. A joined seat that goes idle has its colony eliminated: its ants are removed, its territory turns neutral, and the match continues for the other colonies. If every remaining colony goes idle on the same tick, the time-up order decides among them. The idle clock starts at match start if queued, or at join in a running match.`,
+    ] : [commandLimitText(config), example, IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT,
       `Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default ${DEFAULT_HOUSE_IDLE_SECONDS} seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In any match, a seat that has not joined by the idle limit, counted from match start, or by an earlier end, abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match.`,
     ] },
     { title: "Thoughts and marks", lines: counts === undefined ? (config.wordMarksDisabled ? [logExplainer(config)] : [LOG_EXPLAINER, WORD_MARK_ACTIONS]) : [

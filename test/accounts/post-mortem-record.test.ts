@@ -133,6 +133,23 @@ describe("match record scan", () => {
     expect((await scanRecord(chunks(Buffer.from(JSON.stringify(record({ replies: null }))), 50), undefined, "rerun")).reduced.lines).toBeNull();
   });
 
+  // Credible regression: a four-colony record's seats in colonies 2 and 3 failing the scan, or the scan accepting a
+  // colony no match has.
+  it("keeps a four-colony record's seats in colonies 0 to 3 in its first pass and its re-run scan, and fails any other colony", async () => {
+    const seat = (n: number, colony: unknown) => ({ seat: n, colony, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: null, joinedTick: 0,
+      commands: [{ tick: 0, type: "join", accepted: true, request: { type: "join" }, error: null },
+        { tick: 2, type: "order", accepted: false, request: { type: "order" }, error: { code: "command_floor", message: "wait" } }] });
+    const four = (colonies: readonly unknown[]) => Buffer.from(JSON.stringify(record({ seats: colonies.map((colony, n) => seat(n, colony)) })));
+    const bytes = four([0, 1, 2, 3]);
+    const { scan } = await surveyRecord(chunks(bytes, 64));
+    expect(scan.survey.elements).toEqual([0, 1, 2, 3].map(n => ({ seat: n, colony: n, commands: 2, refused: 1 })));
+    expect((await scanRecord(chunks(bytes, 64), undefined, "rerun")).reduced.seats.map(s => [s.seat, s.colony])).toEqual([[0, 0], [1, 1], [2, 2], [3, 3]]);
+    for (const colony of [4, -1, 1.5, "2", null]) {
+      await expect(surveyRecord(chunks(four([0, 1, 2, colony]), 64))).rejects.toBeInstanceOf(RecordReadError);
+      await expect(scanRecord(chunks(four([0, 1, 2, colony]), 64), undefined, "rerun")).rejects.toBeInstanceOf(RecordReadError);
+    }
+  });
+
   // Credible regression: a defaulted tick rate, or one taken from the setup over the rules.
   it("takes the tick rate from the rules' config, else the match setup, and never assumes one", async () => {
     const rateOf = async (value: unknown) => (await scanRecord(chunks(Buffer.from(JSON.stringify(value)), 9))).ticksPerSecond;

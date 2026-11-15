@@ -107,13 +107,18 @@ export function expireMarks(state: SimState, nextTick: number): void {
 
 /**
  * Whether a colony plays the local ant rules this tick: the
- * redesign is on and, on a new match (localAnts.everyColony), always; on a match
- * recorded before that, only while at least one of its agents is seated (not idle).
- * Such a side has no colony planner.
+ * redesign is on and either the match plays them on every colony or at least
+ * one of the colony's agents is seated (not idle; today's seat rule). A
+ * four-colony match, and a new match (localAnts.everyColony), plays them on
+ * every colony from the first tick; a two-colony match recorded before that,
+ * only while one of its agents is seated. Such a side has no colony planner.
  */
 export function localRulesSide(state: SimState, colony: ColonyId): boolean {
   const local = state.config.localAnts;
-  return local !== undefined && (local.everyColony === true || state.agents.some((a) => a.colony === colony && !a.idle));
+  return (
+    local !== undefined &&
+    (state.colonies.length > 2 || local.everyColony === true || state.agents.some((a) => a.colony === colony && !a.idle))
+  );
 }
 
 /**
@@ -214,7 +219,7 @@ export function claimCountMarks(state: SimState, tick: number, observers?: StepO
     for (const ant of group.splice(0, group.length - mark.count!)) releaseClaim(state, ant);
   }
 
-  for (const colony of [0, 1] as const) {
+  for (const { id: colony } of state.colonies) {
     const colonyMarks = ordered.filter((m) => m.colony === colony);
     if (colonyMarks.length === 0) continue;
     const live = state.ants.filter((a) => a.colony === colony);
