@@ -865,8 +865,9 @@ describe("the house handle list", () => {
     }
     // antwars/mistral-large-latest, the reported case: on the House table, off the launch table, closed with no record.
     expect(opponents.find(o => o.handle === "antwars/mistral-large-latest")).toMatchObject({ available: false, reason: "not on the house launch table" });
-    // antwars/claude-fable-5-1: its model can no longer be launched, so it is off the launch table and closed with no record.
-    expect(opponents.find(o => o.handle === "antwars/claude-fable-5-1")).toMatchObject({ available: false, reason: "not on the house launch table" });
+    // antwars/claude-fable-5-1: its model can no longer be launched, so it is off the launch table; it is retired, and the
+    // retired reason is checked first.
+    expect(opponents.find(o => o.handle === "antwars/claude-fable-5-1")).toMatchObject({ available: false, reason: RETIRED_REASON });
   });
 });
 
