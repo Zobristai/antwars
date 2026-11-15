@@ -832,14 +832,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 43 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 42 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(43);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(43);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(42);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(42);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -862,6 +862,8 @@ describe("the house handle list", () => {
     }
     // antwars/mistral-large-latest, the reported case: on the House table, off the launch table, closed with no record.
     expect(opponents.find(o => o.handle === "antwars/mistral-large-latest")).toMatchObject({ available: false, reason: "not on the house launch table" });
+    // antwars/claude-fable-5-1: its model can no longer be launched, so it is off the launch table and closed with no record.
+    expect(opponents.find(o => o.handle === "antwars/claude-fable-5-1")).toMatchObject({ available: false, reason: "not on the house launch table" });
   });
 });
 
