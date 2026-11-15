@@ -57,6 +57,9 @@ export type SupercolonyLabel = (typeof SUPERCOLONY_NAMES)[number]["label"];
 /** A match's two colony labels, index = colony id. */
 export type ColonyNamePair = readonly [string, string];
 
+/** A match's colony labels, index = colony id: two in most matches, four in a quadrants match. */
+export type ColonyNames = readonly string[];
+
 /** Every pair of the four, unordered: all are mutually hostile, so any can be drawn. */
 export const HOSTILE_PAIRS: readonly (readonly [SupercolonyLabel, SupercolonyLabel])[] = SUPERCOLONY_NAMES.flatMap((a, i) =>
   SUPERCOLONY_NAMES.slice(i + 1).map(b => [a.label, b.label] as const));
@@ -96,6 +99,16 @@ export function drawColonyNames(matchKey: string): ColonyNamePair {
  */
 export function lobbyColonyNames(lobbyId: string, rated: boolean): ColonyNamePair {
   return rated ? COLONY_NAMES : drawColonyNames(lobbyId);
+}
+
+/** A quadrants match's four colony names, by colony: the table's four labels in table order. */
+export function quadrantColonyNames(): string[] {
+  return SUPERCOLONY_NAMES.map(name => name.label);
+}
+
+/** A seated lobby's colony names: a quadrants lobby's four, otherwise lobbyColonyNames (rated for any queue mode). */
+export function seatedColonyNames(lobbyId: string, mode: string | null): ColonyNames {
+  return mode === "quadrants" ? quadrantColonyNames() : lobbyColonyNames(lobbyId, mode !== null);
 }
 
 /** Whether a match's names are the rated pair, which streams and records leave implicit; four names never are. */

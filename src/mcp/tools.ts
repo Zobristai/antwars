@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, type SimConfig } from "../sim/config.js";
-import type { ColonyNamePair } from "../sim/colonyNames.js";
+import type { ColonyNames } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
@@ -207,7 +207,7 @@ function explain(
   extra: Record<string, unknown> = {},
   command?: SimInput["type"],
   /** With matchResult: the colony names of that result's match, from the refused outcome. */
-  colonyNames?: ColonyNamePair,
+  colonyNames?: ColonyNames,
 ): CallToolResult {
   // The sim's empty-squad omission message is the true cause; range is not.
   const emptySquadOmission = code === "count_mark_not_visible" && simMessage === EMPTY_SQUAD_COUNT_MARK;
@@ -636,10 +636,17 @@ function registerSlotTools(server: McpServer, game: Game, slot: SlotAccess, sess
         const nest = nestFields(game, joined.agentId, true);
         const base = { agentId: joined.agentId, briefing: joinBriefing(joined.config, game.mcpConfig, "nestSelection" in nest, { house: game.isHouseMatch(joined.agentId), undrawn: !game.mapDrawnFor(joined.agentId), colonyNames: game.colonyNames(joined.agentId) }) };
         if (outcome.kind === "queued") {
-          return payload({ ...base, ...nest, matchStarts: startText(outcome.nextStart), message: "Your lobby's match has not started; you are seated in it. Call observe until it starts." });
+          // A quadrants seat is told its colony before the start; other modes keep their reply.
+          const colony = game.quadrantSeatColony(joined.agentId);
+          return payload({ ...base, ...(colony === undefined ? {} : { colony }), ...nest, matchStarts: startText(outcome.nextStart), message: "Your lobby's match has not started; you are seated in it. Call observe until it starts." });
         }
         const { view } = outcome;
-        if (view.result !== null) return viewResult(game, joined.config, outcome);
+        if (view.result !== null) {
+          // A quadrants join answered on the match's final tick still names its colony; other modes keep their reply.
+          const colony = game.quadrantSeatColony(joined.agentId);
+          if (colony === undefined) return viewResult(game, joined.config, outcome);
+          return pagedView(game, joined.config, view, false, { colony, ...outcome.observeInfo, ...winnerFields(game, view.agentId, view.result) }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
+        }
         return pagedView(game, joined.config, view, false, { ...base, colony: game.colonyNames(joined.agentId)[view.colony], squad: view.squad }, undefined, OBSERVE_REPLY_LIMITS, undefined, false);
       };
       // A join in flight counts toward the limit until it answers, so concurrent joins cannot pass it together.
