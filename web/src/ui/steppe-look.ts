@@ -287,9 +287,11 @@ ${WATER_2D("d1WetCell")}
 
 /**
  * The 3D ground's colour before lighting, in place of the plain code: the baked steppe, the wash, trails, the seam,
- * water. Beyond the playable bounds the ground is one plain shade, the steppe's in-bounds mean (ground.ts).
+ * water. Beyond the playable bounds the ground is one plain shade, the steppe's in-bounds mean (ground.ts). The trail
+ * ink marks any colony's traffic alike: a four-colony match takes the strongest of its four colonies' channels (channel
+ * c of the trail texture is colony c's); a two-colony match's code is unchanged.
  */
-const DIFFUSE_3D = /* glsl */ `
+const diffuse3d = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 vec2 awTile = vec2(vPositionW.x, uMap.y - vPositionW.z);
 vec2 awUV = awTile / uMap;
@@ -306,10 +308,10 @@ if (awUV.x >= 0.0 && awUV.y >= 0.0 && awUV.x < 1.0 && awUV.y < 1.0) {
   vec4 awB = texture2D(uB, awCentre);
   awCol = mix(d1Owned(awA, awSoil), d1Owned(awB, awSoil), uBlend);
   vec2 awTrailCell = clamp(floor(awTile * ${TRAIL_RES.toFixed(1)}), vec2(0.0), uMap * ${TRAIL_RES.toFixed(1)} - 1.0);
-  vec2 awTrail = texture2D(uTrail, (awTrailCell + 0.5) / (uMap * ${TRAIL_RES.toFixed(1)})).rg;
+${colonies > 2 ? "  vec4 awTrail = texture2D(uTrail, (awTrailCell + 0.5) / (uMap * " + TRAIL_RES.toFixed(1) + "));" : "  vec2 awTrail = texture2D(uTrail, (awTrailCell + 0.5) / (uMap * " + TRAIL_RES.toFixed(1) + ")).rg;"}
   vec2 awTrailLocal = awTile * ${TRAIL_RES.toFixed(1)} - awTrailCell - 0.5;
   float awStroke = 1.0 - smoothstep(0.28, 0.4, max(abs(awTrailLocal.x), abs(awTrailLocal.y)));
-  awCol *= 1.0 - 0.3 * smoothstep(0.04, 0.32, max(awTrail.r, awTrail.g)) * awStroke * uTrails;
+  awCol *= 1.0 - 0.3 * smoothstep(0.04, 0.32, ${colonies > 2 ? "max(max(awTrail.r, awTrail.g), max(awTrail.b, awTrail.a))" : "max(awTrail.r, awTrail.g)"}) * awStroke * uTrails;
   float awLine = awBorder(awA, awLocal) * (1.0 - uBlend) + awBorder(awB, awLocal) * uBlend;
   awCol = mix(awCol, vec3(0.11, 0.09, 0.07), clamp(awLine, 0.0, 1.0) * 0.75 * uFrontOn);
   if (awWet > 0.5) awCol = d1Water(awMirror, uTime);
@@ -325,7 +327,7 @@ export const STEPPE_LOOK: BoardLook = {
   board2d: { soil: SOIL_2D, fill: fill2d, front: front2d },
   board3d: {
     soil: steppe,
-    ground: (point, current, colonies = 2) => point === "definitions" ? current + definitions3d(colonies) : point === "diffuse" ? DIFFUSE_3D : current,
+    ground: (point, current, colonies = 2) => point === "definitions" ? current + definitions3d(colonies) : point === "diffuse" ? diffuse3d(colonies) : current,
     rock: [0.56, 0.53, 0.48],
     // Neutral daylight from the same quarter as Current's warm key, so the ground shows its own colour.
     light: {

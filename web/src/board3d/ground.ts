@@ -21,7 +21,7 @@ import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines.
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { TRAIL_RES, type Frame } from "../buffer.ts";
+import { TRAIL_RES, trailTexels, type Frame } from "../buffer.ts";
 import { FOG_ALPHA } from "../team-view.ts";
 import { boardLook } from "../board-look.ts";
 import { colonyRgb } from "../colony-palette.ts";
@@ -109,7 +109,12 @@ vec3 awBorderColour(vec4 s) {
 #endif
 `;
 
-const DIFFUSE = /* glsl */ `
+/**
+ * The ground's colour before lighting. The trail ink marks any colony's traffic alike: a four-colony match takes the
+ * strongest of its four colonies' channels (channel c of the trail texture is colony c's); a two-colony match's code is
+ * unchanged.
+ */
+const diffuse = (colonies: number) => /* glsl */ `
 #ifdef AW_GROUND
 vec2 awTile = vec2(vPositionW.x, uMap.y - vPositionW.z);
 vec2 awUV = awTile / uMap;
@@ -134,9 +139,9 @@ if (awUV.x >= 0.0 && awUV.y >= 0.0 && awUV.x < 1.0 && awUV.y < 1.0) {
   vec2 awTrailCell = clamp(floor(awTile * ${TRAIL_RES.toFixed(1)}), vec2(0.0), uMap * ${TRAIL_RES.toFixed(1)} - 1.0);
   vec2 awTrailUV = (awTrailCell + 0.5) / (uMap * ${TRAIL_RES.toFixed(1)});
   vec2 awTrailLocal = awTile * ${TRAIL_RES.toFixed(1)} - awTrailCell - 0.5;
-  vec2 awTrail = texture2D(uTrail, awTrailUV).rg;
+${colonies > 2 ? "  vec4 awTrail = texture2D(uTrail, awTrailUV);" : "  vec2 awTrail = texture2D(uTrail, awTrailUV).rg;"}
   float awStroke = 1.0 - smoothstep(0.28, ${(TRAIL_CELL_WIDTH / 2).toFixed(2)}, max(abs(awTrailLocal.x), abs(awTrailLocal.y)));
-  float awInk = smoothstep(0.04, 0.32, max(awTrail.r, awTrail.g)) * awStroke * uTrails;
+  float awInk = smoothstep(0.04, 0.32, ${colonies > 2 ? "max(max(awTrail.r, awTrail.g), max(awTrail.b, awTrail.a))" : "max(awTrail.r, awTrail.g)"}) * awStroke * uTrails;
   awCol *= 1.0 - 0.42 * awInk;
 
   // The light front is last, so trails cannot obscure it. No emissive band or broad bloom source.
@@ -267,9 +272,9 @@ uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1
     const look = boardLook()?.board3d;
     const n = this.colonies, definitions = defs(n);
     if (look) {
-      return { CUSTOM_FRAGMENT_DEFINITIONS: look.ground("definitions", definitions, n), CUSTOM_FRAGMENT_UPDATE_DIFFUSE: look.ground("diffuse", DIFFUSE, n), CUSTOM_FRAGMENT_BEFORE_FOG: look.ground("beforeFog", EMISSIVE, n) };
+      return { CUSTOM_FRAGMENT_DEFINITIONS: look.ground("definitions", definitions, n), CUSTOM_FRAGMENT_UPDATE_DIFFUSE: look.ground("diffuse", diffuse(n), n), CUSTOM_FRAGMENT_BEFORE_FOG: look.ground("beforeFog", EMISSIVE, n) };
     }
-    return { CUSTOM_FRAGMENT_DEFINITIONS: definitions, CUSTOM_FRAGMENT_UPDATE_DIFFUSE: DIFFUSE, CUSTOM_FRAGMENT_BEFORE_FOG: EMISSIVE };
+    return { CUSTOM_FRAGMENT_DEFINITIONS: definitions, CUSTOM_FRAGMENT_UPDATE_DIFFUSE: diffuse(n), CUSTOM_FRAGMENT_BEFORE_FOG: EMISSIVE };
   }
 }
 
@@ -533,10 +538,7 @@ export class Ground {
     if (this.keyTrail !== frame.trails) {
       const t = frame.trails;
       const d = this.trailData;
-      for (let i = 0, n = t.length / 2; i < n; i++) {
-        d[i * 4] = t[i * 2]! * 255;
-        d[i * 4 + 1] = t[i * 2 + 1]! * 255;
-      }
+      trailTexels(t, frame.board?.setup.queens.length ?? 2, d);
       this.trailTex.update(d);
       this.keyTrail = t;
     }
