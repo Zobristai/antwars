@@ -108,9 +108,27 @@ const SCALE2_DESCRIPTIONS: Readonly<Record<string, readonly [string, string]>> =
 /** Maps described by SCALE2_DESCRIPTIONS when their stored geometry is exactly this. */
 const DESCRIBED_SCALE2_MAPS: readonly MapDefinition[] = [...SCALE2_MAPS, THREE_CROSSINGS_V2, CENTRAL_LAKE_V2];
 
+/** Factual layout text for the Quadrants pool maps: [full, compact]. */
+const QUADRANT_DESCRIPTIONS: Readonly<Record<string, readonly [string, string]>> = {
+  "four-coves": ["each start area sits in a corner cove behind a curved lake, with exits toward both neighbouring quadrants; open centre", "curved lake round each corner cove; open centre"],
+  "crossroads": ["a plus-shaped river along the centre lines splits four islands, with one ford on each arm; the arms meet an open central plaza", "plus river, 1 ford per arm; open plaza"],
+  "strait": ["a winding east-west strait runs from each side edge to the open central plaza, the only crossing between north and south; an oval pond on the border between each pair of side-by-side quadrants leaves two routes past it", "E-W strait, crossed only at the plaza; border ponds"],
+};
+
+/** The layout text of a Quadrants pool map, only when its stored geometry (water, quadrant layout, board and grid
+ * scale) is exactly the shipped map's; otherwise undefined. */
+export function quadrantLayoutDescription(map: MapDefinition, compact = false): string | undefined {
+  const shipped = QUADRANT_MAPS.find(pool => pool.id === map.id);
+  const text = QUADRANT_DESCRIPTIONS[map.id];
+  if (shipped === undefined || text === undefined || !sameMap(shipped, map) || JSON.stringify(shipped.quadrant) !== JSON.stringify(map.quadrant)) return undefined;
+  return compact ? text[1] : text[0];
+}
+
 /** Describe only recognized geometry, not a name that a saved/custom map may
  * reuse. The fallback does not mislabel historical Central Lake as a new lake. */
 export function mapLayoutDescription(map: MapDefinition, referenceWidth: number, referenceHeight: number, compact = false): string {
+  const quadrant = map.quadrant === undefined ? undefined : quadrantLayoutDescription(map, compact);
+  if (quadrant !== undefined) return quadrant;
   if (map.water.length === 0) return compact ? "dry" : "open ground with no water";
   if (referenceWidth === 64 * NEW_MATCH_GRID_SCALE && referenceHeight === 48 * NEW_MATCH_GRID_SCALE) {
     const expected = createMapShapes().find(candidate => candidate.id === map.id);
