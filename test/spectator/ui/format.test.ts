@@ -195,7 +195,7 @@ describe("matches rows", () => {
     it("names its winner and each colony's models by its four names, or by the table's four where it carries none", () => {
       const named = recording({ winner: 2, reason: "queens_killed", decidedBy: "queens_killed", seats: four, matchType: { kind: "quadrants", size: 1 },
         colonyNames: ["Lake Skinner Colony", "Sweetwater Colony", "Lake Hodges Colony", "Very Large Colony"] });
-      expect(recordingRow(named, "")).toMatchObject({ result: "Lake Hodges Colony won", type: "Quadrants",
+      expect(recordingRow(named, "")).toMatchObject({ result: "Lake Hodges Colony won", type: "Free-for-all",
         models: "Lake Skinner Colony: m-0 · Sweetwater Colony: m-1 · Lake Hodges Colony: m-2 · Very Large Colony: m-3" });
       const unnamed = recording({ winner: 3, reason: "queens_killed", decidedBy: "queens_killed", seats: four, matchType: { kind: "quadrants", size: 1 } });
       expect(recordingRow(unnamed, "")).toMatchObject({ result: "Lake Skinner Colony won", models: QUADRANTS.map((name, n) => `${name}: m-${n}`).join(" · ") });

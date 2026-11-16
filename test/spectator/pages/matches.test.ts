@@ -393,7 +393,7 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
       const [item] = list.list.querySelectorAll("li");
       expect(row!.children.map(cell => [cell.className, cell.colSpan])).toEqual([["c-start", 1], ["c-type", 1], ["c-model", 2], ["c-status", 1], ["c-go", 1]]);
       for (const scope of [row!, item!]) {
-        expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Quadrants"]);
+        expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Free-for-all"]);
         expect(named(scope)).toEqual(NAMED);
         expect(inks(scope)).toEqual(colonyColours(QUADRANTS).map(colourCss));
         // All four names keep their colours without a text backing.

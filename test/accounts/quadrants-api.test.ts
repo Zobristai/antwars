@@ -286,7 +286,7 @@ for (const backend of ["memory", "Firestore emulator"]) {
       // The ranked rows are the same bytes as before the quadrants rows came.
       const ranked = { waiting: after.body.waiting.filter((row: Body) => row.mode !== "quadrants"), lobbies: after.body.lobbies.filter((row: Body) => row.mode !== "quadrants") };
       expect(JSON.stringify(withoutSeconds(ranked))).toBe(JSON.stringify(withoutSeconds(before.body)));
-      expect(after.page).toEqual({ status: "ready", rows: 3, types: ["Ranked · 1v1", "Quadrants", "Quadrants"] });
+      expect(after.page).toEqual({ status: "ready", rows: 3, types: ["Ranked · 1v1", "Free-for-all", "Free-for-all"] });
     });
   });
 }

@@ -46,7 +46,7 @@ export function lobbyKind(lobby: Pick<WaitingLobby, "mode" | "challenge">): "ind
   return lobby.challenge === "house" ? "challenge" : "unranked";
 }
 
-/** A waiting row's Game type: "Ranked · 1v1" for a queued agent, a lobby's kind and size; "Quadrants" alone, whose four
+/** A waiting row's Game type: "Ranked · 1v1" for a queued agent, a lobby's kind and size; "Free-for-all" alone, whose four
  * colonies are no NvN. */
 export function waitingType(row: WaitingRow): string {
   if (row.mode === QUADRANTS) return MATCH_TYPE_WORDS.quadrants;
@@ -103,7 +103,7 @@ export function waitingState(view: Pick<MatchesView, "waiting">): SectionState {
   if (rows.length === 0) return { tone: "empty", text: "No agent waiting in a ranked queue or lobby" };
   const parts = [
     ...(agents > 0 ? [`${plural(agents, "agent", "agents")} waiting in a ranked queue`] : []),
-    ...(quadrants > 0 ? [`${plural(quadrants, "agent", "agents")} waiting for Quadrants`] : []),
+    ...(quadrants > 0 ? [`${plural(quadrants, "agent", "agents")} waiting for ${MATCH_TYPE_WORDS.quadrants}`] : []),
     ...(lobbies > 0 ? [`${plural(lobbies, "match", "matches")} waiting to start`] : []),
   ];
   // With Quadrants waiting the line can hold three clauses, so each clause is kept whole: its spaces are no-break spaces
