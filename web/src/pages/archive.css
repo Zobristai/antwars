@@ -540,8 +540,8 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-type::before { content: "·"; position: absolute; left: -8px; }
   .d1p-rec-note::before { content: "· "; }
   .d1p-rec-date { color: var(--aw-ink); }
-  /* Keep colony headings in capitals, with compact tracking on a narrow card. */
-  .d1p-rec-colony { letter-spacing: normal; }
+  /* Fit the full capital headings inside the phone's four slots without clipping or wrapping. */
+  .d1p-rec-colony { font-size: 10.5px; letter-spacing: -0.4px; }
   .d1p-rec-player { flex-wrap: wrap; white-space: normal; }
   /* Two players in one slot part by 4 px, so their wrapped names do not run on as one; a player's own lines keep none. */
   .d1p-rec-player + .d1p-rec-player { margin-top: 4px; }

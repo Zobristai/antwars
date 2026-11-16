@@ -288,6 +288,46 @@ function quadrantsPage() {
   return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
 }
 
+describe("Recordings colony headings stay inside their columns", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps complete one-line headings within each slot at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 }, deviceScaleFactor: 3 });
+      try {
+        await tab.setContent(quadrantsPage().page);
+        // Match index.html's margin reset; otherwise the browser's body margin narrows every slot.
+        // Use the wider desktop stand-in face; both target fonts are also checked in the capture matrix.
+        await tab.addStyleTag({ content: 'html, body { margin: 0; } .d1p-rec-colony { font-family: "Liberation Sans", sans-serif; }' });
+        await tab.evaluate(() => document.fonts.ready);
+        const rows = await tab.locator(".d1p-rec-colony").evaluateAll(nodes => nodes.map(node => {
+          const slot = node.parentElement!.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const text = range.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          return { text: node.textContent, width: slot.width, leftInset: text.left - slot.left, rightInset: slot.right - text.right,
+            lines: new Set([...range.getClientRects()].map(rect => rect.top)).size,
+            size: style.fontSize, spacing: style.letterSpacing, transform: style.textTransform,
+            whiteSpace: style.whiteSpace, overflow: style.overflowX, textOverflow: style.textOverflow };
+        }));
+        expect(rows).toHaveLength(16);
+        expect(rows.slice(0, 4).map(row => row.text)).toEqual(SUPERCOLONY_NAMES.map(name => name.label.replace(/ Colony$/, "")));
+        for (const row of rows) {
+          expect(row.lines, row.text!).toBe(1);
+          expect(row.leftInset, row.text!).toBeGreaterThanOrEqual(0);
+          expect(row.rightInset, row.text!).toBeGreaterThan(0);
+          expect(row.transform).toBe("uppercase");
+          expect(row.whiteSpace).toBe("nowrap");
+          expect(row.overflow).toBe("visible");
+          expect(row.textOverflow).not.toBe("ellipsis");
+          expect(row.size).toBe(width === 390 ? "10.5px" : "11px");
+          expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.4 : 0.99, 2);
+          if (width === 390) expect(row.width).toBe(75);
+        }
+      } finally { await tab.close(); }
+    });
+  }
+});
+
 describe("the Matches page's text in a colony's colour has no backing", () => {
   for (const width of [1280, 390]) {
     it(`a four-colony (Quadrants) match: Matches at ${width}px`, async () => {
