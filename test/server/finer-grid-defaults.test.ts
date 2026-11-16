@@ -29,7 +29,7 @@ describe("new matches use the measured finer grid", () => {
     const game = new Game({ simConfig: options.simConfig, onLogLine: line => lines.push(line) });
     game.startMatch(7001);
     expect(game.match!.state.config.wordMarksDisabled).toBe(true);
-    expect(parseLog(lines).header.rulesVersion).toBe(27);
+    expect(parseLog(lines).header.rulesVersion).toBe(28);
   });
 
   it("defaults a new Game to fine tiles but preserves every explicit config", () => {

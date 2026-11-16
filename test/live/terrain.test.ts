@@ -3,13 +3,14 @@ import { GRID_SCALE_STREAM_VERSION, decodeMessage, encodeMessage, encodeReplayMe
 import { LiveHub } from "../../src/live/hub.js";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.js";
 import { playScripted, recordLog } from "../../src/live/record.js";
-import { MAPS, PUBLIC_CONFIG, TERRAIN_RULES, rulesConfig } from "../../src/sim/config.js";
+import { MAPS, PUBLIC_CONFIG, TERRAIN_RULES } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 describe("map stream metadata", () => {
   it.each(MAPS)("$name keeps public setup and terrain private while comparison retains setup and both retain displayed queen HP", map => {
-    const config = { ...rulesConfig("redesign"), terrain: { ...TERRAIN_RULES, rocks: undefined, mapId: map.id }, players: 2 as const };
+    const config = { ...rules27Redesign(), terrain: { ...TERRAIN_RULES, rocks: undefined, mapId: map.id }, players: 2 as const };
     const recorder = new SpectatorRecorder(createMatch(7001, playable(config)));
     const message: StreamMessage = { ...recorder.initial(), full: recorder.initialFull() };
     const original = structuredClone(message);
@@ -34,7 +35,7 @@ describe("map stream metadata", () => {
   });
 
   it.each(MAPS)("$name composes replay redaction with terrain while leaving live metadata unchanged", map => {
-    for (const base of [PUBLIC_CONFIG, { ...rulesConfig("redesign"), players: 2 as const }]) {
+    for (const base of [PUBLIC_CONFIG, { ...rules27Redesign(), players: 2 as const }]) {
       const config = { ...base, terrain: { ...TERRAIN_RULES, rocks: undefined, mapId: map.id } };
       const recorder = new SpectatorRecorder(createMatch(7001, playable(config)));
       const live: StreamMessage = { ...recorder.initial(), full: recorder.initialFull() };
@@ -74,7 +75,7 @@ describe("map stream metadata", () => {
 
   it.each(MAPS)("$name composes count marks, optional idle clocks and early-win results under terrain in a grid-scale-2 snapshot", map => {
     for (const commandIdleTicks of [undefined, 0, 600]) {
-      const config = { ...rulesConfig("redesign"), terrain: { ...TERRAIN_RULES, rocks: undefined, mapId: map.id }, players: 2 as const, commandIdleTicks };
+      const config = { ...rules27Redesign(), terrain: { ...TERRAIN_RULES, rocks: undefined, mapId: map.id }, players: 2 as const, commandIdleTicks };
       const recorder = new SpectatorRecorder(createMatch(7001, playable(config)));
       const counted = { id: 1, agent: 0, colony: 0 as const, tileX: 20, tileY: 20, words: [],
         laidTick: 3, answered: 4, verb: "DEFEND" as const, count: 8, claimed: 0, revision: 0 };

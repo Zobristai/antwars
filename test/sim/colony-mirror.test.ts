@@ -21,7 +21,7 @@ describe("stored colony mirror marker", () => {
     rulesConfig("redesign"), newMatchConfig(rulesConfig("redesign"))].map(playable))("records rules 25 on new configs and headers (%#)", config => {
     expect(config.colonyMirror).toBe(true);
     const { header } = parseLog([headerLine(340, config)]);
-    expect(header.rulesVersion).toBe(27);
+    expect(header.rulesVersion).toBe(config.rules28 === true ? 28 : 27);
     expect(JSON.stringify(header.config)).toBe(JSON.stringify(config));
   });
 });

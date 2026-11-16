@@ -129,8 +129,17 @@ export function localRulesSide(state: SimState, colony: ColonyId): boolean {
  */
 export function releaseClaim(state: SimState, ant: Ant): void {
   ant.claim = undefined;
+  // A flyer whose order ends in the air keeps the destination it was heading for: the flight pass
+  // flies it on and lands it there (or lands a hoverer at once), and no mark claims it until then.
+  if (ant.air !== undefined) {
+    if (!ant.air.released) ant.air = { ...ant.air, released: true };
+    return;
+  }
+  // A grounded flyer's landing record belongs to the order that ended (its lockout does not): a
+  // later claim, even by the same mark on the same tile, is a new order and takes off.
+  delete ant.flyerLanded;
   if (!localRulesSide(state, ant.colony)) return;
-  if (ant.caste === "soldier") ant.holdPoint = { tileX: Math.floor(ant.x / SUB), tileY: Math.floor(ant.y / SUB) };
+  if (ant.caste === "soldier" || ant.flyer === true) ant.holdPoint = { tileX: Math.floor(ant.x / SUB), tileY: Math.floor(ant.y / SUB) };
   else dropFoodTarget(ant);
 }
 
@@ -178,6 +187,8 @@ function centreDistance(ant: Ant, mark: Mark): number {
 
 /** Caste eligibility shared by recruitment, retained claims and acceptance counts. */
 export function countMarkCasteEligible(config: SimConfig, ant: Ant, mark: Pick<Mark, "verb" | "caste">): boolean {
+  // Only flyer marks order flyers, and flyer marks claim only flyers.
+  if (ant.flyer === true || mark.caste === "flyer") return ant.flyer === true && mark.caste === "flyer";
   const caste = ant.caste ?? "worker";
   return !(mark.verb === "FORAGE" && caste !== "worker")
     && (mark.caste === undefined || mark.caste === caste);
@@ -224,7 +235,9 @@ export function claimCountMarks(state: SimState, tick: number, observers?: StepO
     if (colonyMarks.length === 0) continue;
     const live = state.ants.filter((a) => a.colony === colony);
     const guardsExcluded = !localRulesSide(state, colony);
-    const free = live.filter((a) => a.squad === null && a.claim === undefined && !(guardsExcluded && a.role === "guard"));
+    // A released flyer still in the air finishes its flight first: no mark claims it before it lands.
+    const free = live.filter((a) => a.squad === null && a.claim === undefined && !(guardsExcluded && a.role === "guard")
+      && a.air?.released !== true);
     const eligible = (ant: Ant, mark: Mark): boolean => {
       if (!countMarkCasteEligible(config, ant, mark)) return false;
       if (rules.recruitColonyWide) return true;

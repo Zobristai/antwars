@@ -1,7 +1,7 @@
-import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig } from "../sim/config.js";
+import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, firstHatchTicks, hatchIntervalOf, type SimConfig } from "../sim/config.js";
 import { isClassicColonyNames, quadrantColonyNames, type ColonyNames } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
-import { COUNT_CASTES, WORDS } from "../sim/types.js";
+import { BROODS, COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription, quadrantLayoutDescription } from "../sim/mapShapes.js";
 import { colonyCountOf, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
@@ -30,6 +30,11 @@ export function colonyVisibilityText(config: SimConfig): string {
   return `observe shows what any living ant of your colony currently sees (${config.sightTiles} tiles around each colony ant).`;
 }
 
+/** Rules 28: a queen with per-tick damage strikes; she has no bite. */
+export function queensStrike(config: SimConfig): boolean {
+  return config.queenHp !== undefined && !("biteDamage" in config.queenHp);
+}
+
 export function usesCompactAgentText(config: SimConfig): boolean {
   return config.countMarks?.combatTotals === true;
 }
@@ -53,6 +58,39 @@ export const CELL_PAGING_TEXT = "First: all squad-visible cells, then colony cel
 
 export const ENEMY_QUEENS_TEXT = "view.enemyQueens [{tileX,tileY,hp}]: enemy queens in this reply's cells only, same tick; hp=queenHp milli-HP, absent if cells omit it. Fogged queens never appear.";
 
+/** set_brood's choices: flyers only where the match has flyers. */
+export function broodChoices(config: SimConfig): readonly string[] {
+  return config.flyers === undefined ? BROODS : [...BROODS, "flyers"];
+}
+
+/** count_mark's caste choices: flyer only where the match has flyers. */
+export function countCasteChoices(config: SimConfig): readonly string[] {
+  return config.flyers === undefined ? COUNT_CASTES : [...COUNT_CASTES, "flyer"];
+}
+
+/** The flyer, as the match's rules set it; empty without flyers. Served in the rules, the join briefing and /rules. */
+export function flyerRulesLines(config: SimConfig): string[] {
+  const flyers = config.flyers;
+  if (flyers === undefined) return [];
+  const s = (ticks: number) => seconds(config, ticks);
+  const verbs = countMarkVerbs(config), line = verbs.includes("LINE");
+  return [
+    `A flyer has ${flyers.hp / 1000} HP, deals ${flyers.damagePerSecond / 1000} HP per second (x${config.defenderBonusPermille / 1000} on your own territory) and costs ${flyers.cost} food. Each queen on brood flyers hatches one every ${s(hatchIntervalOf(config, "flyer"))} s, from match start; a mixed brood never hatches flyers. Flyers have no lifetime and no cap of their own: they count toward the colony's ant cap. A flyer never forages or carries food.`,
+    `Only flyer count marks (caste flyer) order flyers, and flyer marks order only flyers. A flyer mark's tile${line ? " (LINE: both ends)" : ""} must be land, never water or rock, inside your colony's current sight when the mark is laid or moved. Move one of your flyer marks with count_mark {markId, its own verb, count, the new tileX/tileY${line ? " (LINE: and toTileX/toTileY)" : ""}}: it keeps its id, members, lifetime and laid order; its airborne flyers turn toward the new tile at once and its grounded ones take off once they may.`,
+    `Flight is straight at ${flyers.speedTilesPerSecond} tiles per second over water, rock and ants, toward the mark's current tile; take-off and landing are instant. ATTACK and DEFEND: fly there, land, then walk and fight on the ground as ants on that verb. GATHER: hover over its tile.${verbs.includes("PATROL") ? " PATROL: fly the chain without landing or pausing: two marks back and forth, three or more as a loop, a lone mark as a hover." : ""}${line ? " LINE: hover spread evenly end to end as a wall, each over land your colony sees." : ""} FORAGE with caste flyer is refused.`,
+    `A flyer cannot take off for ${s(flyers.lockoutTicks)} s after landing; reaching a hover is not a landing. Airborne flyers, flying or hovering, bite only airborne enemy flyers in reach; ground ants and queens cannot hit them, and they hit nothing on the ground. A landed flyer fights as a ground ant.`,
+    "Flying and hovering flyers take no part in territory: they cannot claim, refresh or lock a tile, and an airborne enemy flyer never locks one. Landed flyers claim, refresh and lock tiles as other ants do.",
+    "When a flyer's order ends (REMOVE, expiry, a lapsed seat, a lower count or a caste change), a flying flyer finishes its flight, lands and stays put; a hovering one lands on the tile under it; a grounded one holds its tile.",
+    "observe view.flyers lists your colony's flyers, each with its tile and state: grounded, flying or hovering (with the tile it flies to or hovers over), or locked out (with the tick it may take off again).",
+    "In observe cells, every flyer your colony sees, yours or the enemy's, is marked as a flyer with its state: grounded, flying or hovering. An enemy flyer's destination, marks and lockout are never shown.",
+  ];
+}
+
+/** PATROL with flyers: the two kinds of patrol mark stay apart. */
+function flyerPatrolText(config: SimConfig): string {
+  return config.flyers === undefined ? "" : " Flyer and ground PATROL marks never link with each other; flyer patrols do not pause.";
+}
+
 export const MY_MARKS_TEXT = "myMarks: every live mark you laid, in or out of smell range, with its tile tileX/tileY; a LINE mark adds its second end toTileX/toTileY.";
 
 export const COMPACT_VIEW_TEXT = "Decode via observe tool. map:true territory: base64-bitset-lsb0; marks/myMarks: columnar-v1.";
@@ -66,7 +104,7 @@ export const SEAT_NOTICE_BRIEF = "Seat priority: squad_replaced = last nonempty 
 /** Availability precedes the command; answered claims come from the resulting mark. */
 export function countMarkReplyText(config: SimConfig): string {
   const merged = lineMarksEnabled(config) && config.countMarks?.reportClaimAvailability === true;
-  return `${merged ? "mark.claimed and countMark.claimed count this mark's own answered ants in the resulting view, not the colony total." : "mark.claimed is this mark's own answered ants in the command's resulting view, not the colony total."}${config.countMarks?.reportClaimAvailability ? `${merged ? "" : " countMark.claimed reports the same own-mark count."} countMark.claimedAnts is the colony-wide total already answering count marks before this command; freeAntsNow is eligible free colony ants before this command.` : ""}${config.countMarks?.casteSelection ? ` Replies, notices and history include caste only for worker or soldier${lineMarksEnabled(config) ? "" : "; omitted means any"}.` : ""}`;
+  return `${merged ? "mark.claimed and countMark.claimed count this mark's own answered ants in the resulting view, not the colony total." : "mark.claimed is this mark's own answered ants in the command's resulting view, not the colony total."}${config.countMarks?.reportClaimAvailability ? `${merged ? "" : " countMark.claimed reports the same own-mark count."} countMark.claimedAnts is the colony-wide total already answering count marks before this command; freeAntsNow is eligible free colony ants before this command.` : ""}${config.countMarks?.casteSelection ? ` Replies, notices and history include caste only for worker or soldier${lineMarksEnabled(config) ? "" : "; omitted means any"}.${config.flyers === undefined ? "" : " A flyer mark also shows caste flyer."}` : ""}`;
 }
 
 /** Whole seconds for a tick count, as the agent sees time. */
@@ -110,7 +148,7 @@ const FOUR_COLONY_POST_MATCH_TEXT = "Match over: matchOver:true, winner (the win
 /** The four-colony time-up order and same-tick cases (rankColonies): `when` names the moment it applies. Kills are the
  * colony kill credit (src/sim/combat.ts), not the count-mark telemetry. */
 function fourColonyTimeUpText(config: SimConfig, when: string): string {
-  return `${when}: surviving colonies rank by kills, then territory, ants alive and food delivered; the top colony wins, or the match is a draw if the top two are equal on all four. Eliminated colonies rank below every survivor, the latest eliminated highest. When every remaining colony loses its last queen or goes idle on the same tick, this order decides among them, and colonies eliminated on the same tick rank among themselves by it, on scores as they stood just before that tick's removal of ants and territory. Kills: each enemy ant or queen killed is one kill for the colony whose hit takes it to zero HP (on one tick, ants' hits land before queens' bites); a kill is never shared, and removed ants are no one's kills.${config.countMarks?.combatTotals ? " This score is not the count-mark kills in marks/myMarks, which credit the biggest hit." : ""}`;
+  return `${when}: surviving colonies rank by kills, then territory, ants alive and food delivered; the top colony wins, or the match is a draw if the top two are equal on all four. Eliminated colonies rank below every survivor, the latest eliminated highest. When every remaining colony loses its last queen or goes idle on the same tick, this order decides among them, and colonies eliminated on the same tick rank among themselves by it, on scores as they stood just before that tick's removal of ants and territory. Kills: each enemy ant or queen killed is one kill for the colony whose hit takes it to zero HP (on one tick, ants' hits land before queens' ${queensStrike(config) ? "strikes" : "bites"}); a kill is never shared, and removed ants are no one's kills.${config.countMarks?.combatTotals ? " This score is not the count-mark kills in marks/myMarks, which credit the biggest hit." : ""}`;
 }
 
 /** The four-colony territory win (majorityHold), every figure from the match's early-win rules. */
@@ -231,6 +269,16 @@ export function observeDetailText(config: SimConfig, mcpConfig: McpConfig = DEFA
 /** The line that starts the caste sentences (rules switch on only). */
 export const CASTES_LEAD = "- Castes:";
 
+/** Each queen's hatch clock: rules 28's one food rate, with the starting queen's first hatches; rules 27's interval multiplier. */
+function hatchClause(config: SimConfig): string {
+  const worker = hatchIntervalOf(config, "worker"), soldier = hatchIntervalOf(config, "soldier");
+  if (config.hatchRate !== undefined) {
+    const first = firstHatchTicks(config);
+    return `; each queen hatches at ${config.hatchRate.foodPerSecond} food per second: a worker every ${seconds(config, worker)} s (${worker} ticks), a soldier every ${seconds(config, soldier)} s (${soldier} ticks); the starting queen's first worker can hatch at tick ${first.worker} and her first soldier at tick ${first.soldier}`;
+  }
+  return config.hatchTiming === undefined ? "" : `; at each queen a worker takes one hatch interval (${seconds(config, worker)} s), a soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config, soldier)} s)`;
+}
+
 /**
  * The castes in at most three sentences, only with the caste switch on.
  */
@@ -243,7 +291,7 @@ function casteLines(config: SimConfig, hp: (milli: number) => number, callsPerSe
   // Rules 27: each agent sets its own queens' brood with set_brood.
   const brood = queenBroodText(config, callsPerSecond);
   return [
-    compact ? `${CASTES_LEAD} worker: ${config.hatchCost} food, stats above; soldier: ${soldierCost} food, ${soldierHp} HP, ${soldierDps} HP/s plus territory bonus, carries no food${config.hatchTiming === undefined ? "" : `; at each queen a worker takes one hatch interval (${seconds(config, config.hatchIntervalTicks)} s), a soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config, config.hatchIntervalTicks * config.hatchTiming.soldierIntervalMultiplier)} s)`}. ${brood}` : `${CASTES_LEAD} a worker costs ${config.hatchCost} food and is the ant above; a soldier costs ${soldierCost} food, has ${soldierHp} HP, deals ${soldierDps} HP per second (plus the territory bonus) and carries no food${config.hatchTiming === undefined ? "" : `; at each queen a worker takes one hatch interval (${seconds(config, config.hatchIntervalTicks)} s), a soldier takes ${config.hatchTiming.soldierIntervalMultiplier} hatch intervals (${seconds(config, config.hatchIntervalTicks * config.hatchTiming.soldierIntervalMultiplier)} s)`}. ${brood}`,
+    compact ? `${CASTES_LEAD} worker: ${config.hatchCost} food, stats above; soldier: ${soldierCost} food, ${soldierHp} HP, ${soldierDps} HP/s plus territory bonus, carries no food${hatchClause(config)}. ${brood}` : `${CASTES_LEAD} a worker costs ${config.hatchCost} food and is the ant above; a soldier costs ${soldierCost} food, has ${soldierHp} HP, deals ${soldierDps} HP per second (plus the territory bonus) and carries no food${hatchClause(config)}. ${brood}`,
   ];
 }
 
@@ -259,7 +307,7 @@ export function countMarkJobText(config: SimConfig): string {
   const line = lineMarksEnabled(config);
   // The caste line restates FORAGE's workers-only rule only with caste selection.
   const forage = line && rules.casteSelection ? "FORAGE works food nearest the mark and delivers home." : "FORAGE recruits workers only, works food nearest the mark and delivers home; caste soldier is refused.";
-  if (config.patrolLinkTiles !== undefined) return `DEFEND walks to its mark${rules.defendHolds ? ", holds and never chases" : ` and pursues enemies within ${rules.defendTiles} tiles`}. ATTACK marches there, then pursues the nearest enemy in the mark's ${config.attackRadiusTiles}-tile area. ${forage} GATHER holds its mark. PATROL: same-colony marks within ${config.patrolLinkTiles} tiles (Euclidean) ${line ? "link transitively; ants loop oldest to newest (laidTick, then id) and back. A lone patrol mark holds exactly like DEFEND." : "link transitively. Loop by laidTick then id: oldest to newest then back to oldest; two marks go back and forth. A lone patrol mark holds exactly like DEFEND."} Lay a bridging mark to join; expiry/seat lapse can split. Each recruits its own count; bite in reach, then continue.${line ? ` ${LINE_JOB_TEXT}` : ""}`;
+  if (config.patrolLinkTiles !== undefined) return `DEFEND walks to its mark${rules.defendHolds ? ", holds and never chases" : ` and pursues enemies within ${rules.defendTiles} tiles`}. ATTACK marches there, then pursues the nearest enemy in the mark's ${config.attackRadiusTiles}-tile area. ${forage} GATHER holds its mark. PATROL: same-colony marks within ${config.patrolLinkTiles} tiles (Euclidean) ${line ? "link transitively; ants loop oldest to newest (laidTick, then id) and back. A lone patrol mark holds exactly like DEFEND." : "link transitively. Loop by laidTick then id: oldest to newest then back to oldest; two marks go back and forth. A lone patrol mark holds exactly like DEFEND."} Lay a bridging mark to join; expiry/seat lapse can split. Each recruits its own count; bite in reach, then continue.${flyerPatrolText(config)}${line ? ` ${LINE_JOB_TEXT}` : ""}`;
   const defend = rules.defendHolds
     ? `DEFEND ants walk to the mark, hold there and bite only enemies within ${gridScaleForText(config)} tiles (incl. diagonals); they never chase`
     : `DEFEND ants walk to the mark and pursue enemies within ${rules.defendTiles} tiles of it`;
@@ -271,7 +319,7 @@ export const WORD_MARK_ACTIONS = "Word marks guide only squads told to follow_tr
 /** Shared rule text; old config headers retain their original copy. */
 export function countMarkCasteText(config: SimConfig, agent = false): string {
   return config.countMarks?.casteSelection
-    ? `Optional caste: ${COUNT_CASTES.join(", ")}; omitted means any. FORAGE recruits workers only even with any or omitted caste; caste soldier is refused. Only the chosen caste recruits${agent && lineMarksEnabled(config) ? "" : ", nearest first"}. Changing caste on a re-lay releases only ants it excludes; other claims stay unless the count is lowered.`
+    ? `Optional caste: ${COUNT_CASTES.join(", ")}; omitted means any. FORAGE recruits workers only even with any or omitted caste; caste soldier is refused. Only the chosen caste recruits${agent && lineMarksEnabled(config) ? "" : ", nearest first"}. Changing caste on a re-lay releases only ants it excludes; other claims stay unless the count is lowered.${config.flyers === undefined ? "" : " Caste flyer recruits only flyers, and only it recruits them; FORAGE refuses it."}`
     : "";
 }
 
@@ -287,7 +335,7 @@ export const NEW_QUEEN_BROOD_TEXT = "A newly founded queen breeds mixed until he
 
 /** Rules 27: set_brood, its choices and call limit; each agent owns its queen, no colony vote. */
 export function queenBroodText(config: SimConfig, callsPerSecond: number): string {
-  return `Each agent owns its queens and sets each one's brood with set_brood: workers, soldiers or mixed (alternates per queen; unset breeds mixed), queenId only if you own more than one; there is no colony vote.${config.queenFounding === undefined ? "" : ` ${NEW_QUEEN_BROOD_TEXT}`} set_brood counts toward the ${callsPerSecond}-calls-per-second limit, not the command allowance.`;
+  return `Each agent owns its queens and sets each one's brood with set_brood: ${config.flyers === undefined ? "workers, soldiers or mixed (alternates per queen; unset breeds mixed)" : "workers, soldiers, flyers or mixed (alternates worker and soldier per queen, never flyers; unset breeds mixed)"}, queenId only if you own more than one; there is no colony vote.${config.queenFounding === undefined ? "" : ` ${NEW_QUEEN_BROOD_TEXT}`} set_brood counts toward the ${callsPerSecond}-calls-per-second limit, not the command allowance.`;
 }
 
 /** Rules 27: only a queen's owner sets, moves or clears her spawn point. */
@@ -365,7 +413,7 @@ export function softSpacingLines(config: SimConfig): string[] {
     `Personal space: each ant steers itself. Within ${soft.radius} subunits: push strength ${soft.strength}, edge epsilon ${soft.epsilon}; steering+push <=${soft.maxStep} subunits/tick. Soft: no minimum distance/hard blocks; ants squeeze past. Water/rocks impassable.`,
     ...(soft.soldierRadius === undefined ? [] : [`Outside point arrival, soldier personal space: pairs containing a soldier push within ${soft.soldierRadius} subunits (${soft.soldierRadius / (1000 * gridScaleForText(config))} original tile)${exceptions}; worker–worker radius stays ${soft.radius} subunits. This soft push has no hard minimum; fixed-point resting geometry is identical for both castes.`]),
     `Crowd arrival: native reach (points: ${soft.arrivalSubunits} subunits), or same-goal/colony links <=${soft.arrivalLinkRadius} subunits rooted at an ant in reach; recomputed each tick, not remembered. No reserved slots/posts/holding band. Displaced DEFEND/ATTACK soldiers return inside mark.`,
-    `Contact: friends/enemies push alike, may overlap. Bites: within ${gridScaleForText(config)} tiles incl. diagonals; combat/queen-bite reach unchanged. Queens aren't bodies: no push/reserved/blocked tiles; ants there push. Pickup: worker on stocked food tile. Delivery: physically within ${config.nestDeliverTiles} tile${config.nestDeliverTiles === 1 ? "" : "s"} incl. diagonals of live friendly queen. Linked arrival: no remote pickup/delivery/bite. Native terrain-safe hatch; no crowd reservation/spacing deferral.`,
+    `Contact: friends/enemies push alike, may overlap. Bites: within ${gridScaleForText(config)} tiles incl. diagonals; combat/queen-${queensStrike(config) ? "strike" : "bite"} reach unchanged. Queens aren't bodies: no push/reserved/blocked tiles; ants there push. Pickup: worker on stocked food tile. Delivery: physically within ${config.nestDeliverTiles} tile${config.nestDeliverTiles === 1 ? "" : "s"} incl. diagonals of live friendly queen. Linked arrival: no remote pickup/delivery/bite. Native terrain-safe hatch; no crowd reservation/spacing deferral.`,
   ];
 }
 
@@ -418,10 +466,11 @@ function queenHpLine(config: SimConfig, s: (ticks: number) => number, hp: (milli
   const q = config.queenHp!;
   // A four-colony colony with no living queen is eliminated, and the match goes on.
   const four = fourColonies(config);
-  const text = usesCompactAgentText(config)
-    ? `- Queens with HP: ${hp(q.hp)} HP; bite one adjacent enemy for ${hp(q.biteDamage)} HP/${s(q.biteIntervalTicks)} s from ${s(config.combatGraceTicks)} s. Non-carrying ant with no enemy ant in reach: normal damage to adjacent enemy queen, no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles: regain ${hp(q.regenHp)} HP/${s(q.regenIntervalTicks)} s. 0 HP: lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "colony loses when all queens are dead (\"queens killed\")"}. There is no overrun. observe: own queens' hp and maxHp in milli-HP; divide by 1000 for HP.`
-    : `- Queens with HP: each queen has ${hp(q.hp)} HP and bites one adjacent enemy for ${hp(q.biteDamage)} HP every ${s(q.biteIntervalTicks)} s (from ${s(config.combatGraceTicks)} s). A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at its normal damage, with no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles a queen regains ${hp(q.regenHp)} HP every ${s(q.regenIntervalTicks)} s. A queen at 0 HP is lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "a colony loses when all its queens are dead (\"queens killed\")"}. There is no overrun. observe shows your queens' hp and maxHp in milli-HP; divide by 1000 for HP.`;
-  return `${text} Ant and queen bite reach is ${gridScaleForText(config)} tiles, including diagonals: one original-size tile's distance.`;
+  const compact = usesCompactAgentText(config);
+  const text = "biteDamage" in q
+    ? (compact ? `- Queens with HP: ${hp(q.hp)} HP; bite one adjacent enemy for ${hp(q.biteDamage)} HP/${s(q.biteIntervalTicks)} s from ${s(config.combatGraceTicks)} s. Non-carrying ant with no enemy ant in reach: normal damage to adjacent enemy queen, no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles: regain ${hp(q.regenHp)} HP/${s(q.regenIntervalTicks)} s. 0 HP: lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "colony loses when all queens are dead (\"queens killed\")"}. There is no overrun. observe: own queens' hp and maxHp in milli-HP; divide by 1000 for HP.` : `- Queens with HP: each queen has ${hp(q.hp)} HP and bites one adjacent enemy for ${hp(q.biteDamage)} HP every ${s(q.biteIntervalTicks)} s (from ${s(config.combatGraceTicks)} s). A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at its normal damage, with no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles a queen regains ${hp(q.regenHp)} HP every ${s(q.regenIntervalTicks)} s. A queen at 0 HP is lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "a colony loses when all its queens are dead (\"queens killed\")"}. There is no overrun. observe shows your queens' hp and maxHp in milli-HP; divide by 1000 for HP.`)
+    : (compact ? `- Queens with HP: ${hp(q.hp)} HP; strike one adjacent enemy for ${hp(q.damagePerSecond)} HP/s from ${s(config.combatGraceTicks)} s. Non-carrying ant with no enemy ant in reach: normal damage to adjacent enemy queen, no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles: regain ${hp(q.regenHp)} HP/${s(q.regenIntervalTicks)} s. 0 HP: lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "colony loses when all queens are dead (\"queens killed\")"}. There is no overrun. observe: own queens' hp and maxHp in milli-HP; divide by 1000 for HP.` : `- Queens with HP: each queen has ${hp(q.hp)} HP and strikes one adjacent enemy for ${hp(q.damagePerSecond)} HP per second (from ${s(config.combatGraceTicks)} s). A non-carrying ant with no enemy ant in reach bites an adjacent enemy queen at its normal damage, with no territory bonus; queens take no damage before ${s(q.shieldTicks)} s. With no enemy within ${q.regenClearTiles} tiles a queen regains ${hp(q.regenHp)} HP every ${s(q.regenIntervalTicks)} s. A queen at 0 HP is lost; ${four ? "a colony is eliminated when all its queens are dead (reason queens_killed)" : "a colony loses when all its queens are dead (\"queens killed\")"}. There is no overrun. observe shows your queens' hp and maxHp in milli-HP; divide by 1000 for HP.`);
+  return `${text} ${queensStrike(config) ? "Ant bite and queen strike" : "Ant and queen bite"} reach is ${gridScaleForText(config)} tiles, including diagonals: one original-size tile's distance.`;
 }
 
 /**
@@ -441,14 +490,18 @@ function mapLayoutLines(config: SimConfig, compact = false): string[] {
   });
 }
 
+const FLYER_TERRAIN_TEXT = "Airborne flyers can fly over water and rocks.";
+
 function terrainLines(config: SimConfig): string[] {
+  const fourWithFlyers = fourColonies(config) && config.flyers !== undefined;
   return config.terrain === undefined ? [] : [
     ...mapLayoutLines(config, usesCompactAgentText(config)),
     (hasDistinctMapLayouts(config.terrain)
       ? "Seed selects map. view.terrain: name, public water rectangles/legend. Water blocks ants/marks; food stays dry. Ants route around water; target land. Ants/food/enemy nests obey sight."
-      : `Maps: ${config.terrain.maps.map(m => m.name).join(", ")}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ants and marks; food is on land. Ants route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight.`)
+      : `Maps: ${config.terrain.maps.map(m => m.name).join(", ")}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ${fourWithFlyers ? "ground ants" : "ants"} and marks; food is on land. ${fourWithFlyers ? "Ground ants" : "Ants"} route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight.`)
       // A quadrant board's rocks are mirrored into every quadrant, not placed in left-right pairs (src/sim/quadrantMap.ts).
-      + (config.terrain.rocks === undefined ? "" : fourColonies(config) ? " The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid nests, food, water and the centre, keeping land connected." : ` The seed also places ${config.terrain.rocks.minPairs}-${config.terrain.rocks.maxPairs} mirrored rock pairs (${config.terrain.rocks.minClusterTiles}-${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${gridScaleForText(config)}x${gridScaleForText(config)} fine tiles). view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid starting nests, food and water, keeping land connected.`),
+      + (config.terrain.rocks === undefined ? "" : fourColonies(config) ? ` The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ${fourWithFlyers ? "ground ants" : "ants"}, marks and queen founding; ${fourWithFlyers ? "ground ants" : "ants"} route around them. Rocks avoid nests, food, water and the centre, keeping land connected.` : ` The seed also places ${config.terrain.rocks.minPairs}-${config.terrain.rocks.maxPairs} mirrored rock pairs (${config.terrain.rocks.minClusterTiles}-${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${gridScaleForText(config)}x${gridScaleForText(config)} fine tiles). view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid starting nests, food and water, keeping land connected.`)
+      + (fourWithFlyers ? ` ${FLYER_TERRAIN_TEXT}` : ""),
   ];
 }
 
@@ -533,6 +586,7 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
     `- Ants carrying food do not bite enemy ants or queens. Free, squad and count-mark carriers keep delivering to a live friendly queen past enemies, regardless of orders or marks; they never stop for combat.${(four ? config.queenHp !== undefined : lineMarksEnabled(config)) ? "" : " Carriers do not count toward overrunning an enemy queen."}`,
     "- Food carried to the nest hatches new ants.",
     ...casteLines(config, hp, mcpConfig.callsPerSecond),
+    ...(config.flyers === undefined ? [] : [`- Flyers: ${flyerRulesLines(config).join(" ")}`]),
     "",
     "Worked example:",
     ...(config.countMarks === undefined ? (config.wordMarksDisabled ? [
@@ -572,7 +626,7 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
     ...(config.terrain === undefined ? [] : [
       config.terrain.rocks === undefined
         ? `Seed picks ${config.terrain.maps.map(map => map.name).join("/")}. view.terrain: map name, public water rectangles/legend. Water blocks ants/marks; food stays dry. Ants route around water; target land. Ants/food/enemy nests obey sight.`
-        : "No ants, marks or queens on water or rocks.\nAnts/food/enemy nests obey sight. See view.terrain.",
+        : `${four && config.flyers !== undefined ? `No ground ants, marks or queens on water or rocks. ${FLYER_TERRAIN_TEXT}` : "No ants, marks or queens on water or rocks."}\nAnts/food/enemy nests obey sight. See view.terrain.`,
       ...mapLayoutLines(config, true),
     ]),
     // A four-colony match is joined only through its lobby slot, one seat per colony: no non-lobby join limits.
@@ -582,7 +636,7 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
     CELL_PAGING_TEXT,
     compact ? `MCP session closes after ${mcpConfig.sessionIdleMs / 60_000} minutes without requests; rejoin as described below.` : sessionExpiryText(mcpConfig), colonyVisibilityText(config), foodRadixText(config), SEAT_NOTICE_BRIEF,
     compact && context.local !== true ? (`${REJOIN_GUIDANCE} If your nest window is open, call pick_nest first, then read rules. A legal repick replaces yours. /rules here for humans/agents.`) : ("Any session: join {reconnectToken}; token is an alias. If your nest window is open, call pick_nest first, then read rules. A legal repick replaces yours. /rules here for humans/agents."),
-    four ? fourColonyJoinWinText(config) : compact ? `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen bites.` : "time-up: the larger territory wins; ties: more ants alive, then more food delivered."}` : `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen bites.` : "time-up: territory, ants alive, delivered food."}`,
+    four ? fourColonyJoinWinText(config) : compact ? `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen ${queensStrike(config) ? "strikes" : "bites"}.` : "time-up: the larger territory wins; ties: more ants alive, then more food delivered."}` : `How to win: ${config.queenHp ? "kill every enemy queen" : "Queen overrun: hold an enemy majority at every enemy nest"}; ${config.adjudication === "kills-first" ? `time-up or both last queens lost on the same tick (${config.queenHp ? "queens killed" : "double overrun/queens killed"}): kills, territory, ants alive, delivered food, else draw. Kills = enemy ant deaths, including queen ${queensStrike(config) ? "strikes" : "bites"}.` : "time-up: territory, ants alive, delivered food."}`,
     commandLimitText(config),
     "Carriers never bite ants or queens; free, squad and count-mark carriers deliver home past enemies instead of stopping for combat.",
     ...(four ? [] : frontlineFoodLines(config)),
@@ -599,6 +653,7 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
     ...(config.queenFounding ? [compact ? `found_queen: held tile; observe queenFounding for cost and nextFoundTick. Shares the ${config.wordMarksDisabled ? (config.countMarks === undefined ? "order" : "order/count_mark") : (config.countMarks === undefined ? "order/mark" : "order/mark/count_mark")} command limit.` : "found_queen: held tile; observe queenFounding for cost and nextFoundTick."] : []),
     // Rules 27: each agent owns its queens and sets their brood with set_brood.
     ...(config.castes !== undefined ? [queenBroodText(config, mcpConfig.callsPerSecond)] : []),
+    ...(config.flyers === undefined ? [] : [`Flyers: ${flyerRulesLines(config).join(" ")}`]),
     "Commands: outcome, nextCommandTick, changes only. Keep a few lines of notes.",
     "- Play the whole match: keep observing and giving orders until it ends.",
   ].join("\n");

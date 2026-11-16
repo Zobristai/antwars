@@ -44,7 +44,7 @@ describe.each(MODES)("rules 27, %s order schema", (_mode, config) => {
     expect(order.inputSchema.properties).not.toHaveProperty("brood");
     expect(order.inputSchema.properties!.kind).not.toMatchObject({ enum: expect.arrayContaining(["brood"]) });
     const brood = queenBroodText(config, DEFAULT_MCP_CONFIG.callsPerSecond);
-    expect(brood).toContain("set_brood: workers, soldiers or mixed");
+    expect(brood).toContain("set_brood: workers, soldiers, flyers or mixed");
     expect(brood).toContain(`${DEFAULT_MCP_CONFIG.callsPerSecond}-calls-per-second limit`);
     expect(brood).toContain("Each agent owns its queens");
     expect(brood).toContain("there is no colony vote");

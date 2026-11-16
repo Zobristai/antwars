@@ -8,6 +8,7 @@ import type { SimState } from "../../src/sim/types.js";
 import type { StartBox, StartTile } from "../../src/sim/startPlacement.js";
 import { LobbyStart } from "../../src/mcp/lobbyStart.js";
 import { recordedHousePlan } from "../house-plan.js";
+import { rules27Redesign } from "../rules27.ts";
 
 /** Test-only quadrant geometry, as in four-colony.test.ts: nest, water, start area and food off both mirror axes. */
 const QUADRANTS: MapDefinition = {
@@ -194,8 +195,11 @@ describe("start ants on the close fixture, picks far from the nests", () => {
 
 describe("a four-colony start without picks", () => {
   it("is unchanged: the same tick-zero state as before nest picks reached four colonies", () => {
-    // Hashed before new configs carried the no-bot-moves flag, which changes the config and nothing on the board.
-    expect(stateHash(createMatch(SEED, recordedHousePlan(quadrantConfig(QUADRANTS))))).toBe("4b781fa20511119d");
-    expect(stateHash(createMatch(SEED, recordedHousePlan(quadrantConfig(CLOSE))))).toBe("4436dee1f06f80b0");
+    // Hashed before new configs carried the no-bot-moves flag, which changes the config and nothing on the board,
+    // and under the rules-27 redesign (test/rules27.ts) the hashes were taken on.
+    const rules27 = newMatchConfig(rules27Redesign());
+    const rules27Quadrants = (map: MapDefinition): SimConfig => ({ ...rules27, terrain: { ...rules27.terrain!, maps: [map] } });
+    expect(stateHash(createMatch(SEED, recordedHousePlan(rules27Quadrants(QUADRANTS))))).toBe("4b781fa20511119d");
+    expect(stateHash(createMatch(SEED, recordedHousePlan(rules27Quadrants(CLOSE))))).toBe("4436dee1f06f80b0");
   });
 });

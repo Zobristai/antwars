@@ -117,19 +117,21 @@ export function mountDeck(doc: Document): Deck {
   score.insertBefore(coloniesEl, winGroup);
 
   // ---------------------------------------------------------------- each colony's economy: a cell per measure
-  type Key = "workers" | "soldiers" | "food" | "next" | "ants";
-  const measures: [Key, string][] = [["workers", PAGE_WORDS.workers], ["soldiers", PAGE_WORDS.soldiers], ["food", PAGE_WORDS.food], ["next", PAGE_WORDS.nextSpawn], ["ants", SCORE_COPY.ants]];
+  // Flyers only where the board's rules have them (Dial.flyers): a sixth cell, the economy then has-flyers.
+  type Key = "workers" | "soldiers" | "flyers" | "food" | "next" | "ants";
+  const measures: [Key, string][] = [["workers", PAGE_WORDS.workers], ["soldiers", PAGE_WORDS.soldiers], ["flyers", PAGE_WORDS.flyers], ["food", PAGE_WORDS.food], ["next", PAGE_WORDS.nextSpawn], ["ants", SCORE_COPY.ants]];
   const economies = COLONIES.map(c => {
     const root = h(doc, "div", `d1-econ c${c}`);
     const values = measures.map(([key, label]) => {
       const cell = h(doc, "div", "d1-cell");
       const value = figure(doc, c, "d1-mv", named);
       cell.append(h(doc, "span", "d1-ml", label), value.node);
+      cell.hidden = key === "flyers";
       root.append(cell);
-      return { key, value: value.value };
+      return { key, cell, value: value.value };
     });
     // The next spawn: its ring with the coming unit's icon inside, in the colony's colour; no seconds.
-    const value = values[3]!.value;
+    const value = values.find(v => v.key === "next")!.value;
     value.className = "d1-next";
     const ring = h(doc, "span", "d1-ring"), caste = h(doc, "span", "d1-caste"), words = h(doc, "span", "d1-next-text");
     ring.innerHTML = RING;
@@ -176,9 +178,10 @@ export function mountDeck(doc: Document): Deck {
     const n = economies[c]!.next;
     n.value.dataset.kind = view.kind;
     setRing(n.fill, view.kind === "waiting" ? view.fill : view.kind === "full" ? 1 : 0);
+    // A flyer has no icon of its own: the next spawn's spoken words name it (Dial.nextText).
     const caste = view.kind === "waiting" ? view.caste ?? "" : "";
     if (n.casteKey !== caste) { n.casteKey = caste; setMarkup(n.caste, caste === "worker" ? D1_ICON.worker : caste === "soldier" ? D1_ICON.soldier : ""); }
-    setHidden(n.caste, caste === "");
+    setHidden(n.caste, caste !== "worker" && caste !== "soldier");
     setText(n.words, view.kind === "none" ? "—" : "");
     setText(n.said, said);
   };
@@ -255,9 +258,12 @@ export function mountDeck(doc: Document): Deck {
       setHidden(mapRow, map === null);
       const ds: readonly [Dial, Dial] = dials(frame);
       for (const c of COLONIES) {
+        flag(economies[c]!.root, "has-flyers", ds[c].flyers !== null);
         for (const cell of economies[c]!.values) {
           if (cell.key === "next") continue;
-          setText(cell.value, ds[c][cell.key]);
+          const shown = ds[c][cell.key];
+          setHidden(cell.cell, shown === null);
+          setText(cell.value, shown ?? "");
         }
         paintNext(c, ds[c].next, ds[c].nextText);
       }

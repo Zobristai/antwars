@@ -12,7 +12,7 @@ import { createMcpHandler } from "../../src/mcp/http.js";
 import { Game } from "../../src/mcp/game.js";
 import * as streamFormat from "../../src/live/format.js";
 import { SpectatorRecorder } from "../../src/live/model.js";
-import { DEFAULT_CONFIG } from "../../src/sim/config.js";
+import { DEFAULT_CONFIG, rulesConfig } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 import { playable } from "../../test/playable.ts";
 // This is the actual standalone Node entry point, not a test-only copy.
@@ -74,6 +74,27 @@ describe("SSE arrival evidence", () => {
     const first = { ...recorder.initial(), full: recorder.initialFull() };
     const bytes = streamFormat.encodePublicMessage(first);
     expect(bytes[2]).toBeGreaterThanOrEqual(streamFormat.GRID_SCALE_STREAM_VERSION);
+    expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
+  });
+  it("reads the tick of a rules-28 match's first frame, which carries the rules-28 marker's stream version", () => {
+    const { hatchTiming: _timing, ...redesign } = rulesConfig("redesign");
+    const marked = { ...redesign, rules28: true as const, hatchRate: { foodPerSecond: 2 },
+      queenHp: { hp: 100_000, damagePerSecond: 10_000, regenHp: 1_000, regenIntervalTicks: 100, regenClearTiles: 3, shieldTicks: 3000 } };
+    const recorder = new SpectatorRecorder(createMatch(42, playable(marked)));
+    const first = { ...recorder.initial(), full: recorder.initialFull() };
+    const bytes = streamFormat.encodePublicMessage(first);
+    expect(bytes[2]).toBe(streamFormat.RULES28_STREAM_VERSION);
+    expect(SPECTATOR_STREAM_VERSIONS.max).toBeGreaterThanOrEqual(streamFormat.RULES28_STREAM_VERSION);
+    expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
+  });
+  it("reads the tick of a first frame carrying a flyer, at the flyer stream version, the latest it accepts", () => {
+    const state = createMatch(42, playable(DEFAULT_CONFIG));
+    state.ants[0]!.flyer = true;
+    const recorder = new SpectatorRecorder(state);
+    const first = { ...recorder.initial(), full: recorder.initialFull() };
+    const bytes = streamFormat.encodePublicMessage(first);
+    expect(bytes[2]).toBe(streamFormat.FLYER_STREAM_VERSION);
+    expect(SPECTATOR_STREAM_VERSIONS.max).toBe(streamFormat.FLYER_STREAM_VERSION);
     expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
   });
   it("holds the original connection to its deadline, timestamps every frame and closes the socket", async () => {

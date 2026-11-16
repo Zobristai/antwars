@@ -34,19 +34,25 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // Repinned for the no-bot-moves rule: the rules texts' "Active (not idle) colony seat: house bot off; none: on." reads
 // "No house bot plans any colony, seated or not."; the previous sentence restores the previous pins, and the join
 // digests are unchanged.
+// Redesign texts repinned for rules 28 (Kain's unit figures, one hatch rate with the starting queen's first hatches, the queen's
+// per-tick strike); built from the frozen rules-27 redesign config (test/rules27.ts) every text hashes to its previous pin.
+// Redesign texts repinned for flyers in the served rules (the Flyers line, flyers among the set_brood choices, caste flyer in the
+// count-mark caste, reply and PATROL sentences); with those sentences removed every text hashes to its previous pin.
+// Redesign texts repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each
+// flyer in sight with its grounded, flying or hovering state); with those two sentences removed every text hashes to its previous pin.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
-  "join house=false undrawn=true nest=false": "041d477331cf1542c9c2c324e7917802503c8802a9c4b7a54cdafa22171f4eec",
-  "join house=false undrawn=true nest=true": "fb5a6cb9191bab5f817aa725646c6034e9a9d8d7941bdd892a6aeedcddcd7efc",
-  "rules house=false undrawn=true": "ae88346eeab5df0631a4a1f43a8b10fa47377448762db09f6e127aa28049317e",
-  "join house=false undrawn=false nest=false": "8610e98444f71b495f0a8112f8e35d87459672fae4527e77360f10d9aba08861",
-  "join house=false undrawn=false nest=true": "ecb3f81ee0650b2d17888cd3df91ca7adbd4bb98ad5e3c3540f17a00daaa7921",
-  "rules house=false undrawn=false": "06dac6812d87c6d8d389df106ad28a61e7ce26305fb52c5adb5cd212afc0b219",
-  "join house=true undrawn=true nest=false": "17d024367b16cfd5125c5105103de6ee7d382ed1c407b4e31e18aa2c23ecce67",
-  "join house=true undrawn=true nest=true": "bcfe50a2b0e5dd1da5b4d25676138a958cc876c81f524c33a245d4b1c9a6c6cc",
-  "rules house=true undrawn=true": "f5d40adbf42879aab2342ce2febd1bb130af94d52a302a29f7133023058c2824",
-  "join house=true undrawn=false nest=false": "e1ab9ff196b40d29aa79bb46d860d94374436310312fbdc08d85ad0133f57845",
-  "join house=true undrawn=false nest=true": "52d03a98f0f52c96f2175d626842a50a21648daf96a09093de8a839bc10741a2",
-  "rules house=true undrawn=false": "4876e95707560033d41393c56f2fcb1e4b21b7f3568d5cac7fba1f1451ff422d",
+  "join house=false undrawn=true nest=false": "9f82b0787446dd2dcb6d0a5287389c91436b326026d542662aeaa57b11ed0b23",
+  "join house=false undrawn=true nest=true": "1d171ca6af4bf448a723ff746a13f177f7564b1ba47ad46ad309b95e92208e78",
+  "rules house=false undrawn=true": "dcf8a46e0a26be11089bc983cfa30c2534426d6654735c7005a5c8b7015c162f",
+  "join house=false undrawn=false nest=false": "da9f206723a7a93d93a9c13ad078ae6b48f1fdd19069978114adf8813cc4e6d7",
+  "join house=false undrawn=false nest=true": "63e582a095a06c3feb075d80dc2d0ca87883fb4af879c39aed4897f4b3155f37",
+  "rules house=false undrawn=false": "977953274b1810d923c481f706ff828f2f81f81733ee9cb27257543f39d8e9a7",
+  "join house=true undrawn=true nest=false": "7858aac5b8c97dff39385ddecda29bf8b20d1543b517322230fec44e8bd213ab",
+  "join house=true undrawn=true nest=true": "eaa963c92bff17943e2e7301c6b84757acef2cc421580cb320097d155982d0cc",
+  "rules house=true undrawn=true": "8106221918efbb08d33977ff88fef9e83f3cb66fc1da1f99c50dec96c506ac33",
+  "join house=true undrawn=false nest=false": "60575dff108c249386cb2be56d2034571c4ffb38809a4010c58d06c657552542",
+  "join house=true undrawn=false nest=true": "9534c6f963914bfe470106a439e3861345a0512b302dbaea73e5087507f6a0b3",
+  "rules house=true undrawn=false": "975fff8c35db1fc55888638568bce529e7ae9e6afcdb11586e842d7e41ba497a",
 };
 
 // The antwar-preview comparison service (held-match mode, ANTWAR_RULES and ANTWAR_PLAYERS set) is hosted
@@ -60,6 +66,9 @@ const HOSTED_AT_5DF81D04: Record<string, string> = {
 // Repinned for the same queen-HP "(queens killed)" wording as above; only the redesign join digests change.
 // Repinned for the same no-bot-moves sentence as above; only the redesign rules digests change. A comparison server
 // no longer starts on v4 or count-marks, so only redesign is served; the v4 and count-marks texts stay pinned.
+// Redesign texts repinned for rules 28 as above; built from the frozen rules-27 redesign config each hashes to its previous pin.
+// Redesign texts repinned for flyers as above; the v4 and count-marks digests are unchanged.
+// Redesign texts repinned for the two more Flyers sentences as above; the v4 and count-marks digests are unchanged.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "join v4 players=2": "5c5f62959d1ef08efa3ba6e40a31aede6b967a96ed66b893108ec82d2130d14a",
@@ -70,10 +79,10 @@ const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "rules count-marks players=2": "74e50fc4f49e3bd3f30fec1484e01e319270592227a5301feb366a38df8166ee",
   "join count-marks players=4": "6ee40f2fed373eb907d39d6e9e28c12908372e05f586092d9fa331a82bca7aa1",
   "rules count-marks players=4": "d493637afc5ca34792863292f9575984a4995eb660e2e4e005f5d830b940e16c",
-  "join redesign players=2": "d8689b092f1b1c0a720ea0b52521e5e435d0e26236d9ba77c965ce596fb36605",
-  "rules redesign players=2": "089700f2e6e4675b9d191ada91e7ab06519f3cac9e45bce183b5bf0b69573f78",
-  "join redesign players=4": "aef59f5de77da55482b86a3faa2586b457cf0b87330ea876005ed37f2e3cec90",
-  "rules redesign players=4": "11d6125c89fa2c9f39d688c774dbbfc94f79bc03d4e6aa833f8f9bb65178fa43",
+  "join redesign players=2": "0e465c7e5738c8b5177ca6edcdb85e4c9293ae47bc159981989830a2b0afcd92",
+  "rules redesign players=2": "f0ff759c90ef098cfd3d9e40d906b04c1261e20944b673de47d3be81e9b62072",
+  "join redesign players=4": "97daeddc6b7934c99d72d1fb359cdf28f800b9acb1fa4fa548eb676df70a268c",
+  "rules redesign players=4": "0875127d8852028970f3541c014ed6da4ab13ed024abce7554a3c92a293a5f1e",
 };
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));

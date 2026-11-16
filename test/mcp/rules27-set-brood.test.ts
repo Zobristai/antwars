@@ -52,14 +52,15 @@ describe("rules-27 set_brood tool", () => {
     const tool = (await (await h!.connect()).client.listTools()).tools.find((t) => t.name === "set_brood")!;
     expect(tool).toBeDefined();
     const brood = queenBroodText(RULES_27, DEFAULT_MCP_CONFIG.callsPerSecond);
-    expect(brood).toBe(`Each agent owns its queens and sets each one's brood with set_brood: workers, soldiers or mixed (alternates per queen; unset breeds mixed), queenId only if you own more than one; there is no colony vote. A newly founded queen breeds mixed until her owner calls set_brood for her. set_brood counts toward the ${DEFAULT_MCP_CONFIG.callsPerSecond}-calls-per-second limit, not the command allowance.`);
+    expect(brood).toBe(`Each agent owns its queens and sets each one's brood with set_brood: workers, soldiers, flyers or mixed (alternates worker and soldier per queen, never flyers; unset breeds mixed), queenId only if you own more than one; there is no colony vote. A newly founded queen breeds mixed until her owner calls set_brood for her. set_brood counts toward the ${DEFAULT_MCP_CONFIG.callsPerSecond}-calls-per-second limit, not the command allowance.`);
     expect(tool.description).toContain(brood);
     expect(tool.description).toContain("set_brood counts toward the 2-calls-per-second limit, not the command allowance.");
     expect(tool.description).toContain(queenSpawnOwnerText(RULES_27));
     expect(queenSpawnOwnerText(RULES_27)).toBe("Only a queen's owner sets, moves or clears her spawn point.");
     expect(tool.description).toContain("it neither waits for nor moves nextCommandTick");
     const schema = tool.inputSchema as { properties: Record<string, { enum?: string[]; type?: string }>; required?: string[] };
-    expect(schema.properties.brood?.enum).toEqual(["workers", "soldiers", "mixed"]);
+    // The served rules add flyers to the brood choices.
+    expect(schema.properties.brood?.enum).toEqual(["workers", "soldiers", "mixed", "flyers"]);
     expect(schema.properties.queenId?.type).toBe("number");
     expect(schema.required).toEqual(["brood"]);
   });
@@ -102,9 +103,9 @@ describe("rules-27 set_brood tool", () => {
     expect(teammates.data.error.code).toBe("no_owned_queen");
     expect(homeQueen().brood).toBeUndefined();
     const bad = await setBrood(a, { brood: "drones" });
-    expect(bad.data.error).toMatchObject({ code: "bad_arguments", message: "brood must be one of workers, soldiers, mixed." });
+    expect(bad.data.error).toMatchObject({ code: "bad_arguments", message: "brood must be one of workers, soldiers, mixed, flyers." });
     const missing = await setBrood(a, {});
-    expect(missing.data.error).toMatchObject({ code: "bad_arguments", message: "brood must be one of workers, soldiers, mixed." });
+    expect(missing.data.error).toMatchObject({ code: "bad_arguments", message: "brood must be one of workers, soldiers, mixed, flyers." });
     const state = h!.game.match!.state;
     state.colonies[0]!.queens!.push({ ...homeQueen(), id: 5 });
     const ambiguous = await setBrood(a, { brood: "soldiers" });

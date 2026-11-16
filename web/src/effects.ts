@@ -1,6 +1,6 @@
 /**
  * Battles and screen effects: a small contact spark
- * per fixed-tick bite, the place markers of new timeline entries, the
+ * per fixed-tick bite (an air fight lifted to its flyers, ringed), flyers' take-off and landing moments, the place markers of new timeline entries, the
  * switchable tilt-shift miniature effect, and colour-blindness simulation used
  * by capture to check the colony colours.
  */
@@ -8,16 +8,30 @@ import { IconSprites } from "./icons/sprites.ts";
 import { ColorMatrixFilter, Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, type ColorMatrix, type Renderer } from "pixi.js";
 import { TiltShiftFilter } from "pixi-filters";
 import { streamQueens, type StreamQueen } from "../../src/live/format.ts";
-import { HIT_FLASH_MS, QUEEN_COLLAPSE_MS, queenLossAge, type Frame } from "./buffer.ts";
+import { FLIGHT_MOMENT_MS, HIT_FLASH_MS, QUEEN_COLLAPSE_MS, queenLossAge, type Flight, type Frame } from "./buffer.ts";
 import { SUB_TILE, TICK_MS, type Colony } from "../../src/live/snapshot.ts";
-import { renderedBiteContacts } from "./bite.ts";
+import { airFights, fightPairKey, renderedBiteContactPairs, renderedBiteContacts, renderedWorkerLength } from "./bite.ts";
+import { AIR_LIFT_2D_LENGTHS } from "./flyer-lift.ts";
 import { colonyTint } from "./colony-palette.ts";
 import { reducedMotion } from "./camera.ts";
 import { visibleStory } from "./story.ts";
 import { boardQueenHp } from "./variant.ts";
 
+/** A ground fight's contact spark: radius in CSS px, tint and alpha. */
+export const GROUND_SPARK = { r: 1.5, tint: 0xc3ad78, alpha: 0.6 } as const;
+/**
+ * An air fight on the 2D board, in CSS px: its contact spark (r, pale and brighter than a ground
+ * spark) and a ring of dots around the fight on a dark backing, both at the flyers' lifted height.
+ */
+export const AIR_FIGHT = { r: 2, tint: 0xe8f4ff, alpha: 0.95, ringR: 6, dots: 8, dotR: 1.1, backingR: 1.9, backingAlpha: 0.45 } as const;
+
 /** Tiny contact sparks, normally blended and drawn below ants. The ant renderer
- * supplies exact rendered head boundaries; no independent flash/ring timer. */
+ * supplies exact rendered head boundaries; no independent flash/ring timer.
+ * A fight between two airborne flyers (bite.ts airFights) is drawn where
+ * their bodies are, AIR_LIFT_2D_LENGTHS worker lengths up the screen from their
+ * ground points, as a pale spark at their heads' contact and a ring of dots
+ * around them for as long as they stay engaged; its spark is never drawn on
+ * the ground. */
 export class Battles {
   readonly layer: ParticleContainer;
   private px: number;
@@ -33,18 +47,37 @@ export class Battles {
   }
   setTilePx(tilePx: number) { this.px = 1 / tilePx; }
   update(frame: Frame) {
-    const points = renderedBiteContacts(frame);
-    for (let i = 0; i < points.length; i++) {
-      const point = points[i]!;
-      const p = this.pool[i] ??= new Particle({ texture: this.spark, anchorX: 0.5, anchorY: 0.5 });
-      p.x = point.x; p.y = point.y;
-      // At most 1.5 CSS px, never a full-width glow or expanding burst.
-      p.scaleX = p.scaleY = 1.5 * this.px / 14;
-      p.tint = 0xc3ad78; p.alpha = 0.6;
+    const points = renderedBiteContacts(frame), pairs = renderedBiteContactPairs(frame);
+    const air = airFights(frame);
+    const inAir = (i: number) => air.size > 0 && air.has(fightPairKey(pairs[i]![0], pairs[i]![1]));
+    const length = renderedWorkerLength(frame);
+    const lift = AIR_LIFT_2D_LENGTHS * (length ?? 0);
+    const px = this.px;
+    let n = 0;
+    const put = (x: number, y: number, r: number, tint: number, alpha: number) => {
+      const p = this.pool[n++] ??= new Particle({ texture: this.spark, anchorX: 0.5, anchorY: 0.5 });
+      p.x = x; p.y = y;
+      p.scaleX = p.scaleY = r * px / 14;
+      p.tint = tint; p.alpha = alpha;
+    };
+    // At most 1.5 CSS px, never a full-width glow or expanding burst.
+    for (let i = 0; i < points.length; i++) if (!inAir(i)) put(points[i]!.x, points[i]!.y, GROUND_SPARK.r, GROUND_SPARK.tint, GROUND_SPARK.alpha);
+    // The ant renderer has not drawn this frame: no bodies, so no air fight to draw at them.
+    if (length !== null) {
+      const ring = (r: number, tint: number, alpha: number) => {
+        for (const f of air.values()) for (let k = 0; k < AIR_FIGHT.dots; k++) {
+          const t = (k / AIR_FIGHT.dots) * 2 * Math.PI;
+          put(f.x + Math.cos(t) * AIR_FIGHT.ringR * px, f.y - lift + Math.sin(t) * AIR_FIGHT.ringR * px, r, tint, alpha);
+        }
+      };
+      // Every backing dot first, so no ring's backing covers another ring's dots.
+      ring(AIR_FIGHT.backingR, 0x000000, AIR_FIGHT.backingAlpha);
+      ring(AIR_FIGHT.dotR, AIR_FIGHT.tint, AIR_FIGHT.alpha);
+      for (let i = 0; i < points.length; i++) if (inAir(i)) put(points[i]!.x, points[i]!.y - lift, AIR_FIGHT.r, AIR_FIGHT.tint, AIR_FIGHT.alpha);
     }
     const kids = this.layer.particleChildren;
     kids.length = 0;
-    for (let i = 0; i < points.length; i++) kids.push(this.pool[i]!);
+    for (let i = 0; i < n; i++) kids.push(this.pool[i]!);
     this.layer.update();
   }
 }
@@ -212,6 +245,72 @@ export class QueenHomes {
         emblem.rect(qx - w / 2, y, w, h).fill({ color: 0x090807, alpha: 0.9 * s.zone });
         if (s.bar > 0) emblem.rect(qx - w / 2, y, w * s.bar, h).fill({ color: mixColour(colour, 0xffffff, s.flash), alpha: s.zone });
       }
+    }
+  }
+}
+
+/** A take-off or landing moment's ring: its radius where it starts and ends, in CSS px, and its dot's. */
+export const FLIGHT_RING = { near: 9, far: 24, dot: 3 } as const;
+
+/** One take-off or landing moment at one frame: ring radius in CSS px, ring and dot alpha. */
+export interface FlightMomentState {
+  radius: number;
+  ring: number;
+  dot: number;
+}
+
+/**
+ * A flyer's take-off or landing at one frame, the same on both boards: a ring on the ground around the point where it
+ * happened, spreading out from it as the flyer rises (take-off) or closing in on it as the flyer comes down (landing),
+ * fading out over FLIGHT_MOMENT_MS. A take-off also leaves a dot on the spot it left, fading faster. Under reduced
+ * motion the ring stands still where its motion would end (wide for a take-off, near for a landing) and only fades.
+ */
+export function flightMoment(kind: Flight["kind"], ageMs: number, reduced = reducedMotion()): FlightMomentState {
+  const t = Math.min(1, Math.max(0, ageMs / FLIGHT_MOMENT_MS));
+  const fade = 1 - t;
+  const moved = reduced ? 1 : 1 - fade * fade;
+  const { near, far } = FLIGHT_RING;
+  const radius = kind === "takeoff" ? near + (far - near) * moved : far - (far - near) * moved;
+  return { radius, ring: 0.9 * fade, dot: kind === "takeoff" ? 0.9 * fade * fade : 0 };
+}
+
+/** A moment's colour: its colony's, lightened, so it reads apart from the timeline's place markers. */
+export function flightTint(colony: Colony): number {
+  return mixColour(colonyTint(colony), 0xffffff, 0.35);
+}
+
+/**
+ * Each flyer's take-offs and landings (Frame.flights) as brief moments on the ground where they happened
+ * (flightMoment), beneath the ants; sizes are CSS px.
+ */
+export class FlightMoments {
+  readonly layer = new Graphics();
+  private px: number;
+  /** Moments drawn this frame. */
+  shown = 0;
+
+  constructor(tilePx: number) {
+    this.px = 1 / tilePx;
+  }
+
+  setTilePx(tilePx: number) {
+    this.px = 1 / tilePx;
+  }
+
+  update(frame: Pick<Frame, "flights">, reduced = reducedMotion()) {
+    const g = this.layer;
+    const px = this.px;
+    g.clear();
+    this.shown = 0;
+    for (const f of frame.flights) {
+      if (f.ageMs < 0 || f.ageMs >= FLIGHT_MOMENT_MS) continue;
+      const s = flightMoment(f.kind, f.ageMs, reduced);
+      const colour = flightTint(f.colony);
+      this.shown++;
+      // A dark outline under the ring, so it reads over any ground; each stroke takes its own circle.
+      g.circle(f.x, f.y, s.radius * px).stroke({ width: 3.5 * px, color: 0x000000, alpha: 0.5 * s.ring });
+      g.circle(f.x, f.y, s.radius * px).stroke({ width: 2 * px, color: colour, alpha: s.ring });
+      if (s.dot > 0) g.circle(f.x, f.y, FLIGHT_RING.dot * px).fill({ color: colour, alpha: s.dot }).stroke({ width: 1 * px, color: 0x000000, alpha: 0.5 * s.dot });
     }
   }
 }

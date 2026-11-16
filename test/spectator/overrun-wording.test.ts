@@ -25,7 +25,7 @@ const CARRIERS_OVERRUN = `${CARRIERS} Carriers do not count toward overrunning a
 describe("live rules (queen HP)", () => {
   const config = playable(rulesConfig("redesign"));
   it("states the same-tick ending as queens killed on the Rules page", () => {
-    expect(howToWin(config)).toBe("At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.");
+    expect(howToWin(config)).toBe("At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen strikes.");
     expect(winning(config)).toBe("A match lasts 30 minutes. Kill every enemy queen to win before time-up, or meet the sustained-territory early-win condition described in Battle balance. At time-up, or if both colonies lose their last queen on the same tick (queens killed), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.");
   });
   it("gives carriers no overrun effect and keeps There is no overrun", () => {

@@ -11,9 +11,10 @@ import { SpectatorRecorder, SpectatorState } from "../../src/live/model.ts";
 import { playScripted } from "../../src/live/record.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { drawColonyNames, SUPERCOLONY_NAMES } from "../../src/sim/colonyNames.ts";
-import { PUBLIC_CONFIG, rulesConfig, type SimConfig } from "../../src/sim/config.ts";
+import { PUBLIC_CONFIG, type SimConfig } from "../../src/sim/config.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 /** The four Quadrants names by colony number: the shared name table's order. */
@@ -220,7 +221,8 @@ describe("two-colony messages beside four colonies", () => {
   const cases: [keyof typeof TWO_COLONY_BEFORE, SimConfig, ConstructorParameters<typeof SpectatorRecorder>[1]][] = [
     ["rated", publicConfig, { rated: true, identity: (id: string) => ({ displayName: `Seat ${id}`, elo: 1500 + id.length, rd: 80 }) }],
     ["unrated", publicConfig, { rated: false, colonyNames: drawColonyNames("unrated-lobby") }],
-    ["redesign", playable({ ...rulesConfig("redesign"), terrain: undefined, matchTicks: 300 }), {}],
+    // The rules-27 redesign (test/rules27.ts), whose bytes these hashes recorded; rules-28 bytes are not older than four colonies.
+    ["redesign", playable({ ...rules27Redesign(), terrain: undefined, matchTicks: 300 }), {}],
   ];
 
   it.each(cases)("keeps every %s message's version and bytes", (label, config, players) => {

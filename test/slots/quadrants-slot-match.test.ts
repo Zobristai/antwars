@@ -203,6 +203,9 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     const state = server.game.match!.state;
     expect(state.terrain!.mapId).toBe(FIXTURE.id);
     expect(state.colonies.map(colony => colony.id)).toEqual([0, 1, 2, 3]);
+    // Served on the production rules: rules 28 with flyers, as a two-colony match is.
+    expect(LIVE.flyers).toBeDefined();
+    expect([state.config.rules28, state.config.flyers]).toEqual([true, LIVE.flyers]);
     const queen = (colony: number) => {
       const q = state.colonies[colony]!.queens![0]!;
       return { tileX: Math.floor(q.queenX / SUB), tileY: Math.floor(q.queenY / SUB) };

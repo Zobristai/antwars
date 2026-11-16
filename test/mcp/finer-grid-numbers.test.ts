@@ -40,7 +40,7 @@ describe("agent and human rule numbers use the match config", () => {
     }
     // Current agent prose is shorter than the human rules; pin both independently.
     // Says "in reach"; the reach itself is defined once under How to win.
-    expect(full).toContain(`Ant and queen bite reach is ${gridScale} tiles, including diagonals`);
+    expect(full).toContain(`Ant bite and queen strike reach is ${gridScale} tiles, including diagonals`);
     expect(human).toContain(`bite only enemies within ${gridScale} tiles (incl. diagonals), never chasing`);
     expect(sections.find(section => section.title === "Autonomous ants")!.lines.join("\n"))
       .toContain(`Every non-carrying free ant bites enemies within ${gridScale} tiles (incl. diagonals)`);
@@ -103,7 +103,7 @@ describe("agent and human rule numbers use the match config", () => {
       expect(count.description).toContain(`ATTACK marches there, then pursues the nearest enemy in the mark's ${config.attackRadiusTiles}-tile area.`);
       expect(count.description).toContain("DEFEND walks to its mark, holds and never chases.");
       expect(count.description).toContain("Each recruits its own count; bite in reach, then continue.");
-      expect(briefing(config)).toContain(`Ant and queen bite reach is ${config.gridScale} tiles, including diagonals: one original-size tile's distance.`);
+      expect(briefing(config)).toContain(`Ant bite and queen strike reach is ${config.gridScale} tiles, including diagonals: one original-size tile's distance.`);
       expect(count.description).not.toContain("bite only adjacent enemies");
       expect(count.description).toContain(`marks last ${config.markLifetimeTicks / config.ticksPerSecond} seconds`);
     } finally { await h.close(); }

@@ -29,9 +29,10 @@ const CASTE = { worker: "w", soldier: "s" };
 /** With more than two colonies, each enemy ant and enemy queen ends @<colony>; two colonies print as before. */
 const colonyTag = (colony, own, byColony) => (byColony && colony !== own ? `@${colony}` : "");
 
+/** A flyer, own or enemy, reads f with its state in brackets; other ants by caste. */
 function antText(ant, own, byColony) {
-  const letter = CASTE[ant.caste] ?? "a";
-  return `${ant.antId}${ant.colony === own ? letter : letter.toUpperCase()}${hp(ant.hp)}${colonyTag(ant.colony, own, byColony)}`;
+  const letter = ant.flyer === undefined ? CASTE[ant.caste] ?? "a" : "f";
+  return `${ant.antId}${ant.colony === own ? letter : letter.toUpperCase()}${hp(ant.hp)}${ant.flyer === undefined ? "" : `(${ant.flyer})`}${colonyTag(ant.colony, own, byColony)}`;
 }
 
 function tileText(cell, own, byColony) {
@@ -70,7 +71,7 @@ export function territoryLines(rows) {
   return lines;
 }
 
-const CELL_KEY = "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier a=none, lowercase own UPPERCASE enemy; hp in HP";
+const CELL_KEY = "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier f=flyer a=none, lowercase own UPPERCASE enemy; hp in HP; a flyer adds its state (grounded), (flying) or (hovering)";
 /** The key of a cell table with more than two colonies: enemy ants and queens also name their colony. */
 const colonyCellKey = (colonies, own) => `${CELL_KEY}; @<n> ends each enemy ant and enemy queen: the colony it belongs to, 0-${colonies - 1} (yours is ${own})`;
 

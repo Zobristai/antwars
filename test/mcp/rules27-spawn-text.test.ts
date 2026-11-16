@@ -62,7 +62,8 @@ describe("rules-27 agent text for spawn points and count-mark removal", () => {
     expect(tool.description).toContain("Accepted SPAWN replies give spawnPoint {queenId,tileX,tileY} or {queenId,cleared:true}; REMOVE gives removedMark {markId}.");
     const schema = tool.inputSchema as { properties: Record<string, { description?: string }>; required?: string[] };
     expect(schema.properties.queenId?.description).toContain("SPAWN only");
-    expect(schema.properties.markId?.description).toContain("REMOVE only");
+    // With flyers in the served rules, markId also moves the caller's flyer mark.
+    expect(schema.properties.markId?.description).toContain("REMOVE: the markId of your own count mark (myMarks).");
     expect(schema.properties.verb?.description).toContain("Or SPAWN (set, move or clear a queen's spawn point) or REMOVE (remove your own count mark).");
     expect(schema.required ?? []).not.toContain("count");
     expect((await agent.call("rules")).data.rules).toContain(text);

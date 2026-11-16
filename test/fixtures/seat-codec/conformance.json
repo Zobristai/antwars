@@ -513,6 +513,89 @@
      "ants": []
     }
    ]
+  },
+  {
+   "name": "flyers in each state, both colonies, beside a worker and a queen",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none. A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.",
+    "foodRadix": 3,
+    "data": "eai:8c.99e.g/8d.99f.g/8e.iiq;5:8f.6y2.f/8g.99f.f;6,1,gl8:8h.99e.h/8i.9.h"
+   },
+   "decoded": [
+    {
+     "tileX": 30,
+     "tileY": 48,
+     "food": 0,
+     "ants": [
+      {
+       "antId": 300,
+       "hp": 2000,
+       "colony": 0,
+       "caste": "worker",
+       "flyer": "grounded"
+      },
+      {
+       "antId": 301,
+       "hp": 2000,
+       "colony": 1,
+       "caste": "worker",
+       "flyer": "grounded"
+      },
+      {
+       "antId": 302,
+       "hp": 4000,
+       "colony": 0,
+       "caste": "worker"
+      }
+     ]
+    },
+    {
+     "tileX": 31,
+     "tileY": 48,
+     "food": 2,
+     "ants": [
+      {
+       "antId": 303,
+       "hp": 1500,
+       "colony": 0,
+       "caste": "worker",
+       "flyer": "flying"
+      },
+      {
+       "antId": 304,
+       "hp": 2000,
+       "colony": 1,
+       "caste": "worker",
+       "flyer": "flying"
+      }
+     ]
+    },
+    {
+     "tileX": 33,
+     "tileY": 48,
+     "food": 0,
+     "ants": [
+      {
+       "antId": 305,
+       "hp": 2000,
+       "colony": 0,
+       "caste": "worker",
+       "flyer": "hovering"
+      },
+      {
+       "antId": 306,
+       "hp": 1,
+       "colony": 1,
+       "caste": "worker",
+       "flyer": "hovering"
+      }
+     ],
+     "queen": 1,
+     "queenHp": 21500
+    }
+   ]
   }
  ],
  "cellsInvalid": [
@@ -564,6 +647,46 @@
     "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none.",
     "foodRadix": 0,
     "data": "1sg;a*6;7*3;jg;a;9j0,0,n5c;hw,1:9.6;6,1,0;hf0:2s.iio/2t.gz7/2u.ffq/2v.dw9/2w.ccs/2x.atb;6:1jk.5po;7:1jl.5pv;8:1jm.5q2;9:1jn.5q9;a:1jo.5qg;b:1jp.5qn"
+   }
+  },
+  {
+   "name": "unknown flyer state",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none. A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.",
+    "foodRadix": 1,
+    "data": "0:1.8.l"
+   }
+  },
+  {
+   "name": "field after the flyer state",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none. A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.",
+    "foodRadix": 1,
+    "data": "0:1.8.h.3"
+   }
+  },
+  {
+   "name": "empty flyer state",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none. A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.",
+    "foodRadix": 1,
+    "data": "0:1.8."
+   }
+  },
+  {
+   "name": "inherited property name as flyer state",
+   "encoded": {
+    "width": 128,
+    "height": 96,
+    "encoding": "base36 integers (signed); cells separated by ;: p[,queenColony[,queenHp]][:ants]. Reset previousIndex=0 (i) per page; d=floor(p/foodRadix); food=p-d*foodRadix; i+=d; x=i%width; y=floor(i/width). Food-only p*n repeats n times (n base36), updating i each time. queenColony=colony0/1 (own=view.colony), not queenId. Ants=antId.k separated by /; hp=floor(k/6), kind=k%6; kind 0/1=no caste, 2/3=worker, 4/5=soldier; even=colony0, odd=colony1. HP and queenHp are milli-HP. Absent queen/ants or empty data means none. A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.",
+    "foodRadix": 1,
+    "data": "0:1.8.constructor"
    }
   }
  ],

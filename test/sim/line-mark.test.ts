@@ -9,9 +9,9 @@ import { step } from "../../src/sim/step.js";
 import { isBlockedTile } from "../../src/sim/terrain.js";
 import type { Agent, Ant, SimInput, SimState, StepOutput } from "../../src/sim/types.js";
 import { addAnt } from "./fixtures.js";
+import { rules27Redesign } from "../rules27.ts";
 
-function scene(mapId = "open-field", patch: Partial<SimConfig> = {}): SimState {
-  const base = rulesConfig("redesign");
+function scene(mapId = "open-field", patch: Partial<SimConfig> = {}, base: SimConfig = rulesConfig("redesign")): SimState {
   // No squad: colony sight comes from the free ants, and no squad lapse frees extra ants mid-test.
   const config = newMatchConfig({ ...base, startAnts: 0, squadSize: 0, commandFloorTicks: 1, hatchIntervalTicks: 1_000_000,
     terrain: { ...base.terrain!, mapId }, ...patch });
@@ -29,8 +29,8 @@ function lay(state: SimState, input: Partial<Extract<SimInput, { type: "count_ma
   return step(state, [{ type: "count_mark", agentId: "a", verb: "LINE", count: 1, ...input } as SimInput]);
 }
 
-function lineScene(n: number, from: Vec = { x: 24, y: 40 }, to: Vec = { x: 24, y: 58 }, mapId = "open-field") {
-  const state = scene(mapId);
+function lineScene(n: number, from: Vec = { x: 24, y: 40 }, to: Vec = { x: 24, y: 58 }, mapId = "open-field", base?: SimConfig) {
+  const state = scene(mapId, {}, base);
   for (const end of [from, to]) addAnt(state, 0, end.x, end.y); // colony sight over both ends
   // Spare free ants: house rules may keep some home, so the line can still fill.
   for (let i = 0; i < 2 * n + 4; i++) addAnt(state, 0, 18 + (i % 3), 47 + (i % 5));
@@ -103,7 +103,7 @@ describe("rules 26 LINE count marks", () => {
   });
 
   it("bites an enemy in reach without leaving its spot, and never chases one out of reach", () => {
-    let state = settle(lineScene(3).state);
+    let state = settle(lineScene(3, { x: 24, y: 40 }, { x: 24, y: 58 }, "open-field", rules27Redesign()).state);
     const middle = members(state).sort((p, q) => p.y - q.y)[1]!;
     const spot = { x: middle.x, y: middle.y };
     const tile = tileOf(state, middle);

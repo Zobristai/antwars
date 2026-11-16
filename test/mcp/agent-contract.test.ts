@@ -219,9 +219,15 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Briefing repinned for the local-ant line "No house bot plans any colony, seated or not." on a config with
   // localAnts.everyColony; "Active (not idle) colony seat: house bot off; none: on." restores 125a6036…. The join
   // briefing pin is unchanged.
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("9fa3d73a016db210c706025f161f55d6fca13b4352facc6e4954460765da251e");
+  // Briefing, join briefing and tool list repinned for rules 28 (unit figures, one hatch rate and first hatches, queen strike);
+  // built from the frozen rules-27 redesign config (test/rules27.ts) all three hash to their previous pins.
+  // Briefing and join briefing repinned for flyers in the served rules: the Flyers line, flyers in the set_brood choices,
+  // caste flyer in the count-mark caste, reply and PATROL sentences; without them they hash to 2fad77db… and 89c7bf31….
+  // Repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each flyer in
+  // sight with its grounded, flying or hovering state); without them they hash to 6a98378b… and 5939af95….
+  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("aa3f2ce39e81d26ff19fe8fc4c935fa9a337e0f653782cfd0d9b4a752fdc9005");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("3cc5518fa86bd614b81d8899cac1347710961e8463a1ad51a16e34b9aa840eec");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("f654c5720061d8318569cbfcc3ed63d7221e690f7070907482047d4699142b59");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -246,5 +252,8 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Repinned again for that sentence and the idle rule covering every lobby match; the ranked wording restores 136b9e88….
   // Repinned for the myMarks tile and LINE second-end sentence in the observe description; without it the list
   // hashes to 1c3d5dff….
-  expect(sha(JSON.stringify(tools))).toBe("19395f13ae77952ab3ba6cb99a67f84a7e19522052fff6b729e2635e842f591d");
+  // Repinned for flyers in the served rules: brood flyers and caste flyer in the set_brood and count_mark schemas, moving a
+  // flyer mark by markId, view.flyers in observe, and the flyer sentences in those descriptions; without them it hashes to 0b80cf7b….
+  // Repinned for the observe description's sentence on each flyer's state in cells; without it the list hashes to f2e7207b….
+  expect(sha(JSON.stringify(tools))).toBe("58b57bf906a0e3fec60548e5aaeab10fa4a97dad22753f42a0631d8615f50caf");
 });

@@ -24,10 +24,14 @@ export type TileOwner = ColonyId | -1;
 
 /** Ant caste (caste switch on only). */
 export type Caste = "worker" | "soldier";
+/** A count mark's caste: an ant caste, or flyer (rules with flyers only). */
+export type MarkCaste = Caste | "flyer";
 
 /** What an agent asks its colony to breed (caste switch on only). */
 export const BROODS = ["workers", "soldiers", "mixed"] as const;
 export type Brood = (typeof BROODS)[number];
+/** A queen's brood: a Brood, or flyers where the config has flyers (SimConfig.flyers). */
+export type QueenBrood = Brood | "flyers";
 
 /** House-bot role. Kept on the ant and rebalanced each tick. */
 export type Role = "forager" | "guard" | "fighter";
@@ -66,9 +70,25 @@ export interface Ant {
   claim?: number;
   /** Next patrol mark id; present only in patrol-enabled matches while claimed. */
   patrolWaypoint?: number;
-  /** Rules 27: where a free soldier of an agent-seated colony holds (config-grid tile); absent otherwise. */
+  /** Rules 27: where a free soldier of an agent-seated colony, or a free grounded flyer, holds (config-grid tile); absent otherwise. */
   holdPoint?: { readonly tileX: number; readonly tileY: number };
+  /** A flyer (rules with flyers only); its caste stays worker. Absent on every other ant. */
+  flyer?: true;
+  /** A flyer's flight while airborne; absent on the ground. */
+  air?: FlyerAir;
+  /** The first tick a landed flyer may take off again (landing tick + lockoutTicks); absent before its first landing. */
+  takeOffTick?: number;
+  /** Flight engine only: the ATTACK or DEFEND mark and tile this flyer last landed for, so it takes off again only when that mark moves or a new one claims it. */
+  flyerLanded?: { readonly markId: number; readonly tileX: number; readonly tileY: number };
+  /**
+   * Flight engine only: the PATROL mark this airborne flyer flies for, that mark's tile and the ids, in laid order, of its chain. When
+   * the ids change it re-targets the nearest mark of its chain; when only its own mark's tile changes it turns for that mark's new tile.
+   */
+  flyerPatrol?: { readonly markId: number; readonly tileX: number; readonly tileY: number; readonly chain: readonly number[] };
 }
+
+/** An airborne flyer's flight, in sub-tile units; replaced whole, never mutated. */
+export interface FlyerAir { readonly destX: number; readonly destY: number; readonly hovering: boolean; readonly released: boolean }
 
 /** The sixteen-word mark vocabulary. */
 export const WORDS = [
@@ -87,6 +107,8 @@ export type CountMarkVerb = CountVerb | "PATROL" | "LINE";
 
 export const COUNT_CASTES = ["any", "worker", "soldier"] as const;
 export type CountCaste = (typeof COUNT_CASTES)[number];
+/** A count mark's caste as its events carry it: flyer only in rules with flyers. */
+export type CountMarkCaste = CountCaste | "flyer";
 
 /** Standing orders. Tile coordinates. */
 export type Order =
@@ -105,8 +127,9 @@ export interface Mark {
   readonly id: number;
   readonly agentId: string;
   readonly colony: ColonyId;
-  readonly tileX: number;
-  readonly tileY: number;
+  /** Mutable only where a flyer mark is moved: its id, laidTick and laid order stay. */
+  tileX: number;
+  tileY: number;
   readonly words: readonly Word[];
   readonly laidTick: number;
   /** Squad ants following this mark under follow_trail now (marks steer no non-squad ants). */
@@ -115,16 +138,16 @@ export interface Mark {
   verb?: CountMarkVerb;
   count?: number;
   /** Absent is any: preserve the exact state shape of unfiltered marks. */
-  caste?: Caste;
-  /** Times this count mark was re-laid in place to change its count; 0 when first laid. */
+  caste?: MarkCaste;
+  /** Times this count mark was re-laid or moved in place; 0 when first laid. */
   revision?: number;
   /** Cumulative deaths while claimed by this mark; absent in recorded pre-accounting rules. */
   antsLost?: number;
   /** Enemy ant deaths credited to this mark's current ants, one killer per death. */
   enemiesKilled?: number;
   /** Rules 26 LINE marks only: the second endpoint; absent on every other mark. */
-  readonly toTileX?: number;
-  readonly toTileY?: number;
+  toTileX?: number;
+  toTileY?: number;
 }
 
 export interface Agent {
@@ -201,7 +224,8 @@ export type SimInput =
       readonly verb: string;
       readonly count: number;
       readonly caste?: string;
-      /** Rules 27, verb REMOVE: the id of the agent's own count mark to remove. */
+      /** Rules 27, verb REMOVE: the id of the agent's own count mark to remove. With flyers, on any other
+       * mark verb: the id of the agent's own flyer mark to move to tileX/tileY (LINE: and toTileX/toTileY). */
       readonly markId?: number;
       /** Rules 26: a LINE mark's second endpoint; refused on every other verb. */
       readonly toTileX?: number;
@@ -284,7 +308,7 @@ export interface QueenState {
   /** Rules 27: the agentId of the agent that owns this queen; absent until assigned, and in every other rules version. */
   owner?: string;
   /** Rules 27: the brood her owner last set with set_brood; absent breeds mixed. */
-  brood?: Brood;
+  brood?: QueenBrood;
   /** Rules 27, colony with an agent: the caste her mixed brood hatches next; absent is worker. */
   mixedNext?: Caste;
 }
@@ -411,8 +435,13 @@ export type SimEvent =
       readonly antId: number;
       readonly targetId: number;
       readonly colony: ColonyId;
+      /** An air-to-air bite. */
+      readonly air?: true;
     })
   | (AntEventBase & { readonly type: "death"; readonly antId: number; readonly colony: ColonyId })
+  /** A flyer took off or landed, on the tick it happened, with the tile it happened on. */
+  | (AntEventBase & { readonly type: "flyer_takeoff"; readonly antId: number; readonly colony: ColonyId })
+  | (AntEventBase & { readonly type: "flyer_landing"; readonly antId: number; readonly colony: ColonyId })
   | {
       readonly type: "overrun_progress";
       readonly tick: number;
@@ -435,7 +464,7 @@ export type SimEvent =
       /** Count marks only. */
       readonly verb?: CountMarkVerb;
       readonly count?: number;
-      readonly caste?: CountCaste;
+      readonly caste?: CountMarkCaste;
       /** LINE marks only (rules 26). */
       readonly toTileX?: number;
       readonly toTileY?: number;
@@ -447,7 +476,7 @@ export type SimEvent =
       readonly colony: ColonyId;
       readonly verb: CountMarkVerb;
       readonly count: number;
-      readonly caste?: CountCaste;
+      readonly caste?: CountMarkCaste;
       /** LINE marks only (rules 26). */
       readonly toTileX?: number;
       readonly toTileY?: number;
@@ -497,7 +526,7 @@ export type InputResult =
 /** Rules 27: what an accepted set_brood set. */
 export interface BroodSet {
   readonly queenId: number;
-  readonly brood: Brood;
+  readonly brood: QueenBrood;
 }
 
 export interface StepOutput {

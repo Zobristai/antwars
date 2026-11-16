@@ -8,7 +8,7 @@ import type { ModeCopy } from "./replay.ts";
  * hands it the board's live controls and tooltips, publishes what it draws (HudView), and keeps the viewer's selection,
  * hover and pointed order for the board, with the board's area and what the board labels keep clear of.
  */
-import { COLONY_NAMES, RULES_NAMES, rulesConfig } from "../../src/sim/config.ts";
+import { COLONY_NAMES, RULES_NAMES, rulesConfig, type SimConfig } from "../../src/sim/config.ts";
 import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { SUB_TILE, streamQueens, type StreamQueen, type StreamAgent, type StreamHatch, type StreamMark, type StreamStore } from "../../src/live/format.ts";
 import type { Board, Frame, StoryEntry } from "./buffer.ts";
@@ -17,7 +17,8 @@ import { markAge, markReading, type Rect } from "./words.ts";
 import { agentHandle, modelLine, playerLabel } from "./compose.ts";
 import { OPEN_COPY, SCORE_COPY, clockTime, underWay } from "./story.ts";
 import { Tooltip } from "./tip.ts";
-import { boardQueenHp } from "./variant.ts";
+import { boardQueenHp, redesignFigures, redesignSoldierIntervalTicks, rules28Flyer } from "./variant.ts";
+import { flyerOf } from "./flyer-state.ts";
 
 /** Under the log's heading, in one line; the Rules page carries the whole explainer. */
 export { LOG_EXPLAINER, VISUAL_KEY } from "../rules.ts";
@@ -244,15 +245,29 @@ export function nextAntState(store: StreamStore, hatch: StreamHatch | null, livi
   return seconds > 0 ? { kind: "waiting", value: seconds } : { kind: "ready" };
 }
 
-/** Only positively identified rules support caste inference; unnamed non-HP legacy data is ambiguous. */
-export function nextHatchCaste(b: Pick<Board, "setup" | "queens" | "hatch">, cost: number): "worker" | "soldier" | null {
+/**
+ * Only positively identified rules support caste inference; unnamed non-HP legacy data is ambiguous. A flyer, which only
+ * a rules-28 board hatches, is known by its price (rules28Flyer).
+ */
+export function nextHatchCaste(b: Pick<Board, "setup" | "queens" | "hatch">, cost: number): "worker" | "soldier" | "flyer" | null {
   const name = b.setup.rules ?? (boardQueenHp(b) !== undefined ? "redesign" : null);
   if (name === null || !(RULES_NAMES as readonly string[]).includes(name) || b.hatch === null) return null;
   const config = rulesConfig(name);
-  const worker = b.hatch.cost, soldier = config.castes?.soldierCost;
+  const figures = name === "redesign" ? redesignFigures(b) : null;
+  const worker = b.hatch.cost, soldier = figures?.soldierCost ?? config.castes?.soldierCost;
   // A different base cost is not proof this recording used today's caste prices.
-  if (worker !== config.hatchCost || soldier === undefined || worker === soldier) return null;
-  return cost === worker ? "worker" : cost === soldier ? "soldier" : null;
+  if (worker !== (figures?.workerCost ?? config.hatchCost) || soldier === undefined || worker === soldier) return null;
+  return cost === worker ? "worker" : cost === soldier ? "soldier" : cost === rules28Flyer(b)?.cost ? "flyer" : null;
+}
+
+/**
+ * The ticks between two hatches of the coming caste, which the next-spawn ring fills over: a flyer's or a soldier's
+ * own, else the streamed worker interval (an unknown caste included).
+ */
+export function hatchIntervalTicks(b: Pick<Board, "setup">, hatch: StreamHatch, caste: ReturnType<typeof nextHatchCaste>, config: SimConfig | null): number {
+  if (caste === "flyer") return rules28Flyer(b)?.intervalTicks ?? hatch.intervalTicks;
+  if (caste !== "soldier") return hatch.intervalTicks;
+  return config?.rules === "redesign" ? redesignSoldierIntervalTicks(b, hatch.intervalTicks) : hatch.intervalTicks * (config?.hatchTiming?.soldierIntervalMultiplier ?? 1);
 }
 
 /** Soonest eligibility from delayed playback, never a promise of a future birth. */
@@ -300,15 +315,23 @@ export interface ColonyStats {
   lost: number;
   workers: number;
   soldiers: number;
+  /** Flyers, which the stream carries with the worker caste, counted apart from the workers. */
+  flyers: number;
+}
+
+/** A colony's living ants, every caste: what its Ants figure shows and what its cap counts. */
+export function livingAnts(stats: Pick<ColonyStats, "workers" | "soldiers" | "flyers">): number {
+  return stats.workers + stats.soldiers + stats.flyers;
 }
 
 /** Counts living ants at the board's delayed tick, excluding corpse/fade effects: one entry per colony of the match. */
-export function colonyStats(frame: Pick<Frame, "board" | "count" | "colony" | "caste">): ColonyStats[] {
+export function colonyStats(frame: Pick<Frame, "board" | "count" | "colony" | "caste" | "id" | "ants">): ColonyStats[] {
   const colonies = frame.board?.setup.queens.length ?? 2;
-  const stats = Array.from({ length: colonies }, (_, c): ColonyStats => ({ hatched: frame.board?.hatched?.[c] ?? null, lost: frame.board?.deaths[c] ?? 0, workers: 0, soldiers: 0 }));
+  const stats = Array.from({ length: colonies }, (_, c): ColonyStats => ({ hatched: frame.board?.hatched?.[c] ?? null, lost: frame.board?.deaths[c] ?? 0, workers: 0, soldiers: 0, flyers: 0 }));
   for (let i = 0; i < frame.count; i++) {
     const colony = stats[frame.colony[i]!]!;
-    if (frame.caste?.[i] === 1) colony.soldiers++;
+    if (flyerOf(frame, i) !== null) colony.flyers++;
+    else if (frame.caste?.[i] === 1) colony.soldiers++;
     else colony.workers++;
   }
   return stats;

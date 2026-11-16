@@ -3,15 +3,15 @@ import { decodeMessage, encodeMessage, encodePublicMessage, GRID_SCALE_STREAM_VE
 import { SpectatorRecorder, SpectatorState, territoryWinOf } from "../../src/live/model.ts";
 import { Game, observeInfo } from "../../src/mcp/game.ts";
 import { pagedView } from "../../src/mcp/replies.ts";
-import { rulesConfig } from "../../src/sim/config.ts";
+import { rulesConfig, type SimConfig } from "../../src/sim/config.ts";
 import { buildGrid, cloneState } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
 import { takeView } from "../../src/sim/view.ts";
 import { emptyMatch } from "../sim/fixtures.ts";
 
 import { playable } from "../playable.ts";
-function scenario(holdTicks = 4) {
-  const base = rulesConfig("redesign");
+import { rules27Redesign } from "../rules27.ts";
+function scenario(holdTicks = 4, base: SimConfig = rulesConfig("redesign")) {
   // Pin the landed water/countdown composition; rocks.test.ts covers its new extension.
   const config = { ...base, terrain: { ...base.terrain!, rocks: undefined }, hatchIntervalTicks: 100_000,
     earlyWin: { minTick: 10, holdTicks, territoryRatioPermille: 3000, minHeldTiles: 30 } };
@@ -76,7 +76,8 @@ it("clears a stale qualifying lead when a queen loss takes precedence", () => {
 });
 
 it.each([1, 7, 201])("uses configured hold duration %s and preserves public full/delta round trips", holdTicks => {
-  let state = scenario(holdTicks);
+  // A one-tick hold carries no countdown and so asserts no stream version: only the longer holds need the frozen config.
+  let state = scenario(holdTicks, holdTicks === 1 ? rulesConfig("redesign") : rules27Redesign());
   // Start with actual evaluated progress; a one-tick hold ends immediately and carries no live countdown.
   state = step(step(state).state).state;
   const recorder = new SpectatorRecorder(state), message = fullOf(recorder, state.tick);
@@ -99,7 +100,7 @@ it("does not invent lead state without evaluated progress", () => {
 // The landed version-10 terrain packet and the version-4 recording no longer decode (their setups carry
 // no grid scale); the countdown is composed with a grid-scale-2 setup instead.
 it.each([false, true])("composes the countdown with optional terrain (%s) at grid scale 2", terrainPresent => {
-  const message = fullOf(new SpectatorRecorder(scenario()), 9);
+  const message = fullOf(new SpectatorRecorder(scenario(4, rules27Redesign())), 9);
   if (!terrainPresent) delete message.full!.setup.terrain;
   else expect(message.full!.setup.terrain).toBeDefined();
   const setup = structuredClone(message.full!.setup);

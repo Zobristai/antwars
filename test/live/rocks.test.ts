@@ -6,9 +6,10 @@ import { createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 describe.each(MAPS)("$name streamed rocks", map => {
   it("preserves exact geometry/appearance, redaction and optional qualifying leads without exposing the seed", () => {
-    const base = rulesConfig("redesign"), state = createMatch(7001, playable({ ...base, terrain: { ...base.terrain!, mapId: map.id }, players: 2 }));
+    const base = rules27Redesign(), state = createMatch(7001, playable({ ...base, terrain: { ...base.terrain!, mapId: map.id }, players: 2 }));
     const recorder = new SpectatorRecorder(state);
     const setup = recorder.initialFull().setup;
     expect(setup.terrain!.rocks).toEqual(state.terrain!.rocks!.map(r => [r.x, r.y, r.width, r.height, r.appearance]));

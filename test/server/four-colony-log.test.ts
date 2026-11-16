@@ -5,11 +5,12 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { Game, observeInfo, type Outcome } from "../../src/mcp/game.js";
 import { pagedView } from "../../src/mcp/replies.js";
-import { rulesConfig, SUB, type MapDefinition, type SimConfig } from "../../src/sim/config.js";
+import { SUB, type MapDefinition, type SimConfig } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { parseLog, replay, stateHash } from "../../src/sim/log.js";
 import { activeQueens } from "../../src/sim/map.js";
 import { expandCells, type AgentView, type DenseCells } from "../../src/sim/view.js";
+import { rules27Redesign } from "../rules27.ts";
 
 /** Test-only replay fixture: top nests 5 reference tiles apart across the vertical axis, far from the bottom ones,
  * each start area in its quadrant's far corner so a nest is not ringed by its own start ants. */
@@ -18,7 +19,8 @@ const CLOSE: MapDefinition = {
   quadrant: { referenceWidth: 64, referenceHeight: 48, centreHalfWidth: 2, centreHalfHeight: 2, nestTileX: 29, nestTileY: 8,
     startArea: { x: 0, y: 0, width: 8, height: 8 }, foodPatches: [{ tileX: 8, tileY: 8, radius: 3, perTile: 2 }], centreFood: [{ radius: 1, perTile: 2 }] },
 };
-const LIVE = newMatchConfig(rulesConfig("redesign"));
+// The rules-27 redesign (test/rules27.ts): the script's queen loss and timings were set under its queen HP.
+const LIVE = newMatchConfig(rules27Redesign());
 const CONFIG: SimConfig = { ...LIVE, combatGraceTicks: 0, matchTicks: 1500, queenHp: { ...LIVE.queenHp!, shieldTicks: 0 }, terrain: { ...LIVE.terrain!, maps: [CLOSE] } };
 const SEED = 404;
 const IDLE_SECONDS = 30;

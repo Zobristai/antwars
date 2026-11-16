@@ -98,7 +98,7 @@ describe("stored forage marker", () => {
     rulesConfig("redesign"), newMatchConfig(rulesConfig("redesign"))].map(playable))("stores the marker on new configs and headers (%#)", config => {
     expect(config.forageTieBreak).toBe("mirrored");
     const { header } = parseLog([headerLine(329, config)]);
-    expect(header.rulesVersion).toBe(27);
+    expect(header.rulesVersion).toBe(config.rules28 === true ? 28 : 27);
     expect(JSON.stringify(header.config)).toBe(JSON.stringify(config));
   });
 });

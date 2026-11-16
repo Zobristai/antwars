@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, SUB, type InitialQueen, type QueenRules, type SimConfig } from "./config.js";
+import { checkRulesGeneration, DEFAULT_CONFIG, hatchIntervalOf, SUB, type InitialQueen, type QueenRules, type SimConfig } from "./config.js";
 import { tileCentre, withinTiles } from "./geometry.js";
 import { addRocks, createTerrain, isBlockedTile, isWaterTile, landBirthPosition, passableMask, selectMap } from "./terrain.js";
 import { startBoxes, type StartBox } from "./startPlacement.js";
@@ -196,13 +196,13 @@ export function newColony(config: SimConfig, id: ColonyId, queenX: number, queen
     queenX,
     queenY,
     foodStore: 0,
-    lastHatchTick: -config.hatchIntervalTicks,
+    lastHatchTick: -hatchIntervalOf(config, "worker"),
     overrunTicks: 0,
     ...(config.castes === undefined ? {} : { mixedNext: "worker" as const }),
     ...(config.queenFounding === undefined ? {} : {
       queens: [{ id: 0, ...(config.queenFounding.costBasis === "founded-live" ? { starting: true as const } : {}), queenX, queenY, foundedTick: 0,
-        lastHatchTick: -config.hatchIntervalTicks, overrunTicks: 0, lostTick: null,
-        ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, lastBiteTick: -config.queenHp.biteIntervalTicks, regenFromTick: 0 }) }],
+        lastHatchTick: -hatchIntervalOf(config, "worker"), overrunTicks: 0, lostTick: null,
+        ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, ...("biteIntervalTicks" in config.queenHp ? { lastBiteTick: -config.queenHp.biteIntervalTicks } : {}), regenFromTick: 0 }) }],
       lastQueenFoundedTick: -config.queenFounding.cooldownTicks,
     }),
     ...(config.localAnts === undefined ? {} : { seenFood: [] as number[] }),
@@ -217,6 +217,7 @@ export function newStats(colonyCount: number): MatchStats {
 
 /** Create a match at tick 0. Queued agents join through inputs on the first step. */
 export function createMatch(seed: number, config: SimConfig = withGridScale(DEFAULT_CONFIG)): SimState {
+  checkRulesGeneration(config);
   if (isQuadrantRotation(config)) return createQuadrantMatch(seed, config);
   config = matchConfigForMap(seed, config);
   let terrain = createTerrain(seed, config);
@@ -642,13 +643,22 @@ export function forEachNear(
   }
 }
 
-/** Whether any enemy of this ant stands within combat reach (adjacent or same tile). */
+/**
+ * Whether an enemy this ant can fight stands within combat reach (adjacent or same tile). The air is a separate
+ * fight: an airborne flyer is in reach only of airborne enemies, and a ground ant only of ground ones.
+ */
 export function hasAdjacentEnemy(state: SimState, grid: Grid, ant: Ant): boolean {
+  const tx = Math.floor(ant.x / SUB), ty = Math.floor(ant.y / SUB), r = gridScaleOf(state.config);
   const counts = gridColonyCounts(grid, state);
-  if (counts !== undefined) return !noneNear(state, counts[ant.colony === 0 ? 1 : 0], Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config));
+  if (counts !== undefined) {
+    if (noneNear(state, counts[ant.colony === 0 ? 1 : 0], tx, ty, r)) return false;
+    // Without flyers every ant is on the ground, so any enemy in reach is one it fights.
+    if (state.config.flyers === undefined) return true;
+  }
+  const airborne = ant.air !== undefined;
   let found = false;
-  forEachNear(state, grid, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config), (other) => {
-    if (other.colony !== ant.colony) found = true;
+  forEachNear(state, grid, tx, ty, r, (other) => {
+    if (other.colony !== ant.colony && (other.air !== undefined) === airborne) found = true;
   });
   return found;
 }

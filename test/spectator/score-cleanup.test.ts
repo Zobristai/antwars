@@ -7,6 +7,8 @@ import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { colonyCardLines, colonyLedger, nextHatchCaste, scoreHatchStatus } from "../../web/src/overlays.ts";
 import { playable } from "../playable.ts";
 
+// The served redesign's caste prices, which the score reads from the stream and the rules.
+const WORKER = rulesConfig("redesign").hatchCost, SOLDIER = rulesConfig("redesign").castes!.soldierCost;
 function board() {
   const recorder = new SpectatorRecorder(createMatch(228, playable(rulesConfig("redesign"))));
   const playback = new Playback(), frame = new Frame();
@@ -35,28 +37,28 @@ describe("clean spectator score", () => {
   it("uses streamed HP for redacted redesign, never guesses a legacy caste or unknown price", () => {
     const b = board();
     expect(b.setup.rules).toBeUndefined();
-    expect(nextHatchCaste(b, 3)).toBe("worker");
-    expect(nextHatchCaste(b, 6)).toBe("soldier");
+    expect(nextHatchCaste(b, WORKER)).toBe("worker");
+    expect(nextHatchCaste(b, SOLDIER)).toBe("soldier");
     const legacy = { ...b, queens: b.queens!.map(({ hp: _hp, ...q }) => q) };
-    expect(nextHatchCaste(legacy, 3)).toBeNull();
-    expect(nextHatchCaste({ ...b, hatch: { ...b.hatch!, cost: 6 } }, 6)).toBeNull();
+    expect(nextHatchCaste(legacy, WORKER)).toBeNull();
+    expect(nextHatchCaste({ ...b, hatch: { ...b.hatch!, cost: SOLDIER } }, SOLDIER)).toBeNull();
     expect(nextHatchCaste(b, 9)).toBeNull();
-    expect(nextHatchCaste({ ...b, setup: { ...b.setup, rules: "future" as "v4" } }, 3)).toBeNull();
+    expect(nextHatchCaste({ ...b, setup: { ...b.setup, rules: "future" as "v4" } }, WORKER)).toBeNull();
   });
   it("ages eligibility only with playback ticks and shows worker/soldier icons when known", () => {
     const original = board();
-    const b = { ...original, stores: [{ food: 99, nextCost: 3, nextHatchTick: 101 }, original.stores[1]] as const };
+    const b = { ...original, stores: [{ food: 99, nextCost: WORKER, nextHatchTick: 101 }, original.stores[1]] as const };
     expect(scoreHatchStatus(b, 0, 1, 90).text).toBe("⛏ 2 s");
     expect(scoreHatchStatus(b, 0, 1, 100).text).toBe("⛏ 1 s");
     expect(scoreHatchStatus(b, 0, 1, 101).text).toBe("⛏ Eligible");
-    const soldier = { ...b, stores: [{ ...b.stores[0], nextCost: 6 }, b.stores[1]] as const };
+    const soldier = { ...b, stores: [{ ...b.stores[0], nextCost: SOLDIER }, b.stores[1]] as const };
     expect(scoreHatchStatus(soldier, 0, 1, 100).text).toBe("⚔ 1 s");
     const legacy = { ...b, queens: b.queens!.map(({ hp: _hp, ...q }) => q) };
     expect(scoreHatchStatus(legacy, 0, 1, 100)).toMatchObject({ text: "1 s", description: expect.stringContaining("caste unknown") });
   });
   it("does not imply a hatch through food, capacity, unknown rules, extinction or match end", () => {
     const original = board();
-    const b = { ...original, stores: [{ food: 0, nextCost: 6, nextHatchTick: 101 }, original.stores[1]] as const };
+    const b = { ...original, stores: [{ food: 0, nextCost: SOLDIER, nextHatchTick: 101 }, original.stores[1]] as const };
     expect(scoreHatchStatus(b, 0, 1, 100).text).toBe("⚔ Needs food");
     expect(scoreHatchStatus(b, 0, b.hatch!.cap, 100).text).toBe("Cap reached");
     expect(scoreHatchStatus({ ...b, hatch: null }, 0, 1, 100).text).toBe("Hatch unknown");

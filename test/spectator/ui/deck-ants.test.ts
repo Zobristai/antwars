@@ -21,7 +21,7 @@ describe("the deck's Ants balance row", () => {
   it("gives the wide deck 20 px more height for the row, so the score shows its Map row without scrolling", () => {
     expect(CSS).toMatch(/\.d1-hud \{[^}]*grid-template-rows: 48px 4px minmax\(0, 232px\) 12px /);
   });
-  it("keeps the per-unit numbers in each team's economy", () => {
-    expect(DECK).toContain('const measures: [Key, string][] = [["workers", PAGE_WORDS.workers], ["soldiers", PAGE_WORDS.soldiers], ["food", PAGE_WORDS.food], ["next", PAGE_WORDS.nextSpawn], ["ants", SCORE_COPY.ants]];');
+  it("keeps the per-unit numbers in each team's economy, flyers apart from workers", () => {
+    expect(DECK).toContain('const measures: [Key, string][] = [["workers", PAGE_WORDS.workers], ["soldiers", PAGE_WORDS.soldiers], ["flyers", PAGE_WORDS.flyers], ["food", PAGE_WORDS.food], ["next", PAGE_WORDS.nextSpawn], ["ants", SCORE_COPY.ants]];');
   });
 });

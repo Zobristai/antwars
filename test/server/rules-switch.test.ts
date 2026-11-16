@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ import { createMatch } from "../../src/sim/map.js";
 import { startHarness, type Harness } from "../mcp/harness.js";
 import { connect, matchLogs, tempDir, waitFor, type Agent } from "./helpers.js";
 import { playable } from "../playable.ts";
+import { startupRulesLine } from "../../src/main.js";
 
 const randomSeed = vi.hoisted(() => vi.fn<(max: number) => number>(() => 12345));
 vi.mock("node:crypto", async (original) => ({ ...await original<typeof import("node:crypto")>(), randomInt: randomSeed }));
@@ -71,6 +72,28 @@ describe("ANTWAR_RULES and ANTWAR_PLAYERS, read once at start-up", () => {
       expect(r.stderr).toMatch(/antwar refused to start: ANTWAR_(RULES|PLAYERS)/);
       if (env.ANTWAR_RULES === "v4" || env.ANTWAR_RULES === "count-marks") expect(r.stderr).toContain(`ANTWAR_RULES=${env.ANTWAR_RULES} no longer starts a match`);
     }
+  }, 45_000);
+});
+
+describe("the startup log names the rules version and unit numbers it serves", () => {
+  it("unset plays rules 28 with Kain's figures and the starting queen's first hatches", () => {
+    expect(startupRulesLine(comparisonOptions({}, DEFAULT_MCP_CONFIG).simConfig!)).toBe("antwar rules 28 (redesign): worker 2 HP, 1 HP/s, 2 food; "
+      + "soldier 10 HP, 3 HP/s, 6 food; queen 100 HP, 10 HP/s every tick; hatch 2 food/s per queen: worker every 10 ticks, soldier every 30; "
+      + "starting queen's first worker at tick 0, first soldier at tick 20");
+  });
+
+  it("npm start with ANTWAR_RULES unset prints it", async () => {
+    const base: NodeJS.ProcessEnv = { ...process.env };
+    for (const name of ["ANTWAR_RULES", "ANTWAR_PLAYERS", "ANTWAR_SLOT", "ANTWAR_PUBLIC_URL", "ANTWAR_STORE_NAMESPACE"]) delete base[name];
+    const child = spawn(process.execPath, ["--import", "./src/ts-resolve.mjs", "src/main.ts"], { cwd: ROOT, env: { ...base, PORT: "0", DATA_DIR: tempDir() } });
+    let out = "";
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.stdout.on("data", (chunk: Buffer) => { out += chunk.toString(); if (out.includes("antwar rules ")) resolve(); });
+        child.on("exit", code => reject(new Error(`exited ${code}: ${out}`)));
+      });
+    } finally { child.kill(); }
+    expect(out.split("\n")).toContain(startupRulesLine(comparisonOptions({}, DEFAULT_MCP_CONFIG).simConfig!));
   }, 45_000);
 });
 
@@ -200,7 +223,7 @@ describe("the join barrier, the headers and the stdout recording", () => {
 
     const file = readFileSync([...matchLogs(dataDir).values()][0]!, "utf8").split("\n").filter((l) => l !== "");
     const header = JSON.parse(file[0]!);
-    expect(header).toMatchObject({ type: "header", seed: COMPARISON_SEED, rulesVersion: 27, config: { rules: "redesign", players: 2 } });
+    expect(header).toMatchObject({ type: "header", seed: COMPARISON_SEED, rulesVersion: 28, config: { rules: "redesign", players: 2 } });
     const first = JSON.parse(file[1]!);
     expect(first.tick).toBe(0);
     expect(first.inputs.map((i: { type: string; modelLabel?: string }) => [i.type, i.modelLabel])).toEqual([["join", "model-0"], ["join", "model-1"]]);
@@ -246,12 +269,12 @@ describe("over MCP: count_mark, the briefing and observe", () => {
     const rules = await a.call("rules", {});
     expect(rules.isError, rules.text).toBe(false);
     expect(rules.data.rules).toContain("count_mark {verb,count,caste,tileX,tileY,toTileX,toTileY}");
-    expect(rules.data.rules).toContain("Queens with HP: 40 HP");
+    expect(rules.data.rules).toContain("Queens with HP: 100 HP");
     expect(rules.data.rules).not.toMatch(/Queen overrun:/);
     expect((await a.client.listTools()).tools.map((t) => t.name)).toContain("count_mark");
     const observed = await a.call("observe", {});
     expect(observed.data.view.rules).toBe("redesign");
-    expect(observed.data.view.queens[0]).toMatchObject({ hp: 40_000, maxHp: 40_000 });
+    expect(observed.data.view.queens[0]).toMatchObject({ hp: 100_000, maxHp: 100_000 });
     const laid = await a.call("count_mark", { verb: "DEFEND", count: 3 });
     expect(laid.isError, laid.text).toBe(false);
     const bad = await a.call("count_mark", { verb: "HOLD", count: 3 });

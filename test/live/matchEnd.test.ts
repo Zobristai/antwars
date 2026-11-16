@@ -10,7 +10,7 @@
 import { EventEmitter } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { rulesConfig, type SimConfig } from "../../src/sim/config.ts";
+import { type SimConfig } from "../../src/sim/config.ts";
 import { HISTORICAL_CONFIG as DEFAULT_CONFIG } from "../sim/fixtures.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
@@ -23,6 +23,7 @@ import { scriptedInputs, type ScriptOptions } from "../../src/live/record.ts";
 import { decodeData, delivered, ManualClock, RecordedServer, served, SseClient, type ServedResponse } from "./helpers.ts";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 it("round-trips the sustained-territory result under its own wire version", () => {
   const opening = new SpectatorRecorder(createMatch(7001, playable(DEFAULT_CONFIG))).initial();
   const result = { winner: 0 as const, reason: "sustained_territory" as const, decidedBy: "territory" as const, tick: 7800, nextStartMs: null };
@@ -36,12 +37,12 @@ it("round-trips the sustained-territory result under its own wire version", () =
 it("composes early-win and idle-clock wire extensions without inventing an idle clock for old configs", () => {
   expect(EARLY_WIN_STREAM_VERSION).toBeGreaterThan(COMMAND_IDLE_STREAM_VERSION);
   // Pin the historical idle/early-win versions, independently of terrain.
-  const idleZero = new SpectatorRecorder(createMatch(7001, playable({ ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks: 0 })));
+  const idleZero = new SpectatorRecorder(createMatch(7001, playable({ ...rules27Redesign(), terrain: undefined, commandIdleTicks: 0 })));
   const zeroOpening: StreamMessage = { ...idleZero.initial(), full: idleZero.initialFull() };
   expect(encodeMessage(zeroOpening)[2]).toBe(GRID_SCALE_STREAM_VERSION);
   expect(decodeMessage(encodeMessage(zeroOpening)).full!.setup.commandIdleTicks).toBe(0);
   for (const commandIdleTicks of [undefined, 0, 600]) {
-    const recorder = new SpectatorRecorder(createMatch(7001, playable({ ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks })));
+    const recorder = new SpectatorRecorder(createMatch(7001, playable({ ...rules27Redesign(), terrain: undefined, commandIdleTicks })));
     const result = { winner: 0 as const, reason: "sustained_territory" as const, decidedBy: "territory" as const, tick: 7800, nextStartMs: null };
     const message: StreamMessage = { ...recorder.initial(), tick: 7801, full: { ...recorder.initialFull(), result }, events: [{ kind: "end", result }] };
     const bytes = encodeMessage(message), decoded = decodeMessage(bytes);

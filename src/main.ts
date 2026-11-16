@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import { DEFAULT_MCP_CONFIG, houseIdleSecondsFromEnv } from "./mcp/config.js";
+import { damagePerTick, firstHatchTicks, hatchIntervalOf, rulesVersionOf, type SimConfig } from "./sim/config.js";
 import { comparisonOptions, lobbySlotOptions, SHUTDOWN_SAVE_MS, slotOptions, type GameServer, type SlotWiring } from "./server.js";
 import { startSpectatedServer } from "./spectator.js";
 import { replayStoreFromEnv } from "./replays/store.js";
@@ -111,10 +112,31 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     tickReport: { log: (line) => console.log(line) } });
   console.log(`antwar listening on port ${server.port} (spectator at /, agents at /mcp)${slot !== undefined || comparison.match !== undefined ? `; match logs in ${dataDir}` : "; entry point does not host matches"}`);
   if (slot !== undefined) console.log(`antwar slot server for ${slot.slot} at ${slot.publicUrl}`);
+  if (comparison.simConfig !== undefined) console.log(startupRulesLine(comparison.simConfig));
   if (comparison.match === "held") {
     console.log(`antwar comparison run: rules ${comparison.simConfig?.rules}, ${comparison.expectedPlayers} players, seed ${comparison.seed}; the match starts when every player has joined`);
   }
   exitOnShutdownSignal(server);
+}
+
+/** The startup log's line naming the rules version this server plays and its unit numbers and hatch clock. */
+export function startupRulesLine(config: SimConfig): string {
+  const hp = (milli: number) => milli / 1000, perSecond = (perTick: number) => hp(perTick * config.ticksPerSecond);
+  const units = [`worker ${hp(config.antHp)} HP, ${perSecond(damagePerTick(config))} HP/s, ${config.hatchCost} food`];
+  if (config.castes !== undefined) {
+    const { soldierCost, soldierHpPermille, soldierDamagePermille } = config.castes;
+    units.push(`soldier ${hp(Math.trunc((config.antHp * soldierHpPermille) / 1000))} HP, ${perSecond(Math.trunc((damagePerTick(config) * soldierDamagePermille) / 1000))} HP/s, ${soldierCost} food`);
+  }
+  const queen = config.queenHp;
+  if (queen !== undefined) {
+    units.push("damagePerSecond" in queen ? `queen ${hp(queen.hp)} HP, ${hp(queen.damagePerSecond)} HP/s every tick` : `queen ${hp(queen.hp)} HP, bites ${hp(queen.biteDamage)} HP every ${queen.biteIntervalTicks} ticks`);
+  }
+  const worker = hatchIntervalOf(config, "worker"), soldier = hatchIntervalOf(config, "soldier");
+  const first = firstHatchTicks(config);
+  const hatch = config.hatchRate !== undefined
+    ? `hatch ${config.hatchRate.foodPerSecond} food/s per queen: worker every ${worker} ticks, soldier every ${soldier}; starting queen's first worker at tick ${first.worker}, first soldier at tick ${first.soldier}`
+    : `hatch: worker every ${worker} ticks${config.castes === undefined ? "" : `, soldier every ${soldier}`}`;
+  return `antwar rules ${rulesVersionOf(config)}${config.rules === undefined ? "" : ` (${config.rules})`}: ${units.join("; ")}; ${hatch}`;
 }
 
 /**

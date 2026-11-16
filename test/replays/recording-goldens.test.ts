@@ -26,7 +26,6 @@ import { createRecordReplayStore } from "../../src/records/replay-store.ts";
 import { createRecordService } from "../../src/records/service.ts";
 import { gzipMessages } from "../../src/replays/pack.ts";
 import { ReplayCreateError, type ReplayObject } from "../../src/replays/store.ts";
-import { rulesConfig } from "../../src/sim/config.ts";
 import { stateHash, tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { step } from "../../src/sim/step.ts";
@@ -35,6 +34,7 @@ import { playable } from "../playable.ts";
 // The captured scenario was recorded before the no-bot-moves rule, so it keeps that recording's config.
 import { recordedHousePlan } from "../house-plan.ts";
 import { createOnlyRecords } from "../records/create-only-records.js";
+import { rules27Redesign } from "../rules27.ts";
 
 const { GOLDEN_IDENTITY } = vi.hoisted(() => ({ GOLDEN_IDENTITY: 194180557898392 }));
 
@@ -105,7 +105,7 @@ it("the stored replay, checkpoint, readable record and private input envelope ma
     codeVersion: CAPTURE_COMMIT, now: () => clock.now(), log: (line) => logs.push(line),
   });
 
-  let state = createMatch(6006, playable(recordedHousePlan({ ...rulesConfig("redesign"), matchTicks: 4 })));
+  let state = createMatch(6006, playable(recordedHousePlan({ ...rules27Redesign(), matchTicks: 4 })));
   hub.startMatch(1, state, { lobbyId: "synthetic-fixture-lobby", visibility: "public", rated: false });
   while (state.result === null) {
     expect(state.tick).toBeLessThan(4);

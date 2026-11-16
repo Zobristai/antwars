@@ -17,6 +17,7 @@ import { COUNT_VERBS, type Agent, type SimEvent, type SimInput } from "../../src
 import { addAnt, emptyMatch } from "../sim/fixtures.ts";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 const word: StreamMark = { id: 1, agent: 0, colony: 0, tileX: 20, tileY: 20, words: [0, 4], laidTick: 3, answered: 4 };
 const counted: StreamMark = { ...word, id: 2, words: [], verb: "DEFEND", count: 8, claimed: 0, revision: 0 };
@@ -35,7 +36,7 @@ describe("count-mark wire fields", () => {
   });
 
   it.each(STREAM_COUNT_VERBS)("round-trips %s in a full snapshot and a mark event beside a word mark", (verb) => {
-    const message = opening(new SpectatorRecorder(createMatch(42, playable({ ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks: undefined }))));
+    const message = opening(new SpectatorRecorder(createMatch(42, playable({ ...rules27Redesign(), terrain: undefined, commandIdleTicks: undefined }))));
     message.full!.marks = [word, { ...counted, verb }];
     message.events = [{ kind: "mark", mark: word }, { kind: "mark", mark: { ...counted, verb, claimed: 8, revision: 300 } }];
     const bytes = encodeMessage(message);
@@ -78,7 +79,7 @@ describe("unchanged streams and recordings", () => {
   });
 
   it("writes a no-count recording's delta messages below the count-mark version", () => {
-    const config = { ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks: undefined, matchTicks: 20 };
+    const config = { ...rules27Redesign(), terrain: undefined, commandIdleTicks: undefined, matchTicks: 20 };
     const [opening, ...deltas] = recordLog([headerLine(42, playable(config))], 20);
     expect(opening![2]).toBe(GRID_SCALE_STREAM_VERSION);
     for (const bytes of deltas) {
@@ -229,7 +230,7 @@ describe("rules 26 LINE mark wire fields", () => {
   const line: StreamMark = { ...counted, id: 3, verb: "LINE", count: 5, toTileX: 24, toTileY: 58 };
 
   it("carries the second endpoint in a full snapshot and a mark event, only at version 22", () => {
-    const message = opening(new SpectatorRecorder(createMatch(42, playable({ ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks: undefined }))));
+    const message = opening(new SpectatorRecorder(createMatch(42, playable({ ...rules27Redesign(), terrain: undefined, commandIdleTicks: undefined }))));
     message.full!.marks = [word, counted, line];
     message.events = [{ kind: "mark", mark: { ...line, claimed: 5, revision: 2 } }];
     const bytes = encodeMessage(message);

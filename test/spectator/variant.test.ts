@@ -10,6 +10,7 @@ import { queensRoute } from "../../web/rules.ts";
 import { howToWinLine } from "../../web/src/story.ts";
 import { playable } from "../playable.ts";
 import { boardCountMarks, boardLocalAnts, boardQueenFounding, boardQueenHp } from "../../web/src/variant.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 const REDESIGN = { ...rulesConfig("redesign"), players: 2 as const };
 
@@ -52,7 +53,7 @@ it.each(MAPS)("$name public terrain snapshots retain map metadata without compar
 });
 
 it("a comparison run's live header carries its rules, seed and player count, and queens their HP", () => {
-  const m = opening(new SpectatorRecorder(createMatch(6006, playable({ ...REDESIGN, terrain: undefined, commandIdleTicks: undefined }))));
+  const m = opening(new SpectatorRecorder(createMatch(6006, playable({ ...rules27Redesign(), players: 2, terrain: undefined, commandIdleTicks: undefined }))));
   const bytes = encodeMessage(m);
   expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
   const full = decodeMessage(bytes).full!;

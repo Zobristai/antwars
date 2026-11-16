@@ -30,11 +30,14 @@ import { Territory } from "./territory.ts";
 import { Ants, antLengthPx } from "./ants.ts";
 import { gridScale } from "./grid-scale.ts";
 import { FoodPiles } from "./food.ts";
+import { LockoutDials } from "./flyer-lockout.ts";
 import { StartBoxes2D } from "./start-boxes2d.ts";
-import { Battles, CVD_MATRICES, PlaceMarkers, QueenHomes, cvdFilter, tiltShift, type Deficiency } from "./effects.ts";
+import { Battles, CVD_MATRICES, FlightMoments, PlaceMarkers, QueenHomes, cvdFilter, tiltShift, type Deficiency } from "./effects.ts";
 import { FONT_LICENCE, Words, loadFonts, nestRects, nestZoneRect, type MarkStats, type Rect } from "./words.ts";
 import { Camera, FALL_MOVE_MS, LOCATE_ZOOM, easeInOut, fightLane, foundingEnvelope, lerpView, queensBox, reducedMotion, type View } from "./camera.ts";
 import { Squads, agentHues } from "./squads.ts";
+import { FlightLines, liftedBy, type DrawnFlightLine } from "./flight-lines.ts";
+import { AIR_LIFT_2D_LENGTHS } from "./flyer-lift.ts";
 import { Overlays } from "./overlays.ts";
 import { openSource } from "./source.ts";
 import { TeamView, teamViewControl } from "./team-view.ts";
@@ -148,6 +151,8 @@ export interface AntwarApi {
   drawnLabels(): { kind: "tag" | "tooltip"; rect: Rect }[];
   /** Each mark's marker drawn now, in screen px. */
   markers(): { id: number; x: number; y: number; answered: number }[];
+  /** Each airborne flyer's line to its destination drawn now: its dashes and its end, in screen px. */
+  flightLines(): readonly DrawnFlightLine[];
   /** Each mark's label drawn now (a count mark's reading on its plate beside its marker), with its box in screen px: the mark's own tap target. */
   markLabels(): { id: number; text: string; rect: Rect }[];
   zoomAt(factor: number, x: number, y: number): void;
@@ -204,6 +209,7 @@ window.__antwar = {
   labelRects: notReady,
   drawnLabels: notReady,
   markers: notReady,
+  flightLines: notReady,
   markLabels: notReady,
   zoomAt: notReady,
   panBy: notReady,
@@ -365,7 +371,7 @@ async function start(): Promise<void> {
   camera.setFoundingEnvelope(envelope);
   camera.setOpeningBounds(openingPhase(head.tick, head.full) ? openingBounds(head.full) : null);
   const fit = camera.fit;
-  // Scene: [ scene (tilt-shift) [ world [ ground, front with its glow, queen homes, food piles, corpses, rings, battles, ants, places ] ], words, squad badges and tags ]
+  // Scene: [ scene (tilt-shift) [ world [ ground, front with its glow, queen homes, food piles, corpses, flyers' shadows, rings, battles, take-offs and landings, ants, places ] ], flight lines, flyer lockout dials, words, squad badges and tags ]
   // Fights are drawn beneath the ants, so a clash never hides the ants in it.
   const scene = new Container();
   const world = new Container();
@@ -375,21 +381,24 @@ async function start(): Promise<void> {
   // One colour per colony of the page's match (setup.queens: one entry per colony).
   const ants = new Ants(renderer, antLengthPx(fit.tilePx * scale), fit.tilePx, head.full!.setup.queens.length);
   const battles = new Battles(renderer, fit.tilePx);
+  const flights = new FlightMoments(fit.tilePx);
   const places = new PlaceMarkers(fit.tilePx);
   const queens = new QueenHomes(fit.tilePx);
   const startBoxes = new StartBoxes2D(fit.tilePx);
   const food = new FoodPiles(renderer, fit.tilePx, scale);
   const words = new Words({ w, h });
   const squads = new Squads(renderer, w);
+  const destinationLines = new FlightLines();
+  const lockoutDials = new LockoutDials();
   // A colony's point of view: its fog over the ground and territory, under everything the view has filtered.
   const fog = new Fog2D(W, H);
   const teamView = new TeamView();
   // Its control, which the HUD places among the window's controls when it mounts.
   const teamViewSelect = teamViewControl(document, teamView);
-  world.addChild(territory.fill, territory.frontLayer, fog.layer, startBoxes.layer, queens.layer, food.layer, ants.corpseLayer, squads.rings, battles.layer, ants.antLayer, queens.emblems, queens.crownIcons, places.layer);
+  world.addChild(territory.fill, territory.frontLayer, fog.layer, startBoxes.layer, queens.layer, food.layer, ants.corpseLayer, ants.shadowLayer, squads.rings, battles.layer, flights.layer, ants.antLayer, queens.emblems, queens.crownIcons, places.layer);
   scene.addChild(world);
-  // The markers and badges over the world; the tooltips are the page's own, above every panel.
-  app.stage.addChild(scene, words.layer, squads.layer);
+  // Each airborne flyer's line to its destination and each landed flyer's lockout, then the markers and badges, over the world; the tooltips are the page's own, above every panel.
+  app.stage.addChild(scene, destinationLines.layer, lockoutDials.layer, words.layer, squads.layer);
   scene.filters = tiltOn ? [tilt] : [];
   territory.trails = trailsOn;
 
@@ -402,6 +411,7 @@ async function start(): Promise<void> {
     world.scale.set(v.tilePx);
     territory.setView(v);
     battles.setTilePx(v.tilePx);
+    flights.setTilePx(v.tilePx);
     places.setTilePx(v.tilePx);
     queens.setTilePx(v.tilePx);
     startBoxes.setTilePx(v.tilePx);
@@ -646,7 +656,13 @@ async function start(): Promise<void> {
     squads.updateRings(shown, antLengthPx(camera.view.tilePx * scale) / camera.view.tilePx + 0.4 * scale);
     lap("ants");
     battles.update(shown);
+    flights.update(shown);
     places.update(shown);
+    // A hovering flyer's line starts at its body, drawn AIR_LIFT_2D_LENGTHS ant lengths up the screen (Ants.update).
+    const airLift = AIR_LIFT_2D_LENGTHS * antLengthPx(camera.fit.tilePx * scale) / camera.fit.tilePx * camera.view.tilePx;
+    destinationLines.update(shown, camera.toScreen, teamView.choice === "full" ? null : teamView.choice, { x0: 0, y0: 0, x1: w, y1: h }, liftedBy(camera.toScreen, airLift));
+    // A landed flyer's lockout, around it at the ants' on-screen length (Ants.setFit's length at the fit, at this zoom).
+    lockoutDials.update(shown, camera.toScreen, () => antLengthPx(camera.fit.tilePx * scale) / camera.fit.tilePx * camera.view.tilePx);
     lap("battles");
     // The layout keeps the labels and badges clear of the panels and of the nests.
     const blocked = [...(overlaysOn ? overlays.blocked() : []), ...(board ? nestRects(streamQueens(board), board.setup.overrunRadiusTiles, camera.toScreen) : [])];
@@ -740,14 +756,14 @@ async function start(): Promise<void> {
       if (o.tilt !== undefined) scene.filters = o.tilt ? [tilt] : [];
       if (o.trails !== undefined) territory.trails = o.trails;
       if (o.cvd !== undefined) app.stage.filters = o.cvd ? [cvdFilter(o.cvd)] : [];
-      if (o.ants !== undefined) ants.antLayer.visible = ants.corpseLayer.visible = o.ants;
+      if (o.ants !== undefined) ants.antLayer.visible = ants.corpseLayer.visible = ants.shadowLayer.visible = o.ants;
       if (o.words !== undefined) {
         wordsOn = o.words;
         words.layer.visible = squads.layer.visible = o.words;
       }
       if (o.markLabels !== undefined) words.setLabelsVisible(o.markLabels);
       if (o.front !== undefined) territory.frontLayer.visible = o.front;
-      if (o.battles !== undefined) battles.layer.visible = o.battles;
+      if (o.battles !== undefined) battles.layer.visible = flights.layer.visible = o.battles;
       if (o.overlays !== undefined) {
         overlaysOn = o.overlays;
         overlays.setVisible(o.overlays);
@@ -799,6 +815,7 @@ async function start(): Promise<void> {
       return out;
     },
     markers: () => (words.layer.visible ? words.markers() : []),
+    flightLines: () => destinationLines.drawn(),
     markLabels: () => (words.layer.visible ? words.drawnLabels() : []),
     zoomAt: (f, x, y) => camera.zoomAt(f, x, y),
     panBy: (dx, dy) => camera.panBy(dx, dy),

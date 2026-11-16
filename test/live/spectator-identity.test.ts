@@ -10,6 +10,7 @@ import { PRE_FRONTLINE_CONFIGS } from "../sim/fixtures.ts";
 import { step } from "../../src/sim/step.ts";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 const identity = { displayName: "owner/agent", elo: 1234.5, seatKey: "private-seat-key", accountId: "private-account-id" };
 function fixture(rated?: boolean, config: SimConfig = rulesConfig("redesign")) {
   const state = step(createMatch(42, playable(config)), [{ type: "join", agentId: "internal-id", modelLabel: "self-reported model" }]).state;
@@ -22,7 +23,7 @@ const roundtrip = (message: StreamMessage) => decodeMessage(encodeMessage(messag
 
 describe("spectator identity and rated outcome wire projection", () => {
   it.each([true, false, undefined])("roundtrips player display and Elo, keeping rated=%s distinct from historical absence", rated => {
-    const { message } = fixture(rated);
+    const { message } = fixture(rated, rules27Redesign());
     const bytes = encodePublicMessage(message), restored = decodeMessage(bytes);
     expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
     expect(restored.full!.setup.rated).toBe(rated);
@@ -102,7 +103,7 @@ describe("spectator identity and rated outcome wire projection", () => {
   });
 
   it("keeps metadata-free messages free of spectator metadata and byte-identical", () => {
-    const initial = createMatch(42, playable(rulesConfig("redesign")));
+    const initial = createMatch(42, playable(rules27Redesign()));
     const ordinary = new SpectatorRecorder(initial);
     const explicitAbsent = new SpectatorRecorder(initial, { rated: undefined, identity: () => undefined });
     const bytes = encodeMessage({ ...ordinary.initial(), full: ordinary.initialFull() });

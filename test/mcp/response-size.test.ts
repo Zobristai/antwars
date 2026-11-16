@@ -142,11 +142,12 @@ describe("every MCP reply stays below the measured Claude Code inline limit", ()
     const config = newMatchConfig(rulesConfig("redesign"));
     const h = await startHarness({ simConfig: config, start: false });
     const a = await h.connect();
+    // Rules replies share the join/observe budget (MAX_RULES_*); every other reply here is held to the command budget.
     const check = async (name: string, args: Record<string, unknown> = {}) => {
       const reply = await a.client.callTool({ name, arguments: args });
-      expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThanOrEqual(EXPECTED_REPLY_CAP_BYTES);
+      expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThanOrEqual(name === "rules" ? EXPECTED_RULES_CAP_BYTES : EXPECTED_REPLY_CAP_BYTES);
       const text = (reply.content as {type: string; text: string}[])[0]!.text;
-      expect(text.length).toBeLessThanOrEqual(MAX_TEXT_CHARS);
+      expect(text.length).toBeLessThanOrEqual(name === "rules" ? EXPECTED_RULES_TEXT_CHARS : MAX_TEXT_CHARS);
       expect(JSON.parse(text)).toEqual(reply.structuredContent);
       expect(reply.structuredContent).toBeDefined();
       return reply.structuredContent as Record<string, any>;
@@ -203,7 +204,10 @@ it("pages every sighted event without loss or consuming it in commands, errors o
     expect(malformed.isError).toBe(true); expect(malformed.data).not.toHaveProperty("events");
     expect((await a.call("rules")).data.rules).toContain("Worked example");
     const foreign = await enemy.call("observe", { since: 0 });
-    expect(JSON.stringify(foreign.data)).not.toContain("100000");
+    // The other colony's seat sees none of these events: no sentinel ant id as an event field, no pre-match tick.
+    const foreignText = JSON.stringify(foreign.data);
+    for (let i = 0; i < events.length; i++) expect(foreignText).not.toContain(`"antId":${100000 + i}`);
+    expect((foreign.data.view.events as VisibleEvent[]).some(event => event.tick < 0)).toBe(false);
 
     const first = await a.call("observe", { since: 0 });
     expect(first.data.view.eventsMore).toBe(true);
@@ -346,6 +350,12 @@ it.each(["word", "count"] as const)("delivers a budget-fitted current %s page at
   expect(markEvents.every(e => e.type === (kind === "word" ? "mark_laid" : "count_mark_accepted"))).toBe(true);
   expect(sample.fixture.colonySeats).toBe(4);
   expect(sample.fixture.antsPerColony).toEqual([512, 512]);
+  // The reply follows one real tick of the dense front: it shows every ant still alive, all of them prepared ants.
+  const wire = (sample.reply.structuredContent as { view: { cells: Parameters<typeof expandCells>[0]; cellsMore: boolean } }).view;
+  expect(wire.cellsMore).toBe(false);
+  const shown = expandCells(wire.cells).flatMap(cell => cell.ants);
+  expect([0, 1].map(colony => shown.filter(ant => ant.colony === colony).length)).toEqual(sample.fixture.antsAfterTick);
+  expect(shown.every(ant => ant.antId >= 15_000 + ant.colony * 512 && ant.antId < 15_512 + ant.colony * 512)).toBe(true);
   expect(sample.fixture.marksPerSeat).toEqual([18, 18, 18, 18, 18, 18, 18, 18]);
   expect((sample.reply.structuredContent as Record<string, any>).view.territory).toBeDefined();
   const unpaged = (sample.unpagedReply.structuredContent as { view: SizeView }).view;

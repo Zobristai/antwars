@@ -35,6 +35,16 @@ function coverageCells() {
   return cells.sort((a, b) => a.tileY * W + a.tileX - (b.tileY * W + b.tileX));
 }
 
+/** Flyers of both colonies in each state, beside a worker and under a queen. */
+function flyerCells() {
+  return [
+    { tileX: 30, tileY: 48, food: 0, ants: [{ antId: 300, colony: 0, hp: 2000, caste: "worker", flyer: "grounded" },
+      { antId: 301, colony: 1, hp: 2000, caste: "worker", flyer: "grounded" }, { antId: 302, colony: 0, hp: 4000, caste: "worker" }] },
+    { tileX: 31, tileY: 48, food: 2, ants: [{ antId: 303, colony: 0, hp: 1500, caste: "worker", flyer: "flying" }, { antId: 304, colony: 1, hp: 2000, caste: "worker", flyer: "flying" }] },
+    { tileX: 33, tileY: 48, food: 0, ants: [{ antId: 305, colony: 0, hp: 2000, caste: "worker", flyer: "hovering" }, { antId: 306, colony: 1, hp: 1, caste: "worker", flyer: "hovering" }], queen: 1, queenHp: 21500 },
+  ];
+}
+
 describe("generated decoders match the server", () => {
   it("generated expandCells returns exactly what the server's expandCells returns for denseCells output", () => {
     const cells = coverageCells();
@@ -53,6 +63,17 @@ describe("generated decoders match the server", () => {
     for (const data of ["zz!", "1,0*2", "0*0", `${(W * H * table.foodRadix).toString(36)}`]) {
       expect(() => serverExpandCells({ ...table, data })).toThrow();
       expect(() => expandCells({ ...table, data })).toThrow();
+    }
+  });
+
+  it("generated expandCells decodes a flyer table as the server does and refuses what the server refuses", () => {
+    const table = denseCells(flyerCells(), W, H, 2, true);
+    expect(table.data).toMatch(/\.[gfh](\/|;|$)/);
+    expect(expandCells(table)).toEqual(serverExpandCells(table));
+    expect(expandCells(table)).toEqual(flyerCells());
+    for (const data of ["0:1.8.l", "0:1.8.h.3", "0:1.8.", "0:1.8.constructor"]) {
+      expect(() => serverExpandCells({ ...table, foodRadix: 1, data }), data).toThrow();
+      expect(() => expandCells({ ...table, foodRadix: 1, data }), data).toThrow();
     }
   });
 
@@ -156,6 +177,14 @@ describe("readable view", () => {
     expect(text).toContain('myMarks (2):\n{"markId":1,"steering":3}');
   });
 
+  it("prints each flyer, own or enemy, as a flyer with its state", () => {
+    const data = reply([], null);
+    data.view.cells = denseCells(flyerCells(), W, H, 2, true);
+    const text = renderView(data);
+    expect(text).toContain("caste w=worker s=soldier f=flyer a=none");
+    expect(text).toContain("y48: 30:300f2(grounded),301F2(grounded),302w4 31f2:303f1.5(flying),304F2(flying) 33Qenemy21.5:305f2(hovering),306F0.001(hovering)");
+  });
+
   it("says when more cells follow", () => {
     const data = reply(coverageCells(), null, { more: true });
     const text = renderView(data);
@@ -237,7 +266,7 @@ describe("readable view: enemy colonies", () => {
       "queens (1):",
       '{"queenId":1,"tileX":10,"tileY":20,"lostTick":null,"hp":30000}',
       "cells tick 10: 6 tiles (complete)",
-      "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier a=none, lowercase own UPPERCASE enemy; hp in HP",
+      "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier f=flyer a=none, lowercase own UPPERCASE enemy; hp in HP; a flyer adds its state (grounded), (flying) or (hovering)",
       "y2: 5-7f3",
       "y20: 10Qown30:1w4 117f2Qenemy21.5:9S3.5,10a0.001 118Qenemy",
       "territory: not in this reply (observe with map:true)",
@@ -251,7 +280,7 @@ describe("readable view: enemy colonies", () => {
     { tileX: 118, tileY: 20, food: 0, ants: [], queen: 2 },
     { tileX: 10, tileY: 80, food: 0, ants: [{ antId: 20, colony: 3, hp: 4000, caste: "worker" }, { antId: 21, colony: 2, hp: 2000 }], queen: 3, queenHp: 0 },
     { tileX: 11, tileY: 80, food: 1, ants: [{ antId: 22, colony: 1, hp: 1234, caste: "worker" }, { antId: 23, colony: 2, hp: 4000, caste: "soldier" }, { antId: 24, colony: 3, hp: 3000, caste: "soldier" }] }];
-  const keyLine = (own) => "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier a=none, lowercase own UPPERCASE enemy; hp in HP"
+  const keyLine = (own) => "key: per row y<row>: tiles by x; x-x2 = run of equal food-only tiles; f<n> food; Q<own|enemy><hp> queen; :ants, comma-separated id+caste+hp, caste w=worker s=soldier f=flyer a=none, lowercase own UPPERCASE enemy; hp in HP; a flyer adds its state (grounded), (flying) or (hovering)"
     + `; @<n> ends each enemy ant and enemy queen: the colony it belongs to, 0-3 (yours is ${own})`;
   const cellPart = (text) => text.split("\n").slice(text.split("\n").findIndex((line) => line.startsWith("cells ")), -1);
 
@@ -274,6 +303,19 @@ describe("readable view: enemy colonies", () => {
       "y2: 5-7f3",
       "y20: 10Qenemy30@0:1W4@0 117f2Qenemy21.5@1:9S3.5@1,10A0.001@0 118Qenemy@2",
       "y80: 10Qown0:20w4,21A2@2 11f1:22W1.234@1,23S4@2,24s3",
+    ]);
+  });
+
+  it("marks each flyer with its state, then its colony, in a four-colony table with flyers", () => {
+    const cells = [{ tileX: 10, tileY: 20, food: 0, queen: 0, queenHp: 30000, ants: [{ antId: 1, colony: 0, hp: 4000, caste: "worker", flyer: "grounded" }] },
+      { tileX: 12, tileY: 20, food: 0, ants: [{ antId: 30, colony: 3, hp: 2000, caste: "worker", flyer: "flying" }, { antId: 31, colony: 2, hp: 1500, caste: "worker", flyer: "hovering" }, { antId: 32, colony: 1, hp: 4000, caste: "soldier" }] }];
+    const data = seatReply(cells, 0, 4);
+    data.view.cells = denseCells(cells, W, H, 4, true);
+    expect(expandCells(data.view.cells)).toEqual(cells);
+    expect(cellPart(renderView(data))).toEqual([
+      "cells tick 10: 2 tiles (complete)",
+      keyLine(0),
+      "y20: 10Qown30:1f4(grounded) 12:30F2(flying)@3,31F1.5(hovering)@2,32S4@1",
     ]);
   });
 

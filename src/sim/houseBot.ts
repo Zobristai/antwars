@@ -54,11 +54,12 @@ function rememberRole(state: SimState, ant: Ant): void {
  * start-of-tick state: keep the configured guard allotment near each queen,
  * and a fighter share of the rest that rises over the match.
  * Squad ants count toward the budget but are never reassigned by the house bot.
+ * Flyers take no house role: the planner neither counts nor assigns them.
  */
 export function rebalanceRoles(state: SimState): void {
   const { config } = state;
   for (const colony of state.colonies) {
-    const colonyAnts = state.ants.filter((ant) => ant.colony === colony.id);
+    const colonyAnts = state.ants.filter((ant) => ant.colony === colony.id && ant.flyer !== true);
     const local = localRulesSide(state, colony.id);
     for (const ant of colonyAnts) {
       const held = ant.squad !== null || ant.claim !== undefined;
@@ -297,7 +298,7 @@ export function rememberWorkerGuards(state: SimState, assignments: LocalSoldierA
   const previous = (state as WorkerGuardState).workerGuardRoles;
   const roles: Record<number, WorkerGuardRole> = {};
   for (const ant of state.ants) {
-    if (ant.caste === "soldier") continue;
+    if (ant.caste === "soldier" || ant.flyer === true) continue;
     const guarding = assignments.workerGuards.has(ant.id);
     const old = previous?.[ant.id];
     roles[ant.id] = old?.guarding === guarding ? old : {
@@ -334,7 +335,7 @@ export function localSoldierAssignments(state: SimState): LocalSoldierAssignment
     if (rules.workerIdlePatchPatrol && selected.length === free.length) {
       // Reserve a standing screen before dispatch, not only once attackers arrive.
       // Ownership and deliveries win; still leave a non-carrier available to forage.
-      const workers = state.ants.filter((ant) => ant.colony === colony.id && ant.caste !== "soldier" &&
+      const workers = state.ants.filter((ant) => ant.colony === colony.id && ant.caste !== "soldier" && ant.flyer !== true &&
         ant.squad === null && ant.claim === undefined);
       const roles = (state as WorkerGuardState).workerGuardRoles;
       const priority = (ant: Ant): number => {
@@ -356,7 +357,7 @@ export function localSoldierAssignments(state: SimState): LocalSoldierAssignment
           Math.floor(queen.queenX / SUB), Math.floor(queen.queenY / SUB), threatRange)));
       if (threatened.length > 0) {
         const idle = !(colony.seenFood ?? []).some((tile) => (state.food[tile] ?? 0) > 0);
-        const candidates = state.ants.filter((ant) => ant.colony === colony.id && ant.caste !== "soldier" && ant.hp > 0 &&
+        const candidates = state.ants.filter((ant) => ant.colony === colony.id && ant.caste !== "soldier" && ant.flyer !== true && ant.hp > 0 &&
           ant.squad === null && ant.claim === undefined && !ant.carrying &&
           (!rules.workerHomeGuardHold || !workerGuards.has(ant.id)) &&
           (workerGuards.has(ant.id) || idle || antShare(ant.id, 97) < (rules.workerPatchDispatchSharePermille ?? 0)))
@@ -467,7 +468,8 @@ function sameIntent(a: HouseIntent, b: HouseIntent): boolean {
 /** Validate only a competing choice; ordinary same-target ticks need no whole-ant scan. */
 function liveIntent(state: SimState, ant: Ant, intent: HouseIntent): HouseIntent | null {
   if (intent.kind === "chase" || intent.kind === "pursue") {
-    const enemy = state.ants.find(other => other.id === intent.targetId && other.colony !== ant.colony && other.hp > 0);
+    // A target that has taken off is out of every ground ant's reach: the hold lapses.
+    const enemy = state.ants.find(other => other.id === intent.targetId && other.colony !== ant.colony && other.hp > 0 && other.air === undefined);
     return enemy === undefined ? null : { ...intent, x: enemy.x, y: enemy.y };
   }
   if ("homeId" in intent && !activeQueens(state.colonies[ant.colony]).some(q => q.id === intent.homeId)) return null;
@@ -720,12 +722,12 @@ function rebalanceQueenGuards(state: SimState, members: Ant[], colony: ColonyId,
   }
 }
 
-/** Keep the hard ceiling and even split true after casualties, founding and hatching. */
+/** Keep the hard ceiling and even split true after casualties, founding and hatching. Flyers take no guard duty. */
 export function enforceQueenGuardCap(state: SimState): void {
   if (state.config.queenFounding?.totalGuardSharePermille === undefined) return;
   for (const colony of state.colonies) {
     if (localRulesSide(state, colony.id)) continue;
-    const ants = state.ants.filter((a) => a.colony === colony.id), eligible = ants.filter((a) => a.squad === null && a.claim === undefined);
+    const ants = state.ants.filter((a) => a.colony === colony.id && a.flyer !== true), eligible = ants.filter((a) => a.squad === null && a.claim === undefined);
     rebalanceQueenGuards(state, eligible, colony.id,
       queenGuardTargets(ants.length, eligible.length, activeQueens(colony).length, state.config).assignedTarget);
     for (const ant of eligible) rememberRole(state, ant);
