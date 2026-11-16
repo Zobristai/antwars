@@ -174,10 +174,9 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
     });
 
     it("refuses quadrants no_quadrant_map, writing nothing, while its rotation is empty or holds a two-colony map; other modes still join", async () => {
-      expect(quadrantMatchMaps()).toEqual([]);
       expect(quadrantMatchMaps().every(map => map.quadrant !== undefined)).toBe(true);
       validateQuadrantMap(FIXTURE);
-      for (const rotation of ["shipped", [], [...newMatchMaps(), FIXTURE]] as const) {
+      for (const rotation of [[], [...newMatchMaps(), FIXTURE]] as const) {
         const w = world(backend, rotation);
         const ann = await w.claim("ann");
         const token = newWaitToken();
@@ -188,6 +187,12 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       }
       // A quadrant-only rotation admits the join.
       const w = world(backend, [FIXTURE]);
+      expect(value(await w.lobbies.joinQueue((await w.claim("ann")).key, "quadrants")).state).toBe("waiting");
+    });
+
+    it("admits a quadrants join on the shipped pool, Four Coves, Crossroads and Strait", async () => {
+      expect(quadrantMatchMaps().map(map => map.id)).toEqual(["four-coves", "crossroads", "strait"]);
+      const w = world(backend, "shipped");
       expect(value(await w.lobbies.joinQueue((await w.claim("ann")).key, "quadrants")).state).toBe("waiting");
     });
 

@@ -1,6 +1,7 @@
 import type { MapDefinition, TerrainRules, WaterRect } from "./config.js";
 import { CENTRAL_LAKE_V2, SCALE2_MAPS, THREE_CROSSINGS_V2 } from "./scale2Maps.js";
 import { NEW_MATCH_GRID_SCALE } from "./gridScale.js";
+import { QUADRANT_MAPS } from "./quadrantMaps.js";
 
 /** Materialize new-match water in native grid-scale-2 tile coordinates. Saved map definitions
  * are never passed through this function: their rectangles remain authoritative.
@@ -46,10 +47,10 @@ export function newMatchMaps(): readonly MapDefinition[] {
   return [openField!, THREE_CROSSINGS_V2, CENTRAL_LAKE_V2, ...SCALE2_MAPS];
 }
 
-/** The Quadrants (four-colony) rotation: quadrant maps only. Empty until a quadrant map ships, so the mode is
- * refused while it is empty. */
+/** The Quadrants (four-colony) rotation: the shipped Quadrants pool, Four Coves, Crossroads and Strait in that
+ * order (src/sim/quadrantMaps.ts). The mode is refused while a rotation it is given is empty. */
 export function quadrantMatchMaps(): readonly MapDefinition[] {
-  return [];
+  return QUADRANT_MAPS;
 }
 
 /** TEMPORARY: maps no new house-mode match

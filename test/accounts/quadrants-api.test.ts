@@ -198,7 +198,7 @@ for (const backend of ["memory", "Firestore emulator"]) {
       });
 
       it("refuses quadrants with its reason while the rotation is empty, writing no entry, and refuses a quadrants rating", async () => {
-        const w = await world(backend, "shipped");
+        const w = await world(backend, []);
         const call = await open(w.port);
         const ann = await claim(call, "Ann");
         const refused = await call("join_queue", { key: ann.key, mode: "quadrants" });
@@ -208,6 +208,13 @@ for (const backend of ["memory", "Firestore emulator"]) {
         const rating = await call("rating", { displayName: "Ann", mode: "quadrants" });
         expect(rating.ok).toBe(false);
         if (transport === "HTTP") expect(rating.status).toBe(400);
+      });
+
+      it("admits a quadrants join on the shipped pool", async () => {
+        const w = await world(backend, "shipped");
+        const call = await open(w.port);
+        const ann = await claim(call, "Ann");
+        expect((await ok(call, "join_queue", { key: ann.key, mode: "quadrants" })).queue).toMatchObject({ state: "waiting", mode: "quadrants" });
       });
 
       it("refuses a builder with a live challenge live_challenge, adding the no-map reason only to quadrants while the rotation is empty", async () => {
@@ -229,7 +236,7 @@ for (const backend of ["memory", "Firestore emulator"]) {
           return [refused.ok, refused.body.error, refused.body.message, refused.body.waitToken];
         };
 
-        const empty = await world(backend, "shipped");
+        const empty = await world(backend, []);
         const emptyCall = await open(empty.port);
         const builder = await liveChallenge(empty, emptyCall);
         expect(await refusal(emptyCall, builder.key, "quadrants")).toEqual([false, "live_challenge", `${LIVE_CHALLENGE} ${NO_MAP}`, undefined]);

@@ -2,15 +2,14 @@ import { rulesConfig, type FoodPatch, type MapDefinition, type SimConfig, type W
 import { newMatchConfig } from "./gridScale.js";
 
 /**
- * Candidate four-colony quadrant maps, built for preview only. They are in no rotation, two-colony or
- * four-colony: a match plays on one only through quadrantCandidateConfig with its explicit map id.
+ * The Quadrants map pool: the four-colony maps quadrantMatchMaps() serves (src/sim/mapShapes.ts), in pool order.
  * None carries its own ant cap or match length; the config's apply. Every value is in reference tiles of the
- * top-left quadrant (src/sim/quadrantMap.ts mirrors it into the other three), except the water: each candidate sets
+ * top-left quadrant (src/sim/quadrantMap.ts mirrors it into the other three), except the water: each map sets
  * nativeWater, so its water is the top-left quadrant of the native board at grid scale 2, row by row.
  */
 const rect = (x: number, y: number, width: number, height: number): WaterRect => ({ x, y, width, height });
 const food = (tileX: number, tileY: number, radius: number, perTile: number): FoodPatch => ({ tileX, tileY, radius, perTile });
-/** Three seeded centre disks of radius 2 at 6 per tile, shared by every candidate. */
+/** Three seeded centre disks of radius 2 at 6 per tile, shared by every pool map. */
 const CENTRE_FOOD = [{ radius: 2, perTile: 6 }, { radius: 2, perTile: 6 }, { radius: 2, perTile: 6 }];
 
 /** 64x48: each home sits in a corner cove behind a curved lake, open toward both neighbours; open centre. */
@@ -71,17 +70,17 @@ export const STRAIT: MapDefinition = {
   },
 };
 
-/** The candidates, kept apart from every rotation. */
-export const QUADRANT_CANDIDATES: readonly MapDefinition[] = [FOUR_COVES, CROSSROADS, STRAIT];
+/** The Quadrants pool in pool order: Four Coves, Crossroads, Strait. */
+export const QUADRANT_MAPS: readonly MapDefinition[] = [FOUR_COVES, CROSSROADS, STRAIT];
 
-/** A headless four-colony match config on the candidate with this map id: base with terrain.maps holding that
- * candidate alone, so a match created from it takes the candidate's own board size. base defaults to
- * newMatchConfig(rulesConfig("redesign")). RangeError for an id that names no candidate. */
-export function quadrantCandidateConfig(id: string, base: SimConfig = newMatchConfig(rulesConfig("redesign"))): SimConfig {
-  const map = QUADRANT_CANDIDATES.find(candidate => candidate.id === id);
+/** A headless four-colony match config on the pool map with this id: base with terrain.maps holding that map
+ * alone, so a match created from it takes the map's own board size. base defaults to
+ * newMatchConfig(rulesConfig("redesign")). RangeError for an id that names no pool map. */
+export function quadrantMapConfig(id: string, base: SimConfig = newMatchConfig(rulesConfig("redesign"))): SimConfig {
+  const map = QUADRANT_MAPS.find(m => m.id === id);
   if (map === undefined) {
-    throw new RangeError(`no quadrant map candidate has id ${JSON.stringify(id)}; candidates: ${QUADRANT_CANDIDATES.map(c => c.id).join(", ")}`);
+    throw new RangeError(`no Quadrants pool map has id ${JSON.stringify(id)}; pool: ${QUADRANT_MAPS.map(m => m.id).join(", ")}`);
   }
-  if (base.terrain === undefined) throw new Error("a quadrant map candidate requires a base config with terrain rules");
+  if (base.terrain === undefined) throw new Error("a Quadrants pool map requires a base config with terrain rules");
   return { ...base, terrain: { ...base.terrain, maps: [map] } };
 }

@@ -1,6 +1,6 @@
 /** Quadrant maps whose water is in native tiles (layout nativeWater): validation, the covered reading, the native rock
  * test, and the match terrain, log, stream, agent view and rules page carrying the native water undoubled. Every map
- * here is test-only geometry, at each candidate board size (64x48, 96x64, 112x64), played at grid scale 2 in
+ * here is test-only geometry, at each Quadrants pool board size (64x48, 96x64, 112x64), played at grid scale 2 in
  * rulesConfig("redesign") through newMatchConfig. */
 import { describe, expect, it } from "vitest";
 import { decodeMessage, encodePublicMessage } from "../../src/live/format.js";

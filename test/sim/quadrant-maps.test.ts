@@ -1,24 +1,29 @@
-/** The three candidate quadrant maps: each is chosen only by its explicit map id, no rotation can draw it, and each
- * passes the design's correctness checks on the native board its match plays (its own reference board at grid scale 2,
- * with its water in native tiles) over seeds 1-100, default nests, no picks, in the four-colony test config
+/** The Quadrants map pool, Four Coves, Crossroads and Strait in that order: the Quadrants rotation serves exactly these,
+ * no two-colony rotation can draw one, each streams, records and replays its native water exactly at its own board
+ * size, and each passes the design's correctness checks on the native board its match plays (its own reference board at
+ * grid scale 2, with its water in native tiles) over seeds 1-100, default nests, no picks, in the four-colony test config
  * (rulesConfig("redesign") through newMatchConfig). */
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { decodeMessage, encodePublicMessage } from "../../src/live/format.js";
+import { SpectatorRecorder } from "../../src/live/model.js";
 import { MAPS, RULES_NAMES, rulesConfig, withoutHousePausedMaps, type MapDefinition, type SimConfig, type WaterRect } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
-import { createMatch } from "../../src/sim/map.js";
-import { createMapShapes, houseMatchMaps, newMatchMaps, retiredSevenMapRotation, retiredSixMapHouseRotation } from "../../src/sim/mapShapes.js";
-import { CROSSROADS, FOUR_COVES, QUADRANT_CANDIDATES, STRAIT, quadrantCandidateConfig } from "../../src/sim/quadrantCandidates.js";
+import { headerLine, replay, stateHash, tickLine } from "../../src/sim/log.js";
+import { buildGrid, createMatch } from "../../src/sim/map.js";
+import { createMapShapes, houseMatchMaps, newMatchMaps, quadrantMatchMaps, retiredSevenMapRotation, retiredSixMapHouseRotation } from "../../src/sim/mapShapes.js";
+import { CROSSROADS, FOUR_COVES, QUADRANT_MAPS, STRAIT, quadrantMapConfig } from "../../src/sim/quadrantMaps.js";
 import { generateQuadrantBoard, validateQuadrantMap, type QuadrantBoard } from "../../src/sim/quadrantMap.js";
 import { SCALE2_MAPS } from "../../src/sim/scale2Maps.js";
-import { isBlockedTile } from "../../src/sim/terrain.js";
+import { step } from "../../src/sim/step.js";
+import { isBlockedTile, selectMap } from "../../src/sim/terrain.js";
 import { tuningMapConfig } from "../../src/sim/tuningMap.js";
-import type { SimState } from "../../src/sim/types.js";
+import type { SimInput, SimState } from "../../src/sim/types.js";
+import { takeView } from "../../src/sim/view.js";
 
 const SEEDS = Array.from({ length: 100 }, (_, i) => i + 1);
 const SCALE = 2;
-const CANDIDATE_IDS = ["four-coves", "crossroads", "strait"];
+const POOL_IDS = ["four-coves", "crossroads", "strait"];
+const JOINS: SimInput[] = [0, 1, 2, 3].map(seat => ({ type: "join", agentId: `seat-${seat}`, modelLabel: `model-${seat}` }));
 
 type Edge = "left" | "right" | "top" | "bottom";
 /** A named route, measured on the native board as vertex-disjoint 4-connected land paths inside its corridor from its
@@ -150,11 +155,11 @@ function routeImages(w: number, h: number, route: Route) {
 const ids = (maps: readonly MapDefinition[]) => maps.map(map => map.id);
 const centreLayout = (b: QuadrantBoard) => b.centreFood.map(p => `${p.tileX},${p.tileY},${p.radius},${p.perTile}`).join(";");
 
-describe("candidate selection", () => {
-  it("lists the three candidates by id with their own board sizes and no ant cap, match length, board or grid scale of their own", () => {
-    expect(QUADRANT_CANDIDATES.map(m => [m.id, m.quadrant?.referenceWidth, m.quadrant?.referenceHeight]))
+describe("the Quadrants pool", () => {
+  it("lists the three pool maps by id, in pool order, with their own board sizes and no ant cap, match length, board or grid scale of their own", () => {
+    expect(QUADRANT_MAPS.map(m => [m.id, m.quadrant?.referenceWidth, m.quadrant?.referenceHeight]))
       .toEqual([["four-coves", 64, 48], ["crossroads", 96, 64], ["strait", 112, 64]]);
-    for (const map of QUADRANT_CANDIDATES) {
+    for (const map of QUADRANT_MAPS) {
       expect([map.colonyCap, map.matchTicks, map.board, map.gridScale]).toEqual([undefined, undefined, undefined, undefined]);
       expect(map.quadrant!.nativeWater, `${map.id} holds its water in native tiles`).toBe(true);
     }
@@ -163,7 +168,7 @@ describe("candidate selection", () => {
   it.each(CASES.map(c => [c.map.id, c.width, c.height, c.map] as const))(
     "%s: its explicit id yields its definition alone in a four-colony config, and a match at grid scale 2 takes its %ix%i board (seed 1)",
     (id, width, height, map) => {
-      const config = quadrantCandidateConfig(id);
+      const config = quadrantMapConfig(id);
       expect(config.terrain!.maps).toEqual([map]);
       expect(config.gridScale).toBe(SCALE);
       const match = createMatch(1, config);
@@ -171,13 +176,33 @@ describe("candidate selection", () => {
       expect(new Set(match.ants.map(a => a.colony))).toEqual(new Set([0, 1, 2, 3]));
     });
 
-  it("refuses an id that names no candidate", () => {
-    expect(() => quadrantCandidateConfig("open-field")).toThrow(RangeError);
-    expect(() => quadrantCandidateConfig("Four Coves")).toThrow(RangeError);
+  it("refuses an id that names no pool map", () => {
+    expect(() => quadrantMapConfig("open-field")).toThrow(RangeError);
+    expect(() => quadrantMapConfig("Four Coves")).toThrow(RangeError);
+  });
+
+  it("is the Quadrants rotation: quadrantMatchMaps() serves Four Coves, Crossroads and Strait in that order", () => {
+    expect(ids(quadrantMatchMaps())).toEqual(POOL_IDS);
+    expect(quadrantMatchMaps()).toEqual([FOUR_COVES, CROSSROADS, STRAIT]);
+  });
+
+  it("seeds 1-100 on the shipped rotation: every match plays one of the three at its own board size, with the default 512-ant cap and match length", () => {
+    const base = newMatchConfig(rulesConfig("redesign"));
+    const config: SimConfig = { ...base, terrain: { ...base.terrain!, maps: quadrantMatchMaps() } };
+    const sizes: Record<string, readonly [number, number]> = { "four-coves": [128, 96], "crossroads": [192, 128], "strait": [224, 128] };
+    const drawn = new Set<string>();
+    for (const seed of SEEDS) {
+      const id = selectMap(seed, config.terrain!).id;
+      drawn.add(id);
+      const match = createMatch(seed, config);
+      expect([match.terrain!.mapId, match.config.mapWidth, match.config.mapHeight], `seed ${seed}`).toEqual([id, ...sizes[id]!]);
+      expect([match.config.colonyCap, match.config.matchTicks], `seed ${seed}`).toEqual([512, base.matchTicks]);
+    }
+    expect([...drawn].sort()).toEqual([...POOL_IDS].sort());
   });
 });
 
-describe("no rotation draws a candidate", () => {
+describe("no two-colony rotation draws a pool map", () => {
   const ROTATIONS: readonly (readonly [string, readonly MapDefinition[]])[] = [
     ["recorded three-map MAPS", MAPS], ["createMapShapes()", createMapShapes()], ["retiredSevenMapRotation()", retiredSevenMapRotation()],
     ["newMatchMaps()", newMatchMaps()], ["houseMatchMaps()", houseMatchMaps()], ["retiredSixMapHouseRotation()", retiredSixMapHouseRotation()],
@@ -190,23 +215,15 @@ describe("no rotation draws a candidate", () => {
     ["tuningMapConfig(500)", tuningMapConfig(500).terrain!.maps],
   ];
 
-  it.each(ROTATIONS)("%s holds no candidate", (_, maps) => {
-    expect(ids(maps).filter(id => CANDIDATE_IDS.includes(id))).toEqual([]);
+  it.each(ROTATIONS)("%s holds no pool map", (_, maps) => {
+    expect(ids(maps).filter(id => POOL_IDS.includes(id))).toEqual([]);
   });
 
-  it.each(CANDIDATE_IDS)("a two-colony rotation with %s added is refused", id => {
+  it.each(POOL_IDS)("a two-colony rotation with %s added is refused", id => {
     const base = newMatchConfig(rulesConfig("redesign"));
-    const map = QUADRANT_CANDIDATES.find(m => m.id === id)!;
+    const map = QUADRANT_MAPS.find(m => m.id === id)!;
     const mixed: SimConfig = { ...base, terrain: { ...base.terrain!, maps: [...base.terrain!.maps, map] } };
     expect(() => newMatchConfig(mixed)).toThrow(`${id}: a quadrant map plays only in a four-colony rotation`);
-  });
-
-  it("no source module imports the candidates, so no rotation built in src can hold one", () => {
-    const root = join(import.meta.dirname, "../../src");
-    const files = readdirSync(root, { recursive: true, encoding: "utf8" })
-      .filter(f => /\.(ts|mts|mjs|js)$/.test(f) && !f.endsWith("quadrantCandidates.ts"));
-    expect(files.length).toBeGreaterThan(0);
-    expect(files.filter(f => readFileSync(join(root, f), "utf8").includes("quadrantCandidates"))).toEqual([]);
   });
 });
 
@@ -219,7 +236,7 @@ for (const { map, width: W, height: H, routes } of CASES) {
     const boards = new Map<number, QuadrantBoard>(), grids = new Map<number, Uint8Array>(), matches = new Map<number, SimState>();
     beforeAll(() => {
       for (const seed of SEEDS) {
-        const b = generateQuadrantBoard(map, seed), s = createMatch(seed, quadrantCandidateConfig(map.id));
+        const b = generateQuadrantBoard(map, seed), s = createMatch(seed, quadrantMapConfig(map.id));
         boards.set(seed, b); matches.set(seed, s); grids.set(seed, grid(s));
       }
     });
@@ -326,6 +343,36 @@ for (const { map, width: W, height: H, routes } of CASES) {
     it(`centre food: the same seed gives the same layout, and the layouts differ across seeds (${layouts.size} distinct in ${SEEDS.length})`, () => {
       for (const seed of SEEDS) expect(centreLayout(generateQuadrantBoard(map, seed)), `seed ${seed}`).toBe(centreLayout(boards.get(seed)!));
       expect(layouts.size).toBeGreaterThan(1);
+    });
+
+    // The board's native water: each native rectangle's four images, quadrant order, in native tiles.
+    const nativeWater = generateQuadrantBoard(map, 1).nativeWater!.map(key);
+
+    it(`seed 1: a match log replays to the same ${NW}x${NH} board, native water and state`, () => {
+      const config = quadrantMapConfig(map.id);
+      let state = createMatch(1, config);
+      const lines = [headerLine(1, config)];
+      for (let tick = 0; tick < 20; tick++) {
+        const inputs = tick === 0 ? JOINS : [];
+        lines.push(tickLine(tick, inputs));
+        state = step(state, inputs).state;
+      }
+      const replayed = replay(lines, state.tick);
+      expect([replayed.config.mapWidth, replayed.config.mapHeight]).toEqual([NW, NH]);
+      expect(replayed.terrain!.water.map(key)).toEqual(nativeWater);
+      expect(stateHash(replayed)).toBe(stateHash(state));
+    });
+
+    it(`seed 1: the live stream's setup, decoded, carries the native water exactly on the ${NW}x${NH} board`, () => {
+      const recorder = new SpectatorRecorder(createMatch(1, quadrantMapConfig(map.id)));
+      const message = decodeMessage(encodePublicMessage({ ...recorder.initial(), full: recorder.initialFull() }));
+      expect(message.full!.setup.terrain!.water.map(([x, y, width, height]) => key(r(x, y, width, height)))).toEqual(nativeWater);
+    });
+
+    it("seed 1: the agent view carries the native water exactly", () => {
+      const out = step(createMatch(1, quadrantMapConfig(map.id)), JOINS);
+      const view = takeView(out.state, buildGrid(out.state), out.state.agents[0]!);
+      expect(view.terrain!.water.map(([x, y, width, height]) => key(r(x, y, width, height)))).toEqual(nativeWater);
     });
   });
 }
