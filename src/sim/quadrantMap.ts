@@ -9,6 +9,10 @@
  *
  * Quadrant order everywhere: top-left, top-right (left/right mirror), bottom-left (up/down
  * mirror), bottom-right (both). Two-colony rotations refuse quadrant maps (validateMapBoard).
+ *
+ * A map whose layout sets nativeWater holds its water in native tiles at grid scale 2. Validation and generation
+ * then read a reference tile as water when any of its native tiles is water (the covered reading), and keep a rock
+ * group only if it splits no native land region; the match lays the native water exactly.
  */
 import { ROCK_RULES, type FoodPatch, type MapDefinition, type QuadrantLayout, type WaterRect } from "./config.js";
 import { boardSizeProblem, OWN_VALUE_GRID_SCALE, validateMapValues } from "./mapBoard.js";
@@ -27,6 +31,9 @@ export interface QuadrantBoard {
   readonly nests: readonly QuadrantTile[];
   readonly startAreas: readonly WaterRect[];
   readonly water: readonly WaterRect[];
+  /** With nativeWater only: each native top-left rectangle's four images in native tiles, quadrant order.
+   * water then holds the covered reading in reference tiles. */
+  readonly nativeWater?: readonly WaterRect[];
   readonly quadrantFood: readonly FoodPatch[];
   /** The right-hand copies carry the mirror bit 128 in their appearance, as two-colony rocks do. */
   readonly rocks: readonly Rock[];
@@ -69,8 +76,21 @@ function diskTiles(p: { readonly tileX: number; readonly tileY: number; readonly
   return tiles;
 }
 
-/** A quadrant layout with the map's water, which is the top-left quadrant's. */
-type Layout = QuadrantLayout & { readonly waterTemplates: readonly WaterRect[] };
+/** A quadrant layout with the map's water, which is the top-left quadrant's, in reference tiles. With nativeWater,
+ * nativeTemplates holds the map's native rectangles and waterTemplates their covered reading. */
+type Layout = QuadrantLayout & { readonly waterTemplates: readonly WaterRect[]; readonly nativeTemplates?: readonly WaterRect[] };
+
+/** Native tiles per reference tile along each axis on a native-water map: quadrant maps play only at grid scale 2. */
+const NATIVE = OWN_VALUE_GRID_SCALE;
+
+/** The native board of a native-water map: land per native tile (water and rocks blocked), with reusable scratch. */
+interface NativeGround {
+  readonly width: number;
+  readonly height: number;
+  readonly land: Uint8Array;
+  readonly label: Int32Array;
+  readonly queue: Int32Array;
+}
 
 /** The board without centre food: land (not water, not rock), quadrant food, start areas and nests. */
 interface Ground {
@@ -82,6 +102,8 @@ interface Ground {
   readonly land: Uint8Array;
   /** Quadrant food tiles, which rocks never cover. */
   readonly food: Uint8Array;
+  /** With nativeWater only. */
+  readonly native?: NativeGround;
 }
 
 /** The land tiles reachable from the first nest. */
@@ -132,7 +154,64 @@ function ground(q: Layout): Ground {
   for (const patch of q.foodPatches) for (const { tx, ty } of tileImages(q, patch.tileX, patch.tileY)) {
     for (const tile of diskTiles({ ...patch, tileX: tx, tileY: ty })) food[tile.ty * width + tile.tx] = 1;
   }
-  return { q, width, centre: centreOf(q), nests: tileImages(q, q.nestTileX, q.nestTileY), startAreas: rectImages(q, q.startArea), land, food };
+  return { q, width, centre: centreOf(q), nests: tileImages(q, q.nestTileX, q.nestTileY), startAreas: rectImages(q, q.startArea), land, food,
+    ...(q.nativeTemplates === undefined ? {} : { native: nativeGround(q, q.nativeTemplates) }) };
+}
+
+/** A native rectangle's four images on the native board, in quadrant order. */
+function nativeImages(q: QuadrantLayout, r: WaterRect): WaterRect[] {
+  const mx = NATIVE * q.referenceWidth - r.x - r.width, my = NATIVE * q.referenceHeight - r.y - r.height;
+  return [rect(r.x, r.y, r.width, r.height), rect(mx, r.y, r.width, r.height), rect(r.x, my, r.width, r.height), rect(mx, my, r.width, r.height)];
+}
+
+function nativeGround(q: QuadrantLayout, templates: readonly WaterRect[]): NativeGround {
+  const width = NATIVE * q.referenceWidth, height = NATIVE * q.referenceHeight, land = new Uint8Array(width * height).fill(1);
+  for (const water of templates) for (const r of nativeImages(q, water)) {
+    for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) land[y * width + x] = 0;
+  }
+  return { width, height, land, label: new Int32Array(land.length), queue: new Int32Array(land.length) };
+}
+
+/** Label the native land regions (4-connected) into n.label, -1 off land; returns the region count. */
+function labelNativeRegions(n: NativeGround): number {
+  const { width, height, land, label, queue } = n;
+  label.fill(-1);
+  let regions = 0;
+  for (let s = 0; s < land.length; s++) {
+    if (!land[s] || label[s]! >= 0) continue;
+    let read = 0, write = 1;
+    queue[0] = s; label[s] = regions;
+    while (read < write) {
+      const at = queue[read++]!, x = at % width, y = Math.floor(at / width);
+      for (const next of [x > 0 ? at - 1 : -1, x + 1 < width ? at + 1 : -1, y > 0 ? at - width : -1, y + 1 < height ? at + width : -1]) {
+        if (next >= 0 && land[next] && label[next]! < 0) { label[next] = regions; queue[write++] = next; }
+      }
+    }
+    regions++;
+  }
+  return regions;
+}
+
+/**
+ * Block the native tiles of a rock group's reference cells (all four images at once) unless that splits a native land
+ * region: a region left in more than one piece. A region the group covers whole is not split. Returns whether it split;
+ * on a split the native board is left as it was.
+ */
+function splitsNativeLand(n: NativeGround, referenceWidth: number, cells: readonly number[]): boolean {
+  labelNativeRegions(n);
+  const before = n.label.slice(), tiles: number[] = [];
+  for (const i of cells) {
+    const x = i % referenceWidth, y = Math.floor(i / referenceWidth);
+    for (let dy = 0; dy < NATIVE; dy++) for (let dx = 0; dx < NATIVE; dx++) tiles.push((NATIVE * y + dy) * n.width + NATIVE * x + dx);
+  }
+  for (const t of tiles) n.land[t] = 0;
+  const after = labelNativeRegions(n), left = new Set<number>();
+  for (let t = 0; t < n.land.length; t++) if (n.land[t]) left.add(before[t]!);
+  if (after > left.size) {
+    for (const t of tiles) n.land[t] = 1;
+    return true;
+  }
+  return false;
 }
 
 /** Rock spots of one size: inside the top-left quadrant and outside the centre, row by row. */
@@ -146,7 +225,8 @@ function rockSpots(g: Ground, width: number, height: number): WaterRect[] {
 }
 
 /** Place a rock and its three mirror images when all four lie on land, clear of food and every nest's clearance,
- * and the board still keeps the start contract; otherwise change nothing. Rocks may sit in start areas. */
+ * and the board still keeps the start contract (and, with nativeWater, splits no native land region); otherwise
+ * change nothing. Rocks may sit in start areas. */
 function placeRock(g: Ground, spot: WaterRect): boolean {
   const clearance = ROCK_RULES.nestClearanceTiles, cells: number[] = [];
   for (const r of rectImages(g.q, spot)) for (let y = r.y; y < r.y + r.height; y++) for (let x = r.x; x < r.x + r.width; x++) {
@@ -155,7 +235,7 @@ function placeRock(g: Ground, spot: WaterRect): boolean {
     cells.push(i);
   }
   for (const i of cells) g.land[i] = 0;
-  if (connectionProblem(g) !== null) {
+  if (connectionProblem(g) !== null || (g.native !== undefined && splitsNativeLand(g.native, g.width, cells))) {
     for (const i of cells) g.land[i] = 1;
     return false;
   }
@@ -164,7 +244,13 @@ function placeRock(g: Ground, spot: WaterRect): boolean {
 
 function layoutOf(map: MapDefinition): Layout {
   if (map.quadrant === undefined) throw new RangeError(`${map.id}: not a quadrant map`);
-  return { ...map.quadrant, waterTemplates: map.water };
+  if (map.quadrant.nativeWater !== true) return { ...map.quadrant, waterTemplates: map.water };
+  // The covered reading: each native rectangle's reference tiles, any of whose native tiles it covers.
+  const covered = map.water.map(r => {
+    const x = Math.floor(r.x / NATIVE), y = Math.floor(r.y / NATIVE);
+    return rect(x, y, Math.ceil((r.x + r.width) / NATIVE) - x, Math.ceil((r.y + r.height) / NATIVE) - y);
+  });
+  return { ...map.quadrant, waterTemplates: covered, nativeTemplates: map.water };
 }
 
 /**
@@ -197,9 +283,20 @@ function checkedLayout(map: MapDefinition): Layout {
   };
   // Inside the quadrant, a rectangle overlaps the centre region exactly when its bottom-right tile lies in it.
   const farTile = (r: WaterRect) => (): QuadrantTile[] => [{ tx: r.x + r.width - 1, ty: r.y + r.height - 1 }];
-  for (const r of q.waterTemplates) {
-    if (!whole(r.x, r.y, r.width, r.height) || r.width < 1 || r.height < 1) fail("water rectangles must be positive whole tiles");
-    place("water rectangles", r, farTile(r));
+  if (q.nativeTemplates === undefined) {
+    for (const r of q.waterTemplates) {
+      if (!whole(r.x, r.y, r.width, r.height) || r.width < 1 || r.height < 1) fail("water rectangles must be positive whole tiles");
+      place("water rectangles", r, farTile(r));
+    }
+  } else {
+    // Native water: the top-left quadrant and the centre region of the native board.
+    const nativeQuadrant = rect(0, 0, width, height);
+    const nativeCentre = rect(NATIVE * centre.x, NATIVE * centre.y, NATIVE * centre.width, NATIVE * centre.height);
+    for (const r of q.nativeTemplates) {
+      if (!whole(r.x, r.y, r.width, r.height) || r.width < 1 || r.height < 1) fail("native water rectangles must be positive whole tiles");
+      if (!contains(nativeQuadrant, r)) fail("native water rectangles must lie inside the native top-left quadrant");
+      if (overlaps(r, nativeCentre)) fail("native water rectangles must not overlap the centre region");
+    }
   }
   if (!whole(q.nestTileX, q.nestTileY)) fail("the nest must be a whole tile");
   place("the nest", rect(q.nestTileX, q.nestTileY, 1, 1), () => [{ tx: q.nestTileX, ty: q.nestTileY }]);
@@ -265,6 +362,7 @@ export function generateQuadrantBoard(map: MapDefinition, seed: number): Quadran
     mapId: map.id, mapName: map.name, width: q.referenceWidth, height: q.referenceHeight, centre,
     nests: g.nests, startAreas: rectImages(q, q.startArea),
     water: q.waterTemplates.flatMap(r => rectImages(q, r)),
+    ...(q.nativeTemplates === undefined ? {} : { nativeWater: q.nativeTemplates.flatMap(r => nativeImages(q, r)) }),
     quadrantFood: q.foodPatches.flatMap(p => tileImages(q, p.tileX, p.tileY).map(({ tx, ty }) => ({ ...p, tileX: tx, tileY: ty }))),
     rocks, centreFood,
   };

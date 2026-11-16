@@ -119,12 +119,17 @@ export interface QuadrantLayout {
   readonly foodPatches: readonly FoodPatch[];
   /** Centre food: each disk lands where the match seed puts it inside the centre region. */
   readonly centreFood: readonly CentreFood[];
+  /** true: the map's water is in native tiles at grid scale 2, the top-left quadrant of the native board
+   * (referenceWidth by referenceHeight native tiles), so its shores step one native tile at a time.
+   * Absent: the water is in reference tiles, as every other quadrant map's. */
+  readonly nativeWater?: true;
 }
 export interface MapDefinition {
   readonly id: string;
   readonly name: string;
   /** With a board, rectangles are in that board's reference tiles; with a quadrant layout,
-   * they are the top-left quadrant's water in its reference tiles. */
+   * they are the top-left quadrant's water in its reference tiles, or in native tiles when the
+   * layout sets nativeWater. */
   readonly water: readonly WaterRect[];
   /** Absent: the config's size, nest and food, as every recorded map plays. */
   readonly board?: MapBoard;
