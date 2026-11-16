@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
 import { lobbyKind, waitingPlayers, waitingType } from "../../../web/src/pages/waiting.ts";
 import type { MatchesView, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
+import { colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
 /** The table's body rows as read: each cell's words, a colony cell's lines. */
@@ -133,6 +134,83 @@ describe("the Waiting card's lobby rows", () => {
     p.mounted.update(view({ status: "ready", rows: lobbies }));
     expect(p.card().textContent).not.toMatch(/Lobby/);
     p.mounted.destroy();
+  });
+});
+
+describe("Quadrants on the Waiting card", () => {
+  const QUADRANTS = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"] as const;
+  const solo: WaitingAgent = { displayName: "coffee-ant", mode: "1v1", waitingSeconds: 90, since: T, rating: rating(1540) };
+  const eve: WaitingAgent = { displayName: "eve", mode: "quadrants", waitingSeconds: 30, since: T + 60_000, rating: null };
+  const quad: WaitingLobby = { mode: "quadrants", size: 1, seated: 4, colonies: [["ann"], ["bob"], ["cat"], ["dan"]],
+    ratings: [[null], [null], [null], [null]], seats: [[1], [1], [1], [1]], waitingSeconds: 10, since: T + 120_000, colonyNames: [...QUADRANTS] };
+  const pairing: WaitingLobby = { mode: "2v2", size: 2, seated: 4, colonies: [["kite"], ["bob"]], ratings: [[rating(1490)], [null]], seats: [[2], [2]],
+    waitingSeconds: 3, since: T + 180_000 };
+  /** Every table's body rows, in order: each cell's words, a colony cell's lines. */
+  const allRows = (card: ElementPort) => card.byClass("d1p-wide").flatMap(table => table.querySelectorAll("tr").filter(row => row.parent?.tag === "tbody"));
+  const inks = (node: ElementPort) => [0, 1, 2, 3].map(colony => node.style.getPropertyValue(`--aw-k${colony}`));
+  const named = (scope: ElementPort) => scope.byClass("d1p-colony").map(node => [node.textContent, node.title, node.classes().filter(c => /^d1p-c\d$/.test(c))[0]]);
+
+  it("lists a Quadrants agent with its name, Quadrants and when its wait began, with no rating, beside every other row as before", () => {
+    const p = page();
+    p.mounted.update(view({ status: "ready", rows: [solo, eve, pairing] }));
+    const rows = allRows(p.card()).map(row => row.children.map(cell => cell.className === "c-model" ? cell.byClass("d1p-model").map(seat => seat.textContent) : cell.textContent));
+    expect(rows).toEqual([
+      ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:02 UTC", "Quadrants", ["eve"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:04 UTC", "Ranked · 2v2", ["kite1490 ± 80×2, 2 seats"], ["bob×2, 2 seats"], "Status Starting", ""],
+    ]);
+    expect(allRows(p.card())[1]!.byClass("d1p-elo-badge")).toEqual([]);
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Quadrants · 1 match waiting to start");
+    p.mounted.destroy();
+  });
+
+  it("lists a Quadrants lobby with its four colonies' seated names under their Quadrants names and colours, its seats out of four, and no rating", () => {
+    const p = page();
+    p.mounted.update(view({ status: "ready", rows: [solo, quad, pairing] }));
+    const tables = p.card().byClass("d1p-wide");
+    // The rated rows before and after it stand in their own tables, drawn as before; the Quadrants row in its own.
+    expect(tables).toHaveLength(3);
+    const row = allRows(p.card())[1]!;
+    const item = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li")[1]!;
+    expect(row.children.map(cell => [cell.className, cell.colSpan])).toEqual([["c-start", 1], ["c-type", 1], ["c-model", 2], ["c-status", 1], ["c-go", 1]]);
+    for (const scope of [row, item]) {
+      expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Quadrants"]);
+      expect(named(scope)).toEqual(QUADRANTS.map((name, colony) => [name, colonyNameNote(name), `d1p-c${colony}`]));
+      expect(inks(scope)).toEqual(colonyColours(QUADRANTS).map(colourCss));
+      expect(scope.byClass("d1p-model").map(line => line.textContent)).toEqual(["ann", "bob", "cat", "dan"]);
+      expect(scope.byClass("d1p-elo-badge")).toEqual([]);
+      expect(scope.byClass("d1p-stamp")[0]!.textContent).toBe("Status 4 of 4 seats");
+    }
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("1 agent waiting in a ranked queue · 2 matches waiting to start");
+    p.mounted.destroy();
+  });
+
+  it("names a Quadrants lobby's colonies by the shared table where the server sends no names, and counts its open seats out of four", () => {
+    expect(lobbyKind({ mode: "quadrants" })).toBe("quadrants");
+    expect(waitingType(quad)).toBe("Quadrants");
+    expect(waitingType(eve)).toBe("Quadrants");
+    const p = page();
+    const { colonyNames: _, ...unnamed } = quad;
+    p.mounted.update(view({ status: "ready", rows: [{ ...unnamed, seated: 3, colonies: [["ann"], ["bob"], ["cat"], []], ratings: [[null], [null], [null], []], seats: [[1], [1], [1], []] }] }));
+    const [row] = allRows(p.card());
+    expect(named(row!).map(([name]) => name)).toEqual([...QUADRANTS]);
+    expect(row!.byClass("d1p-model").map(line => line.textContent)).toEqual(["ann", "bob", "cat", "seat open"]);
+    expect(row!.byClass("d1p-stamp")[0]!.textContent).toBe("Status 3 of 4 seats");
+    p.mounted.destroy();
+  });
+
+  it("draws the other rows the same beside Quadrants rows, and the card as before when none is waiting", () => {
+    const drawn = (rows: MatchesView["waiting"]["rows"]) => {
+      const p = page();
+      p.mounted.update(view({ status: "ready", rows }));
+      const read = { state: p.card().byClass("d1p-state")[0]!.textContent, rows: allRows(p.card()).map(row => row.textContent) };
+      p.mounted.destroy();
+      return read;
+    };
+    const plain = drawn([solo, pairing]);
+    expect(plain.state).toBe("1 agent waiting in a ranked queue · 1 match waiting to start");
+    const beside = drawn([solo, eve, quad, pairing]);
+    expect([beside.rows[0], beside.rows[3]]).toEqual(plain.rows);
   });
 });
 

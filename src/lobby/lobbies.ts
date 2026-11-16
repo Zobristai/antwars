@@ -6,7 +6,7 @@ import { isClassicColonyNames, lobbyColonyNames, quadrantColonyNames, type Colon
 import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, type MapDefinition } from "../sim/config.js";
 import { isQuadrantRotation } from "../sim/mapBoard.js";
 import { quadrantMatchMaps } from "../sim/mapShapes.js";
-import { isRankedMode, isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
+import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
@@ -382,25 +382,26 @@ export interface Lobbies {
 }
 
 /** A live waiting queue entry by its identity's current display name, with its identity id for server-side reads only. */
-export interface WaitingAgent { readonly identityId: string; readonly displayName: string; readonly mode: RankedMode; readonly joinedAt: number }
+export interface WaitingAgent { readonly identityId: string; readonly displayName: string; readonly mode: QueueMode; readonly joinedAt: number }
 
 /** A seated identity of a lobby not yet begun, with how many of its colony's seats it holds. */
 export interface UnstartedSeat extends Seat { readonly seats: number }
 
 /** A public lobby not yet begun (listUnstarted): each colony's distinct seated identities by current name, in seating
- * order, each with how many seats it holds there. */
+ * order, each with how many seats it holds there; two colonies, or four in a quadrants lobby. */
 export interface UnstartedLobby {
-  /** The queue pairing's ranked mode; null for a player-created lobby. */
-  readonly mode: RankedMode | null;
+  /** The queue pairing's mode; null for a player-created lobby. */
+  readonly mode: QueueMode | null;
   readonly size: LobbySize;
   readonly createdAt: number;
-  /** Seats taken, of 2 × size. A queue pairing's identity holds every seat of its colony, so it is always full. */
+  /** Seats taken, of colonies × size. A queue pairing's identity holds every seat of its colony, so it is always full. */
   readonly seated: number;
-  readonly colonies: readonly [readonly UnstartedSeat[], readonly UnstartedSeat[]];
+  readonly colonies: readonly (readonly UnstartedSeat[])[];
   /** Present only on a house challenge lobby, which the Waiting card labels. */
   readonly challenge?: "house";
-  /** Present only on a player-created lobby or house challenge: the colony names its unrated match draws from its id. */
-  readonly colonyNames?: ColonyNamePair;
+  /** Present only on a player-created lobby or house challenge, the colony names its unrated match draws from its id, and
+   * on a quadrants lobby, its four colonies' names. */
+  readonly colonyNames?: readonly string[];
 }
 
 export interface LobbySettings {
@@ -1313,8 +1314,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     },
 
     async listWaiting() {
-      // The Waiting view lists the ranked queues only; it shows no quadrants entry.
-      const entries = (await waitingEntries((path) => store.get(path), now())).flatMap(({ mode, ...entry }) => isRankedMode(mode) ? [{ ...entry, mode }] : []);
+      // Every queue's live entries, the quadrants queue's included.
+      const entries = await waitingEntries((path) => store.get(path), now());
       const named = await Promise.all(entries.map(async ({ identityId, mode, joinedAt }) => {
         const identity = await identities.findById(identityId);
         return identity ? { identityId, displayName: identity.displayName, mode, joinedAt } : null;
@@ -1342,26 +1343,24 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         // A holding lobby's match begins when its slot's instance stamps matchRunId (beginMatch); Live now lists it then.
         if (!(fields.state === "open" || fields.state === "waiting" || (fields.state === "holding" && !fields.matchRunId))) continue;
         const lobby = toLobby(id, fields, at);
-        // The Waiting view shows two-colony lobbies only; it shows no quadrants lobby.
-        if (lobby.mode === QUADRANTS) continue;
-        const [first = [], second = []] = lobby.colonies;
-        const seated = first.length + second.length;
+        // Two colonies, or a quadrants lobby's four.
+        const seated = lobby.colonies.reduce((sum, colony) => sum + colony.length, 0);
         if (seated === 0) continue;
         const distinct = (colony: readonly Seat[]): UnstartedSeat[] => colony
           .filter((seat, index) => colony.findIndex((other) => other.id === seat.id) === index)
           .map((seat) => ({ ...seat, seats: colony.filter((other) => other.id === seat.id).length }));
-        unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: [distinct(first), distinct(second)],
-          ...(lobby.challenge ? { challenge: "house" as const } : {}), ...(lobby.colonyNames === undefined ? {} : { colonyNames: [lobby.colonyNames[0]!, lobby.colonyNames[1]!] }) });
+        unstarted.push({ mode: lobby.mode, size: lobby.size, createdAt: lobby.createdAt, seated, colonies: lobby.colonies.map(distinct),
+          ...(lobby.challenge ? { challenge: "house" as const } : {}), ...(lobby.colonyNames === undefined ? {} : { colonyNames: [...lobby.colonyNames] }) });
       }
       // A seat stores the name at seating; each is shown by its identity's current display name, as listWaiting names
       // queue entries, and a seat whose identity no longer resolves is left unnamed.
-      const seatIds = [...new Set(unstarted.flatMap((lobby) => [...lobby.colonies[0], ...lobby.colonies[1]].map((seat) => seat.id)))];
+      const seatIds = [...new Set(unstarted.flatMap((lobby) => lobby.colonies.flat().map((seat) => seat.id)))];
       const current = new Map(await Promise.all(seatIds.map(async (seatId) => [seatId, (await identities.findById(seatId))?.displayName] as const)));
       const named = (colony: readonly UnstartedSeat[]) => colony.flatMap((seat) => {
         const displayName = current.get(seat.id);
         return displayName === undefined ? [] : [{ id: seat.id, displayName, seats: seat.seats }];
       });
-      return unstarted.map((lobby) => ({ ...lobby, colonies: [named(lobby.colonies[0]), named(lobby.colonies[1])] as const }))
+      return unstarted.map((lobby) => ({ ...lobby, colonies: lobby.colonies.map(named) }))
         .sort((a, b) => a.createdAt - b.createdAt);
     },
 
