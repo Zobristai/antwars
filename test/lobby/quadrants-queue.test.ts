@@ -174,10 +174,9 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
     });
 
     it("refuses quadrants no_quadrant_map, writing nothing, while its rotation is empty or holds a two-colony map; other modes still join", async () => {
-      expect(quadrantMatchMaps()).toEqual([]);
       expect(quadrantMatchMaps().every(map => map.quadrant !== undefined)).toBe(true);
       validateQuadrantMap(FIXTURE);
-      for (const rotation of ["shipped", [], [...newMatchMaps(), FIXTURE]] as const) {
+      for (const rotation of [[], [...newMatchMaps(), FIXTURE]] as const) {
         const w = world(backend, rotation);
         const ann = await w.claim("ann");
         const token = newWaitToken();
@@ -188,6 +187,12 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       }
       // A quadrant-only rotation admits the join.
       const w = world(backend, [FIXTURE]);
+      expect(value(await w.lobbies.joinQueue((await w.claim("ann")).key, "quadrants")).state).toBe("waiting");
+    });
+
+    it("admits a quadrants join on the shipped pool, Four Coves, Crossroads and Strait", async () => {
+      expect(quadrantMatchMaps().map(map => map.id)).toEqual(["four-coves", "crossroads", "strait"]);
+      const w = world(backend, "shipped");
       expect(value(await w.lobbies.joinQueue((await w.claim("ann")).key, "quadrants")).state).toBe("waiting");
     });
 
@@ -280,16 +285,26 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       expect((await w.raw(`lobbies/${paired.lobbyId}`))!.result).toBeUndefined();
     });
 
-    it("leaves quadrants entries and lobbies out of the Waiting view's lists, keeping the ranked ones", async () => {
+    it("lists quadrants entries and unstarted quadrants lobbies in the Waiting view's lists beside the ranked ones", async () => {
       const w = world(backend);
-      const { lobbyId } = await quadrantsLobby(w, "u");
-      expect(value(await w.lobbies.readLobby(lobbyId)).state).toBe("holding");
+      const { lobbyId, ids } = await quadrantsLobby(w, "u");
+      const lobby = value(await w.lobbies.readLobby(lobbyId));
+      expect(lobby.state).toBe("holding");
+      expect(lobby.colonies.map(colony => colony.length)).toEqual([1, 1, 1, 1]);
+      expect(lobby.colonies.flat().map(seat => seat.id).sort()).toEqual([...ids].sort());
+      w.clock.t += 1_000;
       const ann = await w.claim("ann");
       value(await w.lobbies.joinQueue(ann.key, "quadrants"));
+      w.clock.t += 1_000;
       const solo = await w.claim("solo");
       value(await w.lobbies.joinQueue(solo.key, "1v1"));
-      expect((await w.lobbies.listWaiting()).map(agent => [agent.identityId, agent.mode])).toEqual([[solo.id, "1v1"]]);
-      expect(await w.lobbies.listUnstarted()).toEqual([]);
+      expect((await w.lobbies.listWaiting()).map(agent => [agent.identityId, agent.mode])).toEqual([[ann.id, "quadrants"], [solo.id, "1v1"]]);
+      expect(await w.lobbies.listUnstarted()).toEqual([{
+        mode: "quadrants", size: 1, createdAt: lobby.createdAt, seated: 4,
+        // Each colony's one seat as the lobby holds it, in its colony.
+        colonies: lobby.colonies.map(colony => colony.map(seat => ({ id: seat.id, displayName: seat.displayName, seats: 1 }))),
+        colonyNames: NAMES,
+      }]);
     });
   });
 }

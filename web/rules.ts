@@ -77,8 +77,14 @@ function quadrantMapLines(config: SimConfig, context: { readonly undrawn?: boole
       : `The map the seed selects sets the playable board: ${distinct.map(size => `${size.width}x${size.height}`).join(" or ")} tiles, width by height.`,
     `${count(maps.length, "map")} mirrored left to right and top to bottom into four quadrants, one colony starting in each, around a contested centre. ${terrain?.mapId === undefined ? "The match seed selects the map." : `Selected map: ${maps.find((map) => map.id === terrain.mapId)?.name}.`} Water is impassable to ants and marks; ants route around it.`,
     `The match seed also places rocks, each with a mirror image in every quadrant. Both boards show faceted grey boulders. Rocks are impassable to ants and marks, and queens cannot be founded on them. Ants route around rocks the same way as water. Rocks never overlap water, food or a nest, never lie in the centre, and keep the four nests, the centre and every start area connected by land.`,
-    ...boards.map(({ map, board }) => `${map.name}: ${mapLayoutDescription(map, terrain!.referenceWidth, terrain!.referenceHeight)}. Its board is ${tiles(fine(board.width))} wide and ${tiles(fine(board.height))} high. ${board.water.length === 0 ? "Open land, with no water" : `Water rectangles (top-left tile, width and height): ${board.water.map((r) => `(${fine(r.x)}, ${fine(r.y)}), ${tiles(fine(r.width))} wide and ${tiles(fine(r.height))} high`).join("; ")}`}.`),
+    ...boards.map(({ map, board }) => `${map.name}: ${mapLayoutDescription(map, terrain!.referenceWidth, terrain!.referenceHeight)}. Its board is ${tiles(fine(board.width))} wide and ${tiles(fine(board.height))} high. ${waterLine(board.nativeWater ?? board.water.map(r => ({ x: fine(r.x), y: fine(r.y), width: fine(r.width), height: fine(r.height) })), tiles)}.`),
   ];
+}
+
+/** A quadrant board's water in fine tiles: native water as laid, reference water doubled. */
+function waterLine(water: readonly { x: number; y: number; width: number; height: number }[], tiles: (n: number) => string): string {
+  return water.length === 0 ? "Open land, with no water"
+    : `Water rectangles (top-left tile, width and height): ${water.map((r) => `(${r.x}, ${r.y}), ${tiles(r.width)} wide and ${tiles(r.height)} high`).join("; ")}`;
 }
 
 /** The Lobbies section: how a seated agent leaves a lobby before its match starts (leave_lobby, src/accounts/service.ts). */

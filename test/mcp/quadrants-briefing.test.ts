@@ -9,12 +9,15 @@ import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { balanceRuleLines } from "../../src/mcp/briefing.js";
+import { balanceRuleLines, usesCompactAgentText } from "../../src/mcp/briefing.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { Game, type LobbySeat } from "../../src/mcp/game.js";
 import { createMcpHandler } from "../../src/mcp/http.js";
+import { MAX_OBSERVE_REPLY_BYTES, MAX_OBSERVE_TEXT_CHARS, MAX_RULES_REPLY_BYTES, MAX_RULES_TEXT_CHARS } from "../../src/mcp/replies.js";
 import { type MapDefinition, type SimConfig } from "../../src/sim/config.js";
 import { gridScaleOf, newMatchConfig } from "../../src/sim/gridScale.js";
+import { quadrantLayoutDescription, quadrantMatchMaps } from "../../src/sim/mapShapes.js";
+import { selectMap } from "../../src/sim/terrain.js";
 import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../../src/sim/view.js";
 import { ruleSections } from "../../web/rules.js";
 import { rules27Redesign } from "../rules27.ts";
@@ -45,12 +48,13 @@ afterEach(async () => {
   for (const close of closers.splice(0).reverse()) await close().catch(() => {});
 });
 
-/** A slot server holding a seated Quadrants lobby; its clock moves only when a test moves it. */
-async function quadrantsSlot(seated = true) {
+/** A slot server holding a seated Quadrants lobby; its clock moves only when a test moves it. quadrantMaps "shipped":
+ * the shipped Quadrants pool (quadrantMatchMaps()). */
+async function quadrantsSlot(seated = true, quadrantMaps: readonly MapDefinition[] | "shipped" = [FIXTURE]) {
   const clock = { now: 1000 };
   let scheduled = false;
   const game: Game = new Game({
-    simConfig: LIVE, quadrantMaps: [FIXTURE], startPickWindowMs: 50, now: () => clock.now, mcpConfig: MCP,
+    simConfig: LIVE, ...(quadrantMaps === "shipped" ? {} : { quadrantMaps }), startPickWindowMs: 50, now: () => clock.now, mcpConfig: MCP,
     slot: { identityOf: async key => (key.startsWith("key-") ? `id-${key.slice(4)}` : undefined), locate: async () => undefined },
     // A call waiting on a tick is answered on the next one.
     onInputQueued: () => {
@@ -74,8 +78,8 @@ async function quadrantsSlot(seated = true) {
       const reply = await client.callTool({ name, arguments: args });
       return { isError: reply.isError === true, data: reply.structuredContent as any };
     };
-    // The tool descriptions this session is served (tools/list).
-    return Object.assign(call, { listTools: async () => (await client.listTools()).tools });
+    // The tool descriptions this session is served (tools/list), and the raw client for reply sizes.
+    return Object.assign(call, { listTools: async () => (await client.listTools()).tools, client });
   };
   return { game, clock, connect, seatQuadrants };
 }
@@ -237,6 +241,56 @@ describe("a Quadrants seat's rules and briefing through the MCP tools", () => {
       const win = territoryWin(config);
       expect(balance).toContain(`Territory win: ${win.from}, a colony holding more than half of all owned territory (every colony's held territory added together) and ${win.floor} continuously for ${win.hold} wins immediately. Any interruption resets the clock. An eliminated colony's territory turns neutral and no longer counts. Eliminations are resolved first; otherwise time-up still applies.`);
       expect(balance.join("\n")).not.toMatch(/opponent|left-half|mirrored on the right|flanking/);
+    }
+  });
+});
+
+describe("a Quadrants seat on the shipped pool", () => {
+  const POOL = quadrantMatchMaps();
+  const compact = usesCompactAgentText(LIVE);
+  const layoutLines = POOL.map(map => `${map.name}: ${quadrantLayoutDescription(map, compact)}.`);
+  // The first lobby seed that draws each pool map.
+  const seedFor = (id: string) => {
+    for (let seed = 1; ; seed++) if (selectMap(seed, { ...LIVE.terrain!, maps: POOL }).id === id) return seed;
+  };
+
+  it("briefs each pool map in one layout line, in the join briefing and the rules tool, and leaves a fixture rotation without one", async () => {
+    expect(layoutLines.every(line => !line.includes("undefined"))).toBe(true);
+    const { connect } = await quadrantsSlot(true, "shipped");
+    const seat = await connect();
+    const joined = await seat("join", { key: "key-2" });
+    expect(joined.isError).toBe(false);
+    const rules = await seat("rules");
+    for (const text of [joined.data.briefing as string, rules.data.rules as string]) {
+      for (const line of layoutLines) expect(text.split(line).length - 1, line).toBe(1);
+    }
+    const fixture = await (await quadrantsSlot()).connect();
+    const fixtureRules = (await fixture("rules")).data.rules as string;
+    expect(fixtureRules).not.toContain(`${FIXTURE.name}:`);
+    for (const line of layoutLines) expect(fixtureRules).not.toContain(line);
+  });
+
+  it.each(POOL.map(map => [map.name, map.id] as const))(
+    "%s: the join, observe and rules replies after the draw stay within their character and byte limits", async (_name, id) => {
+    const { game, clock, connect } = await quadrantsSlot(true, "shipped");
+    const seat = await connect();
+    expect((await seat("join", { key: "key-2" })).isError).toBe(false);
+    const closesAt = game.beginLobbyStart(seedFor(id));
+    for (const colony of [0, 1, 3]) await game.joinSeated(`id-${colony}`);
+    clock.now = closesAt;
+    game.finishLobbyStart();
+    game.tick();
+    expect(game.match!.state.terrain!.mapId).toBe(id);
+    expect(game.match!.state.terrain!.water.length).toBe(POOL.find(map => map.id === id)!.water.length * 4);
+    for (const [tool, args] of [["join", { key: "key-2" }], ["observe", {}], ["rules", {}]] as const) {
+      const reply = await seat.client.callTool({ name: tool, arguments: args });
+      expect(reply.isError, tool).not.toBe(true);
+      const text = (reply.content as { text: string }[])[0]!.text;
+      const size = { map: id, tool, textChars: text.length, completeBytes: Buffer.byteLength(JSON.stringify(reply)) };
+      console.log(`Quadrants pool reply size: ${JSON.stringify(size)}`);
+      const rulesLimits = tool === "rules";
+      expect(size.textChars, JSON.stringify(size)).toBeLessThanOrEqual(rulesLimits ? MAX_RULES_TEXT_CHARS : MAX_OBSERVE_TEXT_CHARS);
+      expect(size.completeBytes, JSON.stringify(size)).toBeLessThanOrEqual(rulesLimits ? MAX_RULES_REPLY_BYTES : MAX_OBSERVE_REPLY_BYTES);
     }
   });
 });

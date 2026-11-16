@@ -6,6 +6,8 @@ import { type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { createMatch, matchConfigForMap } from "../../src/sim/map.ts";
 import { colonyCountOf } from "../../src/sim/mapBoard.ts";
+import { quadrantMatchMaps } from "../../src/sim/mapShapes.ts";
+import { selectMap } from "../../src/sim/terrain.ts";
 import { readRulesAssets, startSpectatedServer, type SpectatedServer } from "../../src/spectator.ts";
 import { comparison, startComparisonMatch } from "../server/helpers.ts";
 import { renderRules, ruleSections } from "../../web/rules.ts";
@@ -155,6 +157,51 @@ afterEach(async () => {
   server = undefined;
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
   dataDir = undefined;
+});
+
+describe("the public rules page on the shipped Quadrants pool", () => {
+  const POOL = quadrantMatchMaps();
+  const SHIPPED = quadrantRotation(POOL);
+  const LINES: Readonly<Record<string, string>> = {
+    "four-coves": "Four Coves: each start area sits in a corner cove behind a curved lake, with exits toward both neighbouring quadrants; open centre.",
+    "crossroads": "Crossroads: a plus-shaped river along the centre lines splits four islands, with one ford on each arm; the arms meet an open central plaza.",
+    "strait": "Strait: a winding east-west strait runs from each side edge to the open central plaza, the only crossing between north and south; an oval pond on the border between each pair of side-by-side quadrants leaves two routes past it.",
+  };
+  const seedFor = (id: string) => {
+    for (let seed = 1; ; seed++) if (selectMap(seed, SHIPPED.terrain!).id === id) return seed;
+  };
+
+  it("before the draw, describes each pool map in its one layout line, in pool order", () => {
+    expect(POOL.map(map => map.id)).toEqual(["four-coves", "crossroads", "strait"]);
+    const maps = sectionText(SHIPPED, "Maps", { undrawn: true });
+    expect(maps).toContain("3 maps mirrored left to right and top to bottom into four quadrants");
+    const at = POOL.map(map => maps.indexOf(LINES[map.id]!));
+    expect(at.every(i => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    for (const line of Object.values(LINES)) expect(maps.split(line).length - 1, line).toBe(1);
+  });
+
+  it.each([["Four Coves", "four-coves", 128, 96], ["Crossroads", "crossroads", 192, 128], ["Strait", "strait", 224, 128]] as const)(
+    "after %s (%s) is drawn, states its %ix%i board and still gives each pool map's layout line once", (_name, id, width, height) => {
+    const seed = seedFor(id);
+    const drawn = matchConfigForMap(seed, SHIPPED);
+    expect(createMatch(seed, SHIPPED).terrain!.mapId).toBe(id);
+    const maps = sectionText(drawn, "Maps");
+    expect(maps).toContain(`The playable board is ${width} tiles wide and ${height} tiles high.`);
+    for (const line of Object.values(LINES)) expect(maps.split(line).length - 1, line).toBe(1);
+  });
+
+  it.each(POOL.map(map => [map.name, map] as const))("%s with changed geometry falls back to the generic water line", (name, map) => {
+    const changed: MapDefinition[] = [
+      { ...map, water: map.water.slice(1) },
+      { ...map, quadrant: { ...map.quadrant!, nestTileX: map.quadrant!.nestTileX + 1 } },
+    ];
+    for (const variant of changed) {
+      const maps = sectionText(quadrantRotation([variant]), "Maps", { undrawn: true });
+      expect(maps).toContain(`${name}: water obstacles; use the water rectangles to find land routes.`);
+      for (const line of Object.values(LINES)) expect(maps).not.toContain(line);
+    }
+  });
 });
 
 describe("GET /rules on a server playing four colonies", () => {

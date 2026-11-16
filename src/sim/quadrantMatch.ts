@@ -140,7 +140,8 @@ export function createQuadrantMatch(seed: number, base: SimConfig): SimState {
   const { config, board } = drawn(seed, base);
   const scale = gridScaleOf(config), width = config.mapWidth, height = config.mapHeight;
   const terrain: Terrain = Object.freeze({ mapId: board.mapId, mapName: board.mapName,
-    water: Object.freeze(board.water.map(r => Object.freeze(fine(r, scale)))),
+    // Native water is laid exactly; reference water is doubled into fine tiles.
+    water: Object.freeze((board.nativeWater ?? board.water.map(r => fine(r, scale))).map(r => Object.freeze({ ...r }))),
     rocks: Object.freeze(board.rocks.map(r => Object.freeze({ ...fine(r, scale), appearance: r.appearance }))) });
   // Food draws no randomness that depends on ants or queens, so it is laid first and picks can be checked against it.
   const laid = layQuadrantFood(config, board, seed >>> 0);

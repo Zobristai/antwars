@@ -374,6 +374,36 @@ describe("matches page data: the Waiting card's lobby rows", () => {
   });
 });
 
+describe("matches page data: Quadrants on the Waiting card", () => {
+  const NAMES = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+  const ranked = { displayName: "sam/first", mode: "1v1", waitingSeconds: 95, since: 1_000, rating: null };
+  const eve = { displayName: "eve", mode: "quadrants", waitingSeconds: 30, since: 2_000, rating: null };
+  const quad = { mode: "quadrants", size: 1, seated: 4, colonies: [["ann"], ["bob"], ["cat"], ["dan"]], ratings: [[null], [null], [null], [null]],
+    seats: [[1], [1], [1], [1]], waitingSeconds: 10, since: 3_000, colonyNames: NAMES };
+  const pairing = { mode: "2v2", size: 2, seated: 4, colonies: [["fay"], ["gus"]], seats: [[2], [2]], waitingSeconds: 3, since: 4_000 };
+  const serve = (queue: unknown) => async (path: RequestInfo | URL) => new Response(JSON.stringify(
+    path === "/watch/queue" ? queue : path === "/watch/catalog" ? { matches: [] } : { matches: [], nextPageToken: null },
+  ));
+  it("reads a Quadrants entry and a four-colony lobby beside every other row, instead of failing the whole read", async () => {
+    const data = createMatchesData(serve({ waiting: [ranked, eve], lobbies: [quad, pairing] }), () => {}, { waiting: true });
+    data.refresh();
+    await vi.waitFor(() => expect(data.view.waiting.status).toBe("ready"));
+    expect(data.view.waiting.rows).toEqual([ranked, eve, quad, pairing]);
+    data.destroy();
+  });
+  it("refuses a lobby of three colonies as a malformed read, and reads a malformed name list as none", async () => {
+    const three = createMatchesData(serve({ waiting: [], lobbies: [{ ...quad, colonies: [["ann"], ["bob"], ["cat"]] }] }), () => {}, { waiting: true });
+    three.refresh();
+    await vi.waitFor(() => expect(three.view.waiting.status).toBe("error"));
+    three.destroy();
+    const names = createMatchesData(serve({ waiting: [], lobbies: [{ ...quad, colonyNames: NAMES.slice(0, 3) }] }), () => {}, { waiting: true });
+    names.refresh();
+    await vi.waitFor(() => expect(names.view.waiting.status).toBe("ready"));
+    expect(names.view.waiting.rows).toEqual([{ ...quad, colonyNames: null }]);
+    names.destroy();
+  });
+});
+
 describe("matches page data: the facts the match rows need", () => {
   const serve = (catalog: unknown, history: unknown) => async (path: RequestInfo | URL) => new Response(JSON.stringify(
     path === "/watch/catalog" ? catalog : path === "/watch/queue" ? { waiting: [] } : history));

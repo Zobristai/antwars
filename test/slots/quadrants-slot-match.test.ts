@@ -53,7 +53,7 @@ function value<T>(outcome: { ok: true; value: T } | { ok: false; reason: string 
   return outcome.value;
 }
 
-/** One in-memory store with its account stores; quadrantMaps "shipped" keeps the default (empty) rotation. */
+/** One in-memory store with its account stores; quadrantMaps "shipped" keeps the default rotation, the shipped pool. */
 function world(quadrantMaps: readonly MapDefinition[] | "shipped") {
   const { store, docs } = memoryWatchStore();
   const identities = createIdentities(store);
@@ -306,11 +306,11 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     expect(ratingPaths(w)).toEqual([]);
   });
 
-  it("with the shipped empty rotation, a spectated server refuses Quadrants, ends a prepared Quadrants lobby not played and streams its 1v1", async () => {
-    const w = world("shipped");
+  it("with an empty rotation, a spectated server refuses Quadrants, ends a prepared Quadrants lobby not played and streams its 1v1", async () => {
+    const w = world([]);
     const errors = vi.spyOn(console, "error");
     const submitted: unknown[] = [];
-    const server: SpectatedServer = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: LIVE,
+    const server: SpectatedServer = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: LIVE, quadrantMaps: [],
       startPickWindowMs: 200, mcpConfig: MCP, spectatorClock: new ManualClock(), accounts: w.accounts, watchRegistry: createWatchRegistry(w.store),
       recordHandoff: { submit: inputs => { submitted.push(inputs); } }, replayStore: { create: async () => {} }, slot: w.slot });
     closers.push(() => server.close());
