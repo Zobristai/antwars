@@ -19,10 +19,12 @@ const matchType = z.object({
   size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
 }).nullable().optional().catch(null);
 const colonyName = z.string().min(1);
-// A match's own colony names, index = colony id: two (an unrated match's drawn pair) or, for a four-colony (Quadrants)
-// match, four; absent or null where it uses the rated names. Display only: a malformed list reads null.
+// Live/Waiting retain their two- or four-colony contract.
 const listedNames = z.union([z.tuple([colonyName, colonyName]), z.tuple([colonyName, colonyName, colonyName, colonyName])])
   .nullable().optional().catch(null);
+// Stored recordings may explicitly name three colonies. Display-only malformed names read null.
+const recordedNames = z.union([z.tuple([colonyName, colonyName]), z.tuple([colonyName, colonyName, colonyName]),
+  z.tuple([colonyName, colonyName, colonyName, colonyName])]).nullable().optional().catch(null);
 const liveRow = z.object({
   lobbyId: z.string().min(1), startedAt: z.number().finite(), rated: z.boolean(), delaySeconds: z.union([z.literal(0), z.literal(60), z.literal(300)]),
   // Each colony's seats, index = colony id: two colonies, or four in a Quadrants match.
@@ -49,7 +51,7 @@ const recordingRow = z.object({
     startRating: shownRating })),
   status: z.enum(["complete", "partial", "unavailable"]), unavailable: z.array(z.string()),
   matchType,
-  colonyNames: listedNames,
+  colonyNames: recordedNames,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
 // An agent waiting in a queue (GET /watch/queue), a ranked queue or Quadrants: its public name, the queue's mode, whole

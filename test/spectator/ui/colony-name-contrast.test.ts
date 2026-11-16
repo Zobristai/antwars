@@ -296,9 +296,12 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
       expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
       expectNoBacking(rows);
       const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
-      // Each colony's name in its own colour, on the live row and on each recording; each recording's Winner in its winner's.
-      for (const { label, colour } of SUPERCOLONY_NAMES) expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual(Array(5).fill(rgb(colour)));
-      expect(rows.filter(r => r.text === "Winner" && r.state === "rest").map(r => r.rgb).sort()).toEqual(COLOURS.map(rgb).sort());
+      // Live keeps the full name; each recording uses its short heading in the same original colony ink.
+      for (const { label, colour } of SUPERCOLONY_NAMES) {
+        expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
+        expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(Array(4).fill(rgb(colour)));
+      }
+      expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
     });
   }
 
@@ -311,8 +314,15 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
         const rows = await measured(page, width, 2400);
         expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
         expectNoBacking(rows);
-        // Each recording's result badge stands in its winner's colour.
-        expect(rows.filter(r => r.text === "Winner" && r.state === "rest").map(r => r.rgb).sort()).toEqual(colonyColours(pair ?? COLONY_NAMES).map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")).sort());
+        // Both recordings retain the original ink on their short headings; winner is no longer a coloured badge.
+        const names = pair ?? COLONY_NAMES;
+        const colours = colonyColours(names);
+        names.forEach((name, index) => {
+          const colour = colours[index]!;
+          const rgb = [(colour >> 16) & 255, (colour >> 8) & 255, colour & 255].join(",");
+          expect(rows.filter(r => r.text === name.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual([rgb, rgb]);
+        });
+        expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
         expect(body, "no row draws a text backing").not.toContain("data-aw-ground");
       });
     }

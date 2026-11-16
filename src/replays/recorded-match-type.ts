@@ -38,7 +38,7 @@ const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.st
  * and a record with no setup, whose rated flag is unknown.
  */
 export function recordedMatchType(record: RecordedMatch): RecordingMatchType | null {
-  const perColony = Math.max(...([0, 1] as const).map(colony => record.seats.filter(seat => seat.colony === colony).length));
+  const perColony = Math.max(...Array.from({ length: record.colonyNames?.length ?? 2 }, (_, colony) => record.seats.filter(seat => seat.colony === colony).length));
   const size = perColony >= 1 && perColony <= 4 ? perColony as 1 | 2 | 3 | 4 : null;
   if (record.rated == null) return null;
   if (record.colonyNames?.length === 4) return { kind: "quadrants", size: 1 };

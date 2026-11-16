@@ -13,7 +13,7 @@
 // Rows and links come from today's helpers (ui/format.ts), read-only.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
-import { colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
+import { SUPERCOLONY_NAMES, colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { benchmarkLabel } from "../leaderboard-page/view.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
@@ -459,7 +459,7 @@ export interface RecordingsCardOptions {
 /** The Recordings list as the Matches page and the landing page draw it: a record card saying its own state once, in the
  * one row layout. */
 export function recordingsCard(doc: Document, view: MatchesView, options: RecordingsCardOptions): HTMLElement {
-  const { matchCard } = rowParts(doc);
+  const { card } = rowParts(doc);
   const all = recordingRows(view, options.search);
   // A limited card shows the newest rows; where more remain it says so in the list's own words, never Load more.
   const rows = options.limit === undefined ? all : all.slice(0, options.limit);
@@ -475,11 +475,147 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
     button.addEventListener("click", options.more);
     foot = [button];
   }
-  return matchCard({
-    list: "rec", titleId: "d1p-rec-title", title: PAGE_WORDS.recordings, state,
-    rows: rows.map(row => recordingMatchRow(byId.get(row.id)!, row)),
-    loading: view.recordings.status === "loading" && rows.length === 0, actionHead: PAGE_WORDS.replay, foot,
+  const lines = rows.map(row => recordingMatchRow(byId.get(row.id)!, row));
+  const loading = view.recordings.status === "loading" && rows.length === 0;
+  const body = lines.length > 0 || loading ? recordingSlots(doc, lines, loading) : [];
+  return card("d1p-rec-title", PAGE_WORDS.recordings, [stateLine(doc, state.glyph, state.text)], body, foot, "d1p-rec4");
+}
+
+// ---------------------------------------------------------------- Recordings: one row per recording, four colony slots
+// Colony heads: every recording is one
+// row, whatever its colony count, with four colony slots side by side; a slot with no colony shows a dash. A used slot
+// heads its players with its colony's name in the colony's ink, in the caps the list's column heads use, and holds one
+// line per player: name, then level, Fast and seat count in the quiet ink, then the rating at the slot's end. The
+// winner keeps the ink; the other colonies' players step down to the quiet ink, the row's own metadata treatment. Time
+// and Game type lead the row, a draw, an abandonment or an incomplete record said once under the type; Replay is a text
+// link at the row's end. One head row over the list, never repeated. Live now and Waiting keep their tables.
+
+/** Every Recordings row's colony slots: four, side by side, at every colony count. */
+export const SLOTS = 4;
+/** A colony's name in its slot, without the "Colony" every name ends in; the whole name is its title and is read. */
+export const slotName = (name: string): string => name.replace(/ Colony$/, "");
+
+/** The words a row says once about its whole match: a draw or an abandonment, and a record that is not complete. */
+export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] {
+  const words: string[] = [];
+  const shared = row.colonies.find(cell => cell.result === "Draw" || cell.result === "Abandoned")?.result;
+  if (shared) words.push(shared);
+  if (row.stamp.look === "partial" || row.stamp.look === "unavailable") words.push(`Record ${row.stamp.text}`);
+  return words;
+}
+
+/** The Recordings list: its one head row, then one row per recording (still bars in place of rows while it first loads). */
+function recordingSlots(doc: Document, rows: readonly MatchRow[], loading: boolean): HTMLElement[] {
+  const head = h(doc, "div", "d1p-rec-head");
+  head.setAttribute("aria-hidden", "true");
+  head.append(h(doc, "span", "is-when", MATCH_HEADS[0]), h(doc, "span", "is-type", MATCH_HEADS[1]), h(doc, "span", "is-slots", FOUR_COLONY_HEAD));
+  const list = h(doc, "ol", "d1p-rec-rows");
+  list.setAttribute("aria-labelledby", "d1p-rec-title");
+  if (loading) {
+    list.setAttribute("aria-hidden", "true");
+    for (let line = 0; line < 2; line++) {
+      const item = h(doc, "li");
+      for (const width of ["72px", "84px", "128px", "128px"]) { const bar = h(doc, "span", "d1p-skel"); bar.style.width = width; item.append(bar); }
+      list.append(item);
+    }
+  }
+  for (const row of rows) list.append(recordingLine(doc, row));
+  return [head, list];
+}
+
+/** One recording's row: its start and type, its four slots, Replay. */
+function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
+  const item = h(doc, "li");
+  item.dataset.recRow = row.id;
+  // A row naming its own colonies inks them in their names' colours, with no ground under the words.
+  if (row.colonyNames) colonyColours(row.colonyNames).forEach((colour, colony) => item.style.setProperty(`--aw-k${colony}`, colourCss(colour)));
+  const meta = h(doc, "div", "d1p-rec-meta");
+  const parts = whenParts(row.when);
+  const when = h(doc, "p", "d1p-rec-when");
+  when.append(h(doc, "span", "d1p-rec-date", parts.date));
+  if (parts.time) when.append(h(doc, "span", "d1p-rec-sep", " · "), h(doc, "span", "d1p-rec-time", parts.time));
+  const type = h(doc, "p", "d1p-rec-type");
+  const typeWords = row.type ?? row.typeNote;
+  if (typeWords) type.append(h(doc, "span", undefined, typeWords));
+  for (const word of rowOutcome(row)) type.append(" ", h(doc, "span", "d1p-rec-note", word));
+  meta.append(when, type);
+  item.append(meta, ...recordingSlotIndexes(row).map(colony => recordingSlot(doc, row, colony)));
+  if (row.action) {
+    const link = h(doc, "a", "d2-link d1p-rec-replay", row.action.text);
+    link.href = row.action.href;
+    link.dataset.key = `rec|${row.id}`;
+    link.setAttribute("aria-label", row.action.label);
+    item.append(link);
+  }
+  return item;
+}
+
+/** Fixed columns belong to colony names, not match-local indexes. Keep those indexes for seats, colours and results.
+ * Unknown historical names use remaining columns in recorded order, so no recorded player disappears. */
+export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNames">): (number | null)[] {
+  const names = row.colonyNames ?? COLONY_NAMES;
+  const slots: (number | null)[] = SUPERCOLONY_NAMES.map(({ label }) => {
+    const index = names.indexOf(label);
+    return index >= 0 && index < row.colonies.length ? index : null;
   });
+  row.colonies.forEach((_, index) => {
+    if (slots.includes(index)) return;
+    const empty = slots.indexOf(null);
+    if (empty >= 0) slots[empty] = index;
+  });
+  return slots;
+}
+
+/** One colony slot: the colony's name over its player lines (or its quiet note), or a dash where the match has no such
+ * colony. A slot is the winner's, a loser's, or neither (a draw, an abandonment, no result). */
+function recordingSlot(doc: Document, row: MatchRow, colony: number | null): HTMLElement {
+  const slot = h(doc, "div", "d1p-rec-slot");
+  if (colony === null) {
+    slot.classList.add("is-none");
+    slot.setAttribute("aria-hidden", "true");
+    slot.append(h(doc, "span", "d1p-rec-dash", "—"));
+    return slot;
+  }
+  const cell = row.colonies[colony]!;
+  const name = (row.colonyNames ?? COLONY_NAMES)[colony]!;
+  const decided = row.colonies.some(other => other.result === "Winner");
+  if (cell.result === "Winner") slot.classList.add("is-won");
+  else if (decided) slot.classList.add("is-lost");
+  const label = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(name));
+  const note = colonyNameNote(name);
+  label.title = note ? `${name} — ${note}` : name;
+  label.setAttribute("aria-hidden", "true");
+  slot.append(label, h(doc, "span", "d1p-sr", `${name}: `));
+  cell.lines.forEach((group, index) => slot.append(recordingPlayer(doc, group, `rec|${row.id}|${colony}|${index}`)));
+  if (cell.note !== null) slot.append(h(doc, "span", "d1p-rec-player d1p-unknown", cell.note));
+  if (cell.result === "Winner") slot.append(h(doc, "span", "d1p-sr", ", winner"));
+  return slot;
+}
+
+/** One player line: the username (builders only) and model as one name unit, cut with an ellipsis before anything else is;
+ * then level and Fast and the seat count in the quiet ink; then the rating, figure only, its "± RD" on hover, tap or focus. */
+function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
+  const line = h(doc, "span", "d1p-rec-player");
+  const name = h(doc, "span", "d1p-rec-name");
+  if (parts.user !== null) name.append(h(doc, "span", "d1p-user", parts.user));
+  if (parts.user !== null && parts.model !== null) name.append(" ");
+  if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
+  name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
+  line.append(name);
+  if (parts.badges.length > 0) line.append(h(doc, "span", "d1p-rec-level", parts.badges.join(" ")));
+  if (seats > 1) {
+    const count = h(doc, "span", "d1p-rec-count");
+    const shown = h(doc, "span", undefined, `×${seats}`);
+    shown.setAttribute("aria-hidden", "true");
+    count.append(shown, h(doc, "span", "d1p-sr", `, ${seats} seats`));
+    line.append(count);
+  }
+  if (rating) {
+    const figure = h(doc, "span", "d1p-rec-rating");
+    figure.append(rowRatingNode(doc, rating, `${key}|rating`));
+    line.append(figure);
+  }
+  return line;
 }
 
 /** The HUD's self-reported tooltip: focus, pointing or a tap on the asterisk opens it beside the

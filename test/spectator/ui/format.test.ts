@@ -243,3 +243,14 @@ describe("matches rows", () => {
     expect(utcStamp("soon")).toBeNull();
   });
 });
+
+ describe("explicit three-colony recording counts", () => {
+  const names: [string, string, string] = ["Lake Skinner Colony", "Very Large Colony", "Sweetwater Colony"];
+  it("uses three named colonies, not a guessed missing fourth, and keeps incomplete four-colony records four", () => {
+    expect(recordedColonies({ colonyNames: names, winner: 2 })).toBe(3);
+    expect(recordedColonies({ colonyNames: names, matchType: { kind: "quadrants", size: 1 } })).toBe(4);
+    expect(recordedColonies({ colonyNames: names, winner: 3 })).toBe(4);
+    expect(recordedColonies({ winner: 2 })).toBe(4);
+    expect(recordingType({ kind: "unrated", size: 1 }, 3)).toBe("Unranked · 1v1v1");
+  });
+});

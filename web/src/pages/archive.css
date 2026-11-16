@@ -482,6 +482,77 @@ td.c-model > .d1p-colony { display: block; }
   .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 12px 4px; }
 }
 
+/* ---------------------------------------------------------------- Recordings: one row per recording, four colony slots */
+/* Colony heads (matches.ts recordingSlots). One grid for the head row and every row:
+   Time, Game type, four equal colony slots, Replay. A row's items share their first baseline: the date, the type, each
+   slot's colony name and Replay on the first line; the time, any outcome words and each slot's players under them.
+   Four treatments in a row: the text (12 px, the ink), the quiet text (the same size in the quiet ink: time, type,
+   level, Fast, seat counts, a dash, a losing colony's players), the colony name (the column heads' caps in the colony's
+   ink) and the Replay link (the footer's text link, deck footer .d2-link). The winner keeps the ink: no other treatment
+   marks it. Rows part by the hairline. Under 60rem of card (phones) each row puts its four slots first, side by side, and
+   its start, type and Replay on one line under them. */
+.d1p-rec4 { --rec-gap: 16px; --rec-when: 80px; --rec-type: 100px; --rec-go: 44px; }
+.d1p-rec-head, .d1p-rec-rows > li {
+  display: grid; grid-template-columns: var(--rec-when) var(--rec-type) repeat(4, minmax(0, 1fr)) var(--rec-go);
+  column-gap: var(--rec-gap); padding: 0 var(--d1p-inset);
+}
+.d1p-rec-head {
+  align-items: end; padding-block: 9px 7px; border-top: 1px solid var(--aw-line);
+  font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); white-space: nowrap;
+}
+.d1p-rec-head > .is-slots { grid-column: 3 / 7; }
+.d1p-rec-rows > li {
+  align-items: baseline; padding-block: 7px 8px; border-top: 1px solid var(--d1p-hair);
+  font-size: 12px; line-height: 16px; color: var(--aw-ink); font-variant-numeric: tabular-nums;
+}
+.d1p-rec-rows > li:first-child { border-top-color: var(--aw-line); }
+/* The start and the type are two grid columns of the row on a wide card, one line under the slots on a narrow one. */
+.d1p-rec-meta { display: contents; }
+.d1p-rec-when, .d1p-rec-type { display: flex; flex-direction: column; min-width: 0; white-space: nowrap; }
+.d1p-rec-time, .d1p-rec-type { color: var(--aw-ink-3); }
+/* The date stands over its time on a wide card, so the dot between them is for the phone's one line only. */
+.d1p-rec-sep { display: none; color: var(--aw-ink-3); }
+.d1p-rec-slot { display: flex; flex-direction: column; min-width: 0; }
+.d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
+.d1p-rec-player { display: flex; align-items: baseline; column-gap: 6px; min-width: 0; white-space: nowrap; }
+.d1p-rec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A builder's username in the line's own weight and ink, like the model name beside it. */
+.d1p-rec-name > :is(.d1p-user, .d1p-mname) { font-weight: inherit; color: inherit; }
+.d1p-rec-level, .d1p-rec-count { flex: none; color: var(--aw-ink-3); }
+.d1p-rec-level { text-transform: lowercase; }
+/* The rating, figure only, at the slot's end in the line's own text: the badge's button and its "± RD" tip stay. */
+.d1p-rec-rating { flex: none; margin-left: auto; }
+.d1p-rec4 .d1p-rec-rating > .d1p-elo-badge { padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: normal; text-transform: none; color: inherit; vertical-align: baseline; }
+/* A losing colony's players in the quiet text. */
+.d1p-rec-slot.is-lost > .d1p-rec-player { color: var(--aw-ink-3); }
+.d1p-rec-dash { color: var(--aw-ink-3); }
+.d1p-rec4 .d1p-rec-replay { justify-self: end; min-height: 0; font-size: 12px; }
+@container d1p-card (width < 60rem) {
+  .d1p-rec-head { display: none; }
+  .d1p-rec-rows > li { position: relative; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 8px; row-gap: 8px; align-items: start; padding-block: 10px 12px; }
+  .d1p-rec-slot { grid-row: 1; }
+  /* The start and the type on one line under the slots, Replay at its end; where the line breaks, the next part starts
+     its line without the dot that parts it from the last (the dot sits in the gap, clipped at the line's start). */
+  .d1p-rec-meta { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; grid-row: 2; grid-column: 1 / -1; min-width: 0; padding-right: 56px; overflow: hidden; color: var(--aw-ink-3); }
+  .d1p-rec-when, .d1p-rec-type { display: inline; position: relative; white-space: normal; }
+  .d1p-rec-when > *, .d1p-rec-type > * { white-space: nowrap; }
+  .d1p-rec-sep { display: inline; white-space: pre; }
+  .d1p-rec-type::before { content: "·"; position: absolute; left: -8px; }
+  .d1p-rec-note::before { content: "· "; }
+  .d1p-rec-date { color: var(--aw-ink); }
+  /* Keep colony headings in capitals, with compact tracking on a narrow card. */
+  .d1p-rec-colony { letter-spacing: normal; }
+  .d1p-rec-player { flex-wrap: wrap; white-space: normal; }
+  /* Two players in one slot part by 4 px, so their wrapped names do not run on as one; a player's own lines keep none. */
+  .d1p-rec-player + .d1p-rec-player { margin-top: 4px; }
+  .d1p-rec-name { overflow: visible; white-space: normal; overflow-wrap: anywhere; flex-basis: 100%; }
+  .d1p-rec-level, .d1p-rec-count, .d1p-rec-rating { white-space: nowrap; }
+  .d1p-rec-rating { margin-left: 0; }
+  .d1p-rec4 .d1p-rec-replay { position: absolute; bottom: 12px; right: var(--d1p-inset); }
+  /* A 44 px tap around the word, as every phone target is here. */
+  .d1p-rec4 .d1p-rec-replay::before { content: ""; position: absolute; inset: -14px -8px; }
+}
+
 @media (forced-colors: active) {
   .d1p-card, .d1p-stamp { border-color: CanvasText; }
   /* Fills and shadows are dropped here: badges and result stamps keep a real edge. */
