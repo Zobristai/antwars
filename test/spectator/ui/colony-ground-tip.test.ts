@@ -1,12 +1,5 @@
-// The 3D deck's floating tip (a member's details, a rating's "± RD", the asterisk's note) is one element kept in colony
-// 0's team (ui/deck/pane.ts), fixed to the viewport and placed beside whatever it describes, colony 1's included. Where
-// the teams sit beside the score, a team whose colony has a dark ground gets 2px more room left, right and above for
-// the ground's ring (colony-ground.css); that room must not clip the tip, so a tip over colony 1 shows in full when
-// colony 0 has a ground, and the ring around colony 0's name, at the team's top left, still fits inside its team. The
-// deck is mounted on the test port with each drawn pair and the rated names, written out as markup and laid out at
-// 1280px in headless Chromium with the page's tokens (web/index.html) and the client's stylesheets; the tip is shown
-// over colony 1's name as the deck places it (showTip), and every point across it must hit the tip itself. Not visual
-// evidence.
+// The floating tip remains in colony 0's team but can extend over colony 1 without clipping.
+// Removing text backings must not change its placement or introduce a clipping ancestor.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
@@ -22,7 +15,7 @@ import { markup } from "./port-markup.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
-const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css", "colony-ground.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 const TICK = 4000;
 const queen = (colony: 0 | 1, tile: number): StreamQueen => ({ id: 0, colony, x: tile * SUB_TILE + 2, y: 20 * SUB_TILE + 2, foundedTick: 0, lostTick: null, overrun: 0, hp: 40000 });
 const agent = (colony: 0 | 1, name: string): StreamAgent => ({ identity: { displayName: name, elo: 1500 }, colony, modelLabel: "claude-sonnet-5", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" });
@@ -81,30 +74,27 @@ function tipOverColony1() {
   return { inColony0: !!tip.closest(".d1-team.c0"), overColony1: b.left + b.width / 2 > t1.left && b.left + b.width / 2 < t1.right, hits };
 }
 
-/** In the page: the room colony 0's name's ground and ring have inside its team's clip at either side, or null without a ground. */
-function ringRoom() {
-  const name = document.querySelector<HTMLElement>(".d1-team.c0 .d1-name")!, team = name.closest<HTMLElement>(".d1-team")!;
-  if (getComputedStyle(name).backgroundColor === "rgba(0, 0, 0, 0)") return null;
-  const n = name.getBoundingClientRect(), t = team.getBoundingClientRect();
-  // The team clips at its padding box (overflow), and no clip-path narrows that.
-  const left = t.left + team.clientLeft, right = left + team.clientWidth, top = t.top + team.clientTop;
-  return { left: n.left - 2 - left, right: right - (n.right + 2), top: n.top - 2 - top, clipPath: getComputedStyle(team).clipPath };
+/** Names have no backing or ring; their team still uses ordinary overflow clipping. */
+function nameStyle() {
+  const name = document.querySelector<HTMLElement>(".d1-team.c0 .d1-name")!;
+  return { background: getComputedStyle(name).backgroundColor, shadow: getComputedStyle(name).boxShadow,
+    clipPath: getComputedStyle(name.closest(".d1-team")!).clipPath };
 }
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
 afterAll(async () => { await browser?.close(); });
 
-const PAIRS: [ColonyNamePair | undefined, string | null][] = [
-  [["Sweetwater Colony", "Lake Skinner Colony"], "0 1"], [["Lake Skinner Colony", "Very Large Colony"], "0"],
-  [["Sweetwater Colony", "Lake Hodges Colony"], "0"], [["Lake Hodges Colony", "Sweetwater Colony"], "1"], [undefined, null],
+const PAIRS: (ColonyNamePair | undefined)[] = [
+  ["Sweetwater Colony", "Lake Skinner Colony"], ["Lake Skinner Colony", "Very Large Colony"],
+  ["Sweetwater Colony", "Lake Hodges Colony"], ["Lake Hodges Colony", "Sweetwater Colony"], undefined,
 ];
 
-describe("the 3D deck's floating tip over colony 1 shows in full whatever ground colony 0 has", () => {
-  for (const [names, ground] of PAIRS) {
+describe("the 3D deck's floating tip over colony 1 shows in full for every colony pair", () => {
+  for (const names of PAIRS) {
     it(`${names ? names.join(" against ") : "rated"} at 1280px`, async () => {
       const deck = deckPage(names);
-      expect(deck.ground, "the colonies grounded").toBe(ground);
+      expect(deck.ground, "no colony gets a backing").toBeNull();
       const tab = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       try {
         await tab.setContent(deck.page);
@@ -112,13 +102,7 @@ describe("the 3D deck's floating tip over colony 1 shows in full whatever ground
         expect(tip.inColony0, "the tip is kept in colony 0's team").toBe(true);
         expect(tip.overColony1, "the tip sits over colony 1's team").toBe(true);
         expect(tip.hits, "points across the tip that hit it").toBe(9);
-        const ring = await tab.evaluate(ringRoom);
-        if (ground?.split(" ").includes("0")) {
-          expect(ring, "colony 0's name has a ground").not.toBeNull();
-          expect(ring!.clipPath, "no clip-path on the team").toBe("none");
-          expect(ring!.left, "room for the ring at the team's left").toBeGreaterThanOrEqual(0);
-          expect(ring!.top, "room for the ring at the team's top").toBeGreaterThanOrEqual(0);
-        } else expect(ring, "colony 0's name has no ground").toBeNull();
+        expect(await tab.evaluate(nameStyle)).toEqual({ background: "rgba(0, 0, 0, 0)", shadow: "none", clipPath: "none" });
       } finally { await tab.close(); }
     });
   }

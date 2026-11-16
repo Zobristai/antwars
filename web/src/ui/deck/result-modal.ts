@@ -87,7 +87,7 @@ export function mountResultModal(doc: Document): ResultModal {
     result.style.setProperty("--d1-side", r.winner === null ? "var(--aw-ink-3)" : COLONY_CSS[r.winner]);
     setText(head, r.headline);
     head.style.color = r.winner === null ? "" : COLONY_CSS[r.winner];
-    // A drawn winner's colony class, for its ground where its colour needs one (colony-ground.css).
+    // The drawn winner's colony class identifies its name.
     head.className = drawn && r.winner !== null ? `d1-result-head c${r.winner}` : "d1-result-head";
     setAttr(head, "title", drawn && r.winner !== null ? colonyNameNote(drawn[r.winner]) : null);
     setText(how, r.how);
