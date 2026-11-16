@@ -11,11 +11,12 @@ import { publicQueue, type QueueRatings } from "./queue-catalog.js";
 import { HELD_COLONY } from "../lobby/challenges.js";
 import { seatRating } from "./seat-rating.js";
 import { lobbyMatchType, type RecordingMatchType } from "../replays/recorded-match-type.js";
-import type { RankedMode, Rating } from "../rating/ratings.js";
+import type { Rating } from "../rating/ratings.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { harnessPhaseAt, isIndexMode } from "../rating/harnessPhase.js";
 import type { WatchMatch, WatchRegistry } from "./watch-registry.js";
 import type { Lobby, UnstartedLobby, WaitingAgent } from "../lobby/lobbies.js";
+import type { QueueMode } from "../lobby/queue.js";
 import { lobbySeats, seatDisplayNames } from "./watch-controller.js";
 import { createAdmissionCap, type CapLimits } from "../net/admission.js";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
@@ -205,18 +206,19 @@ export function watchRoutes(options: {
 
 /**
  * Every rating the Waiting view shows, read once per identity and rule (seatRating): a queued agent's in its queue's mode,
- * a lobby seat's in the lobby's mode, a house challenge's held seat by the held-seat rule.
+ * a lobby seat's in the lobby's mode, a house challenge's held seat by the held-seat rule; none in quadrants, which is
+ * unrated.
  */
 async function queueRatings(accounts: AccountStores, agents: readonly WaitingAgent[], lobbies: readonly UnstartedLobby[]): Promise<QueueRatings> {
-  const keyOf = (identityId: string, mode: RankedMode | null, held: boolean) => JSON.stringify([identityId, mode, held]);
+  const keyOf = (identityId: string, mode: QueueMode | null, held: boolean) => JSON.stringify([identityId, mode, held]);
   const reads = new Map<string, Promise<Rating | null>>();
-  const read = (identityId: string, mode: RankedMode | null, held: boolean) => {
+  const read = (identityId: string, mode: QueueMode | null, held: boolean) => {
     const key = keyOf(identityId, mode, held);
     if (!reads.has(key)) reads.set(key, seatRating((id, ranked) => accounts.ratings.readRating(id, ranked), identityId, mode, held));
   };
-  const held = (lobby: UnstartedLobby, colony: 0 | 1) => lobby.challenge === "house" && colony === HELD_COLONY;
+  const held = (lobby: UnstartedLobby, colony: number) => lobby.challenge === "house" && colony === HELD_COLONY;
   for (const agent of agents) read(agent.identityId, agent.mode, false);
-  for (const lobby of lobbies) for (const colony of [0, 1] as const) for (const seat of lobby.colonies[colony]) read(seat.id, lobby.mode, held(lobby, colony));
+  for (const lobby of lobbies) lobby.colonies.forEach((seats, colony) => { for (const seat of seats) read(seat.id, lobby.mode, held(lobby, colony)); });
   const done = new Map(await Promise.all([...reads].map(async ([key, rating]) => [key, await rating] as const)));
   return {
     agent: agent => done.get(keyOf(agent.identityId, agent.mode, false)) ?? null,
