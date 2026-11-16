@@ -121,6 +121,22 @@ export function noteQueenContact(state: SimState, ant: Ant): boolean {
     x: queen.queenX, y: queen.queenY, nativeReached: true });
   return true;
 }
+/** A queen within bite reach of an ATTACK mark remains the approach goal when spacing breaks contact. */
+export function noteQueenApproach(state: SimState, ant: Ant, tileX: number, tileY: number): { readonly x: number; readonly y: number; readonly reached: boolean } | null {
+  const { config } = state;
+  if (frameOf(state) === undefined || config.pointArrival === undefined ||
+      config.queenHp === undefined || state.tick < config.combatGraceTicks || state.tick < config.queenHp.shieldTicks) return null;
+  // Reuse combat's live-queen reach and deterministic selection at the mark, without moving the ant.
+  const queen = adjacentEnemyQueen(state, { ...ant, x: (tileX + 0.5) * SUB, y: (tileY + 0.5) * SUB });
+  if (queen === null) return null;
+  const reach = gridScaleOf(config);
+  const reached = Math.abs(Math.floor(ant.x / SUB) - Math.floor(queen.queenX / SUB)) <= reach
+    && Math.abs(Math.floor(ant.y / SUB) - Math.floor(queen.queenY / SUB)) <= reach;
+  // Per-ant arrival: a companion in contact must not stop this approach outside actual bite reach.
+  record(state, ant, { key: `${ant.colony}/combat/queen-approach/${ant.id}`, kind: 'combat', targetId: queen.id,
+    x: queen.queenX, y: queen.queenY, nativeReached: reached });
+  return { x: queen.queenX, y: queen.queenY, reached };
+}
 const contactMemo = new WeakMap<Grid, Map<number, Ant | null>>();
 /** The weakest live enemy of colony within reach of tile (tx, ty), ties to the lower id; the pick no visiting order changes. */
 function weakestEnemyNear(state: SimState, grid: Grid, colony: number, tx: number, ty: number, reach: number): Ant | null {
