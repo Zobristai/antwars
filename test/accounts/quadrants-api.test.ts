@@ -1,8 +1,8 @@
 /// <reference types="node" />
 // The quadrants mode through the account API, over MCP and HTTP, on an in-memory store and on the Firestore emulator:
 // four agents of distinct owners join, get the usual wait token and stream, and land in one unrated four-colony lobby;
-// the mode is refused with its reason while no quadrant map is in its rotation; and the public Waiting endpoint keeps to
-// the ranked queue, which the Matches page parses as before.
+// the mode is refused with its reason while no quadrant map is in its rotation; and the public Waiting endpoint lists
+// quadrants entries and lobbies beside the ranked ones, unrated, which the Matches page parses.
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -19,6 +19,7 @@ import { startServer } from "../../src/server.ts";
 import type { MapDefinition } from "../../src/sim/config.ts";
 import { createFirestore, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
 import { createMatchesData } from "../../web/src/matches-page/data.ts";
+import { waitingType } from "../../web/src/pages/waiting.ts";
 import { shortConfig, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
 import { playable } from "../playable.ts";
 
@@ -146,7 +147,7 @@ async function streamFrames(port: number, token: string, forMs = 2_000): Promise
 }
 
 /** GET /watch/queue, and the Matches page's own Waiting read of that same body. */
-async function waitingView(origin: string): Promise<{ body: Body; page: { status: string; rows: number } }> {
+async function waitingView(origin: string): Promise<{ body: Body; page: { status: string; rows: number; types: string[] } }> {
   const body = await (await fetch(`${origin}/watch/queue`)).json();
   const request = async (path: RequestInfo | URL) => new Response(JSON.stringify(
     path === "/watch/queue" ? body : path === "/watch/catalog" ? { matches: [] } : { matches: [], nextPageToken: null }));
@@ -157,7 +158,7 @@ async function waitingView(origin: string): Promise<{ body: Body; page: { status
     const poll = () => data.view.waiting.status !== "loading" ? resolve() : Date.now() - started > 5_000 ? reject(new Error("waiting read never settled")) : setTimeout(poll, 10);
     poll();
   });
-  const page = { status: data.view.waiting.status, rows: data.view.waiting.rows.length };
+  const page = { status: data.view.waiting.status, rows: data.view.waiting.rows.length, types: data.view.waiting.rows.map(row => waitingType(row)) };
   data.destroy();
   return { body, page };
 }
@@ -253,25 +254,39 @@ for (const backend of ["memory", "Firestore emulator"]) {
       });
     });
 
-    it("keeps quadrants entries and lobbies out of GET /watch/queue, which the Matches page reads as before", async () => {
+    it("lists quadrants entries and lobbies on GET /watch/queue, unrated, which the Matches page reads, leaving the ranked rows as they were", async () => {
       const w = await world(backend);
       const call = http(w.port);
       const solo = await claim(call, "Solo");
       await ok(call, "join_queue", { key: solo.key, mode: "1v1" });
       const before = await waitingView(w.watchOrigin);
       expect(before.body.waiting.map((row: Body) => [row.displayName, row.mode])).toEqual([["Solo", "1v1"]]);
-      expect(before.page).toEqual({ status: "ready", rows: 1 });
+      expect(before.page).toEqual({ status: "ready", rows: 1, types: ["Ranked · 1v1"] });
 
       // A matched quadrants lobby waiting to begin, and one more quadrants entry waiting.
       const players = [];
       for (const name of ["Ann", "Bob", "Cat", "Dan", "Eve"]) players.push(await claim(call, name));
-      for (const player of players) await ok(call, "join_queue", { key: player.key, mode: "quadrants" });
+      for (const player of players) { w.clock.t += 1_000; await ok(call, "join_queue", { key: player.key, mode: "quadrants" }); }
       expect((await ok(call, "queue_status", { key: players[3]!.key })).queue.state).toBe("matched");
       expect((await ok(call, "queue_status", { key: players[4]!.key })).queue.state).toBe("waiting");
 
       const after = await waitingView(w.watchOrigin);
-      expect(withoutSeconds(after.body)).toEqual(withoutSeconds(before.body));
-      expect(after.page).toEqual({ status: "ready", rows: 1 });
+      const { waitingSeconds: _agentSeconds, ...eve } = after.body.waiting[1];
+      expect(eve).toEqual({ displayName: "Eve", mode: "quadrants", since: w.clock.t, rating: null });
+      expect(after.body.lobbies).toHaveLength(1);
+      const { waitingSeconds: _lobbySeconds, colonies, ...lobby } = after.body.lobbies[0];
+      expect(lobby).toEqual({
+        mode: "quadrants", size: 1, seated: 4,
+        ratings: [[null], [null], [null], [null]], seats: [[1], [1], [1], [1]], since: w.clock.t - 1_000, colonyNames: NAMES,
+      });
+      // Partners take the first three colonies in a random pick order, the fourth joiner the last.
+      expect(colonies).toHaveLength(4);
+      expect(colonies[3]).toEqual(["Dan"]);
+      expect(colonies.slice(0, 3).flat().sort()).toEqual(["Ann", "Bob", "Cat"]);
+      // The ranked rows are the same bytes as before the quadrants rows came.
+      const ranked = { waiting: after.body.waiting.filter((row: Body) => row.mode !== "quadrants"), lobbies: after.body.lobbies.filter((row: Body) => row.mode !== "quadrants") };
+      expect(JSON.stringify(withoutSeconds(ranked))).toBe(JSON.stringify(withoutSeconds(before.body)));
+      expect(after.page).toEqual({ status: "ready", rows: 3, types: ["Ranked · 1v1", "Quadrants", "Quadrants"] });
     });
   });
 }

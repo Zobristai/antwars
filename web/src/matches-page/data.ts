@@ -18,11 +18,9 @@ const matchType = z.object({
   kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated", "quadrants"]),
   size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
 }).nullable().optional().catch(null);
-// An unrated match's own colony names, index = colony id; absent or null where it uses the rated names. Display only:
-// a malformed pair reads null.
-const colonyNames = z.tuple([z.string().min(1), z.string().min(1)]).nullable().optional().catch(null);
 const colonyName = z.string().min(1);
-// A listed match's colony names, as colonyNames, but two or, for a four-colony (Quadrants) match, four.
+// A match's own colony names, index = colony id: two (an unrated match's drawn pair) or, for a four-colony (Quadrants)
+// match, four; absent or null where it uses the rated names. Display only: a malformed list reads null.
 const listedNames = z.union([z.tuple([colonyName, colonyName]), z.tuple([colonyName, colonyName, colonyName, colonyName])])
   .nullable().optional().catch(null);
 const liveRow = z.object({
@@ -54,48 +52,51 @@ const recordingRow = z.object({
   colonyNames: listedNames,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
-// An agent waiting in a ranked queue (GET /watch/queue): its public name, the queue's mode, whole seconds waited
-// when the server read it, when its wait began (epoch ms; a server that sends none leaves the page to work it out from the
-// seconds waited) and its rating in that mode (null where it shows none).
+// An agent waiting in a queue (GET /watch/queue), a ranked queue or Quadrants: its public name, the queue's mode, whole
+// seconds waited when the server read it, when its wait began (epoch ms; a server that sends none leaves the page to work
+// it out from the seconds waited) and its rating in that mode (null where it shows none, as in unrated Quadrants).
 const waitingRow = z.object({
   displayName: z.string().min(1),
-  mode: z.enum(["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4"]),
+  mode: z.enum(["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4", "quadrants"]),
   waitingSeconds: z.number().int().nonnegative(),
   since: z.number().finite().optional(),
   rating: shownRating,
 });
+// Two colonies' worth of `item`, or four in a Quadrants lobby, index = colony id.
+const perColony = <T extends z.ZodType>(item: T) => z.union([z.tuple([item, item]), z.tuple([item, item, item, item])]);
 // A public lobby whose match has not begun (GET /watch/queue lobbies): a queue pairing's mode, or null for a
 // player-created lobby, agents per colony, seats taken, each colony's seated names and their ratings, whole seconds since
-// it was made and when that was (epoch ms).
+// it was made and when that was (epoch ms). Two colonies, or four in a Quadrants lobby.
 const waitingLobby = z.object({
   mode: waitingRow.shape.mode.nullable(),
   size: z.number().int().min(1).max(4),
   seated: z.number().int().nonnegative(),
-  colonies: z.tuple([z.array(z.string().min(1)), z.array(z.string().min(1))]),
+  colonies: perColony(z.array(z.string().min(1))),
   // Each seated name's rating, in the order of colonies; absent from a server that sends none.
-  ratings: z.tuple([z.array(shownRating), z.array(shownRating)]).optional().catch(undefined),
+  ratings: perColony(z.array(shownRating)).optional().catch(undefined),
   // How many of its colony's seats each seated name holds, in the order of colonies; absent from a server that sends none,
   // and read as one each where a count is malformed.
-  seats: z.tuple([z.array(z.number().int().min(1)), z.array(z.number().int().min(1))]).optional().catch(undefined),
+  seats: perColony(z.array(z.number().int().min(1))).optional().catch(undefined),
   waitingSeconds: z.number().int().nonnegative(),
   since: z.number().finite().optional(),
   // Present only on an unrated house challenge, which the Waiting card labels.
   challenge: z.literal("house").optional(),
-  colonyNames,
+  // A drawn pair, or a Quadrants lobby's four names, as a listed match's.
+  colonyNames: listedNames,
 });
 export type LiveMatch = z.infer<typeof liveRow>;
 export type Recording = z.infer<typeof recordingRow>;
 /** When a wait began is always known on the page: sent, or worked out from the seconds waited at the read. */
 export type WaitingAgent = z.infer<typeof waitingRow> & { readonly since: number };
 export type WaitingLobby = z.infer<typeof waitingLobby> & { readonly since: number };
-/** A Waiting card row: an agent in a ranked queue, or a public lobby or queue pairing not yet begun. */
+/** A Waiting card row: an agent in a ranked queue or Quadrants, or a public lobby or queue pairing not yet begun. */
 export type WaitingRow = WaitingAgent | WaitingLobby;
 export type Collection<T> =
   | { readonly status: "loading"; readonly rows: readonly T[] }
   | { readonly status: "ready"; readonly rows: readonly T[] }
   | { readonly status: "error"; readonly rows: readonly T[] };
 export interface MatchesView {
-  /** The agents waiting in the ranked queues, then the public lobbies and queue pairings not yet begun;
+  /** The agents waiting in the ranked queues and Quadrants, then the public lobbies and queue pairings not yet begun;
    * read only where createMatchesData is given waiting: true. */
   readonly waiting: Collection<WaitingRow>;
   readonly live: Collection<LiveMatch>;

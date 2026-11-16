@@ -149,3 +149,55 @@ describe("GET /watch/queue lobbies", () => {
     expect("colonyNames" in queue.lobbies[1]!).toBe(false);
   });
 });
+
+describe("GET /watch/queue in quadrants", () => {
+  const NAMES = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
+  const seat = (id: string, displayName: string) => ({ id, displayName, seats: 1 });
+  const quadrantsLobby = (createdAt: number) => ({ mode: "quadrants" as const, size: 1 as const, seated: 4, createdAt, colonyNames: NAMES,
+    colonies: [[seat("a-id", "ann")], [seat("b-id", "bob")], [seat("c-id", "cat")], [seat("d-id", "dan")]] });
+
+  it("sends a quadrants entry and a four-colony lobby with each colony's seated names, seats and names, and no rating", async () => {
+    const now = Date.now();
+    const origin = await serve([{ displayName: "eve", mode: "quadrants", joinedAt: now - 5_000, identityId: "e-id" }], [quadrantsLobby(now - 9_000)]);
+    const body = await (await fetch(`${origin}/watch/queue`)).json() as { waiting: Record<string, unknown>[]; lobbies: Record<string, unknown>[] };
+    expect(body.waiting.map(({ waitingSeconds: _seconds, ...row }) => row)).toEqual([{ displayName: "eve", mode: "quadrants", since: now - 5_000, rating: null }]);
+    expect(body.lobbies.map(({ waitingSeconds: _seconds, ...row }) => row)).toEqual([{
+      mode: "quadrants", size: 1, seated: 4, colonies: [["ann"], ["bob"], ["cat"], ["dan"]],
+      ratings: [[null], [null], [null], [null]], seats: [[1], [1], [1], [1]], since: now - 9_000, colonyNames: NAMES,
+    }]);
+    // Quadrants is unrated: no rating is read for it.
+    expect(reads).toEqual([]);
+    for (const leak of ["a-id", "e-id"]) expect(JSON.stringify(body)).not.toContain(leak);
+  });
+
+  // The existing modes' Waiting data, as main sent it before quadrants rows were listed, byte for byte.
+  const EXISTING = {
+    agents: [
+      { identityId: "s-id", displayName: "sam/first", mode: "1v1", joinedAt: 1_000 },
+      { identityId: "h-id", displayName: "antwars/agent0", mode: "house-2v2", joinedAt: 2_000 },
+    ],
+    lobbies: [
+      { mode: null, size: 2, seated: 3, createdAt: 3_000, colonies: [[seat("ann-id", "ann"), seat("cat-id", "cat")], [seat("bob-id", "bob")]],
+        colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] },
+      { mode: null, size: 1, seated: 1, createdAt: 4_000, challenge: "house", colonies: [[], [seat("kite-id", "kite")]],
+        colonyNames: ["Very Large Colony", "Sweetwater Colony"] },
+      { mode: "house-2v2", size: 2, seated: 4, createdAt: 5_000, colonies: [[{ ...seat("h0-id", "antwars/agent0"), seats: 2 }], [{ ...seat("h1-id", "antwars/agent1"), seats: 2 }]] },
+    ],
+  } as const;
+  const EXISTING_JSON = '{"waiting":[{"displayName":"sam/first","mode":"1v1","waitingSeconds":60,"since":1000,"rating":{"rating":1612.4,"rd":61.5,"ratedMatches":12}},'
+    + '{"displayName":"antwars/agent0","mode":"house-2v2","waitingSeconds":59,"since":2000,"rating":null}],'
+    + '"lobbies":[{"mode":null,"size":2,"seated":3,"colonies":[["ann","cat"],["bob"]],"ratings":[[{"rating":1612.4,"rd":61.5,"ratedMatches":12},null],[null]],"seats":[[1,1],[1]],"waitingSeconds":58,"since":3000,"colonyNames":["Sweetwater Colony","Lake Skinner Colony"]},'
+    + '{"mode":null,"size":1,"seated":1,"colonies":[[],["kite"]],"ratings":[[],[null]],"seats":[[],[1]],"waitingSeconds":57,"since":4000,"challenge":"house","colonyNames":["Very Large Colony","Sweetwater Colony"]},'
+    + '{"mode":"house-2v2","size":2,"seated":4,"colonies":[["antwars/agent0"],["antwars/agent1"]],"ratings":[[null],[null]],"seats":[[2],[2]],"waitingSeconds":56,"since":5000}]}';
+  const RATINGS = { agent: (agent: { displayName: string }) => agent.displayName === "sam/first" ? RATING : null, seat: (_lobby: unknown, _colony: number, s: { id: string }) => s.id === "ann-id" ? RATING : null };
+
+  it("sends every existing mode's rows byte for byte as before, with or without quadrants rows beside them", () => {
+    const at = 61_000;
+    expect(JSON.stringify(publicQueue(EXISTING.agents, at, EXISTING.lobbies, RATINGS))).toBe(EXISTING_JSON);
+    const withQuadrants = publicQueue(
+      [EXISTING.agents[0], { identityId: "e-id", displayName: "eve", mode: "quadrants", joinedAt: 1_500 }, EXISTING.agents[1]], at,
+      [EXISTING.lobbies[0], quadrantsLobby(3_500), ...EXISTING.lobbies.slice(1)], RATINGS);
+    const existing = { waiting: withQuadrants.waiting.filter(row => row.mode !== "quadrants"), lobbies: withQuadrants.lobbies.filter(row => row.mode !== "quadrants") };
+    expect(JSON.stringify(existing)).toBe(EXISTING_JSON);
+  });
+});
