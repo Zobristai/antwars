@@ -72,6 +72,81 @@ for (const scale of [1, 2] as const) for (const colony of [0, 1] as const) for (
   });
 }
 
+describe('landed ATTACK flyers keep queen contact', () => {
+  function setup(colony: ColonyId = 1) {
+    const state = scene(2), queen = state.colonies[colony === 0 ? 1 : 0].queens![0]!;
+    const attack: Mark = { id: state.nextMarkId++, agentId: 'raider', colony,
+      tileX: Math.floor(queen.queenX / SUB), tileY: Math.floor(queen.queenY / SUB),
+      words: [], laidTick: state.tick, steering: 0, verb: 'ATTACK', count: 1, caste: 'flyer' };
+    state.marks.push(attack);
+    const ant = addAnt(state, colony, attack.tileX, attack.tileY, { flyer: true, caste: 'worker', claim: attack.id,
+      hp: state.config.flyers!.hp });
+    ant.pointRest = { key: 'old-rest', x: ant.x, y: ant.y - 10 * SUB };
+    return { state, queen, attack, ant };
+  }
+  for (const colony of [0, 1] as const) {
+    it(`keeps biting instead of walking to a distant rest, colony ${colony}`, () => {
+      const { state, queen, attack, ant } = setup(colony), hp = queen.hp!;
+      for (let n = 0; n < 2; n++) {
+        beginLocalGoals(state);
+        const { dir } = countMarkDirection(state, buildGrid(state), [], ant, attack);
+        expect(currentLocalGoals(state).get(ant.id)).toMatchObject({ kind: 'combat', nativeReached: true,
+          x: queen.queenX, y: queen.queenY });
+        const frame = advanceSoftAnts(state, new Map([[ant.id, dir]]), new Set());
+        expect(frame.pointRests.has(ant.id)).toBe(false);
+        expect(adjacentEnemyQueen(state, ant)).toBe(queen);
+        resolveCombat(state, buildGrid(state), state.tick++, []);
+      }
+      expect(queen.hp).toBeLessThan(hp);
+    });
+  }
+  it('recovers bite contact after spacing pushes a flyer outside reach of an offset mark queen', () => {
+    const { state, queen, attack, ant } = setup();
+    attack.tileX = 18;
+    ant.x = 19 * SUB + SUB / 2;
+    ant.y = 48 * SUB + SUB / 2;
+    // A companion already in reach must not make the displaced flyer count as arrived by proximity alone.
+    const companion = addAnt(state, 1, 16, 49, { flyer: true, caste: 'worker', claim: attack.id });
+    beginLocalGoals(state);
+    const grid = buildGrid(state);
+    const { dir: companionDir } = countMarkDirection(state, grid, [], companion, attack);
+    const { dir } = countMarkDirection(state, grid, [], ant, attack);
+    expect(currentLocalGoals(state).get(ant.id)).toMatchObject({ kind: 'combat', nativeReached: false,
+      x: queen.queenX, y: queen.queenY });
+    const frame = advanceSoftAnts(state, new Map([[ant.id, dir], [companion.id, companionDir]]), new Set());
+    expect(frame.pointRests.has(ant.id)).toBe(false);
+    expect(frame.arrivals.get(ant.id)?.arrived).toBe(false);
+    expect(ant.x).toBeLessThan(19 * SUB + SUB / 2);
+  });
+  it('preserves adjacent enemy-ant contact before queen contact', () => {
+    const { state, attack, ant } = setup();
+    const enemy = addAnt(state, 0, attack.tileX, attack.tileY, { caste: 'worker' });
+    beginLocalGoals(state);
+    countMarkDirection(state, buildGrid(state), [], ant, attack);
+    expect(currentLocalGoals(state).get(ant.id)).toMatchObject({ kind: 'combat', targetId: enemy.id,
+      x: enemy.x, y: enemy.y });
+  });
+  it.each(['shield', 'grace', 'no-point-arrival', 'airborne', 'carrying', 'ground-ant', 'gather', 'defend', 'dead-queen', 'queen-outside-mark-reach', 'distant-mark'] as const)(
+    'does not introduce queen contact for %s', condition => {
+      const setupResult = setup(), { queen, attack, ant } = setupResult;
+      let state = setupResult.state;
+      if (condition === 'shield') state.tick = state.config.queenHp!.shieldTicks - 1;
+      if (condition === 'grace') state.tick = state.config.combatGraceTicks - 1;
+      if (condition === 'no-point-arrival') state = { ...state, config: { ...state.config, pointArrival: undefined } };
+      if (condition === 'airborne') ant.air = { destX: ant.x, destY: ant.y, hovering: true, released: false };
+      if (condition === 'carrying') ant.carrying = true;
+      if (condition === 'ground-ant') delete ant.flyer;
+      if (condition === 'gather') attack.verb = 'GATHER';
+      if (condition === 'defend') attack.verb = 'DEFEND';
+      if (condition === 'dead-queen') { queen.hp = 0; queen.lostTick = state.tick; }
+      if (condition === 'queen-outside-mark-reach') attack.tileX += 3;
+      if (condition === 'distant-mark') attack.tileX += state.config.attackRadiusTiles + 10;
+      beginLocalGoals(state);
+      countMarkDirection(state, buildGrid(state), [], ant, attack);
+      expect(currentLocalGoals(state).get(ant.id)?.kind).not.toBe('combat');
+    });
+});
+
 describe('holding versus passing through a point', () => {
   it('still gives a soldier sent to hold a point a stable organic rest on land', () => {
     const state = scene(1), held = mark(state, 'GATHER');
