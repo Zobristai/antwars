@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FIT_TARGETS, fitProblems, recordingPositionMs, type TextFit } from "../../../web/capture/match-label-fit.ts";
+import { FIT_TARGETS, fitProblems, nameTapPoints, recordingPositionMs, type TextFit } from "../../../web/capture/match-label-fit.ts";
 
 const deck = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
 const ui = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8");
@@ -8,6 +8,18 @@ const phone = deck.slice(deck.indexOf("@media (max-width: 559px)"));
 const fit: TextFit = { text: "Back to live", target: true, lines: 1, clipped: false, outside: false };
 
 describe("match label fit", () => {
+  it("checks both ends of the name, including text crossing the old half-plate boundary", () => {
+    const points = nameTapPoints({ x: 184, y: 60, width: 180, height: 24 });
+    expect(points).toEqual([{ edge: "left", x: 185, y: 72 }, { edge: "right", x: 363, y: 72 }]);
+    expect(points[0]!.x).toBeLessThan(195);
+    expect(() => nameTapPoints({ x: 0, y: 0, width: 0, height: 24 })).toThrow();
+  });
+  it("enables name and chevron hit targets only on the classic stacked phone plate", () => {
+    const rule = '.d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-name { pointer-events: auto; cursor: pointer; }';
+    const boundary = ui.indexOf("@media (max-width: 559px)");
+    expect(ui.slice(0, boundary)).not.toContain(rule);
+    expect(ui.slice(boundary)).toContain(rule);
+  });
   it("seeks both complete recordings and mid-match excerpts by their own time origin", () => {
     expect(recordingPositionMs(1002, 0, 10)).toBe(100200);
     expect(recordingPositionMs(1002, 980, 10)).toBe(2200);

@@ -173,10 +173,10 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     shownNames = key;
     for (const c of COLONIES) {
       text(nameWords[c]!, pair[c]);
-      // A drawn name has its source as its tooltip; the rated names are shown as they were. The name sits in the rows,
-      // which take no pointer, so the note is on the colony's half under it, the control a pointer over the name reaches.
+      // The name takes the pointer on phone rows; elsewhere its colony's half remains the target.
       const note = setup?.colonyNames ? colonyNameNote(pair[c]) : null;
       attr(halves[c]!, "title", note);
+      attr(names[c]!, "title", note);
       attr(halves[c]!, "aria-label", D2_COPY.details(c, pair));
       attr(drawerEls[c]!.drawer, "aria-label", D2_COPY.details(c, pair));
     }
@@ -278,6 +278,10 @@ export function mountHud(context: HudHost): Mounted<HudView> {
   const dispatch = (event: DrawerEvent) => { state = drawers(state, event); paintDrawers(); };
   for (const colony of COLONIES) {
     const half = halves[colony]!;
+    // Full-width phone names can cross the old half boundary. CSS enables their pointer only on that layout;
+    // the existing halves remain the keyboard controls and the targets for the score rows below.
+    listen(names[colony]!, "pointerenter", e => { if ((e as PointerEvent).pointerType === "mouse") dispatch({ kind: "point", colony }); });
+    listen(names[colony]!, "click", () => dispatch({ kind: "toggle", colony }));
     let pointed = false;
     listen(half, "pointerenter", e => { if ((e as PointerEvent).pointerType === "mouse") dispatch({ kind: "point", colony }); });
     listen(half, "pointerdown", () => { pointed = true; });

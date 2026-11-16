@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { chromium } from "playwright-core";
+import { chromium, type Page } from "playwright-core";
 import { decodeMessage } from "../../src/live/format.ts";
 import { unpackMessages } from "../../src/live/snapshot.ts";
 import { RENDER_DELAY_MS } from "../src/buffer.ts";
@@ -27,6 +27,44 @@ export function recordingPositionMs(tick: number, firstTick: number, ticksPerSec
 }
 export function fitProblems(items: readonly TextFit[]): string[] {
   return items.filter(i => i.target && (i.lines > 1 || i.clipped || i.outside)).map(i => `${i.text}: ${i.lines} lines; clipped=${i.clipped}; outside=${i.outside}`);
+}
+
+export function nameTapPoints(box: { x: number; y: number; width: number; height: number }) {
+  assert(box.width > 2 && box.height > 0, "name must have a visible interior");
+  return [
+    { edge: "left", x: box.x + 1, y: box.y + box.height / 2 },
+    { edge: "right", x: box.x + box.width - 1, y: box.y + box.height / 2 },
+  ];
+}
+
+/** Use physical coordinates, not a click on the underlying half: names can cross its boundary. */
+async function checkNameDrawers(page: Page, touch: boolean) {
+  const checks = [];
+  const reset = async () => {
+    await page.locator(".d2-half.c0").focus();
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.mouse.move(0, 0);
+    for (const colony of [0, 1]) assert.equal(await page.locator(`.d2-half.c${colony}`).getAttribute("aria-expanded"), "false", "drawer reset failed");
+  };
+  for (const colony of [0, 1]) {
+    const name = page.locator(`.d2-name.c${colony} .d2-name-text`);
+    const chevron = page.locator(`.d2-name.c${colony} .d2-chevron`);
+    const box = await name.boundingBox(), arrow = await chevron.boundingBox();
+    assert(box && arrow, "name and chevron must be visible");
+    const points = [...nameTapPoints(box), { edge: "chevron", x: arrow.x + arrow.width / 2, y: arrow.y + arrow.height / 2 }];
+    for (const point of points) {
+      await reset();
+      if (touch) await page.touchscreen.tap(point.x, point.y);
+      else await page.mouse.click(point.x, point.y);
+      const expanded = await Promise.all([0, 1].map(c => page.locator(`.d2-half.c${c}`).getAttribute("aria-expanded")));
+      const visible = await Promise.all([0, 1].map(c => page.locator(`#d2-drawer-${c}`).isVisible()));
+      checks.push({ colony, text: await name.innerText(), ...point, input: touch ? "touch" : "mouse", expanded, visible,
+        passed: expanded[colony] === "true" && expanded[1 - colony] === "false" && visible[colony] && !visible[1 - colony] });
+    }
+  }
+  await reset();
+  return checks;
 }
 
 /** Evaluated in the page, so keep every dependency inside this function. */
@@ -168,14 +206,10 @@ async function capture(): Promise<void> {
           const lower = `${name}-lower.png`; await page.screenshot({ path: join(out, lower) }); shots.push(lower);
         }
         const problems = [...fitProblems(items), ...items.filter(i => i.target && i.overlaps.length).map(i => `${i.text}: overlapping item indices ${i.overlaps.join(",")}`)];
-        let drawerChecked = false;
-        if (board === "2d" && await page.locator('.d2-half.c0').isVisible()) {
-          await page.locator('.d2-half.c0').click();
-          assert.equal(await page.locator('.d2-half.c0').getAttribute('aria-expanded'), 'true', 'colony drawer did not open');
-          drawerChecked = true;
-        }
+        const drawerChecks = board === "2d" && await page.locator('.d2-half.c0').isVisible() ? await checkNameDrawers(page, width === 390) : [];
+        for (const check of drawerChecks) if (!check.passed) problems.push(`${check.text} ${check.edge}: wrong drawer after ${check.input}`);
         runs.push({ name, board, width, height, tick: frame.playbackTick, requestedFont: a.font, browser: browser.version(), renderer: info.rendererString,
-          drawerChecked, items, fonts, tightFits: items.filter(i => i.inventory && (i.spare === null || i.spare < 8)), problems, errors, blocked,
+          drawerChecked: drawerChecks.length > 0, drawerChecks, items, fonts, tightFits: items.filter(i => i.inventory && (i.spare === null || i.spare < 8)), problems, errors, blocked,
           shots: await Promise.all(shots.map(async file => ({ file, sha256: createHash("sha256").update(await readFile(join(out, file))).digest("hex") }))) });
         console.log(`${name}: ${problems.length} target fit problems`);
       } finally { await page.context().close(); }

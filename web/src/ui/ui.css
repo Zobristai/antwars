@@ -400,6 +400,7 @@ button.d2-history-button:hover .d2-said { text-decoration: underline; text-under
   .d2-hud[data-layout="narrow"][data-plate="stacked"]:has(.d2-plate:not(.is-quad)) { --d2-plate-h: 282px; }
   .d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-rows { grid-template-rows: 72px repeat(4, 44px); }
   .d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-head { grid-template-areas: "clock clock" "c0 c0" "c1 c1"; height: 72px; }
+  .d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-name { pointer-events: auto; cursor: pointer; }
   .d2-hud[data-layout="narrow"] .d2-back-text { white-space: nowrap; }
 }
 
