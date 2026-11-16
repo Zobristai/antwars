@@ -209,7 +209,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     setHidden(capBar, c === null);
     if (!c) { setText(capWhat, ""); setText(capWhen, ""); setText(capWho, ""); return; }
     cap.style.setProperty("--d1-side", COLONY_INK[c.colony]!);
-    // A drawn colony's id, for the fall headline's ground where its colour needs one (colony-ground.css).
+    // The fallen colony's id, for its headline colour.
     if (drawn) cap.dataset.colony = String(c.colony);
     else delete cap.dataset.colony;
     setColonyText(doc, capWhat, c.what, drawn);

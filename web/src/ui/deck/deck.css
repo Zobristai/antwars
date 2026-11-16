@@ -250,11 +250,6 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-crow-out { grid-area: out; }
 .d1-crow-share { grid-area: share; justify-self: end; font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d1-crows-none { min-height: 26px; padding-top: 4px; text-align: center; font-size: 13px; color: var(--aw-ink-2); }
-/* A colony name whose colour needs a dark ground to keep 4.5:1 (colony-palette.ts sets data-aw-ground; colony-ground.css). */
-:root[data-aw-ground~="0"] .d1-crow.c0 .d1-crow-name, :root[data-aw-ground~="1"] .d1-crow.c1 .d1-crow-name,
-:root[data-aw-ground~="2"] .d1-crow.c2 .d1-crow-name, :root[data-aw-ground~="3"] .d1-crow.c3 .d1-crow-name {
-  background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
-}
 
 /* ---------------------------------------------------------------- a team's agents and its history */
 /* Agents: one small row each under the

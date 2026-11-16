@@ -746,7 +746,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
     if (!lines) return;
     toast.dataset.kind = lines.kind;
     toast.style.color = COLONY_INK[lines.colony];
-    // A drawn colony's id, for the fall headline's ground where its colour needs one (colony-ground.css).
+    // The fallen colony's id, for its headline colour.
     if (drawn) toast.dataset.colony = String(lines.colony);
     else delete toast.dataset.colony;
     toastWhen.textContent = lines.when;

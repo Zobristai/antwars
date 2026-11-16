@@ -396,8 +396,8 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
         expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Quadrants"]);
         expect(named(scope)).toEqual(NAMED);
         expect(inks(scope)).toEqual(colonyColours(QUADRANTS).map(colourCss));
-        // Sweetwater's and Lake Skinner's words take the dark ground they need for 4.5:1; the rated colours take none.
-        expect(scope.getAttribute("data-aw-ground")).toBe("2 3");
+        // All four names keep their colours without a text backing.
+        expect(scope.getAttribute("data-aw-ground")).toBeNull();
         expect(scope.byClass("d1p-stamp")[0]!.textContent).toBe(stamp);
       }
       expect(colonies(item!).map(([name]) => name)).toEqual([...QUADRANTS]);
