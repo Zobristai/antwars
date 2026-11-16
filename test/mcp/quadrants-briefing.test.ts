@@ -14,7 +14,7 @@ import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { Game, type LobbySeat } from "../../src/mcp/game.js";
 import { createMcpHandler } from "../../src/mcp/http.js";
 import { MAX_OBSERVE_REPLY_BYTES, MAX_OBSERVE_TEXT_CHARS, MAX_RULES_REPLY_BYTES, MAX_RULES_TEXT_CHARS } from "../../src/mcp/replies.js";
-import { type MapDefinition, type SimConfig } from "../../src/sim/config.js";
+import { rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.js";
 import { gridScaleOf, newMatchConfig } from "../../src/sim/gridScale.js";
 import { quadrantLayoutDescription, quadrantMatchMaps } from "../../src/sim/mapShapes.js";
 import { selectMap } from "../../src/sim/terrain.js";
@@ -50,11 +50,11 @@ afterEach(async () => {
 
 /** A slot server holding a seated Quadrants lobby; its clock moves only when a test moves it. quadrantMaps "shipped":
  * the shipped Quadrants pool (quadrantMatchMaps()). */
-async function quadrantsSlot(seated = true, quadrantMaps: readonly MapDefinition[] | "shipped" = [FIXTURE]) {
+async function quadrantsSlot(seated = true, quadrantMaps: readonly MapDefinition[] | "shipped" = [FIXTURE], simConfig: SimConfig = LIVE) {
   const clock = { now: 1000 };
   let scheduled = false;
   const game: Game = new Game({
-    simConfig: LIVE, ...(quadrantMaps === "shipped" ? {} : { quadrantMaps }), startPickWindowMs: 50, now: () => clock.now, mcpConfig: MCP,
+    simConfig, ...(quadrantMaps === "shipped" ? {} : { quadrantMaps }), startPickWindowMs: 50, now: () => clock.now, mcpConfig: MCP,
     slot: { identityOf: async key => (key.startsWith("key-") ? `id-${key.slice(4)}` : undefined), locate: async () => undefined },
     // A call waiting on a tick is answered on the next one.
     onInputQueued: () => {
@@ -241,6 +241,59 @@ describe("a Quadrants seat's rules and briefing through the MCP tools", () => {
       const win = territoryWin(config);
       expect(balance).toContain(`Territory win: ${win.from}, a colony holding more than half of all owned territory (every colony's held territory added together) and ${win.floor} continuously for ${win.hold} wins immediately. Any interruption resets the clock. An eliminated colony's territory turns neutral and no longer counts. Eliminations are resolved first; otherwise time-up still applies.`);
       expect(balance.join("\n")).not.toMatch(/opponent|left-half|mirrored on the right|flanking/);
+    }
+  });
+});
+
+describe.each([
+  ["rules 27", LIVE],
+  ["rules 28", newMatchConfig(rulesConfig("redesign"))],
+] as const)("a Quadrants seat's terrain and flight text under %s", (_label, config) => {
+  it("agrees in the full rules and compact join briefing before and after the draw, preserving rules-27 terrain text", async () => {
+    const { game, clock, connect } = await quadrantsSlot(true, "shipped", config);
+    const seat = await connect();
+    for (const drawn of [false, true]) {
+      if (drawn) {
+        const closesAt = game.beginLobbyStart(4242);
+        for (const colony of [0, 1, 3]) await game.joinSeated(`id-${colony}`);
+        clock.now = closesAt;
+        game.finishLobbyStart();
+        game.tick();
+      }
+      const joined = await seat("join", { key: "key-2" });
+      const rules = await seat("rules");
+      expect(joined.isError).toBe(false);
+      expect(rules.isError).toBe(false);
+      const served = drawn ? game.match!.state.config : game.undrawnConfig;
+      const full = rules.data.rules as string;
+      const compact = joined.data.briefing as string;
+      for (const text of [full, compact]) expect(text).toContain("four colonies");
+      const mapNames = served.terrain!.maps.map(map => map.name).join(", ");
+      if (config.flyers === undefined) {
+        expect(full.split("\n").find(line => line.startsWith("Maps: "))).toBe(
+          `Maps: ${mapNames}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ants and marks; food is on land. Ants route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight. The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid nests, food, water and the centre, keeping land connected.`,
+        );
+        expect(compact.split("\n").filter(line => /water or rocks|See view\.terrain/.test(line))).toEqual([
+          "No ants, marks or queens on water or rocks.",
+          "Ants/food/enemy nests obey sight. See view.terrain.",
+        ]);
+        for (const text of [full, compact]) expect(text).not.toMatch(/flyer/i);
+      } else {
+        expect(full.split("\n").find(line => line.startsWith("Maps: "))).toBe(
+          `Maps: ${mapNames}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ground ants and marks; food is on land. Ground ants route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight. The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ground ants, marks and queen founding; ground ants route around them. Rocks avoid nests, food, water and the centre, keeping land connected. Airborne flyers can fly over water and rocks.`,
+        );
+        expect(compact.split("\n").filter(line => /water or rocks|See view\.terrain/.test(line))).toEqual([
+          "No ground ants, marks or queens on water or rocks. Airborne flyers can fly over water and rocks.",
+          "Ants/food/enemy nests obey sight. See view.terrain.",
+        ]);
+        for (const text of [full, compact]) {
+          expect(text).toContain("Flight is straight at 8 tiles per second over water, rock and ants");
+          expect(text).toContain("A landed flyer fights as a ground ant.");
+          expect(text).not.toContain("No ants, marks or queens on water or rocks.");
+          expect(text).not.toContain("Water is impassable to ants and marks");
+          expect(text).not.toContain("Rocks block ants, marks and queen founding");
+        }
+      }
     }
   });
 });

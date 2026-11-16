@@ -490,14 +490,18 @@ function mapLayoutLines(config: SimConfig, compact = false): string[] {
   });
 }
 
+const FLYER_TERRAIN_TEXT = "Airborne flyers can fly over water and rocks.";
+
 function terrainLines(config: SimConfig): string[] {
+  const fourWithFlyers = fourColonies(config) && config.flyers !== undefined;
   return config.terrain === undefined ? [] : [
     ...mapLayoutLines(config, usesCompactAgentText(config)),
     (hasDistinctMapLayouts(config.terrain)
       ? "Seed selects map. view.terrain: name, public water rectangles/legend. Water blocks ants/marks; food stays dry. Ants route around water; target land. Ants/food/enemy nests obey sight."
-      : `Maps: ${config.terrain.maps.map(m => m.name).join(", ")}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ants and marks; food is on land. Ants route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight.`)
+      : `Maps: ${config.terrain.maps.map(m => m.name).join(", ")}; one chosen from the match seed. view.terrain names this map and lists public water rectangles with a decoding legend. Water is impassable to ${fourWithFlyers ? "ground ants" : "ants"} and marks; food is on land. ${fourWithFlyers ? "Ground ants" : "Ants"} route around water; choose land targets. Dynamic ants, food and enemy nests still obey sight.`)
       // A quadrant board's rocks are mirrored into every quadrant, not placed in left-right pairs (src/sim/quadrantMap.ts).
-      + (config.terrain.rocks === undefined ? "" : fourColonies(config) ? " The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid nests, food, water and the centre, keeping land connected." : ` The seed also places ${config.terrain.rocks.minPairs}-${config.terrain.rocks.maxPairs} mirrored rock pairs (${config.terrain.rocks.minClusterTiles}-${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${gridScaleForText(config)}x${gridScaleForText(config)} fine tiles). view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid starting nests, food and water, keeping land connected.`),
+      + (config.terrain.rocks === undefined ? "" : fourColonies(config) ? ` The seed also places rocks, each mirrored into every quadrant. view.terrain.rocks uses the same rectangle encoding. Rocks block ${fourWithFlyers ? "ground ants" : "ants"}, marks and queen founding; ${fourWithFlyers ? "ground ants" : "ants"} route around them. Rocks avoid nests, food, water and the centre, keeping land connected.` : ` The seed also places ${config.terrain.rocks.minPairs}-${config.terrain.rocks.maxPairs} mirrored rock pairs (${config.terrain.rocks.minClusterTiles}-${config.terrain.rocks.maxClusterTiles} original-size cells each; a cell covers ${gridScaleForText(config)}x${gridScaleForText(config)} fine tiles). view.terrain.rocks uses the same rectangle encoding. Rocks block ants, marks and queen founding; ants route around them. Rocks avoid starting nests, food and water, keeping land connected.`)
+      + (fourWithFlyers ? ` ${FLYER_TERRAIN_TEXT}` : ""),
   ];
 }
 
@@ -622,7 +626,7 @@ export function joinBriefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_M
     ...(config.terrain === undefined ? [] : [
       config.terrain.rocks === undefined
         ? `Seed picks ${config.terrain.maps.map(map => map.name).join("/")}. view.terrain: map name, public water rectangles/legend. Water blocks ants/marks; food stays dry. Ants route around water; target land. Ants/food/enemy nests obey sight.`
-        : "No ants, marks or queens on water or rocks.\nAnts/food/enemy nests obey sight. See view.terrain.",
+        : `${four && config.flyers !== undefined ? `No ground ants, marks or queens on water or rocks. ${FLYER_TERRAIN_TEXT}` : "No ants, marks or queens on water or rocks."}\nAnts/food/enemy nests obey sight. See view.terrain.`,
       ...mapLayoutLines(config, true),
     ]),
     // A four-colony match is joined only through its lobby slot, one seat per colony: no non-lobby join limits.
