@@ -13,21 +13,16 @@ const recording = (minute: number, matchType: Recording["matchType"]): Recording
 });
 
 describe("Recordings rows show each recording's match type", () => {
-  it("puts one badge in the Game type column and the stacked row, and none for an untyped row", () => {
+  it("shows the type once per responsive row, and no type words for an untyped row", () => {
     const { doc } = dom();
     const view: MatchesView = { waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, next: null,
       recordings: { status: "ready", rows: [recording(29, { kind: "index", size: 1 }), recording(13, { kind: "unranked", size: 2 }), recording(1, null)] } };
     const card = recordingsCard(doc, view, { search: "" }) as unknown as ElementPort;
-    const badges = (scope: ElementPort) => scope.byClass("d1p-type").map(node => node.textContent);
-    const [table] = card.byClass("d1p-rec"), [list] = card.byClass("d1p-match-rows");
-    expect(badges(table!)).toEqual(["Index · 1v1", "Unranked · 2v2"]);
-    expect(badges(list!)).toEqual(["Index · 1v1", "Unranked · 2v2"]);
-    // In the table, in the Game type column (never the start cell); in the stacked row, on the line after the time.
-    expect(card.byClass("d1p-type").every(node => node.classes().includes("d1p-tag"))).toBe(true);
-    const cells = table!.byClass("c-type").filter(node => node.tag === "td");
-    expect(cells.map(cell => cell.byClass("d1p-type").length)).toEqual([1, 1, 0]);
-    expect(table!.byClass("c-start").flatMap(cell => cell.byClass("d1p-type"))).toEqual([]);
-    expect(list!.byClass("is-lead").map(line => line.byClass("d1p-type").length)).toEqual([1, 1, 0]);
+    const [list] = card.byClass("d1p-rec-rows");
+    expect(list!.children).toHaveLength(3);
+    expect(list!.byClass("d1p-rec-type").map(node => node.textContent)).toEqual(["Index · 1v1", "Unranked · 2v2", ""]);
+    expect(list!.byClass("d1p-rec-when").flatMap(cell => cell.byClass("d1p-rec-type"))).toEqual([]);
+    expect(card.byClass("d1p-rec-head")).toHaveLength(1);
     expect(card.textContent).not.toMatch(/house-|unranked ·|index ·|Lobby/);
   });
 });

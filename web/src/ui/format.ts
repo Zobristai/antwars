@@ -172,8 +172,11 @@ export interface RecordingRow {
 }
 
 /** How many colonies a listed recording has: four for a four-colony (Quadrants) match, which its type, its four names, its
- * winner or a seat of colony 2 or 3 shows; two otherwise. */
-export function recordedColonies(r: Partial<Pick<Recording, "winner" | "seats" | "matchType" | "colonyNames">>): 2 | 4 {
+ * winner or a seat of colony 2 or 3 shows; three only when explicitly named, two otherwise.
+ * Never reinterpret an incomplete four-colony record as a three-colony match. */
+export function recordedColonies(r: Partial<Pick<Recording, "winner" | "seats" | "matchType" | "colonyNames">>): 2 | 3 | 4 {
+  if (r.colonyNames?.length === 3 && r.matchType?.kind !== "quadrants" && (r.winner ?? 0) < 3
+    && !(r.seats ?? []).some(seat => seat.colony === 3)) return 3;
   const four = r.matchType?.kind === "quadrants" || r.colonyNames?.length === 4 || (r.winner ?? 0) > 1 || (r.seats ?? []).some(seat => seat.colony > 1);
   return four ? 4 : 2;
 }
@@ -214,10 +217,11 @@ export const MATCH_TYPE_WORDS: Record<NonNullable<Recording["matchType"]>["kind"
   index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked", quadrants: "Free-for-all",
 };
 /** "Ranked · 2v2"; the word alone where the size is unknown, and for Quadrants, whose four colonies are no NvN; null for no
- * type, or none sent. */
-export function recordingType(type: Recording["matchType"]): string | null {
+ * type, or none sent. A match of three colonies includes all three sides, for example "1v1v1". */
+export function recordingType(type: Recording["matchType"], colonies = 2): string | null {
   if (type == null) return null;
-  return type.size === null || type.kind === "quadrants" ? MATCH_TYPE_WORDS[type.kind] : `${MATCH_TYPE_WORDS[type.kind]} · ${type.size}v${type.size}`;
+  return type.size === null || type.kind === "quadrants" ? MATCH_TYPE_WORDS[type.kind]
+    : `${MATCH_TYPE_WORDS[type.kind]} · ${Array.from({ length: colonies }, () => type.size).join("v")}`;
 }
 
 export function recordingRow(r: Recording, search: string): RecordingRow {
@@ -225,7 +229,7 @@ export function recordingRow(r: Recording, search: string): RecordingRow {
   return {
     id: r.id, href: keep(`/?replay=${encodeURIComponent(r.id)}`, search),
     when: utcStamp(r.startedAt) ?? utcStamp(replayDate(r.id) ?? "") ?? "Start unknown",
-    result, how, models: recordingModels(r.seats, listedNames(r, recordedColonies(r))), record: RECORD_LABEL[r.status], type: recordingType(r.matchType),
+    result, how, models: recordingModels(r.seats, listedNames(r, recordedColonies(r))), record: RECORD_LABEL[r.status], type: recordingType(r.matchType, recordedColonies(r)),
   };
 }
 

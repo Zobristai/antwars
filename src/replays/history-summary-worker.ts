@@ -31,8 +31,8 @@ const startRating = (value: Json): { rating: number; rd: number; ratedMatches: n
 const colonyNames = (value: Json, colonies: number): string[] | null =>
   Array.isArray(value) && value.length === colonies && value.every(name => typeof name === "string" && name.length > 0)
     ? value.map(name => clip(name as string, 64)!) : null;
-/** The colony numbers of a two-colony match, and of a four-colony one. */
-const TWO = [0, 1] as const, FOUR = [0, 1, 2, 3] as const;
+/** Colony indexes allowed by the record's explicit setup; older records default to two. */
+const TWO = [0, 1] as const, THREE = [0, 1, 2] as const, FOUR = [0, 1, 2, 3] as const;
 
 export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   const record = object(JSON.parse(new TextDecoder().decode(bytes)));
@@ -40,9 +40,9 @@ export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   if (text(record.id) !== id) throw new Error("record identity mismatch");
   const startedAt = text(record.startedAt, 64), endedAt = nullableText(record.endedAt, 64), simulationEndedAt = nullableText(record.simulationEndedAt, 64);
   const setup = record.setup === undefined || record.setup === null ? null : object(record.setup);
-  // A four-colony (Quadrants) record's setup carries colonies 4 and its four names; a record without it has two colonies.
-  const four = setup?.colonies !== undefined && oneOf(setup.colonies, [4]) === 4;
-  const colonies = four ? FOUR : TWO;
+  // Explicit three- and four-colony records carry their names; a record without a count has two colonies.
+  const count = setup?.colonies === undefined ? 2 : oneOf(setup.colonies, [3, 4]);
+  const colonies = count === 4 ? FOUR : count === 3 ? THREE : TWO;
   const result = record.result === null ? null : object(record.result);
   const winner = result === null ? null : oneOf(result.winner, [...colonies, null]);
   const reason = result === null ? null : text(result.reason, 64), decidedBy = result === null ? null : text(result.decidedBy, 64);
@@ -57,8 +57,8 @@ export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
   const unavailable = list(record.unavailable, 32).map(reason => text(reason));
   const rated = setup === null ? undefined : optionalFlag(setup.rated), modelIndex = setup === null ? undefined : optionalFlag(setup.modelIndex);
   const names = setup === null ? null : colonyNames(setup.colonyNames, colonies.length);
-  // The row's four names are how it is known as a four-colony match (recorded-match-type.ts recordedMatchType).
-  if (four && names === null) invalid();
+  // Preserve explicit multi-colony identity through the public summary.
+  if (count > 2 && names === null) invalid();
   return { id, startedAt, endedAt, simulationEndedAt, winner, reason, decidedBy,
     seats: seats.map(seat => ({ ...seat, modelLabel: clip(seat.modelLabel, 64), thinkingLevel: clip(seat.thinkingLevel, 32),
       serviceTier: clip(seat.serviceTier, 32), handle: clip(seat.handle, 256) })),

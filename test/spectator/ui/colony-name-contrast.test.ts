@@ -268,13 +268,17 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage() {
+function quadrantsPage(thinkingLevel: string | null = null) {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
   const handles = ["alice", "bob", "cat", "dan"];
-  const seats = handles.map((handle, colony) => ({ seat: colony, colony: colony as 0 | 1 | 2 | 3, modelLabel: null, thinkingLevel: null, serviceTier: null, handle }));
+  const seats = handles.flatMap((handle, colony) => Array.from({ length: thinkingLevel === null ? 1 : 2 }, (_, index) => ({
+    seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
+    thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
+    ...(thinkingLevel === null ? {} : { startRating: { rating: 1500, rd: 80, ratedMatches: 12 } }),
+  })));
   const recording = (winner: 0 | 1 | 2 | 3): MatchRecording => ({ id: `2026-11-14T09-00-00-000Z-${winner}`, startedAt: "2026-11-14T09:00:00.000Z", endedAt: null,
     simulationEndedAt: null, winner, reason: "queens_killed", decidedBy: null, seats, status: "complete", unavailable: [], matchType: { kind: "quadrants", size: 1 }, colonyNames: names });
   const live: LiveMatch = { lobbyId: "lobby-q", startedAt: Date.parse("2026-11-14T10:00:00Z"), rated: false, delaySeconds: 60, matchType: { kind: "quadrants", size: 1 },
@@ -288,6 +292,84 @@ function quadrantsPage() {
   return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
 }
 
+describe("Recordings contain a self-reported thinking level", () => {
+  const longLevel = "m".repeat(32);
+  for (const width of [1280, 390]) {
+    it(`bounds a 32-character level with seats and rating at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(quadrantsPage(longLevel).page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const rows = await tab.locator(".d1p-rec-level").evaluateAll(nodes => nodes.map(node => {
+          const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          const line = node.closest(".d1p-rec-player")!;
+          return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
+            overflow: style.overflowX, textOverflow: style.textOverflow,
+            count: line.querySelector(".d1p-rec-count")?.textContent, rating: line.querySelector(".d1p-rec-rating")?.textContent,
+            children: [...line.children].map(child => { const box = child.getBoundingClientRect();
+              return { text: child.textContent, leftInset: box.left - slot.left, rightInset: slot.right - box.right }; }) };
+        }));
+        expect(rows).toHaveLength(16);
+        for (const row of rows) {
+          expect(row.text).toBe(`${longLevel} Fast`);
+          expect(row.title).toBe(`${longLevel} Fast`);
+          expect(row.clipped).toBe(true);
+          expect(row.overflow).toBe("hidden");
+          expect(row.textOverflow).toBe("ellipsis");
+          expect(row.count).toContain("×2");
+          expect(row.rating).toContain("1500");
+          for (const child of row.children) {
+            expect(child.leftInset, child.text!).toBeGreaterThanOrEqual(0);
+            expect(child.rightInset, child.text!).toBeGreaterThanOrEqual(0);
+          }
+        }
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
+describe("Recordings colony headings stay inside their columns", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps complete one-line headings within each slot at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 }, deviceScaleFactor: 3 });
+      try {
+        await tab.setContent(quadrantsPage().page);
+        // Match index.html's margin reset; otherwise the browser's body margin narrows every slot.
+        // Use the wider desktop stand-in face; both target fonts are also checked in the capture matrix.
+        await tab.addStyleTag({ content: 'html, body { margin: 0; } .d1p-rec-colony { font-family: "Liberation Sans", sans-serif; }' });
+        await tab.evaluate(() => document.fonts.ready);
+        const rows = await tab.locator(".d1p-rec-colony").evaluateAll(nodes => nodes.map(node => {
+          const slot = node.parentElement!.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const text = range.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          return { text: node.textContent, width: slot.width, leftInset: text.left - slot.left, rightInset: slot.right - text.right,
+            lines: new Set([...range.getClientRects()].map(rect => rect.top)).size,
+            size: style.fontSize, spacing: style.letterSpacing, transform: style.textTransform,
+            whiteSpace: style.whiteSpace, overflow: style.overflowX, textOverflow: style.textOverflow };
+        }));
+        expect(rows).toHaveLength(16);
+        expect(rows.slice(0, 4).map(row => row.text)).toEqual(SUPERCOLONY_NAMES.map(name => name.label.replace(/ Colony$/, "")));
+        for (const row of rows) {
+          expect(row.lines, row.text!).toBe(1);
+          expect(row.leftInset, row.text!).toBeGreaterThanOrEqual(0);
+          expect(row.rightInset, row.text!).toBeGreaterThan(0);
+          expect(row.transform).toBe("uppercase");
+          expect(row.whiteSpace).toBe("nowrap");
+          expect(row.overflow).toBe("visible");
+          expect(row.textOverflow).not.toBe("ellipsis");
+          expect(row.size).toBe(width === 390 ? "10.5px" : "11px");
+          expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.4 : 0.99, 2);
+          if (width === 390) expect(row.width).toBe(75);
+        }
+      } finally { await tab.close(); }
+    });
+  }
+});
+
 describe("the Matches page's text in a colony's colour has no backing", () => {
   for (const width of [1280, 390]) {
     it(`a four-colony (Quadrants) match: Matches at ${width}px`, async () => {
@@ -296,9 +378,12 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
       expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
       expectNoBacking(rows);
       const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
-      // Each colony's name in its own colour, on the live row and on each recording; each recording's Winner in its winner's.
-      for (const { label, colour } of SUPERCOLONY_NAMES) expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual(Array(5).fill(rgb(colour)));
-      expect(rows.filter(r => r.text === "Winner" && r.state === "rest").map(r => r.rgb).sort()).toEqual(COLOURS.map(rgb).sort());
+      // Live keeps the full name; each recording uses its short heading in the same original colony ink.
+      for (const { label, colour } of SUPERCOLONY_NAMES) {
+        expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
+        expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(Array(4).fill(rgb(colour)));
+      }
+      expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
     });
   }
 
@@ -311,8 +396,15 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
         const rows = await measured(page, width, 2400);
         expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
         expectNoBacking(rows);
-        // Each recording's result badge stands in its winner's colour.
-        expect(rows.filter(r => r.text === "Winner" && r.state === "rest").map(r => r.rgb).sort()).toEqual(colonyColours(pair ?? COLONY_NAMES).map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")).sort());
+        // Both recordings retain the original ink on their short headings; winner is no longer a coloured badge.
+        const names = pair ?? COLONY_NAMES;
+        const colours = colonyColours(names);
+        names.forEach((name, index) => {
+          const colour = colours[index]!;
+          const rgb = [(colour >> 16) & 255, (colour >> 8) & 255, colour & 255].join(",");
+          expect(rows.filter(r => r.text === name.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual([rgb, rgb]);
+        });
+        expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
         expect(body, "no row draws a text backing").not.toContain("data-aw-ground");
       });
     }

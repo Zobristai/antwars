@@ -44,7 +44,7 @@ function landing(answers: Parameters<typeof server>[0] = {}, search = "", leader
   const card = (title: string) => root.byClass("d1p-card").find(node => node.querySelector(".d1p-card-title")?.textContent.startsWith(title));
   const state = (title: string) => card(title)!.querySelector(".d1p-state")?.textContent ?? "";
   const count = (title: string) => card(title)!.querySelector(".d1p-count")?.textContent ?? null;
-  const rows = (title: string) => card(title)!.querySelector("table")!.querySelector("tbody")!.children;
+  const rows = (title: string) => title === "Recordings" ? card(title)!.byClass("d1p-rec-rows")[0]!.children : card(title)!.querySelector("table")!.querySelector("tbody")!.children;
   const link = (text: string) => root.all().find(node => node.tag === "a" && node.textContent === text)!;
   return { port, root, dispose, card, state, count, rows, link, ...api };
 }
@@ -210,13 +210,13 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
-  it("gives each recording's Replay the site's cyan primary button, as the Matches page does", async () => {
+  it("gives each recording one Replay text link, as the Matches page does", async () => {
     const p = landing({ matches: () => new Response(JSON.stringify({ matches: [saved(3), saved(2)], nextPageToken: null })) });
     await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));
-    const replays = p.card("Recordings")!.byClass("d1p-row-pill");
-    // Two rows, each in the table and the stacked list.
-    expect(replays).toHaveLength(4);
-    for (const link of replays) expect([link.textContent, link.className]).toEqual(["Replay", "d1-agent-button d1p-row-pill"]);
+    const replays = p.card("Recordings")!.byClass("d1p-rec-replay");
+    // One responsive row per recording.
+    expect(replays).toHaveLength(2);
+    for (const link of replays) expect([link.textContent, link.className]).toEqual(["Replay", "d2-link d1p-rec-replay"]);
     p.dispose();
   });
 

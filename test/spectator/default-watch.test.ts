@@ -9,8 +9,9 @@ it("Matches renders only catalog-live and saved-recording rows, including a trul
   const host = port.doc.createElement("div") as unknown as ElementPort; port.body.append(host);
   const refresh = vi.fn(), more = vi.fn();
   const mounted = mountMatches(port.doc, host as unknown as HTMLElement, { refresh, more });
-  // The wide tables' row actions (the stacked rows repeat them for narrow cards).
-  const links = () => host.byClass("d1p-wide").flatMap(table => table.byClass("d1p-row-pill"));
+  // Live table actions (not their narrow-card copies) and the single recording rows.
+  const recordingLinks = () => host.byClass("d1p-rec-rows").flatMap(rows => rows.byClass("d1p-rec-replay"));
+  const links = () => [...host.byClass("d1p-wide").flatMap(table => table.byClass("d1p-row-pill")), ...recordingLinks()];
   const view: MatchesView = { waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows: [] }, next: null };
   mounted.update(view);
   expect(host.byClass("d1p-live")).toEqual([]);
@@ -19,9 +20,11 @@ it("Matches renders only catalog-live and saved-recording rows, including a trul
     recordings: { status: "ready", rows: [{ id: "2026-10-21T13-58-00-000Z-1", startedAt: "2026-10-21T13:58:00Z", endedAt: null, simulationEndedAt: null,
       winner: null, reason: null, decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "partial", unavailable: [] }] },
   });
+  expect(recordingLinks()).toHaveLength(1);
   expect(links().map(row => row.href)).toEqual(["/?lobby=ongoing&watch=1&board=2d", "/?replay=2026-10-21T13-58-00-000Z-1&board=2d"]);
   expect(host.textContent).not.toMatch(/Watch current playback|Recent upload|recent uploads/);
   mounted.update(view);
+  expect(recordingLinks()).toEqual([]);
   expect(links()).toEqual([]);
   mounted.destroy();
 });
