@@ -1,34 +1,22 @@
-// The score plate's colony names on the 2D board: a drawn name's source note must sit on an element a pointer over the
-// name can reach. The plate's rows take no pointer (ui.css), so a note on the name itself never shows. Reachability is
-// read from ui.css's pointer-events rules along the element's ancestry, nearest first; this is not visual evidence.
+// A drawn score name's source note must be on the actual pointer target: its own name on phone rows, or its half
+// on desktop. Render the mounted plate's markup with the real stylesheet so media rules and ancestor selectors
+// participate in hit testing. This checks tooltip reachability, not the browser chrome's native tooltip rendering.
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { chromium, type Browser } from "playwright-core";
 import { Frame, type Board } from "../../../web/src/buffer.ts";
 import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
 import { mountHud } from "../../../web/src/ui/hud.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
 
-const CSS = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+import { markup } from "./port-markup.ts";
 
-/** Each ui.css rule setting pointer-events whose selector ends in a compound of classes only: its classes and value. */
-const POINTER_RULES = [...CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap(([, selectors, body]) => {
-  const value = /pointer-events:\s*(none|auto)/.exec(body!)?.[1];
-  if (!value) return [];
-  return selectors!.split(",").flatMap(selector => {
-    const last = selector.trim().split(/[\s>+~]+/).at(-1)!;
-    return /^(\.[\w-]+)+$/.test(last) ? [{ classes: last.slice(1).split("."), value }] : [];
-  });
-});
-
-/** Whether a pointer can hit `node`: the nearest element on its ancestry that a rule gives pointer-events decides. */
-function reachable(node: ElementPort): boolean {
-  for (let at: ElementPort | null = node; at; at = at.parent) {
-    const matched = POINTER_RULES.filter(rule => rule.classes.every(cls => at!.classes().includes(cls)));
-    if (matched.length > 0) return matched.at(-1)!.value !== "none";
-  }
-  return true;
-}
+const CSS = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8");
+const DRAWN = ["Sweetwater Colony", "Lake Skinner Colony"] as const;
+let browser: Browser;
+beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
+afterAll(async () => { await browser?.close(); });
 
 function frameOf(drawn: readonly [string, string] | null): Frame {
   const f = new Frame();
@@ -58,25 +46,39 @@ function plate(drawn: readonly [string, string] | null): ElementPort {
   return host.byClass("d2-plate")[0]!;
 }
 
-const titled = (root: ElementPort, note: string) => root.all().filter(node => node.getAttribute("title") === note || node.title === note);
-
 describe("the score plate's drawn colony names", () => {
-  it("puts each drawn name's source note where a pointer over the name reaches it, in that colony's half", () => {
-    const root = plate(["Sweetwater Colony", "Lake Skinner Colony"]);
-    for (const [colony, name] of [[0, "Sweetwater Colony"], [1, "Lake Skinner Colony"]] as const) {
-      const holders = titled(root, colonyNameNote(name)!);
-      expect(holders.length, `${name}'s note is shown somewhere on the plate`).toBeGreaterThan(0);
-      for (const holder of holders) {
-        expect(reachable(holder), `${name}'s note sits on .${holder.classes().join(".")}, which a pointer cannot reach`).toBe(true);
-        expect(holder.classes()).toContain(`c${colony}`);
-      }
-    }
-  });
-
-  it("the rule it checks against holds: the rows under the names take no pointer", () => {
-    const row = plate(["Sweetwater Colony", "Lake Skinner Colony"]).byClass("d2-name-text")[0]!;
-    expect(reachable(row)).toBe(false);
-  });
+  for (const width of [390, 1280]) {
+    it(`exposes each source note on its own ${width === 390 ? "phone name" : "desktop half-control"} at ${width}px`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 844 } });
+      try {
+        // The surrounding shell selects the same two layout modes as the HUD. The plate itself is produced by
+        // mountHud above; no pointer, tooltip or name-position rules are supplied by the fixture.
+        await page.setContent(`<!doctype html><style>${CSS}</style><div class="aw-hud"><div class="d2 d2-hud" data-layout="${width === 390 ? "narrow" : "wide"}" data-plate="${width === 390 ? "stacked" : "inline"}"><header class="d2-score"><div class="d2-plate-wrap">${markup(plate(DRAWN))}</div></header></div></div>`);
+        expect(await page.locator(".d2-rows").evaluate(node => getComputedStyle(node).pointerEvents)).toBe("none");
+        for (const colony of [0, 1]) {
+          const name = page.locator(`.d2-name.c${colony}`);
+          expect(await name.evaluate(node => getComputedStyle(node).pointerEvents)).toBe(width === 390 ? "auto" : "none");
+          const words = await name.locator(".d2-name-text").boundingBox();
+          const chevron = await name.locator(".d2-chevron").boundingBox();
+          expect(words).not.toBeNull(); expect(chevron).not.toBeNull();
+          const points = [
+            { x: words!.x + 1, y: words!.y + words!.height / 2 },
+            { x: words!.x + words!.width - 1, y: words!.y + words!.height / 2 },
+            { x: chevron!.x + chevron!.width / 2, y: chevron!.y + chevron!.height / 2 },
+          ];
+          for (const point of points) {
+            await page.mouse.move(point.x, point.y);
+            const hit = await page.evaluate(({ x, y }) => {
+              const node = document.elementFromPoint(x, y);
+              return { target: node?.closest(".d2-name, .d2-half")?.className ?? null,
+                tooltip: node?.closest("[title]")?.getAttribute("title") ?? null };
+            }, point);
+            expect(hit).toEqual({ target: `d2-${width === 390 ? "name" : "half"} c${colony}`, tooltip: colonyNameNote(DRAWN[colony]!) });
+          }
+        }
+      } finally { await page.close(); }
+    });
+  }
 
   it("shows no note on a rated match's plate", () => {
     const root = plate(null);

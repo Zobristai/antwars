@@ -394,6 +394,16 @@ button.d2-history-button:hover .d2-said { text-decoration: underline; text-under
 /* The phone form of the plate is taller (the drawing: 258px), in either layout. */
 .d2-hud[data-plate="stacked"] { --d2-plate-h: 258px; }
 
+/* Two full colony names plus their drawer chevrons exceed the phone plate's shared row. Keep each name whole on
+   its own line, retaining the clock above and the mirrored score rows below. Four-colony plates already use rows. */
+@media (max-width: 559px) {
+  .d2-hud[data-layout="narrow"][data-plate="stacked"]:has(.d2-plate:not(.is-quad)) { --d2-plate-h: 282px; }
+  .d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-rows { grid-template-rows: 72px repeat(4, 44px); }
+  .d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-head { grid-template-areas: "clock clock" "c0 c0" "c1 c1"; height: 72px; }
+  .d2-hud[data-layout="narrow"][data-plate="stacked"] .d2-plate:not(.is-quad) .d2-name { pointer-events: auto; cursor: pointer; }
+  .d2-hud[data-layout="narrow"] .d2-back-text { white-space: nowrap; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .d2 *, .d2 *::before, .d2 *::after { animation: none !important; }
   .d2-toast, .d2-toast[data-state="shown"] { transform: translate(-50%, 0); }

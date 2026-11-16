@@ -453,9 +453,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-queens > .d1-lamps.c0 { grid-column: 2; }
   .d1-queens > .d1-lamps.c1 { grid-column: 4; }
   .d1-queens > .d1-fig.c1 { grid-column: 5; padding: 0; }
-  /* A hold's side keeps its own width; the label between gives way, onto two lines on the narrowest screens. */
+  /* Each side and the unbroken label keep their content width. */
   .d1-hold { grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); }
-  .d1-hold > .d1-glabel { grid-column: 2; max-width: 92px; white-space: normal; text-align: center; line-height: 13px; }
+  .d1-hold > .d1-glabel { grid-column: 2; text-align: center; line-height: 13px; }
   .d1-hold-dash.c0, .d1-hold-win.c0 { grid-column: 1; justify-self: start; padding: 0; margin: 0; }
   .d1-hold-dash.c1, .d1-hold-win.c1 { grid-column: 3; justify-self: end; padding: 0; margin: 0; }
   .d1-hold-win.c1 { flex-direction: row-reverse; }
@@ -477,6 +477,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-legend { display: block; left: 6px; max-width: calc(100% - 12px); white-space: normal; }
   .d1-dot { display: inline-block; vertical-align: 0; }
   .d1-legend-rest { overflow: visible; }
+  .d1-back { display: inline-block; white-space: nowrap; }
   /* A four-colony match's legend breaks only between its clauses: the mode word, each "· clause" and the link stay whole,
      and the link's gap stays with the clause before it, so a link starting a line is not indented. */
   .d1-legend.is-four :is(.d1-mode, .d1-clause, .d1-back) { white-space: nowrap; }
@@ -491,7 +492,13 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   .d1-transport { order: -1; flex: 1 1 100%; min-width: 0; margin: 0; }
   .d1 .aw-replay-controls { flex: 1 1 auto; }
   .d1 .aw-replay-controls input { flex: 1 1 0; width: auto; }
+  /* The team picker and four board buttons already use the phone's width. A present caption needs its own row;
+     an empty caption keeps the original lane height. Replay transport remains on its existing row above it. */
+  .d1-frame:has(.d1-caption:not([data-kind="none"])) { --d1-lane: calc(var(--d1-tap) * 2 + 16px); }
+  .d1-frame:has(.d1-caption:not([data-kind="none"])):has(.d1-transport:not([hidden])) { --d1-lane: calc(var(--d1-tap) * 3 + 24px); }
+  .d1-lane:has(.d1-caption:not([data-kind="none"])) { flex-wrap: wrap; align-content: center; row-gap: 4px; }
   .d1-caption { display: grid; grid-template-columns: 4px auto minmax(0, 1fr); grid-template-areas: "bar what what" "bar when who"; column-gap: 8px; row-gap: 1px; align-items: baseline; }
+  .d1-caption:not([data-kind="none"]) { flex: 1 0 100%; }
   .d1-cap-bar { grid-area: bar; height: 36px; align-self: center; }
   .d1-cap-what { grid-area: what; font-size: 14px; line-height: 18px; }
   .d1-cap-when { grid-area: when; font-size: 11px; }
