@@ -5,7 +5,7 @@ import { tileCentre } from "../../src/sim/geometry.js";
 import { gridScaleOf } from "../../src/sim/gridScale.js";
 import { activeQueens, buildGrid, tileIndex } from "../../src/sim/map.js";
 import { countMarkCasteEligible } from "../../src/sim/marks.js";
-import { step } from "../../src/sim/step.js";
+import { advance, step } from "../../src/sim/step.js";
 import { updateTerritory } from "../../src/sim/territory.js";
 import type { Agent, Ant, Caste, ColonyId, FlyerAir, Mark, MarkCaste, QueenState, SimEvent, SimState } from "../../src/sim/types.js";
 import { addAnt, emptyMatch, setOwner } from "./fixtures.js";
@@ -172,7 +172,7 @@ describe("test plan check 1: queen raid, combat step alone on fixed positions", 
   });
 });
 
-describe("test plan check 1: queen raid through the full step (information, not asserted)", () => {
+describe("test plan check 1: queen raid through the full step", () => {
   /** The flyers landed and claimed on an ATTACK mark at the queen's tile, defenders holding on DEFEND. */
   function stepRaid(flyers: number, defenders: number, caste: Caste) {
     const { state, flyers: raiders, defenders: guards } = raid(flyers, defenders, caste);
@@ -213,6 +213,68 @@ describe("test plan check 1: queen raid through the full step (information, not 
     console.info(`check 1 full-step runs (information):\n${rows.map((r) => JSON.stringify(r)).join("\n")}`);
     expect(rows).toHaveLength(6);
   });
+  it("settles every soldier and worker raid without fixing balance thresholds", () => {
+    const rows = [];
+    for (const [defenders, caste] of [[4, "soldier"], [12, "worker"]] as const) {
+      for (let flyers = 14; flyers <= 30; flyers++) rows.push(stepRaid(flyers, defenders, caste));
+    }
+    console.info(`check 1 full-step sweep (measured outcomes):\n${rows.map(r => JSON.stringify(r)).join("\n")}`);
+    for (const row of rows) {
+      expect(row.queenLostOnTick !== null || row.flyersLeft === 0, JSON.stringify(row)).toBe(true);
+    }
+  }, 30_000);
+});
+
+describe("accepted-command flyer queen raids", () => {
+  function scene(count: number, fromHome: boolean): SimState {
+    const state = match();
+    for (const colony of [0, 1] as const) state.agents.push({
+      id: colony === 1 ? "raider" : "defender", colony, joinSeq: colony, modelLabel: null, parentAgentId: null,
+      squad: [], order: { kind: "hold" }, lastCallTick: T0 - 100, lastCommandTick: T0 - 100,
+      joinedTick: T0 - 100, idle: false, pendingEvents: [],
+    });
+    for (let i = 0; i < count; i++) {
+      const ant = flyer(state, 1, 22, 49);
+      if (fromHome) { ant.x = queenOf(state, 1).queenX; ant.y = queenOf(state, 1).queenY; }
+    }
+    return state;
+  }
+  const liveAdvance: typeof step = (state, inputs = []) => advance(state, inputs, undefined, undefined, undefined, false, true);
+  function attack(state: SimState, count: number, tick: typeof step): void {
+    let current = state, takeoffs = 0, landings = 0;
+    for (let n = 0; n < 300; n++) {
+      const out = tick(current, n === 0 ? [{ type: "count_mark", agentId: "raider", verb: "ATTACK",
+        tileX: 16, tileY: 49, count, caste: "flyer" }] : []);
+      if (n === 0) expect(out.results[0]?.ok).toBe(true);
+      current = out.state;
+      takeoffs += out.events.filter(e => e.type === "flyer_takeoff").length;
+      landings += out.events.filter(e => e.type === "flyer_landing").length;
+      if (current.colonies[0].queens![0]!.lostTick !== null || !current.ants.some(a => a.colony === 1)) break;
+    }
+    expect(takeoffs).toBe(count);
+    expect(landings).toBe(count);
+    expect(current.colonies[0].queens![0]!.lostTick !== null || !current.ants.some(a => a.colony === 1)).toBe(true);
+  }
+  it.each(["step", "advance"] as const)("ten flyers finish the unguarded raid through %s without moving the mark", mode => {
+    attack(scene(10, false), 10, mode === "step" ? step : liveAdvance);
+  });
+  it("thirteen flyers flown from home by accepted commands finish the raid", () => {
+    let state = scene(13, true), markId: number | undefined;
+    for (const tileX of [101, 91, 81, 71, 61, 51, 41, 31, 21]) {
+      for (let n = 0; n < 100; n++) {
+        const out = liveAdvance(state, n === 0 ? [{ type: "count_mark", agentId: "raider", verb: "GATHER",
+          tileX, tileY: 49, count: 13, caste: "flyer", ...(markId === undefined ? {} : { markId }) }] : []);
+        if (n === 0) expect(out.results[0]?.ok).toBe(true);
+        state = out.state;
+        markId = state.marks[0]!.id;
+      }
+    }
+    const out = liveAdvance(state, [{ type: "count_mark", agentId: "raider", verb: "REMOVE", count: 0, markId }]);
+    expect(out.results[0]?.ok).toBe(true);
+    state = out.state;
+    for (let n = 1; n < 100; n++) state = liveAdvance(state).state;
+    attack(state, 13, liveAdvance);
+  }, 30_000);
 });
 
 describe("test plan check 2: air and ground separation", () => {
