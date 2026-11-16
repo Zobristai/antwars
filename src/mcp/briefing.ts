@@ -2,7 +2,7 @@ import { COLONY_NAMES, COUNT_MARK_MAX_COUNT_TEXT, damagePerTick, type SimConfig 
 import { isClassicColonyNames, quadrantColonyNames, type ColonyNames } from "../sim/colonyNames.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { COUNT_CASTES, WORDS } from "../sim/types.js";
-import { hasDistinctMapLayouts, mapLayoutDescription } from "../sim/mapShapes.js";
+import { hasDistinctMapLayouts, mapLayoutDescription, quadrantLayoutDescription } from "../sim/mapShapes.js";
 import { colonyCountOf, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../sim/view.js";
@@ -431,8 +431,14 @@ function queenHpLine(config: SimConfig, s: (ticks: number) => number, hp: (milli
  */
 function mapLayoutLines(config: SimConfig, compact = false): string[] {
   const terrain = config.terrain;
-  return terrain === undefined || !hasDistinctMapLayouts(terrain) ? [] : terrain.maps.map(map =>
+  if (terrain === undefined) return [];
+  if (hasDistinctMapLayouts(terrain)) return terrain.maps.map(map =>
     `${map.name}: ${mapLayoutDescription(map, terrain.referenceWidth, terrain.referenceHeight, compact)}.`);
+  // A Quadrants rotation: one line for each map whose geometry is exactly a shipped pool map's.
+  return terrain.maps.flatMap(map => {
+    const text = quadrantLayoutDescription(map, compact);
+    return text === undefined ? [] : [`${map.name}: ${text}.`];
+  });
 }
 
 function terrainLines(config: SimConfig): string[] {
