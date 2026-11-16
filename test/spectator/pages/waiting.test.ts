@@ -160,7 +160,10 @@ describe("Quadrants on the Waiting card", () => {
       ["11 Nov 202605:04 UTC", "Ranked · 2v2", ["kite1490 ± 80×2, 2 seats"], ["bob×2, 2 seats"], "Status Starting", ""],
     ]);
     expect(allRows(p.card())[1]!.byClass("d1p-elo-badge")).toEqual([]);
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Quadrants · 1 match waiting to start");
+    // Each clause is kept whole: the line's only ordinary spaces follow its separators, so it breaks only between clauses.
+    const state = p.card().byClass("d1p-state")[0]!.textContent!;
+    expect(state.replaceAll("\u00a0", " ")).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Quadrants · 1 match waiting to start");
+    expect(state.split(" ")).toEqual(["1\u00a0agent\u00a0waiting\u00a0in\u00a0a\u00a0ranked\u00a0queue\u00a0·", "1\u00a0agent\u00a0waiting\u00a0for\u00a0Quadrants\u00a0·", "1\u00a0match\u00a0waiting\u00a0to\u00a0start"]);
     p.mounted.destroy();
   });
 

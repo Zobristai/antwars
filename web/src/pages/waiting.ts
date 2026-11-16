@@ -35,6 +35,7 @@ export const SEAT_OPEN = "seat open";
 
 const isLobby = (row: WaitingRow): row is WaitingLobby => "colonies" in row;
 const QUADRANTS = "quadrants";
+const NBSP = "\u00a0";
 
 /** A lobby's kind, by the rule the server types a recording's lobby by (src/replays/recorded-match-type.ts): quadrants is
  * Quadrants, a house-* mode the Antwars Model Index, any other mode the ranked queue, a modeless lobby a house challenge or
@@ -105,7 +106,11 @@ export function waitingState(view: Pick<MatchesView, "waiting">): SectionState {
     ...(quadrants > 0 ? [`${plural(quadrants, "agent", "agents")} waiting for Quadrants`] : []),
     ...(lobbies > 0 ? [`${plural(lobbies, "match", "matches")} waiting to start`] : []),
   ];
-  return { tone: "complete", text: parts.join(" · ") };
+  // With Quadrants waiting the line can hold three clauses, so each clause is kept whole: its spaces are no-break spaces
+  // and the separator's first space is too, so the line breaks only after a " · ". Without Quadrants the line is exactly
+  // as before.
+  if (quadrants === 0) return { tone: "complete", text: parts.join(" · ") };
+  return { tone: "complete", text: parts.map(part => part.replaceAll(" ", NBSP)).join(`${NBSP}· `) };
 }
 
 export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, parts: RowParts): HTMLElement {
