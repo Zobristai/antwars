@@ -1,6 +1,6 @@
 import { isRockTile, isWaterTile } from "./terrain.js";
 import { softMarkHeading } from "./softSeparation.js";
-import { noteCombat, noteContact, noteMark, noteQueenContact } from "./localArrival.js";
+import { noteCombat, noteContact, noteMark, noteQueenApproach } from "./localArrival.js";
 import { routeToward } from "./navigation.js";
 import { COUNT_MARK_MAX_COUNT, COUNT_MARK_MAX_COUNT_TEXT, SUB } from "./config.js";
 import { distance, tileCentre, withinTiles, ZERO, type Vec } from "./geometry.js";
@@ -988,12 +988,13 @@ function defendMarkDirection(state: SimState, grid: Grid, ant: Ant, mark: Mark, 
 function countMarkDirectionNative(state: SimState, grid: Grid, food: readonly number[], ant: Ant, mark: Mark): { dir: Vec; foraging: boolean } {
   switch (mark.verb) {
     case "ATTACK":
-      // A landed flyer already biting a queen at its attack area must not walk to an organic rest outside bite reach.
+      // Keep landed flyers approaching a queen at their mark even after spacing breaks bite contact.
       // Keep enemy-ant contact first, and leave other orders and historical ground-ant movement unchanged.
       if (state.config.flyers !== undefined && ant.flyer && ant.air === undefined
         && withinTiles(Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), mark.tileX, mark.tileY, state.config.attackRadiusTiles)
-        && !hasAdjacentEnemy(state, grid, ant) && noteQueenContact(state, ant)) {
-        return { dir: ZERO, foraging: false };
+        && !hasAdjacentEnemy(state, grid, ant)) {
+        const queen = noteQueenApproach(state, ant, mark.tileX, mark.tileY);
+        if (queen !== null) return { dir: queen.reached ? ZERO : routeToward(state, ant, queen.x, queen.y), foraging: false };
       }
       return { dir: softMarkHeading(state, ant, mark, attackDirection(state, grid, ant, mark.tileX, mark.tileY, state.config.attackRadiusTiles)), foraging: false };
     case "DEFEND":

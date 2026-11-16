@@ -100,6 +100,24 @@ describe('landed ATTACK flyers keep queen contact', () => {
       expect(queen.hp).toBeLessThan(hp);
     });
   }
+  it('recovers bite contact after spacing pushes a flyer outside reach of an offset mark queen', () => {
+    const { state, queen, attack, ant } = setup();
+    attack.tileX = 18;
+    ant.x = 19 * SUB + SUB / 2;
+    ant.y = 48 * SUB + SUB / 2;
+    // A companion already in reach must not make the displaced flyer count as arrived by proximity alone.
+    const companion = addAnt(state, 1, 16, 49, { flyer: true, caste: 'worker', claim: attack.id });
+    beginLocalGoals(state);
+    const grid = buildGrid(state);
+    const { dir: companionDir } = countMarkDirection(state, grid, [], companion, attack);
+    const { dir } = countMarkDirection(state, grid, [], ant, attack);
+    expect(currentLocalGoals(state).get(ant.id)).toMatchObject({ kind: 'combat', nativeReached: false,
+      x: queen.queenX, y: queen.queenY });
+    const frame = advanceSoftAnts(state, new Map([[ant.id, dir], [companion.id, companionDir]]), new Set());
+    expect(frame.pointRests.has(ant.id)).toBe(false);
+    expect(frame.arrivals.get(ant.id)?.arrived).toBe(false);
+    expect(ant.x).toBeLessThan(19 * SUB + SUB / 2);
+  });
   it('preserves adjacent enemy-ant contact before queen contact', () => {
     const { state, attack, ant } = setup();
     const enemy = addAnt(state, 0, attack.tileX, attack.tileY, { caste: 'worker' });
@@ -108,7 +126,7 @@ describe('landed ATTACK flyers keep queen contact', () => {
     expect(currentLocalGoals(state).get(ant.id)).toMatchObject({ kind: 'combat', targetId: enemy.id,
       x: enemy.x, y: enemy.y });
   });
-  it.each(['shield', 'grace', 'no-point-arrival', 'airborne', 'carrying', 'ground-ant', 'gather', 'defend', 'dead-queen', 'distant-mark'] as const)(
+  it.each(['shield', 'grace', 'no-point-arrival', 'airborne', 'carrying', 'ground-ant', 'gather', 'defend', 'dead-queen', 'queen-outside-mark-reach', 'distant-mark'] as const)(
     'does not introduce queen contact for %s', condition => {
       const setupResult = setup(), { queen, attack, ant } = setupResult;
       let state = setupResult.state;
@@ -121,6 +139,7 @@ describe('landed ATTACK flyers keep queen contact', () => {
       if (condition === 'gather') attack.verb = 'GATHER';
       if (condition === 'defend') attack.verb = 'DEFEND';
       if (condition === 'dead-queen') { queen.hp = 0; queen.lostTick = state.tick; }
+      if (condition === 'queen-outside-mark-reach') attack.tileX += 3;
       if (condition === 'distant-mark') attack.tileX += state.config.attackRadiusTiles + 10;
       beginLocalGoals(state);
       countMarkDirection(state, buildGrid(state), [], ant, attack);
