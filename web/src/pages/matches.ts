@@ -602,7 +602,11 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   line.append(name);
-  if (parts.badges.length > 0) line.append(h(doc, "span", "d1p-rec-level", parts.badges.join(" ")));
+  if (parts.badges.length > 0) {
+    const level = h(doc, "span", "d1p-rec-level", parts.badges.join(" "));
+    level.title = parts.badges.join(" ");
+    line.append(level);
+  }
   if (seats > 1) {
     const count = h(doc, "span", "d1p-rec-count");
     const shown = h(doc, "span", undefined, `×${seats}`);

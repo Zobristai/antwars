@@ -268,13 +268,17 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage() {
+function quadrantsPage(thinkingLevel: string | null = null) {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
   const handles = ["alice", "bob", "cat", "dan"];
-  const seats = handles.map((handle, colony) => ({ seat: colony, colony: colony as 0 | 1 | 2 | 3, modelLabel: null, thinkingLevel: null, serviceTier: null, handle }));
+  const seats = handles.flatMap((handle, colony) => Array.from({ length: thinkingLevel === null ? 1 : 2 }, (_, index) => ({
+    seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
+    thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
+    ...(thinkingLevel === null ? {} : { startRating: { rating: 1500, rd: 80, ratedMatches: 12 } }),
+  })));
   const recording = (winner: 0 | 1 | 2 | 3): MatchRecording => ({ id: `2026-11-14T09-00-00-000Z-${winner}`, startedAt: "2026-11-14T09:00:00.000Z", endedAt: null,
     simulationEndedAt: null, winner, reason: "queens_killed", decidedBy: null, seats, status: "complete", unavailable: [], matchType: { kind: "quadrants", size: 1 }, colonyNames: names });
   const live: LiveMatch = { lobbyId: "lobby-q", startedAt: Date.parse("2026-11-14T10:00:00Z"), rated: false, delaySeconds: 60, matchType: { kind: "quadrants", size: 1 },
@@ -287,6 +291,44 @@ function quadrantsPage() {
   mounted.destroy();
   return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
 }
+
+describe("Recordings contain a self-reported thinking level", () => {
+  const longLevel = "m".repeat(32);
+  for (const width of [1280, 390]) {
+    it(`bounds a 32-character level with seats and rating at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(quadrantsPage(longLevel).page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const rows = await tab.locator(".d1p-rec-level").evaluateAll(nodes => nodes.map(node => {
+          const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
+          const style = getComputedStyle(node);
+          const line = node.closest(".d1p-rec-player")!;
+          return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
+            overflow: style.overflowX, textOverflow: style.textOverflow,
+            count: line.querySelector(".d1p-rec-count")?.textContent, rating: line.querySelector(".d1p-rec-rating")?.textContent,
+            children: [...line.children].map(child => { const box = child.getBoundingClientRect();
+              return { text: child.textContent, leftInset: box.left - slot.left, rightInset: slot.right - box.right }; }) };
+        }));
+        expect(rows).toHaveLength(16);
+        for (const row of rows) {
+          expect(row.text).toBe(`${longLevel} Fast`);
+          expect(row.title).toBe(`${longLevel} Fast`);
+          expect(row.clipped).toBe(true);
+          expect(row.overflow).toBe("hidden");
+          expect(row.textOverflow).toBe("ellipsis");
+          expect(row.count).toContain("×2");
+          expect(row.rating).toContain("1500");
+          for (const child of row.children) {
+            expect(child.leftInset, child.text!).toBeGreaterThanOrEqual(0);
+            expect(child.rightInset, child.text!).toBeGreaterThanOrEqual(0);
+          }
+        }
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      } finally { await tab.close(); }
+    });
+  }
+});
 
 describe("Recordings colony headings stay inside their columns", () => {
   for (const width of [1280, 390]) {

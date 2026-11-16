@@ -287,6 +287,18 @@ describe("the one player line", () => {
     p.mounted.destroy();
   });
 
+  it("retains a 32-character thinking level in its text and full title", () => {
+    const level = "m".repeat(32);
+    const row = at("rec-long-level", { seats: [
+      seat(0, 0, "openai/gpt-6.1-terra", "sample-builder", { thinkingLevel: level, serviceTier: "fast" }),
+      seat(0, 1, "zai/glm-5.3", "kite"),
+    ] });
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [row] } });
+    const shown = recordings.list.byClass("d1p-rec-level")[0]!;
+    expect([shown.textContent, shown.title]).toEqual([`${level} Fast`, `${level} Fast`]);
+    p.mounted.destroy();
+  });
+
   it("keeps a long name whole as its title and in the page, cutting only the name on screen", () => {
     const name = "super-long-production-model-release-candidate-2026-10";
     const long = at("rec-long", { seats: [seat(0, 0, `provider/${name}`, "omp-dolphin", { thinkingLevel: "xhigh" }), seat(0, 1, "zai/glm-5.3", "kite")] });
@@ -398,7 +410,7 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
       const [item] = list.list.querySelectorAll("li");
       expect(row!.children.map(cell => [cell.className, cell.colSpan])).toEqual([["c-start", 1], ["c-type", 1], ["c-model", 2], ["c-status", 1], ["c-go", 1]]);
       for (const scope of [row!, item!]) {
-        expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Quadrants"]);
+        expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Free-for-all"]);
         expect(named(scope)).toEqual(NAMED);
         expect(inks(scope)).toEqual(colonyColours(QUADRANTS).map(colourCss));
         // All four names keep their colours without a text backing.
@@ -411,7 +423,7 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
     expect(colonies(liveList.list.querySelectorAll("li")[0]!)).toEqual(QUADRANTS.map((name, colony) => [name, [["ann", "bob", "cat", "dan"][colony]]]));
     expect(liveList.card.byClass("d1p-result-tag")).toEqual([]);
     const row = recordings.list.children[0]!;
-    expect(row.byClass("d1p-rec-type")[0]!.textContent).toBe("Quadrants");
+    expect(row.byClass("d1p-rec-type")[0]!.textContent).toBe("Free-for-all");
     expect(row.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(QUADRANTS.map(name => name.replace(/ Colony$/, "")));
     expect(inks(row)).toEqual(colonyColours(QUADRANTS).map(colourCss));
     expect(row.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["ann", "bob", "cat", "dan"]);

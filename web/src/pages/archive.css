@@ -519,7 +519,7 @@ td.c-model > .d1p-colony { display: block; }
 /* A builder's username in the line's own weight and ink, like the model name beside it. */
 .d1p-rec-name > :is(.d1p-user, .d1p-mname) { font-weight: inherit; color: inherit; }
 .d1p-rec-level, .d1p-rec-count { flex: none; color: var(--aw-ink-3); }
-.d1p-rec-level { text-transform: lowercase; }
+.d1p-rec-level { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-transform: lowercase; }
 /* The rating, figure only, at the slot's end in the line's own text: the badge's button and its "± RD" tip stay. */
 .d1p-rec-rating { flex: none; margin-left: auto; }
 .d1p-rec4 .d1p-rec-rating > .d1p-elo-badge { padding: 0; border: 0; border-radius: 0; background: none; font: inherit; letter-spacing: normal; text-transform: none; color: inherit; vertical-align: baseline; }

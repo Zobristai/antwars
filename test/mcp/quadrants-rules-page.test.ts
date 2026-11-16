@@ -171,6 +171,13 @@ describe("the public rules page on the shipped Quadrants pool", () => {
     for (let seed = 1; ; seed++) if (selectMap(seed, SHIPPED.terrain!).id === id) return seed;
   };
 
+  it("does not call the mode by its retired name on any shipped map's public rules page", () => {
+    // Lowercase quadrants describes the map's geometry, not the mode's name.
+    for (const config of [SHIPPED, ...POOL.map(map => matchConfigForMap(seedFor(map.id), SHIPPED))]) {
+      expect(renderRules(config, { undrawn: config === SHIPPED })).not.toMatch(/\bQuadrants\b/);
+    }
+  });
+
   it("before the draw, describes each pool map in its one layout line, in pool order", () => {
     expect(POOL.map(map => map.id)).toEqual(["four-coves", "crossroads", "strait"]);
     const maps = sectionText(SHIPPED, "Maps", { undrawn: true });

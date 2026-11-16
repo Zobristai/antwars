@@ -156,14 +156,14 @@ describe("Quadrants on the Waiting card", () => {
     const rows = allRows(p.card()).map(row => row.children.map(cell => cell.className === "c-model" ? cell.byClass("d1p-model").map(seat => seat.textContent) : cell.textContent));
     expect(rows).toEqual([
       ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
-      ["11 Nov 202605:02 UTC", "Quadrants", ["eve"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:02 UTC", "Free-for-all", ["eve"], ["no opponent yet"], "Status Waiting", ""],
       ["11 Nov 202605:04 UTC", "Ranked · 2v2", ["kite1490 ± 80×2, 2 seats"], ["bob×2, 2 seats"], "Status Starting", ""],
     ]);
     expect(allRows(p.card())[1]!.byClass("d1p-elo-badge")).toEqual([]);
     // Each clause is kept whole: the line's only ordinary spaces follow its separators, so it breaks only between clauses.
     const state = p.card().byClass("d1p-state")[0]!.textContent!;
-    expect(state.replaceAll("\u00a0", " ")).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Quadrants · 1 match waiting to start");
-    expect(state.split(" ")).toEqual(["1\u00a0agent\u00a0waiting\u00a0in\u00a0a\u00a0ranked\u00a0queue\u00a0·", "1\u00a0agent\u00a0waiting\u00a0for\u00a0Quadrants\u00a0·", "1\u00a0match\u00a0waiting\u00a0to\u00a0start"]);
+    expect(state.replaceAll("\u00a0", " ")).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Free-for-all · 1 match waiting to start");
+    expect(state.split(" ")).toEqual(["1\u00a0agent\u00a0waiting\u00a0in\u00a0a\u00a0ranked\u00a0queue\u00a0·", "1\u00a0agent\u00a0waiting\u00a0for\u00a0Free-for-all\u00a0·", "1\u00a0match\u00a0waiting\u00a0to\u00a0start"]);
     p.mounted.destroy();
   });
 
@@ -177,7 +177,7 @@ describe("Quadrants on the Waiting card", () => {
     const item = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li")[1]!;
     expect(row.children.map(cell => [cell.className, cell.colSpan])).toEqual([["c-start", 1], ["c-type", 1], ["c-model", 2], ["c-status", 1], ["c-go", 1]]);
     for (const scope of [row, item]) {
-      expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Quadrants"]);
+      expect(scope.byClass("d1p-type").map(node => node.textContent)).toEqual(["Free-for-all"]);
       expect(named(scope)).toEqual(QUADRANTS.map((name, colony) => [name, colonyNameNote(name), `d1p-c${colony}`]));
       expect(inks(scope)).toEqual(colonyColours(QUADRANTS).map(colourCss));
       expect(scope.byClass("d1p-model").map(line => line.textContent)).toEqual(["ann", "bob", "cat", "dan"]);
@@ -190,8 +190,8 @@ describe("Quadrants on the Waiting card", () => {
 
   it("names a Quadrants lobby's colonies by the shared table where the server sends no names, and counts its open seats out of four", () => {
     expect(lobbyKind({ mode: "quadrants" })).toBe("quadrants");
-    expect(waitingType(quad)).toBe("Quadrants");
-    expect(waitingType(eve)).toBe("Quadrants");
+    expect(waitingType(quad)).toBe("Free-for-all");
+    expect(waitingType(eve)).toBe("Free-for-all");
     const p = page();
     const { colonyNames: _, ...unnamed } = quad;
     p.mounted.update(view({ status: "ready", rows: [{ ...unnamed, seated: 3, colonies: [["ann"], ["bob"], ["cat"], []], ratings: [[null], [null], [null], []], seats: [[1], [1], [1], []] }] }));
