@@ -20,23 +20,32 @@ export interface PatrolPosition {
 }
 export type PatrolChains = ReadonlyMap<number, PatrolPosition>;
 
-/** Derived once per movement phase (and once per view), never stored in replay state.
+/** Derived once per movement phase (and once per view), never stored in replay state. */
+export function patrolChains(state: SimState): PatrolChains {
+  const range = state.config.patrolLinkTiles;
+  return range === undefined ? new Map<number, PatrolPosition>() : linkPatrolMarks(state.marks, range);
+}
+
+/** The one patrol chain rule, shared by the simulation and the spectator drawing: PATROL count marks
+ * of one colony link transitively within rangeTiles, and a flyer mark links only with flyer marks.
  * A component's marks are in laid order, independent of traversal/input order.
  */
-export function patrolChains(state: SimState): PatrolChains {
-  const result = new Map<number, PatrolPosition>();
-  const range = state.config.patrolLinkTiles;
-  if (range === undefined) return result;
-  const ordered = state.marks.filter(mark => mark.verb === "PATROL" && mark.count !== undefined)
+export function linkPatrolMarks<M extends { id: number; colony: number; verb?: string; count?: number; caste?: string; tileX: number; tileY: number; laidTick: number }>(
+  marks: readonly M[], rangeTiles: number,
+): ReadonlyMap<number, { chain: readonly M[]; position: number }> {
+  const result = new Map<number, { chain: readonly M[]; position: number }>();
+  const ordered = marks.filter(mark => mark.verb === "PATROL" && mark.count !== undefined)
     .sort((a, b) => a.laidTick - b.laidTick || a.id - b.id);
   const unseen = new Set(ordered);
   for (const root of ordered) {
     if (!unseen.delete(root)) continue;
+    const flyer = root.caste === "flyer";
     const component = [root];
     for (let i = 0; i < component.length; i++) {
       const from = component[i]!;
       for (const other of unseen) {
-        if (other.colony === root.colony && withinTiles(from.tileX, from.tileY, other.tileX, other.tileY, range)) {
+        if (other.colony === root.colony && (other.caste === "flyer") === flyer
+          && withinTiles(from.tileX, from.tileY, other.tileX, other.tileY, rangeTiles)) {
           unseen.delete(other);
           component.push(other);
         }

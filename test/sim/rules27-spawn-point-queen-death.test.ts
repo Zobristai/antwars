@@ -8,6 +8,7 @@ import { step } from "../../src/sim/step.js";
 import { updateOverrun } from "../../src/sim/territory.js";
 import type { Ant, ColonyId, QueenState, SimEvent, SimState } from "../../src/sim/types.js";
 import { addAnt, antById, emptyMatch } from "./fixtures.js";
+import { rules27Redesign } from "../rules27.ts";
 
 // "when a queen dies, her spawn point clears, and her
 // unclaimed ants still walking to it start their caste's rules-27 defaults from
@@ -17,7 +18,8 @@ const TICK = QUEEN_HP_RULES.shieldTicks;
 /** No squads, so every ant here stays free for local planning. */
 const HP_RULES: SimConfig = { ...rulesConfig("redesign"), rules27: true, terrain: undefined, foodLayout: undefined,
   squadSize: 0, commandFloorTicks: 1 };
-const { queenHp: _queenHp, ...withoutQueenHp } = HP_RULES;
+// A config without queen HP plays rules 27: a rules-28 config always has a striking queen.
+const { queenHp: _queenHp, ...withoutQueenHp } = { ...rules27Redesign(), rules27: true, terrain: undefined, foodLayout: undefined, squadSize: 0, commandFloorTicks: 1 } as SimConfig;
 /** Without queen HP, a queen is lost to overrun; one tick of enemy majority is enough here. */
 const OVERRUN_RULES: SimConfig = { ...withoutQueenHp, overrunGraceTicks: 0, overrunTicks: 1 };
 

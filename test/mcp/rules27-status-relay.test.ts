@@ -5,13 +5,15 @@ import { rulesConfig, type SimConfig } from "../../src/sim/config.js";
 import { lineMarksEnabled } from "../../src/sim/patrol.js";
 import { startHarness, type Harness } from "./harness.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 // Under rules 27, observe's status[1] names mark only where the mark tool
 // exists and names set_brood on the house-activity timer; count_mark's description and /rules state
 // that a re-lay keeps the original lifetime.
 const RULES_27: SimConfig = playable(rulesConfig("redesign"));
 const { wordMarksDisabled: _words, ...RULES_27_WORDS } = RULES_27;
-const { castes: _castes, ...RULES_27_NO_CASTES } = RULES_27;
+// A config without castes plays rules 27: a rules-28 config always has castes.
+const { castes: _castes, ...RULES_27_NO_CASTES } = playable(rules27Redesign());
 
 const RELAY_LINE = "A re-lay keeps the lifetime from when the mark was first laid; for LINE the two ends must match in the same order. A different verb, tile or ends makes a new mark with its own lifetime.";
 

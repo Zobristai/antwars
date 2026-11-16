@@ -9,7 +9,7 @@ import { activeQueens, forEachNear, hasAdjacentEnemy, nextQueenFoundingTick, que
 import { countMarkCasteEligible, localRulesSide, markDirection, parseWords, releaseClaim, trailMark } from "./marks.js";
 import { lineSpotOf } from "./lineMarks.js";
 import { countMarkVerbs, lineMarksEnabled, nextPatrolWaypoint, patrolChains, patrolWaypoint, reachedPatrolWaypoint, type PatrolChains } from "./patrol.js";
-import { BROODS, COUNT_CASTES, type Agent, type Ant, type Brood, type BroodSet, type Caste, type ColonyId, type CountMarkVerb, type InputError, type Mark, type Order, type SimEvent, type SimInput, type SimState } from "./types.js";
+import { BROODS, COUNT_CASTES, type Agent, type Ant, type Brood, type BroodSet, type ColonyId, type CountMarkVerb, type InputError, type Mark, type MarkCaste, type Order, type QueenBrood, type SimEvent, type SimInput, type SimState } from "./types.js";
 
 type JoinInput = Extract<SimInput, { type: "join" }>;
 
@@ -420,7 +420,7 @@ function layMark(
   words: NonNullable<ReturnType<typeof parseWords>>,
   tick: number,
   events: SimEvent[],
-  counted?: { readonly verb: CountMarkVerb; readonly count: number; readonly caste?: Caste; readonly toTileX?: number; readonly toTileY?: number },
+  counted?: { readonly verb: CountMarkVerb; readonly count: number; readonly caste?: MarkCaste; readonly toTileX?: number; readonly toTileY?: number },
 ): void {
   const own = state.marks.filter((mark) => mark.agentId === agent.id);
   if (state.config.marksPerAgent !== undefined && own.length >= state.config.marksPerAgent) {
@@ -441,8 +441,11 @@ function layMark(
 /**
  * A count mark: a verb and a positive whole requested count. It shares the command floor, the own-ant tile rule and the per-agent mark limit
  * with word marks. Re-laying one with the same agent, verb and tile keeps its
- * claimed ants and changes only its count;
+ * claimed ants and changes only its count and caste;
  * claims are filled and released in the claim pass (marks.ts).
+ * With flyers in the rules, caste flyer lays a flyer mark, which needs an explicit tile, and markId on a mark verb
+ * moves one of the agent's own flyer marks: its tile (LINE: both ends) and count change in place, under the same
+ * tile rules as a new flyer mark, while its id, laid tick, claims and laid order stay.
  */
 function applyCountMark(
   state: SimState,
@@ -456,10 +459,24 @@ function applyCountMark(
   if (input.verb === "REMOVE") return removeCountMark(state, agent, input.markId, tick);
   const rules = state.config.countMarks;
   if (rules === undefined) return fail(agent.id, "count_marks_disabled", "Count marks are not part of this match's rules.");
-  if (input.caste !== undefined && !(COUNT_CASTES as readonly string[]).includes(input.caste)) {
-    return fail(agent.id, "bad_count_mark", `Choose a caste from ${COUNT_CASTES.join(", ")}; omitted means any.`);
+  // Caste flyer exists only in rules with flyers; elsewhere it is an unknown caste, as before.
+  const flyers = state.config.flyers !== undefined;
+  const castes: readonly string[] = flyers ? [...COUNT_CASTES, "flyer"] : COUNT_CASTES;
+  if (input.caste !== undefined && !castes.includes(input.caste)) {
+    return fail(agent.id, "bad_count_mark", `Choose a caste from ${castes.join(", ")}; omitted means any.`);
   }
-  const caste = input.caste === "worker" || input.caste === "soldier" ? input.caste : undefined;
+  // With flyers, markId on a mark verb moves that flyer mark; without them it is ignored there, as before.
+  const moving = flyers && input.markId !== undefined;
+  const moved = moving ? state.marks.find((m) => m.id === input.markId && m.agentId === agent.id && m.count !== undefined) : undefined;
+  if (moving) {
+    if (moved === undefined || moved.caste !== "flyer") {
+      return fail(agent.id, "bad_count_mark", "markId moves one of your own flyer count marks still on the map; leave markId out to lay a new mark.");
+    }
+    if (input.verb !== moved.verb) return fail(agent.id, "bad_count_mark", `A moved mark keeps its verb: send verb ${moved.verb} to move mark ${moved.id}.`);
+    if (input.caste !== undefined && input.caste !== "flyer") return fail(agent.id, "bad_count_mark", "A moved flyer mark stays caste flyer; leave caste out or use flyer.");
+  }
+  const caste: MarkCaste | undefined = moved !== undefined ? "flyer"
+    : input.caste === "worker" || input.caste === "soldier" || input.caste === "flyer" ? input.caste : undefined;
   const verbs = countMarkVerbs(state.config);
   const verb = verbs.find(verb => verb === input.verb) ?? null;
   if (verb === null || !Number.isInteger(input.count) || input.count < 1) {
@@ -471,6 +488,13 @@ function applyCountMark(
   }
   if (verb === "FORAGE" && caste === "soldier") {
     return fail(agent.id, "bad_count_mark", "FORAGE recruits workers only; leave caste out or use worker.");
+  }
+  if (verb === "FORAGE" && caste === "flyer") {
+    return fail(agent.id, "bad_count_mark", "Flyers never forage; FORAGE recruits workers only.");
+  }
+  // Flyers never join a squad, so a flyer mark has no squad tile to land on: it names its tile.
+  if (caste === "flyer" && input.tileX === undefined && input.tileY === undefined) {
+    return fail(agent.id, "bad_count_mark", `${moved === undefined ? "A flyer mark" : "Moving a flyer mark"} needs whole-number tileX and tileY in your colony's current sight.`);
   }
   const line = lineMarksEnabled(state.config) ? lineEndpoint(state, agent, input, verb) : null;
   if (line !== null && "error" in line) return line.error;
@@ -505,9 +529,18 @@ function applyCountMark(
   const planner = !localRulesSide(state, agent.colony);
   const free = live.filter((ant) => ant.squad === null && (ant.claim === undefined || !marks.has(ant.claim)) && !(planner && ant.role === "guard")
     && countMarkCasteEligible(state.config, ant, { verb, caste })).length;
-  const same = state.marks.find((m) => m.agentId === agent.id && m.verb === verb && m.tileX === tile.tileX && m.tileY === tile.tileY
+  const same = moved !== undefined ? undefined : state.marks.find((m) => m.agentId === agent.id && m.verb === verb && m.tileX === tile.tileX && m.tileY === tile.tileY
     && m.toTileX === to?.tileX && m.toTileY === to?.tileY);
-  if (same !== undefined) {
+  if (moved !== undefined) {
+    moved.tileX = tile.tileX;
+    moved.tileY = tile.tileY;
+    if (to !== undefined) {
+      moved.toTileX = to.tileX;
+      moved.toTileY = to.tileY;
+    }
+    moved.count = input.count;
+    moved.revision = (moved.revision ?? 0) + 1;
+  } else if (same !== undefined) {
     same.count = input.count;
     if (caste === undefined) delete same.caste;
     else same.caste = caste;
@@ -517,7 +550,7 @@ function applyCountMark(
       ...(to === undefined ? {} : { toTileX: to.tileX, toTileY: to.tileY }) });
   }
   if (rules.reportClaimAvailability) {
-    const mark = same ?? state.marks.at(-1)!;
+    const mark = moved ?? same ?? state.marks.at(-1)!;
     const availability = { claimedAnts: claimed, freeAntsNow: free };
     const event: Extract<SimEvent, { type: "count_mark_accepted" }> = {
       type: "count_mark_accepted", tick, markId: mark.id, agentId: agent.id, colony: agent.colony,
@@ -539,12 +572,14 @@ function applyCountMark(
  * Rules 27 set_brood: set the brood of one live queen of the agent's
  * colony that it owns; queenId is needed only when it owns more than one. It
  * never reads or writes the command floor (lastCommandTick) and does not wake a
- * command-idle agent; on acceptance only that queen's brood changes.
+ * command-idle agent; on acceptance only that queen's brood changes. With flyers in the config (SimConfig.flyers)
+ * every colony may also set flyers, from tick 0; without them flyers is an unknown brood, as before.
  */
 function setBrood(state: SimState, agent: Agent, input: Extract<SimInput, { type: "set_brood" }>): InputOutcome {
   const { config } = state;
   if (config.castes === undefined) return fail(agent.id, "bad_brood", "set_brood is not available in these rules.");
-  if (!(BROODS as readonly unknown[]).includes(input.brood)) return fail(agent.id, "bad_brood", `brood is one of ${BROODS.join(", ")}.`);
+  const broods: readonly QueenBrood[] = config.flyers === undefined ? BROODS : [...BROODS, "flyers"];
+  if (!(broods as readonly unknown[]).includes(input.brood)) return fail(agent.id, "bad_brood", `brood is one of ${broods.join(", ")}.`);
   const owned = (state.colonies[agent.colony].queens ?? []).filter((q) => q.lostTick === null && q.owner === agent.id);
   if (owned.length === 0) return fail(agent.id, "no_owned_queen", "You own no live queen, so there is no brood to set. Found one with found_queen.");
   const queen = input.queenId === undefined ? (owned.length === 1 ? owned[0] : undefined) : owned.find((q) => q.id === input.queenId);
@@ -554,7 +589,7 @@ function setBrood(state: SimState, agent: Agent, input: Extract<SimInput, { type
       ? fail(agent.id, "bad_brood", `You own ${owned.length} live queens (queenId ${ids}); send queenId to choose one.`)
       : fail(agent.id, "no_owned_queen", `Queen ${input.queenId} is not a live queen you own; yours: queenId ${ids}.`);
   }
-  queen.brood = input.brood as Brood;
+  queen.brood = input.brood as QueenBrood;
   return { agentId: agent.id, error: null, broodSet: { queenId: queen.id, brood: queen.brood } };
 }
 
@@ -700,7 +735,8 @@ export function fillSquads(state: SimState, allocator: Allocator, tick: number, 
     const spare = allocator.rankSpare(
       state,
       colony,
-      state.ants.filter((ant) => ant.colony === colony && ant.squad === null && ant.claim === undefined),
+      // Only flyer marks order flyers: a flyer never joins a squad.
+      state.ants.filter((ant) => ant.colony === colony && ant.squad === null && ant.claim === undefined && ant.flyer !== true),
     );
     let next = 0;
     for (const agent of wanting) {
@@ -893,7 +929,7 @@ export function foundQueen(state: SimState, colonyId: ColonyId, tileX: number, t
   const id = colony.queens.length;
   colony.queens.push({ id, queenX: tileCentre(tileX), queenY: tileCentre(tileY), foundedTick: tick,
     lastHatchTick: tick, overrunTicks: 0, lostTick: null,
-    ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, lastBiteTick: -config.queenHp.biteIntervalTicks, regenFromTick: tick }) });
+    ...(config.queenHp === undefined ? {} : { hp: config.queenHp.hp, ...("biteIntervalTicks" in config.queenHp ? { lastBiteTick: -config.queenHp.biteIntervalTicks } : {}), regenFromTick: tick }) });
   colony.foodStore -= cost;
   colony.lastQueenFoundedTick = tick;
   events.push({ type: "queen_founded", tick, colony: colonyId, queenId: id, tileX, tileY,

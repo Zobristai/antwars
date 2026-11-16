@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { BALANCE_STRATEGIES, balanceBroodAtCheckpoint, balanceFoundingCommand, balanceSummary, hatchExperimentSummary, playBalanceMatch } from "./balance.js";
-import { parseHatchArm, selectHatchArm } from "./hatchVariants.js";
+import { hatchArmConfig, hatchArmLabel, parseHatchArm, selectHatchArm } from "./hatchVariants.js";
 import { PUBLIC_CONFIG, RULES_NAMES, rulesConfig, type SimConfig } from "../../src/sim/config.js";
 import { stateHash } from "../../src/sim/log.js";
 import { buildGrid, createMatch } from "../../src/sim/map.js";
@@ -10,8 +10,10 @@ import { step } from "../../src/sim/step.js";
 import { takeView, type AgentView } from "../../src/sim/view.js";
 import { addAnt, emptyMatch } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
-const rules = playable(rulesConfig("redesign"));
+// The hatch experiment compares rules-27 timings, so it plays the frozen rules-27 redesign config.
+const rules = playable(rules27Redesign());
 const short = { ...rules, terrain: undefined, foodLayout: undefined, matchTicks: 25 };
 
 function founderView(): AgentView {
@@ -31,11 +33,26 @@ describe("hatch experiment selection and figures", () => {
     expect(historical).not.toHaveProperty("hatchTiming");
     expect(selectHatchArm(historical, "A").hatchTiming).toEqual({ soldierIntervalMultiplier: 2 });
     expect(JSON.stringify(rules)).toBe(before);
-    for (const name of RULES_NAMES) expect(rulesConfig(name).hatchTiming).toEqual(name === "redesign" ? { soldierIntervalMultiplier: 2 } : undefined);
+    for (const name of RULES_NAMES) expect(rulesConfig(name).hatchTiming).toBeUndefined();
+    expect(rulesConfig("redesign").hatchRate).toEqual({ foodPerSecond: 2 });
     expect(PUBLIC_CONFIG).not.toHaveProperty("hatchTiming");
     expect(parseHatchArm("main")).toBe("main");
     expect(parseHatchArm("A")).toBe("A");
     for (const rejected of ["B", "b", "live"]) expect(() => parseHatchArm(rejected)).toThrow("--hatch-arm");
+  });
+
+  it("runs the committed rules without an arm, and an arm only on the frozen rules-27 redesign, never on a spawn-rate config", () => {
+    const committed = rulesConfig("redesign");
+    expect(hatchArmConfig(committed, null)).toBe(committed);
+    expect(() => selectHatchArm(committed, "A")).toThrow("rules-28 spawn rate");
+    expect(() => selectHatchArm(committed, "main")).toThrow("rules-28 spawn rate");
+    for (const arm of ["main", "A"] as const) {
+      const config = hatchArmConfig(committed, arm);
+      expect(config.hatchRate).toBeUndefined();
+      expect(config).toEqual(selectHatchArm(rules27Redesign(), arm));
+    }
+    expect(hatchArmLabel(null)).toBe("none (committed rules)");
+    expect(hatchArmLabel("main")).toBe("main (rules-27 redesign)");
   });
 
   it("observes live soldier share and unspent food without mutating the tick-3000 state", () => {
@@ -190,17 +207,21 @@ describe("hatch experiment selection and figures", () => {
 
   it("wires both CLIs to arm selection, preserving colonyScale's original scripted observation path", () => {
     const sweep = readFileSync("test/tools/balance-sweep.mjs", "utf8");
-    expect(sweep).toContain('parseHatchArm(arg("hatch-arm", "A"))');
-    expect(sweep).toContain('selectHatchArm(rulesConfig("redesign"), hatchArm)');
+    expect(sweep).toContain('const hatchArm = hatchArmArg === null ? null : parseHatchArm(hatchArmArg);');
+    expect(sweep).toContain('hatchArmConfig(rulesConfig("redesign"), hatchArm)');
     expect(sweep).toContain('arg("founding", "shared")');
     expect(sweep).toContain('founding = priorManifest.founding ?? "off"');
     expect(sweep).toContain('...entry, config, founding, earlyCandidates: earlyCandidates(config)');
     expect(sweep).toContain('hatchExperiment.founding.colonies');
     const scale = readFileSync("test/tools/colonyScale.ts", "utf8");
-    expect(scale).toContain('selectHatchArm(rulesConfig("redesign"), hatchArm)');
+    expect(scale).toContain('hatchArmConfig(rulesConfig("redesign"), hatchArm)');
     expect(scale).toContain("houseMatch(seed, candidateConfig)");
     expect(scale).toContain("observe: [await observeBytes(run.peak, 0), await observeBytes(run.peak, 1)]");
     expect(scale).toContain('client.callTool({ name: "join"');
     expect(scale).toContain("peakTiming: peakTiming(run.peak)");
+    // An arm plays the frozen rules-27 config, so its file is part of each tool's clean-source check and digest.
+    expect(readFileSync("test/tools/hatchVariants.ts", "utf8")).toContain('from "../rules27.ts"');
+    expect(sweep).toContain('"test/tools/hatchVariants.ts", "test/rules27.ts"');
+    expect(scale).toContain('"test/tools/hatchVariants.ts", "test/rules27.ts"');
   });
 });

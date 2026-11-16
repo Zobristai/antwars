@@ -9,14 +9,14 @@ import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type Str
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
 import {
-  MODEL_LABEL, cardSubject, colonyStats, headline, matchTime, nextAntCells, nextAntState, nextHatchCaste, orderTarget,
-  orderText, queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText, type AntInfo,
+  MODEL_LABEL, cardSubject, colonyStats, hatchIntervalTicks, headline, livingAnts, matchTime, nextAntCells, nextAntState, nextHatchCaste,
+  orderTarget, orderText, queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText, type AntInfo,
 } from "../../overlays.ts";
 import { OPEN_COPY, PAGE_COPY, SCORE_COPY, clockTime, decisive, resultHow, significant } from "../../story.ts";
 import { CONNECTING_LINE, ENDED_LINE, SEAT, agentHandle, agentModel, isBenchmark, namedText, ratingResultRows, rowName, type RatingRow, type RowName } from "../../compose.ts";
 import { agentShade, cssColour } from "../../squads.ts";
 import { seatModelName } from "../../pages/model.ts";
-import { boardQueenHp } from "../../variant.ts";
+import { boardQueenHp, rules28Flyer } from "../../variant.ts";
 import type { ModeCopy } from "../../replay.ts";
 import { WAITING_COPY } from "../../waiting.ts";
 import { agentDetail, agentEntries, boardRules, tps, type AgentEntry, type AgentLineModel } from "../hud-model.ts";
@@ -72,6 +72,7 @@ export const PAGE_WORDS = {
   kills: "Kills",
   workers: "Workers",
   soldiers: "Soldiers",
+  flyers: "Flyers",
   food: "Food",
   nextSpawn: "Next spawn",
   agents: "Agents",
@@ -203,7 +204,7 @@ export function balance(frame: Frame | null): Balance {
   const t = shares(b.held[0], b.held[1]);
   // The same living count the economy's Ants cell reads (dials).
   const stats = colonyStats(frame);
-  const living = [stats[0].workers + stats[0].soldiers, stats[1].workers + stats[1].soldiers] as const;
+  const living = [livingAnts(stats[0]), livingAnts(stats[1])] as const;
   const a = shares(living[0], living[1]);
   const early = boardRules(b)?.earlyWin;
   const shown = early !== undefined && b.result === null && t !== null;
@@ -327,7 +328,7 @@ function lamp(q: StreamQueen, frame: Frame, b: Board, fullHp: number | undefined
 
 // ---------------------------------------------------------------- the colony dials: economy
 
-export type Caste = "worker" | "soldier";
+export type Caste = "worker" | "soldier" | "flyer";
 export type NextAntView =
   | { readonly kind: "none" }
   | { readonly kind: "food" }
@@ -337,6 +338,8 @@ export type NextAntView =
 export interface Dial {
   readonly workers: string;
   readonly soldiers: string;
+  /** The living flyers; null where the board's rules have none (rules28Flyer), and the deck shows no Flyers cell. */
+  readonly flyers: string | null;
   /** The store, or "2/6" short of the next ant's cost (nextAntCells). */
   readonly food: string;
   readonly next: NextAntView;
@@ -345,7 +348,7 @@ export interface Dial {
   /** Living ants over the streamed cap ("212/512"); the count alone where the stream carries no cap. */
   readonly ants: string;
 }
-const EMPTY_DIAL: Dial = { workers: EM, soldiers: EM, food: EM, next: { kind: "none" }, nextText: "", ants: EM };
+const EMPTY_DIAL: Dial = { workers: EM, soldiers: EM, flyers: null, food: EM, next: { kind: "none" }, nextText: "", ants: EM };
 
 export function dials(frame: Frame | null): readonly [Dial, Dial] {
   const b = frame?.board;
@@ -354,11 +357,11 @@ export function dials(frame: Frame | null): readonly [Dial, Dial] {
   const rate = tps(b);
   return COLONIES.map((colony): Dial => {
     const s = stats[colony];
-    const living = s.workers + s.soldiers;
+    const living = livingAnts(s);
     const food = nextAntCells(b.stores[colony], b.hatch, living, frame.tick, rate);
     const cap = b.hatch !== null && b.hatch.cap > 0 ? b.hatch.cap : null;
     return {
-      workers: fmt(s.workers), soldiers: fmt(s.soldiers), food: food?.[0] ?? EM,
+      workers: fmt(s.workers), soldiers: fmt(s.soldiers), flyers: rules28Flyer(b) === undefined ? null : fmt(s.flyers), food: food?.[0] ?? EM,
       next: nextAnt(b, colony, living, frame.tick), nextText: scoreHatchStatus(b, colony, living, frame.tick).description,
       ants: cap === null ? fmt(living) : `${fmt(living)}/${fmt(cap)}`,
     };
@@ -380,7 +383,7 @@ function nextAnt(b: Board, colony: Colony, living: number, tick: number): NextAn
     // Due now: the full ring at no wait, never a word such as "eligible".
     case "ready": return { kind: "waiting", caste, fill: 1 };
     case "waiting": {
-      const interval = hatch.intervalTicks * (caste === "soldier" ? boardRules(b)?.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
+      const interval = hatchIntervalTicks(b, hatch, caste, boardRules(b));
       // Every change is a cut: the ring steps in quarters.
       return { kind: "waiting", caste, fill: stepped(spawnFill(state, store.nextHatchTick, interval, tick)) };
     }

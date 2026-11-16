@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
+import { type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { createMatch, matchConfigForMap } from "../../src/sim/map.ts";
 import { colonyCountOf } from "../../src/sim/mapBoard.ts";
@@ -11,6 +11,7 @@ import { selectMap } from "../../src/sim/terrain.ts";
 import { readRulesAssets, startSpectatedServer, type SpectatedServer } from "../../src/spectator.ts";
 import { comparison, startComparisonMatch } from "../server/helpers.ts";
 import { renderRules, ruleSections } from "../../web/rules.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 /** Test-only quadrant geometry (as in test/sim/four-colony.test.ts): nest, water, start area and food off both mirror axes. */
 const QUADRANTS: MapDefinition = {
@@ -35,7 +36,8 @@ const WIDE_QUADRANTS: MapDefinition = {
   },
 };
 
-const LIVE = newMatchConfig(rulesConfig("redesign"));
+// The rules-27 redesign (test/rules27.ts), whose four-colony text these tests state; rules 28 is test/sim/four-colony-rules28.test.ts.
+const LIVE = newMatchConfig(rules27Redesign());
 const quadrantRotation = (maps: readonly MapDefinition[], change: Partial<SimConfig> = {}): SimConfig =>
   ({ ...LIVE, ...change, terrain: { ...LIVE.terrain!, maps } });
 const ROTATION = quadrantRotation([QUADRANTS]);

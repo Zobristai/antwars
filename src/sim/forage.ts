@@ -1,3 +1,4 @@
+import { hatchIntervalOf } from "./config.js";
 import { landBirthPosition, segmentOnLand } from "./terrain.js";
 import { gridScaleOf, resourceCellIndex } from "./gridScale.js";
 import { clearLocalGoal, foodWithinReach, noteFood, noteHome, notePoint } from "./localArrival.js";
@@ -196,14 +197,40 @@ export function nextCaste(state: SimState, colony: ColonyState): Caste {
 /**
  * Rules 27: the caste this queen hatches next. In a colony with at least one
  * agent, her own brood (absent: mixed), mixed alternating per queen from worker;
- * otherwise the colony's caste as nextCaste gives it.
+ * otherwise the colony's caste as nextCaste gives it. A flyer is worker caste.
  */
 export function queenNextCaste(state: SimState, colony: ColonyState, queen: QueenState): Caste {
   if (!state.agents.some((agent) => agent.colony === colony.id)) return nextCaste(state, colony);
   const brood = queen.brood ?? "mixed";
-  if (brood === "workers") return "worker";
+  if (brood === "workers" || brood === "flyers") return "worker";
   if (brood === "soldiers") return "soldier";
   return queen.mixedNext ?? "worker";
+}
+
+/**
+ * What a nest hatches next and on what terms: its kind (a flyer is worker caste), the caste it is born with (absent
+ * without castes), the food it costs and the ticks its clock must have run. hatch() charges and times every birth by
+ * it, and the spectator stream forecasts from it.
+ */
+export interface NextHatch {
+  readonly kind: "worker" | "soldier" | "flyer";
+  readonly caste: Caste | undefined;
+  readonly cost: number;
+  readonly interval: number;
+}
+
+/**
+ * The next hatch of a colony's original timer (queen absent) or of one of its queens. A queen on flyer brood hatches a
+ * flyer only with flyers in the config and an agent in her colony, as only an owner's set_brood sets that brood.
+ */
+export function nextHatchOf(state: SimState, colony: ColonyState, queen?: QueenState): NextHatch {
+  const { config } = state;
+  if (queen !== undefined && queen.brood === "flyers" && config.flyers !== undefined && state.agents.some((agent) => agent.colony === colony.id)) {
+    return { kind: "flyer", caste: "worker", cost: config.flyers.cost, interval: hatchIntervalOf(config, "flyer") };
+  }
+  const caste = config.castes === undefined ? undefined : queen === undefined ? nextCaste(state, colony) : queenNextCaste(state, colony, queen);
+  return { kind: caste === "soldier" ? "soldier" : "worker", caste,
+    cost: caste === "soldier" ? config.castes!.soldierCost : config.hatchCost, interval: hatchIntervalOf(config, caste) };
 }
 
 /**
@@ -212,6 +239,8 @@ export function queenNextCaste(state: SimState, colony: ColonyState, queen: Quee
  * soldierCost, and the hatch waits until the store covers the next caste.
  * Rules 27: in a colony with an agent each queen follows her own brood instead.
  * Stored hatch timing charges the next caste's full interval at its own nest.
+ * With flyers in the config, a queen on flyer brood hatches flyers: worker caste, flyers.hp, flyers.cost food,
+ * one per flyer interval on her own clock; a newborn flyer takes no spawn walk and holds the tile it hatched on.
  * A colony in `leaving` (a four-colony colony the server ends idle this tick) hatches nothing.
  */
 export function hatch(state: SimState, tick: number, events: SimEvent[], observeShortfall?: (record: HatchBlockedRecord) => void,
@@ -224,11 +253,8 @@ export function hatch(state: SimState, tick: number, events: SimEvent[], observe
     // Rules 27: the same condition queenNextCaste tests; agents never leave the state mid-hatch.
     const ownBrood = colony.queens !== undefined && state.agents.some((agent) => agent.colony === colony.id);
     for (const nest of nests) {
-    const caste = config.castes === undefined ? undefined
-      : colony.queens === undefined ? nextCaste(state, colony) : queenNextCaste(state, colony, nest as QueenState);
-    const cost = caste === "soldier" ? config.castes!.soldierCost : config.hatchCost;
-    const interval = config.hatchIntervalTicks *
-      (caste === "soldier" ? config.hatchTiming?.soldierIntervalMultiplier ?? 1 : 1);
+    const { kind, caste, cost, interval } = colony.queens === undefined ? nextHatchOf(state, colony) : nextHatchOf(state, colony, nest as QueenState);
+    const flyer = kind === "flyer";
     if (colony.foodStore < cost) {
       // Food-shortfall measure: the nest could hatch now but for food. Read-only.
       if (observeShortfall !== undefined && tick - nest.lastHatchTick >= interval) {
@@ -249,8 +275,13 @@ export function hatch(state: SimState, tick: number, events: SimEvent[], observe
     const id = state.nextAntId;
     state.nextAntId += 1;
     const born = newAnt(config, id, colony.id, position.x, position.y, caste);
+    if (flyer) {
+      born.flyer = true;
+      born.hp = config.flyers!.hp;
+      born.holdPoint = { tileX: Math.floor(position.x / SUB), tileY: Math.floor(position.y / SUB) };
+    }
     state.ants.push(born);
-    if (colony.queens !== undefined) startSpawnWalk(state, nest as QueenState, born);
+    if (colony.queens !== undefined && !flyer) startSpawnWalk(state, nest as QueenState, born);
     colony.foodStore -= cost;
     if (caste !== undefined && ownBrood) {
       const queen = nest as QueenState;

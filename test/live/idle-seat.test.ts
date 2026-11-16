@@ -7,12 +7,13 @@ import { step } from "../../src/sim/step.ts";
 import type { SimInput } from "../../src/sim/types.ts";
 
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 const roundTrip = (message: StreamMessage) => decodeMessage(encodeMessage(message));
 
 describe("command-idle stream and existing IDLE rail helper", () => {
   it("matches simulation expiry across incremental calls, binary roundtrips and reconnect snapshots", () => {
     // This version-8 fixture predates the terrain extension.
-    let state = createMatch(42, playable({ ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks: 5, commandFloorTicks: 1 }));
+    let state = createMatch(42, playable({ ...rules27Redesign(), terrain: undefined, commandIdleTicks: 5, commandFloorTicks: 1 }));
     const recorder = new SpectatorRecorder(state);
     const opening = roundTrip({ ...recorder.initial(), full: recorder.initialFull() });
     expect(encodeMessage(opening)[2]).toBe(GRID_SCALE_STREAM_VERSION);
@@ -53,7 +54,7 @@ describe("command-idle stream and existing IDLE rail helper", () => {
   });
 
   it("keeps historical call-based IDLE semantics when command timing is absent", () => {
-    const recorder = new SpectatorRecorder(createMatch(44, playable({ ...rulesConfig("redesign"), terrain: undefined, commandIdleTicks: undefined })));
+    const recorder = new SpectatorRecorder(createMatch(44, playable({ ...rules27Redesign(), terrain: undefined, commandIdleTicks: undefined })));
     const message = { ...recorder.initial(), full: recorder.initialFull() };
     expect(encodeMessage(message)[2]).toBe(GRID_SCALE_STREAM_VERSION);
     expect(roundTrip(message).full!.setup).not.toHaveProperty("commandIdleTicks");

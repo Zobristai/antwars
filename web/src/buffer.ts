@@ -30,6 +30,7 @@ import {
   type StreamQueen,
   type StreamAgent,
   type StreamAnts,
+  type StreamEvent,
   type StreamFull,
   type StreamHatch,
   type StreamMark,
@@ -59,6 +60,8 @@ export const RENDER_DELAY_MS = 250;
 export const SPAWN_FADE_MS = 400;
 export const CORPSE_FADE_MS = 3000;
 export const FIGHT_EFFECT_MS = 900;
+/** A flyer's take-off or landing shows as a moment at its ground point for this long. */
+export const FLIGHT_MOMENT_MS = 800;
 export const MARK_LIFE_MS = 180_000;
 /**
  * Event-driven motion, all on the playback clock: a bite on a queen flashes her
@@ -184,6 +187,19 @@ export interface Fight {
   x: number;
   y: number;
   tick: number;
+  ageMs: number;
+}
+
+/** A flyer's take-off or landing as the stream carries it (src/live/format.ts). */
+export type StreamFlightEvent = Extract<StreamEvent, { kind: "takeoff" | "landing" }>;
+
+/** A flyer's take-off or landing, where it happened (tiles), aged on the delayed clock. */
+export interface Flight {
+  antId: number;
+  kind: "takeoff" | "landing";
+  colony: Colony;
+  x: number;
+  y: number;
   ageMs: number;
 }
 
@@ -429,6 +445,8 @@ export class Frame {
   carrying = new Uint8Array(0);
   corpses: Corpse[] = [];
   fights: Fight[] = [];
+  /** Take-offs and landings within FLIGHT_MOMENT_MS. */
+  flights: Flight[] = [];
   /** Delayed, event-confirmed pairs; never reconstructed from proximity alone. */
   engagements: readonly Engagement[] = [];
   /** Shared capped travel/combat facing; null for hand-built frames. Canonical rotation stays untouched. */
@@ -437,6 +455,11 @@ export class Frame {
   drawX: Float64Array | null = null;
   drawY: Float64Array | null = null;
   marks: VisibleMark[] = [];
+  /**
+   * The whole board's marks where board holds one colony's view of them (TeamView), so a patrol chain is linked as the
+   * simulation links it even where the view hides some of its waypoints; null where board.marks are the whole board's.
+   */
+  chainMarks: readonly StreamMark[] | null = null;
   /** Bites on a queen within HIT_FLASH_MS. */
   hits: QueenHit[] = [];
   /**
@@ -1005,7 +1028,9 @@ export class Playback {
   private births = new Map<number, number>();
   private deaths: { antId: number; tick: number; x: number; y: number; colony: Colony }[] = [];
   private dead = new Set<number>();
-  private fights: { a: number; b: number; tick: number; x: number; y: number }[] = [];
+  private fights: Omit<Fight, "ageMs">[] = [];
+  /** Take-offs and landings at the tick of their message, in sub-tile units. */
+  private flights: { antId: number; kind: Flight["kind"]; colony: Colony; tick: number; x: number; y: number }[] = [];
   private readonly engagementTracker = new EngagementTracker();
   /** Each queen's HP as last streamed, and the bites read as drops in it. */
   private lastHp = new Map<string, number>();
@@ -1061,6 +1086,8 @@ export class Playback {
           y = (ants.y[i]! + ants.y[j]!) / 2;
         }
         this.fights.push({ a: e.antId, b: e.targetId, tick: m.tick, x, y });
+      } else if (e.kind === "takeoff" || e.kind === "landing") {
+        this.flights.push({ antId: e.antId, kind: e.kind, colony: e.colony, tick: m.tick, x: e.x, y: e.y });
       } else if (e.kind === "mark" && !this.markShown.has(e.mark.id)) {
         // A count mark re-laid in place, or whose claims changed, comes as another mark event: its age is its first showing's.
         this.markShown.set(e.mark.id, m.tick);
@@ -1182,6 +1209,7 @@ export class Playback {
     this.deaths = [];
     this.dead = new Set();
     this.fights = [];
+    this.flights = [];
     this.hits = [];
     this.births = new Map();
     if (!sameMatch) {
@@ -1240,7 +1268,7 @@ export class Playback {
       frame.board = null;
       frame.ants = null;
       frame.count = 0;
-      frame.corpses.length = frame.fights.length = frame.marks.length = frame.hits.length = 0;
+      frame.corpses.length = frame.fights.length = frame.flights.length = frame.marks.length = frame.hits.length = 0;
       frame.engagements = [];
       frame.story = [];
       frame.chat = [];
@@ -1329,6 +1357,11 @@ export class Playback {
       const age = rt - f.tick * TICK_MS;
       if (age >= 0 && age < FIGHT_EFFECT_MS) frame.fights.push({ a: f.a, b: f.b, tick: f.tick, x: f.x / SUB_TILE, y: f.y / SUB_TILE, ageMs: age });
     }
+    frame.flights.length = 0;
+    for (const f of this.flights) {
+      const age = rt - f.tick * TICK_MS;
+      if (age >= 0 && age < FLIGHT_MOMENT_MS) frame.flights.push({ antId: f.antId, kind: f.kind, colony: f.colony, x: f.x / SUB_TILE, y: f.y / SUB_TILE, ageMs: age });
+    }
     frame.marks.length = 0;
     for (const m of A.board.marks) {
       const age = rt - (this.markShown.get(m.id) ?? m.laidTick + 1) * TICK_MS;
@@ -1350,6 +1383,7 @@ export class Playback {
     if (ai > 4) this.held.splice(0, ai - 4);
     if (this.deaths.length > 4096) this.deaths = this.deaths.filter((d) => rt - d.tick * TICK_MS < CORPSE_FADE_MS);
     if (this.fights.length > 4096) this.fights = this.fights.filter((f) => rt - f.tick * TICK_MS < FIGHT_EFFECT_MS);
+    if (this.flights.length > 4096) this.flights = this.flights.filter((f) => rt - f.tick * TICK_MS < FLIGHT_MOMENT_MS);
     if (this.hits.length > 1024) this.hits = this.hits.filter((h) => rt - h.tick * TICK_MS < HIT_FLASH_MS);
     if (this.playout) this.drawnFrame = frame;
     return true;

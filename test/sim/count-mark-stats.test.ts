@@ -7,9 +7,13 @@ import { claimCountMarks, expireMarks } from "../../src/sim/marks.js";
 import type { Agent, Ant, ColonyId, Mark, SimEvent, SimState } from "../../src/sim/types.js";
 import { takeView } from "../../src/sim/view.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
+import { rules27Redesign } from "../rules27.ts";
 
-const RULES: SimConfig = { ...rulesConfig("redesign"), terrain: undefined, foodLayout: undefined,
-  combatGraceTicks: 0, defenderBonusPermille: 1000, commandFloorTicks: 1, squadSize: 1 };
+const combatScene = (base: SimConfig): SimConfig => ({ ...base, terrain: undefined, foodLayout: undefined,
+  combatGraceTicks: 0, defenderBonusPermille: 1000, commandFloorTicks: 1, squadSize: 1 });
+const RULES = combatScene(rulesConfig("redesign"));
+// The defender-bonus and queen-bite totals below depend on the rules-27 unit figures.
+const RULES_27 = combatScene(rules27Redesign());
 function scene(config: SimConfig = RULES) { return emptyMatch(2000, config); }
 function mark(state: SimState, colony: ColonyId, patch: Partial<Mark> = {}): Mark {
   const result: Mark = { id: state.nextMarkId++, colony, agentId: `seat-${colony}`, tileX: 30, tileY: 20,
@@ -82,7 +86,7 @@ describe("count-mark combat totals", () => {
   });
 
   it("uses damage after the defender bonus rather than caste or attacker order", () => {
-    const state = scene({ ...RULES, defenderBonusPermille: 2000 });
+    const state = scene({ ...RULES_27, defenderBonusPermille: 2000 });
     const worker = mark(state, 0), soldier = mark(state, 0);
     const a = fighter(state, 0, worker, { x: 29 * SUB + 500 });
     fighter(state, 0, soldier, { caste: "soldier" });
@@ -138,7 +142,7 @@ describe("count-mark combat totals", () => {
   });
 
   it.each([100, 150, 200])("includes queen bites in kill credit (queen damage %s)", biteDamage => {
-    const state = scene({ ...RULES, queenHp: { ...RULES.queenHp!, biteDamage } });
+    const state = scene({ ...RULES_27, queenHp: { ...RULES_27.queenHp!, biteDamage } });
     const own = mark(state, 0), enemy = mark(state, 1);
     const queen = state.colonies[0].queens![0]!;
     const x = Math.floor(queen.queenX / SUB), y = Math.floor(queen.queenY / SUB);

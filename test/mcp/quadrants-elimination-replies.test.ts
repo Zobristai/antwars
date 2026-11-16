@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { rulesConfig, type MapDefinition } from "../../src/sim/config.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import type { SimState } from "../../src/sim/types.js";
-import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../../src/sim/view.js";
+import { CELL_ENCODING, FLYER_CELL_ENCODING, FOUR_COLONY_CELL_ENCODING, FOUR_COLONY_FLYER_CELL_ENCODING } from "../../src/sim/view.js";
 import { startHarness, TEST_MCP_CONFIG, type Harness, type TestAgent } from "./harness.js";
 
 /** Test-only quadrant geometry, not a production map. */
@@ -127,7 +127,12 @@ async function advertisedDecoderFits(seat: TestAgent, match: SimState, why: stri
   const observed = await call(seat, "observe");
   const cells = observed.data.view?.cells;
   expect(cells, `${why}: ${observed.text}`).toBeDefined();
-  expect(advertised, `${why}: advertised decoder vs served encoding`).toContain(cells.encoding);
+  // Where the match has flyers, the served grammar adds the flyer clause to the advertised decoder, and the description
+  // points to cells.encoding for it.
+  const flyerGrammar = cells.encoding === FLYER_CELL_ENCODING || cells.encoding === FOUR_COLONY_FLYER_CELL_ENCODING;
+  const decoder = cells.encoding === FLYER_CELL_ENCODING ? CELL_ENCODING : cells.encoding === FOUR_COLONY_FLYER_CELL_ENCODING ? FOUR_COLONY_CELL_ENCODING : cells.encoding;
+  expect(advertised, `${why}: advertised decoder vs served encoding`).toContain(decoder);
+  if (flyerGrammar) expect(advertised, `${why}: flyer states per cells.encoding`).toContain("In cells, each flyer in sight, yours or the enemy's, adds its state, grounded, flying or hovering, per cells.encoding.");
   // Two colonies: hp=floor(k/6), kind=k%6, even/odd colony, kind 0/1, 2/3, 4/5 = no caste, worker, soldier.
   // Four colonies: n=colonies; hp=floor(k/(3n)), r=k%(3n); colony=r%n; caste=floor(r/n).
   const n: number = four ? cells.colonies : 2;

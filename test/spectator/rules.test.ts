@@ -13,6 +13,7 @@ import { readRulesAssets, startSpectatedServer, type SpectatedServer } from "../
 import { PAGE_COPY } from "../../web/src/story.ts";
 import { PRE_FRONTLINE_PUBLIC_CONFIG } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 import { comparison, startComparisonMatch } from "../server/helpers.ts";
 import { LOG_EXPLAINER, MODEL_INDEX_MATCH_LINES, VISUAL_KEY, count, queensRoute, renderRules, ruleSections, sectionId } from "../../web/rules.ts";
 import { ruleGroups } from "../../web/src/pages/model.ts";
@@ -112,14 +113,19 @@ describe("shared rules", () => {
   it("teaches worker and soldier hatch intervals from the live config", () => {
     const live = rulesConfig("redesign");
     const text = renderRules(live);
-    expect(text).toContain("hatch a worker every 1 second when food is available");
-    expect(text).toContain("Each soldier takes 2 hatch intervals (2 seconds) at its own queen; workers take one interval.");
+    expect(text).toContain("Each queen hatches at 2 food per second: a worker every 1 second and a soldier every 3 seconds when food is available");
+    expect(text).toContain("The starting queen&#39;s first worker can hatch at once (tick 0) and her first soldier after 2 seconds (tick 20)."); // the page escapes the apostrophe
     expect(text).toContain("Each live queen hatches independently");
-    const changed = renderRules({ ...live, ticksPerSecond: 20, hatchIntervalTicks: 30,
-      hatchTiming: { soldierIntervalMultiplier: 3 } });
-    expect(changed).toContain("hatch a worker every 1.5 seconds");
-    expect(changed).toContain("Each soldier takes 3 hatch intervals (4.5 seconds)");
-    expect(renderRules({ ...live, hatchTiming: undefined })).toContain("hatch an ant every 1 second");
+    expect(text).not.toContain("hatch intervals");
+    const faster = renderRules({ ...live, hatchRate: { foodPerSecond: 3 } });
+    expect(faster).toContain("a worker every 0.7 seconds and a soldier every 2 seconds");
+    expect(faster).toContain("her first soldier after 1.3 seconds (tick 13)");
+    // Rules 27 (operator comparisons, old recordings' pages): one interval, a soldier multiplier, no first-hatch line.
+    const old = renderRules(newMatchConfig(rules27Redesign()));
+    expect(old).toContain("hatch a worker every 1 second when food is available");
+    expect(old).toContain("Each soldier takes 2 hatch intervals (2 seconds) at its own queen; workers take one interval.");
+    expect(old).not.toContain("first worker can hatch");
+    expect(renderRules({ ...newMatchConfig(rules27Redesign()), hatchTiming: undefined })).toContain("hatch an ant every 1 second");
   });
   it.each(["v4", "count-marks", "redesign"] as const)("explains the %s idle countdown with the same words as the agent rules", rules => {
     const config = rulesConfig(rules);
@@ -181,7 +187,7 @@ describe("shared rules", () => {
     expect(text).not.toContain("keeps the house bot");
     expect(text).toContain("count_mark with verb DEFEND, FORAGE, ATTACK, GATHER");
     expect(text).toContain("order, count_mark and found_queen share one allowance");
-    expect(text).toContain("Each queen has 40 HP");
+    expect(text).toContain("Each queen has 100 HP");
     expect(text).toContain("no damage before 300 seconds");
     expect(text).toContain("Kill every enemy queen");
     expect(text).not.toContain("enemy majority");
@@ -257,9 +263,8 @@ describe("shared rules", () => {
     expect(count(2, "second")).toBe("2 seconds");
     expect(count(0.5, "tile")).toBe("0.5 tiles");
     const redesign = rulesConfig("redesign");
-    expect(redesign.hatchIntervalTicks / redesign.ticksPerSecond).toBe(1);
     const page = renderRules(redesign);
-    expect(page).toContain("hatch a worker every 1 second when food is available");
+    expect(page).toContain("a worker every 1 second and a soldier every 3 seconds when food is available");
     expect(page).not.toMatch(/\b1 (seconds|minutes|tiles|living ants|live queens)\b/);
     const ones = ruleSections({ ...redesign, overrunGraceTicks: 600, queenHp: undefined, matchTicks: 600, colonyCap: 1, overrunRadiusTiles: 1 }).flatMap((s) => s.lines).join(" ");
     for (const text of ["A match lasts 1 minute.", "in the first 1 minute.", "within 1 tile of a queen", "up to 1 living ant per colony"]) expect(ones).toContain(text);
@@ -293,7 +298,7 @@ describe("shared rules", () => {
     expect(ruleSections(rulesConfig("redesign")).find((s) => s.title === "Commands")!.lines[1]).toBe('For example, count_mark DEFEND 15 at tile 30, 32 asks 15 ants outside squads to walk to that tile, hold there and bite only enemies within 2 tiles (incl. diagonals), never chasing; the board and the feed read "DEFEND · any · 15 requested · 12 answered" once 12 have answered.');
     // The starting ants and the cap from config, and alive = started with + hatched − lost, one step from the page.
     expect(ruleSections(rulesConfig("redesign")).find((s) => s.title === "Food and hatching")!.lines.slice(0, 2)).toEqual([
-      `Each colony starts with ${rulesConfig("redesign").startAnts} ants. Foragers pick up food and carry it to a friendly queen. A worker costs ${rulesConfig("redesign").hatchCost} food. A queen can hatch a worker every ${count(rulesConfig("redesign").hatchIntervalTicks / rulesConfig("redesign").ticksPerSecond, "second")} when food is available, up to ${rulesConfig("redesign").colonyCap} living ants per colony.`,
+      `Each colony starts with ${rulesConfig("redesign").startAnts} ants. Foragers pick up food and carry it to a friendly queen. A worker costs ${rulesConfig("redesign").hatchCost} food. Each queen hatches at 2 food per second: a worker every 1 second and a soldier every 3 seconds when food is available, up to ${rulesConfig("redesign").colonyCap} living ants per colony. The starting queen's first worker can hatch at once (tick 0) and her first soldier after 2 seconds (tick 20).`,
       "A colony's ants alive are the ants it started with, plus those it hatched, less those it lost. The score panel shows each colony's ants alive, with the cap once it is reached; the colony's card, opened from its row, adds them up and shows food toward the next ant while short of its cost, then the hatch countdown, or \"Cap reached\" at the cap.",
     ]);
     // Live rules retire the old vocabulary; old recordings still use it.
@@ -351,7 +356,7 @@ it("leads with the configured win routes as minutes-based bullets", () => {
   expect(first.lines).toEqual([
     "Kill every enemy queen. Queens can be hurt after 5 minutes.",
     "From 10 minutes, hold at least 100 original-size tile areas and 6 times the opponent's territory for 5 minutes without a break.",
-    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen bites.",
+    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen strikes.",
   ]);
   const html = renderRules(config);
   const lead = html.slice(html.indexOf('<section id="how-to-win"'), html.indexOf('<section id="overview"'));
@@ -467,7 +472,7 @@ describe("the key and the public route, as the spectator page shows them", () =>
   it("withholds the comparison setup from the public stream while the Rules page names the HP route", () => {
     const { simConfig, includeComparisonSetup } = comparisonOptions({}, DEFAULT_MCP_CONFIG);
     expect(simConfig).toMatchObject({ rules: "redesign", queenHp: {
-      ...QUEEN_HP_RULES, regenClearTiles: QUEEN_HP_RULES.regenClearTiles * NEW_MATCH_GRID_SCALE,
+      hp: 100_000, damagePerSecond: 10_000, regenClearTiles: QUEEN_HP_RULES.regenClearTiles * NEW_MATCH_GRID_SCALE,
     } });
     const recorder = new SpectatorRecorder(createMatch(COMPARISON_SEED, simConfig!));
     const hub = new LiveHub({ includeComparisonSetup });

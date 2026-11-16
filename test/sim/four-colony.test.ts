@@ -11,6 +11,7 @@ import { isBlockedTile } from "../../src/sim/terrain.js";
 import type { Ant, ColonyId, QueenState, SimEvent, SimInput, SimState } from "../../src/sim/types.js";
 import { denseCells, expandCells, takeView, type ViewCell } from "../../src/sim/view.js";
 import { addAnt } from "./fixtures.js";
+import { rules27Redesign } from "../rules27.ts";
 
 /** Test-only quadrant geometry (as in quadrant-map.test.ts): nest, water, start area and food off both mirror axes. */
 const QUADRANTS: MapDefinition = {
@@ -33,8 +34,10 @@ const CLOSE: MapDefinition = {
 };
 
 const LIVE = newMatchConfig(rulesConfig("redesign"));
-const quadrantConfig = (map: MapDefinition, change: Partial<SimConfig> = {}): SimConfig =>
-  ({ ...LIVE, ...change, terrain: { ...LIVE.terrain!, maps: [map] } });
+/** The rules-27 redesign (test/rules27.ts), for tests whose figures and scripted outcomes were set under it. */
+const RULES27 = newMatchConfig(rules27Redesign());
+const quadrantConfig = (map: MapDefinition, change: Partial<SimConfig> = {}, base: SimConfig = LIVE): SimConfig =>
+  ({ ...base, ...change, terrain: { ...base.terrain!, maps: [map] } });
 const SEED = 404;
 const JOINS: SimInput[] = [0, 1, 2, 3].map(c => ({ type: "join", agentId: `a${c}` }));
 const tile = (v: number) => Math.floor(v / SUB);
@@ -77,7 +80,7 @@ const kills = (state: SimState) => state.colonies.map(c => c.kills);
 
 describe("a four-colony match on a quadrant map", () => {
   it("starts one colony in each quadrant at the board's nests, with mirrored ants and quadrant food", () => {
-    const state = createMatch(SEED, quadrantConfig(QUADRANTS));
+    const state = createMatch(SEED, quadrantConfig(QUADRANTS, {}, RULES27));
     const { mapWidth: w, mapHeight: h } = state.config;
     expect([w, h]).toEqual([128, 128]);
     expect(state.colonies.map(c => [tile(c.queenX), tile(c.queenY)])).toEqual([[14, 22], [w - 15, 22], [14, h - 23], [w - 15, h - 23]]);
@@ -109,10 +112,11 @@ describe("a four-colony match on a quadrant map", () => {
   });
 
   it("refuses a config without local ant rules, queen HP or the territory win, and two-colony nest picks", () => {
-    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { localAnts: undefined }))).toThrow("local ant rules");
-    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { queenHp: undefined }))).toThrow("queen HP");
-    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { earlyWin: undefined }))).toThrow("territory win");
-    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { initialQueens: [[{ tileX: 14, tileY: 22 }], [{ tileX: 113, tileY: 22 }]] }))).toThrow("nest picks");
+    // Rules 27, where a config without queen HP is a whole rules generation (rules 28 needs a striking queen).
+    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { localAnts: undefined }, RULES27))).toThrow("local ant rules");
+    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { queenHp: undefined }, RULES27))).toThrow("queen HP");
+    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { earlyWin: undefined }, RULES27))).toThrow("territory win");
+    expect(() => createMatch(SEED, quadrantConfig(QUADRANTS, { initialQueens: [[{ tileX: 14, tileY: 22 }], [{ tileX: 113, tileY: 22 }]] }, RULES27))).toThrow("nest picks");
   });
 
   it("refuses a rotation that mixes quadrant and two-colony maps", () => {
@@ -121,9 +125,9 @@ describe("a four-colony match on a quadrant map", () => {
   });
 
   it("without queen founding gives each colony one queen with HP; she cannot be joined by another and her death eliminates the colony", () => {
-    const { queenFounding: _rules, ...noFounding } = quadrantConfig(QUADRANTS);
+    const { queenFounding: _rules, ...noFounding } = quadrantConfig(QUADRANTS, {}, RULES27);
     const plain = createMatch(SEED, noFounding);
-    const founding = createMatch(SEED, quadrantConfig(QUADRANTS));
+    const founding = createMatch(SEED, quadrantConfig(QUADRANTS, {}, RULES27));
     expect(plain.colonies.map(c => c.queens!.map(q => [q.hp, q.lostTick]))).toEqual([0, 1, 2, 3].map(() => [[40_000, null]]));
     let a = plain, b = founding;
     for (let t = 0; t < 300; t++) {
@@ -163,7 +167,9 @@ describe("enemies in a four-colony match", () => {
 });
 
 describe("kill credit: the hit that takes the target to zero, in damage order", () => {
-  const worker = damagePerTick(LIVE), bite = LIVE.queenHp!.biteDamage;
+  // A queen's hit on one tick: her bite, or under rules 28 her per-tick strike.
+  const queenHp = LIVE.queenHp!, worker = damagePerTick(LIVE);
+  const bite = "biteDamage" in queenHp ? queenHp.biteDamage : Math.trunc(queenHp.damagePerSecond / LIVE.ticksPerSecond);
 
   it("credits the later ant's colony when the earlier hit leaves the ant alive, and the earlier one's when it kills", () => {
     for (const [hp, credited] of [[worker + 1, 2], [worker, 1]] as const) {
@@ -499,7 +505,7 @@ describe("a four-colony match replayed from its log", () => {
   /** Seat a0 lays an ATTACK count mark on colony 1's queen tile every 20 ticks (refused while out of sight);
    * the writer ends colony 3 idle at tick 300, as the server does for a silent seat. */
   function play(attack: boolean) {
-    const config = quadrantConfig(CLOSE, { combatGraceTicks: 0, matchTicks: 1500, queenHp: { ...LIVE.queenHp!, shieldTicks: 0 } });
+    const config = quadrantConfig(CLOSE, { combatGraceTicks: 0, matchTicks: 1500, queenHp: { ...RULES27.queenHp!, shieldTicks: 0 } }, RULES27);
     const state = createMatch(SEED, config);
     const lines = [headerLine(SEED, state.config)], hashes: string[] = [];
     const marks: { tick: number; ok: boolean }[] = [], losses: { tick: number; colony: number }[] = [];

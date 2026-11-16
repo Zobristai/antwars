@@ -44,8 +44,8 @@ describe("ant atlas", () => {
   it("bakes every colony's workers, corpses, carriers, soldiers and biting workers in that colony's colour", () => {
     const { frame, children } = atlas(4);
     const [workers, soldiers, carriers, biters] = children as [Graphics, Graphics, Graphics, Graphics];
-    // Four worker rows, four carrying rows, then four soldier rows at twice the size.
-    expect(frame.height).toBe(8 * CELL_H + 4 * 2 * CELL_H);
+    // Four worker rows, four carrying rows, four soldier rows at twice the size, then two flyer rows per colony.
+    expect(frame.height).toBe(8 * CELL_H + 4 * 2 * CELL_H + 4 * 2 * CELL_H);
     expect(soldiers.y).toBe(8 * CELL_H);
     const cy = (row: number) => row * CELL_H + CELL_H / 2;
     for (let colony = 0; colony < 4; colony++) {
@@ -62,13 +62,13 @@ describe("ant atlas", () => {
 
   it("lays out and draws a two-colony atlas exactly as before four colonies", () => {
     const { frame, children } = atlas();
-    expect(frame.height).toBe(4 * CELL_H + 2 * 2 * CELL_H);
+    expect(frame.height).toBe(4 * CELL_H + 2 * 2 * CELL_H + 2 * 2 * CELL_H);
     const drawing = { frame, children: children.map((c) => ({ x: c.x, y: c.y, sx: c.scale.x, sy: c.scale.y,
       ins: JSON.stringify(instructionsOf(c).map((i) => ({ a: i.action,
         style: (({ color, alpha, width, cap, join }) => ({ color, alpha, width, cap, join }))(i.data.style),
         s: i.data.path?.shapePath.shapePrimitives.map((p) => p.shape) }))) })) };
-    // Hash of this drawing with the code before four colonies, under the same stand-in colours.
-    expect(createHash("sha256").update(JSON.stringify(drawing)).digest("hex")).toBe("9abcbb03fd70abb13340971974c7d06a6ea4d249e0502cba70efb8936dd595d4");
+    // Hash of this drawing with the flyer build's code before four colonies, under the same stand-in colours.
+    expect(createHash("sha256").update(JSON.stringify(drawing)).digest("hex")).toBe("f4c9580a74caa7f003d29c738f960c4bb9a462817b2d7d08a02781cd46f9dc7a");
     expect(atlas(2).frame).toEqual(frame);
   });
 });

@@ -49,8 +49,9 @@ it.each(NEW_MATCH_REPLY_MAP_IDS.map(id => ({ id })))("bounds slot lifecycle repl
       const reply = await agent.client.callTool({ name: tool, arguments: args });
       const text = (reply.content as { text: string }[])[0]!.text;
       const full = tool === "join" || tool === "observe";
-      expect(text.length, `${tool}: ${text.length}`).toBeLessThanOrEqual(full ? MAX_OBSERVE_TEXT_CHARS : 20_000);
-      expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThanOrEqual(full ? MAX_OBSERVE_REPLY_BYTES : 40_960);
+      // Rules replies share the join/observe budget (MAX_RULES_*), as the other slot budget test holds them.
+      expect(text.length, `${tool}: ${text.length}`).toBeLessThanOrEqual(full ? MAX_OBSERVE_TEXT_CHARS : tool === "rules" ? MAX_RULES_TEXT_CHARS : 20_000);
+      expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThanOrEqual(full ? MAX_OBSERVE_REPLY_BYTES : tool === "rules" ? MAX_RULES_REPLY_BYTES : 40_960);
       expect(JSON.parse(text)).toEqual(reply.structuredContent);
       return reply;
     };

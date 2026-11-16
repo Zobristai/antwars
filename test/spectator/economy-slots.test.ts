@@ -29,7 +29,7 @@ describe("fixed economy slots", () => {
       expect(playback.sample(message.tick * TICK_MS + RENDER_DELAY_MS, frame)).toBe(true);
       const n = message.tick === 10 ? 1 : 999;
       for (const stats of colonyStats(frame)) {
-        expect(stats).toEqual({ hatched: n, lost: n, workers: pair === "soldiers-waiting" ? 1 : n, soldiers: pair === "soldiers-waiting" ? n : 1 });
+        expect(stats).toEqual({ hatched: n, lost: n, workers: pair === "soldiers-waiting" ? 1 : n, soldiers: pair === "soldiers-waiting" ? n : 1, flyers: 0 });
       }
       expect(frame.board!.stores[0].food).toBe(pair === "workers-shortage" ? (n === 1 ? 1 : 99998) : (n === 1 ? 7 : 99999));
     }

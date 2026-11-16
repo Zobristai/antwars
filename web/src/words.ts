@@ -20,6 +20,15 @@
  * (placeBadges). Sizes follow the screen and are rebuilt on resize and rotation.
  * A LINE mark (rules 26) keeps that marker and label at its first tile and adds a dotted line to its
  * second, ending in a larger dot (lineDots); one drawing for both boards, through each board's toScreen.
+ * A chain of flyer PATROL marks (the chains the simulation links, airRoutes) keeps each mark's marker and joins them
+ * into an air route: straight dashes on a light halo from marker to marker in chain order, closed into a loop for three
+ * or more (airRouteDashes), each of its markers in a light ring, unlike any ground mark; a lone flyer mark, and every
+ * ground PATROL mark, is its marker alone. A colony's view links its chains from the whole board (Frame.chainMarks), so
+ * where it hides some of a chain's waypoints the route keeps only the legs between waypoints it shows, never a leg
+ * between two the chain does not fly from one to the other.
+ * A flyer LINE mark, a wall its flyers hold in the air, keeps the same marker and label but draws an air segment
+ * instead (airSegment): a solid bar lifted above the ground between its two ends, a post down to the ground at each
+ * end and a faint shadow on the ground under it, so it never reads as a ground line.
  *
  * Font: IBM Plex Mono, Copyright 2017 IBM Corp., licensed under the
  * SIL Open Font License, Version 1.1 (OFL-1.1), bundled from @fontsource.
@@ -29,13 +38,16 @@ import { glyphIconKey } from "./icons/set.ts";
 import { BitmapFont, BitmapText, Container, Graphics, GraphicsPath } from "pixi.js";
 import plexMono500 from "@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2?url";
 import { WORDS } from "../../src/sim/types.ts";
-import { SUB_TILE, type StreamAgent, type StreamMark } from "../../src/live/format.ts";
-import { MARK_LIFE_MS, type Frame } from "./buffer.ts";
+import { linkPatrolMarks } from "../../src/sim/patrol.ts";
+import { SUB_TILE, type StreamAgent, type StreamMark, type StreamSetup } from "../../src/live/format.ts";
+import { MARK_LIFE_MS, type Board, type Frame } from "./buffer.ts";
+import { boardPatrolLinkTiles } from "./variant.ts";
 import { agentShade } from "./squads.ts";
 import { MARK_DOT, TOUCH_TARGET_PX, agentHandle, glyphPolygon, markLabelPx } from "./compose.ts";
 import { OPEN_COPY } from "./story.ts";
 import { markSymbol, markSymbolPolygon } from "./mark-symbols.ts";
 import { CASTE_ICON_PATH } from "./ui/deck/icons.ts";
+import { EVERYWHERE, clipToRect, projectedPath, type Project, type ScreenRect } from "./screen-path.ts";
 
 export const FONT_FAMILY = "IBM Plex Mono";
 export const FONT_LICENCE = "IBM Plex Mono, Copyright 2017 IBM Corp., SIL Open Font License 1.1 (OFL-1.1)";
@@ -420,6 +432,156 @@ export function lineDots(m: Pick<StreamMark, "tileX" | "tileY">, end: { tileX: n
   return { dots, end: [ex, ey] };
 }
 
+/**
+ * A flyer patrol's air route, CSS px: each dash's length and the gap after it along a leg, the dash's width in the
+ * owner's shade, and the light halo under it (ground marks are outlined dark); and the light ring each of its markers
+ * wears just outside its dark outline (ringR, ringW), so a route reads as one even where its markers touch.
+ */
+export const AIR_ROUTE = { dash: 10, gap: 6, width: 2.5, halo: 5.5, ringR: MARK_DOT.ring + 4.5, ringW: 2.5 } as const;
+
+/** How far a marker's ring and its dark outline reach from its centre, CSS px. */
+const MARKER_EDGE = MARK_DOT.ring + (MARK_DOT.ringW + 2.5) / 2;
+
+/**
+ * The patrol link range of the board's rules, in the match's own tiles: the rules' patrolLinkTiles at the setup's grid
+ * scale (12 for redesign at grid scale 2). The public stream withholds the rules' name, so a redesign board is known by
+ * its streamed queen HP, as for its other rules (variant.ts). Null for rules without patrol marks, an unnamed board
+ * without HP, or no setup or grid scale.
+ */
+export function patrolRangeTiles(board: { readonly setup?: StreamSetup; readonly queens?: Board["queens"] } | undefined): number | null {
+  const setup = board?.setup;
+  if (setup?.gridScale === undefined) return null;
+  const tiles = boardPatrolLinkTiles({ setup, queens: board?.queens });
+  return tiles === undefined ? null : tiles * setup.gridScale;
+}
+
+/**
+ * Each air route: a chain of two or more flyer PATROL marks, in chain (laid) order, as the simulation links them
+ * (linkPatrolMarks) at rangeTiles; none without a range. Ground patrol chains are not air routes.
+ */
+export function airRoutes(marks: readonly StreamMark[], rangeTiles: number | null): (readonly StreamMark[])[] {
+  if (rangeTiles === null) return [];
+  const routes = new Set<readonly StreamMark[]>();
+  for (const { chain } of linkPatrolMarks(marks, rangeTiles).values()) if (chain.length > 1 && chain[0]!.caste === "flyer") routes.add(chain);
+  return [...routes];
+}
+
+/**
+ * An air route's dashes, [x0, y0, x1, y1] each, through its markers' screen points in chain order: a leg from each
+ * to the next, and back from the last to the first for three or more (two marks are one leg, flown back and forth).
+ * A waypoint not drawn (null, hidden by a colony's view) has no point, so the legs to and from it have none.
+ * Each leg is straight on screen, never laid along the ground's relief as a LINE mark's dots are, and starts and ends
+ * clear of the markers' rings. A leg too short for a whole dash clear of the rings is one dash across whatever gap is
+ * left between the markers' outlines; a leg with a non-finite end, or between markers that touch, has none.
+ * Only the dashes that reach screen (padded by the halo) are cut, so a leg that projects millions of px long costs no
+ * more than one across the screen. With front, the markers' tile centres and the board's projection that gives no
+ * screen point for ground at or behind the 3D camera's near plane (screen-path.ts), a leg with one marker at or behind
+ * that plane runs from the other marker to where the leg crosses it (projectedPath), with no ring to keep clear of
+ * there, and a leg with neither marker in front has none.
+ */
+export function airRouteDashes(points: readonly (readonly [number, number] | null)[], screen: ScreenRect = EVERYWHERE, front?: { tiles: readonly (readonly [number, number])[]; inFront: Project }): [number, number, number, number][] {
+  const legs = points.length < 2 ? 0 : points.length === 2 ? 1 : points.length;
+  const pad = AIR_ROUTE.halo / 2 + 1;
+  const r = { x0: screen.x0 - pad, y0: screen.y0 - pad, x1: screen.x1 + pad, y1: screen.y1 + pad };
+  const dashes: [number, number, number, number][] = [];
+  for (let i = 0; i < legs; i++) {
+    const j = (i + 1) % points.length;
+    const from = points[i] ?? null, to = points[j] ?? null;
+    if (from === null || to === null) continue;
+    let a = from, b = to, open = false;
+    if (front !== undefined) {
+      // Only the leg's ends: where one is not in front, the point where the leg crosses the near plane.
+      const path = projectedPath(front.tiles[i]!, front.tiles[j]!, front.inFront, 1, 1);
+      if (path === null) continue;
+      if (path.start === null) [a, b, open] = [b, path.points[0]!, true];
+      else if (path.end === null) [b, open] = [path.points[1]!, true];
+    }
+    legDashes(a, b, open, r, dashes);
+  }
+  return dashes;
+}
+
+/** One leg's dashes from marker point a to b, a marker's point or, open, the near plane's crossing; those reaching r. */
+function legDashes([ax, ay]: readonly [number, number], [bx, by]: readonly [number, number], open: boolean, r: ScreenRect, out: [number, number, number, number][]): void {
+  const length = Math.hypot(bx - ax, by - ay);
+  if (!(Number.isFinite(length) && length > 0)) return;
+  const cut = clipToRect([ax, ay], [bx, by], r);
+  if (cut === null) return;
+  const ux = (bx - ax) / length, uy = (by - ay) / length;
+  const dash = (s: number, e: number): [number, number, number, number] => [ax + ux * s, ay + uy * s, ax + ux * e, ay + uy * e];
+  const clear = MARK_DOT.ring + 3, end = length - (open ? 0 : clear);
+  if (end - clear >= AIR_ROUTE.dash) {
+    // Dash k starts at clear + k * period, from its own index; from the first that ends past the leg's part on screen
+    // to the last that starts before its end there.
+    const period = AIR_ROUTE.dash + AIR_ROUTE.gap;
+    const lo = cut[0] * length, hi = Math.min(end, cut[1] * length);
+    for (let k = Math.max(0, Math.floor((lo - clear - AIR_ROUTE.dash) / period) + 1); clear + k * period < hi; k++) {
+      const s = clear + k * period;
+      out.push(dash(s, Math.min(s + AIR_ROUTE.dash, end)));
+    }
+  } else if (length - MARKER_EDGE - (open ? 0 : MARKER_EDGE) >= 1) {
+    out.push(dash(MARKER_EDGE, length - (open ? 0 : MARKER_EDGE)));
+  }
+}
+
+/**
+ * A flyer LINE mark's air segment, CSS px: how far up the screen the bar is lifted above the ground, the bar's width,
+ * the spacing of the points sampled along it and the most pieces it is sampled in (4096 px at that spacing, wider than
+ * a 4K screen), and the widths of the ground shadow and of the end posts.
+ */
+export const AIR_SEGMENT = { lift: 16, w: 3, step: 8, maxSteps: 512, shadowW: 2, postW: 1.5 } as const;
+
+/**
+ * A flyer LINE mark's air segment on screen: the parts of its ground path on screen, each an open polyline (the
+ * shadow), the same parts AIR_SEGMENT.lift px up the screen (the bar), and the ground point of each end whose post
+ * shows, from there up to the bar; null for an end that does not project or is off screen.
+ */
+export interface AirSegment {
+  ground: [number, number][][];
+  air: [number, number][][];
+  start: [number, number] | null;
+  end: [number, number] | null;
+}
+
+/** A flyer LINE mark's second endpoint: a LINE mark of the flyer caste with both ends; null for every other mark. */
+export function airLineEnd(m: Pick<StreamMark, "verb" | "caste" | "toTileX" | "toTileY">): { tileX: number; tileY: number } | null {
+  return m.caste === "flyer" ? lineEnd(m) : null;
+}
+
+/**
+ * A flyer LINE mark's air segment from its marker at screen (x, y) to its far end, on screen: its ground path between
+ * the two tile centres, sampled as the destination lines are (screen-path.ts projectedPath, about AIR_SEGMENT.step px
+ * apart and in at most AIR_SEGMENT.maxSteps pieces) through toScreen, which gives no screen point for ground at or
+ * behind the 3D camera's near plane (on the 3D board the path follows the ground's relief), from the marker's point
+ * to the far end's; then kept only where it is on screen, with room for the bar lifted above it. So a camera close to
+ * the ground costs no more than one that shows the whole segment. Null when nothing of it shows.
+ */
+export function airSegment(m: Pick<StreamMark, "tileX" | "tileY">, end: { tileX: number; tileY: number }, x: number, y: number, toScreen: Project, screen: ScreenRect): AirSegment | null {
+  const path = projectedPath([m.tileX + 0.5, m.tileY + 0.5], [end.tileX + 0.5, end.tileY + 0.5], toScreen, AIR_SEGMENT.step, AIR_SEGMENT.maxSteps);
+  if (path === null) return null;
+  // The bar leaves the marker's centre, where the marker is drawn.
+  const points = path.points;
+  if (path.start !== null) points[0] = [x, y];
+  const pad = (AIR_SEGMENT.w + 2.5) / 2 + 1;
+  const r = { x0: screen.x0 - pad, y0: screen.y0 - pad, x1: screen.x1 + pad, y1: screen.y1 + AIR_SEGMENT.lift + pad };
+  const inside = (p: [number, number] | null) => p !== null && p[0] >= r.x0 && p[0] <= r.x1 && p[1] >= r.y0 && p[1] <= r.y1 ? p : null;
+  // Each piece's part on screen; a point that does not project, or a piece that leaves the screen, ends a part.
+  const ground: [number, number][][] = [];
+  let part: [number, number][] | null = null;
+  for (let k = 1; k < points.length; k++) {
+    const a = points[k - 1], b = points[k];
+    const cut = a && b ? clipToRect(a, b, r) : null;
+    if (!a || !b || cut === null) { part = null; continue; }
+    const at = (t: number): [number, number] => (t === 0 ? a : t === 1 ? b : [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    if (part === null || cut[0] > 0) ground.push(part = [at(cut[0])]);
+    part.push(at(cut[1]));
+    if (cut[1] < 1) part = null;
+  }
+  const start = path.start === null ? null : inside(points[0]!), far = inside(path.end);
+  if (ground.length === 0 && start === null && far === null) return null;
+  return { ground, air: ground.map((g) => g.map(([gx, gy]) => [gx, gy - AIR_SEGMENT.lift])), start, end: far };
+}
+
 /** Where a label's count starts after its padding: past the caste icon (px square) and a gap, or at once with no icon. */
 function figureOffset(px: number, icon: boolean): number {
   return icon ? px + 4 : 1;
@@ -471,6 +633,12 @@ export class Words {
   private pointById = new Map<number, { mark: StreamMark; x: number; y: number }>();
   /** Each live LINE mark's dotted line at the last layout, by mark id (lineDots). */
   private lines = new Map<number, { dots: [number, number][]; end: [number, number] }>();
+  /** Each air route at the last layout: its oldest mark, whose owner shades it; its drawn marks in chain order; its dashes (airRouteDashes). */
+  private routes: { owner: StreamMark; marks: StreamMark[]; dashes: [number, number, number, number][] }[] = [];
+  /** The patrol link range of the last layout's board (patrolRangeTiles), kept while its setup and queens are the same. */
+  private range: { setup: unknown; queens: unknown; tiles: number | null } = { setup: null, queens: null, tiles: null };
+  /** Each live flyer LINE mark's air segment at the last layout, by mark id (airSegment). */
+  private airLines = new Map<number, AirSegment>();
   /**
    * Each squad's badge offset from its anchor ant at the last layout, by agent: the placement choice, which the
    * badge keeps as it follows its ant every frame; and the badge radius.
@@ -641,13 +809,25 @@ export class Words {
     return [...this.lines].map(([id, l]) => ({ id, dots: l.dots, end: l.end }));
   }
 
+  /** Each air route drawn now: its marks' ids in chain order and its dashes on screen, for checks of what is on screen. */
+  drawnRoutes(): { ids: number[]; dashes: [number, number, number, number][] }[] {
+    return this.routes.map((r) => ({ ids: r.marks.map((m) => m.id), dashes: r.dashes }));
+  }
+
+  /** Each flyer LINE mark's air segment drawn now: its mark, and its ground and lifted parts and posts on screen. */
+  drawnAirSegments(): ({ id: number } & AirSegment)[] {
+    return [...this.airLines].map(([id, s]) => ({ id, ...s }));
+  }
+
   /**
    * Lay out and fade this frame's markers. blocked: screen areas covered by the
    * HTML overlays. viewKey changes whenever the camera moves. badgeAnchors: each
    * squad's badge anchor ant on screen [agent, x, y], in rank order, and badgeR
-   * the badge radius: the badges are placed after the markers.
+   * the badge radius: the badges are placed after the markers. inFront: the board's ground projection with no screen
+   * point (NaN) for ground at or behind the 3D camera's near plane, through which the flyer LINE marks' air segments
+   * are sampled and the air routes' legs end at that plane; the 2D board's toScreen already is one.
    */
-  update(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], viewKey: unknown, badgeAnchors: readonly (readonly [number, number, number])[] = [], badgeR = 0): Placer {
+  update(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], viewKey: unknown, badgeAnchors: readonly (readonly [number, number, number])[] = [], badgeR = 0, inFront: Project = toScreen): Placer {
     const visible = frame.marks;
     this.now = frame.tick;
     this.agents = frame.board?.agents ?? [];
@@ -658,7 +838,7 @@ export class Words {
     const key = [frame.board?.marks ?? null, viewKey, blocked.length, visible.length, badgeAnchors.length, Math.floor(frame.tick / 10)];
     if (key.some((v, i) => v !== this.key[i])) {
       this.key = key;
-      this.layout(frame, toScreen, blocked, badgeAnchors, badgeR);
+      this.layout(frame, toScreen, blocked, badgeAnchors, badgeR, inFront);
     }
     this.paint(frame, badgeAnchors);
     const top = visible.reduce<StreamMark | null>((best, v) => (best === null || v.mark.answered > best.answered || (v.mark.answered === best.answered && v.mark.id > best.id) ? v.mark : best), null);
@@ -667,7 +847,7 @@ export class Words {
   }
 
   /** The placement choices: each marker's point, each label's spot, each badge's offset from its anchor. */
-  private layout(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], badgeAnchors: readonly (readonly [number, number, number])[], badgeR: number): void {
+  private layout(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], badgeAnchors: readonly (readonly [number, number, number])[], badgeR: number, inFront: Project): void {
     // One placer, seeded in order: the overlays, the markers with their labels, then the badges.
     const placer = new Placer(this.screen.w, this.screen.h, blocked);
     const dots: Rect[] = [];
@@ -686,10 +866,27 @@ export class Words {
       this.pointById.set(m.id, p);
     }
     // A LINE mark's far end is kept clear like a marker, so labels and badges do not sit on it; its dots are not reserved.
+    // A flyer LINE mark's far end keeps its post clear, from the ground up to the lifted bar, where the post shows; the
+    // bar is not reserved.
     this.lines = new Map();
+    this.airLines = new Map();
+    const screen = { x0: 0, y0: 0, x1: this.screen.w, y1: this.screen.h };
     for (const { mark: m } of frame.marks) {
-      const end = lineEnd(m);
       const p = this.pointById.get(m.id)!;
+      const airEnd = airLineEnd(m);
+      if (airEnd !== null) {
+        const segment = airSegment(m, airEnd, p.x, p.y, inFront, screen);
+        if (segment === null) continue;
+        this.airLines.set(m.id, segment);
+        if (segment.end === null) continue;
+        const [gx, gy] = segment.end;
+        const h = AIR_SEGMENT.w + 3;
+        const r = { x0: gx - h, y0: gy - AIR_SEGMENT.lift - h, x1: gx + h, y1: gy + h };
+        placer.occupy(r);
+        dots.push(r);
+        continue;
+      }
+      const end = lineEnd(m);
       const line = end === null ? null : lineDots(m, end, p.x, p.y, toScreen);
       if (line === null) continue;
       this.lines.set(m.id, line);
@@ -697,6 +894,22 @@ export class Words {
       const r = { x0: line.end[0] - h, y0: line.end[1] - h, x1: line.end[0] + h, y1: line.end[1] + h };
       placer.occupy(r);
       dots.push(r);
+    }
+    // Each air route, linked from the sampled message's whole board as the simulation links them (in a colony's view
+    // too, chainMarks), through its drawn markers, its legs only between waypoints drawn; cut only on screen and in front
+    // of the 3D camera's near plane (inFront); like a LINE mark's dots, its dashes are not reserved.
+    const board = frame.board ?? undefined;
+    if (this.range.setup !== board?.setup || this.range.queens !== board?.queens) {
+      this.range = { setup: board?.setup, queens: board?.queens, tiles: patrolRangeTiles(board) };
+    }
+    this.routes = [];
+    for (const chain of airRoutes(frame.chainMarks ?? frame.board?.marks ?? frame.marks.map((v) => v.mark), this.range.tiles)) {
+      const drawn = chain.map((m) => this.pointById.get(m.id) ?? null);
+      const marks = drawn.flatMap((p) => (p === null ? [] : [p.mark]));
+      if (marks.length === 0) continue;
+      const tiles = chain.map((m) => [m.tileX + 0.5, m.tileY + 0.5] as const);
+      const dashes = airRouteDashes(drawn.map((p) => (p === null ? null : [p.x, p.y] as const)), screen, { tiles, inFront });
+      this.routes.push({ owner: chain[0]!, marks, dashes });
     }
     // Then each count mark's label beside its marker, in the owner's shade, where the layout has room (every
     // marker, panel and nest is already reserved); a crowded mark keeps its reading for the tooltip.
@@ -756,6 +969,28 @@ export class Words {
     const badges = this.paintBadges(badgeAnchors);
     this.badges = badges;
     this.moveLabelsOffBadges([...badges.values()]);
+    // Each air route under the markers, in its oldest mark's owner's shade on a light halo, at its faintest mark's alpha,
+    // and a light ring round each of its markers.
+    if (this.routes.length > 0) {
+      const alpha = new Map(frame.marks.map((v) => [v.mark.id, fadeAlpha(v.ageMs) * exitAlpha(v.ageMs)]));
+      for (const { owner, marks, dashes } of this.routes) {
+        const a = Math.min(...marks.map((m) => alpha.get(m.id) ?? 0));
+        if (!(a > 0)) continue;
+        for (const m of marks) {
+          const p = this.pointById.get(m.id)!;
+          this.dotG.circle(p.x, p.y, AIR_ROUTE.ringR);
+        }
+        this.dotG.stroke({ width: AIR_ROUTE.ringW, color: 0xffffff, alpha: 0.55 * a });
+        if (dashes.length === 0) continue;
+        const trace = () => {
+          for (const [x0, y0, x1, y1] of dashes) this.dotG.moveTo(x0, y0).lineTo(x1, y1);
+        };
+        trace();
+        this.dotG.stroke({ width: AIR_ROUTE.halo, color: 0xffffff, alpha: 0.55 * a, cap: "round" });
+        trace();
+        this.dotG.stroke({ width: AIR_ROUTE.width, color: agentShade(owner.colony, owner.agent, this.agents), alpha: a, cap: "round" });
+      }
+    }
     const dot = MARK_DOT;
     for (const { mark: m, ageMs } of frame.marks) {
       const p = this.pointById.get(m.id);
@@ -768,6 +1003,23 @@ export class Words {
       if (line) {
         for (const [x, y] of line.dots) this.dotG.circle(x, y, LINE_DOTS.r).fill({ color: shade, alpha: a }).stroke({ width: 1.5, color: 0x000000, alpha: 0.7 * a });
         this.dotG.circle(line.end[0], line.end[1], LINE_DOTS.endR).fill({ color: shade, alpha: a }).stroke({ width: 1.5, color: 0x000000, alpha: 0.8 * a });
+      }
+      // A flyer LINE mark's air segment, under its marker: the faint shadow on the ground, a post at each end up to the
+      // bar, and the solid bar lifted above the ground, in the owner's shade on a dark casing at the marker's alpha.
+      const air = this.airLines.get(m.id);
+      if (air) {
+        const round = { cap: "round", join: "round" } as const;
+        if (air.ground.length > 0) this.polylines(air.ground).stroke({ ...round, width: AIR_SEGMENT.shadowW, color: 0x000000, alpha: 0.35 * a });
+        for (const g of [air.start, air.end]) {
+          if (g === null) continue;
+          const post = [[g, [g[0], g[1] - AIR_SEGMENT.lift] as const]];
+          this.polylines(post).stroke({ ...round, width: AIR_SEGMENT.postW + 2, color: 0x000000, alpha: 0.6 * a });
+          this.polylines(post).stroke({ ...round, width: AIR_SEGMENT.postW, color: shade, alpha: a });
+        }
+        if (air.air.length > 0) {
+          this.polylines(air.air).stroke({ ...round, width: AIR_SEGMENT.w + 2.5, color: 0x000000, alpha: 0.6 * a });
+          this.polylines(air.air).stroke({ ...round, width: AIR_SEGMENT.w, color: shade, alpha: a });
+        }
       }
       // The owner's hue remains on the ring; a known command replaces the owner glyph inside it.
       this.dotG.circle(p.x, p.y, dot.ring).stroke({ width: dot.ringW + 2.5, color: 0x000000, alpha: 0.6 * a });
@@ -788,6 +1040,15 @@ export class Words {
       this.plateG.moveTo(lx0, ly0).lineTo(lx1, ly1).stroke({ width: 1.5, color: shade, alpha: 0.9 * exit });
       l.text.alpha = exit;
     }
+  }
+
+  /** Open paths, each through its points, on the markers' Graphics, ready for one stroke (a stroke consumes them). */
+  private polylines(paths: readonly (readonly (readonly [number, number])[])[]): Graphics {
+    for (const points of paths) {
+      this.dotG.moveTo(points[0]![0], points[0]![1]);
+      for (let i = 1; i < points.length; i++) this.dotG.lineTo(points[i]![0], points[i]![1]);
+    }
+    return this.dotG;
   }
 
   /** A label's box at spot, its count after the caste icon's room. */

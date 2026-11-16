@@ -89,7 +89,8 @@ describe("a four-colony match on the 3D board", () => {
       // Dull corpses keep their colony's tint, mixed toward the ground.
       near(abdomen(`corpses${c}`), RGB4[c].map((v, i) => v * 0.8 * 0.45 + [0.55, 0.52, 0.47][i]! * 0.3));
     }
-    expect(ants.meshes).toHaveLength(12);
+    // Per colony: workers, soldiers, flyers in three wing poses (landed, flying, hovering) and corpses.
+    expect(ants.meshes).toHaveLength(24);
     expect(ants.casters).toHaveLength(8);
     // The herds empty again with their colony's ants.
     f.count = 0; f.corpses = []; ants.update(f);
@@ -201,8 +202,10 @@ describe("a two-colony match on the 3D board", () => {
   it("builds exactly the herds it always built, in the same order", () => {
     const before = scene.meshes.length;
     new Ants3D(scene, ground, 0.5, COLONY_RGB);
+    // As the flyer build built them: its flyer herds and their shadows follow the soldiers.
     expect(scene.meshes.slice(before).map((mesh) => mesh.name))
-      .toEqual(["ants0", "ants1", "soldiers0", "soldiers1", "carried-food", "rings", "corpses0", "corpses1"]);
+      .toEqual(["ants0", "ants1", "soldiers0", "soldiers1", "flyers-landed0", "flyers-landed1", "flyers-flying0", "flyers-flying1",
+        "flyers-hovering0", "flyers-hovering1", "flyer-shadows", "carried-food", "rings", "corpses0", "corpses1"]);
     const boxes = new StartBoxes3D(scene, ground, COLONY_RGB);
     expect(boxes.meshes.map((mesh) => mesh.name)).toEqual(["start-box-0", "start-box-1"]);
   });

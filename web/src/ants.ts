@@ -17,12 +17,21 @@
  * big round head and large pale mandibles, so a soldier reads as a solid
  * coloured insect beside the pale-bodied workers even on a phone.
  * Soldiers never carry food, so they have no carrying frames.
+ * A flyer (its stream state, flyer-state.ts flyerOf) has its own frames, a worker's body with
+ * wings: on the ground (grounded or locked out) its wings lie folded along its
+ * abdomen; flying they are spread and swept back; hovering they are held straight
+ * out to each side, blurred by their beat. An airborne flyer is drawn
+ * AIR_LIFT_2D_LENGTHS ant lengths up the screen from its position, where its
+ * shadow stays on the ground (shadowLayer, beneath the ants).
  */
 import { colonyTint } from "./colony-palette.ts";
 import { Container, Graphics, Particle, ParticleContainer, Rectangle, Texture, type Renderer } from "pixi.js";
 import { CORPSE_FADE_MS, type Frame } from "./buffer.ts";
 import { FOOD, FOOD_SHADE } from "./food.ts";
 import { Bites } from "./bite.ts";
+import { AIR_LIFT_2D_LENGTHS } from "./flyer-lift.ts";
+import { flyerOf } from "./flyer-state.ts";
+import type { StreamFlyer } from "../../src/live/format.ts";
 
 /** The rated names' colours (colony-palette.ts gives the match's own). */
 export const COLONY_TINT = [0xffb000, 0x00c2ff] as const;
@@ -53,17 +62,19 @@ function drawCrumb(g: Graphics, ox: number, cy: number) {
   g.circle(ox + 57.3, cy - 1.4, 1.4).fill({ color: 0xffffff, alpha: 0.7 });
 }
 
-function drawAnt(g: Graphics, ox: number, oy: number, frame: number, curled: boolean, accent: number, carrying = false, jawOpen = -1) {
+/** tucked: an airborne flyer's legs, folded in under its body (it stands on nothing). */
+function drawAnt(g: Graphics, ox: number, oy: number, frame: number, curled: boolean, accent: number, carrying = false, jawOpen = -1, tucked = false) {
   const cy = oy + CELL_H / 2;
   // Legs: alternating tripods swing between the walk frames.
-  const swing = curled ? 0 : [-1, 0, 1][frame]!;
+  const swing = curled || tucked ? 0 : [-1, 0, 1][frame]!;
   const legs = (pass: (path: Graphics) => void) => {
     [ox + 30, ox + 35, ox + 40].forEach((hx, i) => {
       const phase = (i % 2 === 0 ? 1 : -1) * swing * 7;
-      const reach = curled ? 7 : 16;
+      const reach = curled ? 7 : tucked ? 8 : 16;
+      const spread = tucked ? 0.45 : 1;
       for (const side of [-1, 1]) {
-        const kneeX = hx + (i - 1) * 6 + phase * side * 0.4;
-        const footX = hx + (i - 1) * 12 + phase * side;
+        const kneeX = hx + (i - 1) * 6 * spread + phase * side * 0.4;
+        const footX = hx + (i - 1) * 12 * spread + phase * side;
         g.moveTo(hx, cy).lineTo(kneeX, cy + side * reach * 0.65).lineTo(footX, cy + side * reach);
       }
     });
@@ -99,6 +110,73 @@ function drawAnt(g: Graphics, ox: number, oy: number, frame: number, curled: boo
   }
   if (carrying) drawCrumb(g, ox, cy);
   g.ellipse(ox + 50, cy - 2, 2.2, 1.2).fill({ color: 0xffffff, alpha: 0.9 });
+}
+
+/** A flyer's look: on the ground (grounded or locked out), flying, hovering. */
+const FLYER_GROUND = 0;
+const FLYER_FLYING = 1;
+const FLYER_HOVERING = 2;
+type FlyerLook = typeof FLYER_GROUND | typeof FLYER_FLYING | typeof FLYER_HOVERING;
+
+/** Wing membrane, a pale smoky blue so it never reads as chitin or food. */
+const WING = 0xd6e9f5;
+
+/** A wing: a leaf from its root (x0, y0) to its tip (x1, y1), w at its widest. */
+function wing(g: Graphics, x0: number, y0: number, x1: number, y1: number, w: number) {
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  // A quadratic's control point sits twice its curve's distance from the chord.
+  const nx = (-(y1 - y0) / len) * w * 2, ny = ((x1 - x0) / len) * w * 2;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  g.moveTo(x0, y0).quadraticCurveTo(mx + nx, my + ny, x1, y1).quadraticCurveTo(mx - nx, my - ny, x0, y0).closePath();
+}
+
+/**
+ * A flyer's wings over its body, in a worker cell's drawing units, kept clear of the head
+ * (x < 44) so a biting flyer's head piece carries none: folded back along the abdomen on
+ * the ground, spread and swept back flying, held straight out to each side hovering.
+ */
+function drawWings(g: Graphics, ox: number, cy: number, look: FlyerLook) {
+  const wings = () => {
+    for (const side of [-1, 1]) {
+      if (look === FLYER_GROUND) wing(g, ox + 36, cy + side * 1.5, ox + 2.5, cy + side * 4.5, 3.2);
+      else if (look === FLYER_FLYING) {
+        wing(g, ox + 37, cy + side * 2.5, ox + 17, cy + side * 20, 5.5);
+        wing(g, ox + 33, cy + side * 2.5, ox + 12, cy + side * 12, 3.8);
+      } else {
+        // Each wing at both ends of its beat, so the pair reads as a blur across the body.
+        wing(g, ox + 36, cy + side * 3, ox + 40, cy + side * 20, 4);
+        wing(g, ox + 34, cy + side * 3, ox + 27, cy + side * 20, 4);
+      }
+    }
+  };
+  // A dark rim under the membrane keeps the wings readable on any ground.
+  wings();
+  g.stroke({ width: 3, color: SEAM, alpha: 0.75, join: "round" });
+  wings();
+  g.fill({ color: WING, alpha: look === FLYER_HOVERING ? 0.45 : 0.6 }).stroke({ width: 1, color: 0xffffff, alpha: 0.7, join: "round" });
+  if (look === FLYER_HOVERING) {
+    // The beat's sweep, an arc joining each wing's two tips.
+    for (const side of [-1, 1]) g.moveTo(ox + 27, cy + side * 20).quadraticCurveTo(ox + 33.5, cy + side * 23, ox + 40, cy + side * 20);
+    g.stroke({ width: 1.4, color: 0xffffff, alpha: 0.8, cap: "round" });
+  }
+}
+
+/** A flyer: a worker's body (its legs tucked in while airborne) with its wings for its look. */
+function drawFlyer(g: Graphics, ox: number, oy: number, frame: number, look: FlyerLook, accent: number, jawOpen = -1) {
+  drawAnt(g, ox, oy, look === FLYER_GROUND ? frame : 1, false, accent, false, jawOpen, look !== FLYER_GROUND);
+  drawWings(g, ox, oy + CELL_H / 2, look);
+}
+
+/** An airborne flyer's shadow on the ground under it, about its body's size and shape. */
+function drawShadow(g: Graphics, ox: number, oy: number) {
+  const cy = oy + CELL_H / 2;
+  g.ellipse(ox + 32, cy, 24, 8).fill({ color: SEAM, alpha: 0.28 });
+  g.ellipse(ox + 32, cy, 16, 5).fill({ color: SEAM, alpha: 0.3 });
+}
+
+/** A flyer state's look: grounded and locked out are both on the ground; flying and hovering are airborne. */
+function flyerLook(flyer: StreamFlyer): FlyerLook {
+  return flyer.state === "flying" ? FLYER_FLYING : flyer.state === "hovering" ? FLYER_HOVERING : FLYER_GROUND;
 }
 
 /** A colour with each channel multiplied by k (0..1). */
@@ -168,12 +246,15 @@ const SOLDIER_H = CELL_H * SOLDIER_SCALE;
  * The atlas, for a match of n colonies: n rows of worker cells (three walk frames and a corpse), n rows of
  * workers carrying a crumb, then n rows of soldier walk frames, each set in colony order.
  * Each row also holds closed/open bite frames: worker columns 4/5, soldier 3/4.
+ * Then two rows of worker-sized flyer cells per colony: the grounded walk frames,
+ * flying, hovering and the shadow; then closed/open bite frames for each look.
  * A two-colony match's atlas is laid out as it always was.
  */
 const ATLAS_W = Math.max(CELL_W * 6, SOLDIER_W * 5);
-function atlasLayout(colonies: number): { readonly soldierY: number; readonly height: number } {
+function atlasLayout(colonies: number): { readonly soldierY: number; readonly flyerRow: number; readonly height: number } {
   const soldierY = CELL_H * 2 * colonies;
-  return { soldierY, height: soldierY + SOLDIER_H * colonies };
+  const flyerRow = (soldierY + SOLDIER_H * colonies) / CELL_H;
+  return { soldierY, flyerRow, height: (flyerRow + 2 * colonies) * CELL_H };
 }
 
 /** Every ant outside the selected squad is multiplied by this while a squad is selected, so the squad leads. */
@@ -210,6 +291,8 @@ function channel(a: number, b: number, shift: number): number {
 
 export class Ants {
   readonly corpseLayer: ParticleContainer;
+  /** Airborne flyers' shadows, on the ground beneath the ants. */
+  readonly shadowLayer: ParticleContainer;
   readonly antLayer: ParticleContainer;
   /** Per caste (worker, soldier), per colony, per carrying (0 or 1): three walk frames. */
   private walkFrames: Texture[][][][];
@@ -217,10 +300,19 @@ export class Ants {
   private biteFrames: Texture[][][][];
   private biteBodies: Texture[][][][];
   private biteHeads: Texture[][][][];
+  /** Per flyer look, per colony: its frames (on the ground the three walk frames, airborne one). */
+  private flyerFrames: Texture[][][];
+  /** Per flyer look, per colony: closed/open jaws, as biteBodies and biteHeads. */
+  private flyerBiteBodies: Texture[][][];
+  private flyerBiteHeads: Texture[][][];
+  private shadowFrame: Texture;
   private readonly bites = new Bites();
   private corpseFrame: Texture[];
   private ants: Particle[] = [];
   private corpses: Particle[] = [];
+  private shadows: Particle[] = [];
+  /** This frame's shadows: x, y, rotation and alpha of each in turn. */
+  private readonly shadowAt: number[] = [];
   private scale: number;
   /** Ids of the selected squad's ants this frame, drawn undimmed in its hue (none while no squad is selected). */
   readonly tinted: number[] = [];
@@ -231,7 +323,7 @@ export class Ants {
    */
   constructor(renderer: Renderer, antPx: number, tilePx: number, colonies = 2) {
     const ids = Array.from({ length: colonies }, (_, colony) => colony);
-    const { soldierY, height } = atlasLayout(colonies);
+    const { soldierY, flyerRow, height } = atlasLayout(colonies);
     const g = new Graphics();
     for (const colony of ids) {
       for (let f = 0; f < 3; f++) drawAnt(g, f * CELL_W, colony * CELL_H, f, false, colonyTint(colony));
@@ -256,8 +348,20 @@ export class Ants {
     for (const colony of ids) for (const carrying of [0, 1]) for (let jaw = 0; jaw < 2; jaw++) {
       drawAnt(b, (4 + jaw) * CELL_W, (colony + colonies * carrying) * CELL_H, 1, false, colonyTint(colony), !!carrying, jaw);
     }
+    // Flyers, after every other drawing, in two rows per colony.
+    const fl = new Graphics();
+    for (const colony of ids) {
+      const row = (flyerRow + 2 * colony) * CELL_H;
+      for (let f = 0; f < 3; f++) drawFlyer(fl, f * CELL_W, row, f, FLYER_GROUND, colonyTint(colony));
+      drawFlyer(fl, 3 * CELL_W, row, 1, FLYER_FLYING, colonyTint(colony));
+      drawFlyer(fl, 4 * CELL_W, row, 1, FLYER_HOVERING, colonyTint(colony));
+      drawShadow(fl, 5 * CELL_W, row);
+      for (const look of [FLYER_GROUND, FLYER_FLYING, FLYER_HOVERING] as const) for (let jaw = 0; jaw < 2; jaw++) {
+        drawFlyer(fl, (2 * look + jaw) * CELL_W, row + CELL_H, 1, look, colonyTint(colony), jaw);
+      }
+    }
     const holder = new Container();
-    holder.addChild(g, s, c, b);
+    holder.addChild(g, s, c, b, fl);
     const atlas = renderer.generateTexture({
       target: holder,
       frame: new Rectangle(0, 0, ATLAS_W, height),
@@ -284,7 +388,7 @@ export class Ants {
         return [frames, frames];
       }),
     ];
-    const crop = (heads: boolean) => this.biteFrames.map((colonies, caste) => colonies.map((slots) => slots.map((frames) => frames.map((t) => {
+    const piece = (t: Texture, heads: boolean, caste: number) => {
       const unit = caste ? SOLDIER_SCALE : 1, cut = (caste ? 42 : 44) * unit;
       const width = heads ? t.frame.width - cut : cut;
       return new Texture({ source: t.source,
@@ -292,22 +396,32 @@ export class Ants {
         // Trimmed pieces retain the full ant's original bounds and centre.
         orig: new Rectangle(0, 0, t.frame.width, t.frame.height),
         trim: new Rectangle(heads ? cut : 0, 0, width, t.frame.height) });
-    }))));
+    };
+    const crop = (heads: boolean) => this.biteFrames.map((colonies, caste) => colonies.map((slots) => slots.map((frames) => frames.map((t) => piece(t, heads, caste)))));
     this.biteBodies = crop(false); this.biteHeads = crop(true);
+    const looks = [FLYER_GROUND, FLYER_FLYING, FLYER_HOVERING] as const;
+    this.flyerFrames = looks.map((look) => ids.map((c) =>
+      look === FLYER_GROUND ? [0, 1, 2].map((f) => cell(f, flyerRow + 2 * c)) : [cell(2 + look, flyerRow + 2 * c)]));
+    const flyerBites = looks.map((look) => ids.map((c) => [0, 1].map((jaw) => cell(2 * look + jaw, flyerRow + 2 * c + 1))));
+    this.flyerBiteBodies = flyerBites.map((colonies) => colonies.map((frames) => frames.map((t) => piece(t, false, 0))));
+    this.flyerBiteHeads = flyerBites.map((colonies) => colonies.map((frames) => frames.map((t) => piece(t, true, 0))));
+    this.shadowFrame = cell(5, flyerRow);
     this.corpseFrame = ids.map((c) => cell(3, c));
     this.scale = antPx / tilePx / CELL_W;
     const props = { position: true, rotation: true, color: true, uvs: true, vertex: false };
     this.antLayer = new ParticleContainer({ dynamicProperties: props, texture: this.walkFrames[0]![0]![0]![0] });
     this.corpseLayer = new ParticleContainer({ dynamicProperties: props, texture: this.corpseFrame[0] });
+    this.shadowLayer = new ParticleContainer({ dynamicProperties: props, texture: this.shadowFrame });
   }
 
   /** The whole-board scale changed (a resize): antPx on-screen length in CSS pixels at tilePx CSS pixels per tile. */
   setFit(antPx: number, tilePx: number) {
     this.scale = antPx / tilePx / CELL_W;
-    for (const p of [...this.ants, ...this.corpses]) p.scaleX = p.scaleY = this.scale;
+    for (const p of [...this.ants, ...this.corpses, ...this.shadows]) p.scaleX = p.scaleY = this.scale;
     // Scale is static (vertex) data in these containers: re-upload it.
     this.antLayer.update();
     this.corpseLayer.update();
+    this.shadowLayer.update();
   }
 
   private grow(pool: Particle[], layer: ParticleContainer, n: number, texture: Texture) {
@@ -329,23 +443,37 @@ export class Ants {
     // An ant's quad size comes from its frame and is static data in this container:
     // re-upload when caste size or head/body trimming changes.
     let resized = false;
+    const shadows = this.shadowAt;
+    shadows.length = 0;
     for (let i = 0; i < n; i++) {
       const p = this.ants[i]!;
-      const caste = frame.caste[i] === 1 ? 1 : 0;
+      const flyer = flyerOf(frame, i);
+      const look = flyer === null ? -1 : flyerLook(flyer);
+      // A flyer is a worker in size.
+      const caste = look < 0 && frame.caste[i] === 1 ? 1 : 0;
       const length = this.scale * CELL_W * (caste ? SOLDIER_SCALE : 1);
       const pose = this.bites.pose(i, length, "2d");
       const position = this.bites.bodyPosition(i, length, "2d");
       const slots = [caste, frame.colony[i]!, frame.carrying[i] ? 1 : 0] as const;
-      const frames = (pose ? this.biteBodies : this.walkFrames)[slots[0]]![slots[1]]![slots[2]]!;
       const jaw = pose?.jawOpen && pose.jawOpen > 0.5 ? 1 : 0;
-      const texture = frames[pose ? jaw : frame.walk[i]!]!;
+      let texture: Texture, ht: Texture;
+      if (look < 0) {
+        const frames = (pose ? this.biteBodies : this.walkFrames)[slots[0]]![slots[1]]![slots[2]]!;
+        texture = frames[pose ? jaw : frame.walk[i]!]!;
+        ht = this.biteHeads[slots[0]]![slots[1]]![slots[2]]![jaw]!;
+      } else {
+        const frames = (pose ? this.flyerBiteBodies : this.flyerFrames)[look]![slots[1]]!;
+        texture = frames[pose ? jaw : look === FLYER_GROUND ? frame.walk[i]! : 0]!;
+        ht = this.flyerBiteHeads[look]![slots[1]]![jaw]!;
+      }
+      // An airborne flyer is drawn up the screen from its position, its shadow left there.
+      const lift = look === FLYER_FLYING || look === FLYER_HOVERING ? AIR_LIFT_2D_LENGTHS * length : 0;
       p.anchorX = 0.5;
       const head = this.ants[n + i]!;
-      const ht = this.biteHeads[slots[0]]![slots[1]]![slots[2]]![jaw]!;
       if (head.texture !== ht) resized = true;
       head.texture = ht; head.anchorX = 0.5;
       head.x = (pose?.x ?? frame.x[i]!) + Math.cos(pose?.rotation ?? 0) * (pose?.headOffset ?? 0) - Math.sin(pose?.rotation ?? 0) * (pose?.headSideOffset ?? 0);
-      head.y = (pose?.y ?? frame.y[i]!) + Math.sin(pose?.rotation ?? 0) * (pose?.headOffset ?? 0) + Math.cos(pose?.rotation ?? 0) * (pose?.headSideOffset ?? 0);
+      head.y = (pose?.y ?? frame.y[i]!) + Math.sin(pose?.rotation ?? 0) * (pose?.headOffset ?? 0) + Math.cos(pose?.rotation ?? 0) * (pose?.headSideOffset ?? 0) - lift;
       head.rotation = pose?.rotation ?? 0;
       const gone = fallen[frame.colony[i]!] === true;
       const agent = frame.agent[i]!;
@@ -358,11 +486,21 @@ export class Ants {
       p.x = position?.x ?? frame.drawX?.[i] ?? frame.x[i]!;
       p.y = position?.y ?? frame.drawY?.[i] ?? frame.y[i]!;
       p.rotation = pose?.rotation ?? frame.drawRotation?.[i] ?? frame.rotation[i]!;
+      if (lift > 0) {
+        shadows.push(p.x, p.y, p.rotation, alpha);
+        p.y -= lift;
+      }
       p.alpha = alpha;
       p.tint = tint;
       if (selected >= 0 && frame.agent[i] === selected) this.tinted.push(frame.id[i]!);
     }
     if (resized) this.antLayer.update();
+    const s = shadows.length / 4;
+    this.grow(this.shadows, this.shadowLayer, s, this.shadowFrame);
+    for (let k = 0; k < s; k++) {
+      const p = this.shadows[k]!;
+      p.x = shadows[4 * k]!; p.y = shadows[4 * k + 1]!; p.rotation = shadows[4 * k + 2]!; p.alpha = shadows[4 * k + 3]!;
+    }
     const c = frame.corpses;
     this.grow(this.corpses, this.corpseLayer, c.length, this.corpseFrame[0]!);
     for (let i = 0; i < c.length; i++) {

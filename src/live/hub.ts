@@ -119,7 +119,8 @@ function u32(n: number): Buffer {
 }
 
 /**
- * The stream part, raw-deflated: the agents' stream indexes as JSON, the board as a format.ts message, the
+ * The stream part, raw-deflated: the agents' stream indexes as JSON, the board as a format.ts message (its events the
+ * bites the board remembers, SpectatorState.savedMessage), the
  * record count, then each record as its wall release time (f64, NaN for none) and a format.ts
  * message; the JSON and every message are prefixed by their u32 byte length.
  */
@@ -195,7 +196,7 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
   const full = board.full;
   return { access, resume: {
     identity: identity!, startedAt: startedAt!, delaySeconds: delaySeconds!, nextStartMs: nextStartMs ?? null,
-    released: released ? new SpectatorState(full, board.tick, board.ants) : null,
+    released: released ? new SpectatorState(full, board.tick, board.ants, board.events) : null,
     queue,
     recorder: { setup: full.setup, agents, ants: queue.at(-1)?.record.ants ?? board.ants,
       initialFull: released ? null : () => decodeMessage(boardBytes).full! },
@@ -531,7 +532,7 @@ class MatchStream {
     const meta: StreamSaveMeta = { format: 1, identity: this.identity, startedAt: this.startedAt, tick: this.latestTick,
       released: this.released !== null, delaySeconds: this.delaySeconds, nextStartMs: this.nextStartMs, access: this.access ?? null };
     // Unreleased, the queue's head is the starting record and the board is the starting board.
-    const board = this.released?.message() ?? { ...this.queue[0]!, full: this.recorder.initialFull(), events: [] };
+    const board = this.released?.savedMessage() ?? { ...this.queue[0]!, full: this.recorder.initialFull(), events: [] };
     const part = await encodeStreamPart(this.recorder.agentIndexes(), board, this.queue.map(record => ({ record, releaseAt: this.releaseAt.get(record) })));
     const result = { meta: { stream: meta } as Record<string, unknown>, parts: new Map([[STREAM_PART, part]]) };
     await this.saveRecording(result.meta, result.parts);

@@ -54,7 +54,8 @@ it.each([false, true])("uses only explicit comparison opt-in (%s), keeping label
     const setup = message.full!.setup;
     if (comparison) expect(setup).toMatchObject({ rules: "redesign", seed: 6006, players: 4 });
     else for (const field of ["rules", "seed", "players"]) expect(setup).not.toHaveProperty(field);
-    expect(message.full!.queens!.map((queen) => queen.hp)).toEqual([40_000, 40_000]);
+    const hp = options.simConfig!.queenHp!.hp;
+    expect(message.full!.queens!.map((queen) => queen.hp)).toEqual([hp, hp]);
   }
   expect(JSON.stringify([...early.messages, ...late.messages])).not.toContain("private-agent-uuid");
   expect(out.state).toEqual(before);

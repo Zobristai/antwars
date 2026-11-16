@@ -4,7 +4,7 @@
  * quadrant, colony 1 in the top-right, colony 2 in the bottom-left and colony 3 in the bottom-right, as the board
  * lists its quadrants. Everything a colony starts with is the mirror image of colony 0's.
  */
-import { SUB, type FoodPatch, type SimConfig } from "./config.js";
+import { hatchIntervalOf, SUB, type FoodPatch, type SimConfig } from "./config.js";
 import { tileCentre, withinTiles } from "./geometry.js";
 import { gridScaleOf, scaledFoodPatch } from "./gridScale.js";
 import { checkInitialQueens, newAnt, newColony, newStats, startingQueens } from "./map.js";
@@ -148,12 +148,13 @@ export function createQuadrantMatch(seed: number, base: SimConfig): SimState {
   const picks = config.initialQueens, boxes = board.startAreas.map(area => fine(area, scale));
   if (picks !== undefined) checkInitialQueens(config, terrain, laid.food, boxes);
 
+  const queenHp = config.queenHp!;
   const colonies = board.nests.map(({ tx, ty }, id): ColonyState => {
     const colony = newColony(config, id, nestPosition(tx, board.width, scale), nestPosition(ty, board.height, scale));
     // Every colony has one queen with HP, whether or not queens can be founded: the last queen's death eliminates it.
     const queens = colony.queens ?? [{ id: 0, queenX: colony.queenX, queenY: colony.queenY, foundedTick: 0,
-      lastHatchTick: -config.hatchIntervalTicks, overrunTicks: 0, lostTick: null,
-      hp: config.queenHp!.hp, lastBiteTick: -config.queenHp!.biteIntervalTicks, regenFromTick: 0 }];
+      lastHatchTick: -hatchIntervalOf(config, "worker"), overrunTicks: 0, lostTick: null,
+      hp: queenHp.hp, ...("biteIntervalTicks" in queenHp ? { lastBiteTick: -queenHp.biteIntervalTicks } : {}), regenFromTick: 0 }];
     if (picks === undefined) return { ...colony, queens, kills: 0 };
     const picked = startingQueens(queens[0]!, picks[id]!);
     return { ...colony, queens: picked, queenX: picked[0]!.queenX, queenY: picked[0]!.queenY, kills: 0 };

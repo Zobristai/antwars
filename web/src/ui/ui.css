@@ -232,9 +232,13 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 /* Two pairs a line: the outer column 162px, the spawn chip's widest state as drawn ("Needs food"), beside the inner. */
 .d2-ledger { display: grid; grid-template-columns: 162px minmax(0, 1fr); grid-template-rows: 26px 24px 24px; grid-template-areas: "spawn food" "workers soldiers" "hatched cap"; column-gap: 20px; align-items: center; margin: 0; }
 .d2-drawer.c1 .d2-ledger { grid-template-columns: minmax(0, 1fr) 162px; grid-template-areas: "food spawn" "soldiers workers" "cap hatched"; }
+/* Where the rules have flyers, Flyers on a line of its own under Workers. */
+.d2-drawer.has-flyers .d2-ledger { grid-template-rows: 26px 24px 24px 24px; grid-template-areas: "spawn food" "workers soldiers" "flyers ." "hatched cap"; }
+.d2-drawer.c1.has-flyers .d2-ledger { grid-template-areas: "food spawn" "soldiers workers" ". flyers" "cap hatched"; }
 /* One pair a line in a drawer too narrow for two, as the phone drawing: the chip, Food, Workers, Soldiers, Hatched, Cap. */
 @container (max-width: 281px) {
   .d2-drawer.c0 .d2-ledger, .d2-drawer.c1 .d2-ledger { grid-template-columns: minmax(0, 1fr); grid-template-rows: 26px repeat(5, 24px); grid-template-areas: "spawn" "food" "workers" "soldiers" "hatched" "cap"; }
+  .d2-drawer.c0.has-flyers .d2-ledger, .d2-drawer.c1.has-flyers .d2-ledger { grid-template-rows: 26px repeat(6, 24px); grid-template-areas: "spawn" "food" "workers" "soldiers" "flyers" "hatched" "cap"; }
 }
 .d2-pair { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
 .d2-pair dt { color: var(--aw-ink-2); white-space: nowrap; }

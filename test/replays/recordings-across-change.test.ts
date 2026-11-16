@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { playScripted, recordLog } from "../../src/live/record.ts";
-import { PUBLIC_CONFIG, rulesConfig } from "../../src/sim/config.ts";
+import { PUBLIC_CONFIG } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { replay, stateHash } from "../../src/sim/log.ts";
 import { recordedHousePlan } from "../house-plan.ts";
 import { playable } from "../playable.ts";
+import { rules27Redesign } from "../rules27.ts";
 
 /**
  * Match logs recorded before the economy cleanup still re-simulate and re-record as recorded.
@@ -24,7 +25,7 @@ const RECORDED = JSON.parse(readFileSync(fixture("scripted-hashes.json"), "utf8"
 // The redesign log was recorded before the no-bot-moves rule, so today's match plays the config it carries.
 const CONFIGS = {
   public: playable(PUBLIC_CONFIG),
-  redesign: newMatchConfig(recordedHousePlan(rulesConfig("redesign"))),
+  redesign: newMatchConfig(recordedHousePlan(rules27Redesign())),
 } as const;
 
 describe.each(["public", "redesign"] as const)("a %s match log recorded before the change", name => {

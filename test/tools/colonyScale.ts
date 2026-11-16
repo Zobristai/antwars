@@ -18,7 +18,7 @@ import { Game } from "../../src/mcp/game.js";
 import { registerTools } from "../../src/mcp/tools.js";
 import { COLONY_NAMES, PUBLIC_CONFIG, rulesConfig, type SimConfig } from "../../src/sim/config.js";
 import { withGridScale } from "../../src/sim/gridScale.js";
-import { parseHatchArm, selectHatchArm } from "./hatchVariants.js";
+import { hatchArmConfig, hatchArmLabel, parseHatchArm } from "./hatchVariants.js";
 import { createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
 import type { SimState, WinReason } from "../../src/sim/types.js";
@@ -207,11 +207,12 @@ async function main() {
     head: { type: "string" },
     seeds: { type: "string", default: "6006,6007,10,11" },
     out: { type: "string", default: "out/colony-scale" },
-    "hatch-arm": { type: "string", default: "A" },
+    // Omitted: the committed rules. main|A: the paired rules-27 soldier-timing arm, on the frozen rules-27 redesign.
+    "hatch-arm": { type: "string" },
   } });
   if (!values.head || !/^[a-f0-9]{40}$/.test(values.head)) throw new Error("--head requires the full committed SHA");
-  const hatchArm = parseHatchArm(values["hatch-arm"]);
-  const candidateConfig = withGridScale(selectHatchArm(rulesConfig("redesign"), hatchArm));
+  const hatchArm = values["hatch-arm"] === undefined ? null : parseHatchArm(values["hatch-arm"]);
+  const candidateConfig = withGridScale(hatchArmConfig(rulesConfig("redesign"), hatchArm));
   const seeds = values.seeds.split(",").map(Number);
   if (seeds.length === 0 || seeds.length > 8 || new Set(seeds).size !== seeds.length || seeds.some((seed) => !Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff)) throw new Error("--seeds requires 1–8 distinct uint32 integers");
   const dir = resolve(values.out);
@@ -251,12 +252,12 @@ async function main() {
   const selectedRun = runs.find((run) => run.seed === selected!.initial.seed)!;
   const duration = durationChecks(runs.map((run) => ({ seed: run.seed, endTick: run.candidate.endTick, reason: run.candidate.result?.reason ?? null })), candidateConfig);
   const exitCode = Object.values(duration.checks).every(Boolean) && runs.every((run) => Object.values(run.checks).every(Boolean)) ? 0 : 1;
-  const sourceFiles = ["src/sim/config.ts", "src/sim/forage.ts", "src/sim/step.ts", "src/sim/houseBot.ts", "src/sim/view.ts", "src/mcp/tools.ts", "test/tools/colonyScale.ts", "test/tools/hatchVariants.ts"];
+  const sourceFiles = ["src/sim/config.ts", "src/sim/forage.ts", "src/sim/step.ts", "src/sim/houseBot.ts", "src/sim/view.ts", "src/mcp/tools.ts", "test/tools/colonyScale.ts", "test/tools/hatchVariants.ts", "test/rules27.ts"];
   const sources = Object.fromEntries(sourceFiles.map((path) => [path, createHash("sha256").update(readFileSync(path)).digest("hex")]));
   recording(selected!.initial, "out/recordings/colony-start.bin", 10);
   recording(selected!.peak, "out/recordings/colony-peak.bin", 100);
   const recordings = Object.fromEntries(["colony-start", "colony-peak"].map((name) => [name, createHash("sha256").update(readFileSync(`out/recordings/${name}.bin`)).digest("hex")]));
-  const report = { exitCode, declaredHead: values.head, hatchArm, baselineHead: BASELINE_HEAD,
+  const report = { exitCode, declaredHead: values.head, hatchArm: hatchArmLabel(hatchArm), baselineHead: BASELINE_HEAD,
     seed: selectedRun.seed, seeds, privateInProcess: true, sources, recordings, duration,
     earliestEndTick: Math.min(...runs.map((run) => run.candidate.endTick)),
     peakBenchmark: { seed: selectedRun.seed, ...selectedRun.candidate.totalPeak, ...selectedRun.candidate.peakTiming },

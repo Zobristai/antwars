@@ -9,7 +9,7 @@ type KillCredit = Map<number | QueenState, ColonyId>;
 
 /**
  * The one kill-credit rule (four-colony matches): the hit that takes the target's HP to zero or below,
- * in the order damage is resolved (ant hits by ant, then queen bites by colony and queen), credits the
+ * in the order damage is resolved (ant hits by ant, then queen bites or strikes by colony and queen), credits the
  * hitter's colony. Later hits that tick credit nothing, and a kill is never split.
  */
 function creditLastHit(credit: KillCredit, target: number | QueenState, hp: number, dealtBefore: number, hit: number, colony: ColonyId): void {
@@ -40,8 +40,11 @@ function claimedMark(marks: ReadonlyMap<number, Mark>, ant: Ant): Mark | undefin
   return mark?.colony === ant.colony ? mark : undefined;
 }
 
-/** The adjacent enemy this ant hits: lowest HP, then lowest id. */
-function pickTarget(state: SimState, grid: Grid, ant: Ant): Ant | null {
+/**
+ * The enemy in reach this ant hits: lowest HP, then lowest id. The air is a separate fight: an airborne
+ * flyer picks only airborne enemies, and a ground ant only ground ones.
+ */
+function pickTarget(state: SimState, grid: Grid, ant: Ant, airborne: boolean): Ant | null {
   if (noEnemyNear(state, grid, ant.colony, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config))) return null;
   const dense = gridBuckets(grid);
   if (dense !== undefined) {
@@ -57,7 +60,7 @@ function pickTarget(state: SimState, grid: Grid, ant: Ant): Ant | null {
         if (bucket === undefined) continue;
         for (let i = 0; i < bucket.length; i += 1) {
           const other = bucket[i]!;
-          if (other.colony === ant.colony) continue;
+          if (other.colony === ant.colony || (other.air !== undefined) !== airborne) continue;
           if (best === null || other.hp < best.hp || (other.hp === best.hp && other.id < best.id)) best = other;
         }
       }
@@ -66,7 +69,7 @@ function pickTarget(state: SimState, grid: Grid, ant: Ant): Ant | null {
   }
   let target: Ant | null = null;
   forEachNear(state, grid, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config), (other) => {
-    if (other.colony === ant.colony) return;
+    if (other.colony === ant.colony || (other.air !== undefined) !== airborne) return;
     if (target === null || other.hp < target.hp || (other.hp === target.hp && other.id < target.id)) {
       target = other;
     }
@@ -78,6 +81,9 @@ function pickTarget(state: SimState, grid: Grid, ant: Ant): Ant | null {
  * Attrition combat. After the grace period every ant deals one tick of
  * damage to one adjacent enemy, x bonus on its own colony's territory. All damage
  * lands together, then the dead are removed and each leaves corpse food.
+ * The air is a separate fight: an airborne flyer bites only an airborne enemy
+ * flyer in the same reach, and no ground ant or queen reaches it. A landed flyer
+ * fights as a ground ant.
  */
 export function resolveCombat(state: SimState, grid: Grid, tick: number, events: SimEvent[]): void {
   const { config } = state;
@@ -88,9 +94,14 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
   const worker = damagePerTick(config);
   // A soldier hits harder; the defender bonus applies on top.
   const soldier = config.castes === undefined ? worker : Math.trunc((worker * config.castes.soldierDamagePermille) / 1000);
+  // A flyer deals its own damage, on the ground and in the air.
+  const flyer = config.flyers === undefined ? worker : Math.trunc(config.flyers.damagePerSecond / config.ticksPerSecond);
   const bonusOf = (hit: number): number => Math.trunc((hit * config.defenderBonusPermille) / 1000);
   const workerBonus = bonusOf(worker);
   const soldierBonus = bonusOf(soldier);
+  const flyerBonus = bonusOf(flyer);
+  const baseHit = (ant: Ant): number => ant.flyer === true ? flyer : ant.caste === "soldier" ? soldier : worker;
+  const ownGroundHit = (ant: Ant): number => ant.flyer === true ? flyerBonus : ant.caste === "soldier" ? soldierBonus : workerBonus;
   const damage = new Map<number, number>();
   const queenDamage = new Map<QueenState, number>();
   // Do not track damage sources in historical rules or when there is no live count mark.
@@ -100,44 +111,46 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
   const sources = marks !== undefined && marks.size > 0 ? new Map<number, DamageSource>() : undefined;
   // Attribution only: two-colony matches keep their kill totals as opposing deaths.
   const credit: KillCredit | undefined = state.colonies.length > 2 ? new Map() : undefined;
-  // Ants of one colony on one tile have the same adjacent enemies, and no HP changes until all have chosen.
-  // The key leaves room for four colonies per tile.
-  const targets = new Map<number, Ant | null>(), width = config.mapWidth;
+  // Ants of one colony on one tile have the same adjacent enemies, and no HP changes until all have chosen;
+  // likewise its airborne flyers, which pick from the air alone. The key leaves room for four colonies per tile.
+  const targets = new Map<number, Ant | null>(), airTargets = new Map<number, Ant | null>(), width = config.mapWidth;
   for (const ant of state.ants) {
     // Rules 25 carriers deliver instead of biting, even under a squad or mark.
     if (ant.carrying) {
       ant.lastTargetId = -1;
       continue;
     }
-    const key = (Math.floor(ant.y / SUB) * width + Math.floor(ant.x / SUB)) * 4 + ant.colony;
-    let target = targets.get(key);
-    if (target === undefined) { target = pickTarget(state, grid, ant); targets.set(key, target); }
+    const tx = Math.floor(ant.x / SUB);
+    const ty = Math.floor(ant.y / SUB);
+    const key = (ty * width + tx) * 4 + ant.colony;
+    const flying = ant.air !== undefined;
+    const picks = flying ? airTargets : targets;
+    let target = picks.get(key);
+    if (target === undefined) { target = pickTarget(state, grid, ant, flying); picks.set(key, target); }
     if (target === null) {
       ant.lastTargetId = -1;
-      // With no enemy ant in reach, an ant bites an adjacent enemy queen,
-      // at today's per-tick damage with no territory bonus, and never before the shield ends.
-      if (config.queenHp !== undefined && tick >= config.queenHp.shieldTicks) {
+      // With no enemy ant in reach, a ground ant bites an adjacent enemy queen,
+      // at its per-tick damage with no territory bonus, and never before the shield ends.
+      if (!flying && config.queenHp !== undefined && tick >= config.queenHp.shieldTicks) {
         const queen = adjacentEnemyQueen(state, ant);
         if (queen !== null) {
-          const bite = ant.caste === "soldier" ? soldier : worker, dealt = queenDamage.get(queen) ?? 0;
+          const bite = baseHit(ant), dealt = queenDamage.get(queen) ?? 0;
           if (credit !== undefined) creditLastHit(credit, queen, queen.hp ?? config.queenHp.hp, dealt, bite, ant.colony);
           queenDamage.set(queen, dealt + bite);
         }
       }
       continue;
     }
-    const tx = Math.floor(ant.x / SUB);
-    const ty = Math.floor(ant.y / SUB);
+    // The own-ground bonus goes by the tile beneath, in the air as on the ground.
     const onOwn = state.owner[tileIndex(config, tx, ty)] === ant.colony;
     if (onOwn) state.stats.bonusHits[ant.colony] += 1;
-    const isSoldier = ant.caste === "soldier";
-    const hit = onOwn ? (isSoldier ? soldierBonus : workerBonus) : isSoldier ? soldier : worker;
+    const hit = onOwn ? ownGroundHit(ant) : baseHit(ant);
     if (credit !== undefined) creditLastHit(credit, target.id, target.hp, damage.get(target.id) ?? 0, hit, ant.colony);
     damage.set(target.id, (damage.get(target.id) ?? 0) + hit);
     if (sources !== undefined) recordSource(sources, target.id, hit, ant);
     if (ant.lastTargetId !== target.id) {
       state.stats.fights += 1;
-      events.push({ type: "fight", tick, antId: ant.id, targetId: target.id, colony: ant.colony, tileX: tx, tileY: ty });
+      events.push({ type: "fight", tick, antId: ant.id, targetId: target.id, colony: ant.colony, tileX: tx, tileY: ty, ...(flying ? { air: true as const } : {}) });
     }
     ant.lastTargetId = target.id;
   }
@@ -194,7 +207,8 @@ export function adjacentEnemyQueen(state: SimState, ant: Ant): QueenState | null
  * with the lowest HP (lowest id on ties) for biteDamage once every
  * biteIntervalTicks; her bite lands with the ants' damage. Bites on her land,
  * and at zero HP she is lost. While no enemy is within regenClearTiles she
- * regains regenHp each regenIntervalTicks, up to her full HP.
+ * regains regenHp each regenIntervalTicks, up to her full HP. Airborne flyers
+ * are neither bitten nor counted as near.
  */
 function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEvent[], damage: Map<number, number>, queenDamage: ReadonlyMap<QueenState, number>, sources?: Map<number, DamageSource>, credit?: KillCredit): void {
   const rules = state.config.queenHp!;
@@ -203,24 +217,27 @@ function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEve
       const qx = Math.floor(q.queenX / SUB);
       const qy = Math.floor(q.queenY / SUB);
       const before = q.hp ?? rules.hp;
-      if (tick - (q.lastBiteTick ?? -rules.biteIntervalTicks) >= rules.biteIntervalTicks) {
+      const perTick = "damagePerSecond" in rules ? Math.trunc(rules.damagePerSecond / state.config.ticksPerSecond) : undefined;
+      if (!("biteDamage" in rules) || tick - (q.lastBiteTick ?? -rules.biteIntervalTicks) >= rules.biteIntervalTicks) {
         let target: Ant | null = null;
         forEachNear(state, grid, qx, qy, gridScaleOf(state.config), (other) => {
-          if (other.colony === colony.id) return;
+          if (other.colony === colony.id || other.air !== undefined) return;
           if (target === null || other.hp < target.hp || (other.hp === target.hp && other.id < target.id)) target = other;
         });
         if (target !== null) {
           const hit: Ant = target;
-          if (credit !== undefined) creditLastHit(credit, hit.id, hit.hp, damage.get(hit.id) ?? 0, rules.biteDamage, colony.id);
-          damage.set(hit.id, (damage.get(hit.id) ?? 0) + rules.biteDamage);
-          if (sources !== undefined) recordSource(sources, hit.id, rules.biteDamage, null);
-          q.lastBiteTick = tick;
+          const amount = "biteDamage" in rules ? rules.biteDamage : perTick!;
+          if (credit !== undefined) creditLastHit(credit, hit.id, hit.hp, damage.get(hit.id) ?? 0, amount, colony.id);
+          damage.set(hit.id, (damage.get(hit.id) ?? 0) + amount);
+          if (sources !== undefined) recordSource(sources, hit.id, amount, null);
+          if ("biteDamage" in rules) q.lastBiteTick = tick;
         }
       }
       let hp = before - (queenDamage.get(q) ?? 0);
       let enemyNear = false;
+      // An airborne enemy flyer does not stop her recovering.
       forEachNear(state, grid, qx, qy, rules.regenClearTiles, (other) => {
-        if (other.colony !== colony.id && withinTiles(qx, qy, Math.floor(other.x / SUB), Math.floor(other.y / SUB), rules.regenClearTiles)) enemyNear = true;
+        if (other.colony !== colony.id && other.air === undefined && withinTiles(qx, qy, Math.floor(other.x / SUB), Math.floor(other.y / SUB), rules.regenClearTiles)) enemyNear = true;
       });
       if (enemyNear || hp >= rules.hp) q.regenFromTick = tick;
       else if (tick - (q.regenFromTick ?? tick) >= rules.regenIntervalTicks) {
