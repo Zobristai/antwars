@@ -217,11 +217,6 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d2-hud { visibili
 .d2-qmark { grid-area: track; justify-self: start; color: var(--aw-ink-2); white-space: nowrap; }
 .d2-qfig { grid-area: fig; min-width: 0; font-weight: 700; color: var(--aw-ink-bright); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d2-qrow.is-fallen :is(.d2-qname, .d2-qfig) { opacity: 0.6; }
-/* A name whose colour needs the dark ground keeps 4.5:1 on it, as colony-ground.css grounds the two-colony names. */
-:root[data-aw-ground~="0"] .d2-qrow.c0 .d2-qname, :root[data-aw-ground~="1"] .d2-qrow.c1 .d2-qname,
-:root[data-aw-ground~="2"] .d2-qrow.c2 .d2-qname, :root[data-aw-ground~="3"] .d2-qrow.c3 .d2-qname {
-  background-color: var(--aw-ink-ground); box-shadow: 0 0 0 2px var(--aw-ink-ground);
-}
 /* The phone form: the name, the mark and the figure on a row's first line, the track under them. */
 .d2-hud[data-plate="stacked"] .d2-qheading { grid-area: c1; }
 .d2-hud[data-plate="stacked"] .d2-qrow { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: 24px 16px; grid-template-areas: "name mark fig" "track track track"; row-gap: 4px; column-gap: 8px; }

@@ -12,7 +12,6 @@ import { Frame, Playback, RESULT_BEAT_MS, TickPreparation, type Board } from "..
 import { SUPERCOLONY_NAMES, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { SUB_TILE, type StreamAgent, type StreamEvent, type StreamFull, type StreamMessage, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
 import { TICK_MS } from "../../../src/live/snapshot.ts";
-import { TEXT_GROUND, TEXT_PANEL_MAX, contrastRatio, needsTextGround } from "../../../web/src/colony-palette.ts";
 import { SCORE_COPY } from "../../../web/src/story.ts";
 import { D1_COPY, colonyRows, resultView } from "../../../web/src/ui/deck/model.ts";
 import { mountDeckHud } from "../../../web/src/ui/deck/hud.ts";
@@ -22,7 +21,7 @@ import { markup } from "./port-markup.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
-const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "colony-ground.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 /** A four-colony setup's names: the shared table's, by colony number. */
 const NAMES = SUPERCOLONY_NAMES.map(n => n.label);
 const TICK = 4000;
@@ -246,17 +245,16 @@ let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
 afterAll(async () => { await browser?.close(); });
 
-/** The page root as the palette sets it for a four-colony match: each colony's colour, and a ground where one is needed. */
+/** The page root as the palette sets it for a four-colony match: each colony's colour, with no text backing. */
 function root(): string {
   const colours = SUPERCOLONY_NAMES.map(n => n.colour);
-  const grounded = colours.flatMap((c, i) => needsTextGround(c) ? [String(i)] : []);
   const vars = colours.map((c, i) => `--aw-k${i}: ${colourCss(c)}`).join("; ");
-  return `<html${grounded.length ? ` data-aw-ground="${grounded.join(" ")}"` : ""} style="${vars}; --aw-ink-ground: ${colourCss(TEXT_GROUND)}">`;
+  return `<html style="${vars}">`;
 }
 
 describe("in a browser, a four-colony match's colony names", () => {
   for (const width of [1280, 390]) {
-    it(`show in their colours on one line, keep 4.5:1 and show their notes under the pointer, at ${width}px`, async () => {
+    it(`show in their colours on one line, have no backing and show their notes under the pointer, at ${width}px`, async () => {
       const { host, hud } = mounted(width >= 760);
       hud.update(view(quadFrame({ lost: [1] })));
       const page = await browser.newPage({ viewport: { width, height: 844 } });
@@ -289,10 +287,7 @@ describe("in a browser, a four-colony match's colony names", () => {
           expect(seen.colour, NAMES[c]).toBe(rgb(colour));
           expect(seen, NAMES[c]).toMatchObject({ hovered: true, tooltip: colonyNameNote(NAMES[c]!), lines: 1, clipped: false, outShown: c === 1 });
           expect(seen.rowHeight, NAMES[c]).toBeLessThanOrEqual(26);
-          // On its ground where its colour needs one; any other is held to 4.5:1 on the lightest panel it can sit on.
-          if (needsTextGround(colour)) expect(seen.background, NAMES[c]).toBe(rgb(TEXT_GROUND));
-          const under = needsTextGround(colour) ? TEXT_GROUND : TEXT_PANEL_MAX;
-          expect(contrastRatio(colour, under), NAMES[c]).toBeGreaterThanOrEqual(4.5);
+          expect(seen.background, NAMES[c]).toBe("rgba(0, 0, 0, 0)");
         }
       } finally { await page.close(); }
     });

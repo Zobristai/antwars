@@ -41,8 +41,7 @@ export const COLONY_INK = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-
  * Writes text into node. Where the match drew its colony names (unrated), each of those names in the text is shown in
  * its colony's colour with its one-line source as its tooltip; for any other match the text is written as it always was.
  * Each such name is a span of class aw-colony-name and c0 or c1, which takes the pointer even where its line takes none
- * (ui.css), so hovering it shows its tooltip, and which keeps 4.5:1 on a dark ground where its colour needs one
- * (colony-ground.css).
+ * (ui.css), so hovering it shows its tooltip.
  */
 export function setColonyText(doc: Document, node: HTMLElement, text: string, drawn: readonly string[] | undefined): void {
   if (!drawn) {

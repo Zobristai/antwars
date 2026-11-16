@@ -1,15 +1,6 @@
-// Every piece of text the match view shows in a colony's colour keeps 4.5:1 against what it actually sits on, for all
-// four colony colours: the 2D board's score plate and caption (an event and the fall), the 3D deck's plates, figures and
-// caption, the result box, and the replay marks' label and list. The HUDs are mounted on the test port with each drawn
-// pair, written out as markup and laid out in headless Chromium with the page's tokens (web/index.html) and the client's
-// stylesheets. Each coloured text is found by its rendered colour; then every text on the page is made transparent and
-// the page shot, so the pixels under the text's line boxes are its real background, and each pixel's contrast with the
-// text's colour counts. Rows and buttons are measured again with :hover and :focus-visible forced. A rated match (no
-// drawn names) is held to the same floor and must draw no ground at all, so its text is drawn as before. The HUDs are
-// written out as the desktop lays them out, so they are measured at 1280px; the result box and the replay row, whose
-// markup is the same on a phone, at 1280px and 390px. The served page's phone layouts are measured by the captures. The
-// Matches page's rows naming their own colonies (a name and its result badge) are measured the same way, as its table
-// at 1280px and as its stacked rows at 390px; a rated row draws no ground.
+// Colony-coloured names and figures retain their original ink without text-sized backing boxes.
+// Exercise real mounted HUD, result, replay and Matches markup at rest, hover and focus in Chromium.
+// Ordinary result badges retain the same raised fill as other badges; no contrast threshold applies here.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
@@ -33,9 +24,9 @@ import { markup } from "./port-markup.ts";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 /** The page's tokens (web/index.html's :root) and the stylesheets the match view bundles. */
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
-const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css", "colony-ground.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 /** The Matches page's stylesheets, as its pages bundle them (pages/chrome.ts, pages/top-bar.ts, colony-palette.ts). */
-const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "pages/archive.css", "colony-ground.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "pages/archive.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 const COLOURS = SUPERCOLONY_NAMES.map(n => n.colour);
 /** Each colour as colony 0 and as colony 1, and as the winner, in pairs a match can draw. */
 const PAIRS: ColonyNamePair[] = [
@@ -124,7 +115,7 @@ function mounted(names: ColonyNamePair | undefined, surface: Surface, moment: "e
 
 /** In the page: every visible text drawn in one of the colony colours, tagged, with its line boxes cut to what shows. */
 function findTexts(colours: string[]) {
-  const out: { i: number; text: string; rgb: string; opacity: number; interactive: boolean; rects: { x: number; y: number; w: number; h: number }[] }[] = [];
+  const out: { i: number; text: string; rgb: string; opacity: number; interactive: boolean; background: string; shadow: string; badge: boolean; rects: { x: number; y: number; w: number; h: number }[] }[] = [];
   const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let i = 0;
   for (let n = tw.nextNode(); n; n = tw.nextNode()) {
@@ -152,47 +143,24 @@ function findTexts(colours: string[]) {
     if (rects.length === 0) continue;
     const interactive = el.closest("button,a[href],[role=button],.aw-mark-row");
     interactive?.setAttribute("data-ct", String(i));
-    out.push({ i, text: n.textContent.trim(), rgb: `${m[1]},${m[2]},${m[3]}`, opacity, interactive: !!interactive, rects });
+    out.push({ i, text: n.textContent.trim(), rgb: `${m[1]},${m[2]},${m[3]}`, opacity, interactive: !!interactive, background: ownStyle.backgroundColor, shadow: ownStyle.boxShadow, badge: el.matches(".d1p-result-tag"), rects });
     i++;
   }
   return out;
 }
 
-/** In the page, over a shot with every text transparent: the worst pixel's contrast under each text's line boxes. */
-async function worst([png, items]: readonly [string, readonly { rgb: string; opacity: number; rects: { x: number; y: number; w: number; h: number }[] }[]]) {
-  const img = new Image(); img.src = `data:image/png;base64,${png}`; await img.decode();
-  const c = new OffscreenCanvas(img.width, img.height), x = c.getContext("2d")!; x.drawImage(img, 0, 0);
-  const lin = (v: number) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
-  const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  return items.map(it => {
-    const [tr, tg, tb] = it.rgb.split(",").map(Number) as [number, number, number], a = it.opacity;
-    let min = Infinity;
-    for (const r of it.rects) {
-      const d = x.getImageData(r.x, r.y, r.w, r.h).data;
-      for (let i = 0; i < d.length; i += 4) {
-        const [br, bg, bb] = [d[i]!, d[i + 1]!, d[i + 2]!];
-        const l1 = lum(tr * a + br * (1 - a), tg * a + bg * (1 - a), tb * a + bb * (1 - a)), l2 = lum(br, bg, bb);
-        min = Math.min(min, (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05));
-      }
-    }
-    return min;
-  });
-}
-
-const HIDE = "*, *::before, *::after { color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important; }";
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
 afterAll(async () => { await browser?.close(); });
 
-/** Each coloured text's worst contrast at rest, and its row's or button's with :hover and with :focus-visible forced. */
+/** The same labels and figures at rest and in each containing control's hover/focus state. */
 async function measured(page: string, width: number, height = 800) {
   const tab = await browser.newPage({ viewport: { width, height } });
+  const colours = COLOURS.map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(","));
   try {
     await tab.setContent(page);
-    const texts = await tab.evaluate(findTexts, COLOURS.map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")));
-    await tab.addStyleTag({ content: HIDE });
-    const shot = async () => (await tab.screenshot()).toString("base64");
-    const rows = (await tab.evaluate(worst, [await shot(), texts] as const)).map((min, k) => ({ ...texts[k]!, state: "rest", min }));
+    const texts = await tab.evaluate(findTexts, colours);
+    const rows = texts.map(t => ({ ...t, state: "rest" }));
     const cdp = await tab.context().newCDPSession(tab);
     await cdp.send("DOM.enable"); await cdp.send("CSS.enable");
     const { root } = await cdp.send("DOM.getDocument", { depth: -1 });
@@ -200,12 +168,21 @@ async function measured(page: string, width: number, height = 800) {
       const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: `[data-ct="${t.i}"]` });
       for (const [state, forced] of [["hover", ["hover"]], ["focus-visible", ["focus", "focus-visible"]]] as const) {
         await cdp.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [...forced] });
-        rows.push({ ...t, state, min: (await tab.evaluate(worst, [await shot(), [t]] as const))[0]! });
+        rows.push(...(await tab.evaluate(findTexts, colours)).map(row => ({ ...row, state })));
         await cdp.send("CSS.forcePseudoState", { nodeId, forcedPseudoClasses: [] });
       }
     }
     return rows;
   } finally { await tab.close(); }
+}
+
+function expectNoBacking(rows: Awaited<ReturnType<typeof measured>>) {
+  expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
+  for (const row of rows) {
+    const where = `${row.text} (${row.rgb}, ${row.state})`;
+    expect(row.background, where).toBe(row.badge ? "rgb(41, 51, 55)" : "rgba(0, 0, 0, 0)");
+    expect(row.shadow, where).toBe("none");
+  }
 }
 
 const MOMENTS = [
@@ -214,7 +191,7 @@ const MOMENTS = [
 ] as const;
 const name = (m: unknown) => typeof m === "object" ? `winner ${(m as { winner: number }).winner}` : String(m);
 
-describe("text in a colony's colour keeps 4.5:1 on what it sits on", () => {
+describe("text in a colony's colour has no backing", () => {
   for (const pair of [...PAIRS, undefined]) {
     for (const [surface, moment] of MOMENTS) {
       for (const width of surface === "2d" || surface === "3d" ? [1280] : [1280, 390]) {
@@ -222,10 +199,8 @@ describe("text in a colony's colour keeps 4.5:1 on what it sits on", () => {
           const { ground, page } = mounted(pair, surface, moment);
           const rows = await measured(page, width);
           expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
-          // A fallen colony's words step back by opacity during the fall, rated as unrated (ui.css .is-fallen); the
-          // floor is for text at full strength.
-          for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
-          if (!pair) expect(ground, "a rated match draws no ground").toBeNull();
+          expectNoBacking(rows);
+          expect(ground, "no match draws a text backing").toBeNull();
         });
       }
     }
@@ -259,15 +234,15 @@ describe("text in a colony's colour keeps 4.5:1 on what it sits on", () => {
         const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
         // The heading in the winner's own colour.
         expect(rows.find(r => r.text === `${FOUR[winner]} wins`)?.rgb).toBe(rgb(COLOURS[winner]!));
-        for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
-        expect(ground).toBe("2 3");
+        expectNoBacking(rows);
+        expect(ground).toBeNull();
       });
     }
   }
 
-  it("grounds exactly the two colours that fall short on a raised row, and never the rated colours", () => {
+  it("never adds a backing for any drawn pair or the rated colours", () => {
     const grounds = PAIRS.map(pair => mounted(pair, "result", { winner: 0 }).ground);
-    expect(grounds).toEqual(["0 1", "0 1", null, "1", "1"]);
+    expect(grounds).toEqual(PAIRS.map(() => null));
     expect(mounted(undefined, "result", { winner: 0 }).ground).toBeNull();
   });
 });
@@ -313,17 +288,17 @@ function quadrantsPage() {
   return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
 }
 
-describe("the Matches page's text in a colony's colour keeps 4.5:1 on what it sits on", () => {
+describe("the Matches page's text in a colony's colour has no backing", () => {
   for (const width of [1280, 390]) {
     it(`a four-colony (Quadrants) match: Matches at ${width}px`, async () => {
       const { page } = quadrantsPage();
       const rows = await measured(page, width, 2400);
       expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
-      for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
+      expectNoBacking(rows);
       const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
       // Each colony's name in its own colour, on the live row and on each recording; each recording's Winner in its winner's.
       for (const { label, colour } of SUPERCOLONY_NAMES) expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual(Array(5).fill(rgb(colour)));
-      expect(rows.filter(r => r.text === "Winner").map(r => r.rgb).sort()).toEqual(COLOURS.map(rgb).sort());
+      expect(rows.filter(r => r.text === "Winner" && r.state === "rest").map(r => r.rgb).sort()).toEqual(COLOURS.map(rgb).sort());
     });
   }
 
@@ -334,12 +309,11 @@ describe("the Matches page's text in a colony's colour keeps 4.5:1 on what it si
         // Tall enough that every list's rows are on screen.
         const { body, page } = matchesPage(pair);
         const rows = await measured(page, width, 2400);
-        if (process.env.CONTRAST_REPORT) (await import("node:fs")).appendFileSync(process.env.CONTRAST_REPORT, JSON.stringify({ pair: pair ?? "rated", width, rows: rows.map(r => [r.text, r.rgb, r.state, +r.min.toFixed(2)]) }) + "\n");
         expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
-        for (const r of rows.filter(r => r.opacity === 1)) expect(r.min, `"${r.text}" (${r.rgb}, ${r.state})`).toBeGreaterThanOrEqual(4.5);
+        expectNoBacking(rows);
         // Each recording's result badge stands in its winner's colour.
-        expect(rows.filter(r => r.text === "Winner").map(r => r.rgb).sort()).toEqual(colonyColours(pair ?? COLONY_NAMES).map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")).sort());
-        if (!pair) expect(body, "a rated row draws no ground").not.toContain("data-aw-ground");
+        expect(rows.filter(r => r.text === "Winner" && r.state === "rest").map(r => r.rgb).sort()).toEqual(colonyColours(pair ?? COLONY_NAMES).map(c => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",")).sort());
+        expect(body, "no row draws a text backing").not.toContain("data-aw-ground");
       });
     }
   }
