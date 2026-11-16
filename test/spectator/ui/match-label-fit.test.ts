@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FIT_TARGETS, fitProblems, type TextFit } from "../../../web/capture/match-label-fit.ts";
+import { FIT_TARGETS, fitProblems, recordingPositionMs, type TextFit } from "../../../web/capture/match-label-fit.ts";
 
 const deck = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
 const ui = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8");
@@ -8,6 +8,13 @@ const phone = deck.slice(deck.indexOf("@media (max-width: 559px)"));
 const fit: TextFit = { text: "Back to live", target: true, lines: 1, clipped: false, outside: false };
 
 describe("match label fit", () => {
+  it("seeks both complete recordings and mid-match excerpts by their own time origin", () => {
+    expect(recordingPositionMs(1002, 0, 10)).toBe(100200);
+    expect(recordingPositionMs(1002, 980, 10)).toBe(2200);
+    expect(recordingPositionMs(4800, 4500, 20)).toBe(15000);
+    expect(() => recordingPositionMs(1, 2, 10)).toThrow();
+    expect(() => recordingPositionMs(2, 1, 0)).toThrow();
+  });
   it("reports wrapped, clipped and off-screen targets rather than treating a screenshot as proof", () => {
     expect(fitProblems([fit])).toEqual([]);
     for (const bad of [{ lines: 2 }, { clipped: true }, { outside: true }]) {

@@ -19,6 +19,12 @@ import { CHROMIUM_FLAGS, checkRenderer, servePage } from "./browser.ts";
 
 export const FIT_TARGETS = ".d1-glabel, .d1-back, .d1-name, .d1-crow-name, .d1-cap-what, .d1-cap-who, .d2-name-text, .d2-qname, .d2-slabel, .d2-back-text, .d2-toast-what, .d2-toast-who";
 export interface TextFit { text: string; target: boolean; lines: number; clipped: boolean; outside: boolean }
+/** Replay controls seek from the recording's opening tick, including a mid-match excerpt. */
+export function recordingPositionMs(tick: number, firstTick: number, ticksPerSecond: number): number {
+  assert(ticksPerSecond > 0 && Number.isFinite(ticksPerSecond));
+  assert(tick >= firstTick, "target precedes recording");
+  return (tick - firstTick) * 1000 / ticksPerSecond;
+}
 export function fitProblems(items: readonly TextFit[]): string[] {
   return items.filter(i => i.target && (i.lines > 1 || i.clipped || i.outside)).map(i => `${i.text}: ${i.lines} lines; clipped=${i.clipped}; outside=${i.outside}`);
 }
@@ -94,6 +100,7 @@ async function capture(): Promise<void> {
   const bytes = await readFile(a.recording!), packets = unpackMessages(bytes);
   const first = decodeMessage(packets[0]!), last = decodeMessage(packets.at(-1)!);
   assert(tick >= first.tick && tick <= last.tick, "requested tick outside recording");
+  const targetMs = recordingPositionMs(tick, first.tick, first.full!.setup.ticksPerSecond);
   const stored = { id: "2026-11-15T17-00-00-000Z-1", bytes, lastTick: last.tick };
   const out = resolve(a.out!); await mkdir(out, { recursive: true });
   const browser = await chromium.launch({ executablePath: a.browser!, args: CHROMIUM_FLAGS });
@@ -118,14 +125,14 @@ async function capture(): Promise<void> {
         if (a.replay) {
           for (let i = 0; i < 120; i++) {
             await page.clock.runFor(100); await page.evaluate(() => window.__antwar.frame(false));
-            if (await page.evaluate(target => Number(document.querySelector<HTMLInputElement>(".aw-replay-controls input")?.max ?? 0) >= target * 100, tick)) break;
+            if (await page.evaluate(target => Number(document.querySelector<HTMLInputElement>(".aw-replay-controls input")?.max ?? 0) >= target, targetMs)) break;
             await new Promise(r => setTimeout(r, 25));
           }
-          assert(await page.evaluate(target => Number(document.querySelector<HTMLInputElement>(".aw-replay-controls input")?.max ?? 0) >= target * 100, tick), "replay index did not reach requested tick");
+          assert(await page.evaluate(target => Number(document.querySelector<HTMLInputElement>(".aw-replay-controls input")?.max ?? 0) >= target, targetMs), "replay index did not reach requested tick");
           await page.evaluate(to => {
             const input = document.querySelector<HTMLInputElement>(".aw-replay-controls input")!;
-            input.value = String(Math.max(0, to * 100 - 2000)); input.dispatchEvent(new Event("input")); input.dispatchEvent(new Event("change"));
-          }, tick);
+            input.value = String(Math.max(0, to - 2000)); input.dispatchEvent(new Event("input")); input.dispatchEvent(new Event("change"));
+          }, targetMs);
           // Seeking replays the bounded decoder queue from the start; long fixtures need more than one batch.
           for (let i = 0; i < 900; i++) {
             await page.clock.runFor(100);
@@ -135,7 +142,7 @@ async function capture(): Promise<void> {
             await new Promise(r => setTimeout(r, 25));
           }
         } else {
-          let now = 0; const end = RENDER_DELAY_MS + (tick - first.tick) * 100;
+          let now = 0; const end = RENDER_DELAY_MS + targetMs;
           while (now < end) { const step = Math.min(1000, end - now); await page.clock.runFor(step); await page.evaluate(() => window.__antwar.frame(false)); now += step; }
         }
         const frame = await page.evaluate(() => window.__antwar.frame(true));
