@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseMemoryQuantity } from "../../src/accounts/postMortemJobs.ts";
+import { admits, MEMORY_POLICY, parseMemoryQuantity } from "../../src/accounts/postMortemJobs.ts";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, isExpired, LOBBY_TTL_MS } from "../../src/lobby/lobbies.ts";
 import { markerName, parseInputObjectName, parseRunningBuildName, runningBuildName } from "../../src/records/input-store.ts";
@@ -741,9 +741,9 @@ describe("existing deploy paths are unchanged", () => {
         // The record handoff settings; the slot allocator's 8 public and 8 private
         // live slots and the address it wakes them at; the load balancer's addresses.
         // Variables set outside the script are kept. ANTWAR_MEMORY_LIMIT is --memory's own value.
-        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
+        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
         "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
-        "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",
+        "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "4Gi", "--timeout", "3600", "--concurrency", "1000",
         "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION],
       // The revision the deploy created gets all traffic by name, once Ready.
       named("antwar"), namedRevision("antwar-new"), toNew("antwar"), named("antwar"),
@@ -1251,7 +1251,7 @@ describe("load balancer addresses", () => {
   const printed = (r: { stdout: string; stderr: string }) => ADDRESSES.filter((a) => (r.stdout + r.stderr).includes(a));
   // antwar's variables before ANTWAR_LOAD_BALANCER_ADDRESS, as the live path and `all` gave them, with the client-source
   // claim rule and the memory limit.
-  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV},ANTWAR_MEMORY_LIMIT=2Gi`]);
+  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV},ANTWAR_MEMORY_LIMIT=4Gi`]);
   const gameDeploy = (r: { gcloud: string[][] }) => deploys(r.gcloud).find((c) => c[2] === "antwar")!;
 
   it("the live path adds only ANTWAR_LOAD_BALANCER_ADDRESS to antwar's variables, read before the build, and prints no address", () => {
@@ -1354,8 +1354,6 @@ describe.concurrent("all", () => {
   // The minute-long waits between rounds (the swap checks sleep 5 s between probes).
   const roundSleeps = (r: { calls: string[][] }) => r.calls.filter((c) => c[0] === "sleep" && c[1] !== "5");
 
-  // Credible regression: the game deployed without the post-mortem's configured limit, with one apart from its
-  // --memory, or with a form the server's parser rejects; the main path and a later all-services deploy alike.
   it.each(["12", "", "disable"])("public exclusion preserves, sets or disables game and live slots (%j)", async version => {
     const setting = "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS";
     const r = await runAsync(["all", SHA], { state: live({}, s => {
@@ -1457,7 +1455,12 @@ describe.concurrent("all", () => {
     expect(r.state).toEqual(before!);
     expect(r.gcloud.some(c => c[2] === "update-traffic" || c[1] === "deploy" || c[0] === "builds")).toBe(false);
   }, TIMEOUT);
-  it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which the server's parser accepts", async () => {
+
+  // Credible regression: the game deployed without the post-mortem's configured limit, with one apart from its
+  // --memory, with a form the server's parser rejects, or too small to start a re-run beside a game server sized for the
+  // other services' 2Gi (so a lone re-run is never admitted); or another service moved off 2Gi with it. The main path and
+  // a later all-services deploy alike.
+  it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which admits a re-run, and every other service 2Gi", async () => {
     const later = await runAsync(["all", SHA], { state: live(), env: { ANTWAR_SWAP_STABLE: "" } });
     expect(later.status, later.stderr).toBe(0);
     const main = run([SHA]);
@@ -1468,9 +1471,15 @@ describe.concurrent("all", () => {
       for (const d of game) {
         const memory = d[d.indexOf("--memory") + 1]!;
         expect(envOf(d).ANTWAR_MEMORY_LIMIT, route).toBe(memory);
-        expect(parseMemoryQuantity(envOf(d).ANTWAR_MEMORY_LIMIT), route).toBeGreaterThan(0);
+        const limitMiB = parseMemoryQuantity(envOf(d).ANTWAR_MEMORY_LIMIT)! / 2 ** 20;
+        expect(limitMiB, route).toBeGreaterThan(0);
+        // The headroom left beside a game server using all of 2Gi.
+        expect(admits({ headroomMiB: limitMiB - 2048, source: "configured" }, MEMORY_POLICY), route).toBe(true);
       }
-      for (const d of deploys(r.gcloud).filter((d) => d[2] !== "antwar")) expect(envOf(d).ANTWAR_MEMORY_LIMIT, `${route} ${d[2]}`).toBeUndefined();
+      for (const d of deploys(r.gcloud).filter((d) => d[2] !== "antwar")) {
+        expect(envOf(d).ANTWAR_MEMORY_LIMIT, `${route} ${d[2]}`).toBeUndefined();
+        expect(d[d.indexOf("--memory") + 1], `${route} ${d[2]}`).toBe("2Gi");
+      }
     }
   }, TIMEOUT);
 
@@ -1510,17 +1519,17 @@ describe.concurrent("all", () => {
       expect(deploys(r.gcloud)[i + 1]).toEqual(noTraffic(expected));
     }
 
-    // The game: 2 vCPU with the private replay key, no traffic until Ready, then all of it.
+    // The game: 2 vCPU and 4Gi with the private replay key, no traffic until Ready, then all of it.
     // The load balancer's addresses are read once, before any gate, build or deploy, and never printed.
     expect(r.gcloud.filter((c) => c[0] === "compute")).toEqual([RULES_LIST]);
     expect(r.calls.findIndex((c) => c[0] === "gcloud" && c[1] === "compute")).toBeLessThan(r.calls.findIndex((c) => c[0] === "curl"));
     expect(r.gcloud.findIndex((c) => c[0] === "compute")).toBeLessThan(r.gcloud.findIndex((c) => c[0] === "artifacts"));
     for (const address of ["192.0.2.10", "2001:db8::a"]) expect(r.stdout + r.stderr).not.toContain(address);
     expect(deploys(r.gcloud)[17]).toEqual(["run", "deploy", "antwar", "--image", IMAGE,
-      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
+      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
       "--update-secrets", KEY,
       "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
-      "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",
+      "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "4Gi", "--timeout", "3600", "--concurrency", "1000",
       "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION]);
     const gameDeploy = indexOf(r.gcloud, (c) => c[1] === "deploy" && c[2] === "antwar");
     const gameTraffic = indexOf(r.gcloud, (c) => c[2] === "update-traffic" && c[3] === "antwar" && c[4] === "--to-revisions");
@@ -2364,7 +2373,7 @@ describe.concurrent("all", () => {
         labels: { app: "antwar", commit: SHA }, ingress: "INGRESS_TRAFFIC_ALL", invokerIamDisabled: true, scaling: { maxInstanceCount: 1 },
         template: { revision: REV("antwar"), labels: { app: "antwar", commit: SHA }, serviceAccount: CONFIG.RUN_SA,
           scaling: { minInstanceCount: 1, maxInstanceCount: 1 }, timeout: "3600s", maxInstanceRequestConcurrency: 1000,
-          containers: [{ image, resources: { limits: { cpu: "2", memory: "2Gi" }, cpuIdle: false, startupCpuBoost: true } }] },
+          containers: [{ image, resources: { limits: { cpu: "2", memory: "4Gi" }, cpuIdle: false, startupCpuBoost: true } }] },
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
         "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",
