@@ -328,9 +328,12 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       }
       if (!automatic) {
         if (!feed) throw new Error("This watch link has no lobby id.");
-        // Connecting is bounded by the server sending anything at all; once it has, the link opens as before,
-        // however slowly this page decodes. A lobby link never plays another match's recording.
-        const sending = await Promise.race([arrival, limit(handedOver ? 10_000 : CONNECT_MS)]);
+        // Renderer handovers wait for the snapshot with the same bound as automatic Watch, even if status
+        // already says finished. Ordinary links still open once the server sends anything, however slowly
+        // this page decodes. A lobby link never plays another match's recording.
+        const sending = rendererHandover
+          ? await Promise.race([feed.first, limit(10_000)])
+          : await Promise.race([arrival, limit(handedOver ? 10_000 : CONNECT_MS)]);
         clearTimeout(connectTimer);
         if (abort.signal.aborted) return null;
         let opening: StreamMessage | null = null;

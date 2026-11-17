@@ -13,6 +13,8 @@ import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/int
 import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, openSource } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
+import { mountResultModal } from "../../web/src/ui/deck/result-modal.ts";
+import { dom, type ElementPort } from "./pages/dom.ts";
 
 const packets = unpackMessages(packMessages(scale2Packets(20)));
 const messages = packets.map(decodeMessage);
@@ -350,7 +352,7 @@ it("a public replay shares its own replay link; a lobby's recording shares none,
 
 
 /** Real source/worker, with external storage, catalog and transport ports controlled by the test. */
-function handoverClient(automatic: boolean) {
+function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0) {
   vi.stubGlobal("Worker", BrowserWorker);
   const { doc, listeners } = documentPort();
   Object.assign(doc, { querySelector: () => null });
@@ -377,7 +379,8 @@ function handoverClient(automatic: boolean) {
       m.tick = ended ? 100 : 0;
       m.full!.match = 42;
       m.full!.result = ended ? { tick: m.tick - 1, winner: 1, reason: "time_up", decidedBy: "kills", nextStartMs: null } : null;
-      queueMicrotask(() => es.emit(encodeMessage(m)));
+      if (ended && finishedSnapshotDelayMs > 0) setTimeout(() => es.emit(encodeMessage(m)), finishedSnapshotDelayMs);
+      else queueMicrotask(() => es.emit(encodeMessage(m)));
       return es;
     },
   }, { leaderboard });
@@ -409,6 +412,38 @@ it.each([false, true])("preserves a finishing selected lobby through fallback, c
     expect(await h.open({ board: "2d" })).toBeNull();
     if (!automatic) expect(h.leaderboard).toHaveBeenCalledTimes(1);
     expect(h.reject).not.toHaveBeenCalled();
+  } finally { h.cleanup(); }
+});
+
+it("waits for an explicit-lobby handover's final snapshot arriving after the normal connection timeout", async () => {
+  const h = handoverClient(false, 3000);
+  try {
+    const first = (await h.open())!;
+    first.prepareFallback(); first.close(); h.finish();
+    const resumed = await h.open({ board: "2d" });
+    expect(resumed).not.toBeNull();
+    expect(h.leaderboard).not.toHaveBeenCalled();
+    expect(resumed!.head.full!.result?.winner).toBe(1);
+    const playback = new Playback({ live: true }), frame = new Frame();
+    for (const arrival of resumed!.take(0)) {
+      if (arrival.kind === "prepared") playback.pushPrepared(arrival.prepared, arrival.at);
+      else playback.push(arrival.m, arrival.at);
+    }
+    expect(playback.sample(5000, frame)).toBe(true);
+    expect(frame.board!.result?.winner).toBe(1);
+    const port = dom(), result = mountResultModal(port.doc);
+    const dialog = result.dialog as unknown as ElementPort;
+    port.body.append(dialog);
+    result.update(frame);
+    expect(dialog.open).toBe(false);
+    // The first terminal frame starts playback; the result follows its normal ending beat.
+    expect(playback.sample(10_000, frame)).toBe(true);
+    result.update(frame);
+    expect(dialog.open).toBe(true);
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toContain("wins");
+    result.destroy();
+    expect(h.reject).not.toHaveBeenCalled();
+    resumed!.close();
   } finally { h.cleanup(); }
 });
 
