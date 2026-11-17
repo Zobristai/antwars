@@ -49,7 +49,8 @@ export interface EventSourceLike {
 export interface LiveOptions {
   /**
    * Most messages received but not yet decoded and delivered. One more
-   * suspends the link before it is decoded, and onOverflow runs; the owner
+   * stops transport admission before it is decoded. Accepted work drains before
+   * onOverflow runs; the owner
    * reopens the link, whose first message is a full snapshot.
    */
   maxPending?: number;
@@ -78,7 +79,8 @@ function carriesResult(m: StreamMessage): boolean {
 /**
  * Open the live stream. Messages are decoded one at a time and reach the sink
  * in the order they were sent. Admission is bounded before decoding: past
- * maxPending undelivered messages the link suspends. A connection that is
+ * maxPending undelivered messages the transport closes, but its bounded accepted
+ * prefix is delivered before onOverflow requests resync. A connection that is
  * suspended, reopened or closed is abandoned: its undelivered messages are
  * neither decoded nor delivered. Once a message carrying the match's result
  * has been delivered the link is finished: its connection closes and is not
@@ -118,18 +120,25 @@ export function openLive(path: string, sink: Sink, onState: (s: LinkState) => vo
     stop();
     finished = false;
     const my = gen;
+    let draining = false;
     report("connecting");
     const source = open(path);
     es = source;
     source.onopen = () => {
-      if (my === gen && !finished) report("open");
+      if (my === gen && es === source && !finished) report("open");
     };
     source.onmessage = (ev: MessageEvent<string>) => {
-      if (my !== gen) return;
+      if (my !== gen || draining) return;
       options.onArrival?.();
       if (pending >= maxPending) {
-        stop();
-        options.onOverflow?.();
+        // Do not cancel the snapshot already decoding: a slow drawing thread can
+        // otherwise discard every reconnect snapshot before it reaches playback.
+        draining = true;
+        source.close();
+        es = null;
+        void chain.then(() => {
+          if (my === gen && !finished && !closed) options.onOverflow?.();
+        });
         return;
       }
       pending++;
@@ -150,11 +159,11 @@ export function openLive(path: string, sink: Sink, onState: (s: LinkState) => vo
       });
     };
     source.onerror = () => {
-      if (my !== gen || finished) return;
+      if (my !== gen || es !== source || finished) return;
       report("reconnecting");
       // The browser retries a dropped connection itself; one it gave up on (an
       // error status) is reopened here.
-      if (source.readyState === CLOSED && !closed) setTimeout(() => my === gen && !closed && !finished && connect(), RETRY_MS);
+      if (source.readyState === CLOSED && !closed) setTimeout(() => my === gen && es === source && !closed && !finished && connect(), RETRY_MS);
     };
   };
   connect();
