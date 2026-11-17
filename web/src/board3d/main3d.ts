@@ -394,6 +394,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     if (gaveUp) return;
     gaveUp = true;
     engine.stopRenderLoop();
+    input.prepareFallback();
     client.fallback(why);
   };
   engine.onContextLostObservable.add(() => giveUp("its WebGL context was lost"));

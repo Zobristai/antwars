@@ -20,7 +20,8 @@ const { values } = parseArgs({ options: {
   recording: { type: "string" }, from: { type: "string", default: "0" }, to: { type: "string", default: "200" },
   mode: { type: "string", default: "live" }, "slow-ms": { type: "string", default: "0" },
   duration: { type: "string", default: "45" }, dist: { type: "string", default: "web/dist" },
-  chrome: { type: "string" },
+  chrome: { type: "string" }, automatic: { type: "boolean", default: false },
+  "finish-on-fallback": { type: "boolean", default: false },
 } });
 const from = Number(values.from), to = Number(values.to), slowMs = Number(values["slow-ms"]), duration = Number(values.duration);
 if (![from, to, slowMs, duration].every(Number.isFinite) || from < 0 || to < from || to - from > 300 || slowMs < 0 || slowMs > 5000 || duration < 1 || duration > 120 || !["live", "recording"].includes(values.mode!)) throw new Error("Invalid bounded scenario");
@@ -51,7 +52,17 @@ const connections: number[] = [];
 const dist = resolve(values.dist!);
 const server = createServer(async (req, res) => {
   try {
-    const path = new URL(req.url!, "http://localhost").pathname;
+    const url = new URL(req.url!, "http://localhost");
+    const path = url.pathname;
+    if (values["finish-on-fallback"] && path === "/" && url.searchParams.get("board") === "2d") {
+      clearInterval(timer);
+      while (index + 1 < packets.length) state.apply(packets[++index]!);
+      if (!state.full.result) throw new Error("Finish race requires a terminal recording window");
+    }
+    if (path === "/watch/catalog") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ matches: state.full.result ? [] : [{ lobbyId: "fixture", startedAt: 1, rated: false, delaySeconds: 0 }], lobbies: [] })); return;
+    }
     if (path.startsWith("/watch/status/")) {
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ lobbyId: "fixture", delaySeconds: 0, playbackFinished: false })); return;
@@ -101,7 +112,7 @@ try {
       callback(t);
     });
   }, slowMs);
-  const route = values.mode === "live" ? "lobby=fixture" : "recording=fixture";
+  const route = values.mode === "live" ? values.automatic ? "watch=1" : "lobby=fixture" : "recording=fixture";
   await page.goto(`http://127.0.0.1:${address.port}/?${route}&frametime=1`, { waitUntil: "domcontentloaded" });
   const started = Date.now();
   while (Date.now() - started < duration * 1000) {
@@ -124,6 +135,6 @@ try {
   await browser?.close(); clearInterval(timer);
   for (const client of clients) client.end();
   server.closeAllConnections(); await new Promise<void>(done => server.close(() => done()));
-  console.log(JSON.stringify({ mode: values.mode, slowMs, from: packets[0]!.tick, to: packets.at(-1)!.tick,
+  console.log(JSON.stringify({ mode: values.mode, automatic: values.automatic, finishOnFallback: values["finish-on-fallback"], slowMs, from: packets[0]!.tick, to: packets.at(-1)!.tick,
     terminal: state.full.result, connections, errors, warnings, samples }, null, 2));
 }

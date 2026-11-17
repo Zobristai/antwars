@@ -120,6 +120,7 @@ export function openLive(path: string, sink: Sink, onState: (s: LinkState) => vo
     stop();
     finished = false;
     const my = gen;
+    let draining = false;
     report("connecting");
     const source = open(path);
     es = source;
@@ -127,11 +128,12 @@ export function openLive(path: string, sink: Sink, onState: (s: LinkState) => vo
       if (my === gen && es === source && !finished) report("open");
     };
     source.onmessage = (ev: MessageEvent<string>) => {
-      if (my !== gen || es !== source || finished) return;
+      if (my !== gen || draining) return;
       options.onArrival?.();
       if (pending >= maxPending) {
         // Do not cancel the snapshot already decoding: a slow drawing thread can
         // otherwise discard every reconnect snapshot before it reaches playback.
+        draining = true;
         source.close();
         es = null;
         void chain.then(() => {
