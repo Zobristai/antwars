@@ -1474,11 +1474,37 @@ describe("no-effect answers that settle nothing now, or for good", () => {
       expect((bodyOf(reply).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(2);
       expect(held.started).toEqual([id]);
       f.w.at(f.w.now() + 61_000);
-      await f.postMortem.query({ key: alice.key, lobbyId });
+      const again = await f.postMortem.query({ key: alice.key, lobbyId });
+      expect(bodyOf(again).noEffect).toEqual(SHORT_OF_MEMORY_ANSWER);
       await vi.waitFor(() => expect(held.started).toEqual([id, id]));
     }
   });
+
+  // Credible regression: a due retry's reply read after its restart set "Checking", so an owner asking a minute or
+  // more apart is told the version is being checked every time and never the temporary answer the server holds.
+  it("tells an owner who asks again after each wait the temporary answer the server holds, re-running once per due ask", async () => {
+    const held = heldJobs();
+    const f = world({ jobs: held.jobs });
+    const alice = f.w.played("alice");
+    const { lobbyId, id } = f.match(321, [[alice, 0]]);
+    const first = await f.postMortem.query({ key: alice.key, lobbyId });
+    expect(bodyOf(first).noEffect).toEqual({ status: "being_worked_out", reason: "Checking this match's game version. Ask again shortly." });
+    await vi.waitFor(() => expect(held.started).toEqual([id]));
+    held.finish(id, { kind: "stopped", cause: "admission" });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    for (let ask = 1; ask <= 3; ask++) {
+      f.w.at(f.w.now() + 10 * 60_000);
+      const reply = await f.postMortem.query({ key: alice.key, lobbyId });
+      expect(bodyOf(reply).noEffect).toEqual(SHORT_OF_MEMORY_ANSWER);
+      await vi.waitFor(() => expect(held.started).toHaveLength(ask + 1));
+      held.finish(id, { kind: "stopped", cause: "admission" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(held.started).toEqual([id, id, id, id]);
+  });
 });
+
+const SHORT_OF_MEMORY_ANSWER = { status: "not_computed_now", reason: "No-effect commands are not available right now (the server is short of memory). Ask again later." };
 
 /** A record with its members in another order: `first` leads, `last` ends, the rest keep their stored order. */
 function reordered(record: Record<string, unknown>, first: readonly string[], last: readonly string[] = []): Record<string, unknown> {

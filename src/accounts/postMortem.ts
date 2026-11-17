@@ -688,7 +688,10 @@ export function createPostMortem(deps: PostMortemDeps) {
       // its status "shown" here with no page read for it: shape() then says to ask again rather than show it.
       if (startFrom !== undefined) {
         startNoEffect(replayId, startFrom);
-        status = noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined ?? status;
+        const restarted = noEffectEntry(replayId, base.identity)?.value as NoEffectStatus | undefined;
+        // A due retry of a temporary answer restarts its check, which settles only after this reply is shaped: the
+        // owner is told the temporary answer the server holds, not the restart's "being worked out" in its place.
+        if (restarted !== undefined && !(status?.status === "not_computed_now" && restarted.status === "being_worked_out")) status = restarted;
       }
       return { ok: true, body: shape(base, status, { cursor: refusedAt, page: refused }, noEffect) };
     } finally {
