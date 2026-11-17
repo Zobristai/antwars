@@ -1373,6 +1373,15 @@ describe.concurrent("all", () => {
       else expect(revision.values?.[setting]).toBe(`secret:antwars-public-excluded-owner-ids:${version || "7"}`);
       expect(revision.values?.OTHER_SECRET).toBe("secret:other:1");
       expect(envOf(call)[setting]).toBeUndefined();
+      if (call[2] !== "antwar") {
+        const svc = call[2]!;
+        const direct = new RegExp(`${svc} rollback: gcloud run services update-traffic ${svc} .*--to-revisions ${slotOut(svc)}=100`);
+        if (version === "") expect(r.stderr).toMatch(direct);
+        else {
+          expect(r.stderr).not.toMatch(direct);
+          expect(r.stderr).toContain(`${svc} rollback: revision ${slotOut(svc)}, untagged: redeploy with the current public exclusion policy`);
+        }
+      }
     }
     expect(r.gcloud.some(c => c[0] === "secrets")).toBe(false);
   }, TIMEOUT);
@@ -1421,8 +1430,13 @@ describe.concurrent("all", () => {
     const removals = r.gcloud.map((c, i) => ({ c, i })).filter(({c}) => c.includes("--remove-tags"));
     expect(removals).toHaveLength(17);
     for (const {i} of removals) expect(i).toBeLessThan(firstPublicDeploy);
-    for (const svc of SERVICES.filter(svc => svc !== "antwar-records")) expect(r.state.services[svc]!.traffic.filter(t => t.tag)).toEqual([]);
-    expect(r.stderr).toContain("untagged: redeploy with the current public exclusion policy");
+    for (const svc of SERVICES.filter(svc => svc !== "antwar-records")) {
+      expect(r.state.services[svc]!.traffic.filter(t => t.tag)).toEqual([]);
+      const outgoing = svc === "antwar" ? GAME_OUT : slotOut(svc);
+      expect(r.stderr).toContain(`${svc} rollback: revision ${outgoing}, untagged: redeploy with the current public exclusion policy`);
+      expect(r.stderr).not.toMatch(new RegExp(`${svc} rollback: gcloud run services update-traffic`));
+    }
+    expect(r.stderr).toContain(`records rollback: revision ${RECORDS_OUT}, untagged:`);
   }, TIMEOUT);
   it.each(["FAIL_REMOVE_TAGS", "IGNORE_REMOVE_TAGS"])("public exclusion transition stops before deployment when tag removal fails (%s)", async failure => {
     const r = await runAsync(["all", SHA], { state: live(), env: {

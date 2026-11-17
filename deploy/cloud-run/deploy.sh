@@ -551,17 +551,22 @@ remove_incompatible_public_tags() {
   [[ ${#EXCLUSION_TAG_REMOVALS[@]} -eq 0 ]] || deploy_stop "incompatible public tags remain; no policy was updated"
 }
 
-# Select a game rollback tag only for the same policy as the new revision.
-# An incompatible outgoing revision stays saved, untagged, for explicit recovery.
-public_game_rollback_tag() {
+# Direct recovery is safe only when both revisions use the same public policy.
+# Unknown policy stops the deploy rather than advertising an unchecked rollback.
+public_rollback_policy_matches() {
   local outgoing current
-  read_public_revision_policy "$1" || deploy_stop "cannot inspect outgoing game policy for rollback"
+  read_public_revision_policy "$1" || deploy_stop "cannot inspect outgoing policy for rollback"
   outgoing="$PUBLIC_REVISION_POLICY"
-  read_public_revision_policy "$2" || deploy_stop "cannot inspect current game policy for rollback"
+  read_public_revision_policy "$2" || deploy_stop "cannot inspect current policy for rollback"
   current="$PUBLIC_REVISION_POLICY"
-  [[ "$outgoing" != invalid && "$current" != invalid ]] || deploy_stop "cannot establish game rollback policy"
+  [[ "$outgoing" != invalid && "$current" != invalid ]] || deploy_stop "cannot establish public rollback policy"
+  [[ "$outgoing" == "$current" ]]
+}
+
+# An incompatible outgoing game revision stays saved, untagged, for recovery.
+public_game_rollback_tag() {
   PUBLIC_ROLLBACK_TAG=""
-  if [[ "$outgoing" == "$current" ]]; then PUBLIC_ROLLBACK_TAG="$3"; fi
+  if public_rollback_policy_matches "$1" "$2"; then PUBLIC_ROLLBACK_TAG="$3"; fi
 }
 
 # The one way every mode deploys a service and moves its traffic: by
@@ -1281,9 +1286,9 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 
     # One rollback per service, the outgoing revision: tagged r<first 8 of its
     # commit> on the game; untagged on records and on each slot
-    #, whose rollback is restored by revision name, since a tagged old
-    # slot revision can start an instance that takes the slot. Every other tag
-    # is removed; traffic is not changed.
+    #. A slot can roll back directly by revision name only with matching policy;
+    # a tagged old slot revision can start an instance that takes the slot.
+    # Every other tag is removed; traffic is not changed.
     keep_rollback() {
       local svc="$1" tag=""
       if [[ "$FIRST_DEPLOY" == 1 ]]; then
@@ -1304,8 +1309,10 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
         run_gcloud run services update-traffic "$svc" --clear-tags || stop "clearing the tags of $svc failed"
         if [[ "$svc" == "$RECORDS_SERVICE" ]]; then
           stamp records rollback: revision "${OUT_REV[$svc]}", untagged: "$RECORDS_ROLLBACK"
-        else
+        elif public_rollback_policy_matches "${OUT_REV[$svc]}" "${NEW_REV[$svc]}"; then
           stamp "$svc" rollback: gcloud run services update-traffic "$svc" --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" --to-revisions "${OUT_REV[$svc]}=100"
+        else
+          stamp "$svc" rollback: revision "${OUT_REV[$svc]}", untagged: redeploy with the current public exclusion policy
         fi
       fi
       check_tags_and_traffic "$svc" "${tag:+${OUT_REV[$svc]}}" "$tag" latest-only \
