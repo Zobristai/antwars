@@ -1,4 +1,5 @@
 import { checkRulesGeneration, RULES_MARKERS, RULES_VERSION, rulesVersionOf, type SimConfig } from "./config.js";
+import { parseFfaFinish, type FfaFinish } from "./ffaFinish.js";
 import { createMatch } from "./map.js";
 import { gridScaleOf } from "./gridScale.js";
 import { colonyCountOf } from "./mapBoard.js";
@@ -36,6 +37,8 @@ export interface LogTick {
   /** Four-colony matches: the colonies that left the match on this tick, and why. A record of
    * the tick's outcome, which replay derives again; it is not an input. */
   readonly eliminated?: readonly LoggedElimination[];
+  /** Terminal placement evidence, never an input to the simulation. */
+  readonly ffa?: FfaFinish;
 }
 
 export interface LoggedElimination {
@@ -54,9 +57,9 @@ export function headerLine(seed: number, config: SimConfig): string {
 }
 
 export function tickLine(tick: number, inputs: readonly SimInput[], stop: ServerTerminal = false, houseActive = false,
-  eliminated: readonly LoggedElimination[] = []): string {
+  eliminated: readonly LoggedElimination[] = [], ffa?: FfaFinish): string {
   const terminal = typeof stop === "object" ? { idle: [...stop.idle] } : stop === "abandoned" ? { abandoned: true as const } : stop ? { stop: true as const } : {};
-  const line: LogTick = { tick, inputs, ...terminal, ...(houseActive ? { houseActive: true } : {}), ...(eliminated.length === 0 ? {} : { eliminated }) };
+  const line: LogTick = { tick, inputs, ...terminal, ...(houseActive ? { houseActive: true } : {}), ...(eliminated.length === 0 ? {} : { eliminated }), ...(ffa === undefined ? {} : { ffa: parseFfaFinish(ffa) }) };
   return JSON.stringify(line);
 }
 
@@ -67,6 +70,7 @@ export interface ParsedLog {
   readonly abandonments: ReadonlySet<number>;
   readonly idle: ReadonlyMap<number, readonly ColonyId[]>;
   readonly houseActive: ReadonlySet<number>;
+  readonly finishes: ReadonlyMap<number, FfaFinish>;
 }
 
 export function parseLog(lines: readonly string[]): ParsedLog {
@@ -88,10 +92,15 @@ export function parseLog(lines: readonly string[]): ParsedLog {
   const abandonments = new Set<number>();
   const idle = new Map<number, readonly ColonyId[]>();
   const houseActive = new Set<number>();
+  const finishes = new Map<number, FfaFinish>();
   const colonies = colonyCountOf(header.config);
   for (const line of rest) {
     const entry = JSON.parse(line) as LogTick;
     ticks.set(entry.tick, entry.inputs);
+    if (entry.ffa !== undefined) {
+      if (colonies !== 4 || header.config.ffaTerritoryWinnerFirst === undefined || finishes.size !== 0) throw new Error("unexpected Free-for-all finish");
+      finishes.set(entry.tick, parseFfaFinish(entry.ffa));
+    }
     if (entry.stop === true) stops.add(entry.tick);
     if (entry.abandoned === true) abandonments.add(entry.tick);
     if (entry.idle !== undefined) {
@@ -104,7 +113,7 @@ export function parseLog(lines: readonly string[]): ParsedLog {
     }
     if (entry.houseActive === true) houseActive.add(entry.tick);
   }
-  return { header, ticks, stops, abandonments, idle, houseActive };
+  return { header, ticks, stops, abandonments, idle, houseActive, finishes };
 }
 
 /** The server terminal a log recorded for one tick, as every replayer passes it to step. */

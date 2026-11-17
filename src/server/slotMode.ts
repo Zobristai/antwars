@@ -436,8 +436,8 @@ function naturalOutcome(winner: ColonyId | null): MatchOutcome {
  * A four-colony match's result as its lobby records it: why it ended, and every colony the engine eliminated with its
  * tick, as the engine recorded them (a winner the engine also eliminated is kept); none for a two-colony match.
  */
-function fourColonyResult(state: SimState | undefined, result: MatchResult): LobbyMatchResult | undefined {
+export function fourColonyResult(state: SimState | undefined, result: MatchResult): LobbyMatchResult | undefined {
   if (state === undefined || state.colonies.length !== 4) return undefined;
-  return { reason: result.reason,
+  return { reason: result.reason, ...(result.ffa === undefined ? {} : { ffa: result.ffa }),
     eliminations: state.colonies.flatMap(colony => colony.eliminated === undefined ? [] : [{ colony: colony.id, tick: colony.eliminated.tick }]) };
 }

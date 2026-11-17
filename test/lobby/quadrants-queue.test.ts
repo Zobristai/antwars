@@ -7,7 +7,10 @@ import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, type MatchOutcome, type MatchResult } from "../../src/lobby/lobbies.ts";
 import { newWaitToken } from "../../src/lobby/waits.ts";
 import { createRatings, RANKED_MODES, ratingCollection } from "../../src/rating/ratings.ts";
-import { COLONY_NAMES, type MapDefinition } from "../../src/sim/config.ts";
+import { COLONY_NAMES, rulesConfig, type MapDefinition } from "../../src/sim/config.ts";
+import { newMatchConfig } from "../../src/sim/gridScale.ts";
+import { createMatch } from "../../src/sim/map.ts";
+import { fourColonyEnd } from "../../src/sim/elimination.ts";
 import { newMatchMaps, quadrantMatchMaps } from "../../src/sim/mapShapes.ts";
 import { validateQuadrantMap } from "../../src/sim/quadrantMap.ts";
 import { createFirestore, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
@@ -257,6 +260,61 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       for (const player of [red, blue]) expect((await w.ratings.readRating(player.id, "1v1")).ratedMatches).toBe(1);
     });
 
+    it.each(["winner", "time_up", "queens_killed"] as const)("releases an explicitly rated Free-for-all %s with the rating gate on, saving finish metadata and isolated ratings once", async ending => {
+      const w = world(backend);
+      const { lobbyId, ids } = await quadrantsLobby(w, "enabled");
+      // Test-only admission: production queues continue to create unrated Free-for-all matches.
+      await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+      const gated = createLobbies(w.store, createIdentities(w.store), {
+        publicSlots: 1, privateSlots: 1, ffaLiveEnabled: true, now: () => w.clock.t,
+      });
+      const before = (await w.raw(`lobbies/${lobbyId}`))!;
+      const seats = JSON.parse(before.seats!) as { id: string; colony: number }[];
+      let result: MatchResult = { reason: "time_up", eliminations: [{ colony: 1, tick: 50 }],
+        ffa: { version: 1, order: [2, 0, 3, 1], territoryWinnerFirst: false, rateable: true } };
+      const outcome: MatchOutcome = ending === "winner" ? "colony_2_won" : "draw";
+      if (ending !== "winner") {
+        const base = newMatchConfig(rulesConfig("redesign"));
+        const state = createMatch(404, { ...base, ffaTerritoryWinnerFirst: false,
+          terrain: { ...base.terrain!, maps: [FIXTURE] } });
+        if (ending === "queens_killed") for (const c of state.colonies) for (const q of c.queens!) q.lostTick = 10;
+        const natural = fourColonyEnd(state, 10, ending === "time_up")!;
+        expect(natural).toMatchObject({ winner: null, decidedBy: "draw", reason: ending,
+          ffa: { order: [0, 1, 2, 3], rateable: true } });
+        result = { ...natural, eliminations: state.colonies.flatMap(c => c.eliminated === undefined
+          ? [] : [{ colony: c.id, tick: c.eliminated.tick }]) };
+      }
+      const finish = result.ffa!;
+      await gated.registerInstance("public-0", { runId: "rated-run", ...INSTANCE });
+      value(await gated.beginMatch(lobbyId, "public-0", "rated-run"));
+      expect((await w.raw("slots/public-0"))?.lobbyId).toBe(lobbyId);
+      expect(value(await gated.endMatch(lobbyId, "rated-run", outcome, undefined, undefined, undefined, undefined, result))).toEqual({ next: null });
+      const ended = (await w.raw(`lobbies/${lobbyId}`))!;
+      expect(ended).toMatchObject({ state: "ended", slot: "", outcome, rated: "true" });
+      expect(JSON.parse(ended.result!)).toEqual(result);
+      expect(await w.raw("slots/public-0")).toBeNull();
+      const history = (await w.raw(`ffaMatches/${lobbyId}`))!;
+      expect(JSON.parse(history.input!).finish).toEqual(finish);
+      const changes = JSON.parse(history.changes!) as { identityId: string; place: number; after: { mu: number; sigma: number } }[];
+      expect(changes).toHaveLength(4);
+      const stored = new Map<string, Fields>();
+      for (const seat of seats) {
+        const fields = (await w.raw(`ratings-ffa/${seat.id}`))!;
+        expect(fields.ratedMatches).toBe("1");
+        expect(changes.find(change => change.identityId === seat.id)).toEqual({
+          identityId: seat.id, place: finish.order.findIndex(colony => colony === seat.colony) + 1,
+          before: { mu: 25, sigma: 25 / 3 }, after: { mu: Number(fields.mu), sigma: Number(fields.sigma) },
+        });
+        stored.set(seat.id, fields);
+      }
+      for (const id of ids) for (const mode of RANKED_MODES) expect(await w.raw(`${ratingCollection(mode)}/${id}`)).toBeNull();
+      expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+      expect(await gated.endMatch(lobbyId, "rated-run", outcome, undefined, undefined, undefined, undefined, result)).toEqual({ ok: false, reason: "not_holding" });
+      expect(await w.raw(`ffaMatches/${lobbyId}`)).toEqual(history);
+      expect(await w.raw(`lobbies/${lobbyId}`)).toEqual(ended);
+      for (const [id, fields] of stored) expect(await w.raw(`ratings-ffa/${id}`)).toEqual(fields);
+    });
+
     it("stores the four colonies, their names, a colony 2 or 3 winner or a draw, the reason and each elimination tick on release", async () => {
       const w = world(backend);
       const releases: [MatchOutcome, MatchResult][] = [
@@ -308,3 +366,39 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
     });
   });
 }
+
+for (const enabled of [false, true]) for (const rated of [false, true]) for (const outcome of ["colony_2_won", "draw", "abandoned"] as const) {
+  it(`keeps Free-for-all rating behind both gates and natural outcomes (enabled=${enabled}, rated=${rated}, outcome=${outcome})`, async () => {
+    const shouldRate = enabled && rated && outcome !== "abandoned";
+    const w = world("memory");
+    const { lobbyId, ids } = await quadrantsLobby(w, "gate");
+    const gated = createLobbies(w.store, createIdentities(w.store), { ffaLiveEnabled: enabled, now: () => w.clock.t });
+    if (rated) await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+    const finish = { version: 1 as const, order: [2, 0, 3, 1] as const, territoryWinnerFirst: false, rateable: true };
+    const result = { reason: "time_up", eliminations: [], ffa: finish };
+    await gated.registerInstance("public-0", { runId: "run", ...INSTANCE });
+    value(await gated.beginMatch(lobbyId, "public-0", "run"));
+    value(await gated.endMatch(lobbyId, "run", outcome, undefined, undefined, undefined, undefined, result));
+    expect(JSON.parse((await w.raw(`lobbies/${lobbyId}`))!.result!)).toEqual(result);
+    for (const id of ids) {
+      expect((await w.raw(`ratings-ffa/${id}`))?.ratedMatches).toBe(shouldRate ? "1" : undefined);
+      for (const mode of RANKED_MODES) expect(await w.raw(`${ratingCollection(mode)}/${id}`)).toBeNull();
+    }
+    expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+    expect((await w.raw(`ffaMatches/${lobbyId}`)) !== null).toBe(shouldRate);
+  });
+}
+
+it("an enabled gate still preserves historical results with no order and never routes them to Glicko", async () => {
+  const w = world("memory");
+  const { lobbyId, ids } = await quadrantsLobby(w, "legacy");
+  const gated = createLobbies(w.store, createIdentities(w.store), { ffaLiveEnabled: true, now: () => w.clock.t });
+  await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+  await gated.registerInstance("public-0", { runId: "run", ...INSTANCE });
+  value(await gated.beginMatch(lobbyId, "public-0", "run"));
+  const historical = { reason: "time_up", eliminations: [] };
+  value(await gated.endMatch(lobbyId, "run", "colony_0_won", undefined, undefined, undefined, undefined, historical));
+  expect(JSON.parse((await w.raw(`lobbies/${lobbyId}`))!.result!)).toEqual(historical);
+  for (const id of ids) expect(await w.raw(`ratings-ffa/${id}`)).toBeNull();
+  expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+});
