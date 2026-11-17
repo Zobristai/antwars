@@ -1,6 +1,7 @@
 import { createServer, get as httpGet, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodePublicMessage } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
@@ -644,6 +645,23 @@ describe("the downloadable match record carries each seat's call replies", () =>
     expect(text).not.toContain("seat-private");
     expect(calls(JSON.parse(text) as MatchRecord)[0]).toMatchObject({ arguments: { key: "[redacted key]" },
       reply: { agentId: "[agent seat 0]", reconnectToken: "[redacted reconnectToken]" } });
+  }, 30_000);
+
+  it("carries a seated test username claim into the public record without its proving or issued key", async () => {
+    const proof = randomBytes(32).toString("base64url");
+    const issued = randomBytes(32).toString("base64url");
+    const claim = storedCall("claim_username", { name: "fixture-test", testOwnerKey: proof },
+      { content: [], structuredContent: { key: issued } });
+    const claimLine = replyLine("seat-private-0", 1, { tool: "claim_username", receivedAt: 20, answeredAt: 21, ...claim.call });
+    const gcs = await fakeGcs();
+    gcs.put({ ...match(), replyLines: [...replyLines, claimLine] });
+    await service(gcs).svc.sweep();
+    const text = new TextDecoder().decode(gcs.read(REPLAYS, `${ID}.json`));
+    expect(text.includes(proof)).toBe(false);
+    expect(text.includes(issued)).toBe(false);
+    const published = calls(JSON.parse(text) as MatchRecord).find(line => line.tool === "claim_username");
+    expect(published).toMatchObject({ type: "reply", seat: 0, arguments: { testOwnerKey: "[redacted testOwnerKey]" },
+      reply: { key: "[redacted key]" }, redacted: ["arguments.testOwnerKey", "reply.key"] });
   }, 30_000);
 
   it("seals a private record's replies, with each agent id's seat, and writes nothing public", async () => {

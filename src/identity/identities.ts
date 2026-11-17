@@ -2,6 +2,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
 import { identityDisplay, KEY_ACTIVITY_WINDOW_MS, nameState, timestamp } from "./retention.js";
+import { isHouseOwned } from "./houseOwnership.js";
 
 /**
  * Usernames and owner/agent handles held by once-issued keys.
@@ -97,7 +98,8 @@ export function parseName(input: string): Name | undefined {
 
 export interface Identities {
   /** Omitted caller disables address accounting; null refuses unavailable enabled context. */
-  claimUsername(name: string, caller?: string | null, ownerKey?: string, guard?: CommitGuard): Promise<Outcome<IssuedIdentity>>;
+  /** testOwnerKey proves a server-allowlisted test owner; it never owns the new account. */
+  claimUsername(name: string, caller?: string | null, ownerKey?: string, guard?: CommitGuard, testOwnerKey?: string): Promise<Outcome<IssuedIdentity>>;
   /** No key use: current display/retention projection by stable identity id. */
   findById(id: string): Promise<Identity | undefined>;
   /** Durable successful admission into a started match (not lobby seating). */
@@ -220,8 +222,10 @@ function writesOf(writes: readonly Write[]): Write[] {
 const handleIndex = (ownerId: string, canonical: string) => `identityHandles/${ownerId}-${canonical}`;
 const rotationBudget = (identityId: string) => `identityClaimLimits/rotations-${identityId}`;
 
-export function createIdentities(store: Store, options: { readonly now?: () => number } = {}): Identities {
+export function createIdentities(store: Store, options: { readonly now?: () => number; readonly testClaimOwnerIds?: readonly string[] } = {}): Identities {
   const now = options.now ?? Date.now;
+  // Snapshot server configuration: callers cannot enrol themselves, nor can new test accounts inherit permission.
+  const testClaimOwners = new Set(options.testClaimOwnerIds ?? []);
   /** Expiration is serialized with claims, rotation and activity on the owner. */
   async function account(read: TransactionRead, id: string, at: number, writes: Write[]): Promise<Account | undefined> {
     const fields = (await read([`identities/${id}`])).get(`identities/${id}`);
@@ -281,7 +285,7 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
   }
 
   const api: Identities = {
-    async claimUsername(input, caller, ownerKey, guard) {
+    async claimUsername(input, caller, ownerKey, guard, testOwnerKey) {
       const name = parseName(input);
       if (!name) return refuse("invalid_name");
       if (reservedUsername(name.canonical)) return refuse("reserved_name");
@@ -291,6 +295,15 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
       return store.transaction<Outcome<IssuedIdentity>>(async (read) => {
         const at = now();
         const writes: Write[] = [];
+        if (testOwnerKey !== undefined) {
+          // Check current key, retention and server designation in this transaction, so rotation/purge
+          // cannot race a previously accepted proof. Never accept a handle or house credential.
+          const sponsor = await authenticated(read, testOwnerKey, at, writes);
+          if (!sponsor || sponsor.fields.kind !== "username" || sponsor.id !== sponsor.ownerId
+            || !testClaimOwners.has(sponsor.id) || await isHouseOwned(read, sponsor.id)) {
+            return { result: refuse("unknown_key"), writes: writesOf(writes) };
+          }
+        }
         const claimant = ownerKey === undefined ? undefined : await authenticated(read, ownerKey, at, writes);
         if (ownerKey !== undefined && !claimant) return { result: refuse("unknown_key"), writes: writesOf(writes) };
         if (claimant && claimant.id !== claimant.ownerId) return { result: refuse("not_owner_key"), writes: writesOf(writes) };
@@ -300,7 +313,7 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
           const holder = await account(read, current.identityId!, at, writes);
           if (holder && holder.owner.nameState !== "released") return { result: refuse("taken"), writes: writesOf(writes) };
         }
-        const budget = caller === undefined ? [] : await claimBudget(read,
+        const budget = caller === undefined || testOwnerKey !== undefined ? [] : await claimBudget(read,
           `identityClaimLimits/usernames-${verifierOf(caller)}`, USERNAME_CLAIM_LIMIT, at);
         if (!budget) return { result: refuse("username_claim_limit"), writes: writesOf(writes) };
         // Replacing a released name retains the account and its existing key.

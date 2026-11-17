@@ -8,6 +8,7 @@ import { replaySourceFromEnv } from "./replays/access.js";
 import { historySourceFromEnv } from "./replays/history-source.js";
 import { firestoreFromEnv } from "./store/firestore.js";
 import { createIdentities } from "./identity/identities.js";
+import { testClaimOwnerIdsFromEnv } from "./identity/testClaimAuthorization.js";
 import { createLobbies, STALE_HOLD_GRACE_MS } from "./lobby/lobbies.js";
 import { createRatings, startRecordFill } from "./rating/ratings.js";
 import { correctedHistorySource, correctedReplaySource } from "./replays/correctedRecordings.js";
@@ -31,6 +32,10 @@ import { createVersionSource, httpUploadPack } from "./accounts/postMortemVersio
  * optional ANTWAR_RECORD_INPUT_BUCKET, with ANTWAR_CODE_VERSION (the full commit
  * deployed), to hand each recorded match to the record service,
  * ANTWAR_OPERATOR_TOKEN for slot-only header-authenticated stop (disabled when unset),
+ * optional ANTWARS_TEST_CLAIM_OWNER_IDS, a comma-separated allowlist of existing non-house
+ * username identity UUIDs whose current keys may authorise test username claims without
+ * spending the per-address budget. Unset or blank grants no allowance. It is not a secret;
+ * the corresponding keys stay in the test caller's private store, never in configuration.
  * ANTWAR_LOAD_BALANCER_ADDRESS, the comma list of this deployment's load-balancer
  * addresses that clientSource looks past (unset on match slots), and,
  * for private antwar-preview comparison runs only, ANTWAR_RULES and
@@ -55,10 +60,12 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   let lobbySlots;
   let recordHandoff;
   let usernameClaimLimitRule;
+  let testClaimOwnerIds;
   let slotWaker;
   let relayKey;
   try {
     usernameClaimLimitRule = usernameClaimLimitRuleFromEnv(process.env);
+    testClaimOwnerIds = testClaimOwnerIdsFromEnv(process.env);
     configureClientSource(process.env);
     relayKey = deriveRelayKey(privateMediaKey(process.env.ANTWAR_PRIVATE_REPLAY_KEY));
     slotSettings = slotOptions(process.env);
@@ -78,7 +85,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   let slot: SlotWiring | undefined;
   let accounts: AccountStores | undefined;
   if (store !== undefined) {
-    const identities = createIdentities(store);
+    const identities = createIdentities(store, { testClaimOwnerIds });
     // Slots are assigned through the waking store, so each taken slot's server is woken after commit.
     const lobbyStore = slotWaker === undefined ? store : wakingStore(store, slotWaker);
     // A hold whose server never began its match is released after the stale grace.
