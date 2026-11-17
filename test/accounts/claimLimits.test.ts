@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { Readable } from "node:stream";
@@ -113,8 +113,8 @@ async function open(transport: "HTTP" | "MCP", port: number) {
     }));
     clients.push(client);
   }
-  return async (op: string, args: Record<string, unknown>, forwarded?: string, host?: string) => {
-    headers = { ...(forwarded === undefined ? {} : { "x-forwarded-for": forwarded }), ...(host ? { host } : {}) };
+  return async (op: string, args: Record<string, unknown>, forwarded?: string, host?: string, extraHeaders: Record<string, string> = {}) => {
+    headers = { ...extraHeaders, ...(forwarded === undefined ? {} : { "x-forwarded-for": forwarded }), ...(host ? { host } : {}) };
     if (client) {
       const result = await client.callTool({ name: op, arguments: args });
       return { ok: result.isError !== true, status: 0, body: result.structuredContent as Body };
@@ -241,6 +241,61 @@ describe("identity creation budgets without external services", () => {
 
 for (const transport of ["HTTP", "MCP"] as const) {
   describe(`${transport} actual account wiring`, () => {
+    it("only current designated-owner proof skips an exhausted budget, creating independent owners without inheriting permission", async () => {
+      const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      const w = world("client");
+      const sponsor = value(await w.identities.claimUsername(`test${randomUUID().slice(0, 8)}`));
+      const outsider = value(await w.identities.claimUsername(`test${randomUUID().slice(0, 8)}`));
+      const identities = createIdentities(w.store, { now: w.now, testClaimOwnerIds: [sponsor.identity.id] });
+      const call = await open(transport, await serve({ ...w.stores, identities }));
+      const address = "192.0.2.20";
+      for (let i = 0; i < 10; i++) {
+        expect((await call("claim_username", { name: `visitor${i}` }, address)).ok).toBe(true);
+      }
+      const budget = () => JSON.stringify([...w.docs].filter(([path]) => path.startsWith("identityClaimLimits/")));
+      const before = budget();
+      expect((await call("claim_username", { name: "overbudget" }, address)).body.error).toBe("username_claim_limit");
+      const createdIds = new Set<string>();
+      let createdKey = "";
+      for (let i = 0; i < 4; i++) {
+        const result = await call("claim_username", { name: `newtest${i}`, testOwnerKey: sponsor.key }, address);
+        expect(result.ok).toBe(true);
+        const issuedKey = result.body.key as string;
+        expect(typeof issuedKey).toBe("string");
+        expect(issuedKey === sponsor.key).toBe(false);
+        const identity = value(await identities.resolveKey(issuedKey));
+        expect(identity.kind).toBe("username");
+        expect(identity.id === sponsor.identity.id).toBe(false);
+        expect(w.docs.get(`identities/${identity.id}`)?.ownerId).toBeUndefined();
+        createdIds.add(identity.id);
+        createdKey = issuedKey;
+        // The same MCP session's next request has no implicit privilege.
+        expect((await call("claim_username", { name: "stilllimited" }, address)).body.error).toBe("username_claim_limit");
+      }
+      expect(createdIds.size).toBe(4);
+      expect(budget()).toBe(before);
+      for (const proof of [randomUUID(), outsider.key, createdKey, sponsor.identity.id]) {
+        const result = await call("claim_username", { name: "forgedtest", testOwnerKey: proof }, address);
+        expect(result.body.error).toBe("invalid_key");
+        if (transport === "HTTP") expect(result.status).toBe(401);
+      }
+      // Neither a public owner ID, a test-looking name, flags nor an asserted header is proof.
+      const forged = await call("claim_username", { name: "testvisitor", testOwnerId: sponsor.identity.id, testAccount: true }, address,
+        undefined, { "x-test-owner-id": sponsor.identity.id, "x-test-account": "true" });
+      expect(forged.body.error).toBe("username_claim_limit");
+      for (const [name, error] of [["!", "invalid_name"], ["claude", "reserved_name"], ["newtest0", "taken"]]) {
+        expect((await call("claim_username", { name, testOwnerKey: sponsor.key }, address)).body.error).toBe(error);
+      }
+      expect((await call("claim_username", { name: "nocaller", testOwnerKey: sponsor.key })).body.error).toBe("caller_unavailable");
+      const rotated = value(await identities.rotateKey(sponsor.key));
+      expect((await call("claim_username", { name: "oldproof", testOwnerKey: sponsor.key }, address)).body.error).toBe("invalid_key");
+      expect((await call("claim_username", { name: "newproof", testOwnerKey: rotated.key }, address)).ok).toBe(true);
+      const logged = JSON.stringify(info.mock.calls);
+      for (const privateValue of [sponsor.key, outsider.key, createdKey, rotated.key, sponsor.identity.id]) {
+        expect(logged.includes(privateValue)).toBe(false);
+      }
+    });
+
     it("ships off: malformed/missing addresses never refuse or count; logs shape only and lists all reserved words", async () => {
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
       const w = world();

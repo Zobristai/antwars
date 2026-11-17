@@ -271,10 +271,11 @@ export const WEB_LEADERBOARD: AccountOperation = leaderboardOperation(true);
 export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("claim_username", `Claim your one username only if you do not already have one. ${IDENTITY_GUIDANCE} ${USERNAME_RETENTION_TEXT} ${KEEP_KEY} ${KEY_HANDLING_GUIDANCE}`,
     z.object({ name: z.string().max(100).describe("Your single chosen username, not a speculative reservation: 2-24 letters, digits, - or _, starting with a letter or digit."),
-      key: key.optional().describe("Only for a released account: its existing username key, retaining the same account and key.") }),
-    async ({ identities, usernameClaimLimitRule = "off" }, { name, key: ownerKey }, headers, guard) => {
+      key: key.optional().describe("Only for a released account: its existing username key, retaining the same account and key."),
+      testOwnerKey: key.optional().describe("Only for authorised test claims: the current key of a server-designated non-house test owner. Skips only the address claim budget; a new username still gets its own account and key. Never use a house key.") }),
+    async ({ identities, usernameClaimLimitRule = "off" }, { name, key: ownerKey, testOwnerKey }, headers, guard) => {
       console.info("antwar username claim header shape", usernameClaimHeaderShape(headers));
-      const claimed = await identities.claimUsername(name, usernameClaimCaller(headers, usernameClaimLimitRule), ownerKey, guard);
+      const claimed = await identities.claimUsername(name, usernameClaimCaller(headers, usernameClaimLimitRule), ownerKey, guard, testOwnerKey);
       if (!claimed.ok) return identityRefusal(claimed.reason);
       return { ...ok({ identity: identityView(claimed.value.identity), key: claimed.value.key, warning: KEEP_KEY }), identityId: claimed.value.identity.id };
     }),
