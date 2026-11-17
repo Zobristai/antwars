@@ -2418,6 +2418,46 @@ describe("optional public exclusion secret", () => {
     else expect(revision.values?.[setting]).toBe("secret:antwars-public-excluded-owner-ids:12");
     expect(r.state.revisions["antwar-new"]!.values?.OTHER_SECRET).toBe("secret:other:1");
   });
+  it.each(["antwar-public-0", "antwar-private-7", "antwar"])("refuses missing live slots before any change when %s has exclusions and the version is omitted", protectedService => {
+    let before: State;
+    const r = run(["slots", "live", SHA], { state: s => {
+      s.services[protectedService] = { latest: "protected-old", traffic: [{ revisionName: "protected-old", percent: 100 }] };
+      s.revisions["protected-old"] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA,
+        env: [setting, "OTHER_SECRET"], values: { [setting]: "secret:antwars-public-excluded-owner-ids:12", OTHER_SECRET: "secret:other:1" } };
+      before = structuredClone(s);
+    } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("refusing to create missing live slots");
+    expect(r.stderr).toContain("PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION");
+    expect(deploys(r.gcloud)).toEqual([]);
+    expect(r.gcloud.filter(c => c[0] === "builds" || c[2] === "update-traffic" || c[2] === "delete")).toEqual([]);
+    expect(r.state).toEqual(before!);
+    expect(r.state.services["antwar-public-1"]).toBeUndefined();
+    expect(r.state.revisions["protected-old"]!.values?.[setting]).toBe("secret:antwars-public-excluded-owner-ids:12");
+  });
+  it.each(["12", "disable"])("explicit exclusion mode permits a mixed existing/missing live-slot deployment (%j)", version => {
+    const r = run(["slots", "live", SHA], { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version }, state: s => {
+      s.services["antwar-public-0"] = { latest: "protected-old", traffic: [{ revisionName: "protected-old", percent: 100 }] };
+      s.revisions["protected-old"] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA,
+        env: [setting], values: { [setting]: "secret:antwars-public-excluded-owner-ids:7" } };
+    } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(deploys(r.gcloud)).toHaveLength(16);
+    for (const service of ["antwar-public-0", "antwar-public-1"]) {
+      expect(r.state.revisions[`${service}-new`]!.values?.[setting]).toBe(version === "12"
+        ? "secret:antwars-public-excluded-owner-ids:12" : undefined);
+    }
+  }, LIVE_SLOTS_TIMEOUT);
+  it("omitted version still permits missing slots when existing live services have no exclusions", () => {
+    const r = run(["slots", "live", SHA], { state: s => {
+      s.services["antwar-public-0"] = { latest: "unprotected-old", traffic: [{ revisionName: "unprotected-old", percent: 100 }] };
+      s.revisions["unprotected-old"] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA, env: ["OTHER_SECRET"], values: { OTHER_SECRET: "secret:other:1" } };
+    } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(deploys(r.gcloud)).toHaveLength(16);
+    expect(r.state.revisions["antwar-public-0-new"]!.values?.OTHER_SECRET).toBe("secret:other:1");
+    expect(r.state.revisions["antwar-public-1-new"]!.env).not.toContain(setting);
+  }, LIVE_SLOTS_TIMEOUT);
   it("does not attach the reference to records or preview, even with a version set", () => {
     for (const args of [["records", SHA], ["preview", SHA, "dir"]]) {
       const r = run(args, { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
@@ -2434,10 +2474,13 @@ describe("optional public exclusion secret", () => {
   });
   it.each([undefined, "", "disable"])("live slots preserve exclusion unless explicitly disabled (%j)", version => {
     const r = run(["slots", "live", SHA], { env: version === undefined ? {} : { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version }, state: s => {
-      s.services["antwar-public-0"] = { latest: "old-slot", traffic: [{ revisionName: "old-slot", percent: 100 }] };
-      s.revisions["old-slot"] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA,
-        env: [setting, "OTHER_SECRET", "OTHER_SETTING"],
-        values: { [setting]: "secret:antwars-public-excluded-owner-ids:12", OTHER_SECRET: "secret:other:1", OTHER_SETTING: "retained" } };
+      for (const kind of ["public", "private"]) for (let i = 0; i < 8; i++) {
+        const service = `antwar-${kind}-${i}`, revision = `${service}-old`;
+        s.services[service] = { latest: revision, traffic: [{ revisionName: revision, percent: 100 }] };
+        s.revisions[revision] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA,
+          env: [setting, "OTHER_SECRET", "OTHER_SETTING"],
+          values: { [setting]: "secret:antwars-public-excluded-owner-ids:12", OTHER_SECRET: "secret:other:1", OTHER_SETTING: "retained" } };
+      }
     } });
     expect(r.status, r.stderr).toBe(0);
     const revision = r.state.revisions["antwar-public-0-new"]!;

@@ -397,6 +397,54 @@ service_state_or_absent() {
   fi
 }
 
+# An omitted version can preserve only a binding on an existing service. Check
+# every declared live service before a slots-only deploy changes any of them.
+# Inspect binding names, never secret contents, including every serving revision.
+check_live_exclusion_creation() {
+  local svc slot snapshot err refs rev bound missing=() services=(antwar)
+  LIVE_EXCLUSION_BOUND=0
+  for slot in "${SLOTS[@]}"; do services+=("$PREFIX$slot"); done
+  for svc in "${services[@]}"; do
+    err="$(mktemp)"
+    if snapshot="$(run_gcloud run services describe "$svc" --format json 2>"$err")"; then
+      rm -f "$err"
+    elif grep -qi 'cannot find service' "$err"; then
+      rm -f "$err"
+      [[ "$svc" == antwar ]] || missing+=("$svc")
+      continue
+    else
+      cat "$err" >&2; rm -f "$err"
+      deploy_stop "cannot inspect public exclusion protection on $svc; no live slot was changed"
+    fi
+    refs="$(node -e '
+      let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+        const svc = JSON.parse(s), st = svc.status;
+        if (!st || !Array.isArray(st.traffic)) process.exit(1);
+        const env = svc.spec?.template?.spec?.containers?.[0]?.env ?? [];
+        if (env.some(e => e.name === "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS")) console.log("BOUND");
+        const refs = st.traffic.filter(t => t.percent > 0)
+          .map(t => t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined));
+        for (const ref of new Set(refs)) {
+          if (typeof ref !== "string" || !/^[a-z0-9-]+$/.test(ref)) process.exit(1);
+          console.log(ref);
+        }
+      });' <<<"$snapshot")" || deploy_stop "cannot inspect public exclusion protection on $svc; no live slot was changed"
+    for rev in $refs; do
+      if [[ "$rev" == BOUND ]]; then LIVE_EXCLUSION_BOUND=1; continue; fi
+      bound="$(run_gcloud run revisions describe "$rev" --format json | node -e '
+        let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+          const env = JSON.parse(s).spec?.containers?.[0]?.env;
+          if (!Array.isArray(env)) process.exit(1);
+          console.log(env.some(e => e.name === "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS") ? "1" : "0");
+        });')" || deploy_stop "cannot inspect public exclusion protection on $svc; no live slot was changed"
+      [[ "$bound" == 0 ]] || LIVE_EXCLUSION_BOUND=1
+    done
+  done
+  if [[ "$LIVE_EXCLUSION_BOUND" == 1 && ${#missing[@]} -gt 0 ]]; then
+    deploy_stop "refusing to create missing live slots (${missing[*]}) without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions; give the pinned version (or explicit disable)"
+  fi
+}
+
 # The one way every mode deploys a service and moves its traffic: by
 # the name of the revision this deploy created, never to "latest", so a failed
 # or no-op deploy can never send traffic to an older run's leftover revision.
@@ -416,6 +464,9 @@ deploy_named() {
   read -r serving before _ _ < <(service_state_or_absent "$svc") \
     || deploy_stop "cannot read $svc before its deploy"
   if [[ "$serving" == ABSENT ]]; then
+    if [[ "${MODE:-}" == slots && "${TARGET:-}" == live && "${LIVE_EXCLUSION_BOUND:-0}" == 1 && -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
+      deploy_stop "refusing to create missing live slot $svc without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions"
+    fi
     before=""
     serving=none
     flags=()
@@ -1688,15 +1739,18 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       live_slot_settings "$SHA"
       require_main_commit "$SHA"
     fi
+    SLOTS=()
+    for ((n = 0; n < PUBLIC_SLOTS; n++)); do SLOTS+=("public-$n"); done
+    for ((n = 0; n < PRIVATE_SLOTS; n++)); do SLOTS+=("private-$n"); done
+    if [[ "$TARGET" == live && -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
+      check_live_exclusion_creation
+    fi
     image_digest "$REPO" "$SHA"
 
     project_number
     # Every slot server wakes the slot it hands a lobby to at this address.
     TEMPLATE="https://$PREFIX{slot}-$PROJECT_NUMBER.$REGION.run.app"
 
-    SLOTS=()
-    for ((n = 0; n < PUBLIC_SLOTS; n++)); do SLOTS+=("public-$n"); done
-    for ((n = 0; n < PRIVATE_SLOTS; n++)); do SLOTS+=("private-$n"); done
     SERVICES=()
     for SLOT in "${SLOTS[@]}"; do
       SERVICE="$PREFIX$SLOT"
