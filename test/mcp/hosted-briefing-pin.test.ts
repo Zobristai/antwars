@@ -40,19 +40,21 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // count-mark caste, reply and PATROL sentences); with those sentences removed every text hashes to its previous pin.
 // Redesign texts repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each
 // flyer in sight with its grounded, flying or hovering state); with those two sentences removed every text hashes to its previous pin.
+// Rules-text vocabulary repinned: only the documented movement/direct wording substitutions change.
+// All join hashes remain unchanged; simulation rules and their version are unchanged.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
   "join house=false undrawn=true nest=false": "9f82b0787446dd2dcb6d0a5287389c91436b326026d542662aeaa57b11ed0b23",
   "join house=false undrawn=true nest=true": "1d171ca6af4bf448a723ff746a13f177f7564b1ba47ad46ad309b95e92208e78",
-  "rules house=false undrawn=true": "dcf8a46e0a26be11089bc983cfa30c2534426d6654735c7005a5c8b7015c162f",
+  "rules house=false undrawn=true": "e97dd228b2bf80799a6c21e2dd9043d531ebb514248520eadaf53bca1acf0a90",
   "join house=false undrawn=false nest=false": "da9f206723a7a93d93a9c13ad078ae6b48f1fdd19069978114adf8813cc4e6d7",
   "join house=false undrawn=false nest=true": "63e582a095a06c3feb075d80dc2d0ca87883fb4af879c39aed4897f4b3155f37",
-  "rules house=false undrawn=false": "977953274b1810d923c481f706ff828f2f81f81733ee9cb27257543f39d8e9a7",
+  "rules house=false undrawn=false": "39929998b3bb4473e60e51cdb0c885aec85ac813f4942008d6264cd95e0477a5",
   "join house=true undrawn=true nest=false": "7858aac5b8c97dff39385ddecda29bf8b20d1543b517322230fec44e8bd213ab",
   "join house=true undrawn=true nest=true": "eaa963c92bff17943e2e7301c6b84757acef2cc421580cb320097d155982d0cc",
-  "rules house=true undrawn=true": "8106221918efbb08d33977ff88fef9e83f3cb66fc1da1f99c50dec96c506ac33",
+  "rules house=true undrawn=true": "bceba8c615ab9696ec4b351bb529acf5580bf1c0d42d9d099537c82d05475bb2",
   "join house=true undrawn=false nest=false": "60575dff108c249386cb2be56d2034571c4ffb38809a4010c58d06c657552542",
   "join house=true undrawn=false nest=true": "9534c6f963914bfe470106a439e3861345a0512b302dbaea73e5087507f6a0b3",
-  "rules house=true undrawn=false": "975fff8c35db1fc55888638568bce529e7ae9e6afcdb11586e842d7e41ba497a",
+  "rules house=true undrawn=false": "ab1c80b6cdeb85297ef96c46f5e53d4a86153c03a676bb1b13d849d5005ed6cf",
 };
 
 // The antwar-preview comparison service (held-match mode, ANTWAR_RULES and ANTWAR_PLAYERS set) is hosted
@@ -69,20 +71,21 @@ const HOSTED_AT_5DF81D04: Record<string, string> = {
 // Redesign texts repinned for rules 28 as above; built from the frozen rules-27 redesign config each hashes to its previous pin.
 // Redesign texts repinned for flyers as above; the v4 and count-marks digests are unchanged.
 // Redesign texts repinned for the two more Flyers sentences as above; the v4 and count-marks digests are unchanged.
+// Rules-text vocabulary repinned with the same substitutions; all join hashes remain unchanged.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "join v4 players=2": "5c5f62959d1ef08efa3ba6e40a31aede6b967a96ed66b893108ec82d2130d14a",
-  "rules v4 players=2": "d74106ae57974263cf40fff2fd2e99c52c1c1e7a8d61be0c074032dc0bc14eae",
+  "rules v4 players=2": "0f98b5355c34b4fe2f6edf6f7f911da8962bc8218158bec87f58bfee08edfd9e",
   "join v4 players=4": "a5b8a4de730c6992b8a27b29f705e6440724292b1cbe22209c7ddcf873029702",
-  "rules v4 players=4": "d57a9e79c59accfa216e17c90e02272ac024a32ffb1d7a02a43d93091364648e",
+  "rules v4 players=4": "db85e98eba7ed382237549ffea255110bd131e1d7f3ad9403a61dd44b20b7302",
   "join count-marks players=2": "5d47e87bfdbf7a6f53b2c70b07070163ff06c2f3458ce07b87c25637b101bfa4",
-  "rules count-marks players=2": "74e50fc4f49e3bd3f30fec1484e01e319270592227a5301feb366a38df8166ee",
+  "rules count-marks players=2": "d9303f73a7f636936be540b5381c6009e59f914c6621ae01f9b6de558e5b48c8",
   "join count-marks players=4": "6ee40f2fed373eb907d39d6e9e28c12908372e05f586092d9fa331a82bca7aa1",
-  "rules count-marks players=4": "d493637afc5ca34792863292f9575984a4995eb660e2e4e005f5d830b940e16c",
+  "rules count-marks players=4": "6659d2eaebe9cc2df579bb153a59bf95f58fa65b6ca2e14b3d5eccd0eb52d566",
   "join redesign players=2": "0e465c7e5738c8b5177ca6edcdb85e4c9293ae47bc159981989830a2b0afcd92",
-  "rules redesign players=2": "f0ff759c90ef098cfd3d9e40d906b04c1261e20944b673de47d3be81e9b62072",
+  "rules redesign players=2": "a24ab53434de626a544bb0b95c52b24d91701daed07831494eea4b1a6b90f0c5",
   "join redesign players=4": "97daeddc6b7934c99d72d1fb359cdf28f800b9acb1fa4fa548eb676df70a268c",
-  "rules redesign players=4": "0875127d8852028970f3541c014ed6da4ab13ed024abce7554a3c92a293a5f1e",
+  "rules redesign players=4": "2031b16282f7ac7640c5dde86ed8c963434ca174eb981bd5e84ed05bb4f48ef5",
 };
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));

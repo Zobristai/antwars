@@ -374,7 +374,7 @@ describe("soft movement Rules copy", () => {
     const text = ruleSections(config).flatMap(section => section.lines).join(" ");
     expect(text).toContain("Within 80 subunits");
     expect(text).toContain("strength 1200, edge epsilon 2");
-    expect(text).toContain("steering+push <=170 subunits/tick");
+    expect(text).toContain("movement+push <=170 subunits/tick");
     expect(text).toContain("points: 250 subunits");
     expect(text).toContain("links <=130 subunits");
     expect(text).toContain("Queens aren't bodies: no push/reserved/blocked tiles");
