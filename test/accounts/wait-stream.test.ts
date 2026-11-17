@@ -216,12 +216,19 @@ describe("the wait stream route", () => {
   it("caps open streams overall at the default limits: 256 from distinct sources, then the retryable 503 for a new source", async () => {
     const port = await streamServer(sequence(WAITING_QUEUE));
     const aborts: AbortController[] = [];
-    closers.push(async () => { for (const abort of aborts) abort.abort(); });
+    // Keep unread bodies reachable: collecting a Response can close its stream and free capacity.
+    const responses: Response[] = [];
+    closers.push(async () => {
+      for (const abort of aborts) abort.abort();
+      await Promise.allSettled(responses.map((response) => response.body?.cancel()));
+      responses.length = 0;
+    });
     // One stream per source, so no source comes near its own limit.
     const open = async (n: number) => {
       const abort = new AbortController();
       aborts.push(abort);
       const res = await fetch(`http://127.0.0.1:${port}/wait/${TOKEN}`, { signal: abort.signal, headers: { "x-forwarded-for": `10.0.${n >> 8}.${n & 255}` } });
+      responses.push(res);
       return { status: res.status, retryAfter: res.headers.get("retry-after") };
     };
     expect(WAIT_STREAM_LIMITS).toEqual({ max: 256, perSource: 16 });
