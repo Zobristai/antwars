@@ -39,6 +39,8 @@ export interface HistorySummary {
 export interface HistoryPage { matches: HistorySummary[]; nextPageToken: string | null }
 export interface HistorySource {
   list(pageToken: string | undefined, signal: AbortSignal): Promise<HistoryPage>;
+  /** Exclusive continuation after a returned public record, independent of a raw storage page boundary. */
+  continuationAfter?(id: string): string;
   /**
    * Decoded JSON byte stream. null means missing (or, given a generation, that generation missing); consumer owns its
    * destruction. Its storedIdentity is the stored object's generation and length as the reply that carries it gives them.
@@ -274,6 +276,10 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
     return body;
   }
   return {
+    continuationAfter(id) {
+      if (!isReplayId(id)) throw new Error("invalid match continuation");
+      return `newest-v1:${id}`;
+    },
     async open(id, signal, generation) {
       if (!isReplayId(id)) throw new Error("invalid match id");
       if (generation !== undefined && !/^[1-9]\d{0,19}$/.test(generation)) throw new Error("invalid generation");

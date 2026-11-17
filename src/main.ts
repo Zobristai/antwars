@@ -95,7 +95,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     // Slots are assigned through the waking store, so each taken slot's server is woken after commit.
     const lobbyStore = slotWaker === undefined ? store : wakingStore(store, slotWaker);
     // A hold whose server never began its match is released after the stale grace.
-    accounts = { identities, lobbies: createLobbies(lobbyStore, identities, { ...lobbySlots, staleHoldGraceMs: STALE_HOLD_GRACE_MS }), ratings: createRatings(store, identities, publicVisibility), usernameClaimLimitRule };
+    accounts = { identities, lobbies: createLobbies(lobbyStore, identities, { ...lobbySlots, staleHoldGraceMs: STALE_HOLD_GRACE_MS }), ratings: createRatings(store, identities, publicVisibility), publicVisibility, usernameClaimLimitRule };
     // In the background: rows rated before records existed get theirs; the fill runs
     // once and records completion, so later starts scan nothing.
     void startRecordFill(store);

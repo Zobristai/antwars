@@ -798,3 +798,14 @@ it("logs one info line per record left off a page, naming its id and reason and 
   expect(logged[0]!.mock.calls).toEqual([[`antwar history record ${id} left off listing page: Invalid match record.`]]);
   for (const spy of logged) expect(JSON.stringify(spy.mock.calls)).not.toContain(marker);
 });
+
+
+it("constructs an exclusive continuation from a returned public record, not a raw page boundary", async () => {
+  const f = await fixture((_req, res) => res.end(JSON.stringify(record(emptyId))), () => ({ items: [{ name: `${id}.json` }, { name: `${emptyId}.json` }] }));
+  const token = f.source.continuationAfter!(id);
+  expect(token).toBe(`newest-v1:${id}`);
+  const page = await f.source.list(token, new AbortController().signal);
+  expect(page.matches.map(row => row.id)).toEqual([emptyId]);
+  expect(page.nextPageToken).toBeNull();
+  expect(() => f.source.continuationAfter!("invalid")).toThrow("invalid match continuation");
+});

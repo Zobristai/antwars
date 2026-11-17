@@ -199,6 +199,26 @@ export interface HistoryRouteOptions {
   readonly unsettledLobbyMs?: number;
 }
 
+async function visibleHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
+  visibility: PublicVisibility): Promise<HistoryPage> {
+  const seen = new Set<string>();
+  if (token !== undefined) seen.add(token);
+  for (;;) {
+    signal.throwIfAborted();
+    const raw = await source.list(token, signal);
+    const matches = await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id));
+    if (raw.nextPageToken === null) return { matches, nextPageToken: null };
+    if (matches.length > 0) {
+      if (source.continuationAfter === undefined) throw new Error("Public history continuation unavailable");
+      return { matches, nextPageToken: source.continuationAfter(matches.at(-1)!.id) };
+    }
+    // Hidden-only storage pages cannot disclose their boundary in an empty public page.
+    if (seen.has(raw.nextPageToken)) throw new Error("Invalid history continuation");
+    seen.add(raw.nextPageToken);
+    token = raw.nextPageToken;
+  }
+}
+
 /**
  * Anonymous, read-only history backed by storage rather than this process.
  * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}.
@@ -235,8 +255,8 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     res.once("close", cancel);
     try {
       if (list) {
-        const raw = await source.list(token, abort.signal);
-        const listed = options.publicVisibility ? { ...raw, matches: await publiclyVisible(raw.matches, row => options.publicVisibility!.replayVisible(row.id)) } : raw;
+        const listed = options.publicVisibility ? await visibleHistoryPage(source, token, abort.signal, options.publicVisibility)
+          : await source.list(token, abort.signal);
         const typed = await types(listed);
         const filled = handles === undefined ? typed : await handles(typed);
         // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
