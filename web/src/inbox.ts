@@ -1,22 +1,10 @@
-/**
- * The live client's inbox: decoded stream messages wait here, with their
- * arrival times, until the frame loop hands them to the playback buffer.
- *
- * Bounded: while a tab is hidden the
- * browser draws no frames but the stream keeps delivering. Once more than
- * INBOX_CAP messages wait, the backlog is dropped, later tick messages are
- * ignored until a full snapshot arrives, and the frame loop is asked once
- * (takeResync) to reopen the stream, whose first message is a full snapshot
- * at the delayed live position. Memory and catch-up work stay bounded by the
- * cap however long the tab was away; the skipped stretch is not replayed, so
- * the timeline has no entries for it. onOverflow lets the owner stop the
- * stream at once (web/src/stream.ts suspend), so nothing more is decoded until
- * the reopen; the stream calls overflow() itself when too many messages wait
- * to be decoded.
+/** Bounded live messages waiting for playback. Overflow retains a valid accepted
+ * prefix for the next frame, then requests a fresh snapshot across the skipped gap.
+ * Deltas after the gap are refused; neither history nor memory grows while hidden.
  */
 import type { StreamMessage } from "../../src/live/format.ts";
 
-/** About 3 s of stream at 10 messages a second; a visible tab drains every frame and never comes close. */
+/** About 3 s of stream at 10 messages a second; slow drawing can reach this bound even in a visible tab. */
 export const INBOX_CAP = 30;
 
 export interface Arrival {
@@ -44,6 +32,9 @@ export class Inbox {
         this.dropped++;
         return;
       }
+      // A replacement snapshot supersedes any prefix not yet taken.
+      this.dropped += this.items.length;
+      this.items = [];
       this.awaitingFull = false;
       this.resync = false;
     }
@@ -60,10 +51,9 @@ export class Inbox {
     this.items.push({ m, at });
   }
 
-  /** Drop the backlog, wait for a full snapshot, and tell the owner (each overflow asks for one reopen). */
+  /** Keep accepted progress until drained, then resync once across the missing suffix. */
   overflow(): void {
-    this.dropped += this.items.length;
-    this.items = [];
+    if (this.awaitingFull) return;
     this.awaitingFull = true;
     this.resync = true;
     this.onOverflow();
