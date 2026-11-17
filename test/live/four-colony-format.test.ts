@@ -244,3 +244,13 @@ describe("two-colony messages beside four colonies", () => {
     expect(first.full!).not.toHaveProperty("eliminations");
   });
 });
+
+it("round-trips queen-kill results in full snapshots and end events for rated and unrated play", () => {
+  for (const rated of [false, true]) {
+    const result: StreamResult = { ...end, reason: "time_up", decidedBy: "queen_kills" };
+    const message = opening();
+    message.full = { ...fourColonyFull(result), setup: { ...fourColonyFull().setup, rated } };
+    message.events = [{ kind: "end", result }];
+    expect(decodeMessage(encodeMessage(message))).toEqual(message);
+  }
+});

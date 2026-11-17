@@ -320,6 +320,7 @@ describe("each live queen is an independent nest", () => {
     expect(updateOverrun(s, buildGrid(s), 100, events)).toBeNull();
     expect(updateOverrun(s, buildGrid(s), 101, events)).toBeNull();
     expect(activeQueens(s.colonies[0])).toHaveLength(1);
+    expect(s.colonies.map(c => c.queenKills ?? 0)).toEqual([0, 0]);
     expect(events.filter((e) => e.type === "queen_lost")).toHaveLength(1);
     addAnt(s, 1, X(18), Y(10));
     expect(updateOverrun(s, buildGrid(s), 102, events)).toBeNull();

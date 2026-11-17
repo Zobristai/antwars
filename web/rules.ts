@@ -128,11 +128,14 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
   // A four-colony match (src/sim/elimination.ts): elimination, the last colony with a living queen, the majority
   // hold and the time-up ranking replace the two-colony routes; every two-colony config keeps the lines below.
   const four = colonyCountOf(config) === 4;
+  const queenCredit = config.queenKillsFirst ? " Queen kills go to the colony whose hit takes the queen to zero HP; uncredited overruns and elimination removals count for no one." : "";
+  const queenOrder = config.queenKillsFirst
+    ? `Queen kills decide first; on equal queen kills, ${four || config.adjudication === "kills-first" ? "kills, then " : ""}territory, living ants and food delivered decide, else a draw.${queenCredit}` : "";
   const elimination = "A colony is eliminated when it loses its last queen or its seat goes idle: its ants are removed, its territory turns neutral, and the match continues for the other colonies.";
   const majorityHold = (rules: NonNullable<SimConfig["earlyWin"]>) =>
     `more than half of all owned territory, and at least ${area(rules.minHeldTiles)}, for ${minutes(rules.holdTicks)} without a break`;
   const fourRoutes = ["the last colony with a living queen wins", ...(early === undefined ? [] : [`a sustained territory lead: from ${minutes(early.minTick)}, holding ${majorityHold(early)}`]),
-    `time up: after ${matchLength} the surviving colony with the most kills wins, with territory breaking a tie`];
+    `time up: after ${matchLength} the surviving colony with the most ${config.queenKillsFirst ? "queen kills wins, with kills then territory breaking ties" : "kills wins, with territory breaking a tie"}`];
   const timeUpOrder = "ties go to more territory, then more living ants, then more food delivered";
   const example = counts === undefined && config.wordMarksDisabled
     ? 'For example, order {"kind":"hold"} keeps the squad in place.'
@@ -143,13 +146,15 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
     { title: "How to win", lines: four ? [
       `Be the last colony left: kill every enemy queen.${queenHp === undefined ? "" : ` Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`} A colony that loses its last queen, or whose seat goes idle, is eliminated, and the others play on.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold ${majorityHold(early)}.`]),
-      `At ${matchLength}, the surviving colony with the most kills wins. Ties go to territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor. Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off.${counts?.combatTotals ? " This score is separate from the kills shown on count marks, which go to the biggest hit." : ""}`,
+      `At ${matchLength}, the surviving colony with the most ${config.queenKillsFirst ? "queen kills" : "kills"} wins. Ties go to ${config.queenKillsFirst ? "kills, then " : ""}territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor.${queenCredit} Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off.${counts?.combatTotals ? " This score is separate from the kills shown on count marks, which go to the biggest hit." : ""}`,
     ] : [
       queenHp !== undefined
         ? `Kill every enemy queen. Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`
         : `${founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"}: hold an enemy majority near her for ${minutes(config.overrunTicks)}${config.overrunGraceTicks > 0 ? `, after the first ${minutes(config.overrunGraceTicks)}` : ""}.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold at least ${area(early.minHeldTiles)} and ${early.territoryRatioPermille / 1000} times the opponent's territory for ${minutes(early.holdTicks)} without a break.`]),
-      config.adjudication === "kills-first"
+      config.queenKillsFirst
+        ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}): ${queenOrder}`
+        : config.adjudication === "kills-first"
         ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen ${queensStrike(config) ? "strikes" : "bites"}.`
         : `At ${matchLength}, hold more territory. Ties go to living ants, then food delivered; if still equal, the match is a draw.`,
     ] },
@@ -159,16 +164,16 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       `${fourRoutes.length === 3 ? "Three" : "Two"} ways a match ends: ${fourRoutes.join("; ")}. ${elimination}`,
     ] : [
       "AI agents command two ant colonies. Each colony's ants hold territory, carry food home and bite enemies; its agents direct squads and lay marks.",
-      `Three ways a match ends: ${[route, ...earlyRoute, `time up: after ${matchLength} ${config.adjudication === "kills-first" ? "the colony with more kills wins, with territory breaking a tie" : "the colony holding more territory wins"}`].join("; ")}. ${config.adjudication === "kills-first" ? "The same scoring order applies if both colonies lose their last queen on the same tick. " : ""}Territory held: Share of colony-held tiles · the two colonies add to 100%.`,
+      `Three ways a match ends: ${[route, ...earlyRoute, `time up: after ${matchLength} ${config.queenKillsFirst ? `the colony with more queen kills wins, with ${config.adjudication === "kills-first" ? "kills then " : ""}territory breaking ties` : config.adjudication === "kills-first" ? "the colony with more kills wins, with territory breaking a tie" : "the colony holding more territory wins"}`].join("; ")}. ${config.adjudication === "kills-first" || config.queenKillsFirst ? "The same scoring order applies if both colonies lose their last queen on the same tick. " : ""}Territory held: Share of colony-held tiles · the two colonies add to 100%.`,
       `Key: ${VISUAL_KEY}.`,
     ] },
     { title: "Winning", lines: four ? [
       `A match lasts ${matchLength}. Four colonies play, each against the other three. ${elimination} No colony is credited with kills for the removed ants.`,
       `The last colony with a living queen wins before time-up${early === undefined ? "" : `, or a colony wins by holding, from ${minutes(early.minTick)}, ${majorityHold(early)}`}. An eliminated colony's territory no longer counts toward all owned territory.`,
-      `At time-up the surviving colonies rank by kills; ${timeUpOrder}. The top colony wins; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor, the latest eliminated highest.`,
+      `At time-up the surviving colonies rank by ${config.queenKillsFirst ? "queen kills, then " : ""}kills; ${timeUpOrder}. The top colony wins; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor, the latest eliminated highest.`,
       "When every remaining colony is eliminated on the same tick, by losing its last queen or going idle, the time-up order decides among them. Colonies eliminated on the same tick rank among themselves by the same order. Both read each colony's scores as they stood just before that tick's removal of ants and territory.",
     ] : [
-      `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.adjudication === "kills-first" ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.` : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
+      `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.queenKillsFirst ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}): ${queenOrder}` : config.adjudication === "kills-first" ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.` : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
     ] },
     { title: "Maps", lines: [
       ...(four ? quadrantMapLines(config, context, tiles, scale) : [

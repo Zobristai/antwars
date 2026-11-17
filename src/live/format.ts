@@ -167,7 +167,7 @@ export type OrderKind = (typeof ORDER_KINDS)[number];
 export const CALL_KINDS = ["join", "rejoin", "observe", "order", "mark", "found_queen", "count_mark", "set_brood"] as const;
 export type CallKind = (typeof CALL_KINDS)[number];
 export const WIN_REASONS = ["overrun", "time_up", "double_overrun", "queens_killed", "sustained_territory", "abandoned", "idle"] as const;
-export const DECIDED_BY = ["overrun", "territory", "ants_alive", "food_delivered", "draw", "queens_killed", "kills", "idle"] as const;
+export const DECIDED_BY = ["overrun", "territory", "ants_alive", "food_delivered", "draw", "queens_killed", "kills", "idle", "queen_kills"] as const;
 
 /** Every ant of one message, ids ascending. agent is the index of the agent whose squad holds the ant, or -1. */
 export interface StreamAnts {
