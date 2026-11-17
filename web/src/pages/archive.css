@@ -514,7 +514,7 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-slot { display: flex; flex-direction: column; min-width: 0; }
 /* Noncanonical stored colonies sit outside the named columns, using the same label and player typography. */
 .d1p-rec-extra { grid-column: 3 / 7; min-width: 0; }
-.d1p-rec-extra .d1p-rec-colony { white-space: normal; overflow-wrap: anywhere; }
+.d1p-rec-extra .d1p-rec-colony { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .d1p-rec-player { display: flex; align-items: baseline; column-gap: 6px; min-width: 0; white-space: nowrap; }
 .d1p-rec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

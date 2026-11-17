@@ -311,7 +311,10 @@ describe("Recordings keep other stored colony names outside canonical columns", 
               labels: [...extra.querySelectorAll(".d1p-rec-colony")].map(node => {
                 const range = document.createRange(); range.selectNodeContents(node);
                 const s = getComputedStyle(node);
-                return { text: node.textContent, title: node.getAttribute("title"), box: rect(node), textBounds: [...range.getClientRects()].map(b => ({ left: b.left, right: b.right })),
+                return { text: node.textContent, title: node.getAttribute("title"), box: rect(node),
+                  accessibleName: node.parentElement!.querySelector(".d1p-sr")!.textContent,
+                  lines: new Set([...range.getClientRects()].map(b => b.top)).size,
+                  clipped: node.scrollWidth > node.clientWidth, whiteSpace: s.whiteSpace, overflow: s.overflowX, textOverflow: s.textOverflow,
                   size: s.fontSize, weight: s.fontWeight, expectedSize: style.fontSize, expectedWeight: style.fontWeight, background: s.backgroundColor };
               }),
               players: [...extra.querySelectorAll(".d1p-rec-player")].map(node => ({ ...rect(node), colour: getComputedStyle(node).color,
@@ -328,10 +331,15 @@ describe("Recordings keep other stored colony names outside canonical columns", 
               expect(label.size).toBe(label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
-              for (const text of label.textBounds) {
-                expect(text.left).toBeGreaterThanOrEqual(row.bounds.left);
-                expect(text.right).toBeLessThanOrEqual(row.bounds.right);
-              }
+              expect(label.lines).toBe(1);
+              expect(label.whiteSpace).toBe("nowrap");
+              expect(label.overflow).toBe("hidden");
+              expect(label.textOverflow).toBe("ellipsis");
+              expect(label.accessibleName).toBe(`${label.title}: `);
+              expect(label.text).toBe(label.title!.replace(/ Colony$/, ""));
+              expect(label.box.left).toBeGreaterThanOrEqual(row.bounds.left);
+              expect(label.box.right).toBeLessThanOrEqual(row.bounds.right);
+              if (label.title === "H".repeat(64)) expect(label.clipped).toBe(width === 390);
             }
             for (const player of row.players) {
               expect(player.left).toBeGreaterThanOrEqual(row.bounds.left);
