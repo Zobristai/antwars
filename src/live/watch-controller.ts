@@ -94,30 +94,39 @@ export function createWatchController(options: {
     publish(async () => { if (!await write(runId)) refused(); });
   };
   let closed = false;
-  const jobs: { readonly run: () => Promise<void>; readonly release: () => void; readonly cancel?: () => void }[] = [];
-  let busy = false, reportedFailure = false, timer: ReturnType<typeof setTimeout> | undefined;
-  const drain = async () => {
-    if (busy || closed) return;
-    busy = true;
-    try {
-      while (!closed && jobs.length) { await jobs[0]!.run(); jobs.shift()?.release(); reportedFailure = false; }
-    } catch {
-      if (!closed && !reportedFailure) { console.error("antwar spectator metadata publication failed; retrying"); reportedFailure = true; }
-      if (!closed) timer = setTimeout(() => { timer = undefined; void drain(); }, 1000);
-    } finally { busy = false; }
+  const publicationQueue = () => {
+    const jobs: { readonly run: () => Promise<void>; readonly release: () => void; readonly cancel?: () => void }[] = [];
+    let busy = false, reportedFailure = false, timer: ReturnType<typeof setTimeout> | undefined;
+    const drain = async () => {
+      if (busy || closed) return;
+      busy = true;
+      try {
+        while (!closed && jobs.length) { await jobs[0]!.run(); jobs.shift()?.release(); reportedFailure = false; }
+      } catch {
+        if (!closed && !reportedFailure) { console.error("antwar spectator metadata publication failed; retrying"); reportedFailure = true; }
+        if (!closed) timer = setTimeout(() => { timer = undefined; void drain(); }, 1000);
+      } finally { busy = false; }
+    };
+    return {
+      publish(job: () => Promise<void>, cancel?: () => void) {
+        if (closed) { cancel?.(); return; }
+        jobs.push({ run: job, release: slotActivity(options.slot).hold("spectator metadata publication"), cancel });
+        if (timer === undefined) void drain();
+      },
+      close() { clearTimeout(timer); for (const job of jobs.splice(0)) { job.cancel?.(); job.release(); } },
+    };
   };
-  const publish = (job: () => Promise<void>, cancel?: () => void) => {
-    if (closed) { cancel?.(); return; }
-    jobs.push({ run: job, release: slotActivity(options.slot).hold("spectator metadata publication"), cancel });
-    if (timer === undefined) void drain();
-  };
+  const metadata = publicationQueue(), ownership = publicationQueue();
+  const publish = metadata.publish;
+  // Ownership must precede saving, but must not wait for playback-end publication to succeed.
+  // Keep its retries independent while retaining the order of the public metadata writes.
   return {
     hubOptions: {
       requireMatchAccess: true,
       beforeRecordingPublication(access, replayId) {
         return new Promise<void>((resolve, reject) => {
           const cancel = () => reject(new Error("Recording publication stopped"));
-          publish(async () => {
+          ownership.publish(async () => {
             await registry.recordOwners(access.lobbyId, replayId);
             if (closed) cancel(); else resolve();
           }, cancel);
@@ -223,7 +232,7 @@ export function createWatchController(options: {
       // What its delayed playback has shown so far, on this server or carried by the save.
       publishLabels(lobbyId);
     },
-    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) { job.cancel?.(); job.release(); } prepared.clear(); runs.clear(); published.clear(); shown.clear(); },
+    close() { closed = true; metadata.close(); ownership.close(); prepared.clear(); runs.clear(); published.clear(); shown.clear(); },
   };
 }
 

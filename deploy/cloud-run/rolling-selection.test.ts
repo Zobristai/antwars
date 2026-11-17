@@ -112,7 +112,9 @@ else if (at("projects", "describe")) console.log("123456789");
 else if (at("compute", "forwarding-rules", "list")) console.log(JSON.stringify([{ name: "antwar-domain-https", IPAddress: "192.0.2.10" }]));
 else if (at("run", "services", "describe") && st.services[a[3]]) {
   const svc = st.services[a[3]];
-  console.log(JSON.stringify({ status: { latestReadyRevisionName: svc.latest, latestCreatedRevisionName: svc.latest, traffic: svc.traffic } }));
+  const rev = st.revisions[svc.latest];
+  console.log(JSON.stringify({ spec: { template: { spec: { containers: [{ image: rev.image, env: [{ name: "ANTWAR_CODE_VERSION", value: rev.sha }] }] } } },
+    status: { latestReadyRevisionName: svc.latest, latestCreatedRevisionName: svc.latest, traffic: svc.traffic } }));
 }
 else if (at("run", "revisions", "describe") && st.revisions[a[3]]) {
   const rev = st.revisions[a[3]];
