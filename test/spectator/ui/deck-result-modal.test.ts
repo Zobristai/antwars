@@ -113,6 +113,7 @@ describe("the match result as a modal over the screen", () => {
     overrun.show(f);
     const what = overrun.dialog.byClass("d1-moment-what")[0]!;
     expect(what.textContent).toBe("Overrun attempt on the Lake Skinner Colony queen — took the queen");
+    expect(what.title).toBe(what.textContent);
     expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
     const target = what.children.find(c => c.tag === "span")!;
     expect(target.textContent).toBe("Lake Skinner Colony");
@@ -185,6 +186,27 @@ describe("the match result as a modal over the screen", () => {
     expect(drawHead.getAttribute("title")).toBeNull();
     expect(drawn.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Time-up · decided on draw");
     for (const dialog of [won.dialog, idle.dialog, drawn.dialog]) expect(dialog.textContent).not.toMatch(/both sides|opponent/i);
+  });
+
+  it("keeps the Abandoned headline instead of describing an abandoned match as a draw", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: false });
+    f.board!.result = { winner: null, reason: "abandoned", decidedBy: "draw", tick: END, nextStartMs: null };
+    show(f);
+    const head = dialog.byClass("d1-result-head")[0]!;
+    expect(head.textContent).toBe("Abandoned");
+    expect(head.getAttribute("aria-label")).toBe("Abandoned");
+    expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Seat inactive · unrated");
+    expect(dialog.byClass("rd-outcome")).toHaveLength(0);
+  });
+
+  it("bounds decisive text to two wrapping lines rather than an unshrinkable column", () => {
+    expect(CSS).toContain("grid-template-columns: 36px minmax(0,max-content) minmax(max-content,1fr)");
+    const rule = CSS.match(/\.d1-result-dialog \.d1-moment-what \{([^}]+)\}/)![1];
+    expect(rule).toContain("white-space: normal");
+    expect(rule).toContain("min-width: 0");
+    expect(rule).toContain("-webkit-line-clamp: 2");
+    expect(rule).toContain("overflow: hidden");
   });
 
   it("shows one final Rating column with signed changes between rounded displayed ratings", () => {

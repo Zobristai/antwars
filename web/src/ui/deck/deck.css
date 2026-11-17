@@ -582,8 +582,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-result-dialog .rd-decisive { margin: 20px 28px 0; padding: 14px 16px; border-radius: 8px; background: rgba(255,255,255,.04); }
 .d1-result-dialog .rd-decisive > .rd-label { color: #b4c0c3; margin-bottom: 7px; }
 .d1-result-dialog .d1-moments { margin: 0; gap: 8px; }
-.d1-result-dialog .d1-moment { display: grid; grid-template-columns: 36px max-content minmax(0,1fr); gap: 8px; font-size: 13px; align-items: baseline; }
-.d1-result-dialog .d1-moment-what { color: #f2f5f6 !important; white-space: nowrap; }
+.d1-result-dialog .d1-moment { display: grid; grid-template-columns: 36px minmax(0,max-content) minmax(max-content,1fr); gap: 8px; font-size: 13px; align-items: baseline; }
+.d1-result-dialog .d1-moment-what { color: #f2f5f6 !important; min-width: 0; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .d1-result-dialog .d1-moment-who { grid-column: auto; white-space: nowrap; font-size: 13px; }
 .d1-result-dialog .d1-moment-who .aw-colony-name { color: inherit !important; }
 .d1-result-dialog .d1-when { font-size: 13px; color: #b4c0c3; }

@@ -102,7 +102,7 @@ export function mountResultModal(doc: Document): ResultModal {
     if (!r || !board) return;
     result.style.setProperty("--d1-side", r.winner === null ? "var(--aw-ink-3)" : COLONY_CSS[r.winner]);
     setText(eyebrow, board.setup.queens.length > 2 ? "Free-for-all · Final result" : "Head-to-head · Final result");
-    const winnerName = r.winner === null ? "Match drawn" : colonyNamesOf(board.setup)[r.winner].replace(/ Colony$/, "");
+    const winnerName = r.winner === null ? (r.headline === "Draw" ? "Match drawn" : r.headline) : colonyNamesOf(board.setup)[r.winner].replace(/ Colony$/, "");
     head.replaceChildren(h(doc, "span", "rd-winner-name", winnerName), ...(r.winner === null ? [] : [" ", h(doc, "span", "rd-outcome", "wins")]));
     head.setAttribute("aria-label", r.headline);
     head.style.color = r.winner === null ? "" : COLONY_CSS[r.winner];
@@ -148,6 +148,7 @@ export function mountResultModal(doc: Document): ResultModal {
       // The moment in its colony's colour; another colony it names (the queen overrun) in that colony's own.
       const what = h(doc, "span", drawn ? `d1-moment-what c${m.colony}` : "d1-moment-what");
       setColonyText(doc, what, m.what, drawn);
+      what.title = m.what;
       what.style.color = COLONY_CSS[m.colony];
       const who = h(doc, "span", "d1-moment-who");
       if (drawn) {
