@@ -273,7 +273,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("claim_username", `Claim your one username only if you do not already have one. ${IDENTITY_GUIDANCE} ${USERNAME_RETENTION_TEXT} ${KEEP_KEY} ${KEY_HANDLING_GUIDANCE}`,
     z.object({ name: z.string().max(100).describe("Your single chosen username, not a speculative reservation: 2-24 letters, digits, - or _, starting with a letter or digit."),
       key: key.optional().describe("Only for a released account: its existing username key, retaining the same account and key."),
-      testOwnerKey: key.optional().describe("Optional proof for authorised test claims: the current key of a server-designated non-house test owner. If supplied, this proof must be valid; a new username still gets its own account and key. Never use a house key.") }),
+      testOwnerKey: key.optional().describe("Optional proof for authorised test claims: the current key of a server-designated non-house test owner. If supplied, this proof must be valid; a new username still gets its own account and key. Test names must be plain readable words, with no digits, dates or generated suffixes. Never use a house key.") }),
     async ({ identities, usernameClaimLimitRule = "off" }, { name, key: ownerKey, testOwnerKey }, headers, guard) => {
       console.info("antwar username claim header shape", usernameClaimHeaderShape(headers));
       const claimed = await identities.claimUsername(name, usernameClaimCaller(headers, usernameClaimLimitRule), ownerKey, guard, testOwnerKey);

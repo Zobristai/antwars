@@ -57,6 +57,8 @@ steps:
           || { echo "refusing: commit $$ANTWAR_COMMIT is not on origin/main; nothing from it runs" >&2; exit 1; }
         git -C /tmp/antwars checkout --quiet --detach "$$ANTWAR_COMMIT"
         exec bash /tmp/antwars/deploy/cloud-run/cloudbuild-run.sh
+# Empty preserves an existing exclusion binding; disable explicitly removes it.
+# A positive integer pins the secret version without exposing its contents.
 substitutions:
   _ARGS: ''
   _PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: ''

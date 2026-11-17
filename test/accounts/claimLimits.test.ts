@@ -259,8 +259,8 @@ for (const transport of ["HTTP", "MCP"] as const) {
     it("accepts ordinary claims beyond ten while still validating optional designated-owner proof", async () => {
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
       const w = world("client");
-      const sponsor = value(await w.identities.claimUsername(`test${randomUUID().slice(0, 8)}`));
-      const outsider = value(await w.identities.claimUsername(`test${randomUUID().slice(0, 8)}`));
+      const sponsor = value(await w.identities.claimUsername("kind-maple-fox"));
+      const outsider = value(await w.identities.claimUsername("calm-cedar-owl"));
       const identities = createIdentities(w.store, { now: w.now, testClaimOwnerIds: [sponsor.identity.id] });
       const call = await open(transport, await serve({ ...w.stores, identities }));
       const address = "192.0.2.20";
@@ -272,14 +272,17 @@ for (const transport of ["HTTP", "MCP"] as const) {
       expect((await call("claim_username", { name: "overbudget" }, address)).ok).toBe(true);
       const createdIds = new Set<string>();
       let createdKey = "";
-      for (let i = 0; i < 4; i++) {
-        const result = await call("claim_username", { name: `newtest${i}`, testOwnerKey: sponsor.key }, address);
+      const testNames = ["quiet-willow-wren", "bright-oak-otter", "gentle-elm-robin", "merry-birch-hare"];
+      for (const [i, name] of testNames.entries()) {
+        const result = await call("claim_username", { name, testOwnerKey: sponsor.key }, address);
         expect(result.ok).toBe(true);
         const issuedKey = result.body.key as string;
         expect(typeof issuedKey).toBe("string");
         expect(issuedKey === sponsor.key).toBe(false);
         const identity = value(await identities.resolveKey(issuedKey));
         expect(identity.kind).toBe("username");
+        expect(identity.displayName).toBe(name);
+        expect(identity.displayName).toMatch(/^[a-z]+(?:-[a-z]+){2}$/);
         expect(identity.id === sponsor.identity.id).toBe(false);
         expect(w.docs.get(`identities/${identity.id}`)?.ownerId).toBeUndefined();
         createdIds.add(identity.id);
@@ -298,13 +301,13 @@ for (const transport of ["HTTP", "MCP"] as const) {
       const forged = await call("claim_username", { name: "testvisitor", testOwnerId: sponsor.identity.id, testAccount: true }, address,
         undefined, { "x-test-owner-id": sponsor.identity.id, "x-test-account": "true" });
       expect(forged.ok).toBe(true);
-      for (const [name, error] of [["!", "invalid_name"], ["claude", "reserved_name"], ["newtest0", "taken"]]) {
+      for (const [name, error] of [["!", "invalid_name"], ["claude", "reserved_name"], [testNames[0]!, "taken"]]) {
         expect((await call("claim_username", { name, testOwnerKey: sponsor.key }, address)).body.error).toBe(error);
       }
       expect((await call("claim_username", { name: "nocaller", testOwnerKey: sponsor.key })).body.error).toBe("caller_unavailable");
       const rotated = value(await identities.rotateKey(sponsor.key));
       expect((await call("claim_username", { name: "oldproof", testOwnerKey: sponsor.key }, address)).body.error).toBe("invalid_key");
-      expect((await call("claim_username", { name: "newproof", testOwnerKey: rotated.key }, address)).ok).toBe(true);
+      expect((await call("claim_username", { name: "brave-rowan-raven", testOwnerKey: rotated.key }, address)).ok).toBe(true);
       const logged = JSON.stringify(info.mock.calls);
       for (const privateValue of [sponsor.key, outsider.key, createdKey, rotated.key, sponsor.identity.id]) {
         expect(logged.includes(privateValue)).toBe(false);

@@ -34,8 +34,8 @@ source "$HERE/config.sh"
 HEX40='^[0-9a-f]{40}$'
 # Pin the hide-list version before any external command; the list itself stays in Secret Manager.
 export PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION="${PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION:-}"
-if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
-  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer" >&2; exit 2
+if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" != disable && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty (preserve), disable, or a positive integer" >&2; exit 2
 fi
 
 # The one repository deploy tooling runs from; cloudbuild.yaml clones the same.

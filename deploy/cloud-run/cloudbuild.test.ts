@@ -455,5 +455,12 @@ it("passes only a pinned numeric version to the deploy environment, never privat
 it.each(["latest", "0", "01", "-1", "1,2", "private-invalid", "1\n2"])("refuses nonnumeric or noncanonical secret version before external calls (%j)", version => {
   const r = run({ args: `all ${SHA}`, publicExclusionVersion: version });
   expect(r.status).toBe(2); expect(r.calls).toEqual([]);
-  expect(r.stderr).toContain("PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer");
+  expect(r.stderr).toContain("PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty (preserve), disable, or a positive integer");
+});
+
+it.each(["", "disable"])("forwards the exclusion preserve/disable mode without private config (%j)", version => {
+  const r = run({ args: `all ${SHA} --precheck`, publicExclusionVersion: version });
+  expect(r.status, r.stderr).toBe(0);
+  expect(r.calls).toContainEqual(["public exclusion version", version]);
+  expect(configCall(r.calls)[1]).not.toContain("PUBLIC_EXCLUDED_OWNER_IDS");
 });

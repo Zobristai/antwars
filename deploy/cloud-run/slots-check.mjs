@@ -18,13 +18,13 @@
 // Every line starts with a complete UTC timestamp. Keys and invite tokens are never printed.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { randomBytes } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import "../../src/ts-resolve.mjs";
 
-const [{ COUNTDOWN_MS }, { START_PICK_WINDOW_MS }] = await Promise.all([
+const [{ COUNTDOWN_MS }, { START_PICK_WINDOW_MS }, { testUsername }] = await Promise.all([
   import("../../src/lobby/lobbies.ts"),
   import("../../src/sim/startPlacement.ts"),
+  import("../../src/identity/testNames.ts"),
 ]);
 const BOTH_MATCHES_LIVE_TIMEOUT_MS = Math.max(180_000, COUNTDOWN_MS + START_PICK_WINDOW_MS + 60_000);
 
@@ -41,12 +41,19 @@ async function until(what, check, timeoutMs) {
   }
 }
 
+class ApiFailure extends Error {
+  constructor(operation, status, reason) {
+    super(`${operation}: ${status} ${reason}`);
+    this.reason = reason;
+  }
+}
+
 async function api(base, operation, body) {
   const res = await fetch(new URL(`/api/${operation}`, base), {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
   const reply = await res.json();
-  if (!res.ok) fail(`${operation}: ${res.status} ${reply.error}`);
+  if (!res.ok) throw new ApiFailure(operation, res.status, reply.error);
   return reply;
 }
 
@@ -89,11 +96,20 @@ async function firstMatchData(url, headers, timeoutMs) {
   }
 }
 
+export async function claimBot(base, nextName = testUsername) {
+  for (let attempt = 0; attempt < 32; attempt++) {
+    const name = nextName();
+    try { return { name, key: (await api(base, "claim_username", { name })).key }; }
+    catch (err) {
+      if (!(err instanceof ApiFailure) || err.reason !== "taken") throw err;
+    }
+  }
+  fail("could not claim a readable bot name after 32 attempts");
+}
+
 export async function check(base, size = 1, watchSeconds = 480) {
-  const tag = randomBytes(3).toString("hex");
   const seats = 2 * size;
-  const claim = async (name) => ({ name, key: (await api(base, "claim_username", { name })).key });
-  const bots = await Promise.all(["p", "q"].flatMap((kind) => Array.from({ length: seats }, (_, i) => claim(`bot${tag}${kind}${i}`))));
+  const bots = await Promise.all(Array.from({ length: 2 * seats }, () => claimBot(base)));
   const lobbyBots = { public: bots.slice(0, seats), private: bots.slice(seats) };
   log("claimed", bots.length, "bot usernames", bots.map((b) => b.name).join(" "));
 

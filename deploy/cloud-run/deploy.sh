@@ -28,10 +28,10 @@ set -euo pipefail
 source "$(dirname "$0")/config.sh"
 
 # Optional numeric secret version. Only the version and fixed reference enter deployment metadata.
-# Empty disables the hide list; no owner values are read by this script.
+# Empty preserves the existing binding; disable removes it. No owner values are read here.
 PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION="${PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION:-}"
-if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
-  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer" >&2; exit 2
+if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" != disable && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty (preserve), disable, or a positive integer" >&2; exit 2
 fi
 PUBLIC_EXCLUSION_SECRET="ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS=antwars-public-excluded-owner-ids:$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
 
@@ -588,8 +588,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     local remove_secrets=()
     if [[ "$NAMESPACE" == live ]]; then
       secret_flag=--update-secrets; env_flag=--update-env-vars
-      if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then secrets+=",$PUBLIC_EXCLUSION_SECRET"
-      else remove_secrets=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS); fi
+      if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then remove_secrets=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+      elif [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then secrets+=",$PUBLIC_EXCLUSION_SECRET"; fi
     fi
     SLOT_FLAGS=(
       "$env_flag" "ANTWAR_SLOT=$1,ANTWAR_PUBLIC_URL=$2,ANTWAR_STORE_NAMESPACE=$NAMESPACE,GCLOUD_PROJECT=$PROJECT,ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS,ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS,ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE$EXTRA_ENV"
@@ -1012,7 +1012,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     first_deploy_requires() {
       local common="ANTWAR_RECORD_INPUT_BUCKET ANTWAR_REPLAY_BUCKET ANTWAR_CODE_VERSION ANTWAR_PRIVATE_REPLAY_KEY"
       local served="GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
-      if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then served+=" ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS"; fi
+      if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then served+=" ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS"; fi
       if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common NODE_OPTIONS"
       elif [[ "$1" == "$GAME_SERVICE" ]]; then echo "$common $served ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_OPERATOR_TOKEN"
       elif [[ "$1" == "${PREFIX}public-"* ]]; then echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_OPERATOR_TOKEN"
@@ -1459,8 +1459,9 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # ANTWAR_MEMORY_LIMIT is --memory's own value: the post-mortem's re-run limit where no control group gives one.
     GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
-    GAME_REMOVE_SECRETS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
-    if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then GAME_SECRETS+=",$PUBLIC_EXCLUSION_SECRET"; GAME_REMOVE_SECRETS=(); fi
+    GAME_REMOVE_SECRETS=()
+    if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then GAME_REMOVE_SECRETS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+    elif [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then GAME_SECRETS+=",$PUBLIC_EXCLUSION_SECRET"; fi
     if [[ "$FIRST_DEPLOY" == 1 ]]; then
       GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
       GAME_SECRETS+=",$OPERATOR_TOKEN_SECRET"
@@ -1810,8 +1811,9 @@ if [[ $# -ne 1 || ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 load_deploy_config ACCOUNT PROJECT BUILD_BUCKET BUILD_SA RUN_SA RECORD_INPUT_BUCKET
-PUBLIC_SECRET_FLAGS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
-if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then PUBLIC_SECRET_FLAGS=(--update-secrets "$PUBLIC_EXCLUSION_SECRET"); fi
+PUBLIC_SECRET_FLAGS=()
+if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then PUBLIC_SECRET_FLAGS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+elif [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then PUBLIC_SECRET_FLAGS=(--update-secrets "$PUBLIC_EXCLUSION_SECRET"); fi
 REGION=australia-southeast1
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/antwar/server:$SHA"
 BUCKET="gs://$BUILD_BUCKET"
