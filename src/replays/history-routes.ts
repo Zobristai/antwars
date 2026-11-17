@@ -1,3 +1,4 @@
+import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { addAbortListener } from "node:events";
 import { pipeline } from "node:stream/promises";
 import { peek } from "../net/relay.js";
@@ -191,10 +192,31 @@ const LIST_DEADLINE_MS = 60_000;
 const RECORD_IDLE_MS = 30_000;
 
 export interface HistoryRouteOptions {
+  readonly publicVisibility?: PublicVisibility;
   /** Longest a record download may go without handing the client a chunk; past it the download is dropped. */
   readonly recordIdleMs?: number;
   /** How long a lobby answer that can still change is kept (cachedLobbyLookup); defaults to UNSETTLED_LOBBY_MS. */
   readonly unsettledLobbyMs?: number;
+}
+
+async function visibleHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
+  visibility: PublicVisibility): Promise<HistoryPage> {
+  const seen = new Set<string>();
+  if (token !== undefined) seen.add(token);
+  for (;;) {
+    signal.throwIfAborted();
+    const raw = await source.list(token, signal);
+    const matches = await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id));
+    if (raw.nextPageToken === null) return { matches, nextPageToken: null };
+    if (matches.length > 0) {
+      if (source.continuationAfter === undefined) throw new Error("Public history continuation unavailable");
+      return { matches, nextPageToken: source.continuationAfter(matches.at(-1)!.id) };
+    }
+    // Hidden-only storage pages cannot disclose their boundary in an empty public page.
+    if (seen.has(raw.nextPageToken)) throw new Error("Invalid history continuation");
+    seen.add(raw.nextPageToken);
+    token = raw.nextPageToken;
+  }
 }
 
 /**
@@ -233,7 +255,8 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     res.once("close", cancel);
     try {
       if (list) {
-        const listed = await source.list(token, abort.signal);
+        const listed = options.publicVisibility ? await visibleHistoryPage(source, token, abort.signal, options.publicVisibility)
+          : await source.list(token, abort.signal);
         const typed = await types(listed);
         const filled = handles === undefined ? typed : await handles(typed);
         // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
@@ -245,6 +268,9 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": String(body.length) });
         res.end(req.method === "HEAD" ? undefined : body);
       } else {
+        if (options.publicVisibility && !await options.publicVisibility.replayVisible(id)) {
+          res.writeHead(404, { "cache-control": "no-store" }).end(); return;
+        }
         const body = await source.open(id, abort.signal);
         deadline.refresh();
         if (res.destroyed) { body?.destroy(); return; }
@@ -259,7 +285,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
           const start = Buffer.concat(head);
           const complete = start.subarray(0, prefix.length).equals(prefix);
           // A record a rating correction may change (correctedRecordings.ts) is never cached as immutable.
-          res.writeHead(200, { "content-type": "application/json", "cache-control": complete && !CORRECTED_REPLAY_IDS.has(id) ? IMMUTABLE : SHORT });
+          res.writeHead(200, { "content-type": "application/json", "cache-control": options.publicVisibility ? "no-store" : complete && !CORRECTED_REPLAY_IDS.has(id) ? IMMUTABLE : SHORT });
           if (req.method === "HEAD") { res.end(); return; }
           res.write(start);
           // Each chunk the response takes is progress; under backpressure a stalled client takes none.

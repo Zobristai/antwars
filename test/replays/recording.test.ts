@@ -219,3 +219,35 @@ describe("record service handoff", () => {
      expect(saved).toEqual([r.id]);
    });
  });
+
+
+describe("recording publication prerequisite", () => {
+  it.each([false, true])("gates upload and handoff once (checkpoint: %s)", async checkpoint => {
+    const writes: ReplayObject[] = [], inputs: MatchInputs[] = [];
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const beforePublication = vi.fn(() => ready);
+    const r = new ReplayRecording(0, 41, { create: async object => { writes.push(object); } }, undefined, {
+      logHeader: "{}", beforePublication, handoff: { submit: input => { inputs.push(input); } },
+    });
+    const message = encodeMessage(opening()); r.append(message); r.capture(message);
+    r.ended(100, checkpoint ? { publishAfter: 200, rated: false } : undefined);
+    const finished = r.finish();
+    await vi.waitFor(() => expect(beforePublication).toHaveBeenCalledOnce());
+    expect(writes).toEqual([]); expect(inputs).toEqual([]);
+    release(); expect(await finished).toBe(true);
+    await vi.waitFor(() => expect(inputs).toHaveLength(1));
+    expect(writes).toHaveLength(1); expect(beforePublication).toHaveBeenCalledExactlyOnceWith(r.id);
+  });
+  it("never uploads or hands off if its prerequisite rejects", async () => {
+    const writes: ReplayObject[] = [], inputs: MatchInputs[] = [], errors: string[] = [];
+    const r = new ReplayRecording(0, 42, { create: async object => { writes.push(object); } }, e => errors.push(e), {
+      logHeader: "{}", beforePublication: async () => { throw new Error("publication stopped"); }, handoff: { submit: input => { inputs.push(input); } },
+    });
+    const message = encodeMessage(opening()); r.append(message); r.capture(message);
+    r.ended(100, { publishAfter: 200, rated: false });
+    expect(await r.finish()).toBe(false);
+    await vi.waitFor(() => expect(errors.length).toBeGreaterThanOrEqual(1));
+    expect(writes).toEqual([]); expect(inputs).toEqual([]);
+  });
+});

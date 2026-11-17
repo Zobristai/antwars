@@ -26,6 +26,8 @@ export interface SeatDetails {
   readonly serviceTiers: Readonly<Record<string, string>>;
 }
 export interface WatchRegistry {
+  /** Persist private ownership before either recording publication path may proceed. */
+  recordOwners(lobbyId: string, replayId: string): Promise<void>;
   register(match: Omit<WatchMatch, "playbackFinished" | "replayId">): Promise<void>;
   /**
    * A handed-over match now served by another process: the same match, so its visibility, rated, mode,
@@ -109,6 +111,20 @@ function isStale(match: WatchMatch, listed: Fields | null | undefined, held: Fie
     !(held?.state === "holding" && held.slot === match.slot);
 }
 
+const ownershipPath = (id: string) => `replayOwnership/${id}`;
+
+/** Private immutable ownership only; never included in a public match or recording. */
+export async function readReplayOwners(store: Pick<Store, "get">, replayId: string): Promise<readonly string[] | null> {
+  if (!isReplayId(replayId)) return null;
+  const row = await store.get(ownershipPath(replayId));
+  if (row === null) return null;
+  let owners: unknown;
+  try { owners = JSON.parse(row.ownerIds ?? "null"); } catch { throw new Error("Invalid recording ownership"); }
+  if (row.version !== "1" || !ID.test(row.lobbyId ?? "") || !Array.isArray(owners) || owners.length === 0 ||
+    !owners.every((id): id is string => typeof id === "string" && ID.test(id))) throw new Error("Invalid recording ownership");
+  return owners;
+}
+
 export function createWatchRegistry(store: Store): WatchRegistry {
   /** Deletes the candidates' listings that are still stale, rechecked in this write's own transaction; returns their lobby ids. */
   async function sweep(candidates: readonly WatchMatch[]): Promise<ReadonlySet<string>> {
@@ -185,6 +201,36 @@ export function createWatchRegistry(store: Store): WatchRegistry {
     });
   }
   return {
+    async recordOwners(lobbyId, replayId) {
+      if (!ID.test(lobbyId) || !isReplayId(replayId)) throw new Error("Invalid recording ownership");
+      await store.transaction(async read => {
+        const key = ownershipPath(replayId);
+        const docs = await read([lobby(lobbyId), key]);
+        const held = docs.get(lobby(lobbyId));
+        let seats: unknown;
+        try { seats = JSON.parse(held?.seats ?? "null"); } catch { throw new Error("Invalid recording ownership"); }
+        if (!Array.isArray(seats) || seats.length === 0) throw new Error("Invalid recording ownership");
+        const ids = [...new Set(seats.map((seat: unknown) => {
+          if (typeof seat !== "object" || seat === null || !("id" in seat) || typeof seat.id !== "string" || !ID.test(seat.id)) {
+            throw new Error("Invalid recording ownership");
+          }
+          return seat.id;
+        }))];
+        const identities = await read(ids.map(id => `identities/${id}`));
+        const owners = [...new Set(ids.map(id => {
+          const identity = identities.get(`identities/${id}`);
+          const owner = identity?.kind === "username" ? id : identity?.kind === "handle" ? identity.ownerId : undefined;
+          if (!owner || !ID.test(owner)) throw new Error("Invalid recording ownership");
+          return owner;
+        }))].sort();
+        const fields = { version: "1", lobbyId, ownerIds: JSON.stringify(owners) };
+        const before = docs.get(key);
+        if (before && (before.version !== fields.version || before.lobbyId !== lobbyId || before.ownerIds !== fields.ownerIds)) {
+          throw new Error("Recording ownership changed");
+        }
+        return { result: undefined, writes: before ? [] : [{ op: "create" as const, path: key, fields }] };
+      });
+    },
     async register(match) { await put(match, false); },
     resumed: match => put(match, true),
     async read(lobbyId) {

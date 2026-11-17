@@ -374,3 +374,20 @@ function widePlain(seed: number): SimState {
   }
   return state;
 }
+
+
+it("a resumed recording uses its preserved id and waits for its new server's publication prerequisite", async () => {
+  const target = storage();
+  const previous = vi.fn(async () => {});
+  const initial = new ReplayRecording(0, 51, target.replayStore, undefined, { beforePublication: previous });
+  const saved = carried(await initial.save());
+  let release!: () => void;
+  const ready = new Promise<void>(resolve => { release = resolve; });
+  const next = vi.fn(() => ready);
+  const resumed = new ReplayRecording(500, 99, target.replayStore, undefined, { resume: saved, beforePublication: next });
+  const finishing = resumed.finish();
+  await vi.waitFor(() => expect(next).toHaveBeenCalledExactlyOnceWith(initial.id));
+  expect(previous).not.toHaveBeenCalled(); expect(target.published.size).toBe(0);
+  release(); expect(await finishing).toBe(true);
+  expect([...target.published.keys()]).toEqual([`${initial.id}.bin`]);
+});

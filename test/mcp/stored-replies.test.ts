@@ -6,7 +6,7 @@
  * named marker) within the seat's recording budget, a stub for a rate-limited call, an SDK error or a call past it. Rules text, join briefing and tool descriptions are text lines,
  * once per match, uncapped, named by digest.
  */
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountStores } from "../../src/accounts/service.ts";
@@ -464,7 +464,7 @@ describe("a seat's calls in its match recording", () => {
   it("redacts test-owner proof on a seated claim, including refused and nested arguments, before recording handoff", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
     const w = retentionWorld();
-    const sponsor = value(await w.ids.claimUsername(`test${randomUUID().slice(0, 8)}`));
+    const sponsor = value(await w.ids.claimUsername("kind-maple-fox"));
     const identities = createIdentities(w.store, { now: w.now, testClaimOwnerIds: [sponsor.identity.id] });
     const stores = { identities, lobbies: createLobbies(w.store, identities), ratings: createRatings(w.store, identities) };
     h = await startHarness({ extraTools: server => registerAccountTools(server, stores) });
@@ -472,13 +472,13 @@ describe("a seat's calls in its match recording", () => {
     await agent.call("join", {});
     h.clock.now += 1_000;
     const issued = await agent.call("claim_username", {
-      name: `test${randomUUID().slice(0, 8)}`, testOwnerKey: sponsor.key,
+      name: "quiet-willow-wren", testOwnerKey: sponsor.key,
       note: [{ testOwnerKey: sponsor.key }],
     });
     expect(issued.isError).toBe(false);
     h.clock.now += 1_000;
     const forged = randomBytes(32).toString("base64url");
-    const refused = await agent.call("claim_username", { name: `test${randomUUID().slice(0, 8)}`, testOwnerKey: forged });
+    const refused = await agent.call("claim_username", { name: "brave-rowan-raven", testOwnerKey: forged });
     expect(refused.isError).toBe(true);
     const claims = entries(h).filter(entry => entry.tool === "claim_username");
     expect(claims).toHaveLength(2);

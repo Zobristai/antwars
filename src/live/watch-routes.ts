@@ -1,3 +1,4 @@
+import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { addAbortListener, once } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { pipeline } from "node:stream/promises";
@@ -50,6 +51,7 @@ export const RELAY_LIMITS: CapLimits = { max: 512, perSource: 16 };
 /** Same-origin browser routes: forwarding never redirects a browser or transfers cookies/account keys. */
 export function watchRoutes(options: {
   accounts: AccountStores; registry: WatchRegistry; hub: LiveHub; origin?: string;
+  publicVisibility?: PublicVisibility;
   archive?: PrivateArchive; replays?: ReplaySource; request?: typeof fetch;
   /** Defaults to RELAY_MAX_MS; tests pass a short bound. */
   relayMaxMs?: number;
@@ -58,6 +60,8 @@ export function watchRoutes(options: {
   /** Signs each live relay for the slot (relay-signature.ts); omitted sends none. Never logged. */
   relayKey?: Uint8Array;
 }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  const visibility = options.publicVisibility;
+  const seatsVisible = (lobby: { colonies: readonly (readonly { id: string }[])[] }) => visibility!.identitiesVisible(lobby.colonies.flat().map(seat => seat.id));
   const request = options.request ?? fetch;
   const relayMaxMs = options.relayMaxMs ?? RELAY_MAX_MS;
   const relays = createAdmissionCap("watch relays", options.relayLimits ?? RELAY_LIMITS);
@@ -71,7 +75,9 @@ export function watchRoutes(options: {
       const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
       if (pathname === "/watch/catalog") {
         routeClass = pathname;
-        const [matches, lobbies] = await Promise.all([options.registry.publicMatches(), options.accounts.lobbies.listPublic()]);
+        const [rawMatches, rawLobbies] = await Promise.all([options.registry.publicMatches(), options.accounts.lobbies.listPublic()]);
+        const matches = visibility ? await publiclyVisible(rawMatches, match => visibility.lobbyVisible(match.lobbyId)) : rawMatches;
+        const lobbies = visibility ? await publiclyVisible(rawLobbies, seatsVisible) : rawLobbies;
         const slots = new Map(await Promise.all([...new Set(matches.map(match => match.slot))].map(async slot => [slot, await options.accounts.lobbies.resolveSlot(slot)] as const)));
         // A restarted slot has no retained in-memory playback from its previous process.
         const live = matches.filter(match => slots.get(match.slot)?.runId === match.runId);
@@ -88,7 +94,9 @@ export function watchRoutes(options: {
       // lobbies and queue pairings not yet begun: mode, size, seats, seated names and their ratings only.
       if (pathname === "/watch/queue") {
         routeClass = pathname;
-        const [agents, lobbies] = await Promise.all([options.accounts.lobbies.listWaiting(), options.accounts.lobbies.listUnstarted()]);
+        const [rawAgents, rawLobbies] = await Promise.all([options.accounts.lobbies.listWaiting(), options.accounts.lobbies.listUnstarted()]);
+        const agents = visibility ? await publiclyVisible(rawAgents, agent => visibility.identitiesVisible([agent.identityId])) : rawAgents;
+        const lobbies = visibility ? await publiclyVisible(rawLobbies, seatsVisible) : rawLobbies;
         const queue = publicQueue(agents, Date.now(), lobbies, await queueRatings(options.accounts, agents, lobbies));
         logUnlistedHouse("watch queue", [...queue.waiting.map(agent => agent.displayName), ...queue.lobbies.flatMap(lobby => lobby.colonies.flat())]);
         reply(res, 200, queue); return;
@@ -110,6 +118,7 @@ export function watchRoutes(options: {
       if ((kind === "live" || kind === "status" || kind === "recording") && route[3] !== undefined) { reply(res, 404); return; }
       const lobby = await options.accounts.lobbies.readLobby(lobbyId);
       if (!lobby.ok) { reply(res, 404); return; }
+      if (visibility && !await visibility.lobbyVisible(lobbyId)) { reply(res, 404); return; }
       const access: MatchAccess = { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated === true, mode: lobby.value.mode };
       const header = req.headers["x-antwar-invite"];
       const invite = typeof header === "string" ? header : undefined;

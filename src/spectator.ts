@@ -1,3 +1,4 @@
+import type { PublicVisibility } from "./identity/publicVisibility.js";
 /// <reference types="node" />
 /**
  * The spectator on the game server's one port:
@@ -64,6 +65,7 @@ export interface SpectatedServer extends GameServer {
 }
 
 export interface SpectatedServerOptions extends ServerOptions {
+  readonly publicVisibility?: PublicVisibility;
   readonly replayStore?: ReplayStore;
   readonly replaySource?: ReplaySource;
   readonly historySource?: HistorySource;
@@ -95,7 +97,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
     registry: options.watchRegistry, slot: options.slot.slot, origin: options.slot.publicUrl, archive: options.privateArchive }) : undefined;
   const hub = new LiveHub({ config: live, clock: options.spectatorClock, replayStore, includeComparisonSetup: options.includeComparisonSetup,
     captureMatchLogs: !entryPoint && (replayStore !== undefined || options.privateArchive !== undefined),
-    recordHandoff: entryPoint ? undefined : options.recordHandoff, relayKey: options.relayKey, ...controller?.hubOptions });
+    recordHandoff: entryPoint ? undefined : options.recordHandoff, publicVisibility: options.publicVisibility, relayKey: options.relayKey, ...controller?.hubOptions });
   // A slot server's lobby by the match that streams it, for that match's handover save.
   const lobbies = new Map<number, string>();
   let seated: string | undefined;
@@ -124,8 +126,8 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   const server = await startServer({ ...options, feed: entryPoint ? undefined : feed, postMortem });
   if (!entryPoint) server.mount("/live", (req, res) => hub.handle(req, res));
   if (options.accounts && options.watchRegistry) server.mount("/watch", watchRoutes({ accounts: options.accounts, registry: options.watchRegistry,
-    hub, origin: options.slot?.publicUrl, archive: options.privateArchive, replays: options.replaySource, relayKey: options.relayKey }));
-  if (options.replaySource !== undefined) server.mount("/replays", replayRoutes(options.replaySource));
+    hub, publicVisibility: options.publicVisibility, origin: options.slot?.publicUrl, archive: options.privateArchive, replays: options.replaySource, relayKey: options.relayKey }));
+  if (options.replaySource !== undefined) server.mount("/replays", replayRoutes(options.replaySource, options.publicVisibility));
   if (options.historySource !== undefined) {
     // Older recordings carry no seat handle: each one's lobby supplies its colonies' handles.
     const lobbies = options.accounts?.lobbies, registry = options.watchRegistry;
@@ -135,7 +137,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
       const read = await lobbies.readLobby(found.lobbyId);
       return read.ok ? read.value : null;
     } : undefined;
-    server.mount("/matches", historyRoutes(options.historySource, lookup));
+    server.mount("/matches", historyRoutes(options.historySource, lookup, { publicVisibility: options.publicVisibility }));
   }
   server.mount("/rules", (req, res, game) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

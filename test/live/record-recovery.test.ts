@@ -1,5 +1,10 @@
 import { gunzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AccountStores } from "../../src/accounts/service.ts";
+import { createPublicVisibility } from "../../src/identity/publicVisibility.ts";
+import { createWatchRegistry } from "../../src/live/watch-registry.ts";
+import { createWatchController } from "../../src/live/watch-controller.ts";
+import { memoryWatchStore } from "./watch-fixtures.ts";
 import { LiveHub, type LiveHubOptions } from "../../src/live/hub.ts";
 import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.ts";
 import { decodeMessage, type StreamRatingChange } from "../../src/live/format.ts";
@@ -23,7 +28,7 @@ const close: (() => void)[] = [];
 afterEach(() => { close.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
 
 function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly StreamRatingChange[] | null>; pace?: number; private?: boolean;
-  startRatings?: LiveHubOptions["startRatings"] } = {}) {
+  startRatings?: LiveHubOptions["startRatings"]; beforePublication?: LiveHubOptions["beforeRecordingPublication"]; lobbyId?: string } = {}) {
   const clock = new ManualClock(), pending = new Map<string, Uint8Array>(), published = new Map<string, Uint8Array>();
   const privateObjects = new Map<string, Uint8Array>();
   let binFailures = 0, binaryAttempts = 0;
@@ -45,14 +50,14 @@ function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly S
     createMarker: async () => true, markerReason: async () => null, delete: async name => { pending.delete(name); } };
   const archive = { forLobby: () => privateStore, open: async () => { throw new Error("not used by these public tests"); } };
   const hub = new LiveHub({ clock, replayStore: publicStore, privateReplayStore: () => privateStore, captureMatchLogs: true, recordHandoff: handoff,
-    resultRatings: options.ratings, startRatings: options.startRatings, config: { ...DEFAULT_LIVE_CONFIG, ...(options.pace === undefined ? {} : { paceBytesPerSecond: options.pace }) } });
+    beforeRecordingPublication: options.beforePublication, resultRatings: options.ratings, startRatings: options.startRatings, config: { ...DEFAULT_LIVE_CONFIG, ...(options.pace === undefined ? {} : { paceBytesPerSecond: options.pace }) } });
   close.push(() => hub.close());
   const replays = createRecordReplayStore({ publicStore, readPublic: async id => published.get(`${id}.bin`) ?? null });
   const deps: RecordServiceDeps = { inputs, records: createOnlyRecords(publicStore, archive), replays, codeVersion: "a".repeat(40), now: () => clock.now(), log: line => logs.push(line) };
   const service = (extra: Partial<RecordServiceDeps> = {}) => createRecordService({ ...deps, ...extra });
   function play(seq = 1) {
     let state = createMatch(6006, playable({ ...rulesConfig("redesign"), matchTicks: 4 }));
-    hub.startMatch(seq, state, { lobbyId: "test-lobby", visibility: options.private ? "private" : "public", rated: options.rated ?? false });
+    hub.startMatch(seq, state, { lobbyId: options.lobbyId ?? "test-lobby", visibility: options.private ? "private" : "public", rated: options.rated ?? false });
     while (state.result === null) {
       const commands = state.tick === 0 ? [{ type: "join" as const, agentId: "secret-agent", modelLabel: "test-agent" }] : [];
       hub.appendLog(seq, tickLine(state.tick, commands));
@@ -186,4 +191,34 @@ describe("durable match-end recording recovery", () => {
     expect(p.pending.size).toBe(1);
     expect(p.logs).toContainEqual(expect.stringContaining("replay recovery storage is not configured"));
   });
+});
+
+
+it.each([false, true])("recovery cannot precede ownership, then respects exclusions (excluded: %s)", async excluded => {
+  const owner = "00000000-0000-4000-8000-000000000011", other = "00000000-0000-4000-8000-000000000012";
+  const lobbyId = "00000000-0000-4000-8000-000000000013";
+  const { store, docs } = memoryWatchStore();
+  docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: owner }]) });
+  docs.set(`identities/${owner}`, { kind: "username" });
+  let release!: () => void, entered!: () => void;
+  const ready = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const registry = createWatchRegistry({ ...store, transaction: async step => { entered(); await ready; return store.transaction(step); } });
+  const controller = createWatchController({ accounts: {} as AccountStores, registry, slot: "public-0", origin: "http://p.test" });
+  close.push(() => controller.close());
+  const p = pipeline({ lobbyId, beforePublication: controller.hubOptions.beforeRecordingPublication });
+  p.play(); await started;
+  p.hub.close(); p.clock.advance(60_000 + RECOVERY_GRACE_MS);
+  await p.service().sweep();
+  expect(p.pending.size).toBe(0); expect(p.published.size).toBe(0); expect(p.attempts()).toBe(0);
+  release(); await vi.waitFor(() => expect(p.pending.size).toBe(1));
+  const input = p.savedInput();
+  expect(await registry.replayLobby(input.id)).toEqual({ state: "none" });
+  expect(docs.has(`replayOwnership/${input.id}`)).toBe(true);
+  await p.service().sweep();
+  expect(p.published.has(`${input.id}.bin`)).toBe(true);
+  expect(p.record(input.id).status).toBe("complete");
+  expect(JSON.stringify(p.record(input.id))).not.toContain(owner);
+  const policy = createPublicVisibility(store, registry, [excluded ? owner : other])!;
+  expect(await policy.replayVisible(input.id)).toBe(!excluded);
 });
