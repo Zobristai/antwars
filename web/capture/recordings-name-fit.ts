@@ -1,10 +1,13 @@
 /** Offline Recordings comparison: --dist DIR --input JSON --fonts DIR --out DIR --label base|head --browser FILE.
  * Input is a saved public /matches response or a separately labelled synthetic response. No browser request leaves locally served assets.
  * Capture both surfaces and widths in Roboto and Liberation Sans; output complete geometry, actual fonts and image hashes.
+ * Each capture runs in two conditions: "overlay" (scrollbars take no width, unhinted glyph advances) and "live"
+ * (a classic page scrollbar that takes width, and fully hinted whole-pixel glyph advances, as many desktop browsers render).
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, realpath } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright-core";
@@ -20,11 +23,29 @@ const fontCss = fontFiles.map(f => `@font-face { font-family: Roboto; font-style
 const origin = "http://recordings.local";
 const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml" };
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: a.browser!, headless: true, args: ["--no-sandbox"] });
+// Full hinting on top of the system font configuration, read by the live-condition browser at launch.
+const hintingDir = await mkdtemp(join(tmpdir(), "recordings-hinting-"));
+const hintingConfig = join(hintingDir, "fonts.conf");
+await writeFile(hintingConfig, `<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
+  <match target="font">
+    <edit name="antialias" mode="assign"><bool>true</bool></edit>
+    <edit name="hinting" mode="assign"><bool>true</bool></edit>
+    <edit name="hintstyle" mode="assign"><const>hintfull</const></edit>
+    <edit name="autohint" mode="assign"><bool>false</bool></edit>
+  </match>
+</fontconfig>
+`);
+const browsers = {
+  overlay: await chromium.launch({ executablePath: a.browser!, headless: true, args: ["--no-sandbox"] }),
+  live: await chromium.launch({ executablePath: a.browser!, headless: true, args: ["--no-sandbox"], ignoreDefaultArgs: ["--hide-scrollbars"], env: { ...process.env, FONTCONFIG_FILE: hintingConfig } }),
+};
 const results = [];
 try {
-  for (const font of ["Roboto", "Liberation Sans"]) for (const width of [1280, 390]) for (const surface of ["recordings", "landing"]) {
-    const context = await browser.newContext({ viewport: { width, height: 1000 }, deviceScaleFactor: 1, serviceWorkers: "block" });
+  for (const condition of ["overlay", "live"] as const) for (const font of ["Roboto", "Liberation Sans"]) for (const width of [1280, 390]) for (const surface of ["recordings", "landing"]) {
+    const context = await browsers[condition].newContext({ viewport: { width, height: 1000 }, deviceScaleFactor: 1, serviceWorkers: "block" });
     const page = await context.newPage(), errors: string[] = [], assets: Record<string, string> = {};
     page.on("pageerror", e => errors.push(e.message));
     page.on("console", e => { if (e.type() === "error") errors.push(e.text()); });
@@ -49,7 +70,8 @@ try {
     try {
       await page.goto(`${origin}/${surface === "recordings" ? "?page=matches" : ""}`);
       await page.waitForSelector(".d1p-rec-name");
-      await page.addStyleTag({ content: `${fontCss}\nbody, .d1p-rec4, .d1p-rec4 * { font-family: "${font}" !important; }` });
+      // The live condition keeps the page's classic scrollbar even after the viewport grows to fit the whole card.
+      await page.addStyleTag({ content: `${fontCss}\nbody, .d1p-rec4, .d1p-rec4 * { font-family: "${font}" !important; }${condition === "live" ? "\n.aw-page-host { overflow-y: scroll !important; }" : ""}` });
       await page.evaluate(async () => { await Promise.all([400, 600, 700].map(w => document.fonts.load(`${w} 12px Roboto`))); await document.fonts.ready; });
       const card = page.locator("section.d1p-card").filter({ has: page.getByRole("heading", { name: "Recordings", exact: true }) });
       assert.equal(await card.count(), 1);
@@ -79,28 +101,33 @@ try {
         return { items, rows: root.querySelectorAll(".d1p-rec-rows > li").length,
           lost: root.querySelectorAll(".is-lost").length, dashes: root.querySelectorAll(".d1p-rec-dash").length,
           freeForAll: [...root.querySelectorAll(".d1p-rec-type")].filter(e => e.textContent?.includes("Free-for-all")).length,
-          horizontalOverflow: document.documentElement.scrollWidth > innerWidth };
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+          scrollbar: (host => host ? host.offsetWidth - host.clientWidth : -1)(document.querySelector<HTMLElement>(".aw-page-host")) };
       });
       const cdp = await context.newCDPSession(page); await cdp.send("DOM.enable"); await cdp.send("CSS.enable");
       const { root } = await cdp.send("DOM.getDocument");
       const { nodeIds } = await cdp.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: ".d1p-rec-name, .d1p-rec-head .d1p-rec-colony" });
       const fonts = [];
       for (const nodeId of nodeIds) fonts.push(...(await cdp.send("CSS.getPlatformFontsForNode", { nodeId })).fonts);
-      const prefix = `${a.label}-${font.toLowerCase().replaceAll(" ", "-")}-${width}-${surface}`;
+      const prefix = `${a.label}-${condition}-${font.toLowerCase().replaceAll(" ", "-")}-${width}-${surface}`;
       const snapshot = await card.ariaSnapshot();
       const missingAccessibleNames = geometry.items.filter(i => i.name && !snapshot.includes(i.text)).map(i => i.text);
       await writeFile(join(out, `${prefix}.aria.txt`), snapshot);
       const png = await card.screenshot({ path: join(out, `${prefix}.png`) });
-      results.push({ label: a.label, font, width, surface, capturedAt: new Date().toISOString(), inputHash: hash(input), assets,
+      const headerSpare = geometry.items.filter(i => i.header && i.cls.includes("d1p-rec-colony")).map(i => ({ text: i.text, width: i.box.width, needed: i.needed, spare: i.spare }));
+      console.log(`${condition}\t${font}\t${width}\t${surface}\t${headerSpare.map(h => `${h.text} ${h.spare.toFixed(2)}%`).join("\t")}`);
+      results.push({ label: a.label, condition, font, width, surface, headerSpare, capturedAt: new Date().toISOString(), inputHash: hash(input), assets,
         fontHashes: fontFiles.map(f => ({ weight: f.weight, sha256: hash(f.bytes) })), fonts, geometry, errors, missingAccessibleNames,
         image: `${prefix}.png`, imageHash: hash(png), accessibility: `${prefix}.aria.txt` });
     } finally { await context.close(); }
   }
 } finally {
-  await browser.close();
+  await Promise.all(Object.values(browsers).map(b => b.close()));
+  await rm(hintingDir, { recursive: true, force: true });
   await writeFile(join(out, `${a.label}.json`), JSON.stringify(results, null, 2));
 }
-assert.equal(results.length, 8);
+assert.equal(results.length, 16);
+assert(results.every(r => r.condition === "live" ? r.geometry.scrollbar > 0 : r.geometry.scrollbar === 0), "Scrollbar condition not observed");
 assert(results.every(r => r.errors.length === 0), "Render errors; inspect manifests");
 if (a.label!.startsWith("head-")) {
   assert(results.every(r => !r.geometry.horizontalOverflow && r.missingAccessibleNames.length === 0), "Page overflow or incomplete accessible names");
