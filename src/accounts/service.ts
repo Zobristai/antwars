@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { z } from "zod";
 import {
-  HANDLE_CREATION_LIMIT, KEY_ROTATION_LIMIT, RESERVED_USERNAMES, USERNAME_CLAIM_LIMIT,
+  HANDLE_CREATION_LIMIT, KEY_ROTATION_LIMIT, RESERVED_USERNAMES,
   type CommitGuard, type Identities, type Identity, type Refusal as IdentityRefusal,
 } from "../identity/identities.js";
 import { usernameClaimCaller, usernameClaimHeaderShape, type UsernameClaimLimitRule } from "./caller.js";
@@ -65,10 +65,9 @@ const REFUSALS = {
   invalid_name: [400, "Names are 2-24 letters, digits, - or _, starting with a letter or digit."],
   taken: [409, "That name is taken."],
   reserved_name: [400, `Reserved usernames: ${RESERVED_USERNAMES.join(", ")}. These words, or a word followed by -, _ or a digit, are reserved. Choose another username; handles are exempt.`],
-  username_claim_limit: [429, `This address has claimed ${USERNAME_CLAIM_LIMIT} usernames in 24 hours. Reuse your username and its handles; try again after the 24-hour window.`],
   handle_creation_limit: [429, `This owner has created ${HANDLE_CREATION_LIMIT} handles in 24 hours. Reuse existing handles; try again after the 24-hour window.`],
   key_rotation_limit: [429, `This identity's key has been replaced ${KEY_ROTATION_LIMIT} times in 24 hours (rotate_key and reissue_handle_key count together). Its current key still works: keep using it, and try again after the 24-hour window.`],
-  caller_unavailable: [400, "The enabled username claim limit could not identify a caller address. Retry with valid caller context."],
+  caller_unavailable: [400, "The username claim could not identify a caller address. Retry with valid caller context."],
   invalid_key: [401, "That key is not valid."],
   not_owner_key: [403, "Only a username's key can do this, not a handle's key."],
   already_named: [409, "This account already has a username. Reuse it; an existing key can claim a replacement only after its name is released."],
@@ -272,7 +271,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("claim_username", `Claim your one username only if you do not already have one. ${IDENTITY_GUIDANCE} ${USERNAME_RETENTION_TEXT} ${KEEP_KEY} ${KEY_HANDLING_GUIDANCE}`,
     z.object({ name: z.string().max(100).describe("Your single chosen username, not a speculative reservation: 2-24 letters, digits, - or _, starting with a letter or digit."),
       key: key.optional().describe("Only for a released account: its existing username key, retaining the same account and key."),
-      testOwnerKey: key.optional().describe("Only for authorised test claims: the current key of a server-designated non-house test owner. Skips only the address claim budget; a new username still gets its own account and key. Never use a house key.") }),
+      testOwnerKey: key.optional().describe("Optional proof for authorised test claims: the current key of a server-designated non-house test owner. If supplied, this proof must be valid; a new username still gets its own account and key. Never use a house key.") }),
     async ({ identities, usernameClaimLimitRule = "off" }, { name, key: ownerKey, testOwnerKey }, headers, guard) => {
       console.info("antwar username claim header shape", usernameClaimHeaderShape(headers));
       const claimed = await identities.claimUsername(name, usernameClaimCaller(headers, usernameClaimLimitRule), ownerKey, guard, testOwnerKey);

@@ -161,24 +161,39 @@ describe("identity creation budgets without external services", () => {
     expect(value(await w.identities.resolveKey(next.key)).id).toBe("existing");
   });
 
-  it("charges only successful usernames, persists across instances, resets exactly at 24h and writes nothing on refusal", async () => {
+  it("allows more than ten claims per address across instances without reading or changing legacy budgets", async () => {
     const w = world();
-    value(await w.identities.claimUsername("taken"));
-    for (let i = 0; i < 20; i++) expect(await w.identities.claimUsername("taken", "caller")).toEqual({ ok: false, reason: "taken" });
-    for (const input of ["!", "claude", "gpt4"]) expect((await w.identities.claimUsername(input, "caller")).ok).toBe(false);
-    expect([...w.docs.keys()].some((path) => path.startsWith("identityClaimLimits/"))).toBe(false);
-    for (let i = 0; i < 10; i++) value(await w.identities.claimUsername(`agent${i}`, "caller"));
+    const caller = "192.0.2.20";
+    const path = `identityClaimLimits/usernames-${createHash("sha256").update(caller).digest("hex")}`;
+    const legacy = { windowStart: String(w.now()), used: "10" };
+    w.docs.set(path, legacy);
+    for (let i = 0; i < 10; i++) value(await w.identities.claimUsername(`agent${i}`, caller));
     const other = createIdentities(w.store, { now: w.now });
-    const before = JSON.stringify([...w.docs]);
-    expect(await other.claimUsername("excess", "caller")).toEqual({ ok: false, reason: "username_claim_limit" });
-    expect(JSON.stringify([...w.docs])).toBe(before);
-    expect(await other.findByDisplayName("excess")).toBeUndefined();
-    w.advance(CLAIM_WINDOW_MS - 1);
-    expect((await other.claimUsername("tooearly", "caller")).ok).toBe(false);
-    w.advance(1);
-    value(await other.claimUsername("nextday", "caller"));
-    expect(JSON.stringify([...w.docs])).not.toContain('"caller"');
-    value(await world().identities.claimUsername("agent0", "caller")); // independent namespace/store
+    const eleventh = value(await other.claimUsername("eleventh", caller));
+    expect(value(await other.resolveKey(eleventh.key)).id).toBe(eleventh.identity.id);
+    value(await other.claimUsername("twelfth", caller));
+    expect(w.reads).not.toContain(path);
+    expect(w.docs.get(path)).toEqual(legacy);
+    expect([...w.docs.keys()].filter((key) => key.startsWith("identityClaimLimits/"))).toEqual([path]);
+    expect(JSON.stringify([...w.docs])).not.toContain(caller);
+
+    const owner = value(await other.claimUsername("owner", caller));
+    const handle = value(await other.createHandle(owner.key, "helper"));
+    const cases = [
+      ["!", caller, undefined, undefined, "invalid_name"],
+      ["claude", caller, undefined, undefined, "reserved_name"],
+      ["ＥＬＥＶＥＮＴＨ", caller, undefined, undefined, "taken"],
+      ["nocaller", null, undefined, undefined, "caller_unavailable"],
+      ["badkey", caller, "invalid", undefined, "unknown_key"],
+      ["handleowner", caller, handle.key, undefined, "not_owner_key"],
+      ["renamed", caller, owner.key, undefined, "already_named"],
+      ["busy", caller, undefined, { mayCommit: () => false }, "server_busy"],
+    ] as const;
+    for (const [name, source, key, guard, reason] of cases) {
+      const before = JSON.stringify([...w.docs]);
+      expect(await other.claimUsername(name, source, key, guard)).toEqual({ ok: false, reason });
+      expect(JSON.stringify([...w.docs])).toBe(before);
+    }
   });
 
   it("enforces 20 handles per stable owner; rotation/reissue/retries cannot reset or consume its budget", async () => {
@@ -241,7 +256,7 @@ describe("identity creation budgets without external services", () => {
 
 for (const transport of ["HTTP", "MCP"] as const) {
   describe(`${transport} actual account wiring`, () => {
-    it("only current designated-owner proof skips an exhausted budget, creating independent owners without inheriting permission", async () => {
+    it("accepts ordinary claims beyond ten while still validating optional designated-owner proof", async () => {
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
       const w = world("client");
       const sponsor = value(await w.identities.claimUsername(`test${randomUUID().slice(0, 8)}`));
@@ -254,7 +269,7 @@ for (const transport of ["HTTP", "MCP"] as const) {
       }
       const budget = () => JSON.stringify([...w.docs].filter(([path]) => path.startsWith("identityClaimLimits/")));
       const before = budget();
-      expect((await call("claim_username", { name: "overbudget" }, address)).body.error).toBe("username_claim_limit");
+      expect((await call("claim_username", { name: "overbudget" }, address)).ok).toBe(true);
       const createdIds = new Set<string>();
       let createdKey = "";
       for (let i = 0; i < 4; i++) {
@@ -269,8 +284,8 @@ for (const transport of ["HTTP", "MCP"] as const) {
         expect(w.docs.get(`identities/${identity.id}`)?.ownerId).toBeUndefined();
         createdIds.add(identity.id);
         createdKey = issuedKey;
-        // The same MCP session's next request has no implicit privilege.
-        expect((await call("claim_username", { name: "stilllimited" }, address)).body.error).toBe("username_claim_limit");
+        // Ordinary claims need no designated-owner proof.
+        expect((await call("claim_username", { name: `ordinary${i}` }, address)).ok).toBe(true);
       }
       expect(createdIds.size).toBe(4);
       expect(budget()).toBe(before);
@@ -279,10 +294,10 @@ for (const transport of ["HTTP", "MCP"] as const) {
         expect(result.body.error).toBe("invalid_key");
         if (transport === "HTTP") expect(result.status).toBe(401);
       }
-      // Neither a public owner ID, a test-looking name, flags nor an asserted header is proof.
+      // Extra flags and headers do not change an ordinary claim or grant proof authority.
       const forged = await call("claim_username", { name: "testvisitor", testOwnerId: sponsor.identity.id, testAccount: true }, address,
         undefined, { "x-test-owner-id": sponsor.identity.id, "x-test-account": "true" });
-      expect(forged.body.error).toBe("username_claim_limit");
+      expect(forged.ok).toBe(true);
       for (const [name, error] of [["!", "invalid_name"], ["claude", "reserved_name"], ["newtest0", "taken"]]) {
         expect((await call("claim_username", { name, testOwnerKey: sponsor.key }, address)).body.error).toBe(error);
       }
@@ -323,7 +338,7 @@ for (const transport of ["HTTP", "MCP"] as const) {
       expect(info.mock.calls.at(-1)?.[1]).toEqual({ route: "antwars.ai", lastIsLoadBalancer: false });
     });
 
-    it("client with no load balancer (a match slot): spoofing cannot evade attacker quota or poison the victim; ten honest agents succeed", async () => {
+    it("client with no load balancer: claims beyond ten succeed and missing caller context is still refused", async () => {
       const w = world("client");
       const port = await serve(w.stores);
       const call = await open(transport, port);
@@ -331,14 +346,15 @@ for (const transport of ["HTTP", "MCP"] as const) {
       for (let i = 0; i < 10; i++) {
         expect((await call("claim_username", { name: `attacker${i}` }, `203.0.113.${i},${suffix("192.0.2.20")}`)).ok).toBe(true);
       }
-      for (const spoof of ["203.0.113.9", "192.0.2.99", "garbage,203.0.113.8"]) {
-        const reply = await call("claim_username", { name: "excess" }, `${spoof},${suffix("192.0.2.20")}`);
-        expect(reply.body.error).toBe("username_claim_limit");
-        if (transport === "HTTP") expect(reply.status).toBe(429);
+      for (const [i, spoof] of ["203.0.113.9", "192.0.2.99", "garbage,203.0.113.8"].entries()) {
+        const reply = await call("claim_username", { name: `excess${i}` }, `${spoof},${suffix("192.0.2.20")}`);
+        expect(reply.ok).toBe(true);
+        if (transport === "HTTP") expect(reply.status).toBe(200);
       }
       for (let i = 0; i < 10; i++) expect((await call("claim_username", { name: `honest${i}` }, suffix("192.0.2.99"))).ok).toBe(true);
-      expect((await call("claim_username", { name: "honestexcess" }, suffix("192.0.2.99"))).body.error).toBe("username_claim_limit");
-      expect(await w.identities.findByDisplayName("excess")).toBeUndefined();
+      expect((await call("claim_username", { name: "honestexcess" }, suffix("192.0.2.99"))).ok).toBe(true);
+      expect(await w.identities.findByDisplayName("excess0")).toBeDefined();
+      expect(w.reads.some((path) => path.startsWith("identityClaimLimits/"))).toBe(false);
       expect((await call("claim_username", { name: "nocaller" })).body.error).toBe("caller_unavailable");
     });
 
@@ -378,7 +394,7 @@ for (const transport of ["HTTP", "MCP"] as const) {
       if (transport === "HTTP") expect(reissue.status).toBe(429);
     });
 
-    it("client: claims count per client source behind the load balancer; forged hops are ignored and a missing client is refused", async () => {
+    it("client: IPv4 and IPv6 claims beyond ten succeed behind the load balancer; missing clients remain refused", async () => {
       const info = vi.spyOn(console, "info").mockImplementation(() => {});
       // Documentation addresses only (RFC 5737, RFC 3849).
       const w = world("client", "192.0.2.10,2001:db8:ffff::a10");
@@ -388,17 +404,17 @@ for (const transport of ["HTTP", "MCP"] as const) {
         expect((await call("claim_username", { name: `alpha${i}` }, viaLb("198.51.100.20", `203.0.113.${i},`), "antwars.ai")).ok).toBe(true);
       }
       const excess = await call("claim_username", { name: "alphaexcess" }, viaLb("198.51.100.20", "203.0.113.99,"), "antwars.ai");
-      expect(excess.body.error).toBe("username_claim_limit");
-      if (transport === "HTTP") expect(excess.status).toBe(429);
-      // The same client calling the service address directly shares that budget.
-      expect((await call("claim_username", { name: "alphadirect" }, "198.51.100.20")).body.error).toBe("username_claim_limit");
-      // Another visitor through the same load balancer keeps its own budget.
+      expect(excess.ok).toBe(true);
+      if (transport === "HTTP") expect(excess.status).toBe(200);
+      // Direct requests from the same client are also unmetered.
+      expect((await call("claim_username", { name: "alphadirect" }, "198.51.100.20")).ok).toBe(true);
+      // Another visitor through the same load balancer can also claim.
       expect((await call("claim_username", { name: "beta0" }, viaLb("198.51.100.21"), "antwars.ai")).ok).toBe(true);
-      // IPv6 clients are counted per /64, through the IPv6 load balancer address.
+      // IPv6 addresses in the same /64 remain unmetered through the IPv6 load balancer.
       for (let i = 0; i < 10; i++) {
         expect((await call("claim_username", { name: `gamma${i}` }, `2001:db8:1:2::${i + 1},2001:db8:ffff::a10`)).ok).toBe(true);
       }
-      expect((await call("claim_username", { name: "gammaexcess" }, "2001:db8:1:2:ffff::1,2001:db8:ffff::a10")).body.error).toBe("username_claim_limit");
+      expect((await call("claim_username", { name: "gammaexcess" }, "2001:db8:1:2:ffff::1,2001:db8:ffff::a10")).ok).toBe(true);
       expect((await call("claim_username", { name: "delta0" }, "2001:db8:1:3::1,2001:db8:ffff::a10")).ok).toBe(true);
       for (const forwarded of [undefined, "192.0.2.10", "garbage,192.0.2.10"]) {
         const reply = await call("claim_username", { name: "nocaller" }, forwarded, "antwars.ai");
@@ -412,12 +428,19 @@ for (const transport of ["HTTP", "MCP"] as const) {
   });
 }
 
-it("returns identical reserved/quota JSON over both transports", async () => {
+it("allows later claims over both transports and returns identical validation refusals", async () => {
   vi.spyOn(console, "info").mockImplementation(() => {});
   const w = world("client");
   const port = await serve(w.stores);
   const http = await open("HTTP", port), mcp = await open("MCP", port);
   expect((await http("claim_username", { name: "gpt4" })).body).toEqual((await mcp("claim_username", { name: "gpt4" })).body);
   for (let i = 0; i < 10; i++) expect((await http("claim_username", { name: `quota${i}` }, "192.0.2.20")).ok).toBe(true);
-  expect((await http("claim_username", { name: "excess" }, "192.0.2.20")).body).toEqual((await mcp("claim_username", { name: "excess" }, "192.0.2.20")).body);
+  expect((await http("claim_username", { name: "eleventh" }, "192.0.2.20")).ok).toBe(true);
+  expect((await mcp("claim_username", { name: "twelfth" }, "192.0.2.20")).ok).toBe(true);
+  for (const [name, error] of [["eleventh", "taken"], ["!", "invalid_name"], ["claude", "reserved_name"]]) {
+    const httpReply = await http("claim_username", { name }, "192.0.2.20");
+    const mcpReply = await mcp("claim_username", { name }, "192.0.2.20");
+    expect(httpReply.body.error).toBe(error);
+    expect(mcpReply.body).toEqual(httpReply.body);
+  }
 });
