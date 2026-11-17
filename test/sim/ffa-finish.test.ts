@@ -109,15 +109,35 @@ it.each(["territory", "ants_alive", "food_delivered"] as const)(
     }
   });
 
-it("keeps a complete order but declines to rate abandonment and declared draws", () => {
+it("keeps a complete order but declines to rate abandonment", async () => {
   const abandoned = fourColonyEnd(world().state, 10, "abandoned")!;
   expect(abandoned.ffa).toMatchObject({ order: [1, 0, 2, 3], rateable: false });
-  const { state } = world();
+  const w = retentionWorld();
+  const participants = [0, 1, 2, 3].map(c => w.played(`player${c}`).id);
+  expect(await applyFfaResult(w.store, { matchId: "abandoned-finish", participants,
+    reason: abandoned.reason, finish: abandoned.ffa! })).toEqual({ status: "not_rateable" });
+  expect(w.commits).toHaveLength(0);
+});
+
+it.each(["time_up", "queens_killed"] as const)("rates the complete all-tied %s order without changing the declared draw", async reason => {
+  const { state, kill } = world(false, 100);
   state.colonies.forEach(c => { c.queenKills = 0; c.kills = 0; });
-  const result = fourColonyEnd(state, 10, true)!;
+  if (reason === "queens_killed") for (const colony of [0, 1, 2, 3]) kill(colony, 10);
+  const result = fourColonyEnd(state, 10, reason === "time_up")!;
+  expect(result).toMatchObject({ winner: null, decidedBy: "draw", reason,
+    ffa: { order: [0, 1, 2, 3], rateable: true } });
+  const w = retentionWorld();
+  const participants = state.colonies.map(c => w.played(`player${c.id}`).id);
+  const input = { matchId: "all-tied-finish", participants, reason: result.reason, finish: result.ffa! };
+  expect((await applyFfaResult(w.store, input)).status).toBe("applied");
+  expect((await applyFfaResult(w.store, input)).status).toBe("already_applied");
+  expect(w.commits).toHaveLength(1);
+  expect(w.commits[0]).toHaveLength(5);
+  const changes = JSON.parse(w.docs.get("ffaMatches/all-tied-finish")!.changes!) as { place: number; after: { mu: number } }[];
+  expect(changes.map(c => c.place)).toEqual([1, 2, 3, 4]);
+  for (const id of participants) expect(w.docs.get(`${FFA_COLLECTION}/${id}`)?.ratedMatches).toBe("1");
+  for (let i = 0; i < 3; i++) expect(changes[i]!.after.mu).toBeGreaterThan(changes[i + 1]!.after.mu);
   expect(result).toMatchObject({ winner: null, decidedBy: "draw" });
-  expect(new Set(result.ffa?.order).size).toBe(4);
-  expect(result.ffa?.rateable).toBe(false);
 });
 
 it("preserves historical result shape when the recorded config has no finishing metadata switch", () => {

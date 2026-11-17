@@ -778,7 +778,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         // Never route four participants through the two-colony Glicko or Model Index paths.
         // An old/missing finish cannot be rated; an explicit gate never backfills past results.
         if (settings.ffaLiveEnabled === true && fields.rated === "true" && ending.result?.ffa !== undefined &&
-            /^colony_[0-3]_won$/.test(ending.outcome)) {
+            (ending.outcome === "draw" || /^colony_[0-3]_won$/.test(ending.outcome))) {
           const seats = seatsOf(lobbyId, fields);
           const participants = [0, 1, 2, 3].map(colony => {
             const members = seats.filter(seat => seat.colony === colony);

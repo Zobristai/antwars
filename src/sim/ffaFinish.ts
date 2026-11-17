@@ -7,7 +7,7 @@ export interface FfaFinish {
   /** First through fourth; always a permutation of the four colony ids. */
   readonly order: readonly [number, number, number, number];
   readonly territoryWinnerFirst: boolean;
-  /** False for abandonment or a declared draw. */
+  /** False for abandonment; a natural draw still rates its complete recorded order. */
   readonly rateable: boolean;
 }
 
@@ -27,5 +27,5 @@ export function ffaFinish(ranked: readonly RankedColony[], result: MatchResult, 
   const first = territoryWinnerFirst && result.reason === "sustained_territory" ? result.winner : null;
   const ordered = first === null ? [...ranked] : [...ranked.filter(r => r.colony === first), ...ranked.filter(r => r.colony !== first)];
   return parseFfaFinish({ version: 1, order: ordered.map(r => r.colony), territoryWinnerFirst,
-    rateable: result.winner !== null && result.reason !== "abandoned" });
+    rateable: result.reason !== "abandoned" });
 }
