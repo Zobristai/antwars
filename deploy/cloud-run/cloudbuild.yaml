@@ -23,7 +23,7 @@
 # (deploy/cloud-run/config.sh, deploy.env.example) is a substitution of the same
 # name with a leading underscore, set on the command line, and
 # required settings have no default here. The optional public exclusion secret
-# version defaults empty (off), and contains no owner values. An empty or missing required setting stops deploy.sh before any
+# version defaults empty (preserve), and contains no owner values. An empty or missing required setting stops deploy.sh before any
 # change. The service account (the config's ACCOUNT; cloudbuild-run.sh refuses
 # to run as any other identity) is set on the command line. Build
 # logs go to Cloud Logging, as a build that runs as its own service account

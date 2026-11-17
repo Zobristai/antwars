@@ -202,6 +202,10 @@ function setup(options: Options, keep = true) {
   writeFileSync(calls, "");
   const statePath = join(dir, "state.json");
   const state = startingState();
+  // Historical tag revisions are real readable revisions, even with no traffic.
+  for (const svc of Object.values(state.services)) for (const route of svc.traffic) {
+    if (route.tag && !state.revisions[route.revisionName]) state.revisions[route.revisionName] = structuredClone(state.revisions[svc.latest]!);
+  }
   options.state?.(state);
   writeFileSync(statePath, JSON.stringify(state));
   const fake = (name: string, body: string) => writeFileSync(join(dir, name), `#!/usr/bin/env node
@@ -292,12 +296,17 @@ else if (at("run", "deploy") && st.services[a[2]]) {
 }
 else if (at("run", "services", "update-traffic") && st.services[a[3]]) {
   const svc = st.services[a[3]];
+  if (a.includes("--remove-tags") && process.env.FAIL_REMOVE_TAGS === a[3]) process.exit(1);
   if (process.env.IGNORE_TRAFFIC !== "1") {
     if (a.includes("--to-latest")) svc.traffic = [{ revisionName: svc.latest, percent: 100, latestRevision: true }, ...tagsOnly(svc.traffic)];
     const to = flag("--to-revisions");
     if (to) svc.traffic = [{ revisionName: to.split("=")[0], percent: Number(to.split("=")[1]) }, ...tagsOnly(svc.traffic)];
     // KEEP_TAGS=<service>: that service's tags survive --clear-tags.
     if (a.includes("--clear-tags") && process.env.KEEP_TAGS !== a[3]) svc.traffic = untagged(svc.traffic);
+    if (a.includes("--remove-tags") && process.env.IGNORE_REMOVE_TAGS !== a[3]) {
+      const names = flag("--remove-tags").split(",");
+      svc.traffic = svc.traffic.flatMap(t => !names.includes(t.tag) ? [t] : t.percent ? [{ revisionName: t.revisionName, percent: t.percent }] : []);
+    }
     const set = flag("--set-tags");
     if (set && process.env.IGNORE_SET_TAGS !== a[3]) svc.traffic = [...untagged(svc.traffic), ...set.split(",").map((kv) => ({ revisionName: kv.split("=")[1], tag: kv.split("=")[0] }))];
     save();
@@ -312,6 +321,7 @@ else if (at("run", "services", "describe") && st.services[a[3]]) {
 }
 else if (at("run", "services", "describe") && CAN_BE_ABSENT(a[3])) { console.error("ERROR: (gcloud.run.services.describe) Cannot find service [" + a[3] + "]"); process.exit(1); }
 else if (at("run", "revisions", "describe")) {
+  if (process.env.UNREADABLE_EXCLUSION_REVISION === a[3]) process.exit(1);
   const rev = st.revisions[a[3]];
   if (!rev) process.exit(1);
   console.log(JSON.stringify({ metadata: { name: a[3] },
@@ -719,6 +729,7 @@ describe("existing deploy paths are unchanged", () => {
       ["run", "revisions", "describe", GAME_OUT, ...ACCOUNT, ...REGION, "--format", "json"],
       // Public exclusion consistency is checked before building: entry template/serving revision, then every declared slot.
       named("antwar"), namedRevision(GAME_OUT),
+      ...["antwar-00007-mno", "antwar-00006-pqr", "antwar-00005-stu"].map(namedRevision),
       ...["public", "private"].flatMap(kind => Array.from({ length: 8 }, (_, i) => named(`antwar-${kind}-${i}`))),
       ["builds", "submit", expect.stringMatching(/source\.tgz$/), ...ACCOUNT, ...REGION, "--tag", `${SERVER_REPO}:${SHA}`,
         "--service-account", "projects/example-project/serviceAccounts/antwar-build@example-project.iam.gserviceaccount.com",
@@ -734,7 +745,8 @@ describe("existing deploy paths are unchanged", () => {
         "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION],
       // The revision the deploy created gets all traffic by name, once Ready.
       named("antwar"), namedRevision("antwar-new"), toNew("antwar"), named("antwar"),
-      // Then only tags are replaced.
+      // Then only policy-compatible tags are retained.
+      namedRevision("antwar-new"),
       ["run", "services", "update-traffic", "antwar", ...ACCOUNT, ...REGION, "--set-tags", `r6b6b6b6b=${GAME_OUT}`],
       ["run", "services", "describe", "antwar", ...ACCOUNT, ...REGION, "--format", "json"],
     ]);
@@ -1123,7 +1135,8 @@ describe("private deploy config", () => {
   }, LIVE_SLOTS_TIMEOUT);
 });
 
-// The game keeps only its one immediate rollback revision warm.
+// The game keeps only its one immediate rollback revision warm. Its policy check
+// inspects the live fleet, so successful deploy paths use the live-deploy budget.
 describe("live path rollback tag", () => {
   it("replaces every older tag with the one rollback tag on the outgoing revision, leaving traffic on the new revision", () => {
     const r = run([SHA]);
@@ -1140,7 +1153,7 @@ describe("live path rollback tag", () => {
     // The records service is never retagged by the live path, and no revision is ever deleted.
     expect(r.state.services["antwar-records"]).toEqual(startingState().services["antwar-records"]);
     expect(r.gcloud.filter((c) => c[2] === "delete")).toEqual([]);
-  });
+  }, LIVE_SLOTS_TIMEOUT);
 
   it("stops non-zero, naming each other tag, when the retag does not take", () => {
     const r = run([SHA], { env: { IGNORE_SET_TAGS: "antwar" } });
@@ -1149,7 +1162,7 @@ describe("live path rollback tag", () => {
       expect(r.stderr).toContain(`antwar: unexpected tag ${tag} on ${rev}`);
     }
     expect(r.stderr).toContain(`deployed ${SHA}, but antwar keeps a tag other than r6b6b6b6b on ${GAME_OUT}`);
-  });
+  }, LIVE_SLOTS_TIMEOUT);
 
   it("refuses before the build when the outgoing revision cannot be read", () => {
     const r = run([SHA], { state: (s) => { delete s.revisions[GAME_OUT]; } });
@@ -1308,11 +1321,25 @@ describe.concurrent("all", () => {
       ] };
       s.revisions[slotOut(svc)] = { image: `${SERVER_REPO}@sha256:${"e".repeat(64)}`, sha: SLOT_OUT_SHA,
         env: ["ANTWAR_PRIVATE_REPLAY_KEY", ...(slot.startsWith("public") ? ["ANTWAR_OPERATOR_TOKEN"] : [])] };
+      s.revisions[`${svc}-00008-tag`] = structuredClone(s.revisions[slotOut(svc)]!);
     }
     s.revisions[GAME_OUT]!.cpu = "2";
     s.revisions[GAME_OUT]!.env = ["ANTWAR_PRIVATE_REPLAY_KEY"];
     s.curl = curl;
     edit?.(s);
+  };
+  const publicPolicy = (s: State, version: string | undefined) => {
+    for (const [name, svc] of Object.entries(s.services)) {
+      if (name === "antwar-records") continue;
+      for (const id of new Set([svc.created ?? svc.latest, ...svc.traffic.map(t => t.revisionName)])) {
+        const rev = s.revisions[id]; if (!rev) continue;
+        const setting = "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS";
+        if (version) {
+          rev.env = [...new Set([...(rev.env ?? []), setting])];
+          rev.values = { ...rev.values, [setting]: `secret:antwars-public-excluded-owner-ids:${version}` };
+        }
+      }
+    }
   };
   // A run mark: running/<sha>/<run>/<revision>, the run being <UTC start>-<first 8 of sha>.
   const MARK = (revision: string, sha = SHA) => new RegExp(`^running/${sha}/\\d{8}T\\d{6}Z-${sha.slice(0, 8)}/${revision}$`);
@@ -1335,6 +1362,7 @@ describe.concurrent("all", () => {
         revision.env.push(setting, "OTHER_SECRET");
         revision.values = { ...revision.values, [setting]: "secret:antwars-public-excluded-owner-ids:7", OTHER_SECRET: "secret:other:1" };
       }
+      if (version === "") publicPolicy(s, "7");
     }), env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version } });
     expect(r.status, r.stderr).toBe(0);
     const calls = deploys(r.gcloud); expect(calls).toHaveLength(18);
@@ -1384,6 +1412,35 @@ describe.concurrent("all", () => {
     }
   }, TIMEOUT);
 
+  it.each(["12", "7", "disable"])("public exclusion transition removes incompatible tags before service updates (%s)", async version => {
+    const prior = version === "12" ? undefined : "12";
+    const r = await runAsync(["all", SHA], { state: live({}, s => publicPolicy(s, prior)),
+      env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version } });
+    expect(r.status, r.stderr).toBe(0);
+    const firstPublicDeploy = r.gcloud.findIndex(c => c[0] === "run" && c[1] === "deploy" && c[2] !== "antwar-records");
+    const removals = r.gcloud.map((c, i) => ({ c, i })).filter(({c}) => c.includes("--remove-tags"));
+    expect(removals).toHaveLength(17);
+    for (const {i} of removals) expect(i).toBeLessThan(firstPublicDeploy);
+    for (const svc of SERVICES.filter(svc => svc !== "antwar-records")) expect(r.state.services[svc]!.traffic.filter(t => t.tag)).toEqual([]);
+    expect(r.stderr).toContain("untagged: redeploy with the current public exclusion policy");
+  }, TIMEOUT);
+  it.each(["FAIL_REMOVE_TAGS", "IGNORE_REMOVE_TAGS"])("public exclusion transition stops before deployment when tag removal fails (%s)", async failure => {
+    const r = await runAsync(["all", SHA], { state: live(), env: {
+      PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12", [failure]: "antwar",
+    } });
+    expect(r.status).toBe(1);
+    expect(deploys(r.gcloud)).toEqual([]);
+    expect(r.stderr).toContain("no policy was updated");
+    expect(r.state.revisions[GAME_OUT]!.values?.ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS).toBeUndefined();
+  }, TIMEOUT);
+  it("public exclusion precheck plans a tagged-policy transition without changing anything", async () => {
+    let before: State;
+    const r = await runAsync(["all", SHA, "--precheck"], { state: live({}, s => { before = structuredClone(s); }),
+      env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.state).toEqual(before!);
+    expect(r.gcloud.some(c => c[2] === "update-traffic" || c[1] === "deploy" || c[0] === "builds")).toBe(false);
+  }, TIMEOUT);
   it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which the server's parser accepts", async () => {
     const later = await runAsync(["all", SHA], { state: live(), env: { ANTWAR_SWAP_STABLE: "" } });
     expect(later.status, later.stderr).toBe(0);
@@ -2443,7 +2500,10 @@ describe("optional public exclusion secret", () => {
       s.revisions[revision] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA, env: [] };
       if (version) setPolicy(s.revisions[revision]!, version);
     }
-    if (version) setPolicy(s.revisions[GAME_OUT]!, version);
+    if (version) {
+      setPolicy(s.revisions[GAME_OUT]!, version);
+      for (const t of s.services.antwar!.traffic) if (t.tag) setPolicy(s.revisions[t.revisionName]!, version);
+    }
   };
   const noChanges = (r: ReturnType<typeof run>, before: State) => {
     expect(r.status).toBe(1);
@@ -2452,6 +2512,29 @@ describe("optional public exclusion secret", () => {
     expect(r.gcloud.filter(c => c[0] === "builds" || c[1] === "deploy" || c[2] === "update-traffic" || c[2] === "delete")).toEqual([]);
     expect(r.state).toEqual(before);
   };
+  it.each(["off", "7", "unreadable"])("public exclusion checks zero-traffic tagged revisions (%s)", tagPolicy => {
+    let before: State;
+    const tagRevision = "antwar-public-0-tagged";
+    const r = run(["slots", "live", SHA], { env: tagPolicy === "unreadable" ? { UNREADABLE_EXCLUSION_REVISION: tagRevision } : {}, state: s => {
+      existing("12")(s);
+      s.services["antwar-public-0"]!.traffic.push({ revisionName: tagRevision, tag: "review", percent: 0 });
+      s.revisions[tagRevision] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA, env: [] };
+      if (tagPolicy === "7") setPolicy(s.revisions[tagRevision]!, "7");
+      before = structuredClone(s);
+    } });
+    expect(r.status).toBe(1);
+    expect(deploys(r.gcloud)).toEqual([]);
+    expect(r.gcloud.some(c => c[0] === "builds" || c[2] === "update-traffic")).toBe(false);
+    expect(r.state).toEqual(before!);
+    expect(r.gcloud).toContainEqual(namedRevision(tagRevision));
+  }, LIVE_SLOTS_TIMEOUT);
+  it("public exclusion allows a zero-traffic tag with the same pinned policy", () => {
+    const r = run([SHA], { state: existing("12") });
+    expect(r.status, r.stderr).toBe(0);
+    const tags = r.state.services.antwar!.traffic.filter(t => t.tag);
+    expect(tags).toEqual([{ revisionName: GAME_OUT, tag: `r${GAME_OUT_SHA.slice(0, 8)}` }]);
+    expect(r.state.revisions[tags[0]!.revisionName]!.values?.[setting]).toBe("secret:antwars-public-excluded-owner-ids:12");
+  }, LIVE_SLOTS_TIMEOUT);
   // These preflights describe the entry and every live slot, so use the existing live-service budget.
   it.each([[SHA], ["slots", "live", SHA], ["all", SHA], ["all", SHA, "--precheck"]])("omitted public exclusion version refuses all-existing mixed bindings (%j)", (...args) => {
     let before: State;
@@ -2521,6 +2604,7 @@ describe("optional public exclusion secret", () => {
     const r = run([SHA], { env: version === undefined ? {} : { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version }, state: s => {
       s.revisions[GAME_OUT]!.env = [setting, "OTHER_SECRET"];
       s.revisions[GAME_OUT]!.values = { [setting]: "secret:antwars-public-excluded-owner-ids:12", OTHER_SECRET: "secret:other:1" };
+      for (const t of s.services.antwar!.traffic) if (t.tag) setPolicy(s.revisions[t.revisionName]!, "12");
     } });
     expect(r.status, r.stderr).toBe(0);
     const revision = r.state.revisions["antwar-new"]!;
@@ -2557,6 +2641,7 @@ describe("optional public exclusion secret", () => {
   it("explicit matching version creates missing slots without changing the existing public exclusion policy", () => {
     const r = run(["slots", "live", SHA], { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" }, state: s => {
       setPolicy(s.revisions[GAME_OUT]!, "12");
+      for (const t of s.services.antwar!.traffic) if (t.tag) setPolicy(s.revisions[t.revisionName]!, "12");
     } });
     expect(r.status, r.stderr).toBe(0);
     expect(deploys(r.gcloud)).toHaveLength(16);
@@ -2589,6 +2674,7 @@ describe("optional public exclusion secret", () => {
   it.each([undefined, ""])("live slots preserve consistent exclusion (%j)", version => {
     const r = run(["slots", "live", SHA], { env: version === undefined ? {} : { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version }, state: s => {
       setPolicy(s.revisions[GAME_OUT]!, "12");
+      for (const t of s.services.antwar!.traffic) if (t.tag) setPolicy(s.revisions[t.revisionName]!, "12");
       for (const kind of ["public", "private"]) for (let i = 0; i < 8; i++) {
         const service = `antwar-${kind}-${i}`, revision = `${service}-old`;
         s.services[service] = { latest: revision, traffic: [{ revisionName: revision, percent: 100 }] };

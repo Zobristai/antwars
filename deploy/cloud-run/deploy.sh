@@ -398,7 +398,7 @@ service_state_or_absent() {
 }
 
 # Print only a policy marker (off, a canonical pinned version, or invalid),
-# followed by serving revision names for a service. Never read secret contents
+# followed by serving/tagged revision names and tag mappings for a service. Never read secret contents
 # or print literal values, arbitrary secret references, or an unpinned version.
 public_exclusion_metadata() {
   node -e '
@@ -417,24 +417,47 @@ public_exclusion_metadata() {
       if (!service) return;
       const st = doc.status;
       if (!st || !Array.isArray(st.traffic)) process.exit(1);
-      const refs = st.traffic.filter(t => t.percent > 0)
+      const refs = st.traffic.filter(t => t.percent > 0 || t.tag)
         .map(t => t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined));
       for (const ref of new Set(refs)) {
         if (typeof ref !== "string" || !/^[a-z0-9-]+$/.test(ref)) process.exit(1);
         console.log(ref);
       }
+      for (const t of st.traffic.filter(t => t.tag)) {
+        if (typeof t.tag !== "string" || !/^[a-z][a-z0-9-]*$/.test(t.tag)) process.exit(1);
+        console.log(`${t.tag}=${t.revisionName || st.latestReadyRevisionName}`);
+      }
     });' "$1"
+}
+
+# Revision configuration is immutable. Reuse only its policy marker within this
+# invocation; service templates, traffic and tag assignments are always reread.
+declare -A PUBLIC_REVISION_POLICIES=()
+read_public_revision_policy() {
+  local rev="$1"
+  if [[ -z "${PUBLIC_REVISION_POLICIES[$rev]:-}" ]]; then
+    PUBLIC_REVISION_POLICY="$(run_gcloud run revisions describe "$rev" --format json | public_exclusion_metadata revision)" || return 1
+    PUBLIC_REVISION_POLICIES[$rev]="$PUBLIC_REVISION_POLICY"
+  else
+    PUBLIC_REVISION_POLICY="${PUBLIC_REVISION_POLICIES[$rev]}"
+  fi
 }
 
 # Omission preserves only a coherent policy. Policy changes use one explicit
 # all-services command: targeted deploys may restate, never partially change it.
-# Inspect templates and serving revisions, not idle leftover revisions. A failed
+# Inspect templates, serving and tagged revisions, not untagged idle leftovers. A failed
 # ordered all-services change is repairable by rerunning it with an explicit pin.
+declare -A EXCLUSION_TAG_REMOVALS=()
 check_live_exclusion_policy() {
-  local scope="$1" svc kind n snapshot err refs rev policy first="" mixed=0 desired=""
+  local scope="$1" svc kind n snapshot err refs rev policy tags mapping tag first="" mixed=0 desired="" repair=0
   local missing=() services=(antwar) policies=()
   LIVE_EXCLUSION_BOUND=0
-  [[ "$scope" != all || -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]] || return 0
+  EXCLUSION_TAG_REMOVALS=()
+  if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
+    desired="$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
+    [[ "$desired" != disable ]] || desired=off
+    [[ "$scope" != all ]] || repair=1
+  fi
   for kind in public private; do
     local count="$LIVE_PUBLIC_SLOTS"
     [[ "$kind" != private ]] || count="$LIVE_PRIVATE_SLOTS"
@@ -457,16 +480,28 @@ check_live_exclusion_policy() {
       echo "cannot inspect public exclusion protection on $svc; check service metadata before deploying" >&2; return 1;
     }
     policies+=("${refs%%$'\n'*}")
+    tags=""
     if [[ "$refs" == *$'\n'* ]]; then
+      for mapping in ${refs#*$'\n'}; do [[ "$mapping" != *=* ]] || tags+=" $mapping"; done
       for rev in ${refs#*$'\n'}; do
-        policy="$(run_gcloud run revisions describe "$rev" --format json | public_exclusion_metadata revision)" || {
+        [[ "$rev" != *=* ]] || continue
+        read_public_revision_policy "$rev" || {
           echo "cannot inspect public exclusion protection on $svc; check serving revision metadata before deploying" >&2; return 1;
         }
+        policy="$PUBLIC_REVISION_POLICY"
         policies+=("$policy")
+        if [[ "$repair" == 1 && "$policy" != "$desired" ]]; then
+          for mapping in $tags; do
+            [[ "${mapping#*=}" == "$rev" ]] || continue
+            tag="${mapping%%=*}"
+            EXCLUSION_TAG_REMOVALS[$svc]="${EXCLUSION_TAG_REMOVALS[$svc]:+${EXCLUSION_TAG_REMOVALS[$svc]},}$tag"
+          done
+        fi
       done
     fi
   done
   for policy in "${policies[@]}"; do
+    if [[ "$policy" == invalid ]]; then echo "cannot establish a pinned public exclusion policy; correct unpinned configuration before running deploy.sh all <commit> with the pinned version (or disable)" >&2; return 1; fi
     [[ "$policy" == off ]] || LIVE_EXCLUSION_BOUND=1
     [[ -n "$first" ]] || first="$policy"
     [[ "$policy" == "$first" && "$policy" != invalid ]] || mixed=1
@@ -475,15 +510,58 @@ check_live_exclusion_policy() {
     echo "refusing to create missing live slots (${missing[*]}) without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions; run deploy.sh all <commit> with the pinned version (or explicit disable)" >&2
     return 1
   fi
-  if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
-    desired="$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
-    [[ "$desired" != disable ]] || desired=off
-    [[ "${first:-off}" == "$desired" ]] || mixed=1
-  fi
-  if [[ "$mixed" == 1 ]]; then
+  [[ -z "$desired" || "${first:-off}" == "$desired" ]] || mixed=1
+  if [[ "$mixed" == 1 && "$repair" != 1 ]]; then
     echo "refusing inconsistent public exclusion bindings or a partial policy change; rerun deploy.sh all <commit> with PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION set to the pinned version (or disable) so every live service receives the same policy" >&2
     return 1
   fi
+}
+
+# Public tag names and their pinned revision, including zero-percent routes.
+public_tag_refs() {
+  node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const st = JSON.parse(s).status;
+      if (!st || !Array.isArray(st.traffic)) process.exit(1);
+      for (const t of st.traffic.filter(t => t.tag)) {
+        const rev = t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined);
+        if (!/^[a-z][a-z0-9-]*$/.test(t.tag) || typeof rev !== "string" || !/^[a-z0-9-]+$/.test(rev)) process.exit(1);
+        console.log(`${t.tag}=${rev}`);
+      }
+    });'
+}
+
+# Re-observe the removal plan just before an explicit policy transition. No
+# service receives its new policy until every incompatible tag is gone.
+remove_incompatible_public_tags() {
+  local svc names snapshot mapping
+  [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]] || return 0
+  check_live_exclusion_policy all || deploy_stop "public exclusion tag inspection failed; no policy was updated"
+  for svc in "${!EXCLUSION_TAG_REMOVALS[@]}"; do
+    names="${EXCLUSION_TAG_REMOVALS[$svc]}"
+    stamp gcloud run services update-traffic "$svc" --remove-tags "$names" ...
+    run_gcloud run services update-traffic "$svc" --remove-tags "$names" || deploy_stop "removing incompatible tags on $svc failed; no policy was updated"
+    snapshot="$(run_gcloud run services describe "$svc" --format json | public_tag_refs)" \
+      || deploy_stop "cannot verify tag removal on $svc; no policy was updated"
+    for mapping in $snapshot; do
+      [[ ",$names," != *",${mapping%%=*},"* ]] || deploy_stop "$svc retained an incompatible tag; no policy was updated"
+    done
+  done
+  check_live_exclusion_policy all || deploy_stop "public exclusion tag recheck failed; no policy was updated"
+  [[ ${#EXCLUSION_TAG_REMOVALS[@]} -eq 0 ]] || deploy_stop "incompatible public tags remain; no policy was updated"
+}
+
+# Select a game rollback tag only for the same policy as the new revision.
+# An incompatible outgoing revision stays saved, untagged, for explicit recovery.
+public_game_rollback_tag() {
+  local outgoing current
+  read_public_revision_policy "$1" || deploy_stop "cannot inspect outgoing game policy for rollback"
+  outgoing="$PUBLIC_REVISION_POLICY"
+  read_public_revision_policy "$2" || deploy_stop "cannot inspect current game policy for rollback"
+  current="$PUBLIC_REVISION_POLICY"
+  [[ "$outgoing" != invalid && "$current" != invalid ]] || deploy_stop "cannot establish game rollback policy"
+  PUBLIC_ROLLBACK_TAG=""
+  if [[ "$outgoing" == "$current" ]]; then PUBLIC_ROLLBACK_TAG="$3"; fi
 }
 
 # The one way every mode deploys a service and moves its traffic: by
@@ -1211,10 +1289,16 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       if [[ "$FIRST_DEPLOY" == 1 ]]; then
         stamp "$svc: no rollback: first deploy, it had no earlier revision"
       elif [[ "$svc" == "$GAME_SERVICE" ]]; then
-        tag="r${OUT_SHA[$svc]:0:8}"
-        stamp gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" ...
-        run_gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" || stop "tagging the rollback of $svc failed"
-        stamp "$svc" rollback: gcloud run services update-traffic "$svc" --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" --to-tags "$tag=100"
+        public_game_rollback_tag "${OUT_REV[$svc]}" "${NEW_REV[$svc]}" "r${OUT_SHA[$svc]:0:8}"
+        tag="$PUBLIC_ROLLBACK_TAG"
+        if [[ -n "$tag" ]]; then
+          stamp gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" ...
+          run_gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" || stop "tagging the rollback of $svc failed"
+          stamp "$svc" rollback: gcloud run services update-traffic "$svc" --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" --to-tags "$tag=100"
+        else
+          run_gcloud run services update-traffic "$svc" --clear-tags || stop "clearing the tags of $svc failed"
+          stamp "$svc" rollback: revision "${OUT_REV[$svc]}", untagged: redeploy with the current public exclusion policy
+        fi
       else
         stamp gcloud run services update-traffic "$svc" --clear-tags ...
         run_gcloud run services update-traffic "$svc" --clear-tags || stop "clearing the tags of $svc failed"
@@ -1465,6 +1549,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     STEP=build
     image_digest "$REPO" "$SHA"
     IMAGE="$REPO@$DIGEST"
+    STEP="public tag policy"
+    remove_incompatible_public_tags
 
     # 2. Records. Full gate: only while no lobby is open (no match is saved
     # unavailable). Rolling: the outgoing builder keeps running beside the new one,
@@ -1649,6 +1735,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       for M in "${MISMATCHED[@]}"; do echo "mismatch: $M" >&2; done
       stop "not done: the services above do not all serve $SHA"
     fi
+    check_live_exclusion_policy verify || stop "final public exclusion policy check failed"
     # Rolling: the new build's declaration goes last, after the check above, so an
     # outgoing builder still stopping never takes the new build's inputs.
     [[ ${#RUNNING[@]} -eq 0 ]] || clear_running "$SHA"
@@ -2001,17 +2088,22 @@ deploy_named antwar \
   --no-invoker-iam-check \
   --labels "app=antwar,commit=$SHA"
 
-# --set-tags replaces every tag, so only the one rollback revision
-# stays warm besides the serving one; traffic is left where deploy_named moved it.
-stamp gcloud run services update-traffic antwar --set-tags "$ROLLBACK_TAG=$OUT_REV" ...
-CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud run services update-traffic antwar \
-  --account "$ACCOUNT" --project "$PROJECT" \
-  --region "$REGION" \
-  --set-tags "$ROLLBACK_TAG=$OUT_REV" </dev/null
-stamp game rollback: revision "$OUT_REV", tag "$ROLLBACK_TAG"
-echo "gcloud run services update-traffic antwar --account $ACCOUNT --project $PROJECT --region $REGION --to-tags $ROLLBACK_TAG=100"
+# Keep only a policy-compatible rollback tag; otherwise retain its saved revision untagged.
+public_game_rollback_tag "$OUT_REV" "$CREATED_NEW" "$ROLLBACK_TAG"
+ROLLBACK_TAG="$PUBLIC_ROLLBACK_TAG"
+if [[ -n "$ROLLBACK_TAG" ]]; then
+  stamp gcloud run services update-traffic antwar --set-tags "$ROLLBACK_TAG=$OUT_REV" ...
+  CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud run services update-traffic antwar \
+    --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" \
+    --set-tags "$ROLLBACK_TAG=$OUT_REV" </dev/null
+  stamp game rollback: revision "$OUT_REV", tag "$ROLLBACK_TAG"
+  echo "gcloud run services update-traffic antwar --account $ACCOUNT --project $PROJECT --region $REGION --to-tags $ROLLBACK_TAG=100"
+else
+  run_gcloud run services update-traffic antwar --clear-tags || deploy_stop "clearing game rollback tags failed"
+  stamp game rollback: revision "$OUT_REV", untagged: redeploy with the current public exclusion policy
+fi
 stamp gcloud run services describe antwar ...
-check_tags_and_traffic antwar "$OUT_REV" "$ROLLBACK_TAG" "" \
+check_tags_and_traffic antwar "${ROLLBACK_TAG:+$OUT_REV}" "$ROLLBACK_TAG" "" \
   || { echo "deployed $SHA, but antwar keeps a tag other than $ROLLBACK_TAG on $OUT_REV (above)" >&2; exit 1; }
 
 stamp done "$SHA"
