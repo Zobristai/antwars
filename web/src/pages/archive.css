@@ -517,7 +517,7 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-extra .d1p-rec-colony { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .d1p-rec-player { display: flex; align-items: baseline; column-gap: 6px; min-width: 0; white-space: nowrap; }
-.d1p-rec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.d1p-rec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A builder's username in the line's own weight and ink, like the model name beside it. */
 .d1p-rec-name > :is(.d1p-user, .d1p-mname) { font-weight: inherit; color: inherit; }
 .d1p-rec-level, .d1p-rec-count { flex: none; color: var(--aw-ink-3); }
@@ -547,10 +547,12 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-date { color: var(--aw-ink); }
   /* Fit the full capital headings inside the phone's four slots without clipping or wrapping. */
   .d1p-rec-colony { font-size: 10.5px; letter-spacing: -0.4px; }
+  /* Shared headings retain spare width in the wider fallback face without moving the columns. */
+  .d1p-rec-head > .d1p-rec-colony { letter-spacing: -0.85px; }
   .d1p-rec-player { flex-wrap: wrap; white-space: normal; }
-  /* Two players in one slot part by 4 px, so their wrapped names do not run on as one; a player's own lines keep none. */
+  /* Two players in one slot part by 4 px; each name occupies one line above its existing details. */
   .d1p-rec-player + .d1p-rec-player { margin-top: 4px; }
-  .d1p-rec-name { overflow: visible; white-space: normal; overflow-wrap: anywhere; flex-basis: 100%; }
+  .d1p-rec-name { flex-basis: 100%; }
   .d1p-rec-level, .d1p-rec-count, .d1p-rec-rating { white-space: nowrap; }
   .d1p-rec-rating { margin-left: 0; }
   .d1p-rec4 .d1p-rec-replay { position: absolute; bottom: 12px; right: var(--d1p-inset); }
