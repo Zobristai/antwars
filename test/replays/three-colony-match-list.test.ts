@@ -82,10 +82,18 @@ describe("three-colony recordings", () => {
     const card = recordingsCard(doc, data.view, { search: "?board=2d" }) as unknown as ElementPort;
     const rows = card.byClass("d1p-rec-rows")[0]!.children;
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.byClass("d1p-rec-slot").map(slot => slot.byClass("d1p-rec-colony")[0]?.textContent ?? slot.textContent))
-      .toEqual(["Very Large", "—", "Sweetwater", "Lake Skinner"]);
-    expect(rows[0]!.byClass("d1p-rec-player").map(line => line.byClass("d1p-user")[0]!.textContent)).toEqual(["bea", "cyd", "ada"]);
-    expect(rows[0]!.byClass("is-won")[0]!.byClass("d1p-rec-colony")[0]!.textContent).toBe("Lake Skinner");
+    expect(card.byClass("d1p-rec-head")).toHaveLength(1);
+    expect(card.byClass("d1p-rec-colony").map(node => node.textContent))
+      .toEqual(["Very Large", "Lake Hodges", "Sweetwater", "Lake Skinner"]);
+    expect(rows[0]!.byClass("d1p-rec-colony")).toEqual([]);
+    const slots = rows[0]!.byClass("d1p-rec-slot");
+    expect(slots).toHaveLength(4);
+    expect(slots.map(slot => slot.byClass("d1p-user").map(user => user.textContent)))
+      .toEqual([["bea"], [], ["cyd"], ["ada"]]);
+    expect(slots[1]!.textContent).toBe("—");
+    expect(slots[1]!.classes()).toContain("is-none");
+    expect(rows[0]!.byClass("is-won")).toEqual([slots[3]]);
+    expect(slots[3]!.byClass("d1p-sr").at(-1)!.textContent).toBe(", winner");
     expect(rows[0]!.byClass("is-lost")).toHaveLength(2);
     expect(rows[0]!.byClass("d1p-rec-type")[0]!.textContent).toBe("Unranked · 1v1v1");
     expect(rows[0]!.byClass("d1p-rec-replay")[0]!.href).toBe(`/?replay=${QUADRANTS}&board=2d`);

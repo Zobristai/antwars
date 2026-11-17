@@ -216,6 +216,10 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     const replays = p.card("Recordings")!.byClass("d1p-rec-replay");
     // One responsive row per recording.
     expect(replays).toHaveLength(2);
+    const card = p.card("Recordings")!;
+    expect(card.byClass("d1p-rec-head")).toHaveLength(1);
+    expect(card.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(["Very Large", "Lake Hodges", "Sweetwater", "Lake Skinner"]);
+    expect(card.byClass("d1p-rec-rows")[0]!.byClass("d1p-rec-colony")).toEqual([]);
     for (const link of replays) expect([link.textContent, link.className]).toEqual(["Replay", "d2-link d1p-rec-replay"]);
     p.dispose();
   });

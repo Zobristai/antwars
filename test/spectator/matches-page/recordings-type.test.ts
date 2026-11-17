@@ -23,6 +23,8 @@ describe("Recordings rows show each recording's match type", () => {
     expect(list!.byClass("d1p-rec-type").map(node => node.textContent)).toEqual(["Index · 1v1", "Unranked · 2v2", ""]);
     expect(list!.byClass("d1p-rec-when").flatMap(cell => cell.byClass("d1p-rec-type"))).toEqual([]);
     expect(card.byClass("d1p-rec-head")).toHaveLength(1);
+    expect(card.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(["Very Large", "Lake Hodges", "Sweetwater", "Lake Skinner"]);
+    expect(list!.byClass("d1p-rec-colony")).toEqual([]);
     expect(card.textContent).not.toMatch(/house-|unranked ·|index ·|Lobby/);
   });
 });

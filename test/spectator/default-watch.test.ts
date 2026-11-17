@@ -21,6 +21,9 @@ it("Matches renders only catalog-live and saved-recording rows, including a trul
       winner: null, reason: null, decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "partial", unavailable: [] }] },
   });
   expect(recordingLinks()).toHaveLength(1);
+  expect(host.byClass("d1p-rec-head")).toHaveLength(1);
+  expect(host.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(["Very Large", "Lake Hodges", "Sweetwater", "Lake Skinner"]);
+  expect(host.byClass("d1p-rec-rows")[0]!.byClass("d1p-rec-colony")).toEqual([]);
   expect(links().map(row => row.href)).toEqual(["/?lobby=ongoing&watch=1&board=2d", "/?replay=2026-10-21T13-58-00-000Z-1&board=2d"]);
   expect(host.textContent).not.toMatch(/Watch current playback|Recent upload|recent uploads/);
   mounted.update(view);

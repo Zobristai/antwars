@@ -482,17 +482,16 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
 }
 
 // ---------------------------------------------------------------- Recordings: one row per recording, four colony slots
-// Colony heads: every recording is one
-// row, whatever its colony count, with four colony slots side by side; a slot with no colony shows a dash. A used slot
-// heads its players with its colony's name in the colony's ink, in the caps the list's column heads use, and holds one
-// line per player: name, then level, Fast and seat count in the quiet ink, then the rating at the slot's end. The
+// Every recording is one row, whatever its colony count, with four colony slots side by side under one shared row of
+// colony names in their original ink. A slot with no colony shows a dash. A used slot holds one line per player:
+// name, then level, Fast and seat count in the quiet ink, then the rating at the slot's end. The
 // winner keeps the ink; the other colonies' players step down to the quiet ink, the row's own metadata treatment. Time
 // and Game type lead the row, a draw, an abandonment or an incomplete record said once under the type; Replay is a text
 // link at the row's end. One head row over the list, never repeated. Live now and Waiting keep their tables.
 
 /** Every Recordings row's colony slots: four, side by side, at every colony count. */
 export const SLOTS = 4;
-/** A colony's name in its slot, without the "Colony" every name ends in; the whole name is its title and is read. */
+/** A colony's shared heading, without the "Colony" every name ends in; the whole name remains in its title. */
 export const slotName = (name: string): string => name.replace(/ Colony$/, "");
 
 /** The words a row says once about its whole match: a draw or an abandonment, and a record that is not complete. */
@@ -508,7 +507,13 @@ export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] 
 function recordingSlots(doc: Document, rows: readonly MatchRow[], loading: boolean): HTMLElement[] {
   const head = h(doc, "div", "d1p-rec-head");
   head.setAttribute("aria-hidden", "true");
-  head.append(h(doc, "span", "is-when", MATCH_HEADS[0]), h(doc, "span", "is-type", MATCH_HEADS[1]), h(doc, "span", "is-slots", FOUR_COLONY_HEAD));
+  head.append(h(doc, "span", "is-when", MATCH_HEADS[0]), h(doc, "span", "is-type", MATCH_HEADS[1]));
+  SUPERCOLONY_NAMES.forEach(({ label, note, colour }, colony) => {
+    const heading = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(label));
+    heading.style.setProperty(`--aw-k${colony}`, colourCss(colour));
+    heading.title = `${label} — ${note}`;
+    head.append(heading);
+  });
   const list = h(doc, "ol", "d1p-rec-rows");
   list.setAttribute("aria-labelledby", "d1p-rec-title");
   if (loading) {
@@ -539,7 +544,8 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   if (typeWords) type.append(h(doc, "span", undefined, typeWords));
   for (const word of rowOutcome(row)) type.append(" ", h(doc, "span", "d1p-rec-note", word));
   meta.append(when, type);
-  item.append(meta, ...recordingSlotIndexes(row).map(colony => recordingSlot(doc, row, colony)));
+  const slots = recordingSlotIndexes(row);
+  item.append(meta, ...slots.map(colony => recordingSlot(doc, row, colony)));
   if (row.action) {
     const link = h(doc, "a", "d2-link d1p-rec-replay", row.action.text);
     link.href = row.action.href;
@@ -547,28 +553,29 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
     link.setAttribute("aria-label", row.action.label);
     item.append(link);
   }
+  const other = row.colonies.flatMap((_, colony) => slots.includes(colony) ? [] : [colony]);
+  if (other.length > 0) {
+    item.classList.add("has-extra");
+    const extra = h(doc, "div", "d1p-rec-extra");
+    extra.append(...other.map(colony => recordingSlot(doc, row, colony, true)));
+    item.append(extra);
+  }
   return item;
 }
 
-/** Fixed columns belong to colony names, not match-local indexes. Keep those indexes for seats, colours and results.
- * Unknown historical names use remaining columns in recorded order, so no recorded player disappears. */
+/** Fixed columns belong only to canonical colony names, not match-local indexes. Keep those indexes for seats,
+ * colours and results. Other stored names are labelled separately rather than misidentified by a canonical header. */
 export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNames">): (number | null)[] {
   const names = row.colonyNames ?? COLONY_NAMES;
-  const slots: (number | null)[] = SUPERCOLONY_NAMES.map(({ label }) => {
+  return SUPERCOLONY_NAMES.map(({ label }) => {
     const index = names.indexOf(label);
     return index >= 0 && index < row.colonies.length ? index : null;
   });
-  row.colonies.forEach((_, index) => {
-    if (slots.includes(index)) return;
-    const empty = slots.indexOf(null);
-    if (empty >= 0) slots[empty] = index;
-  });
-  return slots;
 }
 
-/** One colony slot: the colony's name over its player lines (or its quiet note), or a dash where the match has no such
- * colony. A slot is the winner's, a loser's, or neither (a draw, an abandonment, no result). */
-function recordingSlot(doc: Document, row: MatchRow, colony: number | null): HTMLElement {
+/** One colony slot: player lines (or a quiet note) under the shared header, or a dash where the match has no such
+ * colony. Keep its own name for screen readers, including historical names. A slot is the winner's, a loser's, or neither. */
+function recordingSlot(doc: Document, row: MatchRow, colony: number | null, showName = false): HTMLElement {
   const slot = h(doc, "div", "d1p-rec-slot");
   if (colony === null) {
     slot.classList.add("is-none");
@@ -581,11 +588,13 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null): HTM
   const decided = row.colonies.some(other => other.result === "Winner");
   if (cell.result === "Winner") slot.classList.add("is-won");
   else if (decided) slot.classList.add("is-lost");
-  const label = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(name));
-  const note = colonyNameNote(name);
-  label.title = note ? `${name} — ${note}` : name;
-  label.setAttribute("aria-hidden", "true");
-  slot.append(label, h(doc, "span", "d1p-sr", `${name}: `));
+  if (showName) {
+    const label = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(name));
+    label.title = name;
+    label.setAttribute("aria-hidden", "true");
+    slot.append(label);
+  }
+  slot.append(h(doc, "span", "d1p-sr", `${name}: `));
   cell.lines.forEach((group, index) => slot.append(recordingPlayer(doc, group, `rec|${row.id}|${colony}|${index}`)));
   if (cell.note !== null) slot.append(h(doc, "span", "d1p-rec-player d1p-unknown", cell.note));
   if (cell.result === "Winner") slot.append(h(doc, "span", "d1p-sr", ", winner"));
