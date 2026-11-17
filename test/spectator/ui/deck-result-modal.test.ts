@@ -63,17 +63,17 @@ const closeButton = (dialog: ElementPort) => dialog.byClass("d1-close")[0]!;
 
 describe("the match result as a modal over the screen", () => {
   it("opens a modal dialog at the end with the winner in team colour, how it ended and the rating line, named by its headline", () => {
-    const { dialog, score, show } = mount();
+    const { dialog, show } = mount();
     show(frameOf({ ended: false }));
     expect(dialog.tag).toBe("dialog");
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe("Very Large Colony wins");
+    expect(head.textContent).toBe("Very Large wins");
     expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
-    expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
+    expect(dialog.byClass("rd-note")[0]!.textContent).toBe("Unrated match · no rating changes");
     expect(dialog.getAttribute("aria-labelledby")).toBe(head.id);
     expect(dialog.getAttribute("aria-describedby")).toBe(dialog.byClass("d1-result-how")[0]!.id);
     expect(closeButton(dialog).getAttribute("aria-label")).toBe("Close");
@@ -97,10 +97,10 @@ describe("the match result as a modal over the screen", () => {
     const drawn = modal();
     drawn.show(ended(["Sweetwater Colony", "Lake Skinner Colony"]));
     const head = drawn.dialog.byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe("Sweetwater Colony wins");
+    expect(head.textContent).toBe("Sweetwater wins");
     expect(head.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
     const who = drawn.dialog.byClass("d1-moment-who")[0]!;
-    expect(who.textContent).toBe("· Sweetwater Colony");
+    expect(who.textContent).toBe("Sweetwater");
     const name = who.children.find(c => c.tag === "span")!;
     expect(name.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
     expect((name.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
@@ -113,6 +113,7 @@ describe("the match result as a modal over the screen", () => {
     overrun.show(f);
     const what = overrun.dialog.byClass("d1-moment-what")[0]!;
     expect(what.textContent).toBe("Overrun attempt on the Lake Skinner Colony queen — took the queen");
+    expect(what.title).toBe(what.textContent);
     expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k0, var(--aw-c0))");
     const target = what.children.find(c => c.tag === "span")!;
     expect(target.textContent).toBe("Lake Skinner Colony");
@@ -122,10 +123,10 @@ describe("the match result as a modal over the screen", () => {
     const rated = modal();
     rated.show(ended(null));
     const ratedHead = rated.dialog.byClass("d1-result-head")[0]!;
-    expect(ratedHead.textContent).toBe("Very Large Colony wins");
+    expect(ratedHead.textContent).toBe("Very Large wins");
     expect(ratedHead.getAttribute("title")).toBeNull();
     const ratedWho = rated.dialog.byClass("d1-moment-who")[0]!;
-    expect(ratedWho.textContent).toBe("· Very Large Colony");
+    expect(ratedWho.textContent).toBe("Very Large");
     expect(ratedWho.children).toHaveLength(0);
     expect(rated.dialog.byClass("d1-moment-what")[0]!.children).toHaveLength(0);
   });
@@ -155,17 +156,17 @@ describe("the match result as a modal over the screen", () => {
     won.show(ended(2, "queens_killed", "queens_killed"));
     expect(won.dialog.open).toBe(true);
     const head = won.dialog.byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe("Sweetwater Colony wins");
+    expect(head.textContent).toBe("Sweetwater wins");
     expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k2)");
     expect(head.classes()).toEqual(["d1-result-head", "c2"]);
     expect(head.getAttribute("title")).toBe(colonyNameNote("Sweetwater Colony"));
     expect(won.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last colony standing · queens killed");
-    expect(won.dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
+    expect(won.dialog.byClass("rd-note")[0]!.textContent).toBe("Unrated match · no rating changes");
     // The moment in its colony's colour, the colony it names in that colony's own.
     const what = won.dialog.byClass("d1-moment-what")[0]!;
     expect((what.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     const who = won.dialog.byClass("d1-moment-who")[0]!;
-    expect(who.textContent).toBe("· Lake Skinner Colony");
+    expect(who.textContent).toBe("Lake Skinner");
     const name = who.children.find(c => c.tag === "span")!;
     expect((name.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     expect(name.getAttribute("title")).toBe(colonyNameNote("Lake Skinner Colony"));
@@ -174,17 +175,91 @@ describe("the match result as a modal over the screen", () => {
     const idle = modal();
     idle.show(ended(3, "idle", "territory", true));
     const idleHead = idle.dialog.byClass("d1-result-head")[0]!;
-    expect(idleHead.textContent).toBe("Lake Skinner Colony wins");
+    expect(idleHead.textContent).toBe("Lake Skinner wins");
     expect((idleHead.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     expect(idle.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Seats inactive · decided on territory");
 
     const drawn = modal();
     drawn.show(ended(null, "time_up", "draw"));
     const drawHead = drawn.dialog.byClass("d1-result-head")[0]!;
-    expect(drawHead.textContent).toBe("Draw");
+    expect(drawHead.textContent).toBe("Match drawn");
     expect(drawHead.getAttribute("title")).toBeNull();
     expect(drawn.dialog.byClass("d1-result-how")[0]!.textContent).toBe("Time-up · decided on draw");
     for (const dialog of [won.dialog, idle.dialog, drawn.dialog]) expect(dialog.textContent).not.toMatch(/both sides|opponent/i);
+  });
+
+  it("keeps the Abandoned headline instead of describing an abandoned match as a draw", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: false });
+    f.board!.result = { winner: null, reason: "abandoned", decidedBy: "draw", tick: END, nextStartMs: null };
+    show(f);
+    const head = dialog.byClass("d1-result-head")[0]!;
+    expect(head.textContent).toBe("Abandoned");
+    expect(head.getAttribute("aria-label")).toBe("Abandoned");
+    expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Seat inactive · unrated");
+    expect(dialog.byClass("rd-outcome")).toHaveLength(0);
+  });
+
+  it("bounds decisive text to two wrapping lines rather than an unshrinkable column", () => {
+    expect(CSS).toContain("grid-template-columns: 36px minmax(0,max-content) minmax(max-content,1fr)");
+    const rule = CSS.match(/\.d1-result-dialog \.d1-moment-what \{([^}]+)\}/)![1];
+    expect(rule).toContain("white-space: normal");
+    expect(rule).toContain("min-width: 0");
+    expect(rule).toContain("-webkit-line-clamp: 2");
+    expect(rule).toContain("overflow: hidden");
+  });
+
+  it("shows one final Rating column with signed changes between rounded displayed ratings", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: true });
+    f.board!.result!.ratingChanges = [{ agent: 0, before: 1850.2, after: 1860.3 }, { agent: 1, before: 1850.4, after: 1830.1 }];
+    show(f);
+    expect(dialog.byClass("rd-columns")[0]!.textContent).toBe("PlayersRating");
+    expect(dialog.byClass("rd-numbers").map(n => n.textContent)).toEqual(["1860 (+10)", "1830 (−20)"]);
+    expect(dialog.byClass("d1-ratings")[0]!.textContent).not.toMatch(/1850|→/);
+    expect(dialog.byClass("d1-result-head")[0]!.getAttribute("aria-label")).toBe("Very Large Colony wins");
+    f.board!.result!.ratingChanges = [{ agent: 0, before: 1860.1, after: 1860.4 }];
+    show(f);
+    expect(dialog.byClass("rd-numbers").map(n => n.textContent)).toEqual(["1860 (0)", ""]);
+  });
+
+  it("keeps the existing pending-rating message until the played result supplies changes", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: true });
+    show(f);
+    expect(dialog.byClass("rd-note")[0]!.textContent).toBe("Rated match · rating update pending");
+    expect(dialog.byClass("rd-rating-label")[0]!.hidden).toBe(true);
+    expect(dialog.byClass("rd-numbers")).toHaveLength(0);
+    expect(dialog.byClass("d1-rating")).toHaveLength(2);
+    f.board!.result!.ratingChanges = [{ agent: 0, before: 1500, after: 1510 }];
+    show(f);
+    expect(dialog.byClass("rd-note")[0]!.hidden).toBe(true);
+    expect(dialog.byClass("rd-rating-label")[0]!.hidden).toBe(false);
+    expect(dialog.byClass("rd-numbers")[0]!.textContent).toBe("1510 (+10)");
+  });
+
+  it("keeps the shown roster nodes stable when only live agent activity changes", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: false });
+    show(f);
+    const firstRow = dialog.byClass("d1-rating")[0];
+    f.board!.agents = f.board!.agents.map(agent => ({ ...agent, lastCallTick: TICK + 1, intent: "explore" }));
+    show(f);
+    expect(dialog.byClass("d1-rating")[0]).toBe(firstRow);
+  });
+
+  it("never shows rating changes for an unrated match, even if the result carries numbers", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: false });
+    f.board!.result!.ratingChanges = [{ agent: 0, before: 1850, after: 1860 }];
+    show(f);
+    expect(dialog.byClass("rd-rating-label")[0]!.hidden).toBe(true);
+    expect(dialog.byClass("rd-numbers")).toHaveLength(0);
+    expect(dialog.byClass("rd-note")[0]!.textContent).toBe("Unrated match · no rating changes");
+    expect(dialog.byClass("d1-rating")).toHaveLength(2);
+    f.board!.setup = { ...f.board!.setup, rated: undefined };
+    show(f);
+    expect(dialog.byClass("rd-note")[0]!.hidden).toBe(true);
   });
 
   it("leaves no result card in the score: the score keeps its clock and Balance, Win conditions give way at the end", () => {
@@ -258,7 +333,7 @@ describe("the match result as a modal over the screen", () => {
     show(frameOf({ ended: false, name: "next/match" }));
     show(frameOf({ ended: true, winner: 1, name: "next/match" }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Lake Hodges Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Lake Hodges wins");
   });
 
   it("opens again for the next match even when its result reads exactly as the one just closed", () => {
@@ -271,7 +346,7 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true, match: 2 }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large wins");
     // And that match's own Close holds for it, as the first match's did.
     closeButton(dialog).click();
     show(frameOf({ ended: true, match: 2 }));
@@ -313,12 +388,13 @@ describe("Share on X in the deck's result modal", () => {
     expect(link.hidden).toBe(true);
   });
 
-  it("draws Share in the site's cyan button, with no grey treatment of its own", () => {
+  it("draws Share with the same winning-colony banner colour", () => {
     const { dialog } = shareDialog(frameOf({ ended: true }));
     expect(dialog.byClass("d1-share")[0]!.classes()).toEqual(["d1-agent-button", "d1-share"]);
-    // .d1-share only places it; the button's look is .d1-agent-button's alone.
+    // The banner and share button use the same winning-colony token.
     expect(CSS).toContain(".d1-share { justify-self: start; margin-top: 8px; }");
-    expect(CSS).not.toMatch(/\.d1-share[^{]*\{[^}]*(background|color|border-radius|padding)/);
+    expect(CSS).toMatch(/\.d1-result-dialog \.d1-share \{[^}]*background: var\(--d1-side\)/);
+    expect(CSS).toMatch(/\.d1-result-dialog \.d1-result-top \{[^}]*background: var\(--d1-side\)/);
     expect(CSS).not.toContain(".d1-share:hover");
     // The shared button works in any root: its tap height falls back, its dark text holds under the dialog, and a
     // disabled one says so.
