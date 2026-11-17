@@ -1145,7 +1145,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       inputSchema: {
         brood: orNull(z.enum(broodChoices(game.simConfig) as [string, ...string[]]).describe(game.simConfig.flyers === undefined
           ? `workers (${game.simConfig.hatchCost} food, carry food), soldiers (${castes.soldierCost} food, stronger, carry nothing) or mixed (this queen alternates worker and soldier).`
-          : `workers (${game.simConfig.hatchCost} food, carry food), soldiers (${castes.soldierCost} food, stronger, carry nothing), flyers (${game.simConfig.flyers.cost} food, fly; only flyer count marks order them) or mixed (this queen alternates worker and soldier, never flyers).`)),
+          : `workers (${game.simConfig.hatchCost} food, carry food), soldiers (${castes.soldierCost} food, stronger, carry nothing), flyers (${game.simConfig.flyers.cost} food, ${game.simConfig.flyers.hp / 1000} HP${game.simConfig.flyers.hp === game.simConfig.antHp ? " like a worker" : ""}, fly; only flyer count marks order them) or mixed (this queen alternates worker and soldier, never flyers).`)),
         queenId: orNull(z.number().optional().describe("The queenId of the live queen you own whose brood this sets (observe queens); needed only when you own more than one.")),
       },
     },

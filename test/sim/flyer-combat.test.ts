@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { landedFlyerKillTicks } from "../../src/mcp/briefing.js";
 import { resolveCombat } from "../../src/sim/combat.js";
 import { FLYER_RULES, rulesConfig, SUB, type SimConfig } from "../../src/sim/config.js";
 import { tileCentre } from "../../src/sim/geometry.js";
@@ -352,6 +353,28 @@ describe("test plan check 2: air and ground separation", () => {
         expect(queen.hp).toBe(queenBefore);
       }
     }
+  });
+});
+
+describe("the kill times the briefing states for a landed flyer are the ticks combat takes", () => {
+  const stated = landedFlyerKillTicks(KAIN)!;
+  it("one soldier off its own ground: 7 ticks; on its own ground: 6 ticks", () => {
+    expect(stated).toMatchObject({ soldier: 7, soldierOnOwnTerritory: 6 });
+    for (const [owner, ticks] of [[-1, stated.soldier!], [0, stated.soldierOnOwnTerritory!]] as const) {
+      const state = match();
+      owned(state, 60, 30, 61, 30, owner);
+      soldier(state, 0, 60, 30);
+      const f1 = flyer(state, 1, 61, 30);
+      const f = fight(state, 10, undefined, () => !state.ants.includes(f1));
+      expect(f.died.get(f1.id), `owner ${owner}`).toBe(ticks);
+    }
+  });
+  it("an adjacent enemy queen's strike alone: 2 ticks", () => {
+    expect(stated.queen).toBe(2);
+    const state = match(), q = queenTile(state, 0);
+    const f1 = flyer(state, 1, q.x + 1, q.y);
+    const f = fight(state, 10, undefined, () => !state.ants.includes(f1));
+    expect(f.died.get(f1.id)).toBe(stated.queen);
   });
 });
 

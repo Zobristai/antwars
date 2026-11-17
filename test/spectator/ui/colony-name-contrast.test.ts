@@ -361,7 +361,8 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             expect(row.labels).toHaveLength(names[1] === "Very Large Colony" ? 1 : 2);
             for (const label of row.labels) {
               expect(names).toContain(label.title);
-              expect(label.size).toBe(label.expectedSize);
+              // Row labels keep 10.5 px on a phone; only the shared headings above the rows are 10 px there.
+              expect(label.size).toBe(width === 390 ? "10.5px" : label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
               expect(label.lines).toBe(1);
@@ -509,7 +510,7 @@ describe("Recordings colony headings stay inside their columns", () => {
           expect(row.whiteSpace).toBe("nowrap");
           expect(row.overflow).toBe("visible");
           expect(row.textOverflow).not.toBe("ellipsis");
-          expect(row.size).toBe(width === 390 ? "10.5px" : "11px");
+          expect(row.size).toBe(width === 390 ? "10px" : "11px");
           expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.85 : 0.99, 2);
           if (width === 390) expect(row.width).toBe(75);
         }

@@ -37,7 +37,7 @@ function seat(state: SimState, colony: ColonyId, id = `agent-${colony}`, brood?:
 const queensOf = (state: SimState, colony: ColonyId): QueenState[] => state.colonies[colony].queens!;
 
 /** The caste each queen of the colony hatched, in queen order, from hatch events at her nest tile. */
-function castesBy(state: SimState, colony: ColonyId, events: readonly SimEvent[]): (Caste | null)[] {
+function castesBy(state: SimState, colony: ColonyId, events: readonly SimEvent[]): (Caste | "flyer" | null)[] {
   return queensOf(state, colony).map((q) => {
     const born = events.find((e) => e.type === "hatch" && e.colony === colony &&
       e.tileY === Math.floor(q.queenY / SUB) && Math.abs(e.tileX - Math.floor(q.queenX / SUB)) <= 1);
@@ -140,7 +140,7 @@ describe("rules 27: an idle or departed owner's queens keep the brood last set",
   }
 
   /** The castes each colony-0 queen hatched over these events, in birth order. */
-  function births(state: SimState, events: readonly SimEvent[]): Caste[][] {
+  function births(state: SimState, events: readonly SimEvent[]): (Caste | "flyer")[][] {
     return queensOf(state, 0).map((q) => events.flatMap((e) => e.type === "hatch" && e.colony === 0 &&
       e.tileY === Math.floor(q.queenY / SUB) && Math.abs(e.tileX - Math.floor(q.queenX / SUB)) <= 1 ? [e.caste!] : []));
   }
