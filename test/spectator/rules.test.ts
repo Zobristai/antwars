@@ -356,7 +356,7 @@ it("leads with the configured win routes as minutes-based bullets", () => {
   expect(first.lines).toEqual([
     "Kill every enemy queen. Queens can be hurt after 5 minutes.",
     "From 10 minutes, hold at least 100 original-size tile areas and 6 times the opponent's territory for 5 minutes without a break.",
-    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed): Queen kills decide first; on equal queen kills, kills, then territory, living ants and food delivered decide, else a draw. Queen kills go to the colony whose hit takes the queen to zero HP; uncredited overruns and elimination removals count for no one.",
+    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed): Queen kills decide first; on equal queen kills, kills, then territory, living ants and food delivered decide, else a draw. Queen kills go to the colony whose hit takes the queen to zero HP; elimination removals count for no one.",
   ]);
   const html = renderRules(config);
   const lead = html.slice(html.indexOf('<section id="how-to-win"'), html.indexOf('<section id="overview"'));
@@ -393,7 +393,8 @@ it.each([undefined, "redesign"] as const)("describes kills-first scoring for bot
   for (const text of [briefing(config), joinBriefing(config), ruleSections(config).flatMap(s => s.lines).join(" ")]) {
     expect(text).toMatch(/time-up/i);
     expect(text).toMatch(/queen kills.*kills.*territory/is);
-    expect(text).toContain("uncredited overruns");
+    expect(text).toContain("elimination removals count for no one");
+    if (config.queenHp === undefined) expect(text).toContain("uncredited overruns");
     expect(text).toMatch(/both (?:colonies lose their last queen|last queens lost) (?:on the )?same tick/);
     // The same-tick last-queen phrase covers both double-overrun and HP endings.
     expect(text).toMatch(/kills.*territory.*(?:ants alive|living ants).*(?:food delivered|delivered food).*draw/s);

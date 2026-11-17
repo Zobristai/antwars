@@ -128,7 +128,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
   // A four-colony match (src/sim/elimination.ts): elimination, the last colony with a living queen, the majority
   // hold and the time-up ranking replace the two-colony routes; every two-colony config keeps the lines below.
   const four = colonyCountOf(config) === 4;
-  const queenCredit = config.queenKillsFirst ? " Queen kills go to the colony whose hit takes the queen to zero HP; uncredited overruns and elimination removals count for no one." : "";
+  const queenCredit = config.queenKillsFirst ? ` Queen kills go to the colony whose hit takes the queen to zero HP; ${queenHp === undefined ? "uncredited overruns and elimination removals" : "elimination removals"} count for no one.` : "";
   const queenOrder = config.queenKillsFirst
     ? `Queen kills decide first; on equal queen kills, ${four || config.adjudication === "kills-first" ? "kills, then " : ""}territory, living ants and food delivered decide, else a draw.${queenCredit}` : "";
   const elimination = "A colony is eliminated when it loses its last queen or its seat goes idle: its ants are removed, its territory turns neutral, and the match continues for the other colonies.";

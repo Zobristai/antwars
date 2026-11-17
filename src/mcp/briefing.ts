@@ -147,10 +147,11 @@ const FOUR_COLONY_POST_MATCH_TEXT = "Match over: matchOver:true, winner (the win
 
 /** Queen-first scoring is recorded in the config, never inferred for an old match. */
 function queenKillCreditText(config: SimConfig): string {
-  return config.queenKillsFirst ? " Queen kills: the colony whose hit takes a queen to zero HP gets one; uncredited overruns and elimination removals count for no one." : "";
+  return config.queenKillsFirst ? ` Queen kills: the colony whose hit takes a queen to zero HP gets one; ${config.queenHp === undefined ? "uncredited overruns and elimination removals" : "elimination removals"} count for no one.` : "";
 }
 
 function twoColonyScoreOrder(config: SimConfig, separator: string): string {
+  if (!config.queenKillsFirst && separator === ", ") return "kills, territory, ants alive, delivered food, else draw";
   return [...(config.queenKillsFirst ? ["queen kills"] : []), ...(config.adjudication === "kills-first" ? ["kills"] : []),
     "territory", "ants alive", "food delivered", "draw"].join(separator);
 }
