@@ -116,7 +116,7 @@ function drawnTree(node: ElementPort): unknown {
 }
 
 const rated = (rating: number, rd = 80, ratedMatches = 12) => ({ rating, rd, ratedMatches });
-const seat = (seatNo: number, colony: 0 | 1, modelLabel: string | null, handle: string | null, more: Partial<Recording["seats"][number]> = {}) =>
+const seat = (seatNo: number, colony: Recording["seats"][number]["colony"], modelLabel: string | null, handle: string | null, more: Partial<Recording["seats"][number]> = {}) =>
   ({ seat: seatNo, colony, modelLabel, thinkingLevel: null, serviceTier: null, handle, ...more });
 const at = (id: string, fields: Partial<Recording>): Recording => ({ ...recording, id, ...fields });
 
@@ -608,12 +608,39 @@ describe("a model label with nothing after its provider prefix", () => {
     p.mounted.destroy();
   });
 
-  it("retains unknown historical colony names rather than losing their players", () => {
-    const { p, recordings } = show({ recordings: { status: "ready", rows: [{ ...recording, colonyNames: ["Historical Colony", "Very Large Colony"] }] } });
-    const slots = recordings.list.byClass("d1p-rec-slot");
-    expect(slots.map(slot => slot.byClass("d1p-sr")[0]?.textContent ?? slot.textContent)).toEqual(["Very Large Colony: ", "Historical Colony: ", "—", "—"]);
-    expect(recordings.list.byClass("d1p-rec-colony")).toEqual([]);
-    expect(recordings.list.byClass("d1p-rec-player")).toHaveLength(2);
+  it("keeps a historical colony outside canonical columns, with its own name, players, rating and result", () => {
+    for (const winner of [0, 1] as const) {
+      const rec: Recording = { ...recording, winner, colonyNames: ["Historical Colony", "Very Large Colony"],
+        seats: [seat(0, 0, null, "historical-player", { startRating: rated(1510) }), seat(1, 1, null, "canonical-player")] };
+      const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
+      const row = recordings.list.children[0]!;
+      const slots = row.children.filter(node => node.classes().includes("d1p-rec-slot"));
+      expect(slots.map(slot => slot.byClass("d1p-sr")[0]?.textContent ?? slot.textContent)).toEqual(["Very Large Colony: ", "—", "—", "—"]);
+      expect(slots[0]!.byClass("d1p-rec-player")[0]!.textContent).toBe("canonical-player");
+      expect(slots.flatMap(slot => slot.byClass("d1p-rec-colony"))).toEqual([]);
+      const extra = row.byClass("d1p-rec-extra")[0]!;
+      expect(extra.byClass("d1p-rec-colony").map(node => [node.textContent, node.title])).toEqual([["Historical", "Historical Colony"]]);
+      expect(extra.byClass("d1p-rec-player")[0]!.textContent).toBe("historical-player1510 ± 80");
+      expect(extra.byClass("d1p-rec-slot")[0]!.classes().includes("is-won")).toBe(winner === 0);
+      expect(extra.byClass("d1p-rec-slot")[0]!.classes().includes("is-lost")).toBe(winner === 1);
+      expect(extra.textContent.includes(", winner")).toBe(winner === 0);
+      expect(recordings.list.byClass("d1p-rec-player")).toHaveLength(2);
+      p.mounted.destroy();
+    }
+  });
+
+  it("leaves all canonical columns empty when every stored colony has another name, preserving all players", () => {
+    const rec: Recording = { ...recording, colonyNames: ["Old First Colony", "Old Second Colony", "Old Third Colony", "Old Fourth Colony"],
+      seats: [0, 1, 2, 3].map(colony => seat(colony, colony as 0 | 1 | 2 | 3, null, `old-player-${colony}`)), winner: 2 };
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
+    const row = recordings.list.children[0]!;
+    expect(row.children.filter(node => node.classes().includes("d1p-rec-slot")).map(slot => slot.textContent)).toEqual(["—", "—", "—", "—"]);
+    const extra = row.byClass("d1p-rec-extra")[0]!;
+    expect(extra.byClass("d1p-rec-colony").map(node => node.title)).toEqual(rec.colonyNames);
+    expect(extra.byClass("d1p-rec-player").map(node => node.textContent)).toEqual(["old-player-0", "old-player-1", "old-player-2", "old-player-3"]);
+    expect(extra.byClass("is-won")).toHaveLength(1);
+    expect(extra.byClass("is-lost")).toHaveLength(3);
+    expect(recordings.card.byClass("d1p-rec-head")).toHaveLength(1);
     p.mounted.destroy();
   });
 });

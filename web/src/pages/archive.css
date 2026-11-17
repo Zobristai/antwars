@@ -512,6 +512,9 @@ td.c-model > .d1p-colony { display: block; }
 /* The date stands over its time on a wide card, so the dot between them is for the phone's one line only. */
 .d1p-rec-sep { display: none; color: var(--aw-ink-3); }
 .d1p-rec-slot { display: flex; flex-direction: column; min-width: 0; }
+/* Noncanonical stored colonies sit outside the named columns, using the same label and player typography. */
+.d1p-rec-extra { grid-column: 3 / 7; min-width: 0; }
+.d1p-rec-extra .d1p-rec-colony { white-space: normal; overflow-wrap: anywhere; }
 .d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .d1p-rec-player { display: flex; align-items: baseline; column-gap: 6px; min-width: 0; white-space: nowrap; }
 .d1p-rec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -531,6 +534,8 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-head > :is(.is-when, .is-type) { display: none; }
   .d1p-rec-rows > li { position: relative; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 8px; row-gap: 8px; align-items: start; padding-block: 10px 12px; }
   .d1p-rec-slot { grid-row: 1; }
+  .d1p-rec-extra { grid-column: 1 / -1; grid-row: 2; }
+  .d1p-rec-rows > .has-extra > .d1p-rec-meta { grid-row: 3; }
   /* The start and the type on one line under the slots, Replay at its end; where the line breaks, the next part starts
      its line without the dot that parts it from the last (the dot sits in the gap, clipped at the line's start). */
   .d1p-rec-meta { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; grid-row: 2; grid-column: 1 / -1; min-width: 0; padding-right: 56px; overflow: hidden; color: var(--aw-ink-3); }

@@ -292,6 +292,65 @@ function quadrantsPage(thinkingLevel: string | null = null) {
   return { body, page: `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>` };
 }
 
+describe("Recordings keep other stored colony names outside canonical columns", () => {
+  for (const width of [1280, 390]) {
+    for (const names of [["Historical Colony", "Very Large Colony"], ["H".repeat(64), "Other Historical Colony"]] as const) {
+      it(`keeps supplemental names and players clear of the canonical slots and metadata at ${width}px: ${names[0]}`, async () => {
+        const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+        try {
+          await tab.setContent(matchesPage(names).page);
+          await tab.addStyleTag({ content: 'html, body { margin: 0; }' });
+          const rows = await tab.locator(".d1p-rec-rows > li").evaluateAll(nodes => nodes.map(row => {
+            const extra = row.querySelector(".d1p-rec-extra")!;
+            const rect = (node: Element) => { const b = node.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; };
+            const bounds = rect(extra);
+            const heading = row.closest(".d1p-rec4")!.querySelector(".d1p-rec-head .d1p-rec-colony")!;
+            const style = getComputedStyle(heading);
+            return { bounds, canonical: [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => ({ ...rect(slot), empty: slot.classList.contains("is-none") })),
+              meta: rect(row.querySelector(".d1p-rec-meta")!), replay: rect(row.querySelector(".d1p-rec-replay")!),
+              labels: [...extra.querySelectorAll(".d1p-rec-colony")].map(node => {
+                const range = document.createRange(); range.selectNodeContents(node);
+                const s = getComputedStyle(node);
+                return { text: node.textContent, title: node.getAttribute("title"), box: rect(node), textBounds: [...range.getClientRects()].map(b => ({ left: b.left, right: b.right })),
+                  size: s.fontSize, weight: s.fontWeight, expectedSize: style.fontSize, expectedWeight: style.fontWeight, background: s.backgroundColor };
+              }),
+              players: [...extra.querySelectorAll(".d1p-rec-player")].map(node => ({ ...rect(node), colour: getComputedStyle(node).color,
+                lost: node.parentElement!.classList.contains("is-lost"), quiet: getComputedStyle(row.querySelector(".d1p-rec-time")!).color })),
+            };
+          }));
+          expect(rows).toHaveLength(2);
+          for (const row of rows) {
+            expect(row.canonical).toHaveLength(4);
+            expect(row.canonical.filter(slot => !slot.empty)).toHaveLength(names[1] === "Very Large Colony" ? 1 : 0);
+            expect(row.labels).toHaveLength(names[1] === "Very Large Colony" ? 1 : 2);
+            for (const label of row.labels) {
+              expect(names).toContain(label.title);
+              expect(label.size).toBe(label.expectedSize);
+              expect(label.weight).toBe(label.expectedWeight);
+              expect(label.background).toBe("rgba(0, 0, 0, 0)");
+              for (const text of label.textBounds) {
+                expect(text.left).toBeGreaterThanOrEqual(row.bounds.left);
+                expect(text.right).toBeLessThanOrEqual(row.bounds.right);
+              }
+            }
+            for (const player of row.players) {
+              expect(player.left).toBeGreaterThanOrEqual(row.bounds.left);
+              expect(player.right).toBeLessThanOrEqual(row.bounds.right);
+              if (player.lost) expect(player.colour).toBe(player.quiet);
+            }
+            expect(row.bounds.top).toBeGreaterThanOrEqual(Math.max(...row.canonical.map(slot => slot.bottom)));
+            if (width === 390) {
+              expect(row.meta.top).toBeGreaterThanOrEqual(row.bounds.bottom);
+              expect(row.replay.top).toBeGreaterThanOrEqual(row.bounds.bottom);
+            }
+          }
+          expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+        } finally { await tab.close(); }
+      });
+    }
+  }
+});
+
 describe("Recordings contain a self-reported thinking level", () => {
   const longLevel = "m".repeat(32);
   for (const width of [1280, 390]) {
