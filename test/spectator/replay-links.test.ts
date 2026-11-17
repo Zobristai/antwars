@@ -8,7 +8,7 @@ import { modeCopy, replayDate, replayPath } from "../../web/src/replay.ts";
 import { openSource } from "../../web/src/source.ts";
 import { isReplayId } from "../../src/replays/access.ts";
 import { captureQuery } from "../../web/capture/browser.ts";
-import { QualityController, WINDOW } from "../../web/src/board3d/quality.ts";
+import { CATASTROPHIC_INTERVALS, QualityController } from "../../web/src/board3d/quality.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
 const id = "2026-10-18T13-58-00-000Z-12";
@@ -81,8 +81,8 @@ it("accelerated capture never counts skipped simulated frames as actual frame-ca
   expect(harness).toContain("nativePage.goto(`${origin}/?replay=${id}`)");
   // Reproduce the original failure: one draw per 100 accelerated ticks falsely looks like 0.1 FPS.
   const original = new QualityController(1);
-  for (let i = 0; i < WINDOW; i++) expect(original.frame(i * 10_000)).toBe("hold");
-  expect(original.frame(WINDOW * 10_000)).toBe("fallback");
+  for (let i = 0; i < CATASTROPHIC_INTERVALS; i++) expect(original.frame(i * 10_000)).toBe("hold");
+  expect(original.frame(CATASTROPHIC_INTERVALS * 10_000)).toBe("fallback");
   // The offline correctness capture draws only its checkpoints; cadence is checked on a normal-clock page.
   const checkpoints = new QualityController(1);
   for (const time of [0, 900_000, 1_800_000]) expect(checkpoints.frame(time)).toBe("hold");

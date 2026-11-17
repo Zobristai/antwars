@@ -71,15 +71,15 @@ describe("redesign briefing teaches decisions, not just command syntax", () => {
   });
   it("distinguishes verb, requested count, answered claims and squad steering", () => {
     const text = briefing(redesign);
-    expect(text).toContain("count_mark directs free ants, order steers your squad");
+    expect(text).toContain("count_mark directs free ants, order directs your squad");
     // Vocabulary order is not a rule; each admitted verb must be taught.
     const verbs = text.match(/count_mark \{[^\n]+\}: ([A-Z/]+) for/)?.[1]?.split("/");
     expect(verbs).toHaveLength(6);
     expect(verbs).toEqual(expect.arrayContaining(["DEFEND", "ATTACK", "FORAGE", "GATHER", "PATROL", "LINE"]));
     expect(text).toContain("whole count 1-10,000");
     expect(text).toContain("marks/myMarks claimed=answered now, possibly short; never promised");
-    expect(text).not.toContain("steering field counts squad ants following word marks");
-    expect(briefing({ ...redesign, patrolLinkTiles: undefined, wordMarksDisabled: undefined })).toContain("steering field counts squad ants following word marks");
+    expect(text).not.toContain("In each myMarks entry, the only field whose name starts with s counts squad ants following word marks; claimed counts ants answering a count mark");
+    expect(briefing({ ...redesign, patrolLinkTiles: undefined, wordMarksDisabled: undefined })).toContain("In each myMarks entry, the only field whose name starts with s counts squad ants following word marks; claimed counts ants answering a count mark");
     expect(text).toContain("including workers already foraging");
     expect(text).toContain("with no caste preference");
     expect(text).toContain("Marks recruit in laid order");
@@ -91,7 +91,7 @@ describe("redesign briefing teaches decisions, not just command syntax", () => {
     expect(text).not.toContain("claimableAnts");
     expect(text).toContain("freeAntsNow");
     expect(text).toContain("0 free ants now; this mark recruits as ants hatch or free up");
-    expect(text).toContain("Count marks do not steer your squad");
+    expect(text).toContain("Count marks do not direct your squad");
     const example = text.slice(text.indexOf("Worked example:"));
     expect(example).toContain('count_mark {"verb":"FORAGE"');
     expect(example).toContain("claimed (answered now)");
@@ -269,7 +269,7 @@ describe("configured soft personal space and physical interactions", () => {
     const full = briefing(changed);
     expect(full).toContain("Within 80 subunits");
     expect(full).toContain("strength 1200, edge epsilon 2");
-    expect(full).toContain("steering+push <=170 subunits/tick");
+    expect(full).toContain("movement+push <=170 subunits/tick");
     expect(full).toContain("points: 250 subunits");
     expect(full).toContain("links <=130 subunits");
     expect(full).toContain("recomputed each tick, not remembered");
@@ -283,7 +283,7 @@ describe("configured soft personal space and physical interactions", () => {
     expect(full).toContain("Linked arrival: no remote pickup/delivery/bite");
     expect(joinBriefing(changed)).toContain("Soft space: push80/step170/link130 subunits");
     expect(joinBriefing(changed)).toContain("Fresh links, contact/queens: rules.");
-    for (const fact of ["each ant steers itself", "no minimum distance/hard blocks", "ants squeeze past",
+    for (const fact of ["each ant moves independently", "no minimum distance/hard blocks", "ants squeeze past",
       "Water/rocks impassable", "same-goal/colony", "rooted at an ant in reach",
       "Displaced DEFEND/ATTACK soldiers return inside mark", "friends/enemies push alike, may overlap",
       "incl. diagonals; combat/queen-strike reach unchanged", "of live friendly queen",

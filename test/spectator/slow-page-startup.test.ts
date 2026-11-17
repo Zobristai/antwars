@@ -4,7 +4,7 @@
  * Observed in production (the watch link hung on connecting): a slow 3D page draws a frame every
  * ~520 ms, and the worker's reply to each decode is only handled between frames, so the page takes
  * about one live message per frame while the server sends ten a second. The bounded inbox then
- * overflows after ~4 s and reconnects; before this fix the reconnect's full snapshot restarted the
+ * overflows after ~4 s, drains its accepted prefix, then reconnects; originally the reconnect's full snapshot restarted the
  * 1.5 s startup buffer every time, so "Connecting…" stayed until the 3D quality fallback.
  *
  * The page's live path runs here as production wires it: openSource on a ?lobby link, the
@@ -85,12 +85,16 @@ async function watch(frameMs: number, durationMs: number, fast: boolean) {
   } } as unknown as Document;
   const port = new Port(), sources: Source[] = [], reject = vi.fn();
   let now = 0, sent = -1;
+  let replacementSnapshotTick: number | null = null;
+  let firstReconnectAt: number | null = null;
   /** The server: every connection opens with a full snapshot at the live tick, then one message per tick. */
   const serve = () => {
     for (let tick = sent + 1; tick * TICK_MS <= now; tick++) {
       sent = tick;
       const source = sources.at(-1)!;
-      source.emit(message(tick, !source.opened));
+      const m = message(tick, !source.opened);
+      if (sources.length > 1 && !source.opened && replacementSnapshotTick === null) replacementSnapshotTick = m.tick;
+      source.emit(m);
       source.opened = true;
     }
   };
@@ -102,7 +106,11 @@ async function watch(frameMs: number, durationMs: number, fast: boolean) {
   };
   const opening = openSource(new URLSearchParams({ lobby: "slow-page" }), { now: () => now }, doc, reject, {
     intake: new WorkerIntake(() => port),
-    source: (path) => { expect(path).toBe("/watch/live/slow-page"); const s = new Source(); sources.push(s); return s; },
+    source: (path) => {
+      expect(path).toBe("/watch/live/slow-page");
+      if (sources.length > 0 && firstReconnectAt === null) firstReconnectAt = now;
+      const s = new Source(); sources.push(s); return s;
+    },
   });
   // The explicit lobby link waits for the first full snapshot before the frame loop starts.
   while (sources.length === 0) await port.idle();
@@ -118,6 +126,7 @@ async function watch(frameMs: number, durationMs: number, fast: boolean) {
   let firstDraw: { at: number; connections: number; renderMs: number; newestMs: number } | null = null;
   const drawnTicks: number[] = [];
   let hiddenAfterFirstDraw = true;
+  let replacementDrawAt: number | null = null;
   try {
     for (now = frameMs; now <= durationMs; now += frameMs) {
       await gap();
@@ -128,6 +137,9 @@ async function watch(frameMs: number, durationMs: number, fast: boolean) {
       const drew = playback.sample(source.now(now), frame);
       waiting.state(source.linkState());
       waiting.frame(drew);
+      if (drew && replacementSnapshotTick !== null && frame.tick >= replacementSnapshotTick && replacementDrawAt === null) {
+        replacementDrawAt = now;
+      }
       if (drew && firstDraw === null) {
         firstDraw = { at: now, connections: sources.length, renderMs: frame.renderMs, newestMs: playback.newestTick * TICK_MS };
       }
@@ -138,14 +150,19 @@ async function watch(frameMs: number, durationMs: number, fast: boolean) {
     }
   } finally { listeners.get("pagehide")?.(); source.close(); }
   expect(reject).not.toHaveBeenCalled();
-  return { firstFullAt, firstDraw, drawnTicks, hiddenAfterFirstDraw, connections: sources.length, panel };
+  return { firstFullAt, firstDraw, drawnTicks, hiddenAfterFirstDraw, connections: sources.length, panel, firstReconnectAt, replacementDrawAt };
 }
 
 describe("an explicit live lobby link on a page that cannot keep up", () => {
   it("draws the match soon after the first full snapshot, with no reconnect before its first frame, and keeps it drawn", async () => {
     const SLOW_FRAME_MS = 520;
-    const run = await watch(SLOW_FRAME_MS, 10_000, false);
-    expect(run.firstDraw, `the slow page drew no frame within 10 s, over ${run.connections} connections`).not.toBeNull();
+    // Admission fills in about 4 s; the accepted 30-message prefix can then take
+    // 30 × 520 ms to drain. Bound reconnect separately from the replacement's
+    // delivery frame, startup buffer and next drawn frame.
+    const RECONNECT_WINDOW_MS = 20_000;
+    const RECOVERY_WINDOW_MS = RECONNECT_WINDOW_MS + LIVE_BUFFER_MS + 2 * SLOW_FRAME_MS;
+    const run = await watch(SLOW_FRAME_MS, RECOVERY_WINDOW_MS, false);
+    expect(run.firstDraw, `the slow page drew no frame within ${RECOVERY_WINDOW_MS} ms, over ${run.connections} connections`).not.toBeNull();
     const first = run.firstDraw!;
     // Leaves Connecting… within the startup wait plus one slow frame of the first full snapshot.
     expect(first.at - run.firstFullAt).toBeLessThanOrEqual(LIVE_BUFFER_MS + SLOW_FRAME_MS);
@@ -154,6 +171,10 @@ describe("an explicit live lobby link on a page that cannot keep up", () => {
     expect(first.newestMs - first.renderMs).toBeLessThan(LIVE_BUFFER_MS);
     // Later catch-up resyncs (the page still cannot keep up) keep the board drawn and moving.
     expect(run.connections).toBeGreaterThan(1);
+    expect(run.firstReconnectAt).not.toBeNull();
+    expect(run.firstReconnectAt!).toBeLessThanOrEqual(RECONNECT_WINDOW_MS);
+    expect(run.replacementDrawAt, "the replacement full snapshot must reach the drawn board").not.toBeNull();
+    expect(run.replacementDrawAt!).toBeLessThanOrEqual(RECOVERY_WINDOW_MS);
     expect(run.hiddenAfterFirstDraw).toBe(true);
     expect(run.panel.hidden).toBe(true);
     expect(Math.max(...run.drawnTicks)).toBeGreaterThan(run.drawnTicks[0]!);

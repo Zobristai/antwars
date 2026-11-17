@@ -93,7 +93,7 @@ describe("join during a running match", () => {
     );
     expect(text).toContain("forage: each squad ant heads for the nearest tile with food, picks up 1 food and carries it to its queen");
     expect(text).toContain("hold: squad ants stand still.");
-    expect(text).toContain("follow_trail: the squad follows your colony's strongest steering mark within 7 tiles of any squad ant");
+    expect(text).toContain("follow_trail: the squad follows your colony's strongest movement mark within 7 tiles of any squad ant");
     // Combat, as src/sim/combat.ts implements it: 1500 milli-HP/s is 150 per tick; x1.4 is 210 per tick.
     // Bite reach is one original-size tile, 2 fine tiles at grid scale 2.
     expect(text).toContain("every non-carrying ant within 2 tiles of an enemy (diagonals included) hits one of them, the one with the fewest HP, every tick.");
@@ -113,8 +113,8 @@ describe("join during a running match", () => {
     const text: string = (await agent.call("rules")).data.rules;
     // As src/sim/agents.ts join and squadDirections, and src/sim/marks.ts markEffect and trailMark, implement it.
     expect(text).toContain("A new squad starts on forage.");
-    expect(text).toContain("follow_trail: the squad follows your colony's strongest steering mark within 6 tiles of any squad ant");
-    expect(text).toContain("A mark's first steering word decides where it sends a squad on follow_trail: FOOD, HELP, ATTACK, GATHER and HOLD send it toward the mark; AVOID sends it away; GO with a direction word sends it along that fixed heading;");
+    expect(text).toContain("follow_trail: the squad follows your colony's strongest movement mark within 6 tiles of any squad ant");
+    expect(text).toContain("A mark's first movement word decides where it sends a squad on follow_trail: FOOD, HELP, ATTACK, GATHER and HOLD send it toward the mark; AVOID sends it away; GO with a direction word sends it along that fixed heading;");
     expect(text).toContain("fading to nothing at 7 tiles and over its life;");
     expect(text).toContain("Marks move no other ants: your colony's non-squad ants go about their house-bot work whatever marks lie near them.");
     expect(text).toContain("a teammate's squad on follow_trail heads for the mark while it is your colony's strongest mark near that squad.");

@@ -4,7 +4,14 @@
  * A stream dropped before the result still reconnects as before.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StreamMessage } from "../../src/live/format.ts";
+import { inflateRawSync, deflateRawSync } from "node:zlib";
+import { decodeMessage, encodePublicMessage, type StreamMessage, type StreamResult } from "../../src/live/format.ts";
+import { decodeMessage as oldDecode } from "../live/fixtures/pre-queen-ranking-format.ts";
+import { scale2Packets } from "../../web/capture/scale2-recording.ts";
+import { Frame, Playback, resultShownAt, TickPreparation } from "../../web/src/buffer.ts";
+import { openSource, CONNECT_MS } from "../../web/src/source.ts";
+import { resultHeadline } from "../../web/src/ui/format.ts";
+import { resultHow } from "../../web/src/story.ts";
 import { openLive, type EventSourceLike, type LinkState } from "../../web/src/stream.ts";
 
 /** An EventSource the test drives: emit() is one SSE message, drop() an error with the given readyState. */
@@ -43,7 +50,7 @@ function harness(decodeMs = 0) {
 }
 
 beforeEach(() => { vi.useFakeTimers(); });
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("live link after a match's result", () => {
   it.each([
@@ -83,6 +90,43 @@ describe("live link after a match's result", () => {
     h.link.close();
   });
 
+  it.each(["end", "finished"])("keeps an accepted %s through raw overflow and a queued server-close callback", async terminal => {
+    const sources: Source[] = [], delivered: StreamMessage[] = [];
+    let resets = 0, overflows = 0;
+    const link = openLive("/watch/live/lobby", m => delivered.push(m), () => {}, {
+      maxPending: 2,
+      source: () => { const s = new Source(); sources.push(s); return s; },
+      decode: async data => { await new Promise(r => setTimeout(r, 50)); return messages[data]!; },
+      onReset: () => { resets++; }, onOverflow: () => { overflows++; },
+    });
+    try {
+      sources[0]!.emit("full"); sources[0]!.emit(terminal); sources[0]!.emit("delta");
+      sources[0]!.drop(2);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(delivered).toEqual([messages.full, messages[terminal]]);
+      expect(sources).toHaveLength(1);
+      expect(resets).toBe(1);
+      expect(overflows).toBe(0);
+    } finally { link.close(); }
+  });
+
+  it("explicit close cancels accepted work even while overflow is draining", async () => {
+    const sources: Source[] = [], delivered: StreamMessage[] = [];
+    const overflow = vi.fn();
+    const link = openLive("/watch/live/lobby", m => delivered.push(m), () => {}, {
+      maxPending: 1,
+      source: () => { const s = new Source(); sources.push(s); return s; },
+      decode: async data => { await new Promise(r => setTimeout(r, 50)); return messages[data]!; },
+      onOverflow: overflow,
+    });
+    sources[0]!.emit("full"); sources[0]!.emit("delta");
+    await vi.advanceTimersByTimeAsync(1);
+    link.close();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(delivered).toEqual([]);
+    expect(overflow).not.toHaveBeenCalled();
+  });
+
   it("still reconnects a stream dropped before the result", async () => {
     const h = harness();
     h.sources[0]!.open();
@@ -117,4 +161,76 @@ describe("live link after a match's result", () => {
     expect(h.sources).toHaveLength(3);
     h.link.close();
   });
+});
+
+// stream.ts and source.ts are unchanged from the frozen decoder's build. Substitute
+// only that old decode boundary; the actual stream, lobby waiting and playback run.
+const oldData = async (data: string): Promise<StreamMessage> => oldDecode(inflateRawSync(Buffer.from(data, "base64")));
+const wire = (message: StreamMessage) => deflateRawSync(encodePublicMessage(message)).toString("base64");
+const start = decodeMessage(scale2Packets(1)[0]!);
+const queenResult: StreamResult = { winner: 1, reason: "time_up", decidedBy: "queen_kills", tick: 9, nextStartMs: null };
+const queenEnd: StreamMessage = { tick: 10, ants: start.ants, full: null, events: [{ kind: "end", result: queenResult }] };
+const queenSnapshot: StreamMessage = { ...queenEnd, full: { ...start.full!, result: queenResult }, events: [] };
+
+function expectEndCard(delivered: StreamMessage[]) {
+  const playback = new Playback({ live: true }), frame = new Frame();
+  for (const m of delivered) playback.push(m, m.tick * 100);
+  // Start the live playout clock, then advance frames through its terminal beat.
+  for (let now = 0; now < 10_000; now += 100) playback.sample(now, frame);
+  expect(playback.sample(10_000, frame)).toBe(true);
+  const result = frame.board!.result!;
+  expect(result).toEqual({ ...queenResult, decidedBy: "kills" });
+  // These are the HUD's end-card visibility condition and text helpers.
+  expect(frame.targetMs).toBeGreaterThanOrEqual(resultShownAt(result, frame.endShown ?? undefined));
+  expect(resultHeadline(result)).toContain("wins");
+  expect(resultHow(result, true)).toBe("Time-up · decided on kills");
+}
+
+it.each(["final delta", "finished snapshot"])("keeps the end card on an old page receiving a queen-kill %s", async kind => {
+  const es = new Source(), delivered: StreamMessage[] = [];
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const link = openLive("/watch/live/compatibility", m => delivered.push(m), () => {}, { source: () => es, decode: oldData });
+  if (kind === "final delta") es.emit(wire(start));
+  es.emit(wire(kind === "final delta" ? queenEnd : queenSnapshot));
+  await vi.advanceTimersByTimeAsync(0);
+  expectEndCard(delivered);
+  expect(es.closes).toBe(1);
+  expect(errors).not.toHaveBeenCalled();
+  link.close();
+});
+
+it("an old page waiting for a lobby receives its later queen-kill end card without reloading", async () => {
+  const line = { textContent: "" }, reload = vi.fn(), errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const doc = { title: "", querySelector: () => line, getElementById: () => null,
+    defaultView: { addEventListener: () => {}, location: { hash: "", origin: "https://example.test", reload },
+      sessionStorage: { getItem: () => null, removeItem: () => {} } } } as unknown as Document;
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ lobbyId: "waiting", delaySeconds: 60, playbackFinished: false })));
+  const es = new Source(), reject = vi.fn();
+  let preparation = new TickPreparation();
+  const opening = openSource(new URLSearchParams({ lobby: "waiting" }), { now: () => 0 }, doc, reject, {
+    source: () => es,
+    intake: {
+      async decode(data) {
+        const m = await oldData(data);
+        return { kind: "tick", generation: 0, id: 0, m, prepared: preparation.prepare(m), workerMs: 0, deliveryMs: 0 };
+      },
+      reset() { preparation = new TickPreparation(); }, close() {},
+    },
+  });
+  await vi.advanceTimersByTimeAsync(CONNECT_MS + 1);
+  expect(line.textContent).toBe("Live match starting");
+  es.emit(wire(start));
+  await vi.advanceTimersByTimeAsync(0);
+  const source = await opening;
+  expect(source).not.toBeNull();
+  const delivered = source!.take(0).map(a => a.m);
+  es.emit(wire(queenEnd));
+  await vi.advanceTimersByTimeAsync(0);
+  delivered.push(...source!.take(1000).map(a => a.m));
+  expectEndCard(delivered);
+  expect(es.closes).toBe(1);
+  expect(reload).not.toHaveBeenCalled();
+  expect(reject).not.toHaveBeenCalled();
+  expect(errors).not.toHaveBeenCalled();
+  source!.close();
 });

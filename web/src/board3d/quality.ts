@@ -6,6 +6,8 @@
  * Playwright steps during capture). Windows do not overlap, and the window is emptied on every
  * tier change, so each decision rests on a full window drawn at the current tier.
  *
+ * - Three consecutive intervals of at least two seconds fall back before a full
+ *   window; isolated pauses and ordinary slowness retain the rules below.
  * - The line is 33.3 ms (30 fps); a median of PASS_MS (34.3 ms) or less passes, which absorbs
  *   the jitter of a phone capped at 30 fps.
  * - Hysteresis: a tier steps down only after STEP_WINDOWS consecutive full windows above
@@ -19,6 +21,9 @@
  *   leave a slideshow up for minutes (about 160 s at 385 ms a frame from tier 0).
  */
 
+/** Three consecutive multi-second intervals: a single pause must not demote 3D. */
+export const CATASTROPHIC_MS = 2000;
+export const CATASTROPHIC_INTERVALS = 3;
 export const WINDOW = 60;
 export const PASS_MS = 34.3;
 export const STEP_WINDOWS = 2;
@@ -58,10 +63,12 @@ export type Decision = "hold" | "step" | "fallback";
 
 export class QualityController {
   tier: number;
-  /** The median of the last full window, or null before the first. */
+  /** The last decision median (full window or catastrophic streak), or null. */
   lastMedian: number | null = null;
+  lastSampleCount = 0;
   private window: number[] = [];
   private slow = 0;
+  private catastrophic = 0;
   private last: number | null = null;
 
   constructor(tier: number) {
@@ -75,11 +82,22 @@ export class QualityController {
 
   /** A frame was drawn at clock time t (ms): what to do now. */
   frame(t: number): Decision {
-    if (this.last !== null) this.window.push(t - this.last);
+    if (this.last !== null) {
+      const interval = t - this.last;
+      this.window.push(interval);
+      this.catastrophic = interval >= CATASTROPHIC_MS ? this.catastrophic + 1 : 0;
+      if (this.catastrophic >= CATASTROPHIC_INTERVALS) {
+        this.last = t;
+        this.lastMedian = median(this.window.slice(-CATASTROPHIC_INTERVALS));
+        this.lastSampleCount = CATASTROPHIC_INTERVALS;
+        return "fallback";
+      }
+    }
     this.last = t;
     if (this.window.length < WINDOW) return "hold";
     const m = median(this.window);
     this.lastMedian = m;
+    this.lastSampleCount = this.window.length;
     this.window = [];
     this.slow = m > PASS_MS ? this.slow + 1 : 0;
     // Far too slow for any tier to recover: give up at once, wherever it stands.

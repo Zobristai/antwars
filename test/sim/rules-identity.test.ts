@@ -27,13 +27,14 @@ describe("the rules generations", () => {
   it.each([undefined, "v4", "count-marks", "redesign"] as const)("records kills-first scoring explicitly for new %s matches", name => {
     const config = rulesConfig(name);
     expect(config.adjudication).toBe("kills-first");
-    expect(parseLog([headerLine(6006, playable(config))]).header).toMatchObject({ rulesVersion: name === "redesign" ? 28 : 27, config: { adjudication: "kills-first" } });
+    expect(config.queenKillsFirst).toBe(true);
+    expect(parseLog([headerLine(6006, playable(config))]).header).toMatchObject({ rulesVersion: name === "redesign" ? 28 : 27, config: { adjudication: "kills-first", queenKillsFirst: true } });
   });
 
   it("the served redesign differs from the rules-27 redesign only in the unit figures, the hatch rate, the flyers and the rules-28 marker", () => {
     const now = rulesConfig("redesign") as unknown as Record<string, unknown>, before = rules27Redesign() as unknown as Record<string, unknown>;
     const changed = [...new Set([...Object.keys(now), ...Object.keys(before)])].filter(key => JSON.stringify(now[key]) !== JSON.stringify(before[key])).sort();
-    expect(changed).toEqual(["antHp", "castes", "flyers", "hatchCost", "hatchRate", "hatchTiming", "queenHp", "rules28"]);
+    expect(changed).toEqual(["antHp", "castes", "flyers", "hatchCost", "hatchRate", "hatchTiming", "queenHp", "queenKillsFirst", "rules28"]);
     expect(now).toMatchObject({ rules28: true, antHp: 2000, hatchCost: 2, hatchRate: { foodPerSecond: 2 }, flyers: FLYER_RULES,
       castes: { soldierCost: 6, soldierHpPermille: 5000, soldierDamagePermille: 3000 } });
     expect(now.hatchTiming).toBeUndefined();
