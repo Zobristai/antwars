@@ -433,7 +433,7 @@ interface AntEventBase {
 
 /** Renderer-neutral step events. Every event about an ant carries its id. */
 export type SimEvent =
-  | (AntEventBase & { readonly type: "hatch"; readonly antId: number; readonly colony: ColonyId; readonly caste?: Caste })
+  | (AntEventBase & { readonly type: "hatch"; readonly antId: number; readonly colony: ColonyId; readonly caste?: Caste | "flyer" })
   | (AntEventBase & {
       readonly type: "fight";
       readonly antId: number;

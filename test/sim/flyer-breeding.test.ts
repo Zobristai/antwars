@@ -109,8 +109,9 @@ describe("check 7: broods and queen clocks", () => {
     expect(ticksOf(soldiers.born, 0)).toEqual([20, 50, 80, 110, 140, 170]);
     expect(soldiers.born.filter((b) => b.colony === 0).every((b) => b.caste === "soldier" && !b.flyer)).toBe(true);
     expect(ticksOf(flyers.born, 0)).toEqual([50, 110, 170, 230, 290]);
-    // A flyer is worker caste with the flyer mark and the flyer's 2 HP.
-    expect(flyers.born.filter((b) => b.colony === 0).every((b) => b.flyer && b.caste === "worker" && b.hp === 2000)).toBe(true);
+    // Hatch events name flyers; their internal worker caste and 2 HP stay unchanged.
+    expect(flyers.born.filter((b) => b.colony === 0).every((b) => b.flyer && b.caste === "flyer" && b.hp === 2000)).toBe(true);
+    expect(flyers.state.ants.filter((ant) => ant.flyer === true).every((ant) => ant.caste === "worker")).toBe(true);
     // The unseated colony keeps its mixed brood: no flyer.
     expect(flyers.born.some((b) => b.colony === 1 && b.flyer)).toBe(false);
   });
