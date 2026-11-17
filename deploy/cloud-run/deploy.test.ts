@@ -114,6 +114,7 @@ interface State {
 interface CreateSpec {
   labels?: Record<string, string>; ingress?: string; invokerIamDisabled?: boolean; scaling?: { maxInstanceCount?: number };
   template: { revision: string; labels?: Record<string, string>; serviceAccount?: string; timeout?: string; maxInstanceRequestConcurrency?: number;
+    executionEnvironment?: string;
     scaling?: { minInstanceCount?: number; maxInstanceCount?: number };
     containers: { image: string; command?: string[]; args?: string[]; startupProbe?: unknown;
       env: { name: string; value?: string; valueSource?: { secretKeyRef: { secret: string; version: string } } }[];
@@ -743,7 +744,7 @@ describe("existing deploy paths are unchanged", () => {
         // Variables set outside the script are kept. ANTWAR_MEMORY_LIMIT is --memory's own value.
         "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
         "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
-        "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "4Gi", "--timeout", "3600", "--concurrency", "1000",
+        "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "4Gi", "--execution-environment", "gen2", "--timeout", "3600", "--concurrency", "1000",
         "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION],
       // The revision the deploy created gets all traffic by name, once Ready.
       named("antwar"), namedRevision("antwar-new"), toNew("antwar"), named("antwar"),
@@ -1458,9 +1459,10 @@ describe.concurrent("all", () => {
 
   // Credible regression: the game deployed without the post-mortem's configured limit, with one apart from its
   // --memory, with a form the server's parser rejects, or too small to start a re-run beside a game server sized for the
-  // other services' 2Gi (so a lone re-run is never admitted); or another service moved off 2Gi with it. The main path and
-  // a later all-services deploy alike.
-  it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which admits a re-run, and every other service 2Gi", async () => {
+  // other services' 2Gi (so a lone re-run is never admitted); or another service moved off 2Gi with it. Or the game left
+  // off gen2, where the post-mortem cannot read cgroup v2 and so admits no re-run; or another service moved with it.
+  // The main path and a later all-services deploy alike.
+  it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which admits a re-run, on gen2, and every other service 2Gi on the default", async () => {
     const later = await runAsync(["all", SHA], { state: live(), env: { ANTWAR_SWAP_STABLE: "" } });
     expect(later.status, later.stderr).toBe(0);
     const main = run([SHA]);
@@ -1475,10 +1477,12 @@ describe.concurrent("all", () => {
         expect(limitMiB, route).toBeGreaterThan(0);
         // The headroom left beside a game server using all of 2Gi.
         expect(admits({ headroomMiB: limitMiB - 2048, source: "configured" }, MEMORY_POLICY), route).toBe(true);
+        expect(d[d.indexOf("--execution-environment") + 1], route).toBe("gen2");
       }
       for (const d of deploys(r.gcloud).filter((d) => d[2] !== "antwar")) {
         expect(envOf(d).ANTWAR_MEMORY_LIMIT, `${route} ${d[2]}`).toBeUndefined();
         expect(d[d.indexOf("--memory") + 1], `${route} ${d[2]}`).toBe("2Gi");
+        expect(d, `${route} ${d[2]}`).not.toContain("--execution-environment");
       }
     }
   }, TIMEOUT);
@@ -1519,7 +1523,7 @@ describe.concurrent("all", () => {
       expect(deploys(r.gcloud)[i + 1]).toEqual(noTraffic(expected));
     }
 
-    // The game: 2 vCPU and 4Gi with the private replay key, no traffic until Ready, then all of it.
+    // The game: 2 vCPU and 4Gi on gen2 with the private replay key, no traffic until Ready, then all of it.
     // The load balancer's addresses are read once, before any gate, build or deploy, and never printed.
     expect(r.gcloud.filter((c) => c[0] === "compute")).toEqual([RULES_LIST]);
     expect(r.calls.findIndex((c) => c[0] === "gcloud" && c[1] === "compute")).toBeLessThan(r.calls.findIndex((c) => c[0] === "curl"));
@@ -1529,7 +1533,7 @@ describe.concurrent("all", () => {
       "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
       "--update-secrets", KEY,
       "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
-      "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "4Gi", "--timeout", "3600", "--concurrency", "1000",
+      "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "4Gi", "--execution-environment", "gen2", "--timeout", "3600", "--concurrency", "1000",
       "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION]);
     const gameDeploy = indexOf(r.gcloud, (c) => c[1] === "deploy" && c[2] === "antwar");
     const gameTraffic = indexOf(r.gcloud, (c) => c[2] === "update-traffic" && c[3] === "antwar" && c[4] === "--to-revisions");
@@ -2373,6 +2377,7 @@ describe.concurrent("all", () => {
         labels: { app: "antwar", commit: SHA }, ingress: "INGRESS_TRAFFIC_ALL", invokerIamDisabled: true, scaling: { maxInstanceCount: 1 },
         template: { revision: REV("antwar"), labels: { app: "antwar", commit: SHA }, serviceAccount: CONFIG.RUN_SA,
           scaling: { minInstanceCount: 1, maxInstanceCount: 1 }, timeout: "3600s", maxInstanceRequestConcurrency: 1000,
+          executionEnvironment: "EXECUTION_ENVIRONMENT_GEN2",
           containers: [{ image, resources: { limits: { cpu: "2", memory: "4Gi" }, cpuIdle: false, startupCpuBoost: true } }] },
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
