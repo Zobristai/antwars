@@ -4,15 +4,17 @@ import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { fourColonyEnd } from "../../src/sim/elimination.ts";
 import { parseFfaFinish } from "../../src/sim/ffaFinish.ts";
+import { applyFfaResult, FFA_COLLECTION } from "../../src/rating/ffa.ts";
+import { retentionWorld } from "../identity/retentionStore.ts";
 
 const map: MapDefinition = { id: "fixture-quadrants", name: "Fixture", water: [], quadrant: {
   referenceWidth: 64, referenceHeight: 48, centreHalfWidth: 2, centreHalfHeight: 2, nestTileX: 29, nestTileY: 8,
   startArea: { x: 0, y: 0, width: 8, height: 8 }, foodPatches: [{ tileX: 8, tileY: 8, radius: 3, perTile: 2 }], centreFood: [{ radius: 1, perTile: 2 }],
 } };
-function world(territoryWinnerFirst = false) {
+function world(territoryWinnerFirst = false, minTick = 0) {
   const base = newMatchConfig(rulesConfig("redesign"));
   const state = createMatch(404, { ...base, ffaTerritoryWinnerFirst: territoryWinnerFirst,
-    earlyWin: { ...base.earlyWin!, minTick: 0, holdTicks: 1, minHeldTiles: 1 }, terrain: { ...base.terrain!, maps: [map] } });
+    earlyWin: { ...base.earlyWin!, minTick, holdTicks: 1, minHeldTiles: 1 }, terrain: { ...base.terrain!, maps: [map] } });
   state.colonies.forEach((c, i) => { c.queenKills = [2, 3, 1, 0][i]!; c.kills = [20, 10, 40, 50][i]!; });
   const kill = (colony: number, tick: number) => state.colonies[colony]!.queens!.forEach(q => { q.lostTick = tick; });
   return { state, kill };
@@ -64,12 +66,56 @@ it("both territory settings keep the winner, and only the on setting promotes it
   }
 });
 
-it("keeps a complete order but declines to rate abandonment and exact score ties", () => {
+it.each(["territory", "ants_alive", "food_delivered"] as const)(
+  "rates survivor and same-tick elimination finishes resolved by %s after equal queen and unit kills", async decidedBy => {
+    for (const ending of ["survivors", "all_eliminated", "two_eliminated"] as const) {
+      // Exercise score adjudication, not an early territory win after neutralising eliminated tiles.
+      const { state, kill } = world(false, 100);
+      state.colonies.forEach(c => { c.queenKills = 0; c.kills = 0; });
+      // Later score steps deliberately disagree, so each fallback's precedence is exercised.
+      const territory = decidedBy === "territory" ? [8, 12, 4, 0] : [4, 4, 4, 4];
+      state.owner.fill(-1);
+      let offset = 0;
+      territory.forEach((tiles, colony) => { state.owner.fill(colony, offset, offset + tiles); offset += tiles; });
+      const ants = decidedBy === "territory" ? [2, 1, 4, 5] : decidedBy === "ants_alive" ? [2, 3, 1, 0] : [1, 1, 1, 1];
+      state.ants = state.colonies.flatMap(c => state.ants.filter(a => a.colony === c.id).slice(0, ants[c.id]));
+      state.stats.delivered = decidedBy === "food_delivered" ? [2, 3, 1, 0] : [20, 10, 40, 50];
+      if (ending !== "survivors") {
+        for (const colony of ending === "all_eliminated" ? [0, 1, 2, 3] : [0, 1]) kill(colony, 10);
+      }
+      if (ending === "two_eliminated") expect(fourColonyEnd(state, 10, false)).toBeNull();
+      const result = fourColonyEnd(state, 20, true)!;
+      const order = ending === "two_eliminated" ? [2, 3, 1, 0] : [1, 0, 2, 3];
+      expect(result).toMatchObject({ winner: order[0], decidedBy, ffa: { order, rateable: true } });
+      if (ending !== "survivors") {
+        expect(state.colonies[1]!.eliminated?.scores).toMatchObject({ queenKills: 0, kills: 0,
+          territory: territory[1]! / 4, ants: ants[1], delivered: state.stats.delivered[1] });
+      }
+      // Use the actual finish at the offline persistence boundary, not a hand-built eligibility flag.
+      const w = retentionWorld();
+      const participants = state.colonies.map(c => w.played(`player${c.id}`).id);
+      const applied = await applyFfaResult(w.store, { matchId: "fallback-finish", participants, reason: result.reason, finish: result.ffa! });
+      expect(applied.status).toBe("applied");
+      expect(w.commits).toHaveLength(1);
+      expect(w.commits[0]).toHaveLength(5);
+      const history = w.docs.get("ffaMatches/fallback-finish")!;
+      const changes = JSON.parse(history.changes!) as { identityId: string; place: number; after: { mu: number } }[];
+      expect(changes.map(c => c.place)).toEqual(participants.map((_, colony) => order.indexOf(colony) + 1));
+      for (const id of participants) expect(w.docs.get(`${FFA_COLLECTION}/${id}`)?.ratedMatches).toBe("1");
+      const means = order.map(colony => changes[colony]!.after.mu);
+      expect(means[0]).toBeGreaterThan(means[1]!);
+      expect(means[1]).toBeGreaterThan(means[2]!);
+      expect(means[2]).toBeGreaterThan(means[3]!);
+    }
+  });
+
+it("keeps a complete order but declines to rate abandonment and declared draws", () => {
   const abandoned = fourColonyEnd(world().state, 10, "abandoned")!;
   expect(abandoned.ffa).toMatchObject({ order: [1, 0, 2, 3], rateable: false });
   const { state } = world();
   state.colonies.forEach(c => { c.queenKills = 0; c.kills = 0; });
   const result = fourColonyEnd(state, 10, true)!;
+  expect(result).toMatchObject({ winner: null, decidedBy: "draw" });
   expect(new Set(result.ffa?.order).size).toBe(4);
   expect(result.ffa?.rateable).toBe(false);
 });

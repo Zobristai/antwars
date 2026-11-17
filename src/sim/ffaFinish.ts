@@ -7,7 +7,7 @@ export interface FfaFinish {
   /** First through fourth; always a permutation of the four colony ids. */
   readonly order: readonly [number, number, number, number];
   readonly territoryWinnerFirst: boolean;
-  /** False for abandonment, a draw, or scores which need an unapproved tie-break. */
+  /** False for abandonment or a declared draw. */
   readonly rateable: boolean;
 }
 
@@ -21,14 +21,11 @@ export function parseFfaFinish(value: unknown): FfaFinish {
   return { version: 1, order: [...f.order] as [number, number, number, number], territoryWinnerFirst: f.territoryWinnerFirst, rateable: f.rateable };
 }
 
-/** The existing ranker supplies deterministic fallback order; it does not authorize rating an exact score tie. */
+/** Preserve the existing ranker's complete score fallback, including for same-tick eliminations. */
 export function ffaFinish(ranked: readonly RankedColony[], result: MatchResult, territoryWinnerFirst: boolean): FfaFinish {
   if (ranked.length !== 4) throw new Error("a Free-for-all finish needs four colonies");
   const first = territoryWinnerFirst && result.reason === "sustained_territory" ? result.winner : null;
   const ordered = first === null ? [...ranked] : [...ranked.filter(r => r.colony === first), ...ranked.filter(r => r.colony !== first)];
-  const scores = first === null ? ordered : ordered.filter(r => r.colony !== first);
-  const ambiguous = scores.some((a, i) => scores.slice(i + 1).some(b => a.eliminatedTick === b.eliminatedTick &&
-    (a.scores.queenKills ?? 0) === (b.scores.queenKills ?? 0) && a.scores.kills === b.scores.kills));
   return parseFfaFinish({ version: 1, order: ordered.map(r => r.colony), territoryWinnerFirst,
-    rateable: !ambiguous && result.winner !== null && result.reason !== "abandoned" });
+    rateable: result.winner !== null && result.reason !== "abandoned" });
 }
