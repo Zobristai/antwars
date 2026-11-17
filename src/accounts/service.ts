@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import { z } from "zod";
+import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import {
   HANDLE_CREATION_LIMIT, KEY_ROTATION_LIMIT, RESERVED_USERNAMES,
   type CommitGuard, type Identities, type Identity, type Refusal as IdentityRefusal,
@@ -32,6 +33,7 @@ export interface AccountStores {
   readonly identities: Identities;
   readonly lobbies: Lobbies;
   readonly ratings: Ratings;
+  readonly publicVisibility?: PublicVisibility;
   /** Unset is OFF; production runs client (caller.ts). */
   readonly usernameClaimLimitRule?: UsernameClaimLimitRule;
 }
@@ -271,7 +273,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
   operation("claim_username", `Claim your one username only if you do not already have one. ${IDENTITY_GUIDANCE} ${USERNAME_RETENTION_TEXT} ${KEEP_KEY} ${KEY_HANDLING_GUIDANCE}`,
     z.object({ name: z.string().max(100).describe("Your single chosen username, not a speculative reservation: 2-24 letters, digits, - or _, starting with a letter or digit."),
       key: key.optional().describe("Only for a released account: its existing username key, retaining the same account and key."),
-      testOwnerKey: key.optional().describe("Optional proof for authorised test claims: the current key of a server-designated non-house test owner. If supplied, this proof must be valid; a new username still gets its own account and key. Never use a house key.") }),
+      testOwnerKey: key.optional().describe("Optional proof for authorised test claims: the current key of a server-designated non-house test owner. If supplied, this proof must be valid; a new username still gets its own account and key. Test names must be plain readable words, with no digits, dates or generated suffixes. Never use a house key.") }),
     async ({ identities, usernameClaimLimitRule = "off" }, { name, key: ownerKey, testOwnerKey }, headers, guard) => {
       console.info("antwar username claim header shape", usernameClaimHeaderShape(headers));
       const claimed = await identities.claimUsername(name, usernameClaimCaller(headers, usernameClaimLimitRule), ownerKey, guard, testOwnerKey);
@@ -313,7 +315,11 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
 
   operation("list_lobbies", "Find a public lobby to join with join_lobby, or create one with create_lobby. Lists open, waiting and holding lobbies oldest first, with size, seats and state; private lobbies need an invite. Follow your lobby with read_lobby; once it holds a slot, use locate_match and connect to its mcpUrl, then join with your seated identity key.",
     z.object({}),
-    async ({ lobbies }) => ok({ lobbies: await lobbies.listPublic() })),
+    async ({ lobbies, publicVisibility }) => {
+      const listed = await lobbies.listPublic();
+      return ok({ lobbies: publicVisibility ? await publiclyVisible(listed, lobby =>
+        publicVisibility.identitiesVisible([lobby.creatorId, ...lobby.colonies.flat().map(seat => seat.id)])) : listed });
+    }),
 
   operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once both colonies have a seat. ${RATING_GUIDANCE}`,
     z.object({
@@ -477,9 +483,9 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       displayName: z.string().max(100).describe("The username or full username/handle display name, never a key."),
       mode: z.enum(RANKED_MODES).nullish().describe(`The ranked mode to read: ${RANKED_MODES.join(", ")}. Omit for 1v1; any other value is refused.`),
     }),
-    async ({ identities, ratings }, args) => {
+    async ({ identities, ratings, publicVisibility }, args) => {
       const identity = await identities.findByDisplayName(args.displayName);
-      if (identity === undefined) return refuse("no_such_identity");
+      if (identity === undefined || (publicVisibility && !await publicVisibility.identitiesVisible([identity.id]))) return refuse("no_such_identity");
       return ok({ identityId: identity.id, displayName: identity.displayName, ...(await ratings.readRating(identity.id, args.mode ?? undefined)) });
     }),
 ];

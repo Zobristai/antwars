@@ -1,3 +1,4 @@
+import type { PublicVisibility } from "../identity/publicVisibility.js";
 /// <reference types="node" />
 import { FirestoreError, type Fields, type QueryResult, type Store, type TransactionRead, type TransactionStep, type Write } from "../store/firestore.js";
 import { createIdentities, type Identities } from "../identity/identities.js";
@@ -631,7 +632,7 @@ export async function startRecordFill(store: Store): Promise<void> {
  * attempt has finished or failed; a failure is logged, never thrown.
  */
 export function createRatings(
-  store: Store, identities: Pick<Identities, "findById"> = createIdentities(store),
+  store: Store, identities: Pick<Identities, "findById"> = createIdentities(store), publicVisibility?: PublicVisibility,
 ): Ratings & { readonly houseBackfill: Promise<void> } {
   const backfill = (): Promise<boolean> => markHouseRatings(store).then(
     (marked) => { if (marked > 0) console.info("antwar house ratings marked", { marked }); return true; },
@@ -652,6 +653,7 @@ export function createRatings(
     const replayIds = new Map<string, string>();
     const times = new Map<string, number | null>();
     for (const id of unique) {
+      if (publicVisibility && !await publicVisibility.lobbyVisible(id)) continue;
       const replayId = docs.get(`watchMatches/${id}`)?.replayId;
       if (replayId !== undefined && isReplayId(replayId)) replayIds.set(id, replayId);
       if (withTimes) {
@@ -712,31 +714,36 @@ export function createRatings(
       const idOf = (path: string) => path.slice(collection.length + 1);
       // The house rankings order by the house marker, so they never read another identity's row.
       const orderBy = scope === "house" ? HOUSE_RATING : "rating";
-      let page: QueryResult;
+      const publicRows: QueryResult["rows"][number][] = [];
+      let readTime = cursor?.readTime;
+      let startAfter = cursor && { value: cursor.ratingKey, path: `${collection}/${cursor.identityId}` };
+      // Storage boundaries stay internal. A public continuation names only a returned public row.
       try {
-        page = await store.query(collection, {
-          orderBy,
-          direction: "DESCENDING",
-          limit: limit + 1,
-          startAfter: cursor && { value: cursor.ratingKey, path: `${collection}/${cursor.identityId}` },
-          readTime: cursor?.readTime,
-        });
+        while (publicRows.length <= limit) {
+          const page = await store.query(collection, { orderBy, direction: "DESCENDING", limit: limit + 1, startAfter, readTime });
+          readTime ??= page.readTime;
+          for (const row of page.rows) {
+            if (!publicVisibility || await publicVisibility.identitiesVisible([idOf(row.path)])) publicRows.push(row);
+            if (publicRows.length > limit) break;
+          }
+          if (publicRows.length > limit || page.rows.length < limit + 1) break;
+          const last = page.rows.at(-1)!;
+          startAfter = { value: last.fields[orderBy]!, path: last.path };
+        }
       } catch (error) {
-        // A later page reads at its first page's time or not at all: never at the current time.
-        if (cursor && error instanceof FirestoreError && (error.status === "INVALID_ARGUMENT" || error.status === "FAILED_PRECONDITION")) {
+        // Every subsequent storage read uses the first page's snapshot, never a fresh ordering.
+        if (readTime && error instanceof FirestoreError && (error.status === "INVALID_ARGUMENT" || error.status === "FAILED_PRECONDITION")) {
           return { ok: false, reason: "cursor_expired", cause: error };
         }
         throw error;
       }
-      const rows = page.rows.slice(0, limit);
-      // Rating ordering/counts stay pinned to the cursor's readTime. Names are
-      // deliberately current: an old cursor must not attribute a former owner's
-      // history to whoever has since claimed that name.
-      const records = new Map(rows.map(({ path, fields }) => [path, storedRecord(idOf(path), fields)]));
+      const visibleRows = publicRows.slice(0, limit);
+      // Names are current, but row ordering/counts stay pinned to the first readTime.
+      const records = new Map(visibleRows.map(({ path, fields }) => [path, storedRecord(idOf(path), fields)]));
       const indexMode = isIndexMode(mode);
       const { replayIds, times } = await storedFormFacts(
-        [...records.values()].flatMap((record) => record?.form.map(({ matchId }) => matchId) ?? []), indexMode);
-      const entries = await Promise.all(rows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
+        visibleRows.flatMap(row => records.get(row.path)?.form.map(({ matchId }) => matchId) ?? []), indexMode);
+      const entries = await Promise.all(visibleRows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
         const identityId = idOf(path);
         const identity = await identities.findById(identityId);
         const record = records.get(path) ?? null;
@@ -752,9 +759,9 @@ export function createRatings(
       }));
       // A Benchmark row whose handle HOUSE_LABELS does not list shows "Unlisted model"; the server logs it.
       logUnlistedHouse("leaderboard", entries.filter(entry => entry.benchmark).map(entry => entry.displayName));
-      const last = rows.at(-1);
-      const next = page.rows.length > limit && last
-        ? encodeCursor({ readTime: cursor?.readTime ?? page.readTime, ratingKey: last.fields[orderBy]!, identityId: idOf(last.path), mode, scope })
+      const last = visibleRows.at(-1);
+      const next = publicRows.length > limit && last
+        ? encodeCursor({ readTime: readTime!, ratingKey: last.fields[orderBy]!, identityId: idOf(last.path), mode, scope })
         : undefined;
       return { ok: true, value: next === undefined ? { entries } : { entries, next } };
     },

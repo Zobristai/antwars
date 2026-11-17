@@ -78,11 +78,14 @@ describe("a match server after release, while its recording save and publication
     const lobbyId = kind === "public" ? "00000000-0000-4000-8000-000000000011" : "00000000-0000-4000-8000-000000000012";
     const slot = `${kind}-5`;
     const { docs, store } = memoryWatchStore();
-    docs.set("identities/a", { displayName: "alice" }); docs.set("identities/b", { displayName: "bob" });
+    const alice = "00000000-0000-4000-8000-000000000021", bob = "00000000-0000-4000-8000-000000000022";
+    docs.set(`identities/${alice}`, { kind: "username", displayName: "alice" });
+    docs.set(`identities/${bob}`, { kind: "username", displayName: "bob" });
+    docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: alice }, { id: bob }]) });
     holdMatch(docs, lobbyId, "run");
     const registry = createWatchRegistry(store), flakyRegistry = flaky(registry);
-    let lobby: Lobby = { id: lobbyId, kind, size: 1, state: "holding", rated: false, slot, creatorId: "a", createdAt: 0, expiresAt: 1000,
-      colonies: [[{ id: "a", displayName: "alice" }], [{ id: "b", displayName: "bob" }]], startsAt: 0, outcome: null, mode: null };
+    let lobby: Lobby = { id: lobbyId, kind, size: 1, state: "holding", rated: false, slot, creatorId: alice, createdAt: 0, expiresAt: 1000,
+      colonies: [[{ id: alice, displayName: "alice" }], [{ id: bob, displayName: "bob" }]], startsAt: 0, outcome: null, mode: null };
     let invite = "current";
     const accounts = { ratings: createRatings(store), lobbies: {
       readLobby: async (key: string) => key === lobbyId ? { ok: true, value: lobby } : { ok: false, reason: "no_such_lobby" },
@@ -118,7 +121,7 @@ describe("a match server after release, while its recording save and publication
     const other = await listen(watchRoutes({ accounts, registry, hub: otherHub, archive: sealed, replays, origin: "http://127.0.0.1:8" }));
     cleanup.push(async () => { await stop(other.server); otherHub.close(); });
 
-    await controller.prepare(lobbyId, [{ identityId: "a", displayName: "alice", colony: 0 }, { identityId: "b", displayName: "bob", colony: 1 }]);
+    await controller.prepare(lobbyId, [{ identityId: alice, displayName: "alice", colony: 0 }, { identityId: bob, displayName: "bob", colony: 1 }]);
     let state = step(createMatch(35, playable({ ...rulesConfig("redesign"), matchTicks: 3 })),
       [{ type: "join", agentId: "sim-a", placement: 0 }, { type: "join", agentId: "sim-b", placement: 1 }]).state;
     const live = { agentInfo: (agentId: string) => ({ displayName: agentId === "sim-a" ? "alice" : "bob", modelLabel: null }) } as LiveGame;

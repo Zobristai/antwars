@@ -27,6 +27,14 @@ set -euo pipefail
 # shellcheck source=deploy/cloud-run/config.sh
 source "$(dirname "$0")/config.sh"
 
+# Optional numeric secret version. Only the version and fixed reference enter deployment metadata.
+# Empty preserves the existing binding; disable removes it. No owner values are read here.
+PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION="${PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION:-}"
+if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" != disable && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty (preserve), disable, or a positive integer" >&2; exit 2
+fi
+PUBLIC_EXCLUSION_SECRET="ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS=antwars-public-excluded-owner-ids:$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
+
 # Preview mode. Runs only when the first argument is
 # exactly `preview` or `preview-remove`, and always exits; any other call takes
 # the main-only path below, unchanged.
@@ -389,6 +397,178 @@ service_state_or_absent() {
   fi
 }
 
+# Print only a policy marker (off, a canonical pinned version, or invalid),
+# followed by serving/tagged revision names and tag mappings for a service. Never read secret contents
+# or print literal values, arbitrary secret references, or an unpinned version.
+public_exclusion_metadata() {
+  node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const doc = JSON.parse(s), service = process.argv[1] === "service";
+      const spec = service ? doc.spec?.template?.spec : doc.spec;
+      const container = spec?.containers?.[0];
+      if (!container) process.exit(1);
+      const env = container.env ?? [];
+      if (!Array.isArray(env)) process.exit(1);
+      const hits = env.filter(e => e.name === "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS");
+      const ref = hits[0]?.valueFrom?.secretKeyRef;
+      console.log(hits.length === 0 ? "off" : hits.length === 1
+        && hits[0].value === undefined && ref?.name === "antwars-public-excluded-owner-ids"
+        && /^[1-9][0-9]*$/.test(ref.key) ? ref.key : "invalid");
+      if (!service) return;
+      const st = doc.status;
+      if (!st || !Array.isArray(st.traffic)) process.exit(1);
+      const refs = st.traffic.filter(t => t.percent > 0 || t.tag)
+        .map(t => t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined));
+      for (const ref of new Set(refs)) {
+        if (typeof ref !== "string" || !/^[a-z0-9-]+$/.test(ref)) process.exit(1);
+        console.log(ref);
+      }
+      for (const t of st.traffic.filter(t => t.tag)) {
+        if (typeof t.tag !== "string" || !/^[a-z][a-z0-9-]*$/.test(t.tag)) process.exit(1);
+        console.log(`${t.tag}=${t.revisionName || st.latestReadyRevisionName}`);
+      }
+    });' "$1"
+}
+
+# Revision configuration is immutable. Reuse only its policy marker within this
+# invocation; service templates, traffic and tag assignments are always reread.
+declare -A PUBLIC_REVISION_POLICIES=()
+read_public_revision_policy() {
+  local rev="$1"
+  if [[ -z "${PUBLIC_REVISION_POLICIES[$rev]:-}" ]]; then
+    PUBLIC_REVISION_POLICY="$(run_gcloud run revisions describe "$rev" --format json | public_exclusion_metadata revision)" || return 1
+    PUBLIC_REVISION_POLICIES[$rev]="$PUBLIC_REVISION_POLICY"
+  else
+    PUBLIC_REVISION_POLICY="${PUBLIC_REVISION_POLICIES[$rev]}"
+  fi
+}
+
+# Omission preserves only a coherent policy. Policy changes use one explicit
+# all-services command: targeted deploys may restate, never partially change it.
+# Inspect templates, serving and tagged revisions, not untagged idle leftovers. A failed
+# ordered all-services change is repairable by rerunning it with an explicit pin.
+declare -A EXCLUSION_TAG_REMOVALS=()
+check_live_exclusion_policy() {
+  local scope="$1" svc kind n snapshot err refs rev policy tags mapping tag first="" mixed=0 desired="" repair=0
+  local missing=() services=(antwar) policies=()
+  LIVE_EXCLUSION_BOUND=0
+  EXCLUSION_TAG_REMOVALS=()
+  if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
+    desired="$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
+    [[ "$desired" != disable ]] || desired=off
+    [[ "$scope" != all ]] || repair=1
+  fi
+  for kind in public private; do
+    local count="$LIVE_PUBLIC_SLOTS"
+    [[ "$kind" != private ]] || count="$LIVE_PRIVATE_SLOTS"
+    for ((n = 0; n < count; n++)); do services+=("antwar-$kind-$n"); done
+  done
+  for svc in "${services[@]}"; do
+    err="$(mktemp)"
+    if snapshot="$(run_gcloud run services describe "$svc" --format json 2>"$err")"; then
+      rm -f "$err"
+    elif grep -qi 'cannot find service' "$err"; then
+      rm -f "$err"
+      [[ "$svc" == antwar ]] || missing+=("$svc")
+      continue
+    else
+      rm -f "$err"
+      echo "cannot inspect public exclusion protection on $svc; check service read access and retry before deploying" >&2
+      return 1
+    fi
+    refs="$(public_exclusion_metadata service <<<"$snapshot")" || {
+      echo "cannot inspect public exclusion protection on $svc; check service metadata before deploying" >&2; return 1;
+    }
+    policies+=("${refs%%$'\n'*}")
+    tags=""
+    if [[ "$refs" == *$'\n'* ]]; then
+      for mapping in ${refs#*$'\n'}; do [[ "$mapping" != *=* ]] || tags+=" $mapping"; done
+      for rev in ${refs#*$'\n'}; do
+        [[ "$rev" != *=* ]] || continue
+        read_public_revision_policy "$rev" || {
+          echo "cannot inspect public exclusion protection on $svc; check serving revision metadata before deploying" >&2; return 1;
+        }
+        policy="$PUBLIC_REVISION_POLICY"
+        policies+=("$policy")
+        if [[ "$repair" == 1 && "$policy" != "$desired" ]]; then
+          for mapping in $tags; do
+            [[ "${mapping#*=}" == "$rev" ]] || continue
+            tag="${mapping%%=*}"
+            EXCLUSION_TAG_REMOVALS[$svc]="${EXCLUSION_TAG_REMOVALS[$svc]:+${EXCLUSION_TAG_REMOVALS[$svc]},}$tag"
+          done
+        fi
+      done
+    fi
+  done
+  for policy in "${policies[@]}"; do
+    if [[ "$policy" == invalid ]]; then echo "cannot establish a pinned public exclusion policy; correct unpinned configuration before running deploy.sh all <commit> with the pinned version (or disable)" >&2; return 1; fi
+    [[ "$policy" == off ]] || LIVE_EXCLUSION_BOUND=1
+    [[ -n "$first" ]] || first="$policy"
+    [[ "$policy" == "$first" && "$policy" != invalid ]] || mixed=1
+  done
+  if [[ "$scope" == slots && -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && "$LIVE_EXCLUSION_BOUND" == 1 && ${#missing[@]} -gt 0 ]]; then
+    echo "refusing to create missing live slots (${missing[*]}) without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions; run deploy.sh all <commit> with the pinned version (or explicit disable)" >&2
+    return 1
+  fi
+  [[ -z "$desired" || "${first:-off}" == "$desired" ]] || mixed=1
+  if [[ "$mixed" == 1 && "$repair" != 1 ]]; then
+    echo "refusing inconsistent public exclusion bindings or a partial policy change; rerun deploy.sh all <commit> with PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION set to the pinned version (or disable) so every live service receives the same policy" >&2
+    return 1
+  fi
+}
+
+# Public tag names and their pinned revision, including zero-percent routes.
+public_tag_refs() {
+  node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const st = JSON.parse(s).status;
+      if (!st || !Array.isArray(st.traffic)) process.exit(1);
+      for (const t of st.traffic.filter(t => t.tag)) {
+        const rev = t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined);
+        if (!/^[a-z][a-z0-9-]*$/.test(t.tag) || typeof rev !== "string" || !/^[a-z0-9-]+$/.test(rev)) process.exit(1);
+        console.log(`${t.tag}=${rev}`);
+      }
+    });'
+}
+
+# Re-observe the removal plan just before an explicit policy transition. No
+# service receives its new policy until every incompatible tag is gone.
+remove_incompatible_public_tags() {
+  local svc names snapshot mapping
+  [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]] || return 0
+  check_live_exclusion_policy all || deploy_stop "public exclusion tag inspection failed; no policy was updated"
+  for svc in "${!EXCLUSION_TAG_REMOVALS[@]}"; do
+    names="${EXCLUSION_TAG_REMOVALS[$svc]}"
+    stamp gcloud run services update-traffic "$svc" --remove-tags "$names" ...
+    run_gcloud run services update-traffic "$svc" --remove-tags "$names" || deploy_stop "removing incompatible tags on $svc failed; no policy was updated"
+    snapshot="$(run_gcloud run services describe "$svc" --format json | public_tag_refs)" \
+      || deploy_stop "cannot verify tag removal on $svc; no policy was updated"
+    for mapping in $snapshot; do
+      [[ ",$names," != *",${mapping%%=*},"* ]] || deploy_stop "$svc retained an incompatible tag; no policy was updated"
+    done
+  done
+  check_live_exclusion_policy all || deploy_stop "public exclusion tag recheck failed; no policy was updated"
+  [[ ${#EXCLUSION_TAG_REMOVALS[@]} -eq 0 ]] || deploy_stop "incompatible public tags remain; no policy was updated"
+}
+
+# Direct recovery is safe only when both revisions use the same public policy.
+# Unknown policy stops the deploy rather than advertising an unchecked rollback.
+public_rollback_policy_matches() {
+  local outgoing current
+  read_public_revision_policy "$1" || deploy_stop "cannot inspect outgoing policy for rollback"
+  outgoing="$PUBLIC_REVISION_POLICY"
+  read_public_revision_policy "$2" || deploy_stop "cannot inspect current policy for rollback"
+  current="$PUBLIC_REVISION_POLICY"
+  [[ "$outgoing" != invalid && "$current" != invalid ]] || deploy_stop "cannot establish public rollback policy"
+  [[ "$outgoing" == "$current" ]]
+}
+
+# An incompatible outgoing game revision stays saved, untagged, for recovery.
+public_game_rollback_tag() {
+  PUBLIC_ROLLBACK_TAG=""
+  if public_rollback_policy_matches "$1" "$2"; then PUBLIC_ROLLBACK_TAG="$3"; fi
+}
+
 # The one way every mode deploys a service and moves its traffic: by
 # the name of the revision this deploy created, never to "latest", so a failed
 # or no-op deploy can never send traffic to an older run's leftover revision.
@@ -408,6 +588,9 @@ deploy_named() {
   read -r serving before _ _ < <(service_state_or_absent "$svc") \
     || deploy_stop "cannot read $svc before its deploy"
   if [[ "$serving" == ABSENT ]]; then
+    if [[ "${MODE:-}" == slots && "${TARGET:-}" == live && "${LIVE_EXCLUSION_BOUND:-0}" == 1 && -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
+      deploy_stop "refusing to create missing live slot $svc without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions"
+    fi
     before=""
     serving=none
     flags=()
@@ -570,16 +753,23 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 
   # Sets SLOT_FLAGS, slot $1's whole shape at address $2 with secrets $3. It
   # reads PROJECT, NAMESPACE, PUBLIC_SLOTS, PRIVATE_SLOTS, TEMPLATE, EXTRA_ENV and SHA.
-  # The --set-env-vars and --set-secrets flags replace every variable and
-  # secret. At most one instance, and none kept running while idle: the server
+  # Live settings update only the named values; unrelated settings are preserved.
+  # Preview settings retain their replacement behavior. At most one instance, and none kept running while idle: the server
   # is woken when its slot is assigned. No request reaches an instance
   # before /ready answers 200, which happens once it holds the slot.
   # The server runs as antwar-run through the metadata server; there is no key
   # file.
   slot_flags() {
+    local secret_flag=--set-secrets env_flag=--set-env-vars secrets="$3"
+    local remove_secrets=()
+    if [[ "$NAMESPACE" == live ]]; then
+      secret_flag=--update-secrets; env_flag=--update-env-vars
+      if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then remove_secrets=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+      elif [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then secrets+=",$PUBLIC_EXCLUSION_SECRET"; fi
+    fi
     SLOT_FLAGS=(
-      --set-env-vars "ANTWAR_SLOT=$1,ANTWAR_PUBLIC_URL=$2,ANTWAR_STORE_NAMESPACE=$NAMESPACE,GCLOUD_PROJECT=$PROJECT,ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS,ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS,ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE$EXTRA_ENV"
-      --set-secrets "$3"
+      "$env_flag" "ANTWAR_SLOT=$1,ANTWAR_PUBLIC_URL=$2,ANTWAR_STORE_NAMESPACE=$NAMESPACE,GCLOUD_PROJECT=$PROJECT,ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS,ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS,ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE$EXTRA_ENV"
+      "$secret_flag" "$secrets" "${remove_secrets[@]}"
       --service-account "$RUN_SA"
       --min-instances 0 --max-instances 1
       --no-cpu-throttling
@@ -889,6 +1079,12 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
           fi
           echo "  $svc $serving"
         done
+        if [[ "$rc" != 0 ]]; then
+          echo "updated revisions created by this run:"
+          for svc in "${SERVICES[@]}"; do
+            [[ -z "${NEW_REV[$svc]:-}" ]] || echo "  $svc ${NEW_REV[$svc]}"
+          done
+        fi
         for note in ${notes[@]+"${notes[@]}"}; do echo "left: $note"; done
       } >"$STATUS_FILE.tmp" && mv -f "$STATUS_FILE.tmp" "$STATUS_FILE" \
         || echo "could not write the deploy status file $STATUS_FILE" >&2
@@ -960,6 +1156,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
             case "--command": c.command = list(v); break;
             case "--args": c.args = list(v); break;
             case "--set-env-vars": case "--update-env-vars": for (const [name, value] of kv(v)) c.env.push({ name, value }); break;
+            case "--remove-secrets": break; // A newly created service has no prior binding to remove.
             case "--set-secrets": case "--update-secrets":
               for (const [name, ref] of kv(v)) c.env.push({ name, valueSource: { secretKeyRef: { secret: ref.split(":")[0], version: ref.split(":")[1] } } });
               break;
@@ -998,6 +1195,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     first_deploy_requires() {
       local common="ANTWAR_RECORD_INPUT_BUCKET ANTWAR_REPLAY_BUCKET ANTWAR_CODE_VERSION ANTWAR_PRIVATE_REPLAY_KEY"
       local served="GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then served+=" ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS"; fi
       if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common NODE_OPTIONS"
       elif [[ "$1" == "$GAME_SERVICE" ]]; then echo "$common $served ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_OPERATOR_TOKEN"
       elif [[ "$1" == "${PREFIX}public-"* ]]; then echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_OPERATOR_TOKEN"
@@ -1090,25 +1288,33 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 
     # One rollback per service, the outgoing revision: tagged r<first 8 of its
     # commit> on the game; untagged on records and on each slot
-    #, whose rollback is restored by revision name, since a tagged old
-    # slot revision can start an instance that takes the slot. Every other tag
-    # is removed; traffic is not changed.
+    #. A slot can roll back directly by revision name only with matching policy;
+    # a tagged old slot revision can start an instance that takes the slot.
+    # Every other tag is removed; traffic is not changed.
     keep_rollback() {
       local svc="$1" tag=""
       if [[ "$FIRST_DEPLOY" == 1 ]]; then
         stamp "$svc: no rollback: first deploy, it had no earlier revision"
       elif [[ "$svc" == "$GAME_SERVICE" ]]; then
-        tag="r${OUT_SHA[$svc]:0:8}"
-        stamp gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" ...
-        run_gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" || stop "tagging the rollback of $svc failed"
-        stamp "$svc" rollback: gcloud run services update-traffic "$svc" --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" --to-tags "$tag=100"
+        public_game_rollback_tag "${OUT_REV[$svc]}" "${NEW_REV[$svc]}" "r${OUT_SHA[$svc]:0:8}"
+        tag="$PUBLIC_ROLLBACK_TAG"
+        if [[ -n "$tag" ]]; then
+          stamp gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" ...
+          run_gcloud run services update-traffic "$svc" --set-tags "$tag=${OUT_REV[$svc]}" || stop "tagging the rollback of $svc failed"
+          stamp "$svc" rollback: gcloud run services update-traffic "$svc" --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" --to-tags "$tag=100"
+        else
+          run_gcloud run services update-traffic "$svc" --clear-tags || stop "clearing the tags of $svc failed"
+          stamp "$svc" rollback: revision "${OUT_REV[$svc]}", untagged: redeploy with the current public exclusion policy
+        fi
       else
         stamp gcloud run services update-traffic "$svc" --clear-tags ...
         run_gcloud run services update-traffic "$svc" --clear-tags || stop "clearing the tags of $svc failed"
         if [[ "$svc" == "$RECORDS_SERVICE" ]]; then
           stamp records rollback: revision "${OUT_REV[$svc]}", untagged: "$RECORDS_ROLLBACK"
-        else
+        elif public_rollback_policy_matches "${OUT_REV[$svc]}" "${NEW_REV[$svc]}"; then
           stamp "$svc" rollback: gcloud run services update-traffic "$svc" --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" --to-revisions "${OUT_REV[$svc]}=100"
+        else
+          stamp "$svc" rollback: revision "${OUT_REV[$svc]}", untagged: redeploy with the current public exclusion policy
         fi
       fi
       check_tags_and_traffic "$svc" "${tag:+${OUT_REV[$svc]}}" "$tag" latest-only \
@@ -1255,6 +1461,11 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       else
         for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE"; done
       fi
+      # Policy inspection requires readable rollback revisions. A blocked precheck
+      # already refuses deployment; recheck policy once those prerequisites hold.
+      if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
+        check_live_exclusion_policy all || { block "public exclusion policy must be consistent; rerun all with an explicit pinned version or disable" || true; [[ "$PRECHECK" == 1 ]] || return 1; }
+      fi
     }
 
     # --precheck: the preflight alone, changing nothing (no build, deploy, traffic
@@ -1347,6 +1558,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     STEP=build
     image_digest "$REPO" "$SHA"
     IMAGE="$REPO@$DIGEST"
+    STEP="public tag policy"
+    remove_incompatible_public_tags
 
     # 2. Records. Full gate: only while no lobby is open (no match is saved
     # unavailable). Rolling: the outgoing builder keeps running beside the new one,
@@ -1445,13 +1658,16 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # none. The post-mortem still needs cgroup v2 to read its memory, hence --execution-environment gen2 (game only).
     GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
+    GAME_REMOVE_SECRETS=()
+    if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then GAME_REMOVE_SECRETS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+    elif [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then GAME_SECRETS+=",$PUBLIC_EXCLUSION_SECRET"; fi
     if [[ "$FIRST_DEPLOY" == 1 ]]; then
       GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
       GAME_SECRETS+=",$OPERATOR_TOKEN_SECRET"
     fi
     swap "$GAME_SERVICE" \
       --update-env-vars "$GAME_ENV" \
-      --update-secrets "$GAME_SECRETS" \
+      --update-secrets "$GAME_SECRETS" "${GAME_REMOVE_SECRETS[@]}" \
       --service-account "$RUN_SA" \
       --min-instances 1 --max-instances 1 \
       --max 1 \
@@ -1472,7 +1688,15 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     if [[ "$SITE" != 200 && "$FIRST_DEPLOY" == 1 ]]; then
       stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; nothing was reverted, since this first deploy had no earlier revision of $GAME_SERVICE"
     elif [[ "$SITE" != 200 ]]; then
-      run_gcloud run services update-traffic "$GAME_SERVICE" --to-revisions "${OUT_REV[$GAME_SERVICE]}=100" || true
+      if ! public_rollback_policy_matches "${OUT_REV[$GAME_SERVICE]}" "$CREATED"; then
+        stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; $GAME_SERVICE was not reverted because the outgoing public exclusion policy differs; explicit repair required: rerun deploy.sh all <commit> with the intended pinned policy (or disable)"
+      fi
+      run_gcloud run services update-traffic "$GAME_SERVICE" --to-revisions "${OUT_REV[$GAME_SERVICE]}=100" \
+        || stop "$GAME_SERVICE restoration failed after the site health check; explicit repair required"
+      RESTORED_STATE="$(service_state "$GAME_SERVICE")" \
+        || stop "$GAME_SERVICE restoration could not be inspected after the site health check; explicit repair required"
+      [[ "${RESTORED_STATE%% *}" == "${OUT_REV[$GAME_SERVICE]}" ]] \
+        || stop "$GAME_SERVICE restoration was not confirmed after the site health check; explicit repair required"
       stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; $GAME_SERVICE traffic was reverted to ${OUT_REV[$GAME_SERVICE]}"
     fi
     NEW_REV[$GAME_SERVICE]="$CREATED"
@@ -1530,6 +1754,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       for M in "${MISMATCHED[@]}"; do echo "mismatch: $M" >&2; done
       stop "not done: the services above do not all serve $SHA"
     fi
+    check_live_exclusion_policy verify || stop "final public exclusion policy check failed"
     # Rolling: the new build's declaration goes last, after the check above, so an
     # outgoing builder still stopping never takes the new build's inputs.
     [[ ${#RUNNING[@]} -eq 0 ]] || clear_running "$SHA"
@@ -1672,15 +1897,18 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       live_slot_settings "$SHA"
       require_main_commit "$SHA"
     fi
+    SLOTS=()
+    for ((n = 0; n < PUBLIC_SLOTS; n++)); do SLOTS+=("public-$n"); done
+    for ((n = 0; n < PRIVATE_SLOTS; n++)); do SLOTS+=("private-$n"); done
+    if [[ "$TARGET" == live ]]; then
+      check_live_exclusion_policy slots || deploy_stop "public exclusion preflight refused; no live slot was changed"
+    fi
     image_digest "$REPO" "$SHA"
 
     project_number
     # Every slot server wakes the slot it hands a lobby to at this address.
     TEMPLATE="https://$PREFIX{slot}-$PROJECT_NUMBER.$REGION.run.app"
 
-    SLOTS=()
-    for ((n = 0; n < PUBLIC_SLOTS; n++)); do SLOTS+=("public-$n"); done
-    for ((n = 0; n < PRIVATE_SLOTS; n++)); do SLOTS+=("private-$n"); done
     SERVICES=()
     for SLOT in "${SLOTS[@]}"; do
       SERVICE="$PREFIX$SLOT"
@@ -1789,12 +2017,15 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 fi
 
 SHA="${1:-}"
-if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+if [[ $# -ne 1 || ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "usage: $0 <full 40-hex commit sha on main>" >&2
   exit 2
 fi
 
 load_deploy_config ACCOUNT PROJECT BUILD_BUCKET BUILD_SA RUN_SA RECORD_INPUT_BUCKET
+PUBLIC_SECRET_FLAGS=()
+if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then PUBLIC_SECRET_FLAGS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+elif [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then PUBLIC_SECRET_FLAGS=(--update-secrets "$PUBLIC_EXCLUSION_SECRET"); fi
 REGION=australia-southeast1
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/antwar/server:$SHA"
 BUCKET="gs://$BUILD_BUCKET"
@@ -1856,6 +2087,9 @@ read -r _ OUT_SHA < <(revision_facts "$OUT_REV" "$WORK/rollback-revision.json") 
   || { echo "refusing: cannot read the image digest and ANTWAR_CODE_VERSION of $OUT_REV" >&2; exit 1; }
 ROLLBACK_TAG="r${OUT_SHA:0:8}"
 
+check_live_exclusion_policy game || deploy_stop "public exclusion preflight refused; the game was not changed"
+
+
 stamp gcloud builds submit "$WORK/source.tgz" --tag "$IMAGE" ...
 CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
   --account "$ACCOUNT" --project "$PROJECT" \
@@ -1868,7 +2102,7 @@ CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
 # The new revision gets all traffic by name (deploy_named), never "latest".
 stamp gcloud run deploy antwar --image "$IMAGE" --no-traffic ...
 deploy_named antwar \
-  --image "$IMAGE" \
+  --image "$IMAGE" "${PUBLIC_SECRET_FLAGS[@]}" \
   --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY" \
   --service-account "$RUN_SA" \
   --min-instances 1 --max-instances 1 \
@@ -1882,17 +2116,22 @@ deploy_named antwar \
   --no-invoker-iam-check \
   --labels "app=antwar,commit=$SHA"
 
-# --set-tags replaces every tag, so only the one rollback revision
-# stays warm besides the serving one; traffic is left where deploy_named moved it.
-stamp gcloud run services update-traffic antwar --set-tags "$ROLLBACK_TAG=$OUT_REV" ...
-CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud run services update-traffic antwar \
-  --account "$ACCOUNT" --project "$PROJECT" \
-  --region "$REGION" \
-  --set-tags "$ROLLBACK_TAG=$OUT_REV" </dev/null
-stamp game rollback: revision "$OUT_REV", tag "$ROLLBACK_TAG"
-echo "gcloud run services update-traffic antwar --account $ACCOUNT --project $PROJECT --region $REGION --to-tags $ROLLBACK_TAG=100"
+# Keep only a policy-compatible rollback tag; otherwise retain its saved revision untagged.
+public_game_rollback_tag "$OUT_REV" "$CREATED_NEW" "$ROLLBACK_TAG"
+ROLLBACK_TAG="$PUBLIC_ROLLBACK_TAG"
+if [[ -n "$ROLLBACK_TAG" ]]; then
+  stamp gcloud run services update-traffic antwar --set-tags "$ROLLBACK_TAG=$OUT_REV" ...
+  CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud run services update-traffic antwar \
+    --account "$ACCOUNT" --project "$PROJECT" --region "$REGION" \
+    --set-tags "$ROLLBACK_TAG=$OUT_REV" </dev/null
+  stamp game rollback: revision "$OUT_REV", tag "$ROLLBACK_TAG"
+  echo "gcloud run services update-traffic antwar --account $ACCOUNT --project $PROJECT --region $REGION --to-tags $ROLLBACK_TAG=100"
+else
+  run_gcloud run services update-traffic antwar --clear-tags || deploy_stop "clearing game rollback tags failed"
+  stamp game rollback: revision "$OUT_REV", untagged: redeploy with the current public exclusion policy
+fi
 stamp gcloud run services describe antwar ...
-check_tags_and_traffic antwar "$OUT_REV" "$ROLLBACK_TAG" "" \
+check_tags_and_traffic antwar "${ROLLBACK_TAG:+$OUT_REV}" "$ROLLBACK_TAG" "" \
   || { echo "deployed $SHA, but antwar keeps a tag other than $ROLLBACK_TAG on $OUT_REV (above)" >&2; exit 1; }
 
 stamp done "$SHA"

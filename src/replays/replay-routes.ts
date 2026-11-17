@@ -1,3 +1,4 @@
+import type { PublicVisibility } from "../identity/publicVisibility.js";
 import { addAbortListener } from "node:events";
 import { pipeline } from "node:stream/promises";
 import { isGzip, logUnavailable, peek, relayed } from "../net/relay.js";
@@ -10,7 +11,7 @@ import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
  * correction may change (correctedRecordings.ts) is cached for a minute only.
  * A gzip object (by its magic bytes) is labelled content-encoding gzip; a failed read answers a sanitized, logged 503.
  */
-export function replayRoutes(source: ReplaySource): MountHandler {
+export function replayRoutes(source: ReplaySource, publicVisibility?: PublicVisibility): MountHandler {
   return async (req, res) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
     const id = path.slice("/replays/".length);
@@ -26,6 +27,9 @@ export function replayRoutes(source: ReplaySource): MountHandler {
     const cancel = () => abort.abort();
     res.once("close", cancel);
     try {
+      if (publicVisibility && !await publicVisibility.replayVisible(id)) {
+        res.writeHead(404, { "cache-control": "no-store" }).end(); return;
+      }
       const object = await source.open(id, abort.signal);
       if (abort.signal.aborted) { object?.body.destroy(); return; }
       if (object === null) { res.writeHead(404, { "cache-control": "no-store" }).end(); return; }
@@ -37,7 +41,7 @@ export function replayRoutes(source: ReplaySource): MountHandler {
         res.writeHead(200, {
           "content-type": "application/octet-stream",
           ...(isGzip(start.head) ? { "content-encoding": "gzip" } : {}),
-          "cache-control": CORRECTED_REPLAY_IDS.has(id) ? "public, max-age=60, no-transform" : "public, max-age=31536000, immutable, no-transform",
+          "cache-control": publicVisibility ? "no-store, no-transform" : CORRECTED_REPLAY_IDS.has(id) ? "public, max-age=60, no-transform" : "public, max-age=31536000, immutable, no-transform",
           ...(object.contentLength === undefined ? {} : { "content-length": object.contentLength }),
         });
         // Both ends apply backpressure, including after the small prefix lookahead.

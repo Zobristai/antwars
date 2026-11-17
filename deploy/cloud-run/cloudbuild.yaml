@@ -22,7 +22,8 @@
 # ($PROJECT_ID); every other setting of deploy.sh's private config
 # (deploy/cloud-run/config.sh, deploy.env.example) is a substitution of the same
 # name with a leading underscore, set on the command line, and
-# none has a default here. An empty or missing one stops deploy.sh before any
+# required settings have no default here. The optional public exclusion secret
+# version defaults empty (preserve), and contains no owner values. An empty or missing required setting stops deploy.sh before any
 # change. The service account (the config's ACCOUNT; cloudbuild-run.sh refuses
 # to run as any other identity) is set on the command line. Build
 # logs go to Cloud Logging, as a build that runs as its own service account
@@ -35,6 +36,7 @@ steps:
       - ANTWAR_TAG=$TAG_NAME
       - ANTWAR_COMMIT=$COMMIT_SHA
       - ANTWAR_ARGS=$_ARGS
+      - PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION=$_PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION
       - ANTWAR_BUILD_ID=$BUILD_ID
       - ANTWAR_CFG_ACCOUNT=$_ACCOUNT
       - ANTWAR_CFG_PROJECT=$PROJECT_ID
@@ -55,8 +57,11 @@ steps:
           || { echo "refusing: commit $$ANTWAR_COMMIT is not on origin/main; nothing from it runs" >&2; exit 1; }
         git -C /tmp/antwars checkout --quiet --detach "$$ANTWAR_COMMIT"
         exec bash /tmp/antwars/deploy/cloud-run/cloudbuild-run.sh
+# Empty preserves an existing exclusion binding; disable explicitly removes it.
+# A positive integer pins the secret version without exposing its contents.
 substitutions:
   _ARGS: ''
+  _PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: ''
 options:
   logging: CLOUD_LOGGING_ONLY
 # A full-gate `all` run can wait up to ANTWAR_DEPLOY_ROUNDS (120) minute-long

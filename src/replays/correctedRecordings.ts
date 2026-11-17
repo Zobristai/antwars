@@ -226,6 +226,7 @@ export function correctedHistorySource(source: HistorySource, store: Pick<Store,
   const applied = appliedReader(store);
   return {
     list: (pageToken, signal) => source.list(pageToken, signal),
+    continuationAfter: source.continuationAfter === undefined ? undefined : id => source.continuationAfter!(id),
     async listed(rows) {
       return Promise.all(rows.map(async row => {
         const correction = CORRECTIONS.get(row.id);

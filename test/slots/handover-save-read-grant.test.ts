@@ -114,11 +114,11 @@ if (a[0] === "artifacts") console.log("sha256:${"b".repeat(64)}");
 if (a[0] === "projects") console.log("123456789");
 if (a[0] === "run" && a[1] === "deploy") service(a[2]).created += 1;
 if (a[0] === "run" && a[1] === "services" && a[2] === "update-traffic") service(a[3]).serving = a[a.indexOf("--to-revisions") + 1].replace(/=100$/, "");
-if (a[0] === "run" && a[1] === "services" && a[2] === "describe") console.log(JSON.stringify({ metadata: { annotations: {
+if (a[0] === "run" && a[1] === "services" && a[2] === "describe") console.log(JSON.stringify({ spec: { template: { spec: { containers: [{ env: [] }] } } }, metadata: { annotations: {
   "run.googleapis.com/urls": JSON.stringify(["https://" + a[3] + "-123456789.australia-southeast1.run.app"]) } }, status: {
   ...(latest(a[3]) ? { latestCreatedRevisionName: latest(a[3]), latestReadyRevisionName: latest(a[3]) } : {}),
   traffic: service(a[3]).serving ? [{ revisionName: service(a[3]).serving, percent: 100 }] : [] } }));
-if (a[0] === "run" && a[1] === "revisions" && a[2] === "describe") console.log(JSON.stringify({ status: { conditions: [{ type: "Ready", status: "True" }] } }));
+if (a[0] === "run" && a[1] === "revisions" && a[2] === "describe") console.log(JSON.stringify({ spec: { containers: [{ env: [] }] }, status: { conditions: [{ type: "Ready", status: "True" }] } }));
 fs.writeFileSync(statePath, JSON.stringify(services));
 `, { mode: 0o755 });
   writeFileSync(join(dir, "bin", "git"), `#!${process.execPath}
@@ -158,7 +158,7 @@ describe("slot servers' read-back of handover saves under the canonical setup", 
     const slotDeploys = scriptCalls(DEPLOY, ["slots", "live", "a".repeat(40)]).filter((call) => call[0] === "run" && call[1] === "deploy");
     expect(slotDeploys).toHaveLength(16);
     const deployed = (call: readonly string[]) => {
-      const env = flag(call, "--set-env-vars")!.split(",").map((kv) => kv.split("="));
+      const env = (flag(call, "--update-env-vars") ?? flag(call, "--set-env-vars"))!.split(",").map((kv) => kv.split("="));
       return { identity: flag(call, "--service-account"), bucket: env.find(([name]) => name === "ANTWAR_RECORD_INPUT_BUCKET")?.[1] };
     };
     const shapes = new Set(slotDeploys.map((call) => JSON.stringify(deployed(call))));
