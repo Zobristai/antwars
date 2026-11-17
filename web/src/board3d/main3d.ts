@@ -516,7 +516,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   const frameTimeLine = () => {
     const overlay = overlayCosts.length ? ` · overlay ${median(overlayCosts).toFixed(1)} ms` : "";
     const m = quality.lastMedian;
-    const head = m === null ? `3D measuring (${quality.filling} of ${WINDOW} frames)` : `3D ${m.toFixed(1)} ms median (${WINDOW} frames)`;
+    const head = m === null ? `3D measuring (${quality.filling} of ${WINDOW} frames)` : `3D ${m.toFixed(1)} ms median (${quality.lastSampleCount} frames)`;
     return `${head} · tier ${quality.tier}${overlay}`;
   };
 

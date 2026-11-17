@@ -130,6 +130,24 @@ describe("quality step-down and slow fallback", () => {
     return out;
   };
 
+  it("falls back after three consecutive multi-second intervals, not a lone pause", () => {
+    const q = new QualityController(0);
+    expect([0, 2500, 5000].map(t => q.frame(t))).toEqual(["hold", "hold", "hold"]);
+    expect(q.frame(7500)).toBe("fallback");
+    expect(q.lastMedian).toBe(2500);
+    expect(q.lastSampleCount).toBe(3);
+    const paused = new QualityController(0);
+    expect([0, 8000, 8016, 10516, 13016, 13032].map(t => paused.frame(t))).toEqual(Array(6).fill("hold"));
+  });
+
+  it("does not accelerate fallback for ordinary slowness below two seconds", () => {
+    for (const ms of [16, 34, 46, 100, 385, 1999]) {
+      const q = new QualityController(0);
+      expect(feed(q, { t: 0 }, WINDOW, ms)).toEqual([]);
+      expect(q.filling).toBe(WINDOW - 1);
+    }
+  });
+
   it("starts phones (coarse pointer or short side of 500 px or less) one tier down", () => {
     expect(startTier({ coarsePointer: false, shortSide: 1080 })).toBe(0);
     expect(startTier({ coarsePointer: false, shortSide: 390 })).toBe(1);

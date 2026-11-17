@@ -187,7 +187,12 @@ it.each(["construction", "error event", "silent"])("%s startup failure falls bac
     // The inline decoder still uses the production bounded admission and full-snapshot resync.
     for (let i = 0; i <= INBOX_CAP; i++) sources[1]!.emit(packets[1]!);
     expect(sources[1]!.readyState).toBe(2);
-    expect(source.take(now)).toEqual([]);
+    expect(source.take(now)).toEqual([]); // The admitted prefix is still decoding.
+    expect(sources).toHaveLength(2);
+    await vi.waitFor(() => expect(source.feed!.inbox.size).toBe(INBOX_CAP));
+    // Only now may a frame drain the accepted work and reopen for a fresh full.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(source.take(now).map(a => a.kind)).toEqual(Array(INBOX_CAP).fill("inline"));
     expect(sources).toHaveLength(3);
     await vi.waitFor(() => expect(source.feed!.inbox.size).toBe(1));
     expect(source.take(now).map((a) => a.kind)).toEqual(["inline"]);

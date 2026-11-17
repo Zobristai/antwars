@@ -74,8 +74,8 @@ function client() {
   const overflow = async () => {
     // No draw/take: the same frame gap whether a tab is hidden, a window is covered, or frames stall.
     for (let tick = 21; sources.at(-1)!.readyState !== 2; tick++) await deliver(message(tick), tick * TICK_MS);
-    expect(feed.inbox.size).toBe(0);
-    expect(feed.inbox.dropped).toBe(INBOX_CAP + 1);
+    expect(feed.inbox.size).toBe(INBOX_CAP);
+    expect(feed.inbox.dropped).toBe(1);
     expect(sources).toHaveLength(1);
   };
   return { sources, states, feed, playback, frame, panel, draw, deliver, start, overflow };
