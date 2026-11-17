@@ -143,7 +143,8 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
       expect(table.querySelector("colgroup")!.children.map(col => col.className)).toEqual(["c-start", "c-type", "c-model", "c-model", "c-status", "c-go"]);
       expect(table.querySelector("thead")!.byClass("c-go")[0]!.children.every(node => node.className === "d1p-sr")).toBe(true);
     }
-    expect(recordings.card.byClass("d1p-rec-head").map(node => node.textContent)).toEqual(["TimeGame typeColonies"]);
+    expect(recordings.card.byClass("d1p-rec-head").map(node => node.textContent)).toEqual(["TimeGame typeVery LargeLake HodgesSweetwaterLake Skinner"]);
+    expect(recordings.list.byClass("d1p-rec-colony")).toEqual([]);
     expect(recordings.list.children[0]!.byClass("d1p-rec-slot")).toHaveLength(4);
     // Waiting and Live rows retain their six cells.
     for (const { table } of [waiting, liveList]) expect(bodyRows(table).every(row => row.children.length === 6 && row.children.every(cell => cell.colSpan === 1))).toBe(true);
@@ -424,7 +425,8 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
     expect(liveList.card.byClass("d1p-result-tag")).toEqual([]);
     const row = recordings.list.children[0]!;
     expect(row.byClass("d1p-rec-type")[0]!.textContent).toBe("Free-for-all");
-    expect(row.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(QUADRANTS.map(name => name.replace(/ Colony$/, "")));
+    expect(recordings.card.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(QUADRANTS.map(name => name.replace(/ Colony$/, "")));
+    expect(row.byClass("d1p-rec-colony")).toEqual([]);
     expect(inks(row)).toEqual(colonyColours(QUADRANTS).map(colourCss));
     expect(row.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["ann", "bob", "cat", "dan"]);
     expect(row.byClass("is-won")[0]!.byClass("d1p-rec-player")[0]!.textContent).toBe("cat");
@@ -581,7 +583,8 @@ describe("a model label with nothing after its provider prefix", () => {
       expect(slots).toHaveLength(4);
       slots.forEach((slot, index) => {
         if (!order.includes(index)) { expect(slot.textContent).toBe("—"); return; }
-        expect(slot.byClass("d1p-rec-colony")[0]!.textContent).toBe(names[index]!.replace(/ Colony$/, ""));
+        expect(slot.byClass("d1p-rec-colony")).toEqual([]);
+        expect(slot.byClass("d1p-sr")[0]!.textContent).toBe(`${names[index]}: `);
         expect(slot.byClass("d1p-rec-name")[0]!.textContent).toBe(`player-${index}`);
         expect(slot.byClass("d1p-elo-badge")[0]!.textContent).toBe(`${1500 + index} ± 80`);
         expect(slot.classes().includes("is-won")).toBe(index === order[0]);
@@ -608,7 +611,8 @@ describe("a model label with nothing after its provider prefix", () => {
   it("retains unknown historical colony names rather than losing their players", () => {
     const { p, recordings } = show({ recordings: { status: "ready", rows: [{ ...recording, colonyNames: ["Historical Colony", "Very Large Colony"] }] } });
     const slots = recordings.list.byClass("d1p-rec-slot");
-    expect(slots.map(slot => slot.byClass("d1p-rec-colony")[0]?.textContent ?? slot.textContent)).toEqual(["Very Large", "Historical", "—", "—"]);
+    expect(slots.map(slot => slot.byClass("d1p-sr")[0]?.textContent ?? slot.textContent)).toEqual(["Very Large Colony: ", "Historical Colony: ", "—", "—"]);
+    expect(recordings.list.byClass("d1p-rec-colony")).toEqual([]);
     expect(recordings.list.byClass("d1p-rec-player")).toHaveLength(2);
     p.mounted.destroy();
   });

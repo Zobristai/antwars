@@ -500,7 +500,6 @@ td.c-model > .d1p-colony { display: block; }
   align-items: end; padding-block: 9px 7px; border-top: 1px solid var(--aw-line);
   font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); white-space: nowrap;
 }
-.d1p-rec-head > .is-slots { grid-column: 3 / 7; }
 .d1p-rec-rows > li {
   align-items: baseline; padding-block: 7px 8px; border-top: 1px solid var(--d1p-hair);
   font-size: 12px; line-height: 16px; color: var(--aw-ink); font-variant-numeric: tabular-nums;
@@ -528,7 +527,8 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-dash { color: var(--aw-ink-3); }
 .d1p-rec4 .d1p-rec-replay { justify-self: end; min-height: 0; font-size: 12px; }
 @container d1p-card (width < 60rem) {
-  .d1p-rec-head { display: none; }
+  .d1p-rec-head { grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 8px; }
+  .d1p-rec-head > :is(.is-when, .is-type) { display: none; }
   .d1p-rec-rows > li { position: relative; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 8px; row-gap: 8px; align-items: start; padding-block: 10px 12px; }
   .d1p-rec-slot { grid-row: 1; }
   /* The start and the type on one line under the slots, Replay at its end; where the line breaks, the next part starts

@@ -482,17 +482,16 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
 }
 
 // ---------------------------------------------------------------- Recordings: one row per recording, four colony slots
-// Colony heads: every recording is one
-// row, whatever its colony count, with four colony slots side by side; a slot with no colony shows a dash. A used slot
-// heads its players with its colony's name in the colony's ink, in the caps the list's column heads use, and holds one
-// line per player: name, then level, Fast and seat count in the quiet ink, then the rating at the slot's end. The
+// Every recording is one row, whatever its colony count, with four colony slots side by side under one shared row of
+// colony names in their original ink. A slot with no colony shows a dash. A used slot holds one line per player:
+// name, then level, Fast and seat count in the quiet ink, then the rating at the slot's end. The
 // winner keeps the ink; the other colonies' players step down to the quiet ink, the row's own metadata treatment. Time
 // and Game type lead the row, a draw, an abandonment or an incomplete record said once under the type; Replay is a text
 // link at the row's end. One head row over the list, never repeated. Live now and Waiting keep their tables.
 
 /** Every Recordings row's colony slots: four, side by side, at every colony count. */
 export const SLOTS = 4;
-/** A colony's name in its slot, without the "Colony" every name ends in; the whole name is its title and is read. */
+/** A colony's shared heading, without the "Colony" every name ends in; the whole name remains in its title. */
 export const slotName = (name: string): string => name.replace(/ Colony$/, "");
 
 /** The words a row says once about its whole match: a draw or an abandonment, and a record that is not complete. */
@@ -508,7 +507,13 @@ export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] 
 function recordingSlots(doc: Document, rows: readonly MatchRow[], loading: boolean): HTMLElement[] {
   const head = h(doc, "div", "d1p-rec-head");
   head.setAttribute("aria-hidden", "true");
-  head.append(h(doc, "span", "is-when", MATCH_HEADS[0]), h(doc, "span", "is-type", MATCH_HEADS[1]), h(doc, "span", "is-slots", FOUR_COLONY_HEAD));
+  head.append(h(doc, "span", "is-when", MATCH_HEADS[0]), h(doc, "span", "is-type", MATCH_HEADS[1]));
+  SUPERCOLONY_NAMES.forEach(({ label, note, colour }, colony) => {
+    const heading = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(label));
+    heading.style.setProperty(`--aw-k${colony}`, colourCss(colour));
+    heading.title = `${label} — ${note}`;
+    head.append(heading);
+  });
   const list = h(doc, "ol", "d1p-rec-rows");
   list.setAttribute("aria-labelledby", "d1p-rec-title");
   if (loading) {
@@ -566,8 +571,8 @@ export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNam
   return slots;
 }
 
-/** One colony slot: the colony's name over its player lines (or its quiet note), or a dash where the match has no such
- * colony. A slot is the winner's, a loser's, or neither (a draw, an abandonment, no result). */
+/** One colony slot: player lines (or a quiet note) under the shared header, or a dash where the match has no such
+ * colony. Keep its own name for screen readers, including historical names. A slot is the winner's, a loser's, or neither. */
 function recordingSlot(doc: Document, row: MatchRow, colony: number | null): HTMLElement {
   const slot = h(doc, "div", "d1p-rec-slot");
   if (colony === null) {
@@ -581,11 +586,7 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null): HTM
   const decided = row.colonies.some(other => other.result === "Winner");
   if (cell.result === "Winner") slot.classList.add("is-won");
   else if (decided) slot.classList.add("is-lost");
-  const label = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(name));
-  const note = colonyNameNote(name);
-  label.title = note ? `${name} — ${note}` : name;
-  label.setAttribute("aria-hidden", "true");
-  slot.append(label, h(doc, "span", "d1p-sr", `${name}: `));
+  slot.append(h(doc, "span", "d1p-sr", `${name}: `));
   cell.lines.forEach((group, index) => slot.append(recordingPlayer(doc, group, `rec|${row.id}|${colony}|${index}`)));
   if (cell.note !== null) slot.append(h(doc, "span", "d1p-rec-player d1p-unknown", cell.note));
   if (cell.result === "Winner") slot.append(h(doc, "span", "d1p-sr", ", winner"));
