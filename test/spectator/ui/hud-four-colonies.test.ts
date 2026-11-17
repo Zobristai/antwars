@@ -130,7 +130,8 @@ describe("the 2D score plate with four colonies", () => {
     expect(figures(plate)).toEqual(["50%", "50%", "0%", "0%"]);
     expect(dialog().open).toBe(true);
     const head = dialog().byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe(`${NAMES[0]} wins`);
+    expect(head.textContent).toBe("Very Large wins");
+    expect(head.getAttribute("aria-label")).toBe(`${NAMES[0]} wins`);
     expect(head.classes()).toContain("c0");
     // No queen's fall is told for it as the match's loss: a four-colony elimination is never the match's fall.
     expect(toast().dataset.state).toBe("hidden");

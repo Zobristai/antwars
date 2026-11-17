@@ -7,8 +7,9 @@
 //
 // Overlay exports are read only inside functions: overlays.ts imports both HUDs, which import this module.
 import type { Frame } from "../../buffer.ts";
-import { colonyNameNote } from "../../../../src/sim/colonyNames.ts";
+import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
+import { rowName, agentHandle } from "../../compose.ts";
 import { D1_ICON } from "./icons.ts";
 import { PAGE_WORDS, resultView, shareHref, type ResultView } from "./model.ts";
 
@@ -50,15 +51,28 @@ export function mountResultModal(doc: Document): ResultModal {
   close.setAttribute("aria-label", PAGE_WORDS.close);
   close.innerHTML = D1_ICON.close;
   const top = h(doc, "div", "d1-result-top");
-  top.append(head, close);
+  const eyebrow = h(doc, "p", "rd-eyebrow", "Match result");
+  const hero = h(doc, "div", "rd-hero");
+  hero.append(eyebrow, head, how);
+  top.append(hero, close);
   const ratings = h(doc, "ul", "d1-ratings"), moments = h(doc, "ol", "d1-moments"), next = h(doc, "p", "d1-result-next");
-  // Share on X: the post intent in a new tab, only where the match has a public link, in the site's cyan button
-  // (deck.css .d1-agent-button).
+  // Share on X in the winner-colour button, only where the match has a public link.
   const shareLink = h(doc, "a", "d1-agent-button d1-share", PAGE_WORDS.share);
   shareLink.setAttribute("target", "_blank");
   shareLink.setAttribute("rel", "noopener noreferrer");
   shareLink.hidden = true;
-  result.append(top, how, ratings, moments, next, shareLink);
+  const standings = h(doc, "section", "rd-standings");
+  const columns = h(doc, "div", "rd-columns");
+  const playersLabel = h(doc, "span", "rd-label", "Players");
+  const ratingLabel = h(doc, "span", "rd-label rd-rating-label", "Rating");
+  columns.append(playersLabel, ratingLabel);
+  const note = h(doc, "p", "rd-note");
+  standings.append(columns, ratings, note);
+  const decisive = h(doc, "section", "rd-decisive");
+  decisive.append(h(doc, "p", "rd-label", "Decisive moment"), moments);
+  const footer = h(doc, "div", "rd-footer");
+  footer.append(next, shareLink);
+  result.append(top, standings, decisive, footer);
   dialog.append(result);
 
   /** The match's end now shown, and the one the viewer closed: keys over the end itself, not over playback. */
@@ -78,34 +92,57 @@ export function mountResultModal(doc: Document): ResultModal {
    * drawn: the match's drawn colony names (unrated), else undefined. A drawn name is shown in its colony's colour with
    * its one-line source as its tooltip wherever the result names it; the rated names are shown as they always were.
    */
-  const writeBody = (r: ResultView | null, drawn: readonly string[] | undefined) => {
-    const keyNow = r ? JSON.stringify([r, drawn ?? null]) : "";
+  const writeBody = (r: ResultView | null, frame: Frame | null) => {
+    const drawn = frame?.board?.setup.colonyNames;
+    const board = frame?.board;
+    const keyNow = r ? JSON.stringify([r, drawn ?? null, board?.setup.queens.length, board?.agents.map(agent => [agent.colony, agent.identity?.displayName])]) : "";
     if (keyNow === bodyKey) return;
     bodyKey = keyNow;
     setHidden(result, r === null);
-    if (!r) return;
+    if (!r || !board) return;
     result.style.setProperty("--d1-side", r.winner === null ? "var(--aw-ink-3)" : COLONY_CSS[r.winner]);
-    setText(head, r.headline);
+    setText(eyebrow, board.setup.queens.length > 2 ? "Free-for-all · Final result" : "Head-to-head · Final result");
+    const winnerName = r.winner === null ? "Match drawn" : colonyNamesOf(board.setup)[r.winner].replace(/ Colony$/, "");
+    head.replaceChildren(h(doc, "span", "rd-winner-name", winnerName), ...(r.winner === null ? [] : [" ", h(doc, "span", "rd-outcome", "wins")]));
+    head.setAttribute("aria-label", r.headline);
     head.style.color = r.winner === null ? "" : COLONY_CSS[r.winner];
     // The drawn winner's colony class identifies its name.
     head.className = drawn && r.winner !== null ? `d1-result-head c${r.winner}` : "d1-result-head";
     setAttr(head, "title", drawn && r.winner !== null ? colonyNameNote(drawn[r.winner]) : null);
     setText(how, r.how);
-    // Each player's shown name, its level and Fast badges as the Leaderboard shows them, then the change.
-    ratings.replaceChildren(...r.ratings.map(row => {
-      if (row.name === "") return h(doc, "li", undefined, row.text);
-      // Spaces between the parts keep the line's text whole for assistive technology; the flex gap spaces it on screen.
+    // Read the delayed result's numeric changes directly; never parse display sentences.
+    const changes = board.result?.ratingChanges;
+    const hasRatings = board.setup.rated === true && changes !== undefined;
+    standings.classList.toggle("is-rated", hasRatings);
+    setHidden(ratingLabel, !hasRatings);
+    setText(note, board.setup.rated === false ? "Unrated match · no rating changes" : !hasRatings ? r.ratings.find(row => row.name === "")?.text ?? "" : "");
+    setHidden(note, note.textContent === "");
+    ratings.replaceChildren(...board.agents.map((agent, index) => {
+      const named = rowName(agent.identity?.displayName ?? agentHandle(index), undefined);
       const li = h(doc, "li", "d1-rating");
-      li.append(h(doc, "span", "d1-rating-name", row.name), " ");
-      if (row.badges.length > 0) {
-        const tags = h(doc, "span", "d1-tags");
-        row.badges.forEach((text, i) => tags.append(...(i > 0 ? [" "] : []), h(doc, "span", "d1-tag", text)));
-        li.append(tags, " ");
+      li.style.setProperty("--rd-colony", COLONY_CSS[agent.colony]);
+      const identity = h(doc, "div", "rd-identity");
+      const colony = h(doc, "span", "rd-colony", colonyNamesOf(board.setup)[agent.colony].replace(/ Colony$/, ""));
+      setAttr(colony, "title", drawn ? colonyNameNote(drawn[agent.colony]) : null);
+      const name = h(doc, "span", "d1-rating-name", named.name);
+      const badgeLine = h(doc, "span", "rd-player");
+      badgeLine.append(name);
+      named.badges.forEach(text => badgeLine.append(" ", h(doc, "span", "d1-tag", text)));
+      identity.append(colony, " ", badgeLine);
+      li.append(identity);
+      if (hasRatings) {
+        const change = changes.find(c => c.agent === index);
+        const numbers = h(doc, "span", "rd-numbers");
+        if (change) {
+          const before = Math.round(change.before), after = Math.round(change.after), difference = after - before;
+          const signed = `${difference > 0 ? "+" : difference < 0 ? "−" : ""}${Math.abs(difference)}`;
+          numbers.append(h(doc, "strong", "rd-after", String(after)), ` (${signed})`);
+        }
+        li.append(" ", numbers);
       }
-      li.append(h(doc, "span", "d1-rating-change", `· ${row.text}`));
       return li;
     }));
-    setHidden(ratings, r.ratings.length === 0);
+    setHidden(ratings, board.agents.length === 0);
     moments.replaceChildren(...r.moments.map(m => {
       const li = h(doc, "li", "d1-moment");
       // The moment in its colony's colour; another colony it names (the queen overrun) in that colony's own.
@@ -113,11 +150,16 @@ export function mountResultModal(doc: Document): ResultModal {
       setColonyText(doc, what, m.what, drawn);
       what.style.color = COLONY_CSS[m.colony];
       const who = h(doc, "span", "d1-moment-who");
-      setColonyText(doc, who, `· ${m.who}`, drawn);
+      if (drawn) {
+        const name = h(doc, "span", `aw-colony-name c${m.colony}`, m.who.replace(/ Colony$/, ""));
+        name.style.color = COLONY_CSS[m.colony];
+        setAttr(name, "title", colonyNameNote(m.who));
+        who.append(name);
+      } else setText(who, m.who.replace(/ Colony$/, ""));
       li.append(h(doc, "span", "d1-when", m.when), what, who);
       return li;
     }));
-    setHidden(moments, r.moments.length === 0);
+    setHidden(decisive, r.moments.length === 0);
     setText(next, r.next);
   };
 
@@ -133,7 +175,7 @@ export function mountResultModal(doc: Document): ResultModal {
       shownEnd = shown ? end : "";
       const open = shown !== null && end !== closedEnd;
       if (!open && dialog.open) dialog.close();
-      writeBody(shown, frame?.board?.setup.colonyNames);
+      writeBody(shown, frame);
       if (open && !dialog.open && dialog.isConnected) dialog.showModal();
     },
     destroy() {
