@@ -257,6 +257,48 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       for (const player of [red, blue]) expect((await w.ratings.readRating(player.id, "1v1")).ratedMatches).toBe(1);
     });
 
+    it("releases an explicitly rated Free-for-all with the rating gate on, saving finish metadata and isolated ratings once", async () => {
+      const w = world(backend);
+      const { lobbyId, ids } = await quadrantsLobby(w, "enabled");
+      // Test-only admission: production queues continue to create unrated Free-for-all matches.
+      await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+      const gated = createLobbies(w.store, createIdentities(w.store), {
+        publicSlots: 1, privateSlots: 1, ffaLiveEnabled: true, now: () => w.clock.t,
+      });
+      const before = (await w.raw(`lobbies/${lobbyId}`))!;
+      const seats = JSON.parse(before.seats!) as { id: string; colony: number }[];
+      const finish = { version: 1 as const, order: [2, 0, 3, 1] as const, territoryWinnerFirst: false, rateable: true };
+      const result = { reason: "time_up", eliminations: [{ colony: 1, tick: 50 }], ffa: finish };
+      await gated.registerInstance("public-0", { runId: "rated-run", ...INSTANCE });
+      value(await gated.beginMatch(lobbyId, "public-0", "rated-run"));
+      expect((await w.raw("slots/public-0"))?.lobbyId).toBe(lobbyId);
+      expect(value(await gated.endMatch(lobbyId, "rated-run", "colony_2_won", undefined, undefined, undefined, undefined, result))).toEqual({ next: null });
+      const ended = (await w.raw(`lobbies/${lobbyId}`))!;
+      expect(ended).toMatchObject({ state: "ended", slot: "", outcome: "colony_2_won", rated: "true" });
+      expect(JSON.parse(ended.result!)).toEqual(result);
+      expect(await w.raw("slots/public-0")).toBeNull();
+      const history = (await w.raw(`ffaMatches/${lobbyId}`))!;
+      expect(JSON.parse(history.input!).finish).toEqual(finish);
+      const changes = JSON.parse(history.changes!) as { identityId: string; place: number; after: { mu: number; sigma: number } }[];
+      expect(changes).toHaveLength(4);
+      const stored = new Map<string, Fields>();
+      for (const seat of seats) {
+        const fields = (await w.raw(`ratings-ffa/${seat.id}`))!;
+        expect(fields.ratedMatches).toBe("1");
+        expect(changes.find(change => change.identityId === seat.id)).toEqual({
+          identityId: seat.id, place: finish.order.findIndex(colony => colony === seat.colony) + 1,
+          before: { mu: 25, sigma: 25 / 3 }, after: { mu: Number(fields.mu), sigma: Number(fields.sigma) },
+        });
+        stored.set(seat.id, fields);
+      }
+      for (const id of ids) for (const mode of RANKED_MODES) expect(await w.raw(`${ratingCollection(mode)}/${id}`)).toBeNull();
+      expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+      expect(await gated.endMatch(lobbyId, "rated-run", "colony_2_won", undefined, undefined, undefined, undefined, result)).toEqual({ ok: false, reason: "not_holding" });
+      expect(await w.raw(`ffaMatches/${lobbyId}`)).toEqual(history);
+      expect(await w.raw(`lobbies/${lobbyId}`)).toEqual(ended);
+      for (const [id, fields] of stored) expect(await w.raw(`ratings-ffa/${id}`)).toEqual(fields);
+    });
+
     it("stores the four colonies, their names, a colony 2 or 3 winner or a draw, the reason and each elimination tick on release", async () => {
       const w = world(backend);
       const releases: [MatchOutcome, MatchResult][] = [
