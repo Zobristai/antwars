@@ -218,7 +218,7 @@ it("describes every live mark job plainly without retired caps across briefings,
 
 it("teaches optional caste and filter-only re-lays in both briefings and config-driven Rules", () => {
   for (const text of [briefing(redesign), joinBriefing(redesign), ruleSections(redesign).flatMap(section => section.lines).join("\n")]) {
-    expect(text).toContain("Optional caste: any, worker, soldier; omitted means any");
+    expect(text).toContain("Optional caste: any, worker, soldier, flyer; omitted means any");
     expect(text).toContain("releases only ants it excludes");
   }
   // The agent reply says nearest-first once, on the recruitment line.
@@ -238,7 +238,7 @@ it("teaches sparse MCP caste output while keeping omitted-means-any explicit", (
   // States omitted-means-any once, on the caste line.
   expect(briefing(redesign)).toContain("Replies, notices and history include caste only for worker or soldier.");
   expect(briefing(redesign).split("omitted means any")).toHaveLength(2);
-  expect(briefing(redesign)).toContain("Optional caste: any, worker, soldier; omitted means any.");
+  expect(briefing(redesign)).toContain("Optional caste: any, worker, soldier, flyer; omitted means any.");
   expect(joinBriefing(redesign)).toContain("omitted means any");
 });
 
