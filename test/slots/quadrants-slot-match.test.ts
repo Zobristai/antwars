@@ -257,8 +257,12 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     expect(lobby).toMatchObject({ outcome: "colony_2_won", rated: false, mode: "quadrants", colonyNames: NAMES });
     const doc = w.docs.get(`lobbies/${lobbyId}`)!;
     expect(JSON.parse(doc.colonyNames!)).toEqual(NAMES);
-    // The engine's own result: its reason and every colony it eliminated, at the tick it did.
-    expect(JSON.parse(doc.result!)).toEqual({ reason: "idle",
+    // The engine's own result: its full finish, reason and every colony it eliminated, at the tick it did.
+    expect(final.result!.ffa).toEqual({ version: 1, territoryWinnerFirst: false, rateable: true,
+      order: expect.arrayContaining([0, 1, 2, 3]) });
+    expect(final.result!.ffa!.order).toHaveLength(4);
+    expect(final.result!.ffa!.order[0]).toBe(2);
+    expect(JSON.parse(doc.result!)).toEqual({ reason: "idle", ffa: final.result!.ffa,
       eliminations: final.colonies.flatMap(colony => colony.eliminated === undefined ? [] : [{ colony: colony.id, tick: colony.eliminated.tick }]) });
     expect(isIndexMode("quadrants")).toBe(false);
     expect(ratingPaths(w)).toEqual([]);
@@ -300,8 +304,12 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
 
     const lobby = await ended(w, lobbyId.lobbyId!);
     expect(lobby).toMatchObject({ outcome: `colony_${winner}_won`, rated: false });
-    // Unfiltered: every engine elimination, the winning colony's own on that same tick included.
-    expect(JSON.parse(w.docs.get(`lobbies/${lobbyId.lobbyId}`)!.result!)).toEqual({ reason: "idle",
+    // Unfiltered: the full finish and every engine elimination, the winning colony's own included.
+    expect(state.result!.ffa).toEqual({ version: 1, territoryWinnerFirst: false, rateable: true,
+      order: expect.arrayContaining([0, 1, 2, 3]) });
+    expect(state.result!.ffa!.order).toHaveLength(4);
+    expect(state.result!.ffa!.order[0]).toBe(winner);
+    expect(JSON.parse(w.docs.get(`lobbies/${lobbyId.lobbyId}`)!.result!)).toEqual({ reason: "idle", ffa: state.result!.ffa,
       eliminations: state.colonies.map(colony => ({ colony: colony.id, tick: colony.eliminated!.tick })) });
     expect(ratingPaths(w)).toEqual([]);
   });
