@@ -156,7 +156,7 @@ describe("Quadrants on the Waiting card", () => {
     const rows = allRows(p.card()).map(row => row.children.map(cell => cell.className === "c-model" ? cell.byClass("d1p-model").map(seat => seat.textContent) : cell.textContent));
     expect(rows).toEqual([
       ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
-      ["11 Nov 202605:02 UTC", "Free-for-all", ["eve"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:02 UTC", "Free-for-all", ["eve"], "Status Waiting", ""],
       ["11 Nov 202605:04 UTC", "Ranked · 2v2", ["kite1490 ± 80×2, 2 seats"], ["bob×2, 2 seats"], "Status Starting", ""],
     ]);
     expect(allRows(p.card())[1]!.byClass("d1p-elo-badge")).toEqual([]);
@@ -164,6 +164,41 @@ describe("Quadrants on the Waiting card", () => {
     const state = p.card().byClass("d1p-state")[0]!.textContent!;
     expect(state.replaceAll("\u00a0", " ")).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Free-for-all · 1 match waiting to start");
     expect(state.split(" ")).toEqual(["1\u00a0agent\u00a0waiting\u00a0in\u00a0a\u00a0ranked\u00a0queue\u00a0·", "1\u00a0agent\u00a0waiting\u00a0for\u00a0Free-for-all\u00a0·", "1\u00a0match\u00a0waiting\u00a0to\u00a0start"]);
+    p.mounted.destroy();
+  });
+
+  it("draws queued Free-for-all agents without assigned colonies in both layouts, under one neutral Agent heading", () => {
+    const p = page();
+    const longName = "An exceptionally long agent name that must stay inside its row";
+    p.mounted.update(view({ status: "ready", rows: [eve, { ...eve, displayName: longName, rating: rating(1800) }] }));
+    const tables = p.card().byClass("d1p-wide");
+    expect(tables).toHaveLength(1);
+    expect(tables[0]!.querySelectorAll("th").filter(node => node.scope === "col").map(node => [node.textContent, node.colSpan])).toEqual([
+      ["Time", 1], ["Game type", 1], ["Agent", 2], ["Status", 1], ["", 1],
+    ]);
+    const wide = allRows(p.card()), narrow = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li");
+    for (const rows of [wide, narrow]) {
+      expect(rows).toHaveLength(2);
+      rows.forEach((row, index) => {
+        expect(row.byClass("d1p-user").map(node => node.textContent)).toEqual([index === 0 ? "eve" : longName]);
+        expect(row.byClass("d1p-name")[0]!.title).toBe(index === 0 ? "eve" : longName);
+        expect(row.byClass("d1p-type")[0]!.textContent).toBe("Free-for-all");
+        expect(row.byClass("d1p-stamp")[0]!.textContent).toBe("Status Waiting");
+        expect(row.textContent).toContain("05:02 UTC");
+        expect(row.byClass("d1p-colony")).toEqual([]);
+        expect(row.byClass("d1p-colonies")).toEqual([]);
+        expect(row.byClass("d1p-elo-badge")).toEqual([]);
+        expect(row.textContent).not.toMatch(/Colony|no opponent yet|seat open/);
+        expect(row.byClass("d1p-c0")).toEqual([]);
+        expect(row.byClass("d1p-c1")).toEqual([]);
+      });
+    }
+    expect(wide[0]!.byClass("c-model").map(node => node.colSpan)).toEqual([2]);
+    for (const row of narrow) {
+      const identity = row.byClass("d1p-model")[0]!;
+      expect(identity.style.getPropertyValue("grid-column")).toBe("1 / -1");
+      expect(identity.style.getPropertyValue("min-width")).toBe("0");
+    }
     p.mounted.destroy();
   });
 

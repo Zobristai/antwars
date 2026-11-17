@@ -65,8 +65,10 @@ export interface MatchRow {
   /** The Game type badge's words ("Ranked · 1v1"); null for no badge, or the quiet words where it is not recorded. */
   readonly type: string | null;
   readonly typeNote?: string;
-  /** Each colony's cell, index = colony id: two, or four in a Quadrants match. */
+  /** Each colony's cell, index = colony id: two, or four in a Quadrants match; empty for an unassigned queued agent. */
   readonly colonies: readonly ColonyCell[];
+  /** An unassigned Free-for-all queue entry, displayed without colony names or an opponent placeholder. */
+  readonly queuedAgent?: SeatGroup;
   /** The status stamp: its words and its look, as the drawing draws it: a record's (complete, partial, unavailable) solid, a
    * waiting row's (WAITING, STARTING, n OF m SEATS) dashed, a live match's red. */
   readonly stamp: { readonly text: string; readonly look: "complete" | "partial" | "unavailable" | "waiting" | "live" };
@@ -335,8 +337,9 @@ function rowParts(doc: Document) {
       // naming their own colonies sit under neutral heads, each cell naming its own colonies; rows of four colonies sit
       // under one Colonies head across both colony columns, their one cell naming each colony. A list holding more than one
       // kind is drawn as consecutive tables, one per run of rows of one kind, in the list's order.
-      type Kind = "rated" | "own" | "four";
-      const kindOf = (row: MatchRow): Kind => row.colonies.length > 2 ? "four" : row.colonyNames !== undefined ? "own" : "rated";
+      type Kind = "rated" | "own" | "four" | "agent";
+      const kindOf = (row: MatchRow): Kind => row.queuedAgent !== undefined ? "agent"
+        : row.colonies.length > 2 ? "four" : row.colonyNames !== undefined ? "own" : "rated";
       const runs: { kind: Kind; rows: MatchRow[] }[] = [];
       for (const row of spec.rows) {
         const kind = kindOf(row), last = runs[runs.length - 1];
@@ -354,7 +357,11 @@ function rowParts(doc: Document) {
         const head = h(doc, "thead"), labels = h(doc, "tr");
         labels.append(headCell(MATCH_HEADS[0], "c-start"), headCell(MATCH_HEADS[1], "c-type"));
         // A colony's ink is its name's, so the neutral heads over rows naming their own colonies take none.
-        if (kind === "four") { const both = headCell(FOUR_COLONY_HEAD, "c-model"); both.colSpan = 2; labels.append(both); }
+        if (kind === "four" || kind === "agent") {
+          const both = headCell(kind === "agent" ? "Agent" : FOUR_COLONY_HEAD, "c-model");
+          both.colSpan = 2;
+          labels.append(both);
+        }
         else for (const colony of COLONIES) labels.append(headCell(ownNames ? COLONY_HEADS[colony] : COLONY_NAMES[colony], ownNames ? "c-model" : `c-model d1p-c${colony}`));
         labels.append(headCell(MATCH_HEADS[2], "c-status"), srHead(spec.actionHead, "c-go"));
         head.append(labels);
@@ -370,10 +377,12 @@ function rowParts(doc: Document) {
           const type = h(doc, "td", "c-type");
           type.append(...typeNodes(row));
           line.append(startCell(row.when), type);
-          if (kind === "four") {
+          if (kind === "four" || kind === "agent") {
             const cell = h(doc, "td", "c-model");
             cell.colSpan = 2;
-            cell.append(colonyList(row, wide));
+            cell.append(row.queuedAgent !== undefined
+              ? playerLine(row.queuedAgent, 0, null, `${wide}|agent`)
+              : colonyList(row, wide));
             line.append(cell);
           } else for (const colony of COLONIES) {
             const cell = h(doc, "td", "c-model");
@@ -394,7 +403,14 @@ function rowParts(doc: Document) {
           const lead = h(doc, "p", "d1p-line is-lead");
           lead.append(...typeNodes(row), stampNode(row));
           item.append(startLine(row.when), lead);
-          item.append(colonyList(row, narrow));
+          if (row.queuedAgent !== undefined) {
+            const agent = playerLine(row.queuedAgent, 0, null, `${narrow}|agent`);
+            // Like the colony list, an unassigned identity takes the full row below the time and badges, not the action slot.
+            agent.style.setProperty("grid-column", "1 / -1");
+            agent.style.setProperty("min-width", "0");
+            agent.style.setProperty("margin-top", "4px");
+            item.append(agent);
+          } else item.append(colonyList(row, narrow));
           if (row.action) item.append(rowPill(row.action.text, row.action.href, row.action.label, narrow));
           list.append(item);
         }
