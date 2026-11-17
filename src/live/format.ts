@@ -24,7 +24,7 @@
  * base64-encodes it into one SSE data line.
  *
  * Payload layout (little-endian; v = unsigned LEB128 varint; s = v byte length + UTF-8):
- *   header   u16 magic 'AW' | u8 version 4 | u8 flags (bit 0: full, bit 1: public setup redaction) | v tick
+ *   header   u16 magic 'AW' | u8 version 4 | u8 flags (bit 0: full, bit 1: public setup redaction, bit 2: full queen-kill result, bit 3: end-event queen-kill result) | v tick
  *   ants     v count | v idDelta[n] (ids ascending) | u16 x[n] | u16 y[n] | u8 heading[n]
  *            | u8 bits[n] (bit 0 colony, bit 1 in a squad, bit 2 soldier: caste switch on only, bit 3 carrying food)
  *            | u8 agent[k] for the k ants in a squad
@@ -167,6 +167,8 @@ export type OrderKind = (typeof ORDER_KINDS)[number];
 export const CALL_KINDS = ["join", "rejoin", "observe", "order", "mark", "found_queen", "count_mark", "set_brood"] as const;
 export type CallKind = (typeof CALL_KINDS)[number];
 export const WIN_REASONS = ["overrun", "time_up", "double_overrun", "queens_killed", "sustained_territory", "abandoned", "idle"] as const;
+// New result reasons must remain readable by already-open pages. Extend the compatibility
+// markers, not just this table; the frozen-decoder tests exercise every reason.
 export const DECIDED_BY = ["overrun", "territory", "ants_alive", "food_delivered", "draw", "queens_killed", "kills", "idle", "queen_kills"] as const;
 
 /** Every ant of one message, ids ascending. agent is the index of the agent whose squad holds the ant, or -1. */
@@ -735,7 +737,7 @@ function readIdentity(r: Reader): StreamIdentity | undefined {
 function writeResult(w: Writer, res: StreamResult, version: number) {
   w.u8(res.winner ?? 255);
   w.u8(WIN_REASONS.indexOf(res.reason));
-  w.u8(DECIDED_BY.indexOf(res.decidedBy));
+  w.u8(DECIDED_BY.indexOf(res.decidedBy === "queen_kills" ? "kills" : res.decidedBy));
   w.v(res.tick);
   w.u8(res.nextStartMs === null ? 0 : 1);
   if (res.nextStartMs !== null) w.f64(res.nextStartMs);
@@ -1074,7 +1076,12 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
     m.events.some(e => e.kind === "takeoff" || e.kind === "landing" || (e.kind === "fight" && e.air === true) || (e.kind === "mark" && e.mark.caste === "flyer"));
   const version = flyer ? FLYER_STREAM_VERSION : m.full?.setup.rules28 === true ? RULES28_STREAM_VERSION : carriesFourColonies(m) ? FOUR_COLONY_STREAM_VERSION : m.full?.setup.colonyNames !== undefined ? COLONY_NAMES_STREAM_VERSION : deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
   w.u8(version);
-  w.u8(m.full ? 1 : 0);
+  const queenEnd = m.events.some(e => e.kind === "end" && e.result.decidedBy === "queen_kills");
+  if (queenEnd && m.events.some(e => e.kind === "end" && e.result.decidedBy !== "queen_kills")) {
+    throw new Error("mixed end-event result reasons");
+  }
+  w.u8((m.full ? 1 : 0) | (m.full?.result?.decidedBy === "queen_kills" ? FULL_QUEEN_KILLS : 0) |
+    (queenEnd ? END_QUEEN_KILLS : 0));
   w.v(m.tick);
 
   const a = m.ants;
@@ -1247,6 +1254,15 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
 
 /** Public setup-redaction flag; historical unmarked bytes keep their original decoding. */
 const SETUP_REDACTED = 2;
+// Old decoders mask the header flags and ignore these bits. Keep the familiar kills
+// index in each result so old pages still get the winner and terminal end card.
+const FULL_QUEEN_KILLS = 4;
+const END_QUEEN_KILLS = 8;
+
+function restoreQueenKills(result: StreamResult | null | undefined): void {
+  if (result?.decidedBy !== "kills") throw new Error("invalid queen-kill result marker");
+  result.decidedBy = "queen_kills";
+}
 
 /** Public live and stored snapshots omit comparison metadata, not display labels or queen HP. */
 export function encodePublicMessage(message: StreamMessage, encode = encodeMessage): Uint8Array {
@@ -1460,6 +1476,12 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
   const events: StreamEvent[] = [];
   for (let i = r.v(); i > 0; i--) events.push(readEvent(r, version));
   if (r.o !== bytes.byteLength) throw new Error("trailing bytes in stream message");
+  if (flags & FULL_QUEEN_KILLS) restoreQueenKills(full?.result);
+  if (flags & END_QUEEN_KILLS) {
+    const ends = events.filter(e => e.kind === "end");
+    if (ends.length === 0) throw new Error("queen-kill marker without end event");
+    for (const end of ends) restoreQueenKills(end.result);
+  }
   return { tick, ants, full, events };
 }
 
