@@ -323,8 +323,8 @@ describe("the production worker feed retains bounded catch-up", () => {
       expect(panel.hidden).toBe(true);
       states.length = 0;
       for (let offset = 21; sources[0]!.readyState !== 2; offset++) { now = offset * 100; await deliver(tick(offset)); }
-      expect(live.inbox.size).toBe(0);
-      expect(live.inbox.dropped).toBe(INBOX_CAP + 1);
+      expect(live.inbox.size).toBe(INBOX_CAP);
+      expect(live.inbox.dropped).toBe(1);
       now = 10_000;
       expect(draw()).toBe(true);
       expect(states).toEqual([]);
@@ -345,6 +345,37 @@ describe("the production worker feed retains bounded catch-up", () => {
     } finally { live.link.close(); }
   }, 20_000);
 
+  it("advances across repeated delayed full-snapshot bursts and keeps the final result", async () => {
+    const { live, sources } = feed();
+    const playback = new Playback({ live: true });
+    try {
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const first = structuredClone(messages[0]!);
+        first.tick += cycle * 100;
+        first.full!.match = 42;
+        const source = sources.at(-1)!;
+        source.emit(first);
+        for (let i = 1; i <= INBOX_CAP; i++) source.emit({ ...structuredClone(messages[i]!), tick: first.tick + i });
+        await until(() => live.inbox.size === INBOX_CAP);
+        await new Promise(done => setImmediate(done));
+        const accepted = live.take();
+        expect(accepted).toHaveLength(INBOX_CAP);
+        for (const arrival of accepted) if (arrival.kind === "prepared") playback.pushPrepared(arrival.prepared, cycle * 4000);
+        expect(playback.newestTick).toBe(first.tick + INBOX_CAP - 1);
+        expect(sources).toHaveLength(cycle + 2);
+      }
+      const ended = structuredClone(messages[0]!);
+      ended.tick += 400;
+      ended.full!.match = 42;
+      ended.full!.result = { tick: ended.tick - 1, winner: 0, reason: "time_up", decidedBy: "kills", nextStartMs: null };
+      sources.at(-1)!.emit(ended);
+      await until(() => live.inbox.size === 1);
+      for (const arrival of live.take()) if (arrival.kind === "prepared") playback.pushPrepared(arrival.prepared, 16_000);
+      expect(playback.latestBoard!.result).toEqual(ended.full!.result);
+      expect(sources).toHaveLength(4);
+    } finally { live.link.close(); }
+  }, 20_000);
+
   it("bounds a paced hidden-tab backlog, suspends, and resumes once from a full snapshot", async () => {
     const { live, sources } = feed();
     try {
@@ -355,10 +386,10 @@ describe("the production worker feed retains bounded catch-up", () => {
         sources[0]!.emit(messages[i]!);
         await until(() => live.inbox.size === i || sources[0]!.readyState === 2);
       }
-      expect(live.inbox.size).toBe(0);
+      expect(live.inbox.size).toBe(INBOX_CAP);
       expect(sources).toHaveLength(1);
       expect(sources[0]!.readyState).toBe(2);
-      expect(live.take()).toEqual([]);
+      expect(live.take()).toHaveLength(INBOX_CAP);
       expect(sources).toHaveLength(2);
       expect(live.take()).toEqual([]);
       sources[1]!.emit({ ...structuredClone(messages[0]!), tick: messages[0]!.tick + 100 });
@@ -369,26 +400,26 @@ describe("the production worker feed retains bounded catch-up", () => {
     } finally { live.link.close(); }
   }, 20_000);
 
-  it("bounds a raw one-burst backlog before decode, rejecting stale in-flight work", async () => {
+  it("bounds a raw one-burst backlog while retaining accepted in-flight work", async () => {
     const { live, sources } = feed();
     try {
       sources[0]!.emit(messages[0]!); await live.first; live.take();
       for (let i = 1; i <= 100; i++) sources[0]!.emit(messages[i]!);
+      await until(() => live.inbox.size === INBOX_CAP);
       await new Promise((done) => setImmediate(done));
       expect(sources[0]!.readyState).toBe(2);
       expect(live.inbox.size).toBeLessThanOrEqual(INBOX_CAP);
-      expect(live.take()).toEqual([]);
+      expect(live.take()).toHaveLength(INBOX_CAP);
       expect(sources).toHaveLength(2);
     } finally { live.link.close(); }
   });
 
-  it("reopens immediately on overflow before the first full finishes, without waiting for a frame", async () => {
+  it("delivers the first accepted full despite overflow before any frame can run", async () => {
     const { live, sources } = feed();
     try {
       for (let i = 0; i <= 100; i++) sources[0]!.emit(messages[i]!);
-      expect(sources).toHaveLength(2);
-      sources[1]!.emit(messages[0]!);
-      await live.first;
+      expect(sources).toHaveLength(1);
+      expect((await live.first).tick).toBe(messages[0]!.tick);
       const arrival = live.take()[0]!;
       expect(arrival.kind).toBe("prepared");
       if (arrival.kind === "prepared") expect(arrival.prepared.kind).toBe("full");

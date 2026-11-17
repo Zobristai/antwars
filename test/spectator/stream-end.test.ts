@@ -90,6 +90,43 @@ describe("live link after a match's result", () => {
     h.link.close();
   });
 
+  it.each(["end", "finished"])("keeps an accepted %s through raw overflow and a queued server-close callback", async terminal => {
+    const sources: Source[] = [], delivered: StreamMessage[] = [];
+    let resets = 0, overflows = 0;
+    const link = openLive("/watch/live/lobby", m => delivered.push(m), () => {}, {
+      maxPending: 2,
+      source: () => { const s = new Source(); sources.push(s); return s; },
+      decode: async data => { await new Promise(r => setTimeout(r, 50)); return messages[data]!; },
+      onReset: () => { resets++; }, onOverflow: () => { overflows++; },
+    });
+    try {
+      sources[0]!.emit("full"); sources[0]!.emit(terminal); sources[0]!.emit("delta");
+      sources[0]!.drop(2);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(delivered).toEqual([messages.full, messages[terminal]]);
+      expect(sources).toHaveLength(1);
+      expect(resets).toBe(1);
+      expect(overflows).toBe(0);
+    } finally { link.close(); }
+  });
+
+  it("explicit close cancels accepted work even while overflow is draining", async () => {
+    const sources: Source[] = [], delivered: StreamMessage[] = [];
+    const overflow = vi.fn();
+    const link = openLive("/watch/live/lobby", m => delivered.push(m), () => {}, {
+      maxPending: 1,
+      source: () => { const s = new Source(); sources.push(s); return s; },
+      decode: async data => { await new Promise(r => setTimeout(r, 50)); return messages[data]!; },
+      onOverflow: overflow,
+    });
+    sources[0]!.emit("full"); sources[0]!.emit("delta");
+    await vi.advanceTimersByTimeAsync(1);
+    link.close();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(delivered).toEqual([]);
+    expect(overflow).not.toHaveBeenCalled();
+  });
+
   it("still reconnects a stream dropped before the result", async () => {
     const h = harness();
     h.sources[0]!.open();
