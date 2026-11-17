@@ -297,6 +297,8 @@ else if (at("run", "deploy") && st.services[a[2]]) {
 else if (at("run", "services", "update-traffic") && st.services[a[3]]) {
   const svc = st.services[a[3]];
   if (a.includes("--remove-tags") && process.env.FAIL_REMOVE_TAGS === a[3]) process.exit(1);
+  if (flag("--to-revisions") && flag("--to-revisions") === process.env.FAIL_RESTORE_TARGET) process.exit(1);
+  if (flag("--to-revisions") && flag("--to-revisions") === process.env.IGNORE_RESTORE_TARGET) process.exit(0);
   if (process.env.IGNORE_TRAFFIC !== "1") {
     if (a.includes("--to-latest")) svc.traffic = [{ revisionName: svc.latest, percent: 100, latestRevision: true }, ...tagsOnly(svc.traffic)];
     const to = flag("--to-revisions");
@@ -1721,6 +1723,43 @@ describe.concurrent("all", () => {
     expect(r.gcloud.filter((c) => c[2] === "update-traffic" && c[3] === "antwar").map((c) => c[5])).toEqual(["antwar-new=100", `${GAME_OUT}=100`]);
     expect(r.state.services.antwar!.traffic.filter((t) => t.percent)).toEqual([{ revisionName: GAME_OUT, percent: 100 }]);
     expect(r.stdout).toBe("");
+  }, TIMEOUT);
+
+  it.each(["12", "7", "disable"])("public exclusion health recovery refuses an incompatible outgoing policy (%s)", async version => {
+    const prior = version === "12" ? undefined : "12";
+    const r = await runAsync(["all", SHA], { state: live({ site: 503 }, s => publicPolicy(s, prior)),
+      env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("was not reverted because the outgoing public exclusion policy differs");
+    expect(r.stderr).toContain("explicit repair required");
+    expect(r.stderr).not.toContain("traffic was reverted");
+    expect(r.gcloud.filter(c => c[2] === "update-traffic" && c[3] === "antwar" && c.includes("--to-revisions"))
+      .map(c => c[c.indexOf("--to-revisions") + 1])).toEqual(["antwar-new=100"]);
+    expect(r.state.services.antwar!.traffic.filter(t => t.percent)).toEqual([{ revisionName: "antwar-new", percent: 100 }]);
+    const policy = r.state.revisions["antwar-new"]!.values?.ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS;
+    if (version === "disable") expect(policy).toBeUndefined();
+    else expect(policy).toBe(`secret:antwars-public-excluded-owner-ids:${version}`);
+    expect(r.statusFile).toContain("FAILED");
+    expect(r.stdout).toBe("");
+  }, TIMEOUT);
+
+  it("public exclusion health recovery restores a matching pinned policy", async () => {
+    const r = await runAsync(["all", SHA], { state: live({ site: 503 }, s => publicPolicy(s, "12")),
+      env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`antwar traffic was reverted to ${GAME_OUT}`);
+    expect(r.state.services.antwar!.traffic.filter(t => t.percent)).toEqual([{ revisionName: GAME_OUT, percent: 100 }]);
+    expect(r.state.revisions[GAME_OUT]!.values?.ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS).toBe("secret:antwars-public-excluded-owner-ids:12");
+    expect(r.statusFile).toContain("FAILED");
+  }, TIMEOUT);
+
+  it.each(["FAIL_RESTORE_TARGET", "IGNORE_RESTORE_TARGET"])("public exclusion health recovery reports failed restoration (%s)", async failure => {
+    const r = await runAsync(["all", SHA], { state: live({ site: 503 }), env: { [failure]: `${GAME_OUT}=100` } });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("explicit repair required");
+    expect(r.stderr).not.toContain("traffic was reverted");
+    expect(r.state.services.antwar!.traffic.filter(t => t.percent)).toEqual([{ revisionName: "antwar-new", percent: 100 }]);
+    expect(r.statusFile).toContain("FAILED");
   }, TIMEOUT);
 
   it("never moves traffic to a game revision that is not Ready", async () => {

@@ -1684,7 +1684,15 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     if [[ "$SITE" != 200 && "$FIRST_DEPLOY" == 1 ]]; then
       stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; nothing was reverted, since this first deploy had no earlier revision of $GAME_SERVICE"
     elif [[ "$SITE" != 200 ]]; then
-      run_gcloud run services update-traffic "$GAME_SERVICE" --to-revisions "${OUT_REV[$GAME_SERVICE]}=100" || true
+      if ! public_rollback_policy_matches "${OUT_REV[$GAME_SERVICE]}" "$CREATED"; then
+        stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; $GAME_SERVICE was not reverted because the outgoing public exclusion policy differs; explicit repair required: rerun deploy.sh all <commit> with the intended pinned policy (or disable)"
+      fi
+      run_gcloud run services update-traffic "$GAME_SERVICE" --to-revisions "${OUT_REV[$GAME_SERVICE]}=100" \
+        || stop "$GAME_SERVICE restoration failed after the site health check; explicit repair required"
+      RESTORED_STATE="$(service_state "$GAME_SERVICE")" \
+        || stop "$GAME_SERVICE restoration could not be inspected after the site health check; explicit repair required"
+      [[ "${RESTORED_STATE%% *}" == "${OUT_REV[$GAME_SERVICE]}" ]] \
+        || stop "$GAME_SERVICE restoration was not confirmed after the site health check; explicit repair required"
       stop "$SITE_URL answered $SITE, not 200, within 5 minutes of $CREATED serving; $GAME_SERVICE traffic was reverted to ${OUT_REV[$GAME_SERVICE]}"
     fi
     NEW_REV[$GAME_SERVICE]="$CREATED"
