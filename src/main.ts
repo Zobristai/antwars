@@ -10,6 +10,7 @@ import { firestoreFromEnv } from "./store/firestore.js";
 import { createIdentities } from "./identity/identities.js";
 import { testClaimOwnerIdsFromEnv } from "./identity/testClaimAuthorization.js";
 import { createLobbies, STALE_HOLD_GRACE_MS } from "./lobby/lobbies.js";
+import { ffaSettingsFromEnv } from "./rating/ffaSettings.js";
 import { createRatings, startRecordFill } from "./rating/ratings.js";
 import { correctedHistorySource, correctedReplaySource } from "./replays/correctedRecordings.js";
 import type { AccountStores } from "./accounts/service.js";
@@ -55,6 +56,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   const port = Number(process.env.PORT ?? 8080);
   const dataDir = process.env.DATA_DIR ?? "data";
   let comparison;
+  let ffa;
   let houseIdleSeconds: number;
   let slotSettings;
   let lobbySlots;
@@ -72,6 +74,8 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     lobbySlots = lobbySlotOptions(process.env);
     slotWaker = slotWakerFromEnv(process.env);
     comparison = comparisonOptions(process.env, DEFAULT_MCP_CONFIG);
+    ffa = ffaSettingsFromEnv(process.env);
+    if (comparison.simConfig !== undefined) comparison = { ...comparison, simConfig: { ...comparison.simConfig, ffaTerritoryWinnerFirst: ffa.territoryWinnerFirst } };
     houseIdleSeconds = houseIdleSecondsFromEnv(process.env);
     // A slot server is not idle while a match's record inputs await storage.
     const handoffActivity = slotSettings === undefined ? undefined : slotActivity(slotSettings.slot);
@@ -89,7 +93,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     // Slots are assigned through the waking store, so each taken slot's server is woken after commit.
     const lobbyStore = slotWaker === undefined ? store : wakingStore(store, slotWaker);
     // A hold whose server never began its match is released after the stale grace.
-    accounts = { identities, lobbies: createLobbies(lobbyStore, identities, { ...lobbySlots, staleHoldGraceMs: STALE_HOLD_GRACE_MS }), ratings: createRatings(store, identities), usernameClaimLimitRule };
+    accounts = { identities, lobbies: createLobbies(lobbyStore, identities, { ...lobbySlots, staleHoldGraceMs: STALE_HOLD_GRACE_MS, ffaLiveEnabled: ffa.liveEnabled }), ratings: createRatings(store, identities), usernameClaimLimitRule };
     // In the background: rows rated before records existed get theirs; the fill runs
     // once and records completion, so later starts scan nothing.
     void startRecordFill(store);

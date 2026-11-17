@@ -375,6 +375,8 @@ export interface MatchStats {
 export type WinReason = "overrun" | "time_up" | "double_overrun" | "queens_killed" | "sustained_territory" | "abandoned" | "idle";
 
 export interface MatchResult {
+  /** New Free-for-all recordings only; absent on historical and two-colony results. */
+  readonly ffa?: import("./ffaFinish.js").FfaFinish;
   /** Winning colony, or null for a draw. */
   readonly winner: ColonyId | null;
   readonly reason: WinReason;

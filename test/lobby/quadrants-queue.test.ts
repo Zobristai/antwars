@@ -308,3 +308,38 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
     });
   });
 }
+
+for (const enabled of [false, true]) for (const rated of [false, true]) {
+  it(`keeps Free-for-all rating behind both gates (enabled=${enabled}, rated=${rated})`, async () => {
+    const w = world("memory");
+    const { lobbyId, ids } = await quadrantsLobby(w, "gate");
+    const gated = createLobbies(w.store, createIdentities(w.store), { ffaLiveEnabled: enabled, now: () => w.clock.t });
+    if (rated) await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+    const finish = { version: 1 as const, order: [2, 0, 3, 1] as const, territoryWinnerFirst: false, rateable: true };
+    const result = { reason: "time_up", eliminations: [], ffa: finish };
+    await gated.registerInstance("public-0", { runId: "run", ...INSTANCE });
+    value(await gated.beginMatch(lobbyId, "public-0", "run"));
+    value(await gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, result));
+    expect(JSON.parse((await w.raw(`lobbies/${lobbyId}`))!.result!)).toEqual(result);
+    for (const id of ids) {
+      expect((await w.raw(`ratings-ffa/${id}`))?.ratedMatches).toBe(enabled && rated ? "1" : undefined);
+      for (const mode of RANKED_MODES) expect(await w.raw(`${ratingCollection(mode)}/${id}`)).toBeNull();
+    }
+    expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+    expect((await w.raw(`ffaMatches/${lobbyId}`)) !== null).toBe(enabled && rated);
+  });
+}
+
+it("an enabled gate still preserves historical results with no order and never routes them to Glicko", async () => {
+  const w = world("memory");
+  const { lobbyId, ids } = await quadrantsLobby(w, "legacy");
+  const gated = createLobbies(w.store, createIdentities(w.store), { ffaLiveEnabled: true, now: () => w.clock.t });
+  await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+  await gated.registerInstance("public-0", { runId: "run", ...INSTANCE });
+  value(await gated.beginMatch(lobbyId, "public-0", "run"));
+  const historical = { reason: "time_up", eliminations: [] };
+  value(await gated.endMatch(lobbyId, "run", "colony_0_won", undefined, undefined, undefined, undefined, historical));
+  expect(JSON.parse((await w.raw(`lobbies/${lobbyId}`))!.result!)).toEqual(historical);
+  for (const id of ids) expect(await w.raw(`ratings-ffa/${id}`)).toBeNull();
+  expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+});

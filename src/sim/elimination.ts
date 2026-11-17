@@ -5,6 +5,7 @@
  * than half of all owned territory for the hold time wins; at time-up the colonies are ranked. Two-colony
  * matches never come here (src/sim/territory.ts keeps their rules).
  */
+import { ffaFinish } from "./ffaFinish.js";
 import { clearLostQueenSpawn } from "./map.js";
 import { physicalTileArea } from "./gridScale.js";
 import type { ServerTerminal } from "./step.js";
@@ -107,6 +108,12 @@ function majorityHold(state: SimState, tick: number): MatchResult | null {
  * A server abandonment still abandons.
  */
 export function fourColonyEnd(state: SimState, tick: number, stopNow: ServerTerminal): MatchResult | null {
+  const result = decideFourColonyEnd(state, tick, stopNow);
+  if (result === null || state.config.ffaTerritoryWinnerFirst === undefined) return result;
+  return { ...result, ffa: ffaFinish(rankColonies(state), result, state.config.ffaTerritoryWinnerFirst) };
+}
+
+function decideFourColonyEnd(state: SimState, tick: number, stopNow: ServerTerminal): MatchResult | null {
   if (stopNow === "abandoned") return { winner: null, reason: "abandoned", decidedBy: "draw", tick };
   const idle = typeof stopNow === "object" ? stopNow.idle : [];
   // A colony whose last queen died this tick leaves for that, even if the server also found it idle.
