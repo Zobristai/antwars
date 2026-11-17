@@ -1,3 +1,4 @@
+import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 /// <reference types="node" />
 /**
  * The live spectator stream: Server-Sent Events at /live/:match,
@@ -58,6 +59,7 @@ export const realClock: LiveClock = {
 export interface LiveHubOptions {
   readonly config?: LiveConfig;
   readonly clock?: LiveClock;
+  readonly publicVisibility?: PublicVisibility;
   /** Payload encoder; tests substitute one to show the budget checks can fail. */
   readonly encode?: (message: StreamMessage) => Uint8Array;
   /** Gap between records played out after a match ends; defaults to one tick of match time. */
@@ -574,6 +576,7 @@ export class LiveHub {
   private readonly encode: (message: StreamMessage) => Uint8Array;
   private readonly keepMatches: number;
   private readonly relayKey: Uint8Array | undefined;
+  private readonly publicVisibility: PublicVisibility | undefined;
   /** Live spectator streams open at once on this server, and per source. */
   readonly spectatorCap: AdmissionCap;
   private readonly streams = new Map<number, MatchStream>();
@@ -600,6 +603,7 @@ export class LiveHub {
     this.onReleased = options.onReleased;
     this.onReplaySaved = options.onReplaySaved;
     this.relayKey = options.relayKey;
+    this.publicVisibility = options.publicVisibility;
     this.spectatorCap = createAdmissionCap("live spectators", { max: this.config.maxSpectators, perSource: this.config.maxSpectatorsPerSource });
   }
 
@@ -671,6 +675,19 @@ export class LiveHub {
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    try { await this.handlePublic(req, res); }
+    catch { if (!res.destroyed) { if (res.headersSent) res.destroy(); else res.writeHead(503, { "cache-control": "no-store" }).end(); } }
+  }
+
+  private async visibleCurrent(): Promise<MatchStream | undefined> {
+    const candidates = [...this.streams.values()].filter(m => m.access === undefined || m.access.visibility === "public").sort((a, b) => a.seq - b.seq);
+    const visible = this.publicVisibility
+      ? await publiclyVisible(candidates, stream => stream.access ? this.publicVisibility!.lobbyVisible(stream.access.lobbyId) : Promise.resolve(true))
+      : candidates;
+    return visible.find(m => !m.finished) ?? visible.at(-1);
+  }
+
+  private async handlePublic(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let path: string;
     try {
       path = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -683,8 +700,9 @@ export class LiveHub {
         res.writeHead(405, { allow: "GET" }).end();
         return;
       }
+      const stream = await this.visibleCurrent();
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify(this.status()));
+      res.end(JSON.stringify(stream === undefined || stream.finished ? { kind: "idle", match: null } : { kind: "playing", match: stream.identity }));
       return;
     }
     if (path === "/live/replays") {
@@ -694,7 +712,9 @@ export class LiveHub {
       }
       // Only successful uploads enter this map; without a store the list stays empty.
       // Retain small metadata after stream eviction; never list the bucket or overwrite an index.
-      const body = Buffer.from(JSON.stringify({ replays: [...this.replays.values()].sort((a, b) => a.seq - b.seq) }));
+      const rows = [...this.replays.values()].sort((a, b) => a.seq - b.seq);
+      const replays = this.publicVisibility ? await publiclyVisible(rows, row => this.publicVisibility!.replayVisible(row.replayId)) : rows;
+      const body = Buffer.from(JSON.stringify({ replays }));
       res.writeHead(200, { "content-type": "application/json", "content-length": body.length, "cache-control": "no-store" });
       res.end(req.method === "HEAD" ? undefined : body);
       return;
@@ -710,14 +730,16 @@ export class LiveHub {
       try { stream = this.byLobby(decodeURIComponent(selected[1]!)); }
       catch { res.writeHead(400).end(); return; }
     } else {
-      const seq = m![1] === "current" ? this.currentSeq() : Number(m![1]);
-      stream = seq === null ? undefined : this.streams.get(seq);
+      stream = m![1] === "current" ? await this.visibleCurrent() : this.streams.get(Number(m![1]));
     }
     if (stream === undefined) {
       res.writeHead(404).end();
       return;
     }
     if (stream.access) {
+      if (this.publicVisibility && !await this.publicVisibility.lobbyVisible(stream.access.lobbyId)) {
+        res.writeHead(404, { "cache-control": "no-store" }).end(); return;
+      }
       const raw = req.headers["x-antwar-invite"];
       const admission = await admitMatchWatch(stream.access, typeof raw === "string" ? raw : undefined, this.currentInvite);
       if (res.destroyed) return;

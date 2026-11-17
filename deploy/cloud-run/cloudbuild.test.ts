@@ -49,6 +49,7 @@ interface Options {
   readonly config?: Record<string, string>;
   /** The checkout's origin URL (default REPO_URL). */
   readonly origin?: string;
+  readonly publicExclusionVersion?: string;
 }
 
 function setup(options: Options) {
@@ -87,6 +88,7 @@ process.stdout.write(process.env.IDENTITY);
   // writes them there; passes TERM on as deploy.sh's own handler does (FAILED, exit 143).
   fake(join(tools, "deploy.sh"), "deploy.sh", `
 const out = process.env.ANTWAR_ROLLBACK_DIR;
+fs.appendFileSync(process.env.CALLS, JSON.stringify(["public exclusion version", process.env.PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION]) + "\\n");
 fs.appendFileSync(process.env.CALLS, JSON.stringify(["deploy.sh config", fs.readFileSync(process.env.ANTWAR_DEPLOY_CONFIG, "utf8"), out]) + "\\n");
 const write = (status) => { if (process.env.WRITES === "1") { fs.writeFileSync(out + "/antwar-deploy-status", status + "\\n"); fs.writeFileSync(out + "/records-rollback-r1.json", "{}"); } };
 process.on("SIGTERM", () => { write("FAILED"); process.exit(143); });
@@ -106,6 +108,7 @@ else { write(Number(process.env.DEPLOY_RC) === 0 ? "DONE" : "FAILED"); process.e
     WRITES: options.writes === false ? "0" : "1",
     UPLOAD_FAILS: options.uploadFails ? "1" : "0",
     ANTWAR_ARGS: options.args ?? "",
+    PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: options.publicExclusionVersion ?? "",
     ANTWAR_TAG: options.tag ?? "",
     ANTWAR_COMMIT: options.commit ?? SHA,
     ANTWAR_BUILD_ID: BUILD_ID,
@@ -330,16 +333,16 @@ describe("cloudbuild.yaml", () => {
     }
   });
 
-  it("gives no setting a default: only an empty _ARGS", () => {
+  it("defaults only arguments and the optional public exclusion version to empty", () => {
     const block = /\nsubstitutions:\n((?: {2}.*\n)*)/.exec(yaml)![1];
-    expect(block).toBe("  _ARGS: ''\n");
+    expect(block).toBe("  _ARGS: ''\n  _PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: ''\n");
   });
 
   // Cloud Build refuses a submitted build given a substitution its config does not use, so
   // a source-repository substitution such as _REPO_URL is refused rather than used.
   it("uses exactly the deploy's substitutions, and none naming the source repository", () => {
     const used = new Set([...yaml.replaceAll("$$", "").matchAll(/\$\{?([A-Z_][A-Z0-9_]*)\}?/g)].map((m) => m[1]));
-    expect([...used].sort()).toEqual(["BUILD_ID", "COMMIT_SHA", "PROJECT_ID", "TAG_NAME", "_ARGS",
+    expect([...used].sort()).toEqual(["BUILD_ID", "COMMIT_SHA", "PROJECT_ID", "TAG_NAME", "_ARGS", "_PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION",
       ...settings.filter((n) => n !== "PROJECT").map((n) => `_${n}`)].sort());
     expect(used.has("_REPO_URL")).toBe(false);
     expect(yaml).not.toMatch(/substitutionOption|ALLOW_LOOSE/);
@@ -439,4 +442,18 @@ if (rest[0] === "merge-base") process.exit(process.env.ON_MAIN === "1" ? 0 : 1);
     expect(yaml).toMatch(/\noptions:\n {2}logging: CLOUD_LOGGING_ONLY\n/);
     expect(yaml).toMatch(/\ntimeout: 43200s\n/);
   });
+});
+
+
+it("passes only a pinned numeric version to the deploy environment, never private config", () => {
+  const r = run({ args: `all ${SHA} --precheck`, publicExclusionVersion: "12" });
+  expect(r.status, r.stderr).toBe(0);
+  expect(r.calls).toContainEqual(["public exclusion version", "12"]);
+  expect(configCall(r.calls)[1]).not.toContain("PUBLIC_EXCLUDED_OWNER_IDS");
+  expect(deployCall(r.calls)).toEqual(["deploy.sh", "all", SHA, "--precheck"]);
+});
+it.each(["latest", "0", "01", "-1", "1,2", "private-invalid", "1\n2"])("refuses nonnumeric or noncanonical secret version before external calls (%j)", version => {
+  const r = run({ args: `all ${SHA}`, publicExclusionVersion: version });
+  expect(r.status).toBe(2); expect(r.calls).toEqual([]);
+  expect(r.stderr).toContain("PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer");
 });

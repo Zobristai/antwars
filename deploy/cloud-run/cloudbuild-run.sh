@@ -32,6 +32,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/config.sh"
 
 HEX40='^[0-9a-f]{40}$'
+# Pin the hide-list version before any external command; the list itself stays in Secret Manager.
+export PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION="${PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION:-}"
+if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer" >&2; exit 2
+fi
+
 # The one repository deploy tooling runs from; cloudbuild.yaml clones the same.
 SOURCE_REPO="https://github.com/Zobristai/antwars.git"
 [[ "${ANTWAR_COMMIT:-}" =~ $HEX40 ]] || { echo "refusing: the build's commit (COMMIT_SHA) is not a full 40-hex sha" >&2; exit 2; }

@@ -27,6 +27,14 @@ set -euo pipefail
 # shellcheck source=deploy/cloud-run/config.sh
 source "$(dirname "$0")/config.sh"
 
+# Optional numeric secret version. Only the version and fixed reference enter deployment metadata.
+# Empty disables the hide list; no owner values are read by this script.
+PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION="${PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION:-}"
+if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && ! "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+  echo "refusing: PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer" >&2; exit 2
+fi
+PUBLIC_EXCLUSION_SECRET="ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS=antwars-public-excluded-owner-ids:$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
+
 # Preview mode. Runs only when the first argument is
 # exactly `preview` or `preview-remove`, and always exits; any other call takes
 # the main-only path below, unchanged.
@@ -569,16 +577,23 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 
   # Sets SLOT_FLAGS, slot $1's whole shape at address $2 with secrets $3. It
   # reads PROJECT, NAMESPACE, PUBLIC_SLOTS, PRIVATE_SLOTS, TEMPLATE, EXTRA_ENV and SHA.
-  # The --set-env-vars and --set-secrets flags replace every variable and
-  # secret. At most one instance, and none kept running while idle: the server
+  # Live settings update only the named values; unrelated settings are preserved.
+  # Preview settings retain their replacement behavior. At most one instance, and none kept running while idle: the server
   # is woken when its slot is assigned. No request reaches an instance
   # before /ready answers 200, which happens once it holds the slot.
   # The server runs as antwar-run through the metadata server; there is no key
   # file.
   slot_flags() {
+    local secret_flag=--set-secrets env_flag=--set-env-vars secrets="$3"
+    local remove_secrets=()
+    if [[ "$NAMESPACE" == live ]]; then
+      secret_flag=--update-secrets; env_flag=--update-env-vars
+      if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then secrets+=",$PUBLIC_EXCLUSION_SECRET"
+      else remove_secrets=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS); fi
+    fi
     SLOT_FLAGS=(
-      --set-env-vars "ANTWAR_SLOT=$1,ANTWAR_PUBLIC_URL=$2,ANTWAR_STORE_NAMESPACE=$NAMESPACE,GCLOUD_PROJECT=$PROJECT,ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS,ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS,ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE$EXTRA_ENV"
-      --set-secrets "$3"
+      "$env_flag" "ANTWAR_SLOT=$1,ANTWAR_PUBLIC_URL=$2,ANTWAR_STORE_NAMESPACE=$NAMESPACE,GCLOUD_PROJECT=$PROJECT,ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS,ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS,ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE$EXTRA_ENV"
+      "$secret_flag" "$secrets" "${remove_secrets[@]}"
       --service-account "$RUN_SA"
       --min-instances 0 --max-instances 1
       --no-cpu-throttling
@@ -959,6 +974,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
             case "--command": c.command = list(v); break;
             case "--args": c.args = list(v); break;
             case "--set-env-vars": case "--update-env-vars": for (const [name, value] of kv(v)) c.env.push({ name, value }); break;
+            case "--remove-secrets": break; // A newly created service has no prior binding to remove.
             case "--set-secrets": case "--update-secrets":
               for (const [name, ref] of kv(v)) c.env.push({ name, valueSource: { secretKeyRef: { secret: ref.split(":")[0], version: ref.split(":")[1] } } });
               break;
@@ -996,6 +1012,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     first_deploy_requires() {
       local common="ANTWAR_RECORD_INPUT_BUCKET ANTWAR_REPLAY_BUCKET ANTWAR_CODE_VERSION ANTWAR_PRIVATE_REPLAY_KEY"
       local served="GCLOUD_PROJECT ANTWAR_STORE_NAMESPACE ANTWAR_PUBLIC_SLOTS ANTWAR_PRIVATE_SLOTS ANTWAR_SLOT_URL_TEMPLATE ANTWAR_USERNAME_CLAIM_LIMIT_RULE"
+      if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then served+=" ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS"; fi
       if [[ "$1" == "$RECORDS_SERVICE" ]]; then echo "$common NODE_OPTIONS"
       elif [[ "$1" == "$GAME_SERVICE" ]]; then echo "$common $served ANTWAR_LOAD_BALANCER_ADDRESS ANTWAR_OPERATOR_TOKEN"
       elif [[ "$1" == "${PREFIX}public-"* ]]; then echo "$common $served ANTWAR_SLOT ANTWAR_PUBLIC_URL ANTWAR_OPERATOR_TOKEN"
@@ -1442,13 +1459,15 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # ANTWAR_MEMORY_LIMIT is --memory's own value: the post-mortem's re-run limit where no control group gives one.
     GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
+    GAME_REMOVE_SECRETS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+    if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then GAME_SECRETS+=",$PUBLIC_EXCLUSION_SECRET"; GAME_REMOVE_SECRETS=(); fi
     if [[ "$FIRST_DEPLOY" == 1 ]]; then
       GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
       GAME_SECRETS+=",$OPERATOR_TOKEN_SECRET"
     fi
     swap "$GAME_SERVICE" \
       --update-env-vars "$GAME_ENV" \
-      --update-secrets "$GAME_SECRETS" \
+      --update-secrets "$GAME_SECRETS" "${GAME_REMOVE_SECRETS[@]}" \
       --service-account "$RUN_SA" \
       --min-instances 1 --max-instances 1 \
       --max 1 \
@@ -1785,12 +1804,14 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
 fi
 
 SHA="${1:-}"
-if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+if [[ $# -ne 1 || ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "usage: $0 <full 40-hex commit sha on main>" >&2
   exit 2
 fi
 
 load_deploy_config ACCOUNT PROJECT BUILD_BUCKET BUILD_SA RUN_SA RECORD_INPUT_BUCKET
+PUBLIC_SECRET_FLAGS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
+if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then PUBLIC_SECRET_FLAGS=(--update-secrets "$PUBLIC_EXCLUSION_SECRET"); fi
 REGION=australia-southeast1
 IMAGE="$REGION-docker.pkg.dev/$PROJECT/antwar/server:$SHA"
 BUCKET="gs://$BUILD_BUCKET"
@@ -1856,7 +1877,7 @@ CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
 # The new revision gets all traffic by name (deploy_named), never "latest".
 stamp gcloud run deploy antwar --image "$IMAGE" --no-traffic ...
 deploy_named antwar \
-  --image "$IMAGE" \
+  --image "$IMAGE" "${PUBLIC_SECRET_FLAGS[@]}" \
   --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY" \
   --service-account "$RUN_SA" \
   --min-instances 1 --max-instances 1 \

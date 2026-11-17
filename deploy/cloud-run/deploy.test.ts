@@ -273,6 +273,10 @@ else if (at("run", "deploy") && st.services[a[2]]) {
       ...[...pairs(flag("--set-secrets")), ...pairs(flag("--update-secrets"))].map((kv) => [kv.split("=")[0], "secret:" + kv.slice(kv.indexOf("=") + 1)]),
     ]).filter(([n]) => !(dropSvc === a[2] && n === dropName))),
   };
+  for (const name of (flag("--remove-secrets") ?? "").split(",").filter(Boolean)) {
+    st.revisions[svc.latest].env = st.revisions[svc.latest].env.filter(n => n !== name);
+    delete st.revisions[svc.latest].values[name];
+  }
   if (dropSvc === a[2]) st.revisions[svc.latest].env = st.revisions[svc.latest].env.filter((n) => n !== dropName);
   if (process.env.DEPLOY_KEEPS_TRAFFIC !== "1" && !a.includes("--no-traffic")) svc.traffic = [{ revisionName: svc.latest, percent: 100, latestRevision: true }, ...tagsOnly(svc.traffic)];
   // --no-traffic pins traffic that followed the latest revision to the revision it was on, by name.
@@ -498,6 +502,7 @@ if (kind === "fail") { log("RESULT probe failed", "domain stream comparison fail
   // A config the test runner happens to carry never reaches the script.
   const inherited = { ...process.env };
   delete inherited.ANTWAR_DEPLOY_CONFIG;
+  delete inherited.PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION;
   const env = {
     ...inherited, PATH: `${dir}:${process.env.PATH}`, CALLS: calls, ROOT: dir, BUILT: join(dir, "built"),
     ...(options.configPath === null ? {} : { ANTWAR_DEPLOY_CONFIG: options.configPath ?? configFile }),
@@ -548,8 +553,9 @@ function runAsync(args: readonly string[], options: Options = {}): Promise<Retur
 // on /ready keeps an instance unroutable until it holds its slot, for at most 600 s.
 const slotDeploy = (service: string, slot: string, namespace: string, repo: string, counts: string, extra = "") => [
   "run", "deploy", service, ...ACCOUNT, ...REGION, "--image", `${repo}@${DIGEST}`,
-  "--set-env-vars", `ANTWAR_SLOT=${slot},ANTWAR_PUBLIC_URL=${url(service)},ANTWAR_STORE_NAMESPACE=${namespace},GCLOUD_PROJECT=example-project,${counts},ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate(namespace === "live" ? "antwar-" : "antwar-preview-")}${extra}`,
-  "--set-secrets", "ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1",
+  namespace === "live" ? "--update-env-vars" : "--set-env-vars", `ANTWAR_SLOT=${slot},ANTWAR_PUBLIC_URL=${url(service)},ANTWAR_STORE_NAMESPACE=${namespace},GCLOUD_PROJECT=example-project,${counts},ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate(namespace === "live" ? "antwar-" : "antwar-preview-")}${extra}`,
+  namespace === "live" ? "--update-secrets" : "--set-secrets", "ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1",
+  ...(namespace === "live" ? ["--remove-secrets", "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS"] : []),
   "--service-account", "antwar-run@example-project.iam.gserviceaccount.com",
   "--min-instances", "0", "--max-instances", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "2Gi",
   "--timeout", "3600", "--concurrency", "1000",
@@ -710,7 +716,7 @@ describe("existing deploy paths are unchanged", () => {
         "--service-account", "projects/example-project/serviceAccounts/antwar-build@example-project.iam.gserviceaccount.com",
         "--gcs-source-staging-dir", "gs://example-build/source", "--gcs-log-dir", "gs://example-build/logs"],
       named("antwar"),
-      ["run", "deploy", "antwar", "--image", `${SERVER_REPO}:${SHA}`,
+      ["run", "deploy", "antwar", "--image", `${SERVER_REPO}:${SHA}`, "--remove-secrets", "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS",
         // The record handoff settings; the slot allocator's 8 public and 8 private
         // live slots and the address it wakes them at; the load balancer's addresses.
         // Variables set outside the script are kept. ANTWAR_MEMORY_LIMIT is --memory's own value.
@@ -1313,6 +1319,20 @@ describe.concurrent("all", () => {
 
   // Credible regression: the game deployed without the post-mortem's configured limit, with one apart from its
   // --memory, or with a form the server's parser rejects; the main path and a later all-services deploy alike.
+  it("public exclusion version attaches the pinned reference to game and slots only", async () => {
+    const r = await runAsync(["all", SHA], { state: live(), env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
+    expect(r.status, r.stderr).toBe(0);
+    const setting = "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS";
+    const calls = deploys(r.gcloud); expect(calls).toHaveLength(18);
+    for (const call of calls) {
+      const secret = call[call.indexOf("--update-secrets") + 1] ?? "";
+      if (call[2] === "antwar-records") expect(call.join(" ")).not.toContain(setting);
+      else expect(secret).toContain(`${setting}=antwars-public-excluded-owner-ids:12`);
+      expect(envOf(call)[setting]).toBeUndefined();
+    }
+    expect(r.gcloud.some(c => c[0] === "secrets")).toBe(false);
+  }, TIMEOUT);
+
   it("gives the game ANTWAR_MEMORY_LIMIT as its own --memory value, which the server's parser accepts", async () => {
     const later = await runAsync(["all", SHA], { state: live(), env: { ANTWAR_SWAP_STABLE: "" } });
     expect(later.status, later.stderr).toBe(0);
@@ -1374,7 +1394,7 @@ describe.concurrent("all", () => {
     for (const address of ["192.0.2.10", "2001:db8::a"]) expect(r.stdout + r.stderr).not.toContain(address);
     expect(deploys(r.gcloud)[17]).toEqual(["run", "deploy", "antwar", "--image", IMAGE,
       "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=2Gi`,
-      "--update-secrets", KEY,
+      "--update-secrets", KEY, "--remove-secrets", "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS",
       "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
       "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "2Gi", "--timeout", "3600", "--concurrency", "1000",
       "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION]);
@@ -2350,4 +2370,66 @@ describe("names and rules deploy.sh shares with src", () => {
     expect(cases.some(({ fields }) => (fields.state === "open" || fields.state === "waiting") && isExpired(fields, NOW))).toBe(true);
     expect(cases.some(({ fields }) => (fields.state === "open" || fields.state === "waiting") && !isExpired(fields, NOW))).toBe(true);
   });
+});
+
+
+describe("optional public exclusion secret", () => {
+  const setting = "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS";
+  const ref = `${setting}=antwars-public-excluded-owner-ids:12`;
+  const flags = (call: string[], name: string) => call[call.indexOf(name) + 1];
+  it("the version attaches only the pinned secret reference to the game", () => {
+    const r = run([SHA], { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
+    expect(r.status, r.stderr).toBe(0);
+    const calls = deploys(r.gcloud); expect(calls).toHaveLength(1);
+    expect(flags(calls[0]!, "--update-secrets")).toBe(ref);
+    expect(envOf(calls[0]!)[setting]).toBeUndefined();
+    expect(r.gcloud.some(c => c[0] === "secrets")).toBe(false);
+  });
+  it("the version enables the same pinned reference on every live slot", () => {
+    const r = run(["slots", "live", SHA], { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
+    expect(r.status, r.stderr).toBe(0);
+    const calls = deploys(r.gcloud); expect(calls).toHaveLength(16);
+    for (const call of calls) {
+      expect(flags(call, "--update-secrets")).toContain(ref);
+      expect(flags(call, "--update-secrets")).toContain("ANTWAR_PRIVATE_REPLAY_KEY=");
+      expect(envOf(call)[setting]).toBeUndefined();
+    }
+    expect(r.gcloud.some(c => c[0] === "secrets")).toBe(false);
+  }, LIVE_SLOTS_TIMEOUT);
+  it("omitted version clears only the old game exclusion mapping", () => {
+    const r = run([SHA], { state: s => {
+      s.revisions[GAME_OUT]!.env = [setting, "OTHER_SECRET"];
+      s.revisions[GAME_OUT]!.values = { [setting]: "secret:antwars-public-excluded-owner-ids:12", OTHER_SECRET: "secret:other:1" };
+    } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.state.revisions["antwar-new"]!.env).not.toContain(setting);
+    expect(r.state.revisions["antwar-new"]!.values?.OTHER_SECRET).toBe("secret:other:1");
+  });
+  it("does not attach the reference to records or preview, even with a version set", () => {
+    for (const args of [["records", SHA], ["preview", SHA, "dir"]]) {
+      const r = run(args, { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "12" } });
+      expect(r.status, r.stderr).toBe(0);
+      expect(deploys(r.gcloud).flat().join(" ")).not.toContain(ref);
+    }
+  });
+  it("refuses latest and every nonnumeric version before external calls", () => {
+    for (const version of ["latest", "0", "01", "-1", "1,2", "private-invalid-value", "1\n2"]) {
+      const r = run([SHA], { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: version } });
+      expect(r.status).toBe(2); expect(r.gcloud).toEqual([]);
+      expect(r.stderr).toContain("PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION must be empty or a positive integer");
+    }
+  });
+  it("empty version clears only the old slot exclusion mapping", () => {
+    const r = run(["slots", "live", SHA], { env: { PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: "" }, state: s => {
+      s.services["antwar-public-0"] = { latest: "old-slot", traffic: [{ revisionName: "old-slot", percent: 100 }] };
+      s.revisions["old-slot"] = { image: `${SERVER_REPO}@${DIGEST}`, sha: SHA,
+        env: [setting, "OTHER_SECRET", "OTHER_SETTING"],
+        values: { [setting]: "secret:antwars-public-excluded-owner-ids:12", OTHER_SECRET: "secret:other:1", OTHER_SETTING: "retained" } };
+    } });
+    expect(r.status, r.stderr).toBe(0);
+    const revision = r.state.revisions["antwar-public-0-new"]!;
+    expect(revision.env).not.toContain(setting);
+    expect(revision.values?.OTHER_SECRET).toBe("secret:other:1");
+    expect(revision.values?.OTHER_SETTING).toBe("retained");
+  }, LIVE_SLOTS_TIMEOUT);
 });

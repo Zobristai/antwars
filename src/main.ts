@@ -8,6 +8,7 @@ import { replaySourceFromEnv } from "./replays/access.js";
 import { historySourceFromEnv } from "./replays/history-source.js";
 import { firestoreFromEnv } from "./store/firestore.js";
 import { createIdentities } from "./identity/identities.js";
+import { createPublicVisibility, publicExcludedOwnerIdsFromEnv } from "./identity/publicVisibility.js";
 import { testClaimOwnerIdsFromEnv } from "./identity/testClaimAuthorization.js";
 import { createLobbies, STALE_HOLD_GRACE_MS } from "./lobby/lobbies.js";
 import { createRatings, startRecordFill } from "./rating/ratings.js";
@@ -61,11 +62,13 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   let recordHandoff;
   let usernameClaimLimitRule;
   let testClaimOwnerIds;
+  let publicExcludedOwnerIds;
   let slotWaker;
   let relayKey;
   try {
     usernameClaimLimitRule = usernameClaimLimitRuleFromEnv(process.env);
     testClaimOwnerIds = testClaimOwnerIdsFromEnv(process.env);
+    publicExcludedOwnerIds = publicExcludedOwnerIdsFromEnv(process.env);
     configureClientSource(process.env);
     relayKey = deriveRelayKey(privateMediaKey(process.env.ANTWAR_PRIVATE_REPLAY_KEY));
     slotSettings = slotOptions(process.env);
@@ -82,6 +85,9 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   }
   // One configured store serves the slot runner and the account operations.
   const store = firestoreFromEnv(process.env);
+  if (publicExcludedOwnerIds.length > 0 && store === undefined) throw new Error("Public visibility requires an account store");
+  const watchRegistry = store === undefined ? undefined : createWatchRegistry(store);
+  const publicVisibility = store && watchRegistry ? createPublicVisibility(store, watchRegistry, publicExcludedOwnerIds) : undefined;
   let slot: SlotWiring | undefined;
   let accounts: AccountStores | undefined;
   if (store !== undefined) {
@@ -89,7 +95,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     // Slots are assigned through the waking store, so each taken slot's server is woken after commit.
     const lobbyStore = slotWaker === undefined ? store : wakingStore(store, slotWaker);
     // A hold whose server never began its match is released after the stale grace.
-    accounts = { identities, lobbies: createLobbies(lobbyStore, identities, { ...lobbySlots, staleHoldGraceMs: STALE_HOLD_GRACE_MS }), ratings: createRatings(store, identities), usernameClaimLimitRule };
+    accounts = { identities, lobbies: createLobbies(lobbyStore, identities, { ...lobbySlots, staleHoldGraceMs: STALE_HOLD_GRACE_MS }), ratings: createRatings(store, identities, publicVisibility), usernameClaimLimitRule };
     // In the background: rows rated before records existed get theirs; the fill runs
     // once and records completion, so later starts scan nothing.
     void startRecordFill(store);
@@ -108,13 +114,12 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   const storedHistory = comparison.match === undefined ? historySourceFromEnv(process.env) : undefined;
   const historySource = storedHistory && store ? correctedHistorySource(storedHistory, store) : storedHistory;
   const privateArchive = comparison.match === undefined ? privateArchiveFromEnv(process.env) : undefined;
-  const watchRegistry = store === undefined ? undefined : createWatchRegistry(store);
   // The entry server's post-mortem checks a record's game version against the repository's main history; its own
   // build (ANTWAR_CODE_VERSION) must be in that history for any answer to be trusted.
   const ownVersion = process.env.ANTWAR_CODE_VERSION;
   const postMortemVersions = slotSettings === undefined && comparison.match === undefined && ownVersion
     ? createVersionSource({ post: httpUploadPack(), ownVersion, log: (line) => console.log(line) }) : undefined;
-  const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, storedHistorySource: storedHistory, privateArchive, recordHandoff, watchRegistry, postMortemVersions, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
+  const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, storedHistorySource: storedHistory, privateArchive, recordHandoff, watchRegistry, publicVisibility, postMortemVersions, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
     // Every match a deployed server plays reports its tick times to Cloud Run logs.
     tickReport: { log: (line) => console.log(line) } });
   console.log(`antwar listening on port ${server.port} (spectator at /, agents at /mcp)${slot !== undefined || comparison.match !== undefined ? `; match logs in ${dataDir}` : "; entry point does not host matches"}`);

@@ -1,3 +1,4 @@
+import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 /// <reference types="node" />
 import { FirestoreError, type Fields, type QueryResult, type Store, type TransactionRead, type TransactionStep, type Write } from "../store/firestore.js";
 import { createIdentities, type Identities } from "../identity/identities.js";
@@ -631,7 +632,7 @@ export async function startRecordFill(store: Store): Promise<void> {
  * attempt has finished or failed; a failure is logged, never thrown.
  */
 export function createRatings(
-  store: Store, identities: Pick<Identities, "findById"> = createIdentities(store),
+  store: Store, identities: Pick<Identities, "findById"> = createIdentities(store), publicVisibility?: PublicVisibility,
 ): Ratings & { readonly houseBackfill: Promise<void> } {
   const backfill = (): Promise<boolean> => markHouseRatings(store).then(
     (marked) => { if (marked > 0) console.info("antwar house ratings marked", { marked }); return true; },
@@ -652,6 +653,7 @@ export function createRatings(
     const replayIds = new Map<string, string>();
     const times = new Map<string, number | null>();
     for (const id of unique) {
+      if (publicVisibility && !await publicVisibility.lobbyVisible(id)) continue;
       const replayId = docs.get(`watchMatches/${id}`)?.replayId;
       if (replayId !== undefined && isReplayId(replayId)) replayIds.set(id, replayId);
       if (withTimes) {
@@ -733,10 +735,11 @@ export function createRatings(
       // deliberately current: an old cursor must not attribute a former owner's
       // history to whoever has since claimed that name.
       const records = new Map(rows.map(({ path, fields }) => [path, storedRecord(idOf(path), fields)]));
+      const visibleRows = publicVisibility ? await publiclyVisible(rows, row => publicVisibility.identitiesVisible([idOf(row.path)])) : rows;
       const indexMode = isIndexMode(mode);
       const { replayIds, times } = await storedFormFacts(
-        [...records.values()].flatMap((record) => record?.form.map(({ matchId }) => matchId) ?? []), indexMode);
-      const entries = await Promise.all(rows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
+        visibleRows.flatMap(row => records.get(row.path)?.form.map(({ matchId }) => matchId) ?? []), indexMode);
+      const entries = await Promise.all(visibleRows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
         const identityId = idOf(path);
         const identity = await identities.findById(identityId);
         const record = records.get(path) ?? null;
