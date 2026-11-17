@@ -969,6 +969,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
             case "--max": svc.scaling = { maxInstanceCount: Number(v) }; break;
             case "--cpu": lim.cpu = v; break;
             case "--memory": lim.memory = v; break;
+            case "--execution-environment": t.executionEnvironment = { gen1: "EXECUTION_ENVIRONMENT_GEN1", gen2: "EXECUTION_ENVIRONMENT_GEN2" }[v]; if (!t.executionEnvironment) { console.error("unknown --execution-environment " + v); process.exit(1); } break;
             case "--no-cpu-throttling": c.resources.cpuIdle = false; i--; break;
             case "--timeout": t.timeout = v + "s"; break;
             case "--concurrency": t.maxInstanceRequestConcurrency = Number(v); break;
@@ -1440,7 +1441,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # store namespace, replay bucket and operator token); a first deploy has none to
     # keep, so it sets them from the live slot settings, the deploy config and the
     # public slots' operator token secret.
-    # ANTWAR_MEMORY_LIMIT is --memory's own value (GAME_MEMORY): the post-mortem's re-run limit where no control group gives one.
+    # ANTWAR_MEMORY_LIMIT is --memory's own value (GAME_MEMORY): the post-mortem's re-run limit where the control groups set
+    # none. The post-mortem still needs cgroup v2 to read its memory, hence --execution-environment gen2 (game only).
     GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
     if [[ "$FIRST_DEPLOY" == 1 ]]; then
@@ -1455,6 +1457,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       --max 1 \
       --no-cpu-throttling \
       --cpu 2 --memory "$GAME_MEMORY" \
+      --execution-environment gen2 \
       --timeout 3600 \
       --concurrency 1000 \
       --ingress all \
@@ -1802,6 +1805,9 @@ MEMORY=2Gi
 # only with 1,498 MiB of headroom (src/accounts/postMortemJobs.ts), which 2Gi leaves only
 # while the server itself uses at most 550 MiB. 4Gi admits a re-run beside a server
 # using up to 2,598 MiB, more than it can use at 2Gi. Slots, records and preview stay at MEMORY.
+# The game also runs on Cloud Run's second generation execution environment: the
+# post-mortem reads its memory from the cgroup v2 files, and without them it starts no
+# re-run at all, whatever ANTWAR_MEMORY_LIMIT says. Every other service keeps the default.
 GAME_MEMORY=4Gi
 # RECORD_INPUT_BUCKET is the record service's private input bucket
 # (record-service-setup.sh), where this server hands each recorded match.
@@ -1810,7 +1816,7 @@ GAME_MEMORY=4Gi
 # ANTWAR_SLOT_URL_TEMPLATE), ANTWAR_LOAD_BALANCER_ADDRESS (the antwars.ai
 # forwarding-rule addresses, read at deploy time) and the username claim limit's rule
 # (ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client), and ANTWAR_MEMORY_LIMIT, --memory's own value, the post-mortem's re-run
-# limit where no control group gives one; variables set outside this script are kept.
+# limit where the control groups set none (it still needs cgroup v2, hence gen2); variables set outside this script are kept.
 # Its ^;^ prefix makes ; the separator, so the address list's commas stay inside one value.
 
 REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
@@ -1869,6 +1875,7 @@ deploy_named antwar \
   --max 1 \
   --no-cpu-throttling \
   --cpu 1 --memory "$GAME_MEMORY" \
+  --execution-environment gen2 \
   --timeout 3600 \
   --concurrency 1000 \
   --ingress all \
