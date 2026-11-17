@@ -225,7 +225,19 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // caste flyer in the count-mark caste, reply and PATROL sentences; without them they hash to 2fad77db… and 89c7bf31….
   // Repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each flyer in
   // sight with its grounded, flying or hovering state); without them they hash to 6a98378b… and 5939af95….
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("aa3f2ce39e81d26ff19fe8fc4c935fa9a337e0f653782cfd0d9b4a752fdc9005");
+  // Vocabulary-only repin: these historical fixture strings reconstruct the previous
+  // briefing exactly. No other text is normalized beyond the existing controls above.
+  const substitutions = [
+    ["steering+push", "movement+push"],
+    ["order steers your squad", "order directs your squad"],
+    ["Count marks do not steer your squad.", "Count marks do not direct your squad."],
+  ] as const;
+  const currentText = briefing(current).replace(omissionSentence, "").replace(antCap, "");
+  for (const [, after] of substitutions) expect(currentText.split(after)).toHaveLength(2);
+  const original = substitutions.reduce((text, [before, after]) => text.replace(after, before), currentText);
+  expect(sha(original)).toBe("aa3f2ce39e81d26ff19fe8fc4c935fa9a337e0f653782cfd0d9b4a752fdc9005");
+  expect(substitutions.reduce((text, [before, after]) => text.replace(before, after), original)).toBe(currentText);
+  expect(sha(currentText)).toBe("4cc922869bf8df9515b7eed454fd6cb11a04a86cabea93e3de7773eaa33d68cf");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
   expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("f654c5720061d8318569cbfcc3ed63d7221e690f7070907482047d4699142b59");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
