@@ -78,8 +78,8 @@ describe("redesign briefing teaches decisions, not just command syntax", () => {
     expect(verbs).toEqual(expect.arrayContaining(["DEFEND", "ATTACK", "FORAGE", "GATHER", "PATROL", "LINE"]));
     expect(text).toContain("whole count 1-10,000");
     expect(text).toContain("marks/myMarks claimed=answered now, possibly short; never promised");
-    expect(text).not.toContain("Each myMarks entry also counts squad ants following word marks, separately from claimed");
-    expect(briefing({ ...redesign, patrolLinkTiles: undefined, wordMarksDisabled: undefined })).toContain("Each myMarks entry also counts squad ants following word marks, separately from claimed");
+    expect(text).not.toContain("In each myMarks entry, the only field whose name starts with s counts squad ants following word marks; claimed counts ants answering a count mark");
+    expect(briefing({ ...redesign, patrolLinkTiles: undefined, wordMarksDisabled: undefined })).toContain("In each myMarks entry, the only field whose name starts with s counts squad ants following word marks; claimed counts ants answering a count mark");
     expect(text).toContain("including workers already foraging");
     expect(text).toContain("with no caste preference");
     expect(text).toContain("Marks recruit in laid order");
