@@ -210,6 +210,18 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
+  it("keeps complete long player names and hover titles in the Recordings card", async () => {
+    const handle = "long-builder-" + "x".repeat(64), model = "synthetic/" + "long-model-".repeat(12);
+    const record = saved(3);
+    const p = landing({ matches: () => new Response(JSON.stringify({ matches: [{ ...record,
+      seats: [{ ...record.seats[0]!, handle, modelLabel: model }, record.seats[1]!] }], nextPageToken: null })) });
+    await vi.waitFor(() => expect(p.rows("Recordings")).toHaveLength(1));
+    const name = p.card("Recordings")!.byClass("d1p-rec-name")[0]!;
+    expect(name.textContent).toBe(`${handle} ${model.slice("synthetic/".length)}`);
+    expect(name.title).toBe(name.textContent);
+    p.dispose();
+  });
+
   it("gives each recording one Replay text link, as the Matches page does", async () => {
     const p = landing({ matches: () => new Response(JSON.stringify({ matches: [saved(3), saved(2)], nextPageToken: null })) });
     await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));

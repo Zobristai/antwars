@@ -595,6 +595,18 @@ describe("a model label with nothing after its provider prefix", () => {
     }
   });
 
+  it("retains the entire long builder/model name in text and hover title", () => {
+    const handle = "long-builder-" + "x".repeat(64), model = "synthetic/" + "long-model-".repeat(12);
+    const rec: Recording = { ...recording, seats: [{ ...recording.seats[0]!, handle, modelLabel: model }, recording.seats[1]!] };
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
+    const name = recordings.list.byClass("d1p-rec-name")[0]!;
+    expect(name.textContent).toBe(`${handle} ${model.slice("synthetic/".length)}`);
+    expect(name.title).toBe(name.textContent);
+    expect(name.byClass("d1p-user")[0]!.textContent).toBe(handle);
+    expect(name.byClass("d1p-mname")[0]!.textContent).toBe(model.slice("synthetic/".length));
+    p.mounted.destroy();
+  });
+
   it("preserves rating focus and tap behavior across a refresh", () => {
     const rec = { ...recording, seats: recording.seats.map(s => ({ ...s, startRating: rated(1500) })) };
     const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
