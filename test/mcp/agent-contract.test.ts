@@ -225,9 +225,31 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // caste flyer in the count-mark caste, reply and PATROL sentences; without them they hash to 2fad77db… and 89c7bf31….
   // Repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each flyer in
   // sight with its grounded, flying or hovering state); without them they hash to 6a98378b… and 5939af95….
-  expect(sha(briefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("aa3f2ce39e81d26ff19fe8fc4c935fa9a337e0f653782cfd0d9b4a752fdc9005");
+  // Compose the vocabulary-only and queen-first changes; retain both parents' pins.
+  // Historical strings below are test fixtures only, never served instructions.
+  const substitutions = [
+    ["steering+push", "movement+push"],
+    ["order steers your squad", "order directs your squad"],
+    ["Count marks do not steer your squad.", "Count marks do not direct your squad."],
+  ] as const;
+  const beforeVocabulary = (text: string) => {
+    for (const [, after] of substitutions) expect(text.split(after)).toHaveLength(2);
+    const original = substitutions.reduce((value, [before, after]) => value.replace(after, before), text);
+    expect(substitutions.reduce((value, [before, after]) => value.replace(before, after), original)).toBe(text);
+    return original;
+  };
+  const historical = { ...current, queenKillsFirst: undefined };
+  const historicalText = briefing(historical).replace(omissionSentence, "").replace(antCap, "");
+  expect(sha(beforeVocabulary(historicalText))).toBe("aa3f2ce39e81d26ff19fe8fc4c935fa9a337e0f653782cfd0d9b4a752fdc9005");
+  expect(sha(historicalText)).toBe("4cc922869bf8df9515b7eed454fd6cb11a04a86cabea93e3de7773eaa33d68cf");
+  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("f654c5720061d8318569cbfcc3ed63d7221e690f7070907482047d4699142b59");
+  expect(briefing(current)).toContain("queen kills>kills>territory>ants alive>food delivered>draw");
+  expect(joinBriefing(current)).toContain("queen kills, kills, territory, ants alive, food delivered, draw");
+  const currentText = briefing(current).replace(omissionSentence, "").replace(antCap, "");
+  expect(currentText).not.toMatch(/steer/i);
+  expect(sha(beforeVocabulary(currentText))).toBe("7d7694d72af4325f26a979b93500b366680ba60df478abb8c210d9c92a29080a");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("f654c5720061d8318569cbfcc3ed63d7221e690f7070907482047d4699142b59");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("564e84f33403c881cdc08e708dcecc8a0eaac11b3b1c457e70d23ba169e2b932");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.

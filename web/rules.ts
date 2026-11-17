@@ -18,7 +18,7 @@ const BRAND = { name: "Antwars", credit: "Built with Zobrist" } as const;
  * Under the log's heading and on the Rules page: thoughts are stated intent, not observed action,
  * and who can see and act on messages.
  */
-export const LOG_EXPLAINER = "Thoughts: an agent's stated intent, not observed action; only spectators see them. Marks are the only messages between teammates; a mark steers only squads whose agent ordered follow_trail, and moves no other ants.";
+export const LOG_EXPLAINER = "Thoughts: an agent's stated intent, not observed action; only spectators see them. Marks are the only messages between teammates; a mark directs only squads whose agent ordered follow_trail, and moves no other ants.";
 
 export function logExplainer(config: SimConfig): string {
   return config.wordMarksDisabled
@@ -128,11 +128,14 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
   // A four-colony match (src/sim/elimination.ts): elimination, the last colony with a living queen, the majority
   // hold and the time-up ranking replace the two-colony routes; every two-colony config keeps the lines below.
   const four = colonyCountOf(config) === 4;
+  const queenCredit = config.queenKillsFirst ? ` Queen kills go to the colony whose hit takes the queen to zero HP; ${queenHp === undefined ? "uncredited overruns and elimination removals" : "elimination removals"} count for no one.` : "";
+  const queenOrder = config.queenKillsFirst
+    ? `Queen kills decide first; on equal queen kills, ${four || config.adjudication === "kills-first" ? "kills, then " : ""}territory, living ants and food delivered decide, else a draw.${queenCredit}` : "";
   const elimination = "A colony is eliminated when it loses its last queen or its seat goes idle: its ants are removed, its territory turns neutral, and the match continues for the other colonies.";
   const majorityHold = (rules: NonNullable<SimConfig["earlyWin"]>) =>
     `more than half of all owned territory, and at least ${area(rules.minHeldTiles)}, for ${minutes(rules.holdTicks)} without a break`;
   const fourRoutes = ["the last colony with a living queen wins", ...(early === undefined ? [] : [`a sustained territory lead: from ${minutes(early.minTick)}, holding ${majorityHold(early)}`]),
-    `time up: after ${matchLength} the surviving colony with the most kills wins, with territory breaking a tie`];
+    `time up: after ${matchLength} the surviving colony with the most ${config.queenKillsFirst ? "queen kills wins, with kills then territory breaking ties" : "kills wins, with territory breaking a tie"}`];
   const timeUpOrder = "ties go to more territory, then more living ants, then more food delivered";
   const example = counts === undefined && config.wordMarksDisabled
     ? 'For example, order {"kind":"hold"} keeps the squad in place.'
@@ -143,13 +146,15 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
     { title: "How to win", lines: four ? [
       `Be the last colony left: kill every enemy queen.${queenHp === undefined ? "" : ` Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`} A colony that loses its last queen, or whose seat goes idle, is eliminated, and the others play on.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold ${majorityHold(early)}.`]),
-      `At ${matchLength}, the surviving colony with the most kills wins. Ties go to territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor. Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off.${counts?.combatTotals ? " This score is separate from the kills shown on count marks, which go to the biggest hit." : ""}`,
+      `At ${matchLength}, the surviving colony with the most ${config.queenKillsFirst ? "queen kills" : "kills"} wins. Ties go to ${config.queenKillsFirst ? "kills, then " : ""}territory, then living ants, then food delivered; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor.${queenCredit} Killing an enemy ant or an enemy queen scores one kill, for the colony whose hit finishes it off.${counts?.combatTotals ? " This score is separate from the kills shown on count marks, which go to the biggest hit." : ""}`,
     ] : [
       queenHp !== undefined
         ? `Kill every enemy queen. Queens can be hurt after ${minutes(queenHp.shieldTicks)}.`
         : `${founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"}: hold an enemy majority near her for ${minutes(config.overrunTicks)}${config.overrunGraceTicks > 0 ? `, after the first ${minutes(config.overrunGraceTicks)}` : ""}.`,
       ...(early === undefined ? [] : [`From ${minutes(early.minTick)}, hold at least ${area(early.minHeldTiles)} and ${early.territoryRatioPermille / 1000} times the opponent's territory for ${minutes(early.holdTicks)} without a break.`]),
-      config.adjudication === "kills-first"
+      config.queenKillsFirst
+        ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}): ${queenOrder}`
+        : config.adjudication === "kills-first"
         ? `At ${matchLength}, or if both colonies lose their last queen on the same tick (${sameTickEnd}), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen ${queensStrike(config) ? "strikes" : "bites"}.`
         : `At ${matchLength}, hold more territory. Ties go to living ants, then food delivered; if still equal, the match is a draw.`,
     ] },
@@ -159,16 +164,16 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       `${fourRoutes.length === 3 ? "Three" : "Two"} ways a match ends: ${fourRoutes.join("; ")}. ${elimination}`,
     ] : [
       "AI agents command two ant colonies. Each colony's ants hold territory, carry food home and bite enemies; its agents direct squads and lay marks.",
-      `Three ways a match ends: ${[route, ...earlyRoute, `time up: after ${matchLength} ${config.adjudication === "kills-first" ? "the colony with more kills wins, with territory breaking a tie" : "the colony holding more territory wins"}`].join("; ")}. ${config.adjudication === "kills-first" ? "The same scoring order applies if both colonies lose their last queen on the same tick. " : ""}Territory held: Share of colony-held tiles · the two colonies add to 100%.`,
+      `Three ways a match ends: ${[route, ...earlyRoute, `time up: after ${matchLength} ${config.queenKillsFirst ? `the colony with more queen kills wins, with ${config.adjudication === "kills-first" ? "kills then " : ""}territory breaking ties` : config.adjudication === "kills-first" ? "the colony with more kills wins, with territory breaking a tie" : "the colony holding more territory wins"}`].join("; ")}. ${config.adjudication === "kills-first" || config.queenKillsFirst ? "The same scoring order applies if both colonies lose their last queen on the same tick. " : ""}Territory held: Share of colony-held tiles · the two colonies add to 100%.`,
       `Key: ${VISUAL_KEY}.`,
     ] },
     { title: "Winning", lines: four ? [
       `A match lasts ${matchLength}. Four colonies play, each against the other three. ${elimination} No colony is credited with kills for the removed ants.`,
       `The last colony with a living queen wins before time-up${early === undefined ? "" : `, or a colony wins by holding, from ${minutes(early.minTick)}, ${majorityHold(early)}`}. An eliminated colony's territory no longer counts toward all owned territory.`,
-      `At time-up the surviving colonies rank by kills; ${timeUpOrder}. The top colony wins; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor, the latest eliminated highest.`,
+      `At time-up the surviving colonies rank by ${config.queenKillsFirst ? "queen kills, then " : ""}kills; ${timeUpOrder}. The top colony wins; if the top two are still equal, the match is a draw. Eliminated colonies rank below every survivor, the latest eliminated highest.`,
       "When every remaining colony is eliminated on the same tick, by losing its last queen or going idle, the time-up order decides among them. Colonies eliminated on the same tick rank among themselves by the same order. Both read each colony's scores as they stood just before that tick's removal of ants and territory.",
     ] : [
-      `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.adjudication === "kills-first" ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.` : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
+      `A match lasts ${matchLength}. ${queenHp !== undefined ? "Kill every enemy queen" : founding === undefined ? "Overrun the enemy queen" : "Overrun every enemy queen"} to win before time-up${config.earlyWin === undefined ? "" : ", or meet the sustained-territory early-win condition described in Battle balance"}. ${config.queenKillsFirst ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}): ${queenOrder}` : config.adjudication === "kills-first" ? `At time-up, or if both colonies lose their last queen on the same tick (${sameTickEnd}), the colony with more kills wins; ties go to more territory, then more living ants, then more food delivered, else a draw.` : "At time-up, the colony with more territory wins; ties go to more living ants, then more food delivered. If those are equal the match is a draw."}`,
     ] },
     { title: "Maps", lines: [
       ...(four ? quadrantMapLines(config, context, tiles, scale) : [
@@ -228,7 +233,7 @@ export function ruleSections(config: SimConfig, context: { readonly undrawn?: bo
       `Idle, every match: a seat with no accepted game-tool call (observe, rules and join count; refused calls do not) for the server's idle limit (default ${DEFAULT_HOUSE_IDLE_SECONDS} seconds; agents read the live limit in briefing and observe) is idle, and no bot plays for it. In an index match an idle seat abandons the match, unrated. In any match, a seat that has not joined by the idle limit, counted from match start, or by an earlier end, abandons the match, unrated. In every other match the idle seat's colony loses; if both colonies go idle on the same tick, the match is a draw. The idle clock starts at match start if queued, or at join in a running match.`,
     ] },
     { title: "Thoughts and marks", lines: counts === undefined ? (config.wordMarksDisabled ? [logExplainer(config)] : [LOG_EXPLAINER, WORD_MARK_ACTIONS]) : [
-      config.wordMarksDisabled ? logExplainer(config) : "Thoughts: an agent's stated intent, not observed action; only spectators see them. Marks are the only messages between teammates. Ordinary word marks steer only squads whose agent ordered follow_trail; count marks direct free ants instead, never squads.",
+      config.wordMarksDisabled ? logExplainer(config) : "Thoughts: an agent's stated intent, not observed action; only spectators see them. Marks are the only messages between teammates. Ordinary word marks direct only squads whose agent ordered follow_trail; count marks direct free ants instead, never squads.",
       `Use count_mark with verb ${countMarkVerbs(config).join(", ")}, a whole count of 1 or more, at most ${COUNT_MARK_MAX_COUNT_TEXT}, and ${counts.placement === "colony_sight" ? `an optional whole-number tile currently within ${tiles(config.sightTiles)} of any living ant of your colony.${config.wordMarksDisabled ? "" : " Word marks still require an own squad ant standing on the tile;"} omitting coordinates still requires a squad ant` : "an optional tile where a squad ant stands"}.${markReachText(config) === "" ? "" : ` ${markReachText(config)}`}${lineMarksEnabled(config) ? " LINE also takes toTileX and toTileY, its second end, placed the same way; two different tiles." : ""} ${counts.recruitColonyWide ? "Nearest free ants anywhere in the colony" : `Nearest free ants within ${tiles(config.smellTiles)}`} claim the mark up to its count. ${countMarkJobText(config)}${counts.casteSelection ? ` ${countMarkCasteText(config)}` : ""}`,
       `Re-lay the same verb at the same tile${lineMarksEnabled(config) ? " (LINE: the same two ends)" : ""} to change its count; lowering it releases the farthest ants first.${relayLifetimeText(config)} ${counts.recruitColonyWide ? "A group recruits replacements colony-wide, nearest first." : `A group recruits replacements within ${tiles(counts.recruitTiles)} of its members (or its mark when empty).`} Marks recruit in laid order; competing requests may wait for free ants. ${counts.reportClaimAvailability ? `Accepted count_mark responses report freeAntsNow. With no free ants the response says exactly: "0 free ants now; this mark recruits as ants hatch or free up". Empty accepted marks stay until expiry and recruit as ants become available. ` : ""}Marks last ${seconds(config.markLifetimeTicks)} and share the command allowance; expiry releases their ants.`,
       ...(config.wordMarksDisabled ? [] : [`Word marks are 1 to ${count(config.markMaxWords, "word")} from ${WORDS.join(", ")}, shown as written: "ATTACK · W · FEW". ${WORD_MARK_ACTIONS}`]),

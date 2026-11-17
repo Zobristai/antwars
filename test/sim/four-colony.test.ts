@@ -504,8 +504,8 @@ describe("an agent's view in a four-colony match", () => {
 describe("a four-colony match replayed from its log", () => {
   /** Seat a0 lays an ATTACK count mark on colony 1's queen tile every 20 ticks (refused while out of sight);
    * the writer ends colony 3 idle at tick 300, as the server does for a silent seat. */
-  function play(attack: boolean) {
-    const config = quadrantConfig(CLOSE, { combatGraceTicks: 0, matchTicks: 1500, queenHp: { ...RULES27.queenHp!, shieldTicks: 0 } }, RULES27);
+  function play(attack: boolean, queenKillsFirst?: true) {
+    const config = quadrantConfig(CLOSE, { queenKillsFirst, combatGraceTicks: 0, matchTicks: 1500, queenHp: { ...RULES27.queenHp!, shieldTicks: 0 } }, RULES27);
     const state = createMatch(SEED, config);
     const lines = [headerLine(SEED, state.config)], hashes: string[] = [];
     const marks: { tick: number; ok: boolean }[] = [], losses: { tick: number; colony: number }[] = [];
@@ -525,8 +525,9 @@ describe("a four-colony match replayed from its log", () => {
     return { state, lines, hashes, marks, losses };
   }
 
-  it("reaches the same state hashes, eliminations and result, after a logged attack, a queen loss and an idle end", () => {
-    const run = play(true);
+  it.each([undefined, true] as const)("reaches the same state hashes, eliminations and result after attack and idle with queen-first %s", queenKillsFirst => {
+    const run = play(true, queenKillsFirst);
+    expect(run.state.colonies.some(c => (c.queenKills ?? 0) > 0)).toBe(queenKillsFirst === true);
     const accepted = run.marks.find(m => m.ok);
     expect(accepted).toBeDefined();
     const logged = run.lines.slice(1).map(l => JSON.parse(l)).filter(l => l.eliminated !== undefined).map(l => ({ tick: l.tick, eliminated: l.eliminated }));
@@ -551,4 +552,66 @@ describe("a four-colony match replayed from its log", () => {
     expect(replayedEliminations.toSorted((a, b) => a.tick - b.tick || a.colony - b.colony))
       .toEqual(logged.flatMap(l => l.eliminated.map((e: { colony: number; reason: string }) => ({ tick: l.tick, ...e }))));
   }, 120_000);
+});
+
+describe("credited queen-first ranking", () => {
+  it.each([undefined, true] as const)("counts only the lethal queen hit with recorded switch %s", queenKillsFirst => {
+    const original = emptyMatch();
+    const state = { ...original, config: { ...original.config, queenKillsFirst } };
+    const { tx, ty } = openTile(state, 20, 50);
+    moveQueen(state, 1, tx, ty);
+    queenOf(state, 1).hp = damagePerTick(state.config) + 1;
+    addAnt(state, 0, tx - 2, ty, { hp: 100_000 });
+    addAnt(state, 2, tx + 2, ty, { hp: 100_000 });
+    combat(state);
+    expect(kills(state)).toEqual([0, 0, 1, 0]);
+    expect(state.colonies.map(c => c.queenKills ?? 0)).toEqual(queenKillsFirst ? [0, 0, 1, 0] : [0, 0, 0, 0]);
+    if (!queenKillsFirst) expect(state.colonies.every(c => !("queenKills" in c))).toBe(true);
+    combat(state);
+    expect(state.colonies[2]!.queenKills ?? 0).toBe(queenKillsFirst ? 1 : 0);
+  });
+
+  it("uses identical lethal-hit credit for two colonies without changing their ant kill totals", () => {
+    const state = createMatch(SEED, LIVE);
+    state.ants = []; state.tick = FIGHT_TICK;
+    const q = queenOf(state, 1);
+    q.hp = damagePerTick(state.config);
+    addAnt(state, 0, tile(q.queenX) - 1, tile(q.queenY), { hp: 100_000 });
+    combat(state);
+    expect(q.lostTick).toBe(state.tick);
+    expect(state.colonies.map(c => c.queenKills ?? 0)).toEqual([1, 0]);
+    expect(state.stats.deaths).toEqual([0, 0]);
+    expect(state.colonies.map(c => c.kills)).toEqual([undefined, undefined]);
+  });
+
+  it("ranks queens first at time-up, with existing kills resolving equal queens and history unchanged", () => {
+    for (const queenKillsFirst of [undefined, true] as const) {
+      const state = createMatch(SEED, quadrantConfig(QUADRANTS, { queenKillsFirst }));
+      [0, 6, 1, 1].forEach((n, id) => { state.colonies[id]!.queenKills = n; });
+      [1139, 1650, 1974, 2147].forEach((n, id) => { state.colonies[id]!.kills = n; });
+      const tick = state.config.matchTicks - 1;
+      expect(rankColonies(state).map(c => c.colony)).toEqual(queenKillsFirst ? [1, 3, 2, 0] : [3, 2, 1, 0]);
+      expect(fourColonyEnd(state, tick, false)).toMatchObject(queenKillsFirst
+        ? { winner: 1, decidedBy: "queen_kills" } : { winner: 3, decidedBy: "kills" });
+    }
+  });
+
+  it.each(["idle", "queens_killed"] as const)("snapshots queen credit for simultaneous %s and credits no removals", reason => {
+    const state = emptyMatch();
+    state.colonies[2]!.queenKills = 3;
+    state.colonies[3]!.kills = 100;
+    if (reason === "queens_killed") for (const c of state.colonies) for (const q of c.queens!) q.lostTick = state.tick;
+    expect(fourColonyEnd(state, state.tick, reason === "idle" ? { idle: [0, 1, 2, 3] } : false))
+      .toMatchObject({ winner: 2, reason, decidedBy: "queen_kills" });
+    expect(state.colonies.map(c => c.queenKills ?? 0)).toEqual([0, 0, 3, 0]);
+    expect(rankColonies(state).map(c => c.colony)).toEqual([2, 3, 0, 1]);
+    expect(state.colonies[2]!.eliminated!.scores.queenKills).toBe(3);
+  });
+
+  it("keeps eliminated colonies below survivors and orders elimination time before scores", () => {
+    const state = emptyMatch();
+    state.colonies[0]!.eliminated = { tick: 10, reason: "idle", scores: { queenKills: 100, kills: 100, territory: 0, ants: 0, delivered: 0 } };
+    state.colonies[1]!.eliminated = { tick: 11, reason: "idle", scores: { queenKills: 1, kills: 1, territory: 0, ants: 0, delivered: 0 } };
+    expect(rankColonies(state).map(c => c.colony).slice(2)).toEqual([1, 0]);
+  });
 });
