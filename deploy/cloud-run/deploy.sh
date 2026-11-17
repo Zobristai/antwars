@@ -438,6 +438,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
   # Same values as the main path below.
   REGION=australia-southeast1
   MEMORY=2Gi
+  GAME_MEMORY=4Gi
   PREVIEW_SERVICE=antwar-preview
   RECORDS_SERVICE=antwar-records
   stamp() { printf '+ %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
@@ -1430,7 +1431,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       SNAPSHOT=1
     fi
 
-    # 4. The game: 2 vCPU with the private replay key, no traffic until Ready, and
+    # 4. The game: 2 vCPU and GAME_MEMORY with the private replay key, no traffic until Ready, and
     # traffic back unless the site answers 200. Full gate: only while no lobby is open.
     STEP="game swap"
     [[ "$ROLLING" == 1 || "$FIRST_DEPLOY" == 1 ]] || wait_global "$GAME_SERVICE"
@@ -1439,8 +1440,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # store namespace, replay bucket and operator token); a first deploy has none to
     # keep, so it sets them from the live slot settings, the deploy config and the
     # public slots' operator token secret.
-    # ANTWAR_MEMORY_LIMIT is --memory's own value: the post-mortem's re-run limit where no control group gives one.
-    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY"
+    # ANTWAR_MEMORY_LIMIT is --memory's own value (GAME_MEMORY): the post-mortem's re-run limit where no control group gives one.
+    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
     if [[ "$FIRST_DEPLOY" == 1 ]]; then
       GAME_ENV+=";ANTWAR_STORE_NAMESPACE=$NAMESPACE;ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET"
@@ -1453,7 +1454,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
       --min-instances 1 --max-instances 1 \
       --max 1 \
       --no-cpu-throttling \
-      --cpu 2 --memory "$MEMORY" \
+      --cpu 2 --memory "$GAME_MEMORY" \
       --timeout 3600 \
       --concurrency 1000 \
       --ingress all \
@@ -1797,6 +1798,11 @@ BUCKET="gs://$BUILD_BUCKET"
 # Instance memory: the server keeps at most 10 finished match logs plus the live one
 # in DATA_DIR, which is held in memory on Cloud Run; the sizing is in the report.
 MEMORY=2Gi
+# The game (entry) service alone gets more: a post-mortem no-effect re-run starts there
+# only with 1,498 MiB of headroom (src/accounts/postMortemJobs.ts), which 2Gi leaves only
+# while the server itself uses at most 550 MiB. 4Gi admits a re-run beside a server
+# using up to 2,598 MiB, more than it can use at 2Gi. Slots, records and preview stay at MEMORY.
+GAME_MEMORY=4Gi
 # RECORD_INPUT_BUCKET is the record service's private input bucket
 # (record-service-setup.sh), where this server hands each recorded match.
 # --update-env-vars sets only GCLOUD_PROJECT, it, ANTWAR_CODE_VERSION, the
@@ -1857,12 +1863,12 @@ CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
 stamp gcloud run deploy antwar --image "$IMAGE" --no-traffic ...
 deploy_named antwar \
   --image "$IMAGE" \
-  --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$MEMORY" \
+  --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY" \
   --service-account "$RUN_SA" \
   --min-instances 1 --max-instances 1 \
   --max 1 \
   --no-cpu-throttling \
-  --cpu 1 --memory "$MEMORY" \
+  --cpu 1 --memory "$GAME_MEMORY" \
   --timeout 3600 \
   --concurrency 1000 \
   --ingress all \
