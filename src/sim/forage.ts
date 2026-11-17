@@ -296,7 +296,8 @@ export function hatch(state: SimState, tick: number, events: SimEvent[], observe
       colony: colony.id,
       tileX: Math.floor(position.x / SUB),
       tileY: Math.floor(position.y / SUB),
-      ...(caste === undefined ? {} : { caste }),
+      // Report the newborn's public kind; a flyer's internal caste remains worker.
+      ...(born.flyer === true ? { caste: "flyer" as const } : born.caste === undefined ? {} : { caste: born.caste }),
     });
     }
   }
