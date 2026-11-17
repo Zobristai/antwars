@@ -195,10 +195,11 @@ const DROPPED_VIEW_FIELDS = ["cells", "territory", "enemyQueens"] as const;
  * - reconnectToken, token: entry-server join arguments; join reply reconnectToken.
  * - key: slot join argument and every account tool's key argument; claim_username, rotate_key, create_handle,
  *   reissue_handle_key and recover_key replies (recover_key added since that enumeration).
+ * - testOwnerKey: claim_username's designated test-owner proof argument.
  * - inviteToken: join_lobby and read_lobby arguments; create_lobby and issue_invite replies.
  * - inviteLink: create_lobby and issue_invite replies (the invite token is its #invite= fragment).
  */
-export const CREDENTIAL_FIELDS: ReadonlySet<string> = new Set(["reconnectToken", "token", "key", "inviteToken", "inviteLink"]);
+export const CREDENTIAL_FIELDS: ReadonlySet<string> = new Set(["reconnectToken", "token", "key", "testOwnerKey", "inviteToken", "inviteLink"]);
 /** The fixed value a credential field is stored as. */
 export const redactedMarker = (field: string): string => `[redacted ${field}]`;
 
