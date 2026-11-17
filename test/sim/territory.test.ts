@@ -256,3 +256,29 @@ it("resolves the natural time limit using kills on the terminal tick", () => {
   expect(out.state.result).toEqual({ winner: 1, reason: "time_up", decidedBy: "kills", tick: 0 });
   expect(out.events).toContainEqual({ type: "match_end", tick: 0, result: out.state.result });
 });
+
+// Queen kills are an additive recorded step, not a replacement for any historical tie-break.
+describe.each(["time_up", "double_overrun", "queens_killed"] as const)("queen-first %s", reason => {
+  it("compares credited queens before the existing kills order, falling back on equality", () => {
+    const state = emptyMatch(0, { ...DEFAULT_CONFIG, adjudication: "kills-first", queenKillsFirst: true });
+    state.colonies[0].queenKills = 2;
+    state.colonies[1].queenKills = 1;
+    state.stats.deaths = [100, 1];
+    expect(decideTimeUp(state, 10, reason)).toEqual({ winner: 0, reason, decidedBy: "queen_kills", tick: 10 });
+    state.colonies[1].queenKills = 2;
+    expect(decideTimeUp(state, 10, reason)).toMatchObject({ winner: 1, decidedBy: "kills" });
+  });
+
+  it("does not read queen counters in historical configs, and preserves territory-first fallback", () => {
+    for (const queenKillsFirst of [undefined, true] as const) {
+      const state = emptyMatch(0, { ...DEFAULT_CONFIG, queenKillsFirst });
+      setOwner(state, 1, 1, 0);
+      state.stats.deaths = [100, 1];
+      state.colonies[1].queenKills = 2;
+      expect(decideTimeUp(state, 10, reason)).toMatchObject(queenKillsFirst
+        ? { winner: 1, decidedBy: "queen_kills" } : { winner: 0, decidedBy: "territory" });
+      state.colonies[0].queenKills = 2;
+      expect(decideTimeUp(state, 10, reason)).toMatchObject({ winner: 0, decidedBy: "territory" });
+    }
+  });
+});

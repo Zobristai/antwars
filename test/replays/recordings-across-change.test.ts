@@ -22,9 +22,10 @@ const sha256 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes
 const TICKS = 900;
 const RECORDED = JSON.parse(readFileSync(fixture("scripted-hashes.json"), "utf8")) as
   Record<"public" | "redesign", { ticks: number; hashes: string[]; frames: number; framesSha256: string }>;
-// The redesign log was recorded before the no-bot-moves rule, so today's match plays the config it carries.
+// The logs predate queen-first scoring and the redesign no-bot-moves rule.
+// Rebuild with those recorded rules, not today's defaults; never replace the fixture bytes.
 const CONFIGS = {
-  public: playable(PUBLIC_CONFIG),
+  public: playable({ ...PUBLIC_CONFIG, queenKillsFirst: undefined }),
   redesign: newMatchConfig(recordedHousePlan(rules27Redesign())),
 } as const;
 

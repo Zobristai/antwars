@@ -116,6 +116,10 @@ function compare(values: readonly [number, number]): ColonyId | null {
 
 /** Shared time-up / simultaneous last-queen-loss scoring. Old configs keep territory first. */
 export function decideTimeUp(state: SimState, tick: number, reason: "time_up" | "double_overrun" | "queens_killed"): MatchResult {
+  if (state.config.queenKillsFirst === true) {
+    const byQueens = compare([state.colonies[0].queenKills ?? 0, state.colonies[1].queenKills ?? 0]);
+    if (byQueens !== null) return { winner: byQueens, reason, decidedBy: "queen_kills", tick };
+  }
   if (state.config.adjudication === "kills-first") {
     // Every ant death is caused by the opposing colony, including its queens.
     const byKills = compare([state.stats.deaths[1], state.stats.deaths[0]]);

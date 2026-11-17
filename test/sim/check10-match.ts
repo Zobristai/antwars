@@ -45,6 +45,7 @@ function antsAlive(state: SimState): [number, number] {
 function deciding(state: SimState, result: MatchResult): { quantity: string; values: [number, number] } {
   const queensLost = (colony: 0 | 1) => (state.colonies[colony].queens ?? []).filter(q => q.lostTick !== null).length;
   switch (result.decidedBy) {
+    case "queen_kills": return { quantity: "queen kills", values: [state.colonies[0].queenKills ?? 0, state.colonies[1].queenKills ?? 0] };
     case "kills": return { quantity: "kills", values: [state.stats.deaths[1], state.stats.deaths[0]] };
     case "territory": return { quantity: "territory tiles", values: territoryCounts(state) };
     case "ants_alive": return { quantity: "ants alive", values: antsAlive(state) };
