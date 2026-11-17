@@ -268,12 +268,12 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage(thinkingLevel: string | null = null) {
+function quadrantsPage(thinkingLevel: string | null = null, longName?: string) {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
-  const handles = ["alice", "bob", "cat", "dan"];
+  const handles = longName ? Array<string>(4).fill(longName) : ["alice", "bob", "cat", "dan"];
   const seats = handles.flatMap((handle, colony) => Array.from({ length: thinkingLevel === null ? 1 : 2 }, (_, index) => ({
     seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
     thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
@@ -397,6 +397,43 @@ describe("Recordings contain a self-reported thinking level", () => {
   }
 });
 
+describe("Recordings keep the complete player name behind one-line ellipsis", () => {
+  for (const width of [1280, 390]) {
+    it(`contains long builder/model names and preserves hover and accessible text at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(quadrantsPage("m".repeat(32), "long-builder-" + "x".repeat(64)).page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const names = tab.locator(".d1p-rec-name");
+        expect(await names.count()).toBe(16);
+        for (const name of await names.all()) {
+          const result = await name.evaluate(node => {
+            const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+            const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
+            const range = document.createRange(); range.selectNodeContents(node);
+            return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
+              whiteSpace: style.whiteSpace, overflow: style.overflowX, ellipsis: style.textOverflow,
+              lines: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size,
+              left: rect.left - slot.left, right: slot.right - rect.right, width: rect.width };
+          });
+          expect(result.text).toContain("long-builder-" + "x".repeat(64));
+          expect(result.title).toBe(result.text);
+          expect(result.lines).toBe(1);
+          expect(result.whiteSpace).toBe("nowrap");
+          expect(result.overflow).toBe("hidden");
+          expect(result.ellipsis).toBe("ellipsis");
+          expect(result.clipped).toBe(true);
+          expect(result.width).toBeGreaterThan(0);
+          expect(result.left).toBeGreaterThanOrEqual(0);
+          expect(result.right).toBeGreaterThanOrEqual(0);
+          expect(await name.ariaSnapshot()).toContain(result.text!);
+        }
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
 describe("Recordings colony headings stay inside their columns", () => {
   for (const width of [1280, 390]) {
     it(`keeps complete one-line headings within each slot at ${width}px`, async () => {
@@ -434,13 +471,13 @@ describe("Recordings colony headings stay inside their columns", () => {
             expect(column.right, row.text!).toBeCloseTo(row.right, 2);
           }
           expect(row.leftInset, row.text!).toBeGreaterThanOrEqual(0);
-          expect(row.rightInset, row.text!).toBeGreaterThan(0);
+          expect(row.rightInset / row.width, row.text!).toBeGreaterThanOrEqual(0.08);
           expect(row.transform).toBe("uppercase");
           expect(row.whiteSpace).toBe("nowrap");
           expect(row.overflow).toBe("visible");
           expect(row.textOverflow).not.toBe("ellipsis");
           expect(row.size).toBe(width === 390 ? "10.5px" : "11px");
-          expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.4 : 0.99, 2);
+          expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.85 : 0.99, 2);
           if (width === 390) expect(row.width).toBe(75);
         }
       } finally { await tab.close(); }
