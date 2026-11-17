@@ -225,6 +225,10 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // caste flyer in the count-mark caste, reply and PATROL sentences; without them they hash to 2fad77db… and 89c7bf31….
   // Repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each flyer in
   // sight with its grounded, flying or hovering state); without them they hash to 6a98378b… and 5939af95….
+  // Repinned for clearer flyer wording: a landed flyer's kill times against one soldier and a queen's strike, ATTACK/DEFEND
+  // flyers fighting on the ground until the mark moves, hovering harming only airborne enemy flyers, flyers giving sight,
+  // flyer in the count-mark caste list and the flyer clause in the cell legend; without them the briefing hashes to
+  // aa3f2ce3… (4cc92286… with the vocabulary) and the join briefing to f654c572….
   // Vocabulary-only repin: these historical fixture strings reconstruct the previous
   // briefing exactly. No other text is normalized beyond the existing controls above.
   const substitutions = [
@@ -235,11 +239,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   const currentText = briefing(current).replace(omissionSentence, "").replace(antCap, "");
   for (const [, after] of substitutions) expect(currentText.split(after)).toHaveLength(2);
   const original = substitutions.reduce((text, [before, after]) => text.replace(after, before), currentText);
-  expect(sha(original)).toBe("aa3f2ce39e81d26ff19fe8fc4c935fa9a337e0f653782cfd0d9b4a752fdc9005");
+  expect(sha(original)).toBe("9b4a9425d48d9b997dcf989e0aa28dddffae10b87e19bb50d4a030ab92f4b83a");
   expect(substitutions.reduce((text, [before, after]) => text.replace(before, after), original)).toBe(currentText);
-  expect(sha(currentText)).toBe("4cc922869bf8df9515b7eed454fd6cb11a04a86cabea93e3de7773eaa33d68cf");
+  expect(sha(currentText)).toBe("4475d033e45a8263e928220fbce1611325e4b017edf2aafb04f2395eb3603ec2");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("f654c5720061d8318569cbfcc3ed63d7221e690f7070907482047d4699142b59");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("5e0406d84e6588d0b078979dfc8c87d3b8ef658c0cc016b1616f8fb2e41027dd");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -267,5 +271,7 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Repinned for flyers in the served rules: brood flyers and caste flyer in the set_brood and count_mark schemas, moving a
   // flyer mark by markId, view.flyers in observe, and the flyer sentences in those descriptions; without them it hashes to 0b80cf7b….
   // Repinned for the observe description's sentence on each flyer's state in cells; without it the list hashes to f2e7207b….
-  expect(sha(JSON.stringify(tools))).toBe("58b57bf906a0e3fec60548e5aaeab10fa4a97dad22753f42a0631d8615f50caf");
+  // Repinned for the flyer clause in the observe cell legend and the flyer's HP in the set_brood schema; without them it
+  // hashes to 58b57bf9….
+  expect(sha(JSON.stringify(tools))).toBe("9b27abd148fe373846b9b99ffc8f27bc70391d699cc0a295f501b4105d217ded");
 });

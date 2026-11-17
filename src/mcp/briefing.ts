@@ -5,7 +5,7 @@ import { BROODS, COUNT_CASTES, WORDS } from "../sim/types.js";
 import { hasDistinctMapLayouts, mapLayoutDescription, quadrantLayoutDescription } from "../sim/mapShapes.js";
 import { colonyCountOf, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
-import { CELL_ENCODING, FOUR_COLONY_CELL_ENCODING } from "../sim/view.js";
+import { CELL_ENCODING, FLYER_CELL_ENCODING, FOUR_COLONY_CELL_ENCODING, FOUR_COLONY_FLYER_CELL_ENCODING } from "../sim/view.js";
 import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
 import { USERNAME_RETENTION_TEXT } from "../identity/retention.js";
@@ -49,9 +49,11 @@ const REJOIN_GUIDANCE = "Lobby slot servers: join {key}, seated key; reuse to re
 
 export const FOOD_RADIX_TEXT = `Read cells.foodRadix anew per reply. ${CELL_ENCODING}`;
 
-/** The cell legend a match's replies use: four colonies pack colony and caste over the colony count. */
+/** The cell legend a match's replies use: four colonies pack colony and caste over the colony count; with flyers it adds the flyer state, as denseCells does. */
 export function foodRadixText(config: SimConfig): string {
-  return fourColonies(config) ? `Read cells.foodRadix anew per reply. ${FOUR_COLONY_CELL_ENCODING}` : FOOD_RADIX_TEXT;
+  const flyers = config.flyers !== undefined;
+  if (fourColonies(config)) return `Read cells.foodRadix anew per reply. ${flyers ? FOUR_COLONY_FLYER_CELL_ENCODING : FOUR_COLONY_CELL_ENCODING}`;
+  return flyers ? `Read cells.foodRadix anew per reply. ${FLYER_CELL_ENCODING}` : FOOD_RADIX_TEXT;
 }
 
 export const CELL_PAGING_TEXT = "First: all squad-visible cells, then colony cells if space. While cellsMore: observe {cellsCursor:view.cellsCursor}; event since is separate. cellsTick stays fixed. No cellsCursor replaces the snapshot. Reconnect keeps it; stale: restart.";
@@ -68,6 +70,35 @@ export function countCasteChoices(config: SimConfig): readonly string[] {
   return config.flyers === undefined ? COUNT_CASTES : [...COUNT_CASTES, "flyer"];
 }
 
+/**
+ * How many whole ticks a landed flyer lasts at full HP against one hitter, as combat resolves damage: every tick one
+ * soldier deals its per-tick damage (more on its own territory) and a striking queen deals hers. Null without flyers;
+ * a field is absent where the match has no soldier or no striking queen.
+ */
+export function landedFlyerKillTicks(config: SimConfig): { soldier?: number; soldierOnOwnTerritory?: number; queen?: number } | null {
+  const flyers = config.flyers;
+  if (flyers === undefined) return null;
+  const ticks = (perTick: number) => Math.ceil(flyers.hp / perTick);
+  const castes = config.castes;
+  const soldierHit = castes === undefined ? undefined : Math.trunc((damagePerTick(config) * castes.soldierDamagePermille) / 1000);
+  const queen = config.queenHp;
+  return {
+    ...(soldierHit === undefined ? {} : { soldier: ticks(soldierHit), soldierOnOwnTerritory: ticks(Math.trunc((soldierHit * config.defenderBonusPermille) / 1000)) }),
+    ...(queen === undefined || !("damagePerSecond" in queen) ? {} : { queen: ticks(Math.trunc(queen.damagePerSecond / config.ticksPerSecond)) }),
+  };
+}
+
+/** A landed flyer's exposure, in the whole ticks combat takes; empty where the match has neither soldiers nor a striking queen. */
+function landedFlyerText(config: SimConfig): string {
+  const kill = landedFlyerKillTicks(config);
+  if (kill === null) return "";
+  const s = (ticks: number) => seconds(config, ticks);
+  const soldier = kill.soldier === undefined ? undefined : `One soldier kills a landed flyer in ${s(kill.soldier)} s (${s(kill.soldierOnOwnTerritory!)} s on its own territory)`;
+  const queen = kill.queen === undefined ? undefined : `a queen's strike in ${s(kill.queen)} s`;
+  if (soldier === undefined) return queen === undefined ? "" : ` A queen's strike kills a landed flyer in ${s(kill.queen!)} s.`;
+  return ` ${soldier}${queen === undefined ? "" : `, ${queen}`}.`;
+}
+
 /** The flyer, as the match's rules set it; empty without flyers. Served in the rules, the join briefing and /rules. */
 export function flyerRulesLines(config: SimConfig): string[] {
   const flyers = config.flyers;
@@ -75,13 +106,14 @@ export function flyerRulesLines(config: SimConfig): string[] {
   const s = (ticks: number) => seconds(config, ticks);
   const verbs = countMarkVerbs(config), line = verbs.includes("LINE");
   return [
-    `A flyer has ${flyers.hp / 1000} HP, deals ${flyers.damagePerSecond / 1000} HP per second (x${config.defenderBonusPermille / 1000} on your own territory) and costs ${flyers.cost} food. Each queen on brood flyers hatches one every ${s(hatchIntervalOf(config, "flyer"))} s, from match start; a mixed brood never hatches flyers. Flyers have no lifetime and no cap of their own: they count toward the colony's ant cap. A flyer never forages or carries food.`,
+    `A flyer has ${flyers.hp / 1000} HP, deals ${flyers.damagePerSecond / 1000} HP per second (x${config.defenderBonusPermille / 1000} on your own territory) and costs ${flyers.cost} food. Each queen on brood flyers hatches one every ${s(hatchIntervalOf(config, "flyer"))} s, from match start; a mixed brood never hatches flyers. Flyers have no lifetime and no cap of their own: they count toward the colony's ant cap. A flyer never forages or carries food.${landedFlyerText(config)}`,
     `Only flyer count marks (caste flyer) order flyers, and flyer marks order only flyers. A flyer mark's tile${line ? " (LINE: both ends)" : ""} must be land, never water or rock, inside your colony's current sight when the mark is laid or moved. Move one of your flyer marks with count_mark {markId, its own verb, count, the new tileX/tileY${line ? " (LINE: and toTileX/toTileY)" : ""}}: it keeps its id, members, lifetime and laid order; its airborne flyers turn toward the new tile at once and its grounded ones take off once they may.`,
-    `Flight is straight at ${flyers.speedTilesPerSecond} tiles per second over water, rock and ants, toward the mark's current tile; take-off and landing are instant. ATTACK and DEFEND: fly there, land, then walk and fight on the ground as ants on that verb. GATHER: hover over its tile.${verbs.includes("PATROL") ? " PATROL: fly the chain without landing or pausing: two marks back and forth, three or more as a loop, a lone mark as a hover." : ""}${line ? " LINE: hover spread evenly end to end as a wall, each over land your colony sees." : ""} FORAGE with caste flyer is refused.`,
-    `A flyer cannot take off for ${s(flyers.lockoutTicks)} s after landing; reaching a hover is not a landing. Airborne flyers, flying or hovering, bite only airborne enemy flyers in reach; ground ants and queens cannot hit them, and they hit nothing on the ground. A landed flyer fights as a ground ant.`,
+    `Flight is straight at ${flyers.speedTilesPerSecond} tiles per second over water, rock and ants, toward the mark's current tile; take-off and landing are instant. ATTACK and DEFEND: fly there, land, then walk and fight on the ground as ants on that verb until you move the mark. GATHER: hover over its tile.${verbs.includes("PATROL") ? " PATROL: fly the chain without landing or pausing: two marks back and forth, three or more as a loop, a lone mark as a hover." : ""}${line ? " LINE: hover spread evenly end to end as a wall, each over land your colony sees." : ""} FORAGE with caste flyer is refused.`,
+    `A flyer cannot take off for ${s(flyers.lockoutTicks)} s after landing; reaching a hover is not a landing. Airborne flyers, flying or hovering, bite only airborne enemy flyers in reach; ground ants and queens cannot hit them, and they hit nothing on the ground, so hovering harms only airborne enemy flyers in reach. A landed flyer fights as a ground ant.`,
     "Flying and hovering flyers take no part in territory: they cannot claim, refresh or lock a tile, and an airborne enemy flyer never locks one. Landed flyers claim, refresh and lock tiles as other ants do.",
     "When a flyer's order ends (REMOVE, expiry, a lapsed seat, a lower count or a caste change), a flying flyer finishes its flight, lands and stays put; a hovering one lands on the tile under it; a grounded one holds its tile.",
     "observe view.flyers lists your colony's flyers, each with its tile and state: grounded, flying or hovering (with the tile it flies to or hovers over), or locked out (with the tick it may take off again).",
+    "Flyers give sight like any colony ant, airborne or landed.",
     "In observe cells, every flyer your colony sees, yours or the enemy's, is marked as a flyer with its state: grounded, flying or hovering. An enemy flyer's destination, marks and lockout are never shown.",
   ];
 }
@@ -319,7 +351,7 @@ export const WORD_MARK_ACTIONS = "Word marks guide only squads told to follow_tr
 /** Shared rule text; old config headers retain their original copy. */
 export function countMarkCasteText(config: SimConfig, agent = false): string {
   return config.countMarks?.casteSelection
-    ? `Optional caste: ${COUNT_CASTES.join(", ")}; omitted means any. FORAGE recruits workers only even with any or omitted caste; caste soldier is refused. Only the chosen caste recruits${agent && lineMarksEnabled(config) ? "" : ", nearest first"}. Changing caste on a re-lay releases only ants it excludes; other claims stay unless the count is lowered.${config.flyers === undefined ? "" : " Caste flyer recruits only flyers, and only it recruits them; FORAGE refuses it."}`
+    ? `Optional caste: ${countCasteChoices(config).join(", ")}; omitted means any. FORAGE recruits workers only even with any or omitted caste; caste soldier is refused. Only the chosen caste recruits${agent && lineMarksEnabled(config) ? "" : ", nearest first"}. Changing caste on a re-lay releases only ants it excludes; other claims stay unless the count is lowered.${config.flyers === undefined ? "" : " Caste flyer recruits only flyers, and only it recruits them; FORAGE refuses it."}`
     : "";
 }
 

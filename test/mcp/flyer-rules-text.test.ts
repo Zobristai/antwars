@@ -25,6 +25,12 @@ const FACTS: readonly [string, RegExp][] = [
   ["LINE hovers as a spread wall", /LINE: hover spread evenly end to end as a wall/],
   ["FORAGE refused", /FORAGE with caste flyer is refused/],
   ["no take-off for 3 s after landing", /A flyer cannot take off for 3 s after landing/],
+  ["how fast one soldier and a queen's strike kill a landed flyer, in whole ticks",
+    /One soldier kills a landed flyer in 0\.7 s \(0\.6 s on its own territory\), a queen's strike in 0\.2 s\./],
+  ["ATTACK and DEFEND flyers fight on the ground until the mark moves", /walk and fight on the ground as ants on that verb until you move the mark\./],
+  ["hovering deals no damage except to airborne enemy flyers in reach", /so hovering harms only airborne enemy flyers in reach/],
+  ["flyers give colony sight", /Flyers give sight like any colony ant, airborne or landed\./],
+  ["flyer is a count-mark caste", /Optional caste: any, worker, soldier, flyer; omitted means any/],
   ["airborne flyers fight only airborne enemy flyers", /Airborne flyers, flying or hovering, bite only airborne enemy flyers in reach/],
   ["ground ants and queens cannot hit them", /ground ants and queens cannot hit them/],
   ["an order ending in the air finishes its flight, lands and stays put", /a flying flyer finishes its flight, lands and stays put/],
@@ -73,6 +79,9 @@ describe.each(SEAT_MODES)("the flyer in the texts served to a $label rules-28 se
     expect(countMark.description).toMatch(PATROL_NOTE);
     expect(countMark.description).toMatch(/To move one of your flyer marks, send its markId with its own verb, a count and the new tile/);
     expect(tools.find(t => t.name === "set_brood")!.description).toMatch(/workers, soldiers, flyers or mixed/);
+    expect(JSON.stringify(tools.find(t => t.name === "set_brood")!.inputSchema)).toMatch(/flyers \(12 food, 2 HP like a worker, fly; only flyer count marks order them\)/);
+    // The join briefing's cell legend is the one observe replies carry, flyer state included.
+    expect(joined.data.briefing as string).toContain("A flyer, yours or an enemy's, adds its state: antId.k.s, s g grounded, f flying, h hovering; its kind reads worker.");
     expect(tools.find(t => t.name === "observe")!.description).toMatch(/view\.flyers/);
     expect(tools.find(t => t.name === "observe")!.description).toMatch(/In cells, each flyer in sight, yours or the enemy's, adds its state, grounded, flying or hovering, per cells\.encoding\./);
   });
