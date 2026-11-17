@@ -397,13 +397,49 @@ service_state_or_absent() {
   fi
 }
 
-# An omitted version can preserve only a binding on an existing service. Check
-# every declared live service before a slots-only deploy changes any of them.
-# Inspect binding names, never secret contents, including every serving revision.
-check_live_exclusion_creation() {
-  local svc slot snapshot err refs rev bound missing=() services=(antwar)
+# Print only a policy marker (off, a canonical pinned version, or invalid),
+# followed by serving revision names for a service. Never read secret contents
+# or print literal values, arbitrary secret references, or an unpinned version.
+public_exclusion_metadata() {
+  node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const doc = JSON.parse(s), service = process.argv[1] === "service";
+      const spec = service ? doc.spec?.template?.spec : doc.spec;
+      const container = spec?.containers?.[0];
+      if (!container) process.exit(1);
+      const env = container.env ?? [];
+      if (!Array.isArray(env)) process.exit(1);
+      const hits = env.filter(e => e.name === "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS");
+      const ref = hits[0]?.valueFrom?.secretKeyRef;
+      console.log(hits.length === 0 ? "off" : hits.length === 1
+        && hits[0].value === undefined && ref?.name === "antwars-public-excluded-owner-ids"
+        && /^[1-9][0-9]*$/.test(ref.key) ? ref.key : "invalid");
+      if (!service) return;
+      const st = doc.status;
+      if (!st || !Array.isArray(st.traffic)) process.exit(1);
+      const refs = st.traffic.filter(t => t.percent > 0)
+        .map(t => t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined));
+      for (const ref of new Set(refs)) {
+        if (typeof ref !== "string" || !/^[a-z0-9-]+$/.test(ref)) process.exit(1);
+        console.log(ref);
+      }
+    });' "$1"
+}
+
+# Omission preserves only a coherent policy. Policy changes use one explicit
+# all-services command: targeted deploys may restate, never partially change it.
+# Inspect templates and serving revisions, not idle leftover revisions. A failed
+# ordered all-services change is repairable by rerunning it with an explicit pin.
+check_live_exclusion_policy() {
+  local scope="$1" svc kind n snapshot err refs rev policy first="" mixed=0 desired=""
+  local missing=() services=(antwar) policies=()
   LIVE_EXCLUSION_BOUND=0
-  for slot in "${SLOTS[@]}"; do services+=("$PREFIX$slot"); done
+  [[ "$scope" != all || -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]] || return 0
+  for kind in public private; do
+    local count="$LIVE_PUBLIC_SLOTS"
+    [[ "$kind" != private ]] || count="$LIVE_PRIVATE_SLOTS"
+    for ((n = 0; n < count; n++)); do services+=("antwar-$kind-$n"); done
+  done
   for svc in "${services[@]}"; do
     err="$(mktemp)"
     if snapshot="$(run_gcloud run services describe "$svc" --format json 2>"$err")"; then
@@ -413,35 +449,40 @@ check_live_exclusion_creation() {
       [[ "$svc" == antwar ]] || missing+=("$svc")
       continue
     else
-      cat "$err" >&2; rm -f "$err"
-      deploy_stop "cannot inspect public exclusion protection on $svc; no live slot was changed"
+      rm -f "$err"
+      echo "cannot inspect public exclusion protection on $svc; check service read access and retry before deploying" >&2
+      return 1
     fi
-    refs="$(node -e '
-      let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
-        const svc = JSON.parse(s), st = svc.status;
-        if (!st || !Array.isArray(st.traffic)) process.exit(1);
-        const env = svc.spec?.template?.spec?.containers?.[0]?.env ?? [];
-        if (env.some(e => e.name === "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS")) console.log("BOUND");
-        const refs = st.traffic.filter(t => t.percent > 0)
-          .map(t => t.revisionName || (t.latestRevision ? st.latestReadyRevisionName : undefined));
-        for (const ref of new Set(refs)) {
-          if (typeof ref !== "string" || !/^[a-z0-9-]+$/.test(ref)) process.exit(1);
-          console.log(ref);
+    refs="$(public_exclusion_metadata service <<<"$snapshot")" || {
+      echo "cannot inspect public exclusion protection on $svc; check service metadata before deploying" >&2; return 1;
+    }
+    policies+=("${refs%%$'\n'*}")
+    if [[ "$refs" == *$'\n'* ]]; then
+      for rev in ${refs#*$'\n'}; do
+        policy="$(run_gcloud run revisions describe "$rev" --format json | public_exclusion_metadata revision)" || {
+          echo "cannot inspect public exclusion protection on $svc; check serving revision metadata before deploying" >&2; return 1;
         }
-      });' <<<"$snapshot")" || deploy_stop "cannot inspect public exclusion protection on $svc; no live slot was changed"
-    for rev in $refs; do
-      if [[ "$rev" == BOUND ]]; then LIVE_EXCLUSION_BOUND=1; continue; fi
-      bound="$(run_gcloud run revisions describe "$rev" --format json | node -e '
-        let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
-          const env = JSON.parse(s).spec?.containers?.[0]?.env;
-          if (!Array.isArray(env)) process.exit(1);
-          console.log(env.some(e => e.name === "ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS") ? "1" : "0");
-        });')" || deploy_stop "cannot inspect public exclusion protection on $svc; no live slot was changed"
-      [[ "$bound" == 0 ]] || LIVE_EXCLUSION_BOUND=1
-    done
+        policies+=("$policy")
+      done
+    fi
   done
-  if [[ "$LIVE_EXCLUSION_BOUND" == 1 && ${#missing[@]} -gt 0 ]]; then
-    deploy_stop "refusing to create missing live slots (${missing[*]}) without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions; give the pinned version (or explicit disable)"
+  for policy in "${policies[@]}"; do
+    [[ "$policy" == off ]] || LIVE_EXCLUSION_BOUND=1
+    [[ -n "$first" ]] || first="$policy"
+    [[ "$policy" == "$first" && "$policy" != invalid ]] || mixed=1
+  done
+  if [[ "$scope" == slots && -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" && "$LIVE_EXCLUSION_BOUND" == 1 && ${#missing[@]} -gt 0 ]]; then
+    echo "refusing to create missing live slots (${missing[*]}) without PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION: existing live services have public exclusions; run deploy.sh all <commit> with the pinned version (or explicit disable)" >&2
+    return 1
+  fi
+  if [[ -n "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
+    desired="$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION"
+    [[ "$desired" != disable ]] || desired=off
+    [[ "${first:-off}" == "$desired" ]] || mixed=1
+  fi
+  if [[ "$mixed" == 1 ]]; then
+    echo "refusing inconsistent public exclusion bindings or a partial policy change; rerun deploy.sh all <commit> with PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION set to the pinned version (or disable) so every live service receives the same policy" >&2
+    return 1
   fi
 }
 
@@ -954,6 +995,12 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
           fi
           echo "  $svc $serving"
         done
+        if [[ "$rc" != 0 ]]; then
+          echo "updated revisions created by this run:"
+          for svc in "${SERVICES[@]}"; do
+            [[ -z "${NEW_REV[$svc]:-}" ]] || echo "  $svc ${NEW_REV[$svc]}"
+          done
+        fi
         for note in ${notes[@]+"${notes[@]}"}; do echo "left: $note"; done
       } >"$STATUS_FILE.tmp" && mv -f "$STATUS_FILE.tmp" "$STATUS_FILE" \
         || echo "could not write the deploy status file $STATUS_FILE" >&2
@@ -1320,6 +1367,11 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
         for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE" || true; done
       else
         for SERVICE in "${SERVICES[@]}"; do preflight_service "$SERVICE"; done
+      fi
+      # Policy inspection requires readable rollback revisions. A blocked precheck
+      # already refuses deployment; recheck policy once those prerequisites hold.
+      if [[ ${#BLOCKERS[@]} -eq 0 ]]; then
+        check_live_exclusion_policy all || { block "public exclusion policy must be consistent; rerun all with an explicit pinned version or disable" || true; [[ "$PRECHECK" == 1 ]] || return 1; }
       fi
     }
 
@@ -1742,8 +1794,8 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     SLOTS=()
     for ((n = 0; n < PUBLIC_SLOTS; n++)); do SLOTS+=("public-$n"); done
     for ((n = 0; n < PRIVATE_SLOTS; n++)); do SLOTS+=("private-$n"); done
-    if [[ "$TARGET" == live && -z "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" ]]; then
-      check_live_exclusion_creation
+    if [[ "$TARGET" == live ]]; then
+      check_live_exclusion_policy slots || deploy_stop "public exclusion preflight refused; no live slot was changed"
     fi
     image_digest "$REPO" "$SHA"
 
@@ -1920,6 +1972,9 @@ stamp gcloud run revisions describe "$OUT_REV" ...
 read -r _ OUT_SHA < <(revision_facts "$OUT_REV" "$WORK/rollback-revision.json") \
   || { echo "refusing: cannot read the image digest and ANTWAR_CODE_VERSION of $OUT_REV" >&2; exit 1; }
 ROLLBACK_TAG="r${OUT_SHA:0:8}"
+
+check_live_exclusion_policy game || deploy_stop "public exclusion preflight refused; the game was not changed"
+
 
 stamp gcloud builds submit "$WORK/source.tgz" --tag "$IMAGE" ...
 CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
