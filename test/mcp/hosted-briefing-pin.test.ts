@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { briefing, joinBriefing, type BriefingContext } from "../../src/mcp/briefing.js";
+import { briefing, joinBriefing, usesCompactAgentText, type BriefingContext } from "../../src/mcp/briefing.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { COMPARISON_SEED, comparisonOptions, startServer, type GameServer } from "../../src/server.js";
 import { rulesConfig } from "../../src/sim/config.js";
@@ -40,19 +40,21 @@ const sha = (text: string): string => createHash("sha256").update(text).digest("
 // count-mark caste, reply and PATROL sentences); with those sentences removed every text hashes to its previous pin.
 // Redesign texts repinned for two more Flyers sentences (airborne flyers take no part in territory; observe cells mark each
 // flyer in sight with its grounded, flying or hovering state); with those two sentences removed every text hashes to its previous pin.
+// Rules-text vocabulary repinned: only the documented movement/direct wording substitutions change.
+// All join hashes remain unchanged; simulation rules and their version are unchanged.
 const HOSTED_AT_5DF81D04: Record<string, string> = {
   "join house=false undrawn=true nest=false": "9f82b0787446dd2dcb6d0a5287389c91436b326026d542662aeaa57b11ed0b23",
   "join house=false undrawn=true nest=true": "1d171ca6af4bf448a723ff746a13f177f7564b1ba47ad46ad309b95e92208e78",
-  "rules house=false undrawn=true": "dcf8a46e0a26be11089bc983cfa30c2534426d6654735c7005a5c8b7015c162f",
+  "rules house=false undrawn=true": "e97dd228b2bf80799a6c21e2dd9043d531ebb514248520eadaf53bca1acf0a90",
   "join house=false undrawn=false nest=false": "da9f206723a7a93d93a9c13ad078ae6b48f1fdd19069978114adf8813cc4e6d7",
   "join house=false undrawn=false nest=true": "63e582a095a06c3feb075d80dc2d0ca87883fb4af879c39aed4897f4b3155f37",
-  "rules house=false undrawn=false": "977953274b1810d923c481f706ff828f2f81f81733ee9cb27257543f39d8e9a7",
+  "rules house=false undrawn=false": "39929998b3bb4473e60e51cdb0c885aec85ac813f4942008d6264cd95e0477a5",
   "join house=true undrawn=true nest=false": "7858aac5b8c97dff39385ddecda29bf8b20d1543b517322230fec44e8bd213ab",
   "join house=true undrawn=true nest=true": "eaa963c92bff17943e2e7301c6b84757acef2cc421580cb320097d155982d0cc",
-  "rules house=true undrawn=true": "8106221918efbb08d33977ff88fef9e83f3cb66fc1da1f99c50dec96c506ac33",
+  "rules house=true undrawn=true": "bceba8c615ab9696ec4b351bb529acf5580bf1c0d42d9d099537c82d05475bb2",
   "join house=true undrawn=false nest=false": "60575dff108c249386cb2be56d2034571c4ffb38809a4010c58d06c657552542",
   "join house=true undrawn=false nest=true": "9534c6f963914bfe470106a439e3861345a0512b302dbaea73e5087507f6a0b3",
-  "rules house=true undrawn=false": "975fff8c35db1fc55888638568bce529e7ae9e6afcdb11586e842d7e41ba497a",
+  "rules house=true undrawn=false": "ab1c80b6cdeb85297ef96c46f5e53d4a86153c03a676bb1b13d849d5005ed6cf",
 };
 
 // The antwar-preview comparison service (held-match mode, ANTWAR_RULES and ANTWAR_PLAYERS set) is hosted
@@ -69,21 +71,96 @@ const HOSTED_AT_5DF81D04: Record<string, string> = {
 // Redesign texts repinned for rules 28 as above; built from the frozen rules-27 redesign config each hashes to its previous pin.
 // Redesign texts repinned for flyers as above; the v4 and count-marks digests are unchanged.
 // Redesign texts repinned for the two more Flyers sentences as above; the v4 and count-marks digests are unchanged.
+// Rules-text vocabulary repinned with the same substitutions; all join hashes remain unchanged.
 const PREVIEW_RULES = ["v4", "count-marks", "redesign"] as const;
 const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "join v4 players=2": "5c5f62959d1ef08efa3ba6e40a31aede6b967a96ed66b893108ec82d2130d14a",
-  "rules v4 players=2": "d74106ae57974263cf40fff2fd2e99c52c1c1e7a8d61be0c074032dc0bc14eae",
+  "rules v4 players=2": "0f98b5355c34b4fe2f6edf6f7f911da8962bc8218158bec87f58bfee08edfd9e",
   "join v4 players=4": "a5b8a4de730c6992b8a27b29f705e6440724292b1cbe22209c7ddcf873029702",
-  "rules v4 players=4": "d57a9e79c59accfa216e17c90e02272ac024a32ffb1d7a02a43d93091364648e",
+  "rules v4 players=4": "db85e98eba7ed382237549ffea255110bd131e1d7f3ad9403a61dd44b20b7302",
   "join count-marks players=2": "5d47e87bfdbf7a6f53b2c70b07070163ff06c2f3458ce07b87c25637b101bfa4",
-  "rules count-marks players=2": "74e50fc4f49e3bd3f30fec1484e01e319270592227a5301feb366a38df8166ee",
+  "rules count-marks players=2": "bdd416b4fd809974c6683bdb7bc1e0d1925263290f24f2f60706552e05d96dc3",
   "join count-marks players=4": "6ee40f2fed373eb907d39d6e9e28c12908372e05f586092d9fa331a82bca7aa1",
-  "rules count-marks players=4": "d493637afc5ca34792863292f9575984a4995eb660e2e4e005f5d830b940e16c",
+  "rules count-marks players=4": "eaef2a1c4d940f836457df1ed980132d04106d781be1fa0000ed8a4bd90e456f",
   "join redesign players=2": "0e465c7e5738c8b5177ca6edcdb85e4c9293ae47bc159981989830a2b0afcd92",
-  "rules redesign players=2": "f0ff759c90ef098cfd3d9e40d906b04c1261e20944b673de47d3be81e9b62072",
+  "rules redesign players=2": "a24ab53434de626a544bb0b95c52b24d91701daed07831494eea4b1a6b90f0c5",
   "join redesign players=4": "97daeddc6b7934c99d72d1fb359cdf28f800b9acb1fa4fa548eb676df70a268c",
-  "rules redesign players=4": "0875127d8852028970f3541c014ed6da4ab13ed024abce7554a3c92a293a5f1e",
+  "rules redesign players=4": "2031b16282f7ac7640c5dde86ed8c963434ca174eb981bd5e84ed05bb4f48ef5",
 };
+
+// Frozen pre-vocabulary-change digests, from main 6920c5473b0d19b027dc29b6dd90e0014daa3380.
+// Reverse only the listed substitutions, require the original digest, then apply
+// them forward and require exact output equality. This pins the entire old output,
+// not merely the changed phrases, without requiring Git history at test time.
+const BEFORE_VOCABULARY_RULES: Record<string, string> = {
+  "rules house=false undrawn=true": "dcf8a46e0a26be11089bc983cfa30c2534426d6654735c7005a5c8b7015c162f",
+  "rules house=false undrawn=false": "977953274b1810d923c481f706ff828f2f81f81733ee9cb27257543f39d8e9a7",
+  "rules house=true undrawn=true": "8106221918efbb08d33977ff88fef9e83f3cb66fc1da1f99c50dec96c506ac33",
+  "rules house=true undrawn=false": "975fff8c35db1fc55888638568bce529e7ae9e6afcdb11586e842d7e41ba497a",
+  "rules v4 players=2": "d74106ae57974263cf40fff2fd2e99c52c1c1e7a8d61be0c074032dc0bc14eae",
+  "rules v4 players=4": "d57a9e79c59accfa216e17c90e02272ac024a32ffb1d7a02a43d93091364648e",
+  "rules count-marks players=2": "74e50fc4f49e3bd3f30fec1484e01e319270592227a5301feb366a38df8166ee",
+  "rules count-marks players=4": "d493637afc5ca34792863292f9575984a4995eb660e2e4e005f5d830b940e16c",
+  "rules redesign players=2": "f0ff759c90ef098cfd3d9e40d906b04c1261e20944b673de47d3be81e9b62072",
+  "rules redesign players=4": "0875127d8852028970f3541c014ed6da4ab13ed024abce7554a3c92a293a5f1e"
+};
+const VOCABULARY_SUBSTITUTIONS: readonly (readonly [string, string])[] = [
+  [
+    "Count marks do not steer your squad.",
+    "Count marks do not direct your squad."
+  ],
+  [
+    "steering+push",
+    "movement+push"
+  ],
+  [
+    "each ant steers itself",
+    "each ant moves independently"
+  ],
+  [
+    "order steers your squad",
+    "order directs your squad"
+  ],
+  [
+    "order to steer your squad",
+    "order to direct your squad"
+  ],
+  [
+    "strongest colony steering mark",
+    "strongest colony movement mark"
+  ],
+  [
+    "strongest steering mark",
+    "strongest movement mark"
+  ],
+  [
+    "First steering word",
+    "First movement word"
+  ],
+  [
+    "first steering word",
+    "first movement word"
+  ],
+  [
+    "Word marks never steer free ants",
+    "Word marks never direct free ants"
+  ],
+  [
+    "Ordinary word marks do not steer free ants",
+    "Ordinary word marks do not direct free ants"
+  ]
+];
+function verifyVocabularyOnly(key: string, current: string, compact: boolean): void {
+  const fieldBefore = compact
+    ? "The steering field counts squad ants following word marks, not count-mark ants."
+    : "The steering field counts squad ants following word marks, not ants answering a count mark.";
+  const substitutions = [...VOCABULARY_SUBSTITUTIONS, [fieldBefore, "In each myMarks entry, the only field whose name starts with s counts squad ants following word marks; claimed counts ants answering a count mark."] as const];
+  const original = substitutions.reduce((text, [before, after]) => text.replaceAll(after, before), current);
+  expect(BEFORE_VOCABULARY_RULES[key], key).toBeDefined();
+  expect(sha(original), `pre-change output: ${key}`).toBe(BEFORE_VOCABULARY_RULES[key]);
+  const transformed = substitutions.reduce((text, [before, after]) => text.replaceAll(before, after), original);
+  expect(transformed, `substitutions alone: ${key}`).toBe(current);
+}
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));
 const DRAWN = createMatch(6006, UNDRAWN).config;
@@ -105,6 +182,12 @@ describe("hosted briefing stays byte-identical to main 5df81d04", () => {
   it("every hosted join briefing and rules text matches its 5df81d04 digest", () => {
     const digests = Object.fromEntries(Object.entries(hostedTexts()).map(([name, text]) => [name, sha(text)]));
     expect(digests).toEqual(HOSTED_AT_5DF81D04);
+  });
+
+  it("reproduces every hosted rules checksum using only the vocabulary substitutions", () => {
+    for (const [key, value] of Object.entries(hostedTexts())) {
+      if (key.startsWith("rules ")) verifyVocabularyOnly(key, value, usesCompactAgentText(UNDRAWN));
+    }
   });
 
   it("an explicit local: false is the hosted text", () => {
@@ -163,6 +246,14 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
       digests[`rules ${rules} players=${players}`] = sha(briefing(createMatch(COMPARISON_SEED, config).config, mcp));
     }
     expect(digests).toEqual(PREVIEW_AT_5DF81D04);
+  });
+
+  it("reproduces every preview rules checksum using only the vocabulary substitutions", () => {
+    for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
+      const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
+      const config = createMatch(COMPARISON_SEED, { ...newMatchConfig(rulesConfig(rules)), players }).config;
+      verifyVocabularyOnly(`rules ${rules} players=${players}`, briefing(config, mcp), usesCompactAgentText(config));
+    }
   });
 
   for (const rules of ["redesign"] as const) for (const players of [2, 4] as const) {
