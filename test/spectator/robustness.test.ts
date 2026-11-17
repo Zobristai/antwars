@@ -298,12 +298,12 @@ describe("bounded catch-up on the live EventSource path", () => {
       expect(long.counts.decodes).toBe(short.counts.decodes);
       expect(long.counts.decodes).toBeLessThanOrEqual(INBOX_CAP + 1);
       expect(long.counts.maxActive).toBeLessThanOrEqual(1);
-      expect(long.inbox.size).toBe(0);
+      expect(long.inbox.size).toBe(INBOX_CAP);
       // The connection was dropped at the overflow and stays closed while no frame is drawn.
       expect(long.sources[0]!.readyState).toBe(2);
       expect(long.sources.length).toBe(1);
       // The next frame reopens it, once.
-      expect(long.feed.take()).toEqual([]);
+      expect(long.feed.take()).toHaveLength(INBOX_CAP);
       expect(long.sources.length).toBe(2);
       expect(long.feed.take()).toEqual([]);
       expect(long.sources.length).toBe(2);
@@ -321,27 +321,24 @@ describe("bounded catch-up on the live EventSource path", () => {
     expect(c.feed.take().map((a) => a.m.tick)).toEqual([live, live + 1]);
   });
 
-  it("an overflow before the first full is delivered reopens at once, and the first full still arrives", async () => {
-    // The first full is still decoding when a burst arrives (no frame loop runs before it is delivered).
+  it("preserves the first full while a raw burst waits on its decode, then resyncs", async () => {
     const c = client({ holdDecodes: true });
-    c.sources[0]!.emit(fullAt(0, 1));
-    for (let t = 1; t <= 100; t++) c.sources[0]!.emit(at(t));
-    expect(c.sources[0]!.readyState).toBe(2);
-    expect(c.sources.length).toBe(2);
-    for (const release of c.held.splice(0)) release();
-    // The new connection's first message is a full at the delayed live position; the page gets it with no frame drawn.
-    const c2 = c.sources[1]!;
-    const live = 205;
-    c2.emit(fullAt(live, 1));
-    c2.emit(at(live + 1));
-    await until(() => c.held.length > 0);
-    while (c.inbox.size < 2) {
-      for (const release of c.held.splice(0)) release();
-      await new Promise((r) => setTimeout(r, 1));
-    }
-    expect((await c.feed.first).tick).toBe(live);
-    expect(c.feed.take().map((a) => a.m.tick)).toEqual([live, live + 1]);
-    expect(c.sources.length).toBe(2);
+    try {
+      c.sources[0]!.emit(fullAt(0, 1));
+      for (let t = 1; t <= 100; t++) c.sources[0]!.emit(at(t));
+      expect(c.sources[0]!.readyState).toBe(2);
+      expect(c.sources).toHaveLength(1);
+      for (let i = 0; i < INBOX_CAP; i++) {
+        await until(() => c.held.length > 0);
+        c.held.shift()!();
+      }
+      await until(() => c.inbox.size === INBOX_CAP);
+      await settle();
+      expect((await c.feed.first).tick).toBe(0);
+      expect(c.feed.take().map(a => a.m.tick)).toEqual(Array.from({ length: INBOX_CAP }, (_, i) => i));
+      expect(c.sources).toHaveLength(2);
+      expect(c.counts.maxActive).toBe(1);
+    } finally { c.link.close(); }
   });
 
   it("messages of an abandoned connection are neither decoded nor delivered", async () => {
