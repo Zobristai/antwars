@@ -1,5 +1,5 @@
 import type { Store } from "../store/firestore.js";
-import type { WatchRegistry } from "../live/watch-registry.js";
+import { readReplayOwners, type WatchRegistry } from "../live/watch-registry.js";
 
 /** Private operator configuration. Its contents never belong in an error or public response. */
 export function publicExcludedOwnerIdsFromEnv(env: Readonly<Record<string, string | undefined>>): readonly string[] {
@@ -58,9 +58,11 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
   return {
     identitiesVisible: safe(identitiesVisible), lobbyVisible: safe(lobbyVisible),
     replayVisible: safe(async (id: string) => {
+      const owners = await readReplayOwners(store, id);
+      if (owners !== null) return owners.every(owner => !excluded.has(owner));
       const found = await registry.replayLobby(id);
       if (found.state === "pending") throw unavailable();
-      // Scheduled historical matches have no lobby identities. A pending match is never treated as one.
+      // Older recordings without ownership retain their historical behavior; pending is not absence.
       return found.state === "none" || lobbyVisible(found.lobbyId);
     }),
   };

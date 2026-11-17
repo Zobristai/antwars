@@ -350,3 +350,38 @@ describe.skipIf(!host)("spectator starting ratings from the real rating and lobb
     expect(shown).toEqual(state.agents.map(agent => expected.get(agents[Number(agent.id.split("-")[0])]!.id)));
   });
 });
+
+
+describe("ownership publication prerequisite", () => {
+  it("holds a recording across failed writes and releases only after a successful retry", async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { docs, store } = memoryWatchStore();
+    const replay = "2026-10-20T10-00-00-000Z-1";
+    docs.set(`lobbies/${id}`, { seats: JSON.stringify([{ id }]) });
+    docs.set(`identities/${id}`, { kind: "username" });
+    let failing = true;
+    const registry = createWatchRegistry({ ...store, transaction: async step => {
+      if (failing) throw new Error("storage offline");
+      return store.transaction(step);
+    } });
+    const controller = createWatchController({ accounts: {} as AccountStores, registry, slot: "public-0", origin: "http://p.test" });
+    try {
+      let ready = false;
+      const work = controller.hubOptions.beforeRecordingPublication!({ lobbyId: id, visibility: "public", rated: false }, replay).then(() => { ready = true; });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(ready).toBe(false); expect(docs.has(`replayOwnership/${replay}`)).toBe(false);
+      failing = false;
+      await vi.advanceTimersByTimeAsync(1000); await work;
+      expect(ready).toBe(true); expect(docs.has(`replayOwnership/${replay}`)).toBe(true);
+    } finally { controller.close(); vi.useRealTimers(); error.mockRestore(); }
+  });
+  it("rejects queued publication when closed, rather than releasing it", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { store } = memoryWatchStore();
+    const controller = createWatchController({ accounts: {} as AccountStores, registry: createWatchRegistry(store), slot: "public-0", origin: "http://p.test" });
+    const work = controller.hubOptions.beforeRecordingPublication!({ lobbyId: id, visibility: "public", rated: false }, "2026-10-20T10-00-00-000Z-1");
+    const rejected = expect(work).rejects.toThrow("Recording publication stopped");
+    controller.close(); await rejected; error.mockRestore();
+  });
+});

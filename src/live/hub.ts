@@ -83,6 +83,8 @@ export interface LiveHubOptions {
   /** Each record of a match as it reaches delayed playback, with the agents spectators see at that point. */
   readonly onReleased?: (access: MatchAccess, agents: readonly StreamAgent[]) => void;
   readonly onReplaySaved?: (access: MatchAccess, replayId: string) => void;
+  /** Private ownership must commit before either normal upload or recovery handoff. */
+  readonly beforeRecordingPublication?: (access: MatchAccess, replayId: string) => Promise<void>;
   /**
    * Each seat's rating as read before the match started, by stream display name, for its private record input only:
    * never sent on the stream. Read at match end; undefined or a missing seat means none is known.
@@ -317,6 +319,8 @@ class MatchStream {
       // The already-random match identity fits the existing positive-integer replay-id format.
       : new ReplayRecording(this.startedAt, this.access === undefined ? seq : this.identity, store, undefined, { includeComparisonSetup: hub.includeComparisonSetup,
         onBinarySaved: id => hub.savedReplay(seq, this.identity, id, this.access),
+        beforePublication: this.access === undefined || hub.beforeRecordingPublication === undefined ? undefined
+          : id => hub.beforeRecordingPublication!(this.access!, id),
         handoff: hub.recordHandoff, lobbyId: this.access?.visibility === "private" ? this.access.lobbyId : null,
         ...(hub.captureMatchLogs ? { logHeader: headerLine(state.seed, state.config) } : {}), resume: recording });
     // House matches are live even under the default (or a larger configured) delay.
@@ -573,6 +577,7 @@ export class LiveHub {
   private readonly onPlaybackFinished: LiveHubOptions["onPlaybackFinished"];
   private readonly onReleased: LiveHubOptions["onReleased"];
   private readonly onReplaySaved: LiveHubOptions["onReplaySaved"];
+  readonly beforeRecordingPublication: LiveHubOptions["beforeRecordingPublication"];
   private readonly encode: (message: StreamMessage) => Uint8Array;
   private readonly keepMatches: number;
   private readonly relayKey: Uint8Array | undefined;
@@ -602,6 +607,7 @@ export class LiveHub {
     this.onPlaybackFinished = options.onPlaybackFinished;
     this.onReleased = options.onReleased;
     this.onReplaySaved = options.onReplaySaved;
+    this.beforeRecordingPublication = options.beforeRecordingPublication;
     this.relayKey = options.relayKey;
     this.publicVisibility = options.publicVisibility;
     this.spectatorCap = createAdmissionCap("live spectators", { max: this.config.maxSpectators, perSource: this.config.maxSpectatorsPerSource });

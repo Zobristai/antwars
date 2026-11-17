@@ -213,6 +213,8 @@ export class ReplayRecording {
   private readonly includeComparisonSetup: boolean;
   private readonly onBinarySaved: ((id: string) => void) | undefined;
   private readonly handoff: RecordHandoff | undefined;
+  private readonly beforePublication: ((id: string) => Promise<void>) | undefined;
+  private publicationReady: Promise<void> | undefined;
   private readonly lobbyId: string | null;
 
   constructor(startedAt: number, seq: number, store: ReplayStore,
@@ -221,6 +223,8 @@ export class ReplayRecording {
       readonly includeComparisonSetup?: boolean; readonly logHeader?: string; readonly onBinarySaved?: (id: string) => void;
       /** Receives the finished match's inputs; the record service builds the readable record, never this process. */
       readonly handoff?: RecordHandoff;
+      /** Must finish before normal upload and before inputs can reach independent recovery. */
+      readonly beforePublication?: (id: string) => Promise<void>;
       /** Private lobby whose sealed archive receives the record; null or omitted for a public match. */
       readonly lobbyId?: string | null;
       /** A recording another server saved: its replay id, copies and log lines continue here; logHeader is not used. */
@@ -232,6 +236,7 @@ export class ReplayRecording {
     this.includeComparisonSetup = options.includeComparisonSetup === true;
     this.onBinarySaved = options.onBinarySaved;
     this.handoff = options.handoff;
+    this.beforePublication = options.beforePublication;
     this.lobbyId = options.lobbyId ?? null;
     const resume = options.resume;
     if (resume === undefined) {
@@ -347,7 +352,8 @@ export class ReplayRecording {
     this.checkpointBefore = [];
     // Own the bytes before yielding: close/discard cannot cancel this finished match's handoff. Reply lines are taken
     // at submission, so the replies to the final tick's calls, answered after this push, are in it.
-    void whole(before, checkpoint).then(binary => {
+    void whole(before, checkpoint).then(async binary => {
+      await this.preparePublication();
       const replyLines = this.takeReplyLines();
       this.handoff!.submit({ id: this.id, endedAt: at, lobbyId: this.lobbyId, logLines, binary, ...publication, ...replyLines });
     }).catch(error => {
@@ -498,6 +504,10 @@ export class ReplayRecording {
     };
   }
 
+  private preparePublication(): Promise<void> {
+    return this.publicationReady ??= Promise.resolve().then(() => this.beforePublication?.(this.id));
+  }
+
   private async upload(): Promise<boolean> {
     try {
       const released = this.released!, before = this.releasedBefore;
@@ -506,6 +516,7 @@ export class ReplayRecording {
       this.releasedBefore = [];
       this.logLines = undefined;
       const body = await whole(before, released);
+      await this.preparePublication();
       try { await this.store.create({
         name: `${this.id}.bin`, body, contentType: "application/octet-stream",
         contentEncoding: "gzip", ifGenerationMatch: 0,

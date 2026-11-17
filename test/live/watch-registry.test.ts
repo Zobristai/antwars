@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWatchRegistry } from "../../src/live/watch-registry.ts";
+import { createWatchRegistry, readReplayOwners } from "../../src/live/watch-registry.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { spectatorDelaySeconds } from "../../src/live/match-access.ts";
 
@@ -226,5 +226,36 @@ describe("stale public listing sweep", () => {
     expect(listed()).toBe(151);
     expect((await registry.publicMatches()).map(row => row.lobbyId)).toEqual([live]);
     expect(listed()).toBe(1);
+  });
+});
+
+
+describe("private recording ownership", () => {
+  it("commits deduplicated retained owners before watch registration, without public fields, and retries immutably", async () => {
+    const { docs, store } = memory(); const registry = createWatchRegistry(store);
+    docs.set(`lobbies/${id}`, { seats: JSON.stringify([{ id }, { id: nextId }, { id: nextId }]) });
+    docs.set(`identities/${id}`, { kind: "username", nameState: "purged" });
+    docs.set(`identities/${nextId}`, { kind: "handle", ownerId: id });
+    expect(await readReplayOwners(store, replayId)).toBeNull();
+    await registry.recordOwners(id, replayId);
+    expect(await readReplayOwners(store, replayId)).toEqual([id]);
+    expect(await registry.replayLobby(replayId)).toEqual({ state: "none" });
+    expect(await registry.publicMatches()).toEqual([]);
+    const before = structuredClone([...docs]);
+    await createWatchRegistry(store).recordOwners(id, replayId);
+    expect([...docs]).toEqual(before);
+    docs.set(`identities/${nextId}`, { kind: "username" });
+    await expect(registry.recordOwners(id, replayId)).rejects.toThrow("Recording ownership changed");
+    expect(await readReplayOwners(store, replayId)).toEqual([id]);
+  });
+  it("refuses missing identities, empty or malformed seats and corrupt provenance", async () => {
+    const { docs, store } = memory(); const registry = createWatchRegistry(store);
+    for (const seats of [undefined, "[]", "not json", JSON.stringify([{ id }])]) {
+      docs.set(`lobbies/${id}`, seats === undefined ? {} : { seats });
+      await expect(registry.recordOwners(id, replayId)).rejects.toThrow("Invalid recording ownership");
+      expect(await readReplayOwners(store, replayId)).toBeNull();
+    }
+    docs.set(`replayOwnership/${replayId}`, { version: "1", lobbyId: id, ownerIds: "[]" });
+    await expect(readReplayOwners(store, replayId)).rejects.toThrow("Invalid recording ownership");
   });
 });

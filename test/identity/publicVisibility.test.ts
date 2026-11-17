@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPublicVisibility, publicExcludedOwnerIdsFromEnv } from "../../src/identity/publicVisibility.ts";
+import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
@@ -58,4 +59,22 @@ describe("private public-visibility configuration", () => {
     const result = await identities.claimUsername("Willow", "source", undefined, undefined, claimed.value.key);
     expect(result.ok).toBe(false);
   });
+});
+
+
+it("filters persisted ownership without watch registration and re-evaluates changes without caching", async () => {
+  const { store, docs } = memoryWatchStore(), registry = createWatchRegistry(store);
+  const replay = "2026-10-20T10-00-00-000Z-1";
+  docs.set(`lobbies/${other}`, { seats: JSON.stringify([{ id: owner }]) });
+  docs.set(`identities/${owner}`, { kind: "username" });
+  const hidden = createPublicVisibility(store, registry, [owner])!;
+  expect(await hidden.replayVisible(replay)).toBe(true); // Grandfathered absence, not a new publication.
+  await registry.recordOwners(other, replay);
+  expect(await registry.replayLobby(replay)).toEqual({ state: "none" });
+  expect(await hidden.replayVisible(replay)).toBe(false);
+  expect(await createPublicVisibility(store, registry, [other])!.replayVisible(replay)).toBe(true);
+  docs.delete(`identities/${owner}`); // The immutable owner record survives identity projection changes.
+  expect(await hidden.replayVisible(replay)).toBe(false);
+  docs.set(`replayOwnership/${replay}`, { version: "1", lobbyId: other, ownerIds: "private malformed contents" });
+  await expect(hidden.replayVisible(replay)).rejects.toThrow("Public visibility temporarily unavailable");
 });

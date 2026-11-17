@@ -94,7 +94,7 @@ export function createWatchController(options: {
     publish(async () => { if (!await write(runId)) refused(); });
   };
   let closed = false;
-  const jobs: { readonly run: () => Promise<void>; readonly release: () => void }[] = [];
+  const jobs: { readonly run: () => Promise<void>; readonly release: () => void; readonly cancel?: () => void }[] = [];
   let busy = false, reportedFailure = false, timer: ReturnType<typeof setTimeout> | undefined;
   const drain = async () => {
     if (busy || closed) return;
@@ -106,12 +106,23 @@ export function createWatchController(options: {
       if (!closed) timer = setTimeout(() => { timer = undefined; void drain(); }, 1000);
     } finally { busy = false; }
   };
-  const publish = (job: () => Promise<void>) => {
-    if (!closed) { jobs.push({ run: job, release: slotActivity(options.slot).hold("spectator metadata publication") }); if (timer === undefined) void drain(); }
+  const publish = (job: () => Promise<void>, cancel?: () => void) => {
+    if (closed) { cancel?.(); return; }
+    jobs.push({ run: job, release: slotActivity(options.slot).hold("spectator metadata publication"), cancel });
+    if (timer === undefined) void drain();
   };
   return {
     hubOptions: {
       requireMatchAccess: true,
+      beforeRecordingPublication(access, replayId) {
+        return new Promise<void>((resolve, reject) => {
+          const cancel = () => reject(new Error("Recording publication stopped"));
+          publish(async () => {
+            await registry.recordOwners(access.lobbyId, replayId);
+            if (closed) cancel(); else resolve();
+          }, cancel);
+        });
+      },
       activity: slotActivity(options.slot),
       currentInvite: (id, token) => accounts.lobbies.isInviteCurrent(id, token),
       privateReplayStore: id => options.archive?.forLobby(id),
@@ -212,7 +223,7 @@ export function createWatchController(options: {
       // What its delayed playback has shown so far, on this server or carried by the save.
       publishLabels(lobbyId);
     },
-    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) job.release(); prepared.clear(); runs.clear(); published.clear(); shown.clear(); },
+    close() { closed = true; clearTimeout(timer); for (const job of jobs.splice(0)) { job.cancel?.(); job.release(); } prepared.clear(); runs.clear(); published.clear(); shown.clear(); },
   };
 }
 
