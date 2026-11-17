@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Worker as NodeWorker } from "node:worker_threads";
 import { deflateRawSync } from "node:zlib";
 import { afterEach, expect, it, vi } from "vitest";
-import { decodeMessage } from "../../src/live/format.ts";
+import { decodeMessage, encodeMessage } from "../../src/live/format.ts";
 import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
 import { Frame, Playback } from "../../web/src/buffer.ts";
 import { Ants } from "../../web/src/ants.ts";
@@ -10,9 +10,11 @@ import { Texture, type Particle, type Renderer } from "pixi.js";
 import { Waiting } from "../../web/src/waiting.ts";
 import { INBOX_CAP } from "../../web/src/inbox.ts";
 import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/intake.ts";
-import { openSource } from "../../web/src/source.ts";
+import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, openSource } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
+import { mountResultModal } from "../../web/src/ui/deck/result-modal.ts";
+import { dom, type ElementPort } from "./pages/dom.ts";
 
 const packets = unpackMessages(packMessages(scale2Packets(20)));
 const messages = packets.map(decodeMessage);
@@ -187,7 +189,12 @@ it.each(["construction", "error event", "silent"])("%s startup failure falls bac
     // The inline decoder still uses the production bounded admission and full-snapshot resync.
     for (let i = 0; i <= INBOX_CAP; i++) sources[1]!.emit(packets[1]!);
     expect(sources[1]!.readyState).toBe(2);
-    expect(source.take(now)).toEqual([]);
+    expect(source.take(now)).toEqual([]); // The admitted prefix is still decoding.
+    expect(sources).toHaveLength(2);
+    await vi.waitFor(() => expect(source.feed!.inbox.size).toBe(INBOX_CAP));
+    // Only now may a frame drain the accepted work and reopen for a fresh full.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(source.take(now).map(a => a.kind)).toEqual(Array(INBOX_CAP).fill("inline"));
     expect(sources).toHaveLength(3);
     await vi.waitFor(() => expect(source.feed!.inbox.size).toBe(1));
     expect(source.take(now).map((a) => a.kind)).toEqual(["inline"]);
@@ -341,4 +348,117 @@ it("a public replay shares its own replay link; a lobby's recording shares none,
     const source = (await openSource(new URLSearchParams(params), { now: () => 0 }, doc, vi.fn()))!;
     try { expect(source.share).toBe(share); } finally { source.close(); }
   }
+});
+
+
+/** Real source/worker, with external storage, catalog and transport ports controlled by the test. */
+function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0) {
+  vi.stubGlobal("Worker", BrowserWorker);
+  const { doc, listeners } = documentPort();
+  Object.assign(doc, { querySelector: () => null });
+  const saved = new Map<string, string>();
+  const location = { pathname: "/", hash: "", origin: "http://localhost", reload: vi.fn() };
+  Object.assign(doc.defaultView!, { location, sessionStorage: {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, value: string) => saved.set(key, value),
+    removeItem: (key: string) => saved.delete(key),
+  } });
+  let ended = false;
+  const paths: string[] = [];
+  vi.stubGlobal("fetch", async (path: string) => {
+    if (path === "/watch/catalog") return Response.json({ matches: ended ? [] : [{ lobbyId: "selected", startedAt: 1, rated: false, delaySeconds: 0 }], lobbies: [] });
+    if (path.startsWith("/watch/status/")) return Response.json({ lobbyId: "selected", delaySeconds: 0, playbackFinished: ended });
+    if (path === "/matches") return Response.json({ matches: [], nextPageToken: null });
+    throw new Error(`Unexpected request ${path}`);
+  });
+  const leaderboard = vi.fn(), reject = vi.fn();
+  const open = (extra: Record<string, string> = {}) => openSource(new URLSearchParams({ ...(automatic ? {} : { lobby: "selected" }), ...extra }), { now: () => 0 }, doc, reject, {
+    source: path => {
+      paths.push(path);
+      const es = new Source(), m = structuredClone(messages[0]!);
+      m.tick = ended ? 100 : 0;
+      m.full!.match = 42;
+      m.full!.result = ended ? { tick: m.tick - 1, winner: 1, reason: "time_up", decidedBy: "kills", nextStartMs: null } : null;
+      if (ended && finishedSnapshotDelayMs > 0) setTimeout(() => es.emit(encodeMessage(m)), finishedSnapshotDelayMs);
+      else queueMicrotask(() => es.emit(encodeMessage(m)));
+      return es;
+    },
+  }, { leaderboard });
+  return { open, saved, paths, leaderboard, reject, finish: () => { ended = true; }, cleanup: () => listeners.get("pagehide")?.() };
+}
+
+it.each([false, true])("preserves a finishing selected lobby through fallback, consumes it once, then retains normal idle behavior (automatic=%s)", async automatic => {
+  const h = handoverClient(automatic);
+  try {
+    const first = (await h.open())!;
+    expect(first.recorded).toBe(false);
+    first.prepareFallback(); first.close(); h.finish();
+    expect(h.saved.has(FALLBACK_HANDOVER_KEY)).toBe(true);
+    const resumed = (await h.open({ board: "2d" }))!;
+    expect(resumed).not.toBeNull();
+    expect(resumed.recorded).toBe(false);
+    expect(resumed.head.full!.result?.winner).toBe(1);
+    expect(h.paths).toEqual(["/watch/live/selected", "/watch/live/selected"]);
+    expect(h.saved.has(FALLBACK_HANDOVER_KEY)).toBe(false);
+    expect(h.leaderboard).not.toHaveBeenCalled();
+    const playback = new Playback({ live: true }), frame = new Frame();
+    for (const arrival of resumed.take(0)) {
+      if (arrival.kind === "prepared") playback.pushPrepared(arrival.prepared, arrival.at);
+      else playback.push(arrival.m, arrival.at);
+    }
+    expect(playback.sample(5000, frame)).toBe(true);
+    expect(frame.board!.result?.winner).toBe(1);
+    resumed.close();
+    expect(await h.open({ board: "2d" })).toBeNull();
+    if (!automatic) expect(h.leaderboard).toHaveBeenCalledTimes(1);
+    expect(h.reject).not.toHaveBeenCalled();
+  } finally { h.cleanup(); }
+});
+
+it("waits for an explicit-lobby handover's final snapshot arriving after the normal connection timeout", async () => {
+  const h = handoverClient(false, 3000);
+  try {
+    const first = (await h.open())!;
+    first.prepareFallback(); first.close(); h.finish();
+    const resumed = await h.open({ board: "2d" });
+    expect(resumed).not.toBeNull();
+    expect(h.leaderboard).not.toHaveBeenCalled();
+    expect(resumed!.head.full!.result?.winner).toBe(1);
+    const playback = new Playback({ live: true }), frame = new Frame();
+    for (const arrival of resumed!.take(0)) {
+      if (arrival.kind === "prepared") playback.pushPrepared(arrival.prepared, arrival.at);
+      else playback.push(arrival.m, arrival.at);
+    }
+    expect(playback.sample(5000, frame)).toBe(true);
+    expect(frame.board!.result?.winner).toBe(1);
+    const port = dom(), result = mountResultModal(port.doc);
+    const dialog = result.dialog as unknown as ElementPort;
+    port.body.append(dialog);
+    result.update(frame);
+    expect(dialog.open).toBe(false);
+    // The first terminal frame starts playback; the result follows its normal ending beat.
+    expect(playback.sample(10_000, frame)).toBe(true);
+    result.update(frame);
+    expect(dialog.open).toBe(true);
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toContain("wins");
+    result.destroy();
+    expect(h.reject).not.toHaveBeenCalled();
+    resumed!.close();
+  } finally { h.cleanup(); }
+});
+
+it.each(["expired", "future", "wrong route", "wrong board", "malformed"])("refuses a %s renderer handover without changing a normal finished-lobby visit", async invalid => {
+  const h = handoverClient(false);
+  try {
+    const first = (await h.open())!;
+    first.prepareFallback(); first.close(); h.finish();
+    const saved = JSON.parse(h.saved.get(FALLBACK_HANDOVER_KEY)!);
+    if (invalid === "expired") saved.at = Date.now() - FALLBACK_HANDOVER_MS - 1;
+    if (invalid === "future") saved.at = Date.now() + 60_000;
+    if (invalid === "wrong route") saved.route = "/?lobby=another";
+    h.saved.set(FALLBACK_HANDOVER_KEY, invalid === "malformed" ? "{" : JSON.stringify(saved));
+    expect(await h.open({ board: invalid === "wrong board" ? "3d" : "2d" })).toBeNull();
+    expect(h.leaderboard).toHaveBeenCalledTimes(1);
+    expect(h.saved.has(FALLBACK_HANDOVER_KEY)).toBe(false);
+  } finally { h.cleanup(); }
 });

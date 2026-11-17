@@ -332,6 +332,8 @@ export interface ColonyState {
   seenFood?: number[];
   /** Four-colony matches only: kills credited to this colony (the last hit on an ant or queen). */
   kills?: number;
+  /** Credited lethal hits on queens, only when queen-first scoring is enabled; absent means zero. */
+  queenKills?: number;
   /** Four-colony matches only: set once, on the tick the colony left the match. */
   eliminated?: Elimination;
 }
@@ -341,6 +343,8 @@ export type EliminationReason = "queens_killed" | "idle";
 
 /** A colony's time-up scores, in time-up order. */
 export interface ColonyScores {
+  /** Absent in historical snapshots, where this score did not participate. */
+  readonly queenKills?: number;
   readonly kills: number;
   /** Physical original-tile area held. */
   readonly territory: number;
@@ -371,11 +375,13 @@ export interface MatchStats {
 export type WinReason = "overrun" | "time_up" | "double_overrun" | "queens_killed" | "sustained_territory" | "abandoned" | "idle";
 
 export interface MatchResult {
+  /** New Free-for-all recordings only; absent on historical and two-colony results. */
+  readonly ffa?: import("./ffaFinish.js").FfaFinish;
   /** Winning colony, or null for a draw. */
   readonly winner: ColonyId | null;
   readonly reason: WinReason;
   /** Which tiebreak decided a time-up result; "idle" for an idle loss, "draw" when both colonies idled. */
-  readonly decidedBy: "overrun" | "territory" | "ants_alive" | "food_delivered" | "draw" | "queens_killed" | "kills" | "idle";
+  readonly decidedBy: "overrun" | "territory" | "ants_alive" | "food_delivered" | "draw" | "queens_killed" | "kills" | "idle" | "queen_kills";
   readonly tick: number;
 }
 
@@ -429,7 +435,7 @@ interface AntEventBase {
 
 /** Renderer-neutral step events. Every event about an ant carries its id. */
 export type SimEvent =
-  | (AntEventBase & { readonly type: "hatch"; readonly antId: number; readonly colony: ColonyId; readonly caste?: Caste })
+  | (AntEventBase & { readonly type: "hatch"; readonly antId: number; readonly colony: ColonyId; readonly caste?: Caste | "flyer" })
   | (AntEventBase & {
       readonly type: "fight";
       readonly antId: number;

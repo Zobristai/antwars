@@ -98,9 +98,12 @@ describe("hovering a drawn colony name shows its source note", () => {
         const shown = await hovered(what, width);
         expect(shown.length, "drawn names are shown").toBeGreaterThan(0);
         // The caption names both colonies; the result box at least its winner, in its headline.
-        expect(shown.map(s => s.name)).toEqual(expect.arrayContaining(what === "result" ? [DRAWN[0]] : [...DRAWN]));
+        expect(shown.map(s => s.name)).toEqual(expect.arrayContaining(what === "result" ? [DRAWN[0].replace(/ Colony$/, "")] : [...DRAWN]));
         for (const s of shown) {
-          expect(s.note).toBe(colonyNameNote(s.name));
+          // The banner abbreviates the visible name, but keeps the full colony's source note.
+          const fullName = what === "result" ? `${s.name} Colony` : s.name;
+          expect(DRAWN).toContain(fullName);
+          expect(s.note).toBe(colonyNameNote(fullName));
           expect(s, `${s.name}: the pointer over it reaches it and its note`).toMatchObject({ hovered: true, tooltip: s.note });
         }
       });

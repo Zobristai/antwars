@@ -380,7 +380,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
       // Snapshot metadata with the outcome: retries must not read a later match's agents.
       pending = { lobbyId: current, outcome, thinkingLevels: thinkingLevels && { ...thinkingLevels }, serviceTiers: serviceTiers && { ...serviceTiers },
         modelLabels: modelLabels && { ...modelLabels }, ...(absentColonies?.length ? { absentColonies: [...absentColonies] } : {}),
-        ...(result === undefined ? {} : { result: { reason: result.reason, eliminations: result.eliminations.map(e => ({ ...e })) } }) };
+        ...(result === undefined ? {} : { result: { reason: result.reason, ...(result.ffa === undefined ? {} : { ffa: { ...result.ffa, order: [...result.ffa.order] as [number, number, number, number] } }), eliminations: result.eliminations.map(e => ({ ...e })) } }) };
     },
     close() {
       closed = true;

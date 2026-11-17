@@ -185,6 +185,39 @@ function expectNoBacking(rows: Awaited<ReturnType<typeof measured>>) {
   }
 }
 
+/** The result uses a colony-coloured banner, not colony-coloured heading text. */
+async function expectVictoryBanner(page: string, width: number, winnerName: string) {
+  const tab = await browser.newPage({ viewport: { width, height: 800 } });
+  try {
+    await tab.setContent(page);
+    const banner = await tab.locator(".d1-result-top").evaluate(el => {
+      const head = el.querySelector<HTMLElement>(".d1-result-head")!;
+      const name = head.querySelector<HTMLElement>(".rd-winner-name")!;
+      const outcome = head.querySelector<HTMLElement>(".rd-outcome")!;
+      return {
+        background: getComputedStyle(el).backgroundColor,
+        name: name.textContent, outcome: outcome.textContent, label: head.getAttribute("aria-label"),
+        textStyles: [head, name, outcome].map(text => {
+          const style = getComputedStyle(text), rect = text.getBoundingClientRect();
+          return { colour: style.color, background: style.backgroundColor, shadow: style.boxShadow,
+            visible: rect.width > 0 && rect.height > 0 && style.visibility === "visible" };
+        }),
+      };
+    });
+    const colour = SUPERCOLONY_NAMES.find(colony => colony.label === winnerName)!.colour;
+    expect(banner.background).toBe(`rgb(${(colour >> 16) & 255}, ${(colour >> 8) & 255}, ${colour & 255})`);
+    expect(banner.name).toBe(winnerName.replace(/ Colony$/, ""));
+    expect(banner.outcome).toBe("wins");
+    expect(banner.label).toBe(`${winnerName} wins`);
+    for (const text of banner.textStyles) {
+      expect(text.visible).toBe(true);
+      expect(text.colour).toBe("rgb(16, 33, 38)");
+      expect(text.background).toBe("rgba(0, 0, 0, 0)");
+      expect(text.shadow).toBe("none");
+    }
+  } finally { await tab.close(); }
+}
+
 const MOMENTS = [
   ["2d", "event"], ["2d", "fall"], ["3d", "event"], ["3d", "fall"], ["result", { winner: 0 }], ["result", { winner: 1 }],
   ["replay", "label0"], ["replay", "label1"], ["replay", "list"],
@@ -197,9 +230,13 @@ describe("text in a colony's colour has no backing", () => {
       for (const width of surface === "2d" || surface === "3d" ? [1280] : [1280, 390]) {
         it(`${pair ? pair.join(" against ") : "rated"}: ${surface} ${name(moment)} at ${width}px`, async () => {
           const { ground, page } = mounted(pair, surface, moment);
-          const rows = await measured(page, width);
-          expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
-          expectNoBacking(rows);
+          if (surface === "result") {
+            await expectVictoryBanner(page, width, (pair ?? COLONY_NAMES)[moment.winner]);
+          } else {
+            const rows = await measured(page, width);
+            expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
+            expectNoBacking(rows);
+          }
           expect(ground, "no match draws a text backing").toBeNull();
         });
       }
@@ -230,11 +267,7 @@ describe("text in a colony's colour has no backing", () => {
     for (const width of [1280, 390]) {
       it(`a four-colony match: result, ${FOUR[winner]} wins, at ${width}px`, async () => {
         const { ground, page } = fourColonyResult(winner);
-        const rows = await measured(page, width);
-        const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
-        // The heading in the winner's own colour.
-        expect(rows.find(r => r.text === `${FOUR[winner]} wins`)?.rgb).toBe(rgb(COLOURS[winner]!));
-        expectNoBacking(rows);
+        await expectVictoryBanner(page, width, FOUR[winner]!);
         expect(ground).toBeNull();
       });
     }
@@ -328,7 +361,8 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             expect(row.labels).toHaveLength(names[1] === "Very Large Colony" ? 1 : 2);
             for (const label of row.labels) {
               expect(names).toContain(label.title);
-              expect(label.size).toBe(label.expectedSize);
+              // Row labels keep 10.5 px on a phone; only the shared headings above the rows are 10 px there.
+              expect(label.size).toBe(width === 390 ? "10.5px" : label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
               expect(label.lines).toBe(1);
@@ -476,7 +510,7 @@ describe("Recordings colony headings stay inside their columns", () => {
           expect(row.whiteSpace).toBe("nowrap");
           expect(row.overflow).toBe("visible");
           expect(row.textOverflow).not.toBe("ellipsis");
-          expect(row.size).toBe(width === 390 ? "10.5px" : "11px");
+          expect(row.size).toBe(width === 390 ? "10px" : "11px");
           expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.85 : 0.99, 2);
           if (width === 390) expect(row.width).toBe(75);
         }

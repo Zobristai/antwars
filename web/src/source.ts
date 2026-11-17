@@ -17,6 +17,32 @@ import { liveStarting } from "./waiting.ts";
 export const CONNECT_MS = 2000;
 /** Keep the confirmed live selection across its recording-to-live reload. */
 export const HANDOVER_KEY = "antwar-live-handover";
+/** One renderer reload, not a fresh visit: preserve the selected live lobby even if it just ended. */
+export const FALLBACK_HANDOVER_KEY = "antwar-renderer-handover";
+export const FALLBACK_HANDOVER_MS = 60_000;
+interface RendererHandover { lobbyId: string; route: string; at: number; delaySeconds?: number }
+function fallbackRoute(params: URLSearchParams, pathname: string): string {
+  const copy = new URLSearchParams(params);
+  copy.delete("board"); copy.sort();
+  return `${pathname}?${copy}`;
+}
+function consumeRendererHandover(view: Window | null, params: URLSearchParams): RendererHandover | null {
+  try {
+    const raw = view?.sessionStorage.getItem(FALLBACK_HANDOVER_KEY);
+    view?.sessionStorage.removeItem(FALLBACK_HANDOVER_KEY);
+    if (!raw || params.get("board") !== "2d" || params.has("replay") || params.has("recording")) return null;
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null ||
+      !("lobbyId" in value) || typeof value.lobbyId !== "string" || !value.lobbyId || value.lobbyId.length > 256 ||
+      !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
+      !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
+      Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
+      (params.has("lobby") && params.get("lobby") !== value.lobbyId)) return null;
+    const delaySeconds = "delaySeconds" in value && typeof value.delaySeconds === "number" && Number.isFinite(value.delaySeconds) && value.delaySeconds >= 0 ? value.delaySeconds : undefined;
+    return { lobbyId: value.lobbyId, route: value.route, at: value.at, delaySeconds };
+  } catch { return null; }
+}
+
 /** A dropped feed changes source only after repeated confirmed catalog absence. */
 export const DROP_CHECKS = 2;
 
@@ -44,6 +70,8 @@ export interface SpectatorSource {
   now(realMs: number): number;
   /** After the displayed result, automatic Watch chooses again; explicit links stay pinned. */
   nextMatch(): void;
+  /** Preserve this live selection for the imminent 3D-to-2D reload only. */
+  prepareFallback(): void;
   close(): void;
 }
 
@@ -145,6 +173,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   // Numeric main-match links now enter ordinary Watch discovery, never a retired route.
   const automatic = !replay && !name && !params.has("lobby");
   const view = doc.defaultView;
+  const rendererHandover = consumeRendererHandover(view, params);
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
   let closeStatus: (() => void) | undefined;
@@ -248,7 +277,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       try { handover = view?.sessionStorage.getItem(HANDOVER_KEY) ?? null; view?.sessionStorage.removeItem(HANDOVER_KEY); } catch { /* Optional. */ }
       selected = matches?.find(match => match.lobbyId === handover) ?? selected;
       handedOver = selected !== null && selected.lobbyId === handover;
-      delaySeconds = selected?.delaySeconds;
+      delaySeconds = rendererHandover?.delaySeconds ?? selected?.delaySeconds;
     } else if (!replay && !name && params.has("lobby")) {
       // A lobby link reloaded to hand over from the Leaderboard gets the longer bound, as automatic Watch does.
       try {
@@ -258,9 +287,10 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     }
     if (abort.signal.aborted) return null;
     const replayParams = storedId ? new URLSearchParams({ replay: storedId }) : params;
+    const liveLobbyId = rendererHandover?.lobbyId ?? (automatic ? selected?.lobbyId : params.get("lobby"));
     const path = replay ? (lobbyRecording ? lobbyRecordingPath(params) : replayPath(replayParams))
       : name ? `recordings/${encodeURIComponent(name)}.bin`
-      : automatic ? selected ? streamPath(new URLSearchParams({ lobby: selected.lobbyId })) : null : streamPath(params);
+      : liveLobbyId ? streamPath(new URLSearchParams({ lobby: liveLobbyId })) : null;
     let head: StreamMessage;
     if (replay) {
       recording = openRecording(path!, fail, lobbyRecording ? inviteRecordingRequest(path!, invite) : undefined, {
@@ -298,9 +328,12 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       }
       if (!automatic) {
         if (!feed) throw new Error("This watch link has no lobby id.");
-        // Connecting is bounded by the server sending anything at all; once it has, the link opens as before,
-        // however slowly this page decodes. A lobby link never plays another match's recording.
-        const sending = await Promise.race([arrival, limit(handedOver ? 10_000 : CONNECT_MS)]);
+        // Renderer handovers wait for the snapshot with the same bound as automatic Watch, even if status
+        // already says finished. Ordinary links still open once the server sends anything, however slowly
+        // this page decodes. A lobby link never plays another match's recording.
+        const sending = rendererHandover
+          ? await Promise.race([feed.first, limit(10_000)])
+          : await Promise.race([arrival, limit(handedOver ? 10_000 : CONNECT_MS)]);
         clearTimeout(connectTimer);
         if (abort.signal.aborted) return null;
         let opening: StreamMessage | null = null;
@@ -322,7 +355,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         // No match to wait for (ended, unknown, or no status), or a finished one: a just-ended lobby's retained stream
         // sends its final snapshot at once. The Leaderboard; the live subscription stays open, so a running snapshot
         // (a match that starts here) takes over (reload).
-        if (opening === null || opening.full?.result != null) {
+        if (opening === null || (opening.full?.result != null && !rendererHandover)) {
           if (abort.signal.aborted) return null;
           lobbyIdle = true;
           void firstRunning!.then(() => reload(true));
@@ -332,7 +365,10 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         head = opening;
       } else {
         // Handover is still bounded: a server failure after reload must not leave Connecting forever.
-        const first = firstRunning ? await Promise.race([firstRunning, limit(handedOver ? 10_000 : CONNECT_MS)]) : null;
+        // A renderer handover continues an already selected match, including its final snapshot.
+        const first = rendererHandover && feed
+          ? await Promise.race([feed.first, limit(10_000)])
+          : firstRunning ? await Promise.race([firstRunning, limit(handedOver ? 10_000 : CONNECT_MS)]) : null;
         clearTimeout(connectTimer);
         if (abort.signal.aborted) return null;
         if (first) { live = true; head = first; }
@@ -360,7 +396,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       share: name ? null : watchUrl(view?.location?.origin ?? "", {
         private: !!invite || lobbyRecording,
         replayId: replay || fallback !== null ? storedId : null,
-        lobbyId: automatic ? selected?.lobbyId ?? null : params.get("lobby"),
+        lobbyId: liveLobbyId ?? null,
       }),
       linkState: () => state,
       take(realMs) {
@@ -381,6 +417,14 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       },
       now: realMs => recording?.time ?? realMs,
       nextMatch: () => reload(),
+      prepareFallback() {
+        if (replay || legacy || fallback || !liveLobbyId || abort.signal.aborted) return;
+        try {
+          view?.sessionStorage.setItem(FALLBACK_HANDOVER_KEY, JSON.stringify({
+            lobbyId: liveLobbyId, route: fallbackRoute(params, view.location.pathname), at: Date.now(), delaySeconds,
+          } satisfies RendererHandover));
+        } catch { /* Storage is optional; retain ordinary navigation if unavailable. */ }
+      },
       close,
     };
   } catch (cause: unknown) {

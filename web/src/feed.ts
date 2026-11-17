@@ -3,10 +3,10 @@
  * link (web/src/stream.ts) and the bounded inbox (web/src/inbox.ts) wired
  * together, so the page and the tests run the same path.
  *
- * An overflow drops the backlog. Before the first full snapshot has been
+ * An overflow retains a bounded accepted prefix. Before the first full snapshot has been
  * delivered no frame loop is running yet, so the stream is reopened at once;
- * after it, the stream is suspended at once and the frame loop reopens it on
- * its next frame (take). Either way the new connection's first message is a
+ * after it, the stream is suspended and the frame loop drains that prefix
+ * before reopening it on its next frame (take). Either way the new connection's first message is a
  * full snapshot at the delayed live position.
  */
 import type { StreamMessage } from "../../src/live/format.ts";

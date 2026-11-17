@@ -57,7 +57,7 @@ export interface MatchRecord {
   simulationEndedAt: string | null;
   rules: { version: number; holdBehaviour: string; config: unknown } | null;
   setup: StreamSetup | null;
-  result: Omit<StreamResult, "nextStartMs"> | null;
+  result: (Omit<StreamResult, "nextStartMs"> & { readonly ffa?: import("../sim/ffaFinish.js").FfaFinish }) | null;
   seats: SeatRecord[];
   /** Events as recorded, with simulation-step ticks; no invented causal attribution. */
   events: { tick: number; event: StreamEvent }[];
@@ -318,7 +318,15 @@ export function matchRecord(input: HistoryInput): MatchRecord {
   // A rated match's recorded result also carries its delayed rating changes, which the simulation
   // never produces. They are left out of this comparison only; the record keeps them.
   const { ratingChanges: _ratings, ...recordedResult } = record.result;
-  if (JSON.stringify(state.result) !== JSON.stringify(recordedResult)) throw new Error("log result does not match binary under recorded rules");
+  if (state.result === null) throw new Error("log has no terminal result");
+  const { ffa, ...simResult } = state.result;
+  if (JSON.stringify(simResult) !== JSON.stringify(recordedResult)) throw new Error("log result does not match binary under recorded rules");
+  if (ffa !== undefined) {
+    if (log.finishes.size !== 1 || JSON.stringify(log.finishes.get(state.result.tick)) !== JSON.stringify(ffa)) {
+      throw new Error("logged Free-for-all finish does not match replay");
+    }
+    record.result = { ...record.result, ffa };
+  }
   // A record verified against its log publishes eliminations the log's re-run reaches, not only the binary's.
   if (JSON.stringify(eliminationsOf(state)) !== JSON.stringify(record.eliminations ?? [])) throw new Error("log eliminations do not match binary under recorded rules");
   const callFacts = (list: readonly SeatRecord[]) => list.map(seat => ({ seat: seat.seat, colony: seat.colony,

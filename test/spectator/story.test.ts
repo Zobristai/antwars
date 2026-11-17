@@ -251,3 +251,8 @@ it("labels an abandoned match as idle and unrated rather than a time-up decision
   expect(resultHow({ reason: "abandoned", decidedBy: "draw" }, true)).toBe("Seat inactive · unrated");
   expect(decisive([], "abandoned", null)).toEqual([]);
 });
+
+it.each([2, 4])("names the queen-kill deciding step for %s colonies", colonies => {
+  expect(resultHow({ reason: "time_up", decidedBy: "queen_kills" }, true, colonies)).toBe("Time-up · decided on queen kills");
+  expect(resultHow({ reason: "queens_killed", decidedBy: "queen_kills" }, true, colonies)).toContain("decided on queen kills");
+});

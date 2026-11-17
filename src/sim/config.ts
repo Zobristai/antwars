@@ -257,6 +257,10 @@ export interface SimConfig {
   readonly forageTieBreak: "mirrored";
   /** New-match scoring; absence preserves recorded territory-first adjudication. */
   readonly adjudication?: "kills-first";
+  /** New matches prepend credited queen kills; absence preserves the recorded scoring order. */
+  readonly queenKillsFirst?: true;
+  /** Record complete Free-for-all placement; absence preserves historical result shape. */
+  readonly ffaTerritoryWinnerFirst?: boolean;
   /** Fine terrain tiles per original tile edge. Every playable config carries 2; only a rules
    * template (the input to withGridScale) omits it. */
   readonly gridScale?: GridScale;
@@ -620,7 +624,7 @@ const PUBLIC_FOOD_PATCHES = [...DEFAULT_CONFIG.foodPatches, ...FRONTLINE_FOOD_PA
 const LIVE_REDESIGN_FOOD_PATCHES = [...REDESIGN_FOOD_PATCHES, ...FRONTLINE_FOOD_PATCHES];
 
 const { marksPerAgent: _historicalMarkSlots, ...UNCAPPED_PUBLIC_BASE } = RULES_V4_CONFIG;
-export const PUBLIC_CONFIG: SimConfig = { ...UNCAPPED_PUBLIC_BASE, adjudication: "kills-first", controlRevision: 1, guardSharePermille: 400, queenFounding: QUEEN_RULES,
+export const PUBLIC_CONFIG: SimConfig = { ...UNCAPPED_PUBLIC_BASE, adjudication: "kills-first", queenKillsFirst: true, controlRevision: 1, guardSharePermille: 400, queenFounding: QUEEN_RULES,
   terrain: TERRAIN_RULES, foodPatches: PUBLIC_FOOD_PATCHES, foodLayout: foodLayoutRules(PUBLIC_FOOD_PATCHES, 452, 1026) };
 
 /**

@@ -1,3 +1,5 @@
+import { Game } from "../../src/mcp/game.ts";
+import { replay } from "../../src/sim/log.ts";
 // A four-colony match's recording and finished-match record. A scripted match on a test-only quadrant map, recorded
 // as the live hub records it (each step's public stream message, packed and gzipped) with the match log the game
 // server writes, decodes to what its live messages carried; binaryRecord and matchRecord keep its four colonies,
@@ -44,7 +46,7 @@ function play(idle: Readonly<Record<number, readonly number[]>>, config = CONFIG
     const inputs: SimInput[] = tick === 0 ? Array.from({ length: seats }, (_, seat) => ({ type: "join", agentId: `seat-private-${seat}`, modelLabel: `model-${seat}` })) : [];
     const terminal: ServerTerminal = idle[tick] === undefined ? false : { idle: idle[tick] };
     const out = step(state, inputs, undefined, undefined, undefined, terminal, true);
-    lines.push(tickLine(tick, inputs, terminal, true, eliminationsAt(out.state, tick)));
+    lines.push(tickLine(tick, inputs, terminal, true, eliminationsAt(out.state, tick), out.state.result?.ffa));
     live.push({ ...recorder.record(out), full: null });
     state = out.state;
   }
@@ -128,4 +130,60 @@ it("leaves a two-colony record as it was: no eliminations and no colony count", 
     expect(record.seats.map(seat => seat.colony)).toEqual([0, 1]);
     expect(record.result).toEqual({ winner: 0, reason: "idle", decidedBy: "idle", tick: 3 });
   }
+});
+
+it("records finishing order in verified JSON, without changing spectator binary bytes", () => {
+  const old = play({ 5: [3], 8: [2], 12: [1] });
+  const recorded = play({ 5: [3], 8: [2], 12: [1] }, { ...CONFIG, ffaTerritoryWinnerFirst: false });
+  expect(recorded.input.binary).toEqual(old.input.binary);
+  expect(recorded.state.result?.ffa?.order).toEqual([0, 1, 2, 3]);
+  const record = matchRecord(recorded.input);
+  expect(record.result?.ffa).toEqual(recorded.state.result?.ffa);
+  expect(JSON.parse(recorded.input.logLines!.at(-1)!).ffa).toEqual(record.result?.ffa);
+  // Historical logs and binary-only records load without inventing new official placements.
+  expect(matchRecord(old.input).result).not.toHaveProperty("ffa");
+  expect(binaryRecord(old.input).result).not.toHaveProperty("ffa");
+  expect(binaryRecord(recorded.input).result).not.toHaveProperty("ffa");
+});
+
+it("rejects missing, duplicated, nonterminal or contradictory new finishing metadata", () => {
+  const recorded = play({ 5: [3], 8: [2], 12: [1] }, { ...CONFIG, ffaTerritoryWinnerFirst: false });
+  const lines = recorded.input.logLines!;
+  const last = JSON.parse(lines.at(-1)!);
+  const changed = (replacement: unknown) => ({ ...recorded.input, logLines: [...lines.slice(0, -1), JSON.stringify(replacement)] });
+  const { ffa: _finish, ...missing } = last;
+  expect(() => matchRecord(changed(missing))).toThrow(/finish/);
+  expect(() => matchRecord(changed({ ...last, ffa: { ...last.ffa, order: [3, 2, 1, 0] } }))).toThrow(/finish/);
+  expect(() => matchRecord(changed({ ...last, ffa: { ...last.ffa, order: [0, 0, 2, 3] } }))).toThrow(/finish/);
+  const early = [...lines]; early[1] = JSON.stringify({ ...JSON.parse(early[1]!), ffa: last.ffa });
+  expect(() => matchRecord({ ...recorded.input, logLines: early })).toThrow(/finish/);
+});
+
+
+it("the live Game writes the complete final order after a save and resume", async () => {
+  const logs: string[] = [];
+  const config = { ...CONFIG, matchTicks: 5, ffaTerritoryWinnerFirst: false };
+  const game = new Game({ simConfig: config, onLogLine: line => logs.push(line) });
+  await Promise.all([0, 1, 2, 3].map(i => game.join({ displayName: `seat ${i}` })));
+  game.startMatch(SEED);
+  game.tick();
+  const save = game.saveMatch();
+  const resumed = new Game({ simConfig: { ...config, ffaTerritoryWinnerFirst: true }, onLogLine: line => logs.push(line) });
+  resumed.resumeMatch(save);
+  while (resumed.match!.state.result === null) resumed.tick();
+  const finish = resumed.match!.state.result!.ffa!;
+  expect(finish.territoryWinnerFirst).toBe(false);
+  expect([...finish.order].sort()).toEqual([0, 1, 2, 3]);
+  expect(JSON.parse(logs.at(-1)!).ffa).toEqual(finish);
+  expect(replay(logs, Infinity).result).toEqual(resumed.match!.state.result);
+});
+
+it("new quadrants lobbies pin the off policy, while ordinary match configurations are unchanged", () => {
+  const game = new Game();
+  expect(game.undrawnConfig).toBe(game.simConfig);
+  game.seatLobby("fixture-lobby", [], "quadrants");
+  expect(game.undrawnConfig.ffaTerritoryWinnerFirst).toBe(false);
+  const configured = new Game({ simConfig: { ...CONFIG, ffaTerritoryWinnerFirst: true } });
+  configured.seatLobby("fixture-lobby", [], "quadrants");
+  expect(configured.undrawnConfig.ffaTerritoryWinnerFirst).toBe(true);
 });

@@ -4,11 +4,11 @@ import { gridScaleOf } from "./gridScale.js";
 import { activeQueens, clearLostQueenSpawn, forEachNear, gridBuckets, noEnemyNear, tileIndex, type Grid } from "./map.js";
 import type { Ant, ColonyId, Mark, QueenState, SimEvent, SimState } from "./types.js";
 
-/** Four-colony kill credit: each dying ant (by id) or queen, and the colony credited with it. */
+/** Last-hit credit: each dying ant (by id) or queen, and the colony credited with it. */
 type KillCredit = Map<number | QueenState, ColonyId>;
 
 /**
- * The one kill-credit rule (four-colony matches): the hit that takes the target's HP to zero or below,
+ * The one kill-credit rule: the hit that takes the target's HP to zero or below,
  * in the order damage is resolved (ant hits by ant, then queen bites or strikes by colony and queen), credits the
  * hitter's colony. Later hits that tick credit nothing, and a kill is never split.
  */
@@ -18,7 +18,11 @@ function creditLastHit(credit: KillCredit, target: number | QueenState, hp: numb
 
 function creditKill(state: SimState, credit: KillCredit, target: number | QueenState): void {
   const killer = credit.get(target);
-  if (killer !== undefined) state.colonies[killer]!.kills = (state.colonies[killer]!.kills ?? 0) + 1;
+  if (killer === undefined) return;
+  const colony = state.colonies[killer]!;
+  // Keep the existing total-kills step: four-colony credit, two-colony opposing ant deaths.
+  if (state.colonies.length > 2) colony.kills = (colony.kills ?? 0) + 1;
+  if (state.config.queenKillsFirst === true && typeof target !== "number") colony.queenKills = (colony.queenKills ?? 0) + 1;
 }
 
 /** Telemetry only: null is a queen, which wins equal-damage ties against ants. */
@@ -109,8 +113,8 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     .filter(mark => mark.verb !== undefined && mark.count !== undefined && mark.laidTick <= tick && tick - mark.laidTick < config.markLifetimeTicks)
     .map(mark => [mark.id, mark])) : undefined;
   const sources = marks !== undefined && marks.size > 0 ? new Map<number, DamageSource>() : undefined;
-  // Attribution only: two-colony matches keep their kill totals as opposing deaths.
-  const credit: KillCredit | undefined = state.colonies.length > 2 ? new Map() : undefined;
+  // Two-colony queen-first matches need last-hit credit too, but keep their total kills as opposing ant deaths.
+  const credit: KillCredit | undefined = state.colonies.length > 2 || config.queenKillsFirst === true ? new Map() : undefined;
   // Ants of one colony on one tile have the same adjacent enemies, and no HP changes until all have chosen;
   // likewise its airborne flyers, which pick from the air alone. The key leaves room for four colonies per tile.
   const targets = new Map<number, Ant | null>(), airTargets = new Map<number, Ant | null>(), width = config.mapWidth;

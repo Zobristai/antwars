@@ -451,7 +451,7 @@ export class Game {
   /** The seated lobby's pre-draw config, before its seed draws a map: house modes leave out the paused maps. */
   get undrawnConfig(): SimConfig {
     const mode = this.lobby?.mode;
-    if (mode === "quadrants") return { ...this.simConfig, terrain: { ...(this.simConfig.terrain ?? TERRAIN_RULES), maps: this.quadrantMaps } };
+    if (mode === "quadrants") return { ...this.simConfig, ffaTerritoryWinnerFirst: this.simConfig.ffaTerritoryWinnerFirst ?? false, terrain: { ...(this.simConfig.terrain ?? TERRAIN_RULES), maps: this.quadrantMaps } };
     return mode?.startsWith("house-") === true ? withoutHousePausedMaps(this.simConfig) : this.simConfig;
   }
 
@@ -1033,7 +1033,7 @@ export class Game {
       out = advance(start, inputs, undefined, undefined, undefined, terminal, true);
       if (neverJoined) m.absentColonies = absent;
     }
-    this.onLogLine(tickLine(tick, inputs, terminal, true, eliminationsAt(out.state, tick)));
+    this.onLogLine(tickLine(tick, inputs, terminal, true, eliminationsAt(out.state, tick), out.state.result?.ffa));
     m.state = out.state;
     if (out.state.result !== null) {
       for (const rec of this.records.values()) {

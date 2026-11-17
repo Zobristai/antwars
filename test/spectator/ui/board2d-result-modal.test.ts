@@ -66,9 +66,9 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     expect(dialog.open).toBe(false);
     show(frameOf({ ended: true }));
     expect(dialog.open).toBe(true);
-    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large Colony wins");
+    expect(dialog.byClass("d1-result-head")[0]!.textContent).toBe("Very Large wins");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Queens killed");
-    expect(dialog.byClass("d1-ratings")[0]!.textContent).toBe("Unrated match · no rating change");
+    expect(dialog.byClass("rd-note")[0]!.textContent).toBe("Unrated match · no rating changes");
     expect(host.byClass("d2-result")).toHaveLength(0);
     expect(host.byClass("d2-pane")[0]!.byClass("d1-result")).toHaveLength(0);
   });
@@ -97,11 +97,11 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     const [luna, tide] = ratings.children;
     expect(luna!.byClass("d1-rating-name")[0]!.textContent).toBe("GPT-6 Luna");
     expect(luna!.byClass("d1-tag").map(tag => tag.textContent)).toEqual(["max", "Fast"]);
-    expect(luna!.byClass("d1-rating-change")[0]!.textContent).toBe("· Rating 1198 → 1144 (-54)");
+    expect(luna!.byClass("rd-numbers")[0]!.textContent).toBe("1144 (−54)");
     // Read whole, as assistive technology hears it.
-    expect(luna!.textContent).toBe("GPT-6 Luna max Fast · Rating 1198 → 1144 (-54)");
+    expect(luna!.textContent).toBe("Very Large GPT-6 Luna max Fast 1144 (−54)");
     expect(tide!.byClass("d1-tag")).toHaveLength(0);
-    expect(tide!.textContent).toBe("tidewater · Rating 1489 → 1542 (+53)");
+    expect(tide!.textContent).toBe("Lake Hodges tidewater 1542 (+53)");
     expect(ratings.textContent).not.toContain("antwars/");
   });
 
@@ -116,7 +116,7 @@ describe("the 2D board's match result as the deck's modal over the screen", () =
     const dialog = dialogs()[0]!;
     expect(dialog.open).toBe(true);
     const head = dialog.byClass("d1-result-head")[0]!;
-    expect(head.textContent).toBe("Lake Skinner Colony wins");
+    expect(head.textContent).toBe("Lake Skinner wins");
     expect((head.style as unknown as { color: string }).color).toBe("var(--aw-k3)");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Last colony standing · queens killed");
   });

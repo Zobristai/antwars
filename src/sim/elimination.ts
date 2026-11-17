@@ -5,6 +5,7 @@
  * than half of all owned territory for the hold time wins; at time-up the colonies are ranked. Two-colony
  * matches never come here (src/sim/territory.ts keeps their rules).
  */
+import { ffaFinish } from "./ffaFinish.js";
 import { clearLostQueenSpawn } from "./map.js";
 import { physicalTileArea } from "./gridScale.js";
 import type { ServerTerminal } from "./step.js";
@@ -22,18 +23,22 @@ function territoryByColony(state: SimState): number[] {
 export function colonyScores(state: SimState): ColonyScores[] {
   const territory = territoryByColony(state), ants = state.colonies.map(() => 0);
   for (const ant of state.ants) ants[ant.colony]! += 1;
-  return state.colonies.map((colony, id) => ({ kills: colony.kills ?? 0, territory: territory[id]!, ants: ants[id]!, delivered: state.stats.delivered[id]! }));
+  return state.colonies.map((colony, id) => ({ ...(state.config.queenKillsFirst === true ? { queenKills: colony.queenKills ?? 0 } : {}), kills: colony.kills ?? 0, territory: territory[id]!, ants: ants[id]!, delivered: state.stats.delivered[id]! }));
 }
 
 type Step = MatchResult["decidedBy"];
 
-/** The four-colony time-up order, in every four-colony config: kills, then territory, living ants, food delivered.
+/** The recorded four-colony order after the optional queen-kill step: kills, territory, living ants, food delivered.
  * The config's adjudication field only governs two-colony scoring (src/sim/territory.ts). */
 const SCORE_STEPS: readonly [Step, (s: ColonyScores) => number][] = [
   ["kills", s => s.kills], ["territory", s => s.territory], ["ants_alive", s => s.ants], ["food_delivered", s => s.delivered]];
 
 /** The step that first separates a from b (negative: a ranks higher), or null when they tie through every step. */
-function separate(_state: SimState, a: ColonyScores, b: ColonyScores): { step: Step; order: number } | null {
+function separate(state: SimState, a: ColonyScores, b: ColonyScores): { step: Step; order: number } | null {
+  if (state.config.queenKillsFirst === true) {
+    const order = (b.queenKills ?? 0) - (a.queenKills ?? 0);
+    if (order !== 0) return { step: "queen_kills", order };
+  }
   for (const [step, value] of SCORE_STEPS) if (value(a) !== value(b)) return { step, order: value(b) - value(a) };
   return null;
 }
@@ -103,6 +108,12 @@ function majorityHold(state: SimState, tick: number): MatchResult | null {
  * A server abandonment still abandons.
  */
 export function fourColonyEnd(state: SimState, tick: number, stopNow: ServerTerminal): MatchResult | null {
+  const result = decideFourColonyEnd(state, tick, stopNow);
+  if (result === null || state.config.ffaTerritoryWinnerFirst === undefined) return result;
+  return { ...result, ffa: ffaFinish(rankColonies(state), result, state.config.ffaTerritoryWinnerFirst) };
+}
+
+function decideFourColonyEnd(state: SimState, tick: number, stopNow: ServerTerminal): MatchResult | null {
   if (stopNow === "abandoned") return { winner: null, reason: "abandoned", decidedBy: "draw", tick };
   const idle = typeof stopNow === "object" ? stopNow.idle : [];
   // A colony whose last queen died this tick leaves for that, even if the server also found it idle.

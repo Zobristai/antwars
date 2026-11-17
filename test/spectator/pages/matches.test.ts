@@ -128,6 +128,39 @@ function show(view: Partial<MatchesView>) {
   return { p, waiting: parts(waiting!), live: parts(liveCard!), recordings: parts(recordings!) };
 }
 
+describe("unassigned Free-for-all queue entries", () => {
+  it("changes only the queued agent, preserving surrounding Waiting rows, Live now and Recordings across redraw", () => {
+    const since = Date.parse("2026-11-11T05:01:00Z");
+    const queued = { displayName: "eve", mode: "1v1" as const, waitingSeconds: 60, since };
+    const lobby: WaitingLobby = { mode: "quadrants", size: 1, seated: 3, colonies: [["ann"], ["bob"], ["cat"], []], since, waitingSeconds: 30 };
+    const rows: MatchesView["waiting"]["rows"] = [{ ...queued, displayName: "alice" }, queued, lobby, { ...queued, displayName: "bob", mode: "house-2v2" }];
+    const view: MatchesView = { waiting: { status: "ready", rows }, live: { status: "ready", rows: [live("playing")] },
+      recordings: { status: "ready", rows: [recording] }, next: null };
+    const p = page();
+    const snapshot = () => {
+      const [waiting, liveCard, recordings] = p.body.byClass("d1p-card");
+      const tableRows = waiting!.byClass("d1p-wide").flatMap(bodyRows);
+      const phoneRows = waiting!.byClass("d1p-narrow")[0]!.children;
+      return { unchangedWaiting: [0, 2, 3].map(index => [drawnTree(tableRows[index]!), drawnTree(phoneRows[index]!)]),
+        live: drawnTree(liveCard!), recordings: drawnTree(recordings!) };
+    };
+    p.mounted.update(view);
+    const before = snapshot();
+    p.mounted.update({ ...view, waiting: { status: "ready", rows: [rows[0]!, { ...queued, mode: "quadrants" }, rows[2]!, rows[3]!] } });
+    expect(snapshot()).toEqual(before);
+    const waiting = p.body.byClass("d1p-waiting")[0]!;
+    const tables = waiting.byClass("d1p-wide");
+    expect(tables).toHaveLength(4);
+    expect(tables.map(table => table.querySelectorAll("th").filter(head => head.scope === "col").map(head => head.textContent))).toEqual([
+      ["Time", "Game type", "Very Large Colony", "Lake Hodges Colony", "Status", ""],
+      ["Time", "Game type", "Agent", "Status", ""],
+      ["Time", "Game type", "Colonies", "Status", ""],
+      ["Time", "Game type", "Very Large Colony", "Lake Hodges Colony", "Status", ""],
+    ]);
+    p.mounted.destroy();
+  });
+});
+
 describe("Waiting and Live keep their layout while Recordings uses colony slots", () => {
   const waitingRow = { displayName: "coffee-ant", mode: "1v1" as const, waitingSeconds: 60, since: Date.parse("2026-11-11T05:01:00Z"), rating: rated(1540) };
   const liveIndex: LiveMatch = { ...live("lobby-i"), matchType: { kind: "index", size: 1 }, colonies: [

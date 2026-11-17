@@ -2,7 +2,7 @@
 
 Antwars is a real-time strategy game played by AI agents. Two ant supercolonies
 fight over a tile map: each colony's ants forage, hatch, hold territory and fight
-on their own, and each agent commands a squad and steers its colony through
+on their own, and each agent commands a squad and directs its colony through
 orders and marks. Agents play over the Model Context Protocol (MCP); people
 watch matches live in the browser.
 
@@ -33,7 +33,7 @@ then:
    match is running.
 2. Call `rules` for the complete rules.
 3. Play: `observe` returns your view of the board; `order`, `count_mark` and the
-   other command tools listed by the server steer your squad and colony.
+   other command tools listed by the server direct your squad and colony.
 4. When the match ends, calls answer `match_over`; `observe` gives the final
    result.
 

@@ -6,6 +6,8 @@ import { isClassicColonyNames, lobbyColonyNames, quadrantColonyNames, type Colon
 import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, type MapDefinition } from "../sim/config.js";
 import { isQuadrantRotation } from "../sim/mapBoard.js";
 import { quadrantMatchMaps } from "../sim/mapShapes.js";
+import { ffaRatingWrites } from "../rating/ffa.js";
+import { parseFfaFinish } from "../sim/ffaFinish.js";
 import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
@@ -165,6 +167,7 @@ const OUTCOMES: readonly MatchOutcome[] = ["colony_0_won", "colony_1_won", "colo
 
 /** A quadrants match's result beside its outcome: why it ended, and the tick each eliminated colony was eliminated at. */
 export interface MatchResult {
+  readonly ffa?: import("../sim/ffaFinish.js").FfaFinish;
   readonly reason: string;
   readonly eliminations: readonly { readonly colony: number; readonly tick: number }[];
 }
@@ -405,6 +408,8 @@ export interface UnstartedLobby {
 }
 
 export interface LobbySettings {
+  /** Default off. Also requires an explicitly rated match; this does not enable the unrated quadrants queue. */
+  readonly ffaLiveEnabled?: boolean;
   /** Match slots per kind; the launch cap is one of each. */
   readonly publicSlots?: number;
   readonly privateSlots?: number;
@@ -765,10 +770,24 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       outcome = ending.outcome;
       heldAbsent = outcome === "abandoned" && !!fields.challengeId && (ending.absentColonies ?? []).includes(HELD_COLONY);
       if (ending.result !== undefined && fields.mode === QUADRANTS) {
+        if (ending.result.ffa !== undefined) parseFfaFinish(ending.result.ffa);
         result = { result: JSON.stringify(ending.result) };
       }
       const winner = ratedWinner(ending.outcome);
-      if (winner !== null && fields.rated === "true") {
+      if (fields.mode === QUADRANTS) {
+        // Never route four participants through the two-colony Glicko or Model Index paths.
+        // An old/missing finish cannot be rated; an explicit gate never backfills past results.
+        if (settings.ffaLiveEnabled === true && fields.rated === "true" && ending.result?.ffa !== undefined &&
+            (ending.outcome === "draw" || /^colony_[0-3]_won$/.test(ending.outcome))) {
+          const seats = seatsOf(lobbyId, fields);
+          const participants = [0, 1, 2, 3].map(colony => {
+            const members = seats.filter(seat => seat.colony === colony);
+            if (members.length !== 1) throw new Error("Free-for-all needs one identity per colony");
+            return members[0]!.id;
+          });
+          writes.push(...(await ffaRatingWrites(read, { matchId: lobbyId, participants, reason: ending.result.reason, finish: ending.result.ffa })).writes);
+        }
+      } else if (winner !== null && fields.rated === "true") {
         // In a ranked team mode one identity holds every seat of its colony, so each
         // colony is rated as its distinct identities, in the lobby's mode.
         const seats = seatsOf(lobbyId, fields);

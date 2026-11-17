@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DECIDED_BY, decodeMessage, encodeMessage, encodePublicMessage, GRID_SCALE_STREAM_VERSION, streamQueens, WIN_REASONS, type StreamQueen } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { MAPS, PUBLIC_CONFIG, QUEEN_HP_RULES, TERRAIN_RULES, rulesConfig } from "../../src/sim/config.ts";
@@ -139,16 +139,18 @@ it("selects HP rules and wording from streamed HP, including zero, never the com
   expect(boardQueenHp({ queens: [] })).toBeUndefined();
 });
 
-it.each(["time_up", "double_overrun", "queens_killed"] as const)("round-trips a kills-decided %s result without shifting existing indices", reason => {
-  // Appends "idle" (version 23 only); existing indices do not move.
-  expect(DECIDED_BY).toEqual(["overrun", "territory", "ants_alive", "food_delivered", "draw", "queens_killed", "kills", "idle"]);
-  const result = { winner: 1 as const, reason, decidedBy: "kills" as const, tick: 10, nextStartMs: null };
-  const first = opening(new SpectatorRecorder(createMatch(6006, playable(REDESIGN))));
-  first.full.result = result;
-  expect(decodeMessage(encodeMessage(first)).full!.result).toEqual(result);
-  const delta = { tick: 11, ants: first.ants, full: null, events: [{ kind: "end" as const, result }] };
-  expect(decodeMessage(encodeMessage(delta)).events).toEqual(delta.events);
-  const playback = new Playback(), frame = new Frame();
-  playback.push(first, 0); playback.push(delta, 100); playback.sample(1000, frame);
-  expect(frame.board!.result).toMatchObject({ reason, decidedBy: "kills", winner: 1 });
+describe.each(["kills", "queen_kills"] as const)("%s-decided results", decidedBy => {
+  it.each(["time_up", "double_overrun", "queens_killed"] as const)("round-trips %s without shifting existing indices", reason => {
+    // Appends queen_kills after idle; existing indices do not move.
+    expect(DECIDED_BY).toEqual(["overrun", "territory", "ants_alive", "food_delivered", "draw", "queens_killed", "kills", "idle", "queen_kills"]);
+    const result = { winner: 1 as const, reason, decidedBy, tick: 10, nextStartMs: null };
+    const first = opening(new SpectatorRecorder(createMatch(6006, playable(REDESIGN))));
+    first.full.result = result;
+    expect(decodeMessage(encodeMessage(first)).full!.result).toEqual(result);
+    const delta = { tick: 11, ants: first.ants, full: null, events: [{ kind: "end" as const, result }] };
+    expect(decodeMessage(encodeMessage(delta)).events).toEqual(delta.events);
+    const playback = new Playback(), frame = new Frame();
+    playback.push(first, 0); playback.push(delta, 100); playback.sample(1000, frame);
+    expect(frame.board!.result).toMatchObject({ reason, decidedBy, winner: 1 });
+  });
 });
