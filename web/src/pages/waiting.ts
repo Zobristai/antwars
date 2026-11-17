@@ -4,8 +4,9 @@
 // Refresh of its own: the page's one Refresh reads it again, and it does not update while open (no polling).
 //
 // Each row is drawn by the one Matches row builder (matches.ts matchCard), in the same six columns: when the wait began,
-// the game type, the two colonies, the status stamp and no button (there is nothing to watch yet). A queued agent stands
-// in the first colony with "no opponent yet" in the second; a lobby's seated players stand in their colonies, a held house
+// the game type, the two colonies, the status stamp and no button (there is nothing to watch yet). A ranked queued agent
+// stands in the first colony with "no opponent yet" in the second. A queued Free-for-all agent has no assigned colony:
+// its identity spans both colony columns under Agent, without an opponent placeholder. A lobby's seated players stand in their colonies, a held house
 // seat not yet taken "not joined yet", and a colony with room "seat open". A queued pairing is STARTING; a lobby shows how
 // many seats are taken, STARTING once full. A Quadrants lobby is a four-colony row, each colony under its Quadrants name
 // and colour as Live now draws one, and always shows its seats taken out of four; Quadrants is unrated, so no rating. A player line is drawn as everywhere: a builder by its username and rating
@@ -75,6 +76,10 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
   const when = utcStamp(row.since) ?? "Start unknown";
   const base = { id: String(index), when, type: waitingType(row), action: null };
   if (!isLobby(row)) {
+    if (row.mode === QUADRANTS) {
+      return { ...base, stamp: { text: STAMPS.waiting, look: "waiting" }, colonies: [],
+        queuedAgent: { ...waitingSeat(row.displayName, null), seats: 1 } };
+    }
     return { ...base, stamp: { text: STAMPS.waiting, look: "waiting" },
       colonies: [{ lines: waitingPlayers([row.displayName], [row.rating ?? null]), result: null, note: null }, { lines: [], result: null, note: NO_OPPONENT }] };
   }
