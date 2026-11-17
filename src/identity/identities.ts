@@ -39,7 +39,6 @@ export const RESERVED_USERNAMES = [
   "chatgpt", "mistral", "mixtral", "codestral", "minimax", "cohere", "moonshot", "zhipu", "baidu",
   "ernie", "bytedance", "doubao", "microsoft", "phi", "nvidia", "nemotron", "amazon", "nova",
 ] as const;
-export const USERNAME_CLAIM_LIMIT = 10;
 /**
  * Handles per username per window: house seats are a fixed set and a team of up to 4
  * agents uses one handle each, so 20 leaves every real builder room while one username can no
@@ -54,7 +53,7 @@ export const KEY_ROTATION_LIMIT = 5;
 export const CLAIM_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 export type Refusal = "invalid_name" | "taken" | "unknown_key" | "not_owner_key" | "no_such_handle"
-  | "reserved_name" | "username_claim_limit" | "handle_creation_limit" | "key_rotation_limit" | "caller_unavailable"
+  | "reserved_name" | "handle_creation_limit" | "key_rotation_limit" | "caller_unavailable"
   | "already_named" | "server_busy";
 export type Outcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: Refusal };
 
@@ -97,7 +96,7 @@ export function parseName(input: string): Name | undefined {
 }
 
 export interface Identities {
-  /** Omitted caller disables address accounting; null refuses unavailable enabled context. */
+  /** Caller context is not metered; null still refuses unavailable enabled context. */
   /** testOwnerKey proves a server-allowlisted test owner; it never owns the new account. */
   claimUsername(name: string, caller?: string | null, ownerKey?: string, guard?: CommitGuard, testOwnerKey?: string): Promise<Outcome<IssuedIdentity>>;
   /** No key use: current display/retention projection by stable identity id. */
@@ -313,9 +312,6 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
           const holder = await account(read, current.identityId!, at, writes);
           if (holder && holder.owner.nameState !== "released") return { result: refuse("taken"), writes: writesOf(writes) };
         }
-        const budget = caller === undefined || testOwnerKey !== undefined ? [] : await claimBudget(read,
-          `identityClaimLimits/usernames-${verifierOf(caller)}`, USERNAME_CLAIM_LIMIT, at);
-        if (!budget) return { result: refuse("username_claim_limit"), writes: writesOf(writes) };
         // Replacing a released name retains the account and its existing key.
         const id = claimant?.id ?? randomUUID();
         const issued = claimant ? { key: ownerKey!, verifier: claimant.fields.verifier! } : newKey();
@@ -326,7 +322,7 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
         // An occupied-but-expired index is replaced, not deleted then recreated.
         const next = writes.filter((write) => write.path !== claim);
         next.push({ op: current ? "update" : "create", path: claim, fields: { identityId: id } },
-          { op: claimant ? "update" : "create", path: `identities/${id}`, fields }, ...budget);
+          { op: claimant ? "update" : "create", path: `identities/${id}`, fields });
         if (!claimant) next.push({ op: "create", path: `keys/${issued.verifier}`, fields: { identityId: id } });
         if (busy(guard)) return { result: refuse("server_busy"), writes: [] };
         return issuing(guard, ok({ identity: identityOf(id, fields), key: issued.key }), writesOf(next));

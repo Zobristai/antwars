@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
-import { createIdentities, CLAIM_WINDOW_MS, type Outcome } from "../../src/identity/identities.ts";
+import { createIdentities, type Outcome } from "../../src/identity/identities.ts";
 import { createFirestore, type Store } from "../../src/store/firestore.ts";
 
 // Real Firestore atomicity coverage. It runs with the emulator suite;
@@ -42,23 +42,21 @@ function overlap() {
 }
 
 describe.skipIf(!host)("claim limits against the Firestore emulator", { timeout: 60_000 }, () => {
-  it("admits exactly one final username across instances racing different names, without charging the loser", async () => {
+  it("admits concurrent usernames beyond ten across instances without modifying the old address budget", async () => {
     const { store, ids } = setup();
     const caller = "192.0.2.20";
     const path = `identityClaimLimits/usernames-${createHash("sha256").update(caller).digest("hex")}`;
-    await seed(store, path, 9);
+    await seed(store, path, 10);
+    const before = await store.get(path);
     const wrap = overlap();
     const contenders = [setup(wrap(), store.namespace).ids, setup(wrap(), store.namespace).ids];
-    const names = ["finalone", "finaltwo"];
+    const names = ["eleventh", "twelfth"];
     const results = await Promise.all(contenders.map((instance, i) => instance.claimUsername(names[i]!, caller)));
-    expect(results.filter((outcome) => outcome.ok)).toHaveLength(1);
-    expect(results.filter((outcome) => !outcome.ok)).toEqual([{ ok: false, reason: "username_claim_limit" }]);
-    for (let i = 0; i < names.length; i++) expect(Boolean(await ids.findByDisplayName(names[i]!))).toBe(results[i]!.ok);
-    expect((await store.get(path))?.used).toBe("10");
-    expect(await ids.claimUsername("stillfull", caller)).toEqual({ ok: false, reason: "username_claim_limit" });
-    const future = createIdentities(store, { now: () => Date.now() + CLAIM_WINDOW_MS });
-    value(await future.claimUsername("nextwindow", caller));
-    expect((await store.get(path))?.used).toBe("1");
+    expect(results.every((outcome) => outcome.ok)).toBe(true);
+    for (const name of names) expect(await ids.findByDisplayName(name)).toBeDefined();
+    value(await ids.claimUsername("thirteenth", caller));
+    expect(await store.get(path)).toEqual(before);
+    expect(await ids.claimUsername("ELEVENTH", caller)).toEqual({ ok: false, reason: "taken" });
   });
 
   it("serializes final handle creations and retains the owner budget after rotation", async () => {
