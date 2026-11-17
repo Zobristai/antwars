@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { briefing, joinBriefing, usesCompactAgentText, type BriefingContext } from "../../src/mcp/briefing.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { COMPARISON_SEED, comparisonOptions, startServer, type GameServer } from "../../src/server.js";
-import { rulesConfig } from "../../src/sim/config.js";
+import { rulesConfig, type SimConfig } from "../../src/sim/config.js";
 import { drawColonyNames } from "../../src/sim/colonyNames.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { createMatch } from "../../src/sim/map.js";
@@ -88,6 +88,49 @@ const PREVIEW_AT_5DF81D04: Record<string, string> = {
   "rules redesign players=4": "2031b16282f7ac7640c5dde86ed8c963434ca174eb981bd5e84ed05bb4f48ef5",
 };
 
+// Pins before the vocabulary change, with queen-first scoring. Reverse vocabulary only
+// to verify these unchanged pins; the separate scoring reversal pins the other parent.
+const HOSTED_QUEEN_FIRST: Record<string, string> = {
+  "join house=false undrawn=true nest=false": "93a42cd317eb53912235c5644252cdfc7c518759022742a7422b07a4796a67f0",
+  "join house=false undrawn=true nest=true": "532544fde5003092548c71600e5def02fb5a86d1a7fb704b9b9fd9500fe78d08",
+  "rules house=false undrawn=true": "ccda2a9d62fae25fd523756dbf778fd7fcac1644638cdd97bfc86df88aeba846",
+  "join house=false undrawn=false nest=false": "c84f5ba632410aad504801ed9376a52efde2454dcff6abe8a7186818e5f029a9",
+  "join house=false undrawn=false nest=true": "11948a4503d7ca7f29a896e88ec667f8c80d7ac69e2cb7175af349c7124509d1",
+  "rules house=false undrawn=false": "16a3cba9b9624db1243428fe4ff6b4e10b7320622986a83430e07e120bc9a530",
+  "join house=true undrawn=true nest=false": "8dd27013832ffa4894bbaa9901a5243c3d60c1bae08992cc1224ca2af5d933e1",
+  "join house=true undrawn=true nest=true": "8b563141778d572bd8ff9b0e24f423c25685c6824fef1b27119d7dd84f9c17a0",
+  "rules house=true undrawn=true": "f80f50bd126ecc1319767899cfe931093f558da40106cbddc40650487d48484d",
+  "join house=true undrawn=false nest=false": "32f33cbac08a8b1b5be0dc6a4e6bfe85c3f1c02757531d12fe3b73c4e5baac2a",
+  "join house=true undrawn=false nest=true": "81089c597077fd2020e55cc71223fd1f76f6b75bc3546c18aa7ee9b04fb7330e",
+  "rules house=true undrawn=false": "b0d3c36a99cb91d16aaf6edba8fd7b127273bdb443110faa38dec4d0dc13b8a3"
+};
+const PREVIEW_QUEEN_FIRST: Record<string, string> = {
+  "join v4 players=2": "5d0cab3eadc950631fb1633a4561bde966f7a2ce01bb157db13e404c7b869218",
+  "rules v4 players=2": "f7ac59a2b57cf4f5ef5d5a70ce1dc17a1045e51530db25618a7dd9d0e2fa9e90",
+  "join v4 players=4": "622e624f5355f8f0784511da622646ade58bb8d687a4ccf7613555d1f23b7fde",
+  "rules v4 players=4": "d7bb7b66632bca5cb413a2ea8782e628b202b783f4eab4804da0ec8ef4ab93bf",
+  "join count-marks players=2": "533b360643ba5ae31000beb12664abb8164b80d120ab54f13e8f4e66e965bebe",
+  "rules count-marks players=2": "b656448095b7a62d4372aa0a14210b1ca29e13b917cbb42c82e2d9b82186f60f",
+  "join count-marks players=4": "59650a0fe6e64698bdf3c55c765c11e9f0e735bbda1c8c8cbbeca725123676d1",
+  "rules count-marks players=4": "0c61979d8141318cff72c701e752ee3026cd6f2e52d06cceddf7e2d30d8cac32",
+  "join redesign players=2": "6086e46e98758365296c4bfa6ce0b96be95ba5b3271edb3e5117defc7e2c8ffb",
+  "rules redesign players=2": "1d84cc03948ef16eb57a5d41894a0e31702022cb8de9816d44af2cf8ea0e207b",
+  "join redesign players=4": "eb8188e888305a4bb8ff680a54f3e1a8fec29eff9297eb6bf471511a253b250b",
+  "rules redesign players=4": "890938d04d2112269466b06680f964d7013fd7ce3a1261d416292cc103045fed"
+};
+
+// Undo only the explicitly asserted scoring text, proving every other byte stays pinned.
+function previousScoring(text: string, config: SimConfig): string {
+  const credit = ` Queen kills: the colony whose hit takes a queen to zero HP gets one; ${config.queenHp === undefined ? "uncredited overruns and elimination removals" : "elimination removals"} count for no one.`;
+  expect(text.split(credit)).toHaveLength(2);
+  if (text.includes("queen kills>")) {
+    expect(text).toContain("queen kills>kills>territory>ants alive>food delivered>draw.");
+    return text.replace(credit, "").replace("queen kills>kills>", "kills>");
+  }
+  expect(text).toContain("queen kills, kills, territory, ants alive, food delivered, draw.");
+  return text.replace(credit, "").replace("queen kills, kills, territory, ants alive, food delivered, draw.", "kills, territory, ants alive, delivered food, else draw.");
+}
+
 // Frozen pre-vocabulary-change digests, from main 6920c5473b0d19b027dc29b6dd90e0014daa3380.
 // Reverse only the listed substitutions, require the original digest, then apply
 // them forward and require exact output equality. This pins the entire old output,
@@ -150,25 +193,29 @@ const VOCABULARY_SUBSTITUTIONS: readonly (readonly [string, string])[] = [
     "Ordinary word marks do not direct free ants"
   ]
 ];
-function verifyVocabularyOnly(key: string, current: string, compact: boolean): void {
+function beforeVocabulary(current: string, compact: boolean): string {
   const fieldBefore = compact
     ? "The steering field counts squad ants following word marks, not count-mark ants."
     : "The steering field counts squad ants following word marks, not ants answering a count mark.";
   const substitutions = [...VOCABULARY_SUBSTITUTIONS, [fieldBefore, "In each myMarks entry, the only field whose name starts with s counts squad ants following word marks; claimed counts ants answering a count mark."] as const];
   const original = substitutions.reduce((text, [before, after]) => text.replaceAll(after, before), current);
-  expect(BEFORE_VOCABULARY_RULES[key], key).toBeDefined();
-  expect(sha(original), `pre-change output: ${key}`).toBe(BEFORE_VOCABULARY_RULES[key]);
   const transformed = substitutions.reduce((text, [before, after]) => text.replaceAll(before, after), original);
-  expect(transformed, `substitutions alone: ${key}`).toBe(current);
+  expect(transformed, "vocabulary substitutions alone").toBe(current);
+  return original;
+}
+function verifyVocabularyOnly(key: string, current: string, compact: boolean): void {
+  expect(BEFORE_VOCABULARY_RULES[key], key).toBeDefined();
+  expect(sha(beforeVocabulary(current, compact)), `pre-change output: ${key}`).toBe(BEFORE_VOCABULARY_RULES[key]);
 }
 
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));
 const DRAWN = createMatch(6006, UNDRAWN).config;
 
-function hostedTexts(extra: Partial<BriefingContext> = {}): Record<string, string> {
+function hostedTexts(extra: Partial<BriefingContext> = {}, historical = false): Record<string, string> {
   const out: Record<string, string> = {};
   for (const house of [false, true]) for (const undrawn of [true, false]) {
-    const config = undrawn ? UNDRAWN : DRAWN;
+    const current = undrawn ? UNDRAWN : DRAWN;
+    const config = historical ? { ...current, queenKillsFirst: undefined } : current;
     const context = { house, undrawn, ...extra };
     for (const nest of [false, true]) out[`join house=${house} undrawn=${undrawn} nest=${nest}`] = joinBriefing(config, DEFAULT_MCP_CONFIG, nest, context);
     out[`rules house=${house} undrawn=${undrawn}`] = briefing(config, DEFAULT_MCP_CONFIG, context);
@@ -180,12 +227,17 @@ const ACCOUNT_TOOLS = ["list_lobbies", "create_lobby", "join_lobby", "start_lobb
 
 describe("hosted briefing stays byte-identical to main 5df81d04", () => {
   it("every hosted join briefing and rules text matches its 5df81d04 digest", () => {
-    const digests = Object.fromEntries(Object.entries(hostedTexts()).map(([name, text]) => [name, sha(text)]));
+    const digests = Object.fromEntries(Object.entries(hostedTexts({}, true)).map(([name, text]) => [name, sha(text)]));
     expect(digests).toEqual(HOSTED_AT_5DF81D04);
+    const current = hostedTexts();
+    expect(Object.fromEntries(Object.entries(current).map(([name, text]) => [name, sha(beforeVocabulary(text, usesCompactAgentText(UNDRAWN)))]))).toEqual(HOSTED_QUEEN_FIRST);
+    for (const [name, text] of Object.entries(current)) {
+      expect(previousScoring(text, UNDRAWN), name).toBe(hostedTexts({}, true)[name]);
+    }
   });
 
   it("reproduces every hosted rules checksum using only the vocabulary substitutions", () => {
-    for (const [key, value] of Object.entries(hostedTexts())) {
+    for (const [key, value] of Object.entries(hostedTexts({}, true))) {
       if (key.startsWith("rules ")) verifyVocabularyOnly(key, value, usesCompactAgentText(UNDRAWN));
     }
   });
@@ -241,18 +293,33 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
     const digests: Record<string, string> = {};
     for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
       const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
-      const config = { ...newMatchConfig(rulesConfig(rules)), players };
+      const config = { ...newMatchConfig(rulesConfig(rules)), players, queenKillsFirst: undefined };
       digests[`join ${rules} players=${players}`] = sha(joinBriefing(config, mcp, false, { house: false, undrawn: true }));
       digests[`rules ${rules} players=${players}`] = sha(briefing(createMatch(COMPARISON_SEED, config).config, mcp));
     }
     expect(digests).toEqual(PREVIEW_AT_5DF81D04);
+    const current: Record<string, string> = {};
+    for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
+      const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
+      const config = { ...newMatchConfig(rulesConfig(rules)), players };
+      const texts = {
+        join: joinBriefing(config, mcp, false, { house: false, undrawn: true }),
+        rules: briefing(createMatch(COMPARISON_SEED, config).config, mcp),
+      };
+      for (const [kind, text] of Object.entries(texts)) {
+        const key = `${kind} ${rules} players=${players}`;
+        current[key] = sha(beforeVocabulary(text, usesCompactAgentText(config)));
+        expect(sha(previousScoring(text, config)), key).toBe(PREVIEW_AT_5DF81D04[key]);
+      }
+    }
+    expect(current).toEqual(PREVIEW_QUEEN_FIRST);
   });
 
   it("reproduces every preview rules checksum using only the vocabulary substitutions", () => {
     for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
       const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
       const config = createMatch(COMPARISON_SEED, { ...newMatchConfig(rulesConfig(rules)), players }).config;
-      verifyVocabularyOnly(`rules ${rules} players=${players}`, briefing(config, mcp), usesCompactAgentText(config));
+      verifyVocabularyOnly(`rules ${rules} players=${players}`, briefing({ ...config, queenKillsFirst: undefined }, mcp), usesCompactAgentText(config));
     }
   });
 
@@ -271,10 +338,13 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
       await waitFor(() => (server!.game.match?.state.tick ?? 0) >= 1);
       for (const [index, joined] of joins.entries()) {
         expect(joined.isError, joined.text).toBe(false);
-        expect(sha(joined.data.briefing as string)).toBe(PREVIEW_AT_5DF81D04[`join ${rules} players=${players}`]);
+        expect(sha(joined.data.briefing as string)).toBe(PREVIEW_QUEEN_FIRST[`join ${rules} players=${players}`]);
         const full = await agents[index]!.call("rules", {});
         expect(full.isError, full.text).toBe(false);
-        expect(sha(full.data.rules as string)).toBe(PREVIEW_AT_5DF81D04[`rules ${rules} players=${players}`]);
+        const rulesText = full.data.rules as string;
+        expect(rulesText).not.toMatch(/steer/i);
+        expect(rulesText).toContain("queen kills");
+        expect(sha(beforeVocabulary(rulesText, usesCompactAgentText(rulesConfig(rules))))).toBe(PREVIEW_QUEEN_FIRST[`rules ${rules} players=${players}`]);
       }
     }, 30_000);
   }

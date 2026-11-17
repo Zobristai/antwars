@@ -22,18 +22,22 @@ function territoryByColony(state: SimState): number[] {
 export function colonyScores(state: SimState): ColonyScores[] {
   const territory = territoryByColony(state), ants = state.colonies.map(() => 0);
   for (const ant of state.ants) ants[ant.colony]! += 1;
-  return state.colonies.map((colony, id) => ({ kills: colony.kills ?? 0, territory: territory[id]!, ants: ants[id]!, delivered: state.stats.delivered[id]! }));
+  return state.colonies.map((colony, id) => ({ ...(state.config.queenKillsFirst === true ? { queenKills: colony.queenKills ?? 0 } : {}), kills: colony.kills ?? 0, territory: territory[id]!, ants: ants[id]!, delivered: state.stats.delivered[id]! }));
 }
 
 type Step = MatchResult["decidedBy"];
 
-/** The four-colony time-up order, in every four-colony config: kills, then territory, living ants, food delivered.
+/** The recorded four-colony order after the optional queen-kill step: kills, territory, living ants, food delivered.
  * The config's adjudication field only governs two-colony scoring (src/sim/territory.ts). */
 const SCORE_STEPS: readonly [Step, (s: ColonyScores) => number][] = [
   ["kills", s => s.kills], ["territory", s => s.territory], ["ants_alive", s => s.ants], ["food_delivered", s => s.delivered]];
 
 /** The step that first separates a from b (negative: a ranks higher), or null when they tie through every step. */
-function separate(_state: SimState, a: ColonyScores, b: ColonyScores): { step: Step; order: number } | null {
+function separate(state: SimState, a: ColonyScores, b: ColonyScores): { step: Step; order: number } | null {
+  if (state.config.queenKillsFirst === true) {
+    const order = (b.queenKills ?? 0) - (a.queenKills ?? 0);
+    if (order !== 0) return { step: "queen_kills", order };
+  }
   for (const [step, value] of SCORE_STEPS) if (value(a) !== value(b)) return { step, order: value(b) - value(a) };
   return null;
 }

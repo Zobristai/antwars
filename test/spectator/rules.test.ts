@@ -281,7 +281,7 @@ describe("shared rules", () => {
     expect(sections[0]!.lines).toHaveLength(3);
     expect(sections[0]!.lines.join(" ")).not.toMatch(/count_mark|mark ATTACK|For example/);
     expect(sections[0]!.lines[0]).toMatch(/^AI agents command two ant colonies\./);
-    expect(sections[0]!.lines[1]).toBe("Three ways a match ends: every enemy queen overrun; time up: after 30 minutes the colony with more kills wins, with territory breaking a tie. The same scoring order applies if both colonies lose their last queen on the same tick. Territory held: Share of colony-held tiles · the two colonies add to 100%.");
+    expect(sections[0]!.lines[1]).toBe("Three ways a match ends: every enemy queen overrun; time up: after 30 minutes the colony with more queen kills wins, with kills then territory breaking ties. The same scoring order applies if both colonies lose their last queen on the same tick. Territory held: Share of colony-held tiles · the two colonies add to 100%.");
     // The first route's words by rule set, which the spectator page's masthead reads too (web/src/overlays.ts).
     expect(queensRoute(undefined, undefined)).toBe("the enemy queen overrun");
     expect(queensRoute(undefined, PUBLIC_CONFIG.queenFounding)).toBe("every enemy queen overrun");
@@ -293,7 +293,7 @@ describe("shared rules", () => {
     expect(sections[1]!.lines[0]).toMatch(/^A match lasts 30 minutes\. Overrun every enemy queen to win before time-up\./);
     // The public rules: all queens killed and the sustained territory lead, with the config's numbers, and the count-mark example.
     const redesign = ruleSections(rulesConfig("redesign")).find((s) => s.title === "Overview")!.lines;
-    expect(redesign[1]).toBe("Three ways a match ends: all queens killed: a colony loses when every one of its queens is dead; a sustained territory lead: from 10 minutes, holding at least 100 original-size tile areas and 6 times the opponent's territory for 5 minutes without a break; time up: after 30 minutes the colony with more kills wins, with territory breaking a tie. The same scoring order applies if both colonies lose their last queen on the same tick. Territory held: Share of colony-held tiles · the two colonies add to 100%.");
+    expect(redesign[1]).toBe("Three ways a match ends: all queens killed: a colony loses when every one of its queens is dead; a sustained territory lead: from 10 minutes, holding at least 100 original-size tile areas and 6 times the opponent's territory for 5 minutes without a break; time up: after 30 minutes the colony with more queen kills wins, with kills then territory breaking ties. The same scoring order applies if both colonies lose their last queen on the same tick. Territory held: Share of colony-held tiles · the two colonies add to 100%.");
     expect(redesign).toHaveLength(3);
     expect(ruleSections(rulesConfig("redesign")).find((s) => s.title === "Commands")!.lines[1]).toBe('For example, count_mark DEFEND 15 at tile 30, 32 asks 15 ants outside squads to walk to that tile, hold there and bite only enemies within 2 tiles (incl. diagonals), never chasing; the board and the feed read "DEFEND · any · 15 requested · 12 answered" once 12 have answered.');
     // The starting ants and the cap from config, and alive = started with + hatched − lost, one step from the page.
@@ -356,7 +356,7 @@ it("leads with the configured win routes as minutes-based bullets", () => {
   expect(first.lines).toEqual([
     "Kill every enemy queen. Queens can be hurt after 5 minutes.",
     "From 10 minutes, hold at least 100 original-size tile areas and 6 times the opponent's territory for 5 minutes without a break.",
-    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed), more kills wins. Ties go to territory, then living ants, then food delivered; if still equal, the match is a draw. Kills count enemy ants killed by the colony, including queen strikes.",
+    "At 30 minutes, or if both colonies lose their last queen on the same tick (queens killed): Queen kills decide first; on equal queen kills, kills, then territory, living ants and food delivered decide, else a draw. Queen kills go to the colony whose hit takes the queen to zero HP; elimination removals count for no one.",
   ]);
   const html = renderRules(config);
   const lead = html.slice(html.indexOf('<section id="how-to-win"'), html.indexOf('<section id="overview"'));
@@ -392,11 +392,14 @@ it.each([undefined, "redesign"] as const)("describes kills-first scoring for bot
   const config = rulesConfig(rules);
   for (const text of [briefing(config), joinBriefing(config), ruleSections(config).flatMap(s => s.lines).join(" ")]) {
     expect(text).toMatch(/time-up/i);
+    expect(text).toMatch(/queen kills.*kills.*territory/is);
+    expect(text).toContain("elimination removals count for no one");
+    if (config.queenHp === undefined) expect(text).toContain("uncredited overruns");
     expect(text).toMatch(/both (?:colonies lose their last queen|last queens lost) (?:on the )?same tick/);
     // The same-tick last-queen phrase covers both double-overrun and HP endings.
     expect(text).toMatch(/kills.*territory.*(?:ants alive|living ants).*(?:food delivered|delivered food).*draw/s);
   }
-  const { adjudication: _adjudication, ...recorded } = config;
+  const { adjudication: _adjudication, queenKillsFirst: _queens, ...recorded } = config;
   expect(briefing(recorded)).toContain("the larger territory wins");
   expect(joinBriefing(recorded)).toMatch(/time-up: (?:territory, ants alive, delivered food|the larger territory wins; ties: more ants alive, then more food delivered)/);
   expect(ruleSections(recorded)[0]!.lines.at(-1)).toContain("hold more territory");

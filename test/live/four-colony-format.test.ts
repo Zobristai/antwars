@@ -1,6 +1,7 @@
 // A four-colony match's spectator stream, read directly: version 27 carries all four colonies' names, ants, queens and
 // tile ownership, each elimination with its tick, and the result, in full snapshots and in deltas. Every two-colony
 // message, rated or unrated, keeps the version and bytes it had before four colonies.
+import { decodeMessage as oldDecode } from "./fixtures/pre-queen-ranking-format.ts";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
@@ -243,4 +244,21 @@ describe("two-colony messages beside four colonies", () => {
     expect(first.full!.setup).not.toHaveProperty("colonies");
     expect(first.full!).not.toHaveProperty("eliminations");
   });
+});
+
+it("round-trips queen-kill results in full snapshots and end events for rated and unrated play", () => {
+  for (const rated of [false, true]) {
+    const result: StreamResult = { ...end, reason: "time_up", decidedBy: "queen_kills" };
+    const message = opening();
+    message.full = { ...fourColonyFull(result), setup: { ...fourColonyFull().setup, rated } };
+    message.events = [{ kind: "end", result }];
+    expect(decodeMessage(encodeMessage(message))).toEqual(message);
+    for (const full of [message.full, null]) for (const encode of [encodeMessage, encodePublicMessage]) {
+      const legacy = oldDecode(encode({ ...message, full }));
+      const e = legacy.events[0]!;
+      if (e.kind !== "end") throw new Error("missing end event");
+      expect(e.result).toEqual({ ...result, decidedBy: "kills" });
+      if (full) expect(legacy.full!.result).toEqual(e.result);
+    }
+  }
 });
