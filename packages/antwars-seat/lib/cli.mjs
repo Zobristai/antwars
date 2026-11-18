@@ -31,8 +31,8 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
   leave                                     leave the queue only if this seat is waiting
   entry-read <read_lobby|queue_status> --key-name <KEY_NAME> ['<json args>']
                                             one read-only entry call with the named key; needs no setup,
-                                            writes nothing, never prints the key; fails naming a key
-                                            absent from the key file (a key presence check)
+                                            writes nothing, never prints the key; fails, without naming
+                                            it, when the named key is absent (a key presence check)
   create-lobby                              create an unrated public lobby, 1 per colony; prints lobbyId
   join-lobby <lobbyId> [--detach]           take a seat in that lobby (no queue), join; stops in the nest window like go
   observe [--raw] [--since N] [--wait S] [--cellsCursor C] [--map]
