@@ -280,7 +280,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
   for (let pages = 1; ; pages++) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
-    const visible = visibility ? await untilAborted(publiclyVisible(raw.matches, row => visibility.replayVisible(row.id)), signal) : raw.matches;
+    const visible = visibility ? await untilAborted(publiclyVisible(raw.matches, row => visibility.replayVisible(row.id), signal), signal) : raw.matches;
     const served = await untilAborted(serve({ matches: visible, nextPageToken: raw.nextPageToken }), signal);
     listed.push(...served.matches.filter(publiclyListedMatch));
     if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
