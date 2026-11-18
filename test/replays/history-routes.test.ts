@@ -288,6 +288,18 @@ describe("Recordings list a match unrated where its lobby's outcome is one the r
     expect(recordingRated(rated(id), indexLobby("abandoned"))).toBe(false);
     expect(recordingRated(rated(id), indexLobby("not_played"))).toBe(false);
     for (const natural of ["colony_0_won", "colony_1_won", "draw"] as const) expect(recordingRated(rated(id), indexLobby(natural))).toBe(true);
+    // A rated Free-for-all match won by colony 2 or 3 is a result too.
+    for (const win of ["colony_2_won", "colony_3_won"] as const) expect(recordingRated(rated(id), indexLobby(win))).toBe(true);
+  });
+
+  it("lists a natural result unrated where its ended lobby was left unrated, as a refused Free-for-all rating leaves it", () => {
+    for (const natural of ["colony_0_won", "colony_1_won", "colony_3_won", "draw"] as const) {
+      expect(recordingRated(rated(id), { ...indexLobby(natural), rated: false })).toBe(false);
+      expect(recordingRated(rated(id), { ...indexLobby(natural), rated: true })).toBe(true);
+      expect(recordingRated(rated(id), { ...indexLobby(natural), rated: null })).toBe(true);
+    }
+    // Before its match ends, the lobby's flag decides nothing.
+    expect(recordingRated(rated(id), { ...indexLobby(null), rated: false })).toBe(true);
   });
 
   it("keeps the record's flag with no lobby read, a lobby with no outcome yet, or a record that is not rated", () => {
@@ -457,6 +469,22 @@ describe("GET /matches lists only Model Index, challenge and rated matches", () 
       [ids.index, "index", true], [ids.stoppedIndex, "index", false], [ids.challenge, "challenge", false], [ids.ranked, "ranked", true],
       [ids.indexRecord, "index", true], [ids.untyped, null, true]]);
     expect(listed.nextPageToken).toBeNull();
+  });
+
+  it("leaves out a rated Free-for-all record whose lobby its refused rating left unrated, and keeps one it rated", async () => {
+    const id = (minute: number) => `2026-11-18T06-${String(minute).padStart(2, "0")}-00-000Z-1`;
+    const four = [[seat("a", "a")], [seat("b", "b")], [seat("c", "c")], [seat("d", "d")]];
+    const ids = { refusedWin: id(4), refusedDraw: id(3), refusedColony1: id(2), ratedWin: id(1) };
+    const rows = Object.values(ids).map(rowId => rated(rowId, true));
+    const { lookup } = lobbies({
+      [ids.refusedWin]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_0_won", rated: false }),
+      [ids.refusedDraw]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "draw", rated: false }),
+      [ids.refusedColony1]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_1_won", rated: false }),
+      [ids.ratedWin]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_2_won", rated: true }),
+    });
+    const origin = await listen({ async list() { return page(...rows); }, async open() { return null; } }, lookup);
+    const listed = (await (await fetch(`${origin}/matches`)).json()) as { matches: TypedHistorySummary[] };
+    expect(listed.matches.map(match => [match.id, match.matchType?.kind ?? null, match.rated])).toEqual([[ids.ratedWin, "quadrants", true]]);
   });
 
   /** Stored rows newest first in storage pages of twenty, continued after an id, as the storage source pages them. */

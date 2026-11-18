@@ -7,7 +7,6 @@ import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
 import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
-import { NATURAL_OUTCOMES } from "../rating/ratings.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
@@ -31,6 +30,8 @@ export interface RecordingLobby {
   readonly createdAt?: number;
   /** How its match ended once its slot was released; null or absent before then. */
   readonly outcome?: MatchOutcome | null;
+  /** The lobby's rated flag; an ended match its rating step refused is left rated false (src/lobby/lobbies.ts endMatch). */
+  readonly rated?: boolean | null;
 }
 /**
  * Replay id -> the lobby that recording came from; null when it has none (a scheduled match); "pending" when its lobby
@@ -161,14 +162,20 @@ export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined,
 }
 
 /**
- * Whether a recording lists as rated: its record's flag, except that a lobby whose match ended with an outcome the rating
- * table does not rate (src/rating/ratings.ts NATURAL_OUTCOMES: a stopped, abandoned or unplayed match) lists unrated, so the
- * Recordings list counts the same rated matches as the leaderboard. Only ever clears the flag; a row with no lobby read, or
- * a lobby with no recorded outcome, keeps its record's flag. Display only: nothing stored is rewritten.
+/** A match result a rating step rates: a draw or a colony's win, of two colonies or a Free-for-all's four (src/lobby/lobbies.ts endMatch). */
+const RATED_RESULT = /^(?:draw|colony_[0-3]_won)$/;
+
+/**
+ * Whether a recording lists as rated: its record's flag, except that a lobby whose match ended with no result a rating
+ * step rates (a stopped, abandoned or unplayed match), or whose match ended with the lobby left unrated (a Free-for-all
+ * result its rating step refused), lists unrated, so the Recordings list counts the same rated matches as the ratings.
+ * Only ever clears the flag; a row with no lobby read, or a lobby with no recorded outcome, keeps its record's flag.
+ * Display only: nothing stored is rewritten.
  */
 export function recordingRated(row: Pick<HistorySummary, "rated">, lobby: RecordingLobby | null | undefined): HistorySummary["rated"] {
   const outcome = lobby?.outcome;
-  return row.rated === true && outcome != null && !Object.hasOwn(NATURAL_OUTCOMES, outcome) ? false : row.rated;
+  if (row.rated !== true || outcome == null) return row.rated;
+  return !RATED_RESULT.test(outcome) || lobby?.rated === false ? false : row.rated;
 }
 
 /** A recording's match time: its lobby's startsAt, else createdAt, where the lobby was read; else the recorded start. */
