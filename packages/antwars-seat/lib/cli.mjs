@@ -4,7 +4,7 @@ import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { fileURLToPath } from "node:url";
 import { renderView } from "./board.mjs";
 import { claimGameCommand, isGameCommand, procStat, refusalMessage } from "./guard.mjs";
-import { isMatchOver, matchClient, savedMatch, seatContext } from "./match.mjs";
+import { isMatchOver, matchClient, noteMatchReply, savedMatch, seatContext } from "./match.mjs";
 import { observerSettings, observerStatus, runObserver } from "./observer.mjs";
 import { err, out, redact } from "./redact.mjs";
 import { createLobby, go, joinLobby, leaveQueue, savedWaitLink } from "./seat.mjs";
@@ -20,7 +20,10 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
         [--parallel]                        queuing seat may queue while another run of its handle plays
   go [--detach]                             queue once, wait for pairing, join; stops in the nest window
                                             (step joined with closesAt and box); then send your own pick_nest
-  status                                    progress of go or join-lobby (status.json + log tail)
+  status                                    the seat's latest known state, no server call: go or join-lobby
+                                            progress, then nest_picked, waiting_for_start and match_started
+                                            from this seat's own pick_nest and observe replies, with the
+                                            server's own matchStarts and message (fromServer)
   wait-url                                  the waitUrl go or join-lobby saved (printed when saved): GET it and wait
                                             for the event done, whose data.state is slot_ready or expired
   leave                                     leave the queue only if this seat is waiting
@@ -156,15 +159,26 @@ async function runSeat(argv, flags, env, clock, flow) {
   }
 }
 
-function status(env) {
+/** Says beside the server's own facts whether its matchStarts time has passed by this machine's clock; not a confirmed start. */
+export const MATCH_STARTS_PASSED_NOTE = "the server's matchStarts time has passed by this machine's clock; that is not a confirmed start: observe shows whether the match is running";
+
+/** True or false once matchStarts is a time and the match is not yet seen started; null when unknown (e.g. "when its caller starts it"). */
+function matchStartsPassed(current, clock) {
+  const at = Date.parse(current.fromServer?.matchStarts ?? "");
+  return Number.isFinite(at) ? clock.now() >= at : null;
+}
+
+function status(env, clock) {
   const current = readJson(statePath("status.json", env), { step: "not_started" });
+  const passed = matchStartsPassed(current, clock);
+  const timing = passed === null ? {} : { matchStartsPassed: passed, ...(passed ? { matchStartsNote: MATCH_STARTS_PASSED_NOTE } : {}) };
   let tail = [];
   try {
     tail = readFileSync(statePath("progress.log", env), "utf8").trim().split("\n").slice(-8);
   } catch {
     // No progress yet.
   }
-  print({ ...current, goRunning: alive(Number(readJson(statePath("go.lock", env))?.pid)), observer: observerStatus(env, alive).state });
+  print({ ...current, ...timing, goRunning: alive(Number(readJson(statePath("go.lock", env))?.pid)), observer: observerStatus(env, alive).state });
   for (const line of tail) print(line);
   return 0;
 }
@@ -181,6 +195,7 @@ async function matchCall(name, args, env, clock, { raw = false, readStat = procS
     }
   }
   const reply = await client.callTool(name, args);
+  noteMatchReply(name, args, reply, ctx);
   print(reply.data?.view && typeof reply.data.view === "object" && !raw ? renderView(reply.data) : reply.data);
   if (isMatchOver(reply.data)) progress("match_over", { winner: reply.data.winner ?? null }, env);
   return reply.ok ? 0 : 2;
@@ -254,7 +269,7 @@ export async function main(argv, { env = process.env, clock = realClock, readSta
         return await runSeat(["join-lobby", lobbyId], flags, env, clock, (ctx) => joinLobby(ctx, lobbyId));
       }
       case "status":
-        return status(env);
+        return status(env, clock);
       case "wait-url":
         print(savedWaitLink(env));
         return 0;

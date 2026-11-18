@@ -4,7 +4,7 @@
 // Only the match client rides out a server handover (HANDOVER_RETRY_MS per
 // command); the entry client reports a failed send at once, as before.
 import { ALLOW_HTTP_ENV, HANDOVER_RETRY_MS, McpClient, errorCode } from "./mcp.mjs";
-import { envNumber, makeLimiter, progress, readJson, readKey, statePath, writeJson } from "./state.mjs";
+import { dropped, envNumber, makeLimiter, progress, readJson, readKey, statePath, writeJson } from "./state.mjs";
 
 export const DEFAULT_MIN_CALL_MS = 600;
 
@@ -72,4 +72,43 @@ export function savedMatch(env = process.env) {
 export function isMatchOver(data) {
   return data?.matchOver === true || (data?.view && data.view.result !== null && data.view.result !== undefined)
     || errorCode(data) === "match_over" || errorCode(data) === "match_not_played";
+}
+
+/**
+ * The server's own pre-start facts in a join or observe reply, copied as the server gave them: matchStarts and its
+ * message (e.g. "Call observe until it starts"). from names the reply, at when it was received. Null when it gave none.
+ */
+export function serverStartFacts(data, from, clock) {
+  if (data?.matchStarts === undefined && typeof data?.message !== "string") return null;
+  return { from, at: new Date(clock.now()).toISOString(), matchStarts: data.matchStarts ?? null, message: data.message ?? null };
+}
+
+/** Status fields that hold only before the match starts: the nest window, the pick instruction and the server's pre-start facts. */
+const PRE_START_FIELDS = ["closesAt", "box", "next", "fromServer"];
+
+/**
+ * Keeps status current from a reply to a call the seat itself made (a match command or the observer's observe); it
+ * never makes a call of its own. An accepted pick_nest writes nest_picked and drops the pick instruction; an observe
+ * answered "not started" writes waiting_for_start with the server's facts; the first observe of a started match
+ * writes match_started and drops every pre-start field. Repeats of an unchanged state add no log line.
+ */
+export function noteMatchReply(name, args, reply, { env, clock }) {
+  const data = reply?.data;
+  if (!reply?.ok || !data || isMatchOver(data)) return;
+  const current = readJson(statePath("status.json", env), {});
+  if (name === "pick_nest" && data.accepted === true) {
+    progress("nest_picked", { pick: { tileX: args?.tileX ?? null, tileY: args?.tileY ?? null },
+      closesAt: data.nestSelection?.closesAt ?? current.closesAt ?? null, next: undefined }, env);
+    return;
+  }
+  if (name !== "observe") return;
+  if (data.waiting === true) {
+    const facts = serverStartFacts(data, "observe", clock);
+    if (current.step === "waiting_for_start" && current.fromServer?.matchStarts === facts?.matchStarts && current.fromServer?.message === facts?.message) return;
+    progress("waiting_for_start", { fromServer: facts }, env);
+    return;
+  }
+  if (data.view && data.view.tick > 0 && current.startSeenTick === undefined) {
+    progress("match_started", { startSeenTick: data.view.tick, ...dropped(PRE_START_FIELDS) }, env);
+  }
 }

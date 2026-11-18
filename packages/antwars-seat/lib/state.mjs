@@ -47,6 +47,11 @@ export function progress(step, detail = {}, env = process.env, { fresh = false }
   return line;
 }
 
+/** progress() detail that removes these fields from status.json: a field set to undefined is not written. */
+export function dropped(fields) {
+  return Object.fromEntries(fields.map((field) => [field, undefined]));
+}
+
 const CONFIG_FIELDS = ["handle", "keyName", "mode", "seat", "queuing", "parallel", "modelLabel", "thinkingLevel", "serviceTier", "entryUrl"];
 
 export function readConfig(env = process.env) {

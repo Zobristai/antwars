@@ -549,7 +549,8 @@ describe("match commands", () => {
     expect(await s.cli("observe")).toBe(0);
     const after = s.fake.calls.slice(before).map((c) => c.tool ?? c.method);
     expect(after).toEqual(["initialize", "join", "observe"]);
-    expect(s.state("status.json").step).toBe("rejoined");
+    // The re-join is logged, then the completed observe of the started match moves status on to match_started.
+    expect(readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step).slice(-2)).toEqual(["rejoined", "match_started"]);
   });
 
   it("re-joins seat 1 of a key holding several seats with seat 1 when the MCP session is gone", async () => {
@@ -558,7 +559,117 @@ describe("match commands", () => {
     s.fake.expireSessions();
     expect(await s.cli("observe")).toBe(0);
     expect(s.fake.toolCalls("join").map((c) => c.args.seat)).toEqual([1, 1]);
-    expect(s.state("status.json").step).toBe("rejoined");
+    // The re-join is logged, then the completed observe of the started match moves status on to match_started.
+    expect(readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step).slice(-2)).toEqual(["rejoined", "match_started"]);
+  });
+});
+
+/** The status command's printed status object (its first line), read with no server call. */
+async function printedStatus(s) {
+  s.printed.length = 0;
+  const callsBefore = s.fake.calls.length;
+  expect(await s.cli("status")).toBe(0);
+  expect(s.fake.calls.length).toBe(callsBefore);
+  return JSON.parse(s.printed[0]);
+}
+
+function loggedSteps(s) {
+  return readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step);
+}
+
+const STALE_LOBBY_FIELDS = ["state", "lobbyState", "queue", "waitedMs"];
+const SERVER_JOIN_MESSAGE = "Your lobby's match has not started; you are seated in it. Call observe until it starts.";
+
+describe("status after go: the nest pick and the match start", () => {
+  it("before the pick, after it, once matchStarts has passed and after the match starts, status shows that state, never the join-time lobby state", async () => {
+    const s = await seat();
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    const closesAt = s.state("status.json").closesAt;
+
+    // Before the pick: the open window, the pick instruction and the server's own join facts, verbatim.
+    const before = await printedStatus(s);
+    expect(before).toMatchObject({ step: "joined", closesAt, box: { x: 2, y: 0, width: 3, height: 3 },
+      fromServer: { from: "join", matchStarts: closesAt, message: SERVER_JOIN_MESSAGE }, matchStartsPassed: false, goRunning: false, observer: "not_started" });
+    expect(before.next).toContain("pick_nest --json");
+    for (const field of [...STALE_LOBBY_FIELDS, "matchStartsNote"]) expect(before).not.toHaveProperty(field);
+
+    // After the pick: nest_picked with the pick, no pick instruction; the server's facts stay beside it.
+    expect(await s.cli("pick_nest", "--json", "{\"tileX\":3,\"tileY\":1}")).toBe(0);
+    const picked = await printedStatus(s);
+    expect(picked).toMatchObject({ step: "nest_picked", pick: { tileX: 3, tileY: 1 }, closesAt,
+      fromServer: { from: "join", matchStarts: closesAt, message: SERVER_JOIN_MESSAGE }, matchStartsPassed: false });
+    for (const field of [...STALE_LOBBY_FIELDS, "next"]) expect(picked).not.toHaveProperty(field);
+
+    // matchStarts passes with no call from the seat: status says the time has passed, not that the match started.
+    await s.clock.sleep(130_000);
+    const passed = await printedStatus(s);
+    expect(passed).toMatchObject({ step: "nest_picked", matchStartsPassed: true, fromServer: { message: SERVER_JOIN_MESSAGE } });
+    expect(passed.matchStartsNote).toContain("not a confirmed start");
+    expect(passed).not.toHaveProperty("next");
+
+    // The seat's own observe of the started match: match_started, and every pre-start field is gone.
+    expect(await s.cli("observe")).toBe(0);
+    const started = await printedStatus(s);
+    expect(started).toMatchObject({ step: "match_started", startSeenTick: 11, pick: { tileX: 3, tileY: 1 }, lobbyId: "lobby-1" });
+    for (const field of [...STALE_LOBBY_FIELDS, "next", "closesAt", "box", "fromServer", "matchStartsPassed", "matchStartsNote"]) expect(started).not.toHaveProperty(field);
+    // A further observe keeps the state and adds no log line.
+    expect(await s.cli("observe")).toBe(0);
+    expect(loggedSteps(s).filter((step) => step === "match_started")).toHaveLength(1);
+
+    // The harness started no observer: the only observe calls are the seat's own two.
+    expect(s.fake.toolCalls("observe")).toHaveLength(2);
+    expect(existsSync(join(s.dir, "state", "observer.json"))).toBe(false);
+  });
+
+  it("go's final status drops the queue and lobby states read while pairing", async () => {
+    const s = await seat({ pairAfterMs: 20_000 });
+    const seen = recordStatuses(s);
+    expect(await s.cli("go")).toBe(0);
+    expect(seen.some((status) => status.queue === "waiting")).toBe(true);
+    const final = s.state("status.json");
+    expect(final).toMatchObject({ step: "joined", lobbyId: "fresh-lobby", fromServer: { from: "join", message: SERVER_JOIN_MESSAGE } });
+    for (const field of STALE_LOBBY_FIELDS) expect(final).not.toHaveProperty(field);
+  });
+
+  it("an observe answered before the start shows waiting_for_start with the server's matchStarts and message, once per change", async () => {
+    const s = await seat({ waitingObserves: 2 });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(await s.cli("pick_nest", "--json", "{\"tileX\":3,\"tileY\":1}")).toBe(0);
+    expect(await s.cli("observe", "--raw")).toBe(0);
+    const waiting = await printedStatus(s);
+    expect(waiting).toMatchObject({ step: "waiting_for_start", pick: { tileX: 3, tileY: 1 },
+      fromServer: { from: "observe", matchStarts: waiting.closesAt, message: "Your match has not started; keep calling observe." } });
+    expect(waiting).not.toHaveProperty("next");
+    expect(await s.cli("observe", "--raw")).toBe(0);
+    expect(loggedSteps(s).filter((step) => step === "waiting_for_start")).toHaveLength(1);
+    expect(await s.cli("observe")).toBe(0);
+    expect(await printedStatus(s)).toMatchObject({ step: "match_started", startSeenTick: 13 });
+  });
+
+  it("an observe before the pick keeps the pick instruction", async () => {
+    const s = await seat({ waitingObserves: 1 });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(await s.cli("observe", "--raw")).toBe(0);
+    const waiting = await printedStatus(s);
+    expect(waiting).toMatchObject({ step: "waiting_for_start", fromServer: { from: "observe" } });
+    expect(waiting.next).toContain("pick_nest --json");
+  });
+
+  it("a seat that started the observer itself sees the start recorded from the observer's replies", async () => {
+    const s = await seat({ waitingObserves: 1, matchOverAfterObserves: 3 });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(await s.cli("pick_nest", "--json", "{\"tileX\":3,\"tileY\":1}")).toBe(0);
+    s.env.ANTWARS_DETACHED = "1";
+    expect(await s.cli("observer", "start", "--interval", "60")).toBe(0);
+    const steps = loggedSteps(s);
+    expect(steps.indexOf("waiting_for_start")).toBeLessThan(steps.indexOf("match_started"));
+    const final = s.state("status.json");
+    expect(final).toMatchObject({ startSeenTick: 12, pick: { tileX: 3, tileY: 1 } });
+    for (const field of ["next", "closesAt", "box", "fromServer"]) expect(final).not.toHaveProperty(field);
   });
 });
 

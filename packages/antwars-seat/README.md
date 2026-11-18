@@ -44,7 +44,7 @@ S=./.antwars-seat/bin/antwars-seat
 $S setup --handle antwars/<handle> --key-name <KEY_NAME> --mode house-1v1 \
    --model-label <model label> --thinking-level <level> [--seat N] [--service-tier fast]
 $S go --detach          # queue once, wait for pairing, join; stops in the nest window
-$S status               # follow go until it has finished in the nest window (see below)
+$S status               # follow go to the nest window, then the pick and the match start (see below)
 $S wait-url             # the waitUrl go or join-lobby saved: wait for its event done (see below)
 $S pick_nest --json '{"tileX":10,"tileY":4}'   # your own pick, inside box, before closesAt
 $S observer start       # observe every 60 s; keeps the seat inside the idle limit
@@ -196,13 +196,34 @@ step `joined`, `closesAt` and `box` both present (not null), and `goRunning`
 false. That final status is:
 
 ```json
-{"step":"joined","closesAt":"<ISO time>","box":{"x":2,"y":0,"width":3,"height":3},"next":"choose a tile inside box and send it before closesAt: antwars-seat pick_nest --json '{\"tileX\":X,\"tileY\":Y}'","goRunning":false}
+{"step":"joined","closesAt":"<ISO time>","box":{"x":2,"y":0,"width":3,"height":3},"next":"choose a tile inside box and send it before closesAt: antwars-seat pick_nest --json '{\"tileX\":X,\"tileY\":Y}'","fromServer":{"from":"join","at":"<ISO time>","matchStarts":"<ISO time>","message":"Your lobby's match has not started; you are seated in it. Call observe until it starts."},"matchStartsPassed":false,"goRunning":false}
 ```
 
-(`status` also keeps earlier fields of the same run, such as `lobbyId`,
-`matchedAt`, `agentId`, `colony` and `at`.)
+`fromServer` is the server's own `matchStarts` and `message` from the join
+reply, copied as it gave them. (`status` also keeps earlier fields of the same
+run, such as `lobbyId`, `matchedAt`, `agentId`, `colony` and `at`; the queue
+and lobby states read while pairing, `queue`, `waitedMs`, `state` and
+`lobbyState`, are dropped here, since they are not the match's state.)
 If the match starts with no open nest window, `go` ends with step `ready`,
 `nest` null and a note, and nothing is picked.
+
+**Status after go.** `status` makes no server call. After `go` it follows the
+replies to this seat's own calls (match commands, and the observer's observes
+if you started it):
+
+- an accepted `pick_nest`: step `nest_picked` with `pick`, `closesAt` and
+  `box`; `next` is removed;
+- an `observe` answered before the match starts: step `waiting_for_start`,
+  with `fromServer` replaced by that reply's `matchStarts` and `message`;
+- the first `observe` of the started match: step `match_started` with
+  `startSeenTick`; `closesAt`, `box`, `next` and `fromServer` are removed.
+
+While `fromServer.matchStarts` is a time, `status` adds `matchStartsPassed`
+(true or false, by this machine's clock), and once it is true a
+`matchStartsNote`: the start time has passed, which is not a confirmed start;
+`observe` shows whether the match is running. The harness never starts the
+observer and never observes for you after `go`: a seat that makes no call is
+still idle under the idle limit.
 
 Progress: `state/status.json` (current step) and `state/progress.log` (one JSON
 line per step), shown by `status`. Only one `go` runs per seat at a time. Each
