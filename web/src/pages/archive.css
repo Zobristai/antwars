@@ -304,6 +304,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 :is(.d1p-model, .d1p-rec-player) .d1p-tag + .d1p-tag { margin-left: var(--d1p-cell-gap); }
 .d1p-tag.is-fast { padding-right: 2px; }
 .d1p-bolt { display: inline-block; width: 6px; height: 9px; margin-left: 2px; background: currentColor; vertical-align: -1px; clip-path: polygon(70% 0, 0 58%, 42% 58%, 30% 100%, 100% 40%, 58% 40%); }
+/* Forced colours replace every background, so the bolt keeps its own fill there, in the system text colour. */
+@media (forced-colors: active) { .d1p-bolt { forced-color-adjust: none; background: CanvasText; } }
 :is(.d1p-model, .d1p-rec-player) .d1p-count { margin-left: 0; }
 .d1p-unknown { color: var(--aw-ink-3); }
 /* Colony colour only as ink: on a colony's name, which always names it too, and on the words of its WINNER, DRAW or

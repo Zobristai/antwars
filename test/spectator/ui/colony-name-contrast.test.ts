@@ -561,6 +561,28 @@ describe("every Matches player is one line", () => {
   }
 });
 
+describe("the Fast bolt shows in forced colours", () => {
+  for (const width of [1280, 390]) {
+    it(`fills every shown bolt in its badge's text colour, not its background, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(quadrantsPage("max", "CedarGrove", 1).page);
+        await tab.emulateMedia({ forcedColors: "active" });
+        const bolts = await tab.evaluate(() => [...document.querySelectorAll<HTMLElement>(".d1p-bolt")].filter(bolt => bolt.checkVisibility()).map(bolt => {
+          const badge = getComputedStyle(bolt.closest(".d1p-tag")!), rect = bolt.getBoundingClientRect();
+          return { fill: getComputedStyle(bolt).backgroundColor, ink: badge.color, ground: badge.backgroundColor, size: rect.width * rect.height };
+        }));
+        expect(bolts.length, "bolts are shown").toBeGreaterThan(0);
+        for (const bolt of bolts) {
+          expect(bolt.size).toBeGreaterThan(0);
+          expect(bolt.fill).toBe(bolt.ink);
+          expect(bolt.fill).not.toBe(bolt.ground);
+        }
+      } finally { await tab.close(); }
+    });
+  }
+});
+
 describe("Recordings colony headings stay inside their columns", () => {
   for (const width of [1280]) {
     it(`keeps complete one-line headings within each slot at ${width}px`, async () => {
