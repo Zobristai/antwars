@@ -8,7 +8,7 @@
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -17,7 +17,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -26,7 +26,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -35,7 +35,7 @@
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -44,7 +44,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -53,7 +53,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -80,7 +80,7 @@
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -89,7 +89,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -98,7 +98,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -125,7 +125,7 @@
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -134,7 +134,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "landing",
@@ -143,7 +143,7 @@
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
    "count": 1,
-   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
    "surface": "leaderboard",
