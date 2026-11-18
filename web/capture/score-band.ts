@@ -45,7 +45,7 @@ try {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("DOM.enable"); await cdp.send("CSS.enable");
   const { root } = await cdp.send("DOM.getDocument");
-  const { nodeIds } = await cdp.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: ".d1-name,.d1-title,.d1-model,.d1-glabel,.d1-clock,.d1-ml" });
+  const { nodeIds } = await cdp.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: ".d1-name,.d1-title,.d1-model,.d1-glabel,.d1-clock,.d1-ml,.d2-name-text,.d2-slabel,.d2-clock" });
   const fonts = [];
   for (const nodeId of nodeIds) fonts.push(...(await cdp.send("CSS.getPlatformFontsForNode", { nodeId })).fonts);
   const used = fonts.filter(f => f.glyphCount > 0);
@@ -54,7 +54,7 @@ try {
     f.familyName === "Roboto SemiBold" && f.postScriptName === "Roboto-SemiBold" && f.isCustomFont);
   if (!used.length || used.some(f => !expectedFont(f))) throw new Error(`Actual fonts differ: ${JSON.stringify(used)}`);
   const measured = await page.evaluate(() => {
-    const selectors = ".d1-name,.d1-title,.d1-model,.d1-tag,.d1-ml,.d1-glabel,.d1-kicker,.d1-clock,.d1-legend,.d1-hold-text,.d1-match-meta,.sb-holder,.sb-rule,.sb-meta-item,.sb-value";
+    const selectors = ".d1-name,.d1-crow-name,.d1-crow-share,.d1-title,.d1-model,.d1-tag,.d1-ml,.d1-glabel,.d1-kicker,.d1-clock,.d1-legend,.d1-hold-text,.d1-match-meta,.sb-holder,.sb-rule,.sb-meta-item,.sb-value,.d2-name-text,.d2-slabel,.d2-clock";
     const labels = [...document.querySelectorAll<HTMLElement>(selectors)].filter(e => {
       if (!e.checkVisibility()) return false;
       // The desktop column headers replace the per-cell labels visually, not for screen readers.
@@ -77,7 +77,7 @@ try {
   const images: { file: string; sha256: string; view: string }[] = [];
   const fits: { view: string; items: ReturnType<typeof measureLabels> }[] = [];
   async function capture(view: string) {
-    const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-tag,.d1-ml,.d1-glabel,.d1-kicker,.d1-clock,.d1-legend,.sb-holder,.sb-rule,.sb-meta-item,.sb-value,.sb-history,.d1-btn,.d2-nav-link");
+    const items = await page.evaluate(measureLabels, ".d1-name,.d1-crow-name,.d1-crow-share,.d1-title,.d1-model,.d1-tag,.d1-ml,.d1-glabel,.d1-kicker,.d1-clock,.d1-legend,.sb-holder,.sb-rule,.sb-meta-item,.sb-value,.sb-history,.d1-btn,.d2-nav-link,.d2-name-text,.d2-slabel,.d2-clock");
     const file = `${prefix}-${view}.png`, image = await page.screenshot({ path: join(output, file) });
     images.push({ file, sha256: digest(image), view });
     fits.push({ view, items });
@@ -87,7 +87,7 @@ try {
   const scrolls: { file: string; top: number; height: number; total: number; box: { x: number; y: number; width: number; height: number } }[] = [];
   if (width === 390) {
     const panel = page.locator(".d1-below");
-    const box = await panel.boundingBox();
+    const box = await panel.count() ? await panel.boundingBox() : null;
     if (box) {
       const size = await panel.evaluate(e => ({ height: e.clientHeight, total: e.scrollHeight }));
       for (let top = 0, index = 0; top < size.total; top += size.height, index++) {
