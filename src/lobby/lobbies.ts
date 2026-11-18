@@ -44,7 +44,9 @@ import { lobbyPageUrl } from "./site.js";
  *                       in lobbies stored before modes) for a player-created one;
  *                       colonyNames is the pair its begun match plays under, JSON, or ""
  *                       for the rated names, written when the match begins or is adopted
- *                       (absent on a match an older server began, which kept the rated names)
+ *                       (absent on a match an older server began, which kept the rated names);
+ *                       ratingFailure, written with rated "false" only when a rated Free-for-all
+ *                       match's rating step refused its result at release, is why
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
  *   queues/{kind}       { lobbies }  waiting lobby ids, earliest first
  *   listings/public     { lobbies }  public lobby ids, pruned of ended/expired ones
@@ -281,7 +283,9 @@ export interface Lobbies {
    * none), teams by colony with each identity once; nothing else is rated. An abandoned
    * house challenge whose absentColonies (the colonies whose seat never joined) include its
    * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby, never rated, also stores
-   * result when given; no other lobby stores it.
+   * result when given; no other lobby stores it. A rated Free-for-all result its rating step refuses (anything
+   * but a failed store read, which rejects the call so it is retried) releases the slot all the same, leaving the
+   * lobby unrated with ratingFailure recorded; a result already rated identically is not refused.
    */
   endMatch(lobbyId: string, runId: string, outcome: MatchOutcome, thinkingLevels?: ThinkingLevels, serviceTiers?: ServiceTiers,
     modelLabels?: ModelLabels, absentColonies?: readonly ColonyId[], result?: MatchResult): Promise<LobbyOutcome<{ readonly next: string | null }>>;
@@ -764,6 +768,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     let outcome = "";
     let heldAbsent = false;
     let result: Fields = {};
+    let ratingFailure: string | null = null;
     if (ending) {
       if (docs.get(instancePath(fields.slot))?.runId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       if (ending.outcome !== "not_played" && fields.matchRunId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
@@ -779,13 +784,25 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         // An old/missing finish cannot be rated; an explicit gate never backfills past results.
         if (settings.ffaLiveEnabled === true && fields.rated === "true" && ending.result?.ffa !== undefined &&
             (ending.outcome === "draw" || /^colony_[0-3]_won$/.test(ending.outcome))) {
-          const seats = seatsOf(lobbyId, fields);
-          const participants = [0, 1, 2, 3].map(colony => {
-            const members = seats.filter(seat => seat.colony === colony);
-            if (members.length !== 1) throw new Error("Free-for-all needs one identity per colony");
-            return members[0]!.id;
-          });
-          writes.push(...(await ffaRatingWrites(read, { matchId: lobbyId, participants, reason: ending.result.reason, finish: ending.result.ffa })).writes);
+          const finish = ending.result.ffa, reason = ending.result.reason;
+          // A failed store read is temporary: it is rethrown and the whole release retried. Any other
+          // failure of the rating step rejects this match on every retry, so the slot is released and
+          // the match left unrated with the failure recorded, rather than held for ever.
+          let storeFailed = false;
+          const storeRead: TransactionRead = (paths) => read(paths).catch((error: unknown) => { storeFailed = true; throw error; });
+          try {
+            const seats = seatsOf(lobbyId, fields);
+            const participants = [0, 1, 2, 3].map(colony => {
+              const members = seats.filter(seat => seat.colony === colony);
+              if (members.length !== 1) throw new Error("Free-for-all needs one identity per colony");
+              return members[0]!.id;
+            });
+            writes.push(...(await ffaRatingWrites(storeRead, { matchId: lobbyId, participants, reason, finish })).writes);
+          } catch (error) {
+            if (storeFailed) throw error;
+            ratingFailure = error instanceof Error ? error.message : String(error);
+            console.error(`antwar lobby ${lobbyId}: Free-for-all rating refused, releasing the match unrated: ${ratingFailure}`);
+          }
         }
       } else if (winner !== null && fields.rated === "true") {
         // In a ranked team mode one identity holds every seat of its colony, so each
@@ -802,7 +819,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     const settled = await settleSlots(read, fields.kind as LobbyKind, at, undefined, slotPath);
     return {
       result: ok({ next: settled.handedTo[0] ?? null }) as Released,
-      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}), ...(heldAbsent ? { heldAbsent: "true" } : {}), ...result } }, ...settled.writes, ...writes] as Write[],
+      writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}),
+        ...(ratingFailure !== null ? { rated: "false", ratingFailure } : {}), ...(heldAbsent ? { heldAbsent: "true" } : {}), ...result } }, ...settled.writes, ...writes] as Write[],
     };
   }
 
