@@ -1,9 +1,6 @@
-// The Instrument deck: a team container at each side of the shared score,
-// each holding its colony's state: its name with a small row per agent under it, its economy, and below them
-// its game history, full width, every command and major event with its time and the member who acted, and
-// for a live viewer arriving mid-match each agent's standing order at arrival. A pick on the board or an agent row
-// opens the Selected card in that colony's container in place of its history, its agents and economy kept. The result
-// shows as a modal over the whole screen; the page places it and the recording's offer, shown when there are no agents.
+// Score Band colony rows: identity and economy stay visible; per-colony history expands below.
+// Picking an agent or ant opens its existing Selected card in that colony, in place of history.
+// The result remains the shared modal, and all values come from the displayed playback frame.
 //
 // Overlay exports are read only inside functions: overlays.ts imports this HUD, which imports this module.
 import type { Board, Frame } from "../../buffer.ts";
@@ -17,21 +14,21 @@ import { OFFER_TEXT } from "../../replay.ts";
 import { D1_ICON } from "./icons.ts";
 import { mountResultModal } from "./result-modal.ts";
 import {
-  COLONIES, D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyCount, colonyName, colonyNote, history as gameHistory, roster, selected,
+  D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyRows, colonyName, colonyNote, history as gameHistory, roster, selected,
   type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Player, type Row, type Selected,
 } from "./model.ts";
 
-const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))"] as const;
+const COLONY_CSS = ["var(--aw-k0, var(--aw-c0))", "var(--aw-k1, var(--aw-c1))", "var(--aw-k2)", "var(--aw-k3)"] as const;
 
 export interface TeamHooks {
   /** The page's query, carried on the recording's link. */
   search(): string;
   /** Each colony's economy (deck.ts), placed under its name. */
-  readonly economy: readonly [HTMLElement, HTMLElement];
+  readonly economy: readonly HTMLElement[];
 }
 export interface Teams {
-  /** Very Large Colony's container and Lake Hodges Colony's, for the deck's sides. */
-  readonly teams: readonly [HTMLElement, HTMLElement];
+  /** Stable colony containers, hidden when absent from the displayed match. */
+  readonly teams: readonly HTMLElement[];
   /** The result's modal dialog, for the page to place over the whole screen. */
   readonly result: HTMLDialogElement;
   /** The recording's offer, for the footer. */
@@ -72,6 +69,7 @@ interface RowNode {
 }
 
 export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks): Teams {
+  const colonies = hooks.economy.map((_, c) => c);
   const win = doc.defaultView!;
   const listeners: (() => void)[] = [];
   const listen = (target: EventTarget, type: string, fn: (e: Event) => void) => {
@@ -121,7 +119,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   listen(doc, "pointerdown", e => { const at = e.target as Node | null; if (tipFor && !(at && (tip.contains(at) || tipFor.contains(at)))) hideTip(); });
 
   // ---------------------------------------------------------------- the team containers
-  const teamNodes = COLONIES.map(colony => {
+  const teamNodes = colonies.map(colony => {
     const section = h(doc, "section", `d1-team c${colony}`);
     section.tabIndex = -1;
     const head = h(doc, "header", "d1-team-head");
@@ -151,11 +149,35 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const entries = h(doc, "ol", "d1-tl");
     const none = h(doc, "li", "d1-tl-entry d1-tl-none", D1_COPY.timelineNone);
     line.append(h(doc, "h3", "d1-kicker", D1_COPY.history), entries);
-    section.append(head, rows, hooks.economy[colony], line);
+    const out = h(doc, "span", "d1-tag d1-team-out", D1_COPY.eliminated);
+    setHidden(out, true);
+    if (colonies.length > 2) head.append(out);
+    const identity = h(doc, "div", "sb-identity");
+    identity.append(head, rows);
+    const historyButton = h(doc, "button", "sb-history");
+    historyButton.type = "button";
+    historyButton.textContent = "≡";
+    historyButton.setAttribute("aria-label", `${colonyName(colony)} history`);
+    line.id = `colony-history-${colony}`;
+    historyButton.setAttribute("aria-controls", line.id);
+    historyButton.setAttribute("aria-expanded", "false");
+    setHidden(line, true);
+    listen(historyButton, "click", () => {
+      const open = historyButton.getAttribute("aria-expanded") !== "true";
+      setAttr(historyButton, "aria-expanded", String(open));
+      setHidden(line, !open);
+      if (open) { actions.select(null); actions.selectAgent(-1); }
+    });
+    listen(line, "keydown", e => {
+      if ((e as KeyboardEvent).key !== "Escape") return;
+      setAttr(historyButton, "aria-expanded", "false"); setHidden(line, true); historyButton.focus();
+    });
+    line.tabIndex = 0;
+    section.append(identity, hooks.economy[colony], historyButton, line);
     // Each row's node by its key, written again only when what it shows changes.
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
-    return { section, name, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
-      playerRd: "", playerKey: "", rows, line, entries, none, lineNodes };
+    return { section, name, out, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
+      playerRd: "", playerKey: "", rows, line, entries, none, lineNodes, historyButton };
   });
 
   for (const team of teamNodes) {
@@ -290,7 +312,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   /** Each colony's small agent rows under its own head, its member icons and any one player beside its name; one player or an empty colony shows no rows. */
   const writeGroups = (groups: readonly Group[]) => {
-    for (const colony of COLONIES) {
+    for (const colony of colonies) {
       const g = groups.find(group => group.colony === colony);
       const team = teamNodes[colony]!;
       const n = g?.rows.length ?? 0;
@@ -447,7 +469,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   /** The card in its colony's container, in place of its history, its agent rows kept; nothing picked, no card. */
   const place = (sel: Selected) => {
     current = sel;
-    for (const colony of COLONIES) flag(teamNodes[colony]!.section, "is-picked", sel.kind !== "none" && sel.colony === colony);
+    for (const colony of colonies) flag(teamNodes[colony]!.section, "is-picked", sel.kind !== "none" && sel.colony === colony);
     if (sel.kind === "none") { selectedEl.hidden = true; return; }
     const home = teamNodes[sel.colony]!.section;
     if (selectedEl.parentElement !== home) home.append(selectedEl);
@@ -526,6 +548,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   teamNodes[0]!.section.append(tip);
 
   // ---------------------------------------------------------------- update
+  let lastMatch: number | null = null;
   let lastSecond = -1;
   let lastChat: unknown = null;
   let lastSubject = "";
@@ -538,31 +561,41 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   let arrived: Arrival | null = null;
   let lastSeed: readonly HistoryRow[] = [];
   /** The colony names the headings show: the match's own, else the rated names; written again only when they change. */
-  let shownNames = `${colonyName(0)}\n${colonyName(1)}`;
+  let shownNames = colonies.map(c => colonyName(c)).join("\n");
   const writeNames = (setup: Board["setup"] | null) => {
-    const names = `${colonyName(0, setup)}\n${colonyName(1, setup)}`;
+    const names = colonies.map(c => colonyName(c, setup)).join("\n");
     if (names === shownNames) return;
     shownNames = names;
-    for (const colony of COLONIES) {
+    for (const colony of colonies) {
       const node = teamNodes[colony]!, named = colonyName(colony, setup), note = colonyNote(colony, setup);
       node.name.textContent = named;
       if (note) node.name.title = note; else node.name.removeAttribute("title");
       node.rows.setAttribute("aria-label", `${named} agents`);
       node.line.setAttribute("aria-label", `${named} ${D1_COPY.history.toLowerCase()}`);
+      node.historyButton.setAttribute("aria-label", `${named} history`);
     }
   };
   return {
-    teams: [teamNodes[0]!.section, teamNodes[1]!.section],
+    teams: teamNodes.map(t => t.section),
     result: resultModal.dialog,
     offer,
     update(view, connecting) {
       const frame: Frame | null = view.frame;
       const b = frame?.board ?? null;
       writeNames(b?.setup ?? null);
-      // The containers are a two-colony match's two sides; a four-colony match's deck names its colonies in the score
-      // (deck.ts), and nothing picked opens a card here.
-      const four = b !== null && colonyCount(b.setup) > 2;
-      for (const team of teamNodes) setHidden(team.section, four);
+      if (lastMatch !== (frame?.match ?? null)) {
+        lastMatch = frame?.match ?? null;
+        lastSecond = -1; lastStory = -1; lastCommands = null;
+        for (const team of teamNodes) {
+          setAttr(team.historyButton, "aria-expanded", "false"); setHidden(team.line, true);
+        }
+      }
+      const status = colonyRows(frame);
+      const count = b?.setup.queens.length ?? 2;
+      for (const c of colonies) {
+        setHidden(teamNodes[c].section, c >= count);
+        setHidden(teamNodes[c].out, !status?.rows[c]?.eliminated);
+      }
       selectedAgent = view.selectedAgent;
       const none = !frame || !b || b.agents.length === 0;
       // With no agents, or no match, the footer holds the recording's offer, once; while connecting, nothing yet.
@@ -594,9 +627,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         lastStory = stories;
         lastCommands = commands;
         lastSeed = seed;
-        for (const colony of COLONIES) writeHistory(colony, gameHistory(frame, colony, seed));
+        for (const colony of colonies) writeHistory(colony, gameHistory(frame, colony, seed));
       }
-      const sel = four ? NOTHING : selected(frame, view.selected, view.selectedAgent);
+      const sel = selected(frame, view.selected, view.selectedAgent);
       if (sel.kind !== "agent" || sel.index !== targetFor) { if (targetFor >= 0) { targetFor = -1; light(-1); } }
       writeSelected(sel);
       // A row chosen opens its card with the focus in it; a pick on the board leaves the focus where it is.

@@ -30,7 +30,8 @@ describe("the team section's agent rows", () => {
 
   it("places the agents under the colony name, before the economy, and the history below them", () => {
     expect(PANE).toContain('const rows = h(doc, "ol", "d1-agents");');
-    expect(PANE).toContain("section.append(head, rows, hooks.economy[colony], line);");
+    expect(PANE).toContain("identity.append(head, rows);");
+    expect(PANE).toContain("section.append(identity, hooks.economy[colony], historyButton, line);");
     expect(PANE).toContain("setHidden(team.rows, n === 0);");
   });
 
@@ -83,8 +84,9 @@ describe("the team section's agent rows", () => {
     expect(PANE).toContain("const showTip = (target: Element, lines: readonly string[] = [D1_COPY.selfReported]) =>");
   });
 
-  it("adds no keyboard-only control: the two Escape handlers are the only key listeners", () => {
-    expect(PANE.match(/"keydown"/g)).toHaveLength(2);
+  it("supports Escape in history as well as selected cards and tooltips", () => {
+    expect(PANE).toContain('listen(line, "keydown", e => {');
+    expect(PANE).toContain('setHidden(line, true); historyButton.focus();');
   });
 
   it("keeps the agents in view while a card is open: only the history gives way", () => {

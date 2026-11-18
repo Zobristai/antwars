@@ -72,6 +72,8 @@ export function measureLabels(targets: string) {
   const elements = [...document.querySelectorAll<HTMLElement>("body *")].filter(e => {
     if (e.matches("script, style, option") || e.closest(".d1-sr, .d2-sr, [hidden]")) return false;
     const box = e.getBoundingClientRect();
+    // Column headers replace these screen-reader labels visually, not semantically.
+    if (getComputedStyle(e).clipPath === "inset(50%)" && box.width <= 1 && box.height <= 1) return false;
     for (let a = e.parentElement; a; a = a.parentElement) {
       // Measure the whole outer HUD, but not rows scrolled out of a nested history/list viewport.
       if (a.matches(".aw-hud, body, html")) continue;
