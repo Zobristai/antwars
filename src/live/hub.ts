@@ -185,6 +185,7 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
   o += 4;
   const queue: { record: TickRecord; releaseAt: number | undefined }[] = [];
   let last = released ? board.tick : -1;
+  let kills = board.full.kills;
   for (let i = 0; i < count; i++) {
     need(8);
     const at = bytes.readDoubleLE(o);
@@ -192,6 +193,8 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
     const message = decodeMessage(take());
     if (message.full !== null || message.tick <= last) throw invalidSave("records out of order");
     last = message.tick;
+    // The saved board may lag the simulation: held records carry the newest recorded totals.
+    for (const event of message.events) if (event.kind === "kills") kills = event.totals;
     queue.push({ record: { tick: message.tick, ants: message.ants, events: message.events }, releaseAt: Number.isNaN(at) ? undefined : at });
   }
   if (o !== bytes.length) throw invalidSave("trailing bytes");
@@ -203,6 +206,7 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
     released: released ? new SpectatorState(full, board.tick, board.ants, board.events) : null,
     queue,
     recorder: { setup: full.setup, agents, ants: queue.at(-1)?.record.ants ?? board.ants,
+      ...(kills === undefined ? {} : { kills }),
       initialFull: released ? null : () => decodeMessage(boardBytes).full! },
   } };
 }

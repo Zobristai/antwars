@@ -192,6 +192,8 @@ export interface RecorderResume {
   readonly initialFull: (() => StreamFull) | null;
   /** The last recorded tick's ants: headings and death positions carry on from them. */
   readonly ants: StreamAnts;
+  /** Last recorded kill totals, including held records; absent for an older stream with no baseline. */
+  readonly kills?: readonly number[];
 }
 
 /** Explicit projection: an adapter returning extra account/key fields cannot disclose them. */
@@ -233,8 +235,10 @@ export class SpectatorRecorder {
     this.owner = initial.owner.slice();
     this.food = initial.food.slice();
     this.stores = storesOf(initial);
-    // A resumed older stream needs a complete authoritative baseline on its next tick.
-    this.kills = resume === undefined && initial.colonies.length === 4 ? initial.colonies.map(c => c.kills ?? 0) : undefined;
+    // Current streams retain their recorded baseline; only older streams need one on the next tick.
+    this.kills = initial.colonies.length === 4
+      ? resume === undefined ? initial.colonies.map(c => c.kills ?? 0) : resume.kills?.slice()
+      : undefined;
     this.eliminated = new Set(initial.colonies.flatMap((c) => (c.eliminated === undefined ? [] : [c.id])));
     if (resume !== undefined) {
       this.initialState = null;

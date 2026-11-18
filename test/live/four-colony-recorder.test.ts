@@ -231,6 +231,21 @@ describe("the spectator recorder on a two-colony match", () => {
 
 
 describe("authoritative kill totals across recorder resume", () => {
+  it("copies the current baseline, omits unchanged totals and emits a genuine later change", () => {
+    const state = createMatch(SEED, CONFIG);
+    state.colonies.forEach((colony, i) => { colony.kills = i * 7; });
+    const original = new SpectatorRecorder(state), first = original.initial();
+    const kills = [0, 7, 14, 21];
+    const recorder = new SpectatorRecorder(state, {}, { setup: original.setup, agents: original.agentIndexes(),
+      initialFull: () => original.initialFull(), ants: first.ants, kills });
+    kills[0] = 999; // A caller changing the saved array cannot change the recorder's baseline.
+    const unchanged = recorder.record(advance(state, []));
+    expect(unchanged.events.filter(event => event.kind === "kills")).toEqual([]);
+    state.colonies[2]!.kills!++;
+    const changed = recorder.record(advance(state, []));
+    expect(changed.events.filter(event => event.kind === "kills")).toEqual([{ kind: "kills", totals: [0, 7, 15, 21] }]);
+  });
+
   it("establishes a complete baseline after an old handover without fabricating deaths", () => {
     const state = createMatch(SEED, CONFIG);
     const original = new SpectatorRecorder(state);
