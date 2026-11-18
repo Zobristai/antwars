@@ -19,6 +19,8 @@ export interface Render {
   images: string[];
   /** For each failure, the marked render that shows it. */
   failureImages: string[];
+  /** For each failure, whether it is in view on its render: false only where no scrolling brings it into view. */
+  failureInView?: boolean[];
   fonts: Record<string, number>;
   /** Problems that make this render itself invalid: wrong typeface, unanswered requests, a page that did not load. */
   invalid: string[];
@@ -40,7 +42,7 @@ export async function readHeld(file: string): Promise<HeldList> {
   return JSON.parse(await readFile(file, "utf8")) as HeldList;
 }
 
-export interface Judged extends Finding { surface: string; width: number; typeface: Typeface; image: string; held: boolean }
+export interface Judged extends Finding { surface: string; width: number; typeface: Typeface; image: string; held: boolean; outOfView?: boolean }
 export interface Verdict {
   passed: boolean;
   newFailures: Judged[];
@@ -65,7 +67,7 @@ export function judge(renders: readonly Render[], held: HeldList): Verdict {
       const candidates = open.get(heldKey({ ...at, rule: f.rule, element: f.element, text: f.text })) ?? [];
       candidates.sort((a, b) => b.extent - a.extent);
       const match = candidates.findIndex(e => f.extent <= e.extent + heldSlack(f.rule));
-      const judged = { ...f, ...at, image: r.failureImages[i] ?? r.images[0] ?? "", held: match >= 0 };
+      const judged = { ...f, ...at, image: r.failureImages[i] ?? r.images[0] ?? "", held: match >= 0, ...(r.failureInView?.[i] === false ? { outOfView: true } : {}) };
       if (match >= 0) { candidates.splice(match, 1); heldFailures.push(judged); continue; }
       const was = candidates[0];
       newFailures.push(was ? { ...judged, measure: `${judged.measure}; held at ${was.extent}, now ${f.extent}` } : judged);
@@ -106,7 +108,7 @@ export function markdown(v: Verdict, renders: readonly Render[], context: { buil
   const table = (title: string, rows: Judged[]) => {
     if (!rows.length) return;
     out.push(`## ${title}`, "", "| Surface | Width | Typeface | Rule | Element | Text | Measure | Render |", "|---|---|---|---|---|---|---|---|");
-    for (const j of rows) out.push(`| ${j.surface} | ${j.width} | ${j.typeface} | ${j.rule} | ${cell(j.element)} | ${cell(j.text)} | ${cell(j.measure)} | ${j.image} |`);
+    for (const j of rows) out.push(`| ${j.surface} | ${j.width} | ${j.typeface} | ${j.rule} | ${cell(j.element)} | ${cell(j.text)} | ${cell(j.measure)} | ${j.image}${j.outOfView ? " (outside the view: nothing scrolls to it)" : ""} |`);
     out.push("");
   };
   table("New failures", v.newFailures);

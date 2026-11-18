@@ -5,14 +5,17 @@
  *
  * Fails:
  * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings;
- *   every label and table heading, wherever it stands) laid out on 2+ rendered lines, explicit breaks included
+ *   every label, button and table heading, wherever it stands and however long) laid out on 2+ rendered lines,
+ *   explicit breaks included. A part positioned out of the line (a tooltip) is not a line; a heading cell built of
+ *   stacked blocks (a date over its time) is judged block by block
  * - clipped / cut / offscreen: text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport's
  *   sides; an image, board or control cut by an overflow box or the viewport. Each axis is judged on its own: a box
  *   that scrolls on an axis cuts nothing on it (the reader scrolls), and past it the content counts where scrolling
  *   brings it
- * - sideways / page-wider: a scroller with sideways overflow, or a page wider than the viewport
+ * - sideways / page-wider: a scroller with sideways overflow (of text, an image or anything else), or a page wider
+ *   than the viewport
  * - row-uneven / grid-uneven: tiles of one kind (2+ in a grid, one column or several) of unequal height, in a row or
- *   across the grid. In one column, children that each hold a heading and running text are reading sections, not tiles.
+ *   across the grid, in one column as in several, whatever the tiles hold (a heading and a paragraph included)
  * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text
  * - part-uneven: a tile part shown on some tiles of the grid but not others
  * - page-empty: an empty horizontal band on the page taller than RULE_LIMITS.pageBandPx
@@ -117,6 +120,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     }
     return bands.length;
   };
+  /** Taken out of the line by position (a tooltip, a badge pinned to a corner): not part of its item's line. */
+  const outOfFlow = (e: Element) => /absolute|fixed/.test(style(e).position);
   const inline = (d: string) => d === "inline" || d === "inline-block" || d === "inline-flex" || d === "contents";
   // A row of flex items is laid out as one line whether or not it may wrap: wrapping it is the defect judged.
   const rowFlex = (cs: CSSStyleDeclaration) => cs.display.includes("flex") && cs.flexDirection.startsWith("row");
@@ -131,41 +136,55 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     // A group of links or buttons allowed to wrap is a set of controls, not a line of text.
     if (cs.flexWrap !== "nowrap" && [...el.children].some(c => c.matches("a, button"))) return false;
     if (!top && !inline(cs.display) && !(el.parentElement && rowFlex(style(el.parentElement)))) return false;
+    // A heading cell built of two or more stacked blocks (a date over its time) is that many lines by design: each block
+    // is then judged as a one-line item of its own.
+    if (heading && [...el.children].filter(c => style(c).display === "block" && !outOfFlow(c) && c.textContent?.trim()).length >= 2) return false;
     for (const c of el.children) {
       if (!c.textContent?.trim() && !c.querySelector("img, svg")) continue;
       const d = style(c).display;
-      if (d === "none") continue;
+      if (d === "none" || outOfFlow(c)) continue;
       // A block inside a heading cell (a sort button, a wrapper) is still the heading's one line.
       if (!rowFlex(cs) && !inline(d) && !(heading && d === "block")) return false;
       if (!lineable(c, heading && d === "block")) return false;
     }
     return true;
   };
-  // Running text, which may wrap. Labels and table headings are not here: they are one-line items.
+  // Running text, which may wrap. Labels, buttons and table headings are not here: they are one-line items.
   const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
   const all = [...document.body.querySelectorAll("*")].filter(el => !skipped(el));
 
-  // One-line items: the outermost line-able blocks with text, and every label and table heading wherever it stands
-  // (inside a paragraph too): those are one line by what they are, not by where they are.
-  const ONE_LINE = "label, th";
+  // One-line items: the outermost line-able blocks with text, and every label, button and table heading wherever it
+  // stands (inside a paragraph too) and however long its text: those are one line by what they are, not by where they
+  // are or how much they say.
+  const ONE_LINE = "label, th, button, [role=button]";
   const items: Element[] = [];
   const isItem = new Set<Element>();
+  const withinLine = (el: Element) => {
+    for (let e: Element | null = el; e; e = e.parentElement) {
+      if (e !== el && isItem.has(e)) return true;
+      if (outOfFlow(e)) return false;
+    }
+    return false;
+  };
   for (const el of all) {
     const cs = style(el);
     const oneLine = el.matches(ONE_LINE);
     if ((cs.display === "inline" && !oneLine) || cs.display === "contents" || !el.textContent?.trim() || !shown(el)) continue;
     if (!lineable(el, true)) continue;
-    if (!oneLine && [...ancestors(el)].some(a => isItem.has(a))) continue;
+    // Inside an item it is part of that item's line, unless positioned out of it (a panel laid over a line).
+    if (!oneLine && withinLine(el)) continue;
     isItem.add(el);
     items.push(el);
   }
   for (const el of items) {
-    const rects = textRects(el).map(t => t.r);
-    for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0) rects.push(r); }
+    // Only what stands in the item's line: a part positioned out of it (a tooltip shown above a badge) is not a line.
+    const inLine = (n: Element) => { for (let e: Element | null = n; e && e !== el; e = e.parentElement) if (outOfFlow(e)) return false; return true; };
+    const rects = textRects(el).filter(t => inLine(t.el)).map(t => t.r);
+    for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && inLine(m)) rects.push(r); }
     // Rendered lines, an explicit <br> included: a one-line item broken by hand is still broken.
     const lines = lineCount(rects);
     const words = text(el);
-    const prose = el.matches(ONE_LINE) ? words.length >= 80 : el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80;
+    const prose = !el.matches(ONE_LINE) && (el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80);
     if (lines > 1 && !prose) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
@@ -266,7 +285,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   }
   for (const el of all) {
     const cs = style(el);
-    if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1 && el.textContent?.trim() && shown(el)) {
+    if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1 && shown(el)) {
       fail({ rule: "sideways", element: name(el), text: text(el), measure: `${el.scrollWidth} px wide in ${el.clientWidth} px`, extent: el.scrollWidth - el.clientWidth, box: box(el.getBoundingClientRect()) }, el);
     }
   }
@@ -296,9 +315,6 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const rects = (cards as Element[]).map(c => c.getBoundingClientRect());
     const rows = new Map<number, number[]>();
     rects.forEach((r, i) => { const top = Math.round(r.top); rows.set(top, [...(rows.get(top) ?? []), i]); });
-    // In one column, children that each hold a heading and running text are a page's reading sections, not tiles.
-    const section = (c: Element) => c.querySelector("h1, h2, h3, h4, h5, h6") !== null && c.querySelector("p") !== null;
-    if (![...rows.values()].some(row => row.length >= 2) && (cards as Element[]).every(section)) continue;
     grids++;
     tiles += cards.length;
     const where = name(el);

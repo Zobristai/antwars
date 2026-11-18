@@ -44,3 +44,19 @@ it("never scrolls a box that clips to bring a finding into view", async () => {
   expect(await page.evaluate(() => document.getElementById("clip")!.scrollTop)).toBe(0);
   await page.close();
 });
+
+it("renders every finding in view, however many positions they take", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+  const labels = Array.from({ length: 28 }, (_, i) => `<label style="display:block;width:60px;margin-bottom:900px">Rated matches ${i}</label>`).join("");
+  await page.setContent(`<body style="margin:0;font:16px/20px monospace">${labels}</body>`);
+  // The wrapped labels only (the empty bands between them are findings too).
+  const marks = (await marked(page)).filter(m => m.label === "wrap");
+  expect(marks.length).toBe(28);
+  const shot = await shoot(page, marks, "long", out);
+  expect(shot.images.length).toBeGreaterThan(24);
+  expect(shot.inView.every(Boolean)).toBe(true);
+  // The last label is on its own render, not the first.
+  expect(shot.shownIn[27]).not.toBe(shot.images[0]);
+  expect(new Set(shot.shownIn).size).toBe(28);
+  await page.close();
+});

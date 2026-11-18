@@ -40,7 +40,12 @@ export const HUD_PLAY_MS = 10_000;
  * itself too slow in a software renderer and reloads as 2D. The replay also loads with capture=1 (as web/capture
  * does), so its board draws only when the check steps it.
  */
-export interface Surface { id: string; url: string; hud: boolean; what: string }
+export interface Surface {
+  id: string; url: string; hud: boolean; what: string;
+  /** Fixtures this surface alone answers with (a file beside this one), over the shared ones; the page's clock is then
+   * fixed at the snapshot's time, so the times it derives from them are the same on every run. */
+  fixtures?: string;
+}
 
 /**
  * The public Free-for-all recording the replay surface plays, so the four-colony HUD (the Score Band) is rendered:
@@ -53,6 +58,7 @@ export const SURFACES: readonly Surface[] = [
   // Not capture=1: on Watch that also changes what the page shows with no live match.
   { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match)" },
   { id: "matches", url: "/?page=matches", hud: false, what: "the Matches page (all recordings)" },
+  { id: "waiting", url: "/?page=matches", hud: false, what: "the Matches page with agents waiting and matches live (fixture: Waiting and Live now rows)", fixtures: "waiting-fixture.json" },
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
@@ -130,17 +136,20 @@ export interface Mark { box: Box; anchor: NonNullable<Finding["anchor"]>; label:
 /**
  * The marked renders of the layout exactly as judged. The viewport never changes size: the first render is the
  * surface as it opens; each further one scrolls the first finding not yet shown into view (scrolling moves the
- * judged layout, it does not lay it out again) and outlines every finding then in view. Returns the renders saved
- * and, for each mark, the render that shows it.
+ * judged layout, it does not lay it out again) and outlines every finding then in view. There is no limit on the
+ * renders: every finding is rendered in view, however many positions that takes. Returns the renders saved and, for
+ * each mark, the render that shows it, and whether it is in view there: a finding no scrolling can bring into view
+ * (past the edge of a fixed HUD) is reported with the render where scrolling stopped, said to be outside it.
  */
-export async function shoot(page: Page, marks: Mark[], base: string, out: string): Promise<{ images: string[]; shownIn: string[]; marksMoved: string | null; clipScrolled: string | null }> {
+export async function shoot(page: Page, marks: Mark[], base: string, out: string): Promise<{ images: string[]; shownIn: string[]; inView: boolean[]; marksMoved: string | null; clipScrolled: string | null }> {
   const images: string[] = [];
   let marksMoved: string | null = null;
   let clipScrolled: string | null = null;
   const judgedClips = await clipOffsets(page);
   const shownIn: string[] = Array.from({ length: marks.length }, () => "");
-  const MAX_RENDERS = 24;
-  for (let target = -1; images.length < MAX_RENDERS; ) {
+  const seenInView: boolean[] = marks.map(() => false);
+  // Each pass after the first renders the first finding not yet shown, so this ends after at most one pass per finding.
+  for (let target = -1; ; ) {
     if (target >= 0) {
       // Bring the finding into view the way a reader can: by scrolling the boxes that scroll (and the page), never a box
       // that clips (overflow hidden or clip), whose cut is the finding. scrollIntoView would scroll those too.
@@ -193,16 +202,15 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
     const offsets = await clipOffsets(page);
     if (offsets !== judgedClips) clipScrolled ??= `judged at [${judgedClips || "none scrolled"}], rendered at [${offsets || "none scrolled"}]`;
     images.push(image);
-    inView.forEach((v, i) => { if (v && !shownIn[i]) shownIn[i] = image; });
+    inView.forEach((v, i) => { if (v && !shownIn[i]) { shownIn[i] = image; seenInView[i] = true; } });
     // A finding that scrolling cannot bring into view (off the screen of a HUD) is shown where it was tried.
     if (target >= 0 && !shownIn[target]) shownIn[target] = image;
     target = shownIn.findIndex(s => !s);
     if (target < 0) break;
   }
-  for (let i = 0; i < shownIn.length; i++) if (!shownIn[i]) shownIn[i] = images[0]!;
   await page.evaluate(() => document.querySelector("[data-render-check-marks]")?.remove());
   await scrollHome(page);
-  return { images, shownIn, marksMoved, clipScrolled };
+  return { images, shownIn, inView: seenInView, marksMoved, clipScrolled };
 }
 
 /** The findings that must be identical on the layout saved and the layout judged. */
@@ -216,6 +224,8 @@ interface Options {
 async function renderAll(o: Options): Promise<Render[]> {
   const snapshot = await readSnapshot().catch(() => ({ recordedFrom: "https://antwars.ai", recordedAt: new Date().toISOString(), responses: {} }));
   const fixtures = await readFixtures([join(HERE, "fixtures.json"), ...o.fixtureFiles]);
+  const surfaceFixtures = new Map(await Promise.all(o.surfaces.filter(s => s.fixtures)
+    .map(async s => [s.id, { ...fixtures, ...await readFixtures([join(HERE, s.fixtures!)]) }] as const)));
   const manifest = JSON.parse(await readFile(join(o.dist, ".vite/manifest.json"), "utf8"));
   const rulesPage = () => renderRules(newMatchConfig(PUBLIC_CONFIG), { undrawn: true, assets: rulesAssets(manifest) });
   const held = await readHeld(o.heldFile).catch(() => ({ note: "", held: [] }));
@@ -229,7 +239,8 @@ async function renderAll(o: Options): Promise<Render[]> {
       browser = await chromium.launch({ executablePath: o.chrome, args: CHROMIUM_FLAGS, env: { ...process.env, FONTCONFIG_FILE: conf } });
       for (const width of WIDTHS) for (const surface of o.surfaces) {
         const context = await browser.newContext({ ...viewport(width), timezoneId: "UTC", locale: "en-GB", reducedMotion: "reduce" });
-        const served = await serveSite(context, { dist: o.dist, snapshot, fixtures, rulesPage, record: o.record });
+        if (surface.fixtures) await context.clock.setFixedTime(new Date(snapshot.recordedAt));
+        const served = await serveSite(context, { dist: o.dist, snapshot, fixtures: surfaceFixtures.get(surface.id) ?? fixtures, rulesPage, record: o.record });
         const page = await context.newPage();
         if (surface.hud) {
           await page.addInitScript(() => {
@@ -246,6 +257,7 @@ async function renderAll(o: Options): Promise<Render[]> {
         let fonts: Record<string, number> = {};
         let images: string[] = [];
         let failureImages: string[] = [];
+        let failureInView: boolean[] = [];
         try {
           await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
           await settle(page, surface);
@@ -264,7 +276,9 @@ async function renderAll(o: Options): Promise<Render[]> {
           if (shot.marksMoved) invalid.push(`the marks changed the page's size: ${shot.marksMoved}`);
           if (shot.clipScrolled) invalid.push(`a box that clips was scrolled while its renders were saved: ${shot.clipScrolled}`);
           failureImages = judged.failures.map(() => images[0]!);
-          marked.forEach((m, k) => { failureImages[m.i] = shot.shownIn[k]!; });
+          // A finding with no box (a page wider than the viewport) is about the whole page: its render is the first.
+          failureInView = judged.failures.map(() => true);
+          marked.forEach((m, k) => { failureImages[m.i] = shot.shownIn[k]!; failureInView[m.i] = shot.inView[k]!; });
           // The renders show the layout judged: judged again after they are saved, it finds the same.
           if (fingerprint(await page.evaluate(judgePage, RULE_LIMITS)) !== fingerprint(judged)) {
             invalid.push("the layout changed while its renders were saved");
@@ -276,7 +290,7 @@ async function renderAll(o: Options): Promise<Render[]> {
           await page.screenshot({ path: join(o.out, images[0]!) }).catch(() => undefined);
         }
         if (served.unanswered.length) invalid.push(`requests outside the snapshot and fixtures: ${[...new Set(served.unanswered)].join(", ")}`);
-        renders.push({ surface: surface.id, url: surface.url, width, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, fonts, invalid, pageErrors, fixtures: [...served.fixturesUsed] });
+        renders.push({ surface: surface.id, url: surface.url, width, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, pageErrors, fixtures: [...served.fixturesUsed] });
         console.log(`${surface.id} ${width} ${typeface}: ${judged.failures.length} failures, ${judged.tight.length} tight, ${judged.counted.items} items, ${judged.counted.grids} grids${invalid.length ? `; INVALID: ${invalid.join("; ")}` : ""}`);
         await context.close();
       }

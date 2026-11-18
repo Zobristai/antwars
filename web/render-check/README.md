@@ -9,13 +9,14 @@ npm run render-check                     # writes out/render-check/report.md, re
 
 ## What it renders
 
-Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liberation Sans**: 24 renders.
+Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liberation Sans**: 28 renders.
 
 | Surface | Page |
 |---|---|
 | landing | `/` |
 | watch | `/?watch=1`, with no live match |
 | matches | `/?page=matches` |
+| waiting | `/?page=matches` with agents waiting and matches live (`waiting-fixture.json`), so the Waiting and Live now tables have rows; the page's clock is fixed at the snapshot's time, so the times it shows are the same on every run |
 | leaderboard | `/?page=leaderboard` |
 | rules | `/rules`, as the server renders it before a map is drawn |
 | replay-free-for-all | `/?replay=<id>&capture=1` of a public Free-for-all recording: the four-colony match HUD over the 3D board |
@@ -37,10 +38,10 @@ Any other request fails the render. To refresh the data: `npm run render-check -
 
 A render fails on:
 
-- **wrap**: a one-line item (a block holding only inline content: a name, a button; and every label and table heading, wherever it stands) laid out on two or more rendered lines, an explicit `<br>` included. Prose and headings may wrap.
+- **wrap**: a one-line item (a block holding only inline content, such as a name; and every label, button and table heading, wherever it stands and however long its text) laid out on two or more rendered lines, an explicit `<br>` included. A part positioned out of the line (a tooltip over a badge) is not one of its lines. A table heading built of two or more stacked blocks (a date over its time) is judged block by block, each as one line. Prose and headings may wrap.
 - **clipped / cut / offscreen**: text cut by an overflow box (its own or an ancestor's), by an ellipsis, or by the viewport's sides; an image, board or control cut by an overflow box or the viewport (an image cropped by design with `object-fit` stays inside its box and is not cut). Each axis is judged on its own. A box that scrolls on an axis cuts nothing on it, because the reader can scroll to the content; past that box the content is judged where scrolling brings it, so a scroller cut by its own container still fails. Visually hidden screen-reader text is not judged.
-- **sideways / page-wider**: a box that scrolls sideways, or a page wider than the viewport.
-- **row-uneven / grid-uneven**: tiles of one kind, two or more in a grid, of unequal height in a row or across the grid. A grid laid out in one column (as at phone width) is judged too, however tall its tiles; only a column whose children each hold a heading and running text is a page's reading sections, not tiles.
+- **sideways / page-wider**: a box that scrolls sideways, whatever overflows it (text, an image, a board), or a page wider than the viewport.
+- **row-uneven / grid-uneven**: tiles of one kind, two or more in a grid, of unequal height in a row or across the grid. A grid laid out in one column (as at phone width) is judged too, however tall its tiles and whatever they hold. A tile is a child with a drawn edge or background (or wrapping one such box); children with neither, such as a page's plain reading sections, are not tiles.
 - **tile-empty**: an empty band inside such a tile taller than 1.5 lines of its text.
 - **part-uneven**: a tile part (an element with text) shown on some tiles of a grid but not others.
 - **page-empty**: an empty band between parts of the page taller than 48 px, measured with every box that scrolls unrolled (its content counts where it lies, as the reader scrolls to it). The largest designed gap on main is 45 px; the band the Top matches review rejected measured 60 px.
@@ -49,7 +50,7 @@ A one-line item with under 8% of its width to spare is listed as a **tight** fit
 
 Each failure names its surface, width, typeface, rule, element (class path and text), measure and extent (lines for wrap, tiles missing the part for part-uneven, otherwise px), and the render that shows it outlined (red for new, amber for held).
 
-The renders (`renders/`) are taken of the layout exactly as judged: the viewport never changes size. The first render is the surface as it opens; each further one brings the first finding not yet shown into view by scrolling the boxes that scroll and the page, never a box that clips (scrolling moves the layout, it does not lay it out again). The marks are drawn in a layer fixed to the viewport and clipped to it, so they add nothing to the page's size. A render is invalid, and the check fails, if the marks change the page's size, if a box that clips is not where it was judged, or if the surface judged again after its renders are saved finds anything different. In CI the failures are annotations on the pull request and the report is the job summary; the renders are the job's `render-check` artifact.
+The renders (`renders/`) are taken of the layout exactly as judged: the viewport never changes size. The first render is the surface as it opens; each further one, with no limit on their number, brings the first finding not yet shown into view by scrolling the boxes that scroll and the page, never a box that clips (scrolling moves the layout, it does not lay it out again). Every finding is linked to a render that shows it; a finding no scrolling can bring into view (past the edge of a fixed HUD) is linked to the render where scrolling stopped and is said in the report to be outside it. The marks are drawn in a layer fixed to the viewport and clipped to it, so they add nothing to the page's size. A render is invalid, and the check fails, if the marks change the page's size, if a box that clips is not where it was judged, or if the surface judged again after its renders are saved finds anything different. In CI the failures are annotations on the pull request and the report is the job summary; the renders are the job's `render-check` artifact.
 
 Wording, case and whether a part belongs on a tile at all are not measured: they stay with the reviewer.
 

@@ -38,6 +38,24 @@ describe("render check rules", () => {
     expect(rules(await judged(table(360), 390))).not.toContain("wrap");
   });
 
+  it("fails a button inside a paragraph, or a long label, that wraps, whatever its length or place", async () => {
+    expect(rules(await judged('<p>Then <button style="width:80px">Bring your agent</button> to play.</p>', 390))).toContain("wrap");
+    expect(rules(await judged('<p>Then <button>Go</button> to play.</p>', 390))).not.toContain("wrap");
+    const long = "Show only the rated matches of the agents you follow, newest first, with their levels";
+    expect(rules(await judged(`<label style="display:block;width:200px">${long}</label>`, 390))).toContain("wrap");
+    expect(rules(await judged(`<button style="width:200px">${long}</button>`, 390))).toContain("wrap");
+  });
+
+  it("does not count a tooltip positioned out of a badge's line, and judges a stacked heading block by block", async () => {
+    const tip = (open: boolean) => `<p>Rating <button style="position:relative">1995<span style="position:absolute;left:0;bottom:120%;white-space:nowrap${open ? "" : ";width:1px;height:1px;overflow:hidden;clip-path:inset(50%)"}"> ± 107</span></button></p>`;
+    expect(rules(await judged(tip(false), 390))).not.toContain("wrap");
+    expect(rules(await judged(`<div style="height:60px"></div>${tip(true)}`, 390))).not.toContain("wrap");
+    const start = (w: number) => `<table style="border-collapse:collapse"><tbody><tr><th style="width:${w}px;text-align:left"><span style="display:block">18 Nov 2026</span><span style="display:block">13:44 UTC</span></th><td>Ranked</td></tr></tbody></table>`;
+    expect(rules(await judged(start(140), 390))).not.toContain("wrap");
+    // Each stacked block is still one line: one broken onto two fails.
+    expect(rules(await judged(start(50), 390))).toContain("wrap");
+  });
+
   it("fails text cut by an overflow box or an ellipsis", async () => {
     const clipped = await judged('<div style="width:80px;overflow:hidden;white-space:nowrap"><span>A long colony name</span></div>');
     expect(rules(clipped).some(r => r === "clipped" || r === "cut")).toBe(true);
@@ -81,6 +99,10 @@ describe("render check rules", () => {
     expect(rules(await judged('<div style="margin-left:360px;white-space:nowrap">Leaderboard</div>'))).toEqual(expect.arrayContaining(["offscreen", "page-wider"]));
     expect(rules(await judged('<div style="width:200px;overflow-x:auto;white-space:nowrap">Watch Matches Leaderboard Rules Recordings</div>'))).toContain("sideways");
     expect(rules(await judged('<div style="width:380px;overflow-x:auto;white-space:nowrap">Watch Matches</div>'))).toEqual([]);
+    // An image alone overflowing a box that scrolls sideways.
+    const img = (w: number) => `<div style="width:80px;overflow-x:auto"><img style="display:block;width:${w}px;height:20px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>`;
+    expect(rules(await judged(img(160), 390))).toContain("sideways");
+    expect(rules(await judged(img(80), 390))).toEqual([]);
   });
 
   it("fails tiles of unequal height and an empty band inside a tile", async () => {
@@ -100,8 +122,11 @@ describe("render check rules", () => {
     // A card taller than the screen is still a card.
     const tall = (h: number) => `<li class="tile" style="height:${h}px"><canvas width="10" height="10" style="display:block;width:100%;height:100%"></canvas></li>`;
     expect(rules(await judged(`<ol class="grid" style="grid-template-columns:1fr">${tall(850)}${tall(50)}</ol>`, 390))).toContain("grid-uneven");
-    // Sections that each hold a heading and running text are a reading column, not tiles.
-    const section = (n: number) => `<section class="tile"><h2>Part</h2>${"<p>Running text of the rules page.</p>".repeat(n)}</section>`;
+    // Cards that each hold a heading and a paragraph are still cards.
+    const card = (h: number) => `<article class="tile" style="height:${h}px"><h3>Colony</h3><p>Running text.</p></article>`;
+    expect(rules(await judged(`<div class="grid" style="grid-template-columns:1fr">${card(80)}${card(110)}</div>`, 390))).toContain("grid-uneven");
+    // Plain reading sections, with no drawn edge or background, are not tiles.
+    const section = (n: number) => `<section><h2>Part</h2>${"<p>Running text of the rules page.</p>".repeat(n)}</section>`;
     expect(rules(await judged(`<div class="grid" style="grid-template-columns:1fr">${section(2)}${section(9)}</div>`, 390))).not.toContain("grid-uneven");
   });
 

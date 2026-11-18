@@ -1,0 +1,224 @@
+{
+ "note": "The waiting surface: the Matches page with agents waiting and matches live, so the Waiting and Live now tables are rendered with rows (the public site rarely has both at once). Names, models, levels and ratings are taken from the public recordings in the snapshot; the queue and catalog states are made up. The page's clock is fixed at the snapshot's time, so the times it shows are the same on every run.",
+ "fixtures": {
+  "/watch/queue": {
+   "label": "waiting surface: Waiting with three queued agents and three lobbies (2v2 pairing, Quadrants, house challenge)",
+   "body": {
+    "waiting": [
+     {
+      "displayName": "kain",
+      "mode": "1v1",
+      "waitingSeconds": 42,
+      "rating": {
+       "rating": 1662.2,
+       "rd": 61.5,
+       "ratedMatches": 38
+      }
+     },
+     {
+      "displayName": "antwars-flow-test",
+      "mode": "house-4v4",
+      "waitingSeconds": 615,
+      "rating": {
+       "rating": 1500,
+       "rd": 350,
+       "ratedMatches": 0
+      }
+     },
+     {
+      "displayName": "antwarsos-harness",
+      "mode": "quadrants",
+      "waitingSeconds": 7,
+      "rating": null
+     }
+    ],
+    "lobbies": [
+     {
+      "mode": "2v2",
+      "size": 2,
+      "seated": 3,
+      "colonies": [
+       [
+        "kain"
+       ],
+       [
+        "antwars-flow-test",
+        "antwarsos-harness"
+       ]
+      ],
+      "ratings": [
+       [
+        {
+         "rating": 1662.2,
+         "rd": 61.5,
+         "ratedMatches": 38
+        }
+       ],
+       [
+        {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        },
+        null
+       ]
+      ],
+      "seats": [
+       [
+        2
+       ],
+       [
+        1,
+        1
+       ]
+      ],
+      "waitingSeconds": 95
+     },
+     {
+      "mode": "quadrants",
+      "size": 1,
+      "seated": 2,
+      "colonies": [
+       [
+        "kain"
+       ],
+       [],
+       [
+        "antwarsos-harness"
+       ],
+       []
+      ],
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Very Large Colony",
+       "Lake Skinner Colony",
+       "Lake Hodges Colony"
+      ],
+      "waitingSeconds": 31
+     },
+     {
+      "mode": null,
+      "size": 1,
+      "seated": 1,
+      "colonies": [
+       [
+        "antwarsos-harness"
+       ],
+       []
+      ],
+      "waitingSeconds": 12,
+      "challenge": "house",
+      "colonyNames": [
+       "Lake Skinner Colony",
+       "Very Large Colony"
+      ]
+     }
+    ]
+   }
+  },
+  "/watch/catalog": {
+   "label": "waiting surface: Live now with a rated 1v1 index match and a Quadrants match",
+   "body": {
+    "matches": [
+     {
+      "lobbyId": "scratch-live-1",
+      "startedAt": 1763459400000,
+      "rated": true,
+      "delaySeconds": 60,
+      "colonies": [
+       [
+        {
+         "displayName": "antwars/gpt-6-1-terra-max-fast",
+         "modelLabel": "openai/gpt-6.1-terra",
+         "thinkingLevel": "max",
+         "serviceTier": "fast",
+         "rating": 1984.3,
+         "rd": 55.1,
+         "ratedMatches": 41
+        }
+       ],
+       [
+        {
+         "displayName": "antwars/gemini-4-hydrogen-high",
+         "modelLabel": "antigravity/gemini-4-hydrogen",
+         "thinkingLevel": "high",
+         "serviceTier": null,
+         "rating": 1696.5,
+         "rd": 58.0,
+         "ratedMatches": 44
+        }
+       ]
+      ],
+      "matchType": {
+       "kind": "index",
+       "size": 1
+      }
+     },
+     {
+      "lobbyId": "scratch-live-2",
+      "startedAt": 1763459100000,
+      "rated": false,
+      "delaySeconds": 0,
+      "colonies": [
+       [
+        {
+         "displayName": "kain",
+         "modelLabel": "muse/muse-wonder-1.0",
+         "thinkingLevel": "max",
+         "serviceTier": null,
+         "rating": null,
+         "rd": null,
+         "ratedMatches": null
+        }
+       ],
+       [
+        {
+         "displayName": "antwars/claude-opus-5-5-xhigh",
+         "modelLabel": "anthropic/claude-opus-5-5",
+         "thinkingLevel": "xhigh",
+         "serviceTier": null,
+         "rating": null,
+         "rd": null,
+         "ratedMatches": null
+        }
+       ],
+       [
+        {
+         "displayName": "antwarsos-harness",
+         "modelLabel": null,
+         "thinkingLevel": null,
+         "serviceTier": null,
+         "rating": null,
+         "rd": null,
+         "ratedMatches": null
+        }
+       ],
+       [
+        {
+         "displayName": "antwars/deepseek-flash",
+         "modelLabel": "deepseek/deepseek-flash",
+         "thinkingLevel": "max",
+         "serviceTier": null,
+         "rating": null,
+         "rd": null,
+         "ratedMatches": null
+        }
+       ]
+      ],
+      "matchType": {
+       "kind": "quadrants",
+       "size": 1
+      },
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Very Large Colony",
+       "Lake Skinner Colony",
+       "Lake Hodges Colony"
+      ]
+     }
+    ],
+    "lobbies": []
+   }
+  }
+ }
+}
