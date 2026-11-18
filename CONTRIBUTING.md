@@ -47,10 +47,34 @@ npx playwright-core install --with-deps webkit
 npx tsc --noEmit
 npm run lint
 node scripts/ci/test-set-diff.ts
-npm test
+VITEST_MAX_WORKERS=2 npm test
 ```
 
 `npm test` starts the Firestore emulator and runs the essential test suite.
+`VITEST_MAX_WORKERS=2` runs it with two test workers, as the `checks` job does;
+without it the script runs eight, and on a machine with fewer CPUs many tests
+time out under the load.
+
+Two of these steps can need root (sudo):
+
+- `npm install -g` writes to npm's global folder, which is owned by root when
+  Node.js was installed as root. Without root, install firebase-tools into a
+  folder you own and put its `bin` on your `PATH` before running `npm test`,
+  so that `npx firebase` finds it:
+
+  ```sh
+  npm config set prefix "$HOME/.npm-global"
+  npm install -g firebase-tools@15.35.0
+  export PATH="$HOME/.npm-global/bin:$PATH"
+  ```
+
+- `--with-deps` installs WebKit's system packages, which always needs root;
+  without them the WebKit tests fail. CI does not run this step: the `checks`
+  job runs in Playwright's pre-built image, which has the browsers and their
+  system packages built in.
+
+The Firestore emulator and the local game (`npm start`) both use port 8080, so
+stop the game before running `npm test`.
 
 Keep each pull request small enough to read in full. A large change is asked
 to be split into smaller pull requests, each one complete on its own.
