@@ -11,9 +11,11 @@ function mount(board: "2d" | "3d") {
   const port = dom({ wide: true });
   Object.assign(port.win.location, { href: `https://antwars.example/?board=${board}`, pathname: "/" });
   const host = port.doc.createElement("div") as unknown as ElementPort; port.body.append(host);
-  const actions = { select() {}, selectAgent() {}, pointOrder() {}, hover() {}, focusMark() {}, openSheet() {} } as unknown as HudActions;
+  let selectedAgent = -1;
+  const actions = { select() {}, selectAgent(index: number) { selectedAgent = index; }, pointOrder() {}, hover() {}, focusMark() {}, openSheet() {} } as unknown as HudActions;
   const hud = mountDeckHud({ doc: port.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
-  return { host, show: (frame: ReturnType<typeof scoreFrame>) => hud.update({ frame, board, connection: "live", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView) };
+  return { host, doc: port.doc, chosen: () => selectedAgent,
+    show: (frame: ReturnType<typeof scoreFrame> | null) => hud.update({ frame, board, connection: "live", selected: null, selectedAgent, mode: null, stalled: false } as HudView) };
 }
 
 describe("one Score Band for every match", () => {
@@ -56,6 +58,59 @@ describe("one Score Band for every match", () => {
     expect(players[0]!.byClass("d1-model")[0]!.title).toBe(model);
     expect(players[0]!.byClass("d1-team-player-name")[0]!.title).toBe(`${name} ${model}`);
   });
+  for (const board of ["2d", "3d"] as const) {
+    it(`restores cumulative hatched totals only inside expanded colony details in ${board}`, () => {
+      const { host, show } = mount(board), frame = scoreFrame(2);
+      frame.ensure(2); frame.count = 2; frame.colony[0] = 0; frame.colony[1] = 1;
+      frame.board!.deaths = [1248, 60]; frame.board!.hatched = [2, 3];
+      show(frame);
+      const details = host.byClass("sb-detail-stat");
+      expect(details.filter(visible)).toHaveLength(0);
+      const button = host.byClass("sb-history")[0]!; button.click();
+      expect(details.filter(visible)).toHaveLength(1);
+      expect(details[0]!.textContent).toBe("Hatched1,249"); // includes starting ants, as the former drawer did
+      expect(host.byClass("sb-columns")[0]!.textContent).not.toContain("Hatched");
+      frame.board!.deaths = [1250, 60]; frame.tick++;
+      show(frame); expect(details[0]!.textContent).toBe("Hatched1,251");
+      button.click(); expect(details.filter(visible)).toHaveLength(0);
+      show(null); expect(details[0]!.textContent).toBe("Hatched—");
+      show(scoreFrame(4)); expect(host.byClass("d1-team").filter(visible)).toHaveLength(4);
+    });
+    it(`opens every grouped seat's own thoughts, marks and orders in ${board} without ungrouping names`, () => {
+      const { host, doc, show, chosen } = mount(board), frame = scoreFrame(2, 8);
+      frame.board!.agents.forEach((a, index) => {
+        a.identity = { displayName: `player-${index % 2} #${Math.floor(index / 2) + 1}`, elo: 1500 };
+        a.order = index % 2 ? "hold" : "forage";
+        frame.chat.push({ kind: "intent", agent: index, colony: a.colony, tick: 5900, text: `seat-thought-${index}`,
+          words: [], markId: -1, tileX: 0, tileY: 0, laidTick: -1 },
+          { kind: "mark", agent: index, colony: a.colony, tick: 5910, text: "", words: [], verb: "need", count: index + 7,
+            markId: index, tileX: index, tileY: 1, laidTick: 5910 });
+      });
+      show(frame);
+      expect(host.byClass("d1-agent").filter(visible)).toHaveLength(0);
+      expect(host.byClass("d1-team-player").filter(visible)).toHaveLength(2);
+      const controls = host.byClass("d1-member").filter(visible);
+      expect(controls).toHaveLength(8);
+      for (const control of controls) {
+        expect(control.tag).toBe("button"); expect(control.type).toBe("button");
+        expect(control.getAttribute("aria-label")).toContain("badge");
+        expect(control.getAttribute("aria-controls")).toBe("score-band-selected");
+        control.click(); show(frame);
+        const index = chosen(), selected = host.byClass("d1-selected")[0]!;
+        expect(visible(selected)).toBe(true);
+        expect(doc.activeElement).toBe(selected);
+        expect(control.getAttribute("aria-expanded")).toBe("true");
+        expect(selected.textContent).toContain(`seat-thought-${index}`);
+        expect(selected.textContent).toContain(`Squad order: ${index % 2 ? "hold" : "forage"}`);
+        expect(selected.byClass("d1-history-line").some(line => line.getAttribute("aria-label")?.includes("Mark,"))).toBe(true);
+        expect(selected.textContent).not.toContain(`seat-thought-${(index + 1) % 8}`);
+        selected.fire("keydown", { key: "Escape", preventDefault() {} }); show(frame);
+        expect(chosen()).toBe(-1); expect(doc.activeElement).toBe(control);
+        expect(control.getAttribute("aria-expanded")).toBe("false");
+        expect(host.byClass("d1-agent").filter(visible)).toHaveLength(0);
+      }
+    });
+  }
   it("routes both actual board hosts to the shared component", () => {
     const source = readFileSync(new URL("../../../web/src/overlays.ts", import.meta.url), "utf8");
     expect(source).toContain("this.hud = mountDeckHud({");

@@ -9,7 +9,7 @@ import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type Str
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
 import {
-  MODEL_LABEL, cardSubject, colonyStats, hatchIntervalTicks, headline, livingAnts, matchTime, nextAntCells, nextAntState, nextHatchCaste,
+  MODEL_LABEL, cardSubject, colonyCardLines, colonyLedger, colonyStats, hatchIntervalTicks, headline, livingAnts, matchTime, nextAntCells, nextAntState, nextHatchCaste,
   orderTarget, orderText, queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText, type AntInfo,
 } from "../../overlays.ts";
 import { OPEN_COPY, PAGE_COPY, SCORE_COPY, clockTime, decisive, resultHow, significant } from "../../story.ts";
@@ -871,6 +871,13 @@ export function roster(frame: Frame): Roster {
     groups.push({ colony, heading: `${colonyNamesOf(b.setup)[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
   }
   return { groups, count: groups.reduce((n, g) => n + g.rows.length, 0) };
+}
+
+/** The former colony drawer's cumulative total, including the starting cohort, at the displayed frame. */
+export function hatchedTotals(frame: Frame | null): readonly string[] {
+  if (!frame?.board) return [];
+  return colonyStats(frame).map(stats =>
+    colonyCardLines(colonyLedger(stats, livingAnts(stats), frame.board!.hatch), stats, "").hatched);
 }
 
 // ---------------------------------------------------------------- the Selected card

@@ -11,10 +11,11 @@ import { crownIcon, markIcon, orderIcon } from "../icons.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
 import { keep } from "../format.ts";
 import { OFFER_TEXT } from "../../replay.ts";
+import { SCORE_COPY } from "../../story.ts";
 import { D1_ICON } from "./icons.ts";
 import { mountResultModal } from "./result-modal.ts";
 import {
-  D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyRows, colonyName, colonyNote, history as gameHistory, roster, selected,
+  D1_COPY, NOTHING, PAGE_WORDS, arrival as arrivalOf, arrivalRows, colonyRows, colonyName, colonyNote, history as gameHistory, hatchedTotals, roster, selected,
   type Arrival, type Colony, type Group, type HistoryGlyph, type HistoryRow, type Member, type Player, type Row, type Selected,
 } from "./model.ts";
 
@@ -148,7 +149,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     line.setAttribute("aria-label", `${colonyName(colony)} ${D1_COPY.history.toLowerCase()}`);
     const entries = h(doc, "ol", "d1-tl");
     const none = h(doc, "li", "d1-tl-entry d1-tl-none", D1_COPY.timelineNone);
-    line.append(h(doc, "h3", "d1-kicker", D1_COPY.history), entries);
+    const ledger = h(doc, "dl", "sb-detail-stat"), hatched = h(doc, "dd", "d1-mv");
+    ledger.append(h(doc, "dt", "d1-ml", SCORE_COPY.hatched), hatched);
+    line.append(ledger, h(doc, "h3", "d1-kicker", D1_COPY.history), entries);
     const out = h(doc, "span", "d1-tag d1-team-out", D1_COPY.eliminated);
     setHidden(out, true);
     if (colonies.length > 2) head.append(out);
@@ -177,7 +180,8 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // Each row's node by its key, written again only when what it shows changes.
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
     return { section, name, out, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
-      playerRd: "", playerKey: "", rows, line, entries, none, lineNodes, historyButton };
+      playerRd: "", playerKey: "", rows, line, entries, none, lineNodes, historyButton, hatched,
+      memberButtons: new Map<number, HTMLButtonElement>() };
   });
 
   for (const team of teamNodes) {
@@ -265,24 +269,41 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     setAttr(node.button, "aria-label", row.label);
   };
 
-  /**
-   * A colony's member icons: each a labelled image, never a stop for the keyboard, whose
-   * tip a pointer shows while over it and a tap shows until the next tap elsewhere.
-   */
-  const writeMembers = (team: (typeof teamNodes)[number], members: readonly Member[]) => {
-    const keyNow = members.map(m => `${m.badge}|${m.lines.join("\n")}|${m.label}`).join("~");
-    if (keyNow === team.membersKey) return;
-    team.membersKey = keyNow;
-    if (tipFor && team.members.contains(tipFor)) hideTip();
-    team.members.replaceChildren(...members.map(m => {
-      const icon = h(doc, "span", "d1-member");
-      icon.setAttribute("role", "img");
-      icon.setAttribute("aria-label", m.label);
-      icon.innerHTML = m.badge;
-      for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, m.lines));
-      icon.addEventListener("pointerleave", leaveTip);
-      return icon;
-    }));
+  /** Grouped identities retain one line; their existing badges open each seat's Selected card. */
+  const writeMembers = (team: (typeof teamNodes)[number], members: readonly Member[], grouped: boolean) => {
+    const keyNow = `${grouped}|${members.map(m => `${m.index}|${m.badge}|${m.lines.join("\n")}|${m.label}`).join("~")}`;
+    if (keyNow !== team.membersKey) {
+      team.membersKey = keyNow;
+      if (tipFor && team.members.contains(tipFor)) hideTip();
+      team.memberButtons.clear();
+      team.members.replaceChildren(...members.map(m => {
+        const icon = h(doc, grouped ? "button" : "span", "d1-member");
+        icon.setAttribute("aria-label", m.label);
+        icon.innerHTML = m.badge;
+        if (grouped) {
+          const button = icon as HTMLButtonElement;
+          button.type = "button";
+          button.setAttribute("aria-controls", "score-band-selected");
+          team.memberButtons.set(m.index, button);
+          const point = () => { actions.hover(m.index); light(m.index); showTip(button, m.lines); };
+          const leave = () => { actions.hover(selectedAgent); light(targetFor); hideTip(); };
+          button.addEventListener("pointerenter", point);
+          button.addEventListener("focus", point);
+          button.addEventListener("pointerleave", leave);
+          button.addEventListener("blur", leave);
+          button.addEventListener("click", () => {
+            hideTip(); focusCard = true; actions.select(null); actions.selectAgent(m.index);
+          });
+        } else {
+          icon.setAttribute("role", "img");
+          for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, m.lines));
+          icon.addEventListener("pointerleave", leaveTip);
+        }
+        return icon;
+      }));
+    }
+    // Selection does not replace the focused button or collapse a retained tooltip's owner.
+    for (const [index, button] of team.memberButtons) setAttr(button, "aria-expanded", String(index === selectedAgent));
   };
 
   /** The one player's line in its colony's head, in the Matches order; none hides it. */
@@ -320,7 +341,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       const g = groups.find(group => group.colony === colony);
       const team = teamNodes[colony]!;
       const n = g?.rows.length ?? 0;
-      writeMembers(team, g?.members ?? []);
+      writeMembers(team, g?.members ?? [], g?.player !== null && g?.player !== undefined);
       writePlayer(team, g?.player ?? null);
       setHidden(team.rows, n === 0);
       if (!g) { team.rows.replaceChildren(); continue; }
@@ -402,6 +423,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   // ---------------------------------------------------------------- Selected: the card for whatever was picked
   const selectedEl = h(doc, "section", "d1-selected");
+  selectedEl.id = "score-band-selected";
   selectedEl.setAttribute("aria-label", D1_COPY.selected);
   selectedEl.tabIndex = -1;
   selectedEl.hidden = true;
@@ -458,7 +480,10 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // The card goes at once, so the focus never stays in it: back to the row it came from, else to its colony.
     place(NOTHING);
     const row = rowNodes.get(was);
-    if (row && row.item.isConnected) row.button.focus(); else home?.focus();
+    const member = teamNodes.flatMap(team => [...team.memberButtons]).find(([index]) => index === was)?.[1];
+    if (member?.isConnected) member.focus();
+    else if (row && row.item.isConnected) row.button.focus();
+    else home?.focus();
   };
   listen(close, "click", closeSelection);
   listen(antClose, "click", closeSelection);
@@ -601,6 +626,8 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         setHidden(teamNodes[c].out, !status?.rows[c]?.eliminated);
       }
       selectedAgent = view.selectedAgent;
+      const hatched = hatchedTotals(frame);
+      for (const colony of colonies) setText(teamNodes[colony]!.hatched, hatched[colony] ?? "—");
       const none = !frame || !b || b.agents.length === 0;
       // With no agents, or no match, the footer holds the recording's offer, once; while connecting, nothing yet.
       setHidden(offer, !none || connecting);

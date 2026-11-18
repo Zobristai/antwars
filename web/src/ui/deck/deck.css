@@ -143,7 +143,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* One icon per member, centred on the name; its tip shows the member's handle, model and Elo. */
 .d1-team-members { flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; align-self: center; gap: 4px; min-width: 0; }
 .d1-member { display: inline-grid; place-items: center; padding: 2px; margin: -2px; border-radius: 5px; line-height: 0; cursor: help; }
+button.d1-member { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; line-height: 0; cursor: pointer; }
 .d1-member:hover { background: var(--aw-raise); }
+button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 /* The one player's line, in the Matches order: its name and model give way, ending in an ellipsis; its badges, rating,
    seat count and result never do. */
 .d1-team-player { flex: 0 1 auto; display: inline-flex; align-items: baseline; gap: 0 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -703,6 +705,8 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .sb-history:hover { background: var(--aw-raise-hover); }
 .score-band .d1-timeline, .score-band .d1-selected { grid-column: 1 / -1; grid-row: 2; padding: 12px 0 0; max-height: none; overflow: visible; }
 .score-band .d1-tl { max-height: 252px; }
+.sb-detail-stat { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; }
+.sb-detail-stat > dd { margin: 0; }
 .score-band .d1-ml { overflow: visible; text-overflow: clip; }
 .score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) var(--d1-lane); }
 .sb-metadata { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px 4px; background: var(--aw-bg); z-index: 1; color: var(--aw-ink-2); font-size: 12px; pointer-events: auto; }
