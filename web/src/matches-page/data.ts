@@ -111,6 +111,10 @@ export interface MatchesDataOptions {
    * data (the landing page) make no queue request. */
   readonly waiting?: boolean;
 }
+/** Rows one Recordings load aims for: a full server page. */
+const FILL_ROWS = 20;
+/** Further requests one Recordings load may make to reach FILL_ROWS. */
+const MAX_FOLLOWS = 4;
 export function createMatchesData(request: typeof fetch, publish: (view: MatchesView) => void, options: MatchesDataOptions = {}) {
   let view: MatchesView = { waiting: { status: "loading", rows: [] }, live: { status: "loading", rows: [] }, recordings: { status: "loading", rows: [] }, next: null };
   const abort = new AbortController();
@@ -122,20 +126,31 @@ export function createMatchesData(request: typeof fetch, publish: (view: Matches
     if (!response.ok) throw new Error("Matches unavailable");
     return response.json() as Promise<unknown>;
   };
+  /**
+   * One load of Recordings: a refresh (reset) or Load more. The server may return a short or empty page with a continuation
+   * (it reads a bounded number of stored pages per request, leaving out unlisted recordings), so a load that has added fewer
+   * than FILL_ROWS rows follows the continuation, at most MAX_FOLLOWS more requests, each committed as it arrives.
+   */
   async function history(reset: boolean) {
     if (historyBusy || abort.signal.aborted || (!reset && view.next === null)) return;
     historyBusy = true;
-    const token = reset ? null : view.next;
-    view = { ...view, recordings: { status: "loading", rows: view.recordings.rows } }; emit();
+    let token = reset ? null : view.next, added = 0;
     try {
-      const page = historyPage.parse(await json(`/matches${token ? `?pageToken=${encodeURIComponent(token)}` : ""}`));
-      if (abort.signal.aborted) return;
-      if (reset) seen.clear();
-      if (page.nextPageToken !== null && (page.nextPageToken === token || seen.has(page.nextPageToken))) throw new Error("Repeated continuation");
-      if (token) seen.add(token);
-      const rows = new Map((reset ? [] : view.recordings.rows).map(row => [row.id, row]));
-      for (const row of page.matches) rows.set(row.id, row);
-      view = { ...view, recordings: { status: "ready", rows: [...rows.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)) }, next: page.nextPageToken };
+      for (let follow = 0; ; follow++) {
+        view = { ...view, recordings: { status: "loading", rows: view.recordings.rows } }; emit();
+        const page = historyPage.parse(await json(`/matches${token ? `?pageToken=${encodeURIComponent(token)}` : ""}`));
+        if (abort.signal.aborted) return;
+        const first = reset && follow === 0;
+        if (first) seen.clear();
+        if (page.nextPageToken !== null && (page.nextPageToken === token || seen.has(page.nextPageToken))) throw new Error("Repeated continuation");
+        if (token) seen.add(token);
+        const rows = new Map((first ? [] : view.recordings.rows).map(row => [row.id, row]));
+        for (const row of page.matches) rows.set(row.id, row);
+        view = { ...view, recordings: { status: "ready", rows: [...rows.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)) }, next: page.nextPageToken };
+        added += page.matches.length;
+        token = page.nextPageToken;
+        if (token === null || added >= FILL_ROWS || follow >= MAX_FOLLOWS) break;
+      }
     } catch { view = { ...view, recordings: { status: "error", rows: view.recordings.rows } }; }
     finally { historyBusy = false; emit(); }
   }
