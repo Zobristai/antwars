@@ -557,7 +557,7 @@ td.c-model > .d1p-colony { display: block; }
    its whole text its title and read in full. */
 .d1p-rec-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .d1p-rec-badges { display: flex; flex: 1 0 auto; align-items: baseline; column-gap: var(--d1p-cell-gap); }
-.d1p-rec-badges .d1p-tags > .d1p-tag:first-child, .d1p-rec-badges > :first-child { margin-left: 0; }
+.d1p-rec-badges > :first-child { margin-left: 0; }
 /* A self-reported level may run to 32 characters (src/mcp/config.ts): the badges stop at 12em, as on Live now's line,
    clipped, their whole text their title. Every real set shows whole. */
 .d1p-rec-badges > .d1p-tags { max-width: 12em; overflow: hidden; }
