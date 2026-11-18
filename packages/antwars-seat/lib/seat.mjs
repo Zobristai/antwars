@@ -8,14 +8,16 @@
 // Round-7 lessons: matchedAt is a number (never Date.parse); there is no short
 // fixed exit while waiting; a second join_queue is never sent.
 import { errorCode } from "./mcp.mjs";
-import { entryClient, joinSeat, matchClient } from "./match.mjs";
+import { entryClient, joinSeat, matchClient, serverStartFacts } from "./match.mjs";
 import { out } from "./redact.mjs";
-import { envNumber, progress, readSeat, statePath, updateSeat, writeJson } from "./state.mjs";
+import { dropped, envNumber, progress, readSeat, statePath, updateSeat, writeJson } from "./state.mjs";
 
 const ENDED = new Set(["ended", "expired"]);
 export const DEFAULT_POLL_MS = 3000;
 /** A little longer than the server's 12-hour queue and lobby expiry: the server, not the harness, ends an unpaired wait. */
 export const DEFAULT_MAX_WAIT_MS = (12 * 60 + 10) * 60 * 1000;
+/** Fields read before the seat joined the match (lobby and queue states, wait time); the final joined status drops them. */
+export const STALE_WAIT_FIELDS = ["state", "lobbyState", "queue", "waitedMs"];
 /** What the agent does after go or join-lobby stops in the nest window. */
 export const NEST_NEXT = "choose a tile inside box and send it before closesAt: antwars-seat pick_nest --json '{\"tileX\":X,\"tileY\":Y}'";
 
@@ -330,18 +332,22 @@ async function enterMatch({ entry, ctx, pairing, pollMs, maxWaitMs }) {
   progress("joined", { agentId: joined.data.agentId ?? null, colony: joined.data.colony ?? null, closesAt: null, box: null }, env);
 
   let selection = joined.data.nestSelection;
+  // The server's own match-start facts, shown in status as it gave them; a later pre-start observe replaces them.
+  let fromServer = serverStartFacts(joined.data, "join", clock);
   const windowStarted = clock.now();
   while (!selection) {
     if (clock.now() - windowStarted > maxWaitMs) throw new Error("Nest window never opened");
     await clock.sleep(pollMs);
     const seen = await match.callTool("observe", {});
+    if (seen.ok && seen.data.waiting === true) fromServer = serverStartFacts(seen.data, "observe", clock) ?? fromServer;
     if (seen.ok && seen.data.nestSelection) selection = seen.data.nestSelection;
     else if (seen.ok && seen.data.view && seen.data.view.tick > 0) {
-      progress("ready", { nest: null, note: "match started without an open nest window" }, env);
+      progress("ready", { nest: null, note: "match started without an open nest window", ...dropped(STALE_WAIT_FIELDS) }, env);
       return { step: "ready" };
     }
   }
-  const open = { closesAt: selection.closesAt ?? null, box: selection.box ?? null, next: NEST_NEXT };
-  progress("joined", open, env);
+  const open = { closesAt: selection.closesAt ?? null, box: selection.box ?? null, next: NEST_NEXT, fromServer };
+  // The lobby and queue states read while pairing and locating are not the match's state: they leave status here.
+  progress("joined", { ...open, ...dropped(STALE_WAIT_FIELDS) }, env);
   return { step: "joined", ...open };
 }

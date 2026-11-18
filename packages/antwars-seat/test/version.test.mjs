@@ -83,7 +83,8 @@ async function runSeat(fakeOptions, { mode = "house-1v1", setup = [], commands }
   const exits = [];
   for (const command of commands) exits.push(await cli(...command));
   const state = (name) => JSON.parse(readFileSync(join(dir, "state", name), "utf8"));
-  return { fake, cli, exits, printed, state, origin: new URL(fake.url).origin };
+  const steps = () => readFileSync(join(dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step);
+  return { fake, cli, exits, printed, state, steps, origin: new URL(fake.url).origin };
 }
 
 /** Every entry tool call with its arguments and the result it was answered with; the fake's own address made neutral. */
@@ -146,7 +147,8 @@ describe("seat client version", () => {
     expect(after[1].result.isError).toBeUndefined();
     expect(after[1].result.structuredContent).toMatchObject({ agentId: "agent-1", colony: "red" });
     expect(after[2].result.isError).toBeUndefined();
-    expect(run.state("status.json").step).toBe("rejoined");
+    // The re-join is logged, then the completed observe of the started match moves status on to match_started.
+    expect(run.steps().slice(-2)).toEqual(["rejoined", "match_started"]);
   });
 
   it("control: that server refuses a session presenting 1.0.0 on each of the six calls, in each tool's reply family, and nothing is queued, seated or created", async () => {
