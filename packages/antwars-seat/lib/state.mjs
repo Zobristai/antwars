@@ -2,7 +2,7 @@
 // Nothing written here ever contains the seat key: config.json names the key,
 // and every write passes through redact().
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addSecret, redact } from "./redact.mjs";
 
@@ -33,18 +33,63 @@ export function writeJson(path, value) {
   renameSync(tmp, path);
 }
 
+/** A lock not released within this long was left by a writer that died holding it, and is taken over. */
+export const STATUS_LOCK_STALE_MS = 2000;
+const LOCK_WAIT = new Int32Array(new SharedArrayBuffer(4));
+
+/**
+ * Runs fn holding state/status.lock, so the read, merge and write of status.json by this seat's processes (go, match
+ * commands, the observer) never interleave and one cannot overwrite another's fields.
+ */
+function withStatusLock(env, fn) {
+  mkdirSync(stateDir(env), { recursive: true });
+  const lock = statePath("status.lock", env);
+  let staleAt = Date.now() + STATUS_LOCK_STALE_MS;
+  for (;;) {
+    try {
+      closeSync(openSync(lock, "wx"));
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (Date.now() >= staleAt) {
+        rmSync(lock, { force: true });
+        staleAt = Date.now() + STATUS_LOCK_STALE_MS;
+      } else Atomics.wait(LOCK_WAIT, 0, 0, 5);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    rmSync(lock, { force: true });
+  }
+}
+
+function writeProgress(step, detail, env, status) {
+  const at = new Date().toISOString();
+  const line = redact(JSON.stringify({ at, step, ...detail }));
+  appendFileSync(statePath("progress.log", env), line + "\n");
+  writeJson(statePath("status.json", env), { ...status, step, at, ...detail });
+  return line;
+}
+
 /**
  * One timestamped line in progress.log; also mirrored to status.json, which keeps the
  * earlier fields of the current run. fresh starts status.json over (a new go or join-lobby run).
  */
 export function progress(step, detail = {}, env = process.env, { fresh = false } = {}) {
-  const at = new Date().toISOString();
-  const line = redact(JSON.stringify({ at, step, ...detail }));
-  mkdirSync(stateDir(env), { recursive: true });
-  appendFileSync(statePath("progress.log", env), line + "\n");
-  const status = fresh ? {} : readJson(statePath("status.json", env), {});
-  writeJson(statePath("status.json", env), { ...status, step, at, ...detail });
-  return line;
+  return withStatusLock(env, () => writeProgress(step, detail, env, fresh ? {} : readJson(statePath("status.json", env), {})));
+}
+
+/**
+ * progress() decided from the current status under the same lock: decide(current) returns { step, detail } to write,
+ * or null to write nothing. Returns the logged line, or null.
+ */
+export function progressFrom(decide, env = process.env) {
+  return withStatusLock(env, () => {
+    const current = readJson(statePath("status.json", env), {});
+    const next = decide(current);
+    return next === null ? null : writeProgress(next.step, next.detail, env, current);
+  });
 }
 
 /** progress() detail that removes these fields from status.json: a field set to undefined is not written. */

@@ -7,7 +7,7 @@ import { claimGameCommand, isGameCommand, procStat, refusalMessage } from "./gua
 import { isMatchOver, matchClient, noteMatchReply, savedMatch, seatContext } from "./match.mjs";
 import { observerSettings, observerStatus, runObserver } from "./observer.mjs";
 import { err, out, redact } from "./redact.mjs";
-import { createLobby, go, joinLobby, leaveQueue, savedWaitLink } from "./seat.mjs";
+import { STALE_WAIT_FIELDS, createLobby, go, joinLobby, leaveQueue, savedWaitLink } from "./seat.mjs";
 import { alive, ensureReadyAt, progress, readConfig, readJson, readKey, realClock, stateDir, statePath, writeConfig, writeJson } from "./state.mjs";
 
 const BIN = fileURLToPath(new URL("../bin/antwars-seat", import.meta.url));
@@ -23,7 +23,8 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
   status                                    the seat's latest known state, no server call: go or join-lobby
                                             progress, then nest_picked, waiting_for_start and match_started
                                             from this seat's own pick_nest and observe replies, with the
-                                            server's own matchStarts and message (fromServer)
+                                            server's own matchStarts and message (fromServer); then the
+                                            last log lines as history, superseded by that state
   wait-url                                  the waitUrl go or join-lobby saved (printed when saved): GET it and wait
                                             for the event done, whose data.state is slot_ready or expired
   leave                                     leave the queue only if this seat is waiting
@@ -179,8 +180,26 @@ function status(env, clock) {
     // No progress yet.
   }
   print({ ...current, ...timing, goRunning: alive(Number(readJson(statePath("go.lock", env))?.pid)), observer: observerStatus(env, alive).state });
-  for (const line of tail) print(line);
+  if (tail.length === 0) return 0;
+  print({ history: HISTORY_NOTE });
+  for (const line of tail) print(historyLine(line));
   return 0;
+}
+
+/** Heads the log lines status prints after the current status. */
+export const HISTORY_NOTE = "earlier progress.log lines, oldest first: superseded by the status above, not the current state; their instructions and lobby and queue states are left out";
+/** Left out of the history lines: a superseded instruction and the lobby and queue states read while pairing. */
+const HISTORY_OMITTED = ["next", ...STALE_WAIT_FIELDS];
+
+function historyLine(line) {
+  let entry;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return line;
+  }
+  for (const field of HISTORY_OMITTED) delete entry[field];
+  return entry;
 }
 
 async function matchCall(name, args, env, clock, { raw = false, readStat = procStat } = {}) {

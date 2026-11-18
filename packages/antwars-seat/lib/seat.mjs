@@ -17,7 +17,7 @@ export const DEFAULT_POLL_MS = 3000;
 /** A little longer than the server's 12-hour queue and lobby expiry: the server, not the harness, ends an unpaired wait. */
 export const DEFAULT_MAX_WAIT_MS = (12 * 60 + 10) * 60 * 1000;
 /** Fields read before the seat joined the match (lobby and queue states, wait time); the final joined status drops them. */
-const STALE_WAIT_FIELDS = ["state", "lobbyState", "queue", "waitedMs"];
+export const STALE_WAIT_FIELDS = ["state", "lobbyState", "queue", "waitedMs"];
 /** What the agent does after go or join-lobby stops in the nest window. */
 export const NEST_NEXT = "choose a tile inside box and send it before closesAt: antwars-seat pick_nest --json '{\"tileX\":X,\"tileY\":Y}'";
 

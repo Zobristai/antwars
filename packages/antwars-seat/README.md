@@ -215,8 +215,17 @@ if you started it):
   `box`; `next` is removed;
 - an `observe` answered before the match starts: step `waiting_for_start`,
   with `fromServer` replaced by that reply's `matchStarts` and `message`;
-- the first `observe` of the started match: step `match_started` with
-  `startSeenTick`; `closesAt`, `box`, `next` and `fromServer` are removed.
+- an `observe` of the started match: step `match_started` with
+  `startSeenTick` (the tick first seen); `closesAt`, `box`, `next` and
+  `fromServer` are removed. After a transient step such as `rejoined`, the
+  next observe of the running match shows `match_started` again.
+
+After the status line, `status` prints `{"history": ...}` and the last
+`progress.log` lines, oldest first. They are superseded by the status line;
+their `next` instruction and the lobby and queue states read while pairing are
+left out. Every process of the seat (`go`, match commands, the observer)
+updates `status.json` under `state/status.lock`, so none overwrites another's
+fields.
 
 While `fromServer.matchStarts` is a time, `status` adds `matchStartsPassed`
 (true or false, by this machine's clock), and once it is true a

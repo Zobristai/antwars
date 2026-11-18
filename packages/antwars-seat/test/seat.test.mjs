@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { main } from "../lib/cli.mjs";
+import { HISTORY_NOTE, main } from "../lib/cli.mjs";
+import { noteMatchReply } from "../lib/match.mjs";
+import { progress } from "../lib/state.mjs";
 import { rpcReply } from "../lib/mcp.mjs";
 import { DEFAULT_MAX_WAIT_MS, WAIT_URL_NEXT } from "../lib/seat.mjs";
 import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
@@ -620,6 +622,78 @@ describe("status after go: the nest pick and the match start", () => {
     // The harness started no observer: the only observe calls are the seat's own two.
     expect(s.fake.toolCalls("observe")).toHaveLength(2);
     expect(existsSync(join(s.dir, "state", "observer.json"))).toBe(false);
+  });
+
+  it("the complete status output after the pick and after the start carries no superseded pick instruction or lobby state", async () => {
+    const s = await seat();
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    const before = await printedStatus(s);
+    expect(before.next).toContain("pick_nest --json"); // Current before the pick: shown on the status line only.
+    expect(JSON.parse(s.printed[1])).toEqual({ history: HISTORY_NOTE });
+    for (const line of s.printed.slice(2)) {
+      expect(line).not.toContain("pick_nest --json");
+      for (const field of STALE_LOBBY_FIELDS) expect(JSON.parse(line)).not.toHaveProperty(field);
+    }
+    expect(await s.cli("pick_nest", "--json", "{\"tileX\":3,\"tileY\":1}")).toBe(0);
+    for (const command of [[], ["observe"]]) {
+      if (command.length) expect(await s.cli(...command)).toBe(0);
+      await printedStatus(s);
+      const output = s.printed.join("");
+      expect(output).not.toContain("pick_nest --json");
+      for (const field of ["\"state\":", "\"lobbyState\":", "\"queue\":", "\"waitedMs\":"]) expect(output).not.toContain(field);
+      expect(JSON.parse(s.printed[1])).toEqual({ history: HISTORY_NOTE });
+    }
+    expect(JSON.parse(s.printed[0]).step).toBe("match_started");
+  });
+
+  it("after a re-join the next observe of the running match shows match_started again, keeping the first start tick", async () => {
+    const s = await seat();
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    expect(await s.cli("observe")).toBe(0);
+    s.fake.expireSessions();
+    expect(await s.cli("observe")).toBe(0);
+    expect(loggedSteps(s).slice(-4)).toEqual(["match_started", "session_gone", "rejoined", "match_started"]);
+    expect(await printedStatus(s)).toMatchObject({ step: "match_started", startSeenTick: 11 });
+    expect(await s.cli("observe")).toBe(0);
+    expect(loggedSteps(s).filter((step) => step === "match_started")).toHaveLength(2);
+  });
+
+  it("an observer's pre-start observe recorded after the pick, or before it, never restores the pick instruction or loses the pick", async () => {
+    for (const observeFirst of [false, true]) {
+      const s = await seat();
+      await s.cli("create-lobby");
+      expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+      const waitingReply = { ok: true, data: { waiting: true, matchStarts: s.state("status.json").closesAt, message: "Your match has not started; keep calling observe." } };
+      // The observer's reply was read from the joined status; it is recorded around the seat's own pick.
+      if (observeFirst) noteMatchReply("observe", {}, waitingReply, { env: s.env, clock: s.clock });
+      expect(await s.cli("pick_nest", "--json", "{\"tileX\":3,\"tileY\":1}")).toBe(0);
+      if (!observeFirst) noteMatchReply("observe", {}, waitingReply, { env: s.env, clock: s.clock });
+      const status = s.state("status.json");
+      expect(status).toMatchObject({ pick: { tileX: 3, tileY: 1 }, step: observeFirst ? "nest_picked" : "waiting_for_start" });
+      expect(status).not.toHaveProperty("next");
+    }
+  });
+
+  it("status writes from separate processes of one seat never lose each other's fields", async () => {
+    const s = await seat();
+    const script = join(s.dir, "writer.mjs");
+    writeFileSync(script, `import { progress } from ${JSON.stringify(new URL("../lib/state.mjs", import.meta.url).href)};\n`
+      + "const tag = process.argv[2];\nfor (let i = 0; i < 150; i++) progress(`w_${tag}`, { [`${tag}${i}`]: i }, process.env);\n");
+    const env = { ...process.env, ANTWARS_SEAT_STATE: join(s.dir, "state") };
+    await Promise.all(["a", "b"].map((tag) => run(process.execPath, [script, tag], { env })));
+    const status = s.state("status.json");
+    for (const tag of ["a", "b"]) for (let i = 0; i < 150; i++) expect(status[`${tag}${i}`]).toBe(i);
+    expect(existsSync(join(s.dir, "state", "status.lock"))).toBe(false);
+  });
+
+  it("a status lock left by a writer that died is taken over", async () => {
+    const s = await seat();
+    writeFileSync(join(s.dir, "state", "status.lock"), "");
+    progress("after_stale_lock", {}, s.env);
+    expect(s.state("status.json").step).toBe("after_stale_lock");
+    expect(existsSync(join(s.dir, "state", "status.lock"))).toBe(false);
   });
 
   it("go's final status drops the queue and lobby states read while pairing", async () => {
