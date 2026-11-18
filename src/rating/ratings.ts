@@ -1,4 +1,4 @@
-import type { PublicVisibility } from "../identity/publicVisibility.js";
+import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
 /// <reference types="node" />
 import { FirestoreError, type Fields, type QueryResult, type Store, type TransactionRead, type TransactionStep, type Write } from "../store/firestore.js";
 import { createIdentities, type Identities } from "../identity/identities.js";
@@ -632,7 +632,7 @@ export async function startRecordFill(store: Store): Promise<void> {
  * attempt has finished or failed; a failure is logged, never thrown.
  */
 export function createRatings(
-  store: Store, identities: Pick<Identities, "findById"> = createIdentities(store), publicVisibility?: PublicVisibility,
+  store: Store, identities: Pick<Identities, "findById"> = createIdentities(store), publicVisibility?: BatchPublicVisibility,
 ): Ratings & { readonly houseBackfill: Promise<void> } {
   const backfill = (): Promise<boolean> => markHouseRatings(store).then(
     (marked) => { if (marked > 0) console.info("antwar house ratings marked", { marked }); return true; },
@@ -641,19 +641,23 @@ export function createRatings(
   let houseMarked = backfill();
   /**
    * The replay id stored for each match (watchMatches), read in one batch; a match without one is absent. With
-   * withTimes, the same batch also reads each match's lobby for its match time (null when it cannot be read).
+   * withTimes, the same batch also reads each match's lobby for its match time (null when it cannot be read). With the
+   * hide list on, the same batch reads every lobby and one more read checks all their seats; a hidden match is absent.
    */
   async function storedFormFacts(matchIds: readonly string[], withTimes: boolean):
     Promise<{ readonly replayIds: ReadonlyMap<string, string>; readonly times: ReadonlyMap<string, number | null> }> {
     const unique = [...new Set(matchIds)];
     if (unique.length === 0) return { replayIds: new Map(), times: new Map() };
-    const paths = unique.flatMap((id) => withTimes ? [`watchMatches/${id}`, `lobbies/${id}`] : [`watchMatches/${id}`]);
+    const withLobbies = withTimes || publicVisibility !== undefined;
+    const paths = unique.flatMap((id) => withLobbies ? [`watchMatches/${id}`, `lobbies/${id}`] : [`watchMatches/${id}`]);
     // A transaction with no writes is rolled back: this is one batched read.
     const docs = await store.transaction(async (read) => ({ result: await read(paths), writes: [] }));
+    const visible = publicVisibility &&
+      await publicVisibility.lobbiesVisibleEach(new Map(unique.map((id) => [id, docs.get(`lobbies/${id}`) ?? null])));
     const replayIds = new Map<string, string>();
     const times = new Map<string, number | null>();
     for (const id of unique) {
-      if (publicVisibility && !await publicVisibility.lobbyVisible(id)) continue;
+      if (visible && !visible.get(id)) continue;
       const replayId = docs.get(`watchMatches/${id}`)?.replayId;
       if (replayId !== undefined && isReplayId(replayId)) replayIds.set(id, replayId);
       if (withTimes) {
@@ -722,8 +726,10 @@ export function createRatings(
         while (publicRows.length <= limit) {
           const page = await store.query(collection, { orderBy, direction: "DESCENDING", limit: limit + 1, startAfter, readTime });
           readTime ??= page.readTime;
+          // One read checks the whole page; rows are still taken in order and only up to the cut.
+          const visible = publicVisibility && await publicVisibility.identitiesVisibleEach(page.rows.map((row) => idOf(row.path)));
           for (const row of page.rows) {
-            if (!publicVisibility || await publicVisibility.identitiesVisible([idOf(row.path)])) publicRows.push(row);
+            if (!visible || visible.get(idOf(row.path))) publicRows.push(row);
             if (publicRows.length > limit) break;
           }
           if (publicRows.length > limit || page.rows.length < limit + 1) break;

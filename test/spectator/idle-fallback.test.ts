@@ -220,7 +220,7 @@ it.each([0, 0.99])("opens a random catalog match once and preserves its delay wi
   expect(source.delaySeconds).toBe(random === 0 ? 0 : 300);
   expect([source.replay, source.recorded, source.recording]).toEqual([false, false, null]);
   await vi.advanceTimersByTimeAsync(4500);
-  expect(paths).toEqual([`/watch/live/${chosen}`]);
+  expect(paths).toEqual([`/watch/live/${chosen}?kills=1`]);
   expect(server.paths.every(path => path === "/watch/catalog")).toBe(true);
   expect(reload).not.toHaveBeenCalled();
 });
@@ -315,7 +315,7 @@ it("handover pins the confirmed lobby rather than picking another random match, 
   const pending = openSource(new URLSearchParams(), { now: () => 0 }, doc, vi.fn(), { source: path => { paths.push(path); return new Source(); }, intake });
   await vi.advanceTimersByTimeAsync(10_000);
   const source = (await pending)!; active.push(source);
-  expect(paths).toEqual(["/watch/live/two"]);
+  expect(paths).toEqual(["/watch/live/two?kills=1"]);
   expect(source.recorded).toBe(true);
   expect(storage.has(HANDOVER_KEY)).toBe(false);
 });
@@ -379,7 +379,7 @@ it.each(["refused", "silent"] as const)("a lobby link with no live stream (%s) l
   expect(lobby.leaderboard).toHaveBeenCalledTimes(1);
   expect(lobby.leaderboard).toHaveBeenCalledWith(doc);
   expect(storedReads(server.paths)).toEqual([]);
-  expect(lobby.streams[0]).toBe("/watch/live/gone");
+  expect(lobby.streams[0]).toBe("/watch/live/gone?kills=1");
   expect(error.textContent).toBe("");
   // Nothing reloads while the lobby stays silent.
   await vi.advanceTimersByTimeAsync(9000);

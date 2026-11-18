@@ -47,6 +47,7 @@ import { Playout } from "./playout.ts";
 import { Pivots } from "./pivot.ts";
 import { isStartingQueen } from "./start-boxes.ts";
 import { gridScale } from "./grid-scale.ts";
+import { shownAgent } from "./scripted-seat.ts";
 
 /** A colony id: 0 and 1 in a two-colony match, 0 to 3 in a four-colony one. */
 export type Colony = number;
@@ -110,6 +111,8 @@ export interface Board {
   overrun: number[];
   overrunRequired: number;
   deaths: number[];
+  /** Unknown for older four-colony recordings; never inferred from deaths. */
+  kills?: readonly number[];
   /** Cumulative births from the v5 stream, unknown in older recordings. */
   hatched?: readonly number[];
   result: StreamResult | null;
@@ -529,6 +532,7 @@ function cloneFull(f: StreamFull): StreamFull {
     overrun: [...f.overrun],
     overrunRequired: f.overrunRequired,
     deaths: [...f.deaths],
+    ...(f.kills === undefined ? {} : { kills: [...f.kills] }),
     result: f.result,
     ...(f.food !== undefined ? { food: f.food.slice() } : {}),
     ...(f.hatch !== undefined ? { hatch: { ...f.hatch } } : {}),
@@ -968,10 +972,12 @@ export class TickPreparation {
         territory,
         held: heldTiles(territory, colonies),
         marks: f.marks.map((x) => ({ ...x })),
-        agents: f.agents.map((a) => ({ ...a })),
+        // A scripted seat is named as every surface shows it (scripted-seat.ts), so each reader of the board takes it.
+        agents: f.agents.map((a) => shownAgent({ ...a })),
         overrun: [...f.overrun],
         overrunRequired: f.overrunRequired,
         deaths: [...f.deaths],
+    ...(f.kills === undefined ? {} : { kills: [...f.kills] }),
         hatched,
         result: f.result,
         food: f.food?.slice() ?? new Uint32Array(f.setup.mapW * f.setup.mapH),
@@ -994,10 +1000,11 @@ export class TickPreparation {
       territory,
       held: territory === prev.territory ? prev.held : heldTiles(territory, colonies),
       marks: marksChanged ? f.marks.map((x) => ({ ...x })) : prev.marks,
-      agents: agentsChanged ? f.agents.map((a) => ({ ...a })) : prev.agents,
+      agents: agentsChanged ? f.agents.map((a) => shownAgent({ ...a })) : prev.agents,
       overrun: overrunChanged ? [...f.overrun] : prev.overrun,
       overrunRequired: f.overrunRequired,
       deaths: deathsChanged ? [...f.deaths] : prev.deaths,
+      kills: f.kills === undefined ? undefined : kinds.has("kills") ? [...f.kills] : prev.kills,
       hatched,
       result: f.result,
       food: kinds.has("food") && f.food ? f.food.slice() : prev.food,

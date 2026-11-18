@@ -183,6 +183,22 @@ describe("newest saved history without recent-upload discovery", () => {
     data.destroy();
   });
 
+  it("does not count matches a colony never joined toward the twenty rows, since the Recordings lists do not show them", async () => {
+    const unjoined = Array.from({ length: 20 }, (_, n) => ({ ...saved(59 - n), seats: [] }));
+    const played = saved(30);
+    const calls: string[] = [];
+    const data = createMatchesData(async input => {
+      const path = String(input); calls.push(path);
+      if (path === "/watch/catalog") return Response.json({ matches: [] });
+      return Response.json(path === "/matches" ? { matches: unjoined, nextPageToken: "older" } : { matches: [played], nextPageToken: null });
+    }, () => {});
+    data.refresh();
+    await vi.waitFor(() => expect(data.view.recordings.rows.map(row => row.id)).toContain(played.id));
+    expect(calls.filter(path => path.startsWith("/matches"))).toEqual(["/matches", "/matches?pageToken=older"]);
+    expect(data.view.next).toBeNull();
+    data.destroy();
+  });
+
   it("stops following where no continuation remains", async () => {
     const f = served({ "": { rows: 2, next: "a" }, a: { rows: 1, next: null } });
     const data = createMatchesData(f.request, () => {}); data.refresh();

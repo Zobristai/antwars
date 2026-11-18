@@ -184,6 +184,31 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
+  it("fills the Recordings card from the next page when the first page comes back short with a continuation", async () => {
+    // A first page cut short by hidden recordings: one row and a continuation; the next page carries the older rows.
+    let served = 0;
+    const p = landing({
+      matches: () => new Response(JSON.stringify(served++ === 0 ? { matches: [saved(59)], nextPageToken: "older" }
+        : { matches: Array.from({ length: 6 }, (_, i) => saved(50 - i)), nextPageToken: null })),
+    });
+    await vi.waitFor(() => expect(p.rows("Recordings")).toHaveLength(5));
+    expect(p.asked.map(call => call.path).filter(path => path.startsWith("/matches"))).toEqual(["/matches", "/matches?pageToken=older"]);
+    expect(p.root.textContent).not.toContain("Load more");
+    p.dispose();
+  });
+
+  it("shows an older played match behind a full page of matches a colony never joined", async () => {
+    let served = 0;
+    const p = landing({
+      matches: () => new Response(JSON.stringify(served++ === 0
+        ? { matches: Array.from({ length: 20 }, (_, i) => ({ ...saved(59 - i), seats: [] })), nextPageToken: "older" }
+        : { matches: [saved(30)], nextPageToken: null })),
+    });
+    await vi.waitFor(() => expect(p.rows("Recordings")).toHaveLength(1));
+    expect(p.asked.map(call => call.path).filter(path => path.startsWith("/matches"))).toEqual(["/matches", "/matches?pageToken=older"]);
+    p.dispose();
+  });
+
   it("shows no house slug on either card or its foot link, a house handle by its row", async () => {
     const house = [
       { displayName: "antwars/abliterated-large-v2", rating: 1600, ratedMatches: 3, benchmark: true, thinkingLevel: "max", serviceTier: "standard" },

@@ -56,6 +56,7 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
   const owner = new LiveHub({ clock, currentInvite: accounts.lobbies.isInviteCurrent, relayKey: relay.ownerKey });
   /** The relay signature each request to the slot's /watch/live carried. */
   const relaySignatures: (string | undefined)[] = [];
+  const ownerPaths: string[] = [];
   const gateway = new LiveHub(); close.push(() => owner.close(), () => gateway.close());
   const blobs = new Map<string, Uint8Array>();
   const archive = createPrivateArchive({ create: async object => { blobs.set(object.name, object.body); } },
@@ -64,8 +65,8 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
     let origin = "";
     let handle: ReturnType<typeof watchRoutes> | undefined;
     const server: Server = createServer((req, res) => {
-      if (req.url === `/watch/live/${id}`) {
-        if (hub === owner) relaySignatures.push(req.headers[RELAY_HEADER] as string | undefined);
+      if (new URL(req.url!, "http://localhost").pathname === `/watch/live/${id}`) {
+        if (hub === owner) { relaySignatures.push(req.headers[RELAY_HEADER] as string | undefined); ownerPaths.push(req.url!); }
         const stream = { origin, writes: [] as string[], endedAfter: null as number | null, closed: new Promise<void>(resolve => res.once("close", () => resolve())) }; streams.push(stream);
         const write = res.write.bind(res) as (chunk: unknown, ...rest: unknown[]) => boolean;
         res.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
@@ -94,7 +95,7 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
   owner.startMatch(1, initial, { lobbyId: id, visibility: kind, rated });
   let state = initial;
   while (!state.result) { const out = step(state, []); clock.advance(100); owner.pushTick(1, out); state = out.state; }
-  return { registry, accounts, archive, blobs, owner, clock, lobbies, streams, ownerOrigin, gatewayOrigin, relaySignatures, revoke: () => { invite = "fresh"; } };
+  return { registry, accounts, archive, blobs, owner, clock, lobbies, streams, ownerOrigin, gatewayOrigin, relaySignatures, ownerPaths, revoke: () => { invite = "fresh"; } };
 }
 function request(origin: string, path: string, invite?: string) {
   const abort = new AbortController(); close.push(() => abort.abort());
@@ -102,6 +103,16 @@ function request(origin: string, path: string, invite?: string) {
 }
 
 describe("shared spectator HTTP routes", () => {
+  it.each(["public", "private"] as const)("forwards only the kill opt-in through a %s relay", async kind => {
+    const f = await fixture(kind), invite = kind === "private" ? "current" : undefined;
+    for (const query of ["?kills=1&unrelated=value", "?kills=0", ""]) {
+      const response = await request(f.gatewayOrigin, `/watch/live/${id}${query}`, invite);
+      held.push(response);
+      expect(response.status).toBe(200);
+    }
+    expect(f.ownerPaths).toEqual([`/watch/live/${id}?kills=1`, `/watch/live/${id}`, `/watch/live/${id}`]);
+  });
+
   it.each([
     ["public", true], ["public", false], ["private", true], ["private", false],
   ] as const)("preserves immediate and delayed final heartbeats, then ends, for attached and late %s rated=%s owner/proxy viewers", async (kind, rated) => {
@@ -337,13 +348,14 @@ describe("shared spectator HTTP routes", () => {
     const third = "00000000-0000-4000-8000-000000000003";
     await f.registry.register({ lobbyId: third, visibility: "public", rated: true, mode: "1v1", startedAt: 9, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     // The slot published the labels of the seats that reported one; a seat that reported none, or has not joined, carries null.
-    // The builder's seat also reported its level and tier; the house seat reported neither.
+    // The builder's seat also reported its level and tier; the house seat reported neither. Every seat but alice #1 has
+    // been seen joining: bob joined and reported no model.
     expect(await f.registry.seatLabels(second, "run", { "alice #2": "openai/gpt-6.1-terra", "antwars/gpt-6-luna": "openai/gpt-6-luna" },
-      { thinkingLevels: { "alice #2": "high" }, serviceTiers: { "alice #2": "fast" } })).toBe(true);
+      { thinkingLevels: { "alice #2": "high" }, serviceTiers: { "alice #2": "fast" }, joined: ["alice #2", "antwars/gpt-6-luna", "bob"] })).toBe(true);
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === second).colonies).toEqual([
-      [{ displayName: "alice #1", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: 1612.4, rd: 80, ratedMatches: 12 }],
-      [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice #1", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", joined: true, rating: 1612.4, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, joined: true, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", thinkingLevel: null, serviceTier: null, joined: true, rating: 1490, rd: 80, ratedMatches: 12 }],
     ]);
     // One read per identity per match: the 2v2 match's in 2v2, the fixture's modeless match's in public 1v1.
     expect(reads.sort()).toEqual(["a:1v1", "a:2v2", "b:1v1", "b:2v2", "c:2v2"]);

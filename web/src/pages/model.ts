@@ -7,9 +7,10 @@ import { HOUSE_USERNAME } from "../../../src/identity/houseOwnership.ts";
 import { UNLISTED_MODEL, houseDisplayName, houseLabel, houseModelEntry } from "../../../src/rating/houseLabels.ts";
 import { C } from "../leaderboard-page/copy.ts";
 import { LEADERBOARD_HREF } from "../leaderboard-page/route.ts";
-import { benchmarkLabel, recordText, type RankingView } from "../leaderboard-page/view.ts";
+import { NO_BADGES, benchmarkBadges, benchmarkLabel, recordText, type BadgeKinds, type RankingView } from "../leaderboard-page/view.ts";
 import { RECORD_LABEL, RETRY, keep, liveState, recordingsState, type SectionState } from "../ui/format.ts";
 import type { ShownRating } from "./identity.ts";
+import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 
 // ---------------------------------------------------------------- shared
 
@@ -193,10 +194,22 @@ export function recordedIdentity(seat: Pick<Recording["seats"][number], "modelLa
   const label = (text: string) => options.listed ? seatModelName(text, seat.handle) : modelName(text);
   const name = house ? houseDisplayName(seat.handle!) : seat.modelLabel !== null ? label(seat.modelLabel) : seat.handle ?? "model unknown";
   if (name === UNLISTED_MODEL) return { name, badges: [], quiet: null };
+  return { name, badges: benchmarkLabel(recordedLevels(seat)).badges, quiet: null };
+}
+
+/** What a recorded seat's badges come from: the level it recorded, else a listed house handle's fixed level; a listed house
+ * handle's fixed tier, else the tier it recorded. A house seat passes its handle, so a retired one carries the retired badge;
+ * any other seat passes no name. */
+function recordedLevels(seat: Pick<Recording["seats"][number], "thinkingLevel" | "serviceTier" | "handle">) {
+  const house = seat.handle !== null && isHouseHandle(seat.handle);
   const fixed = seat.handle === null ? { thinkingLevel: null, serviceTier: null } : houseLabel(seat.handle);
-  // A house seat passes its handle, so a retired one carries the retired badge; any other seat passes no name.
-  const badges = benchmarkLabel({ displayName: house ? seat.handle! : "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier }).badges;
-  return { name, badges, quiet: null };
+  return { displayName: house ? seat.handle! : "", thinkingLevel: seat.thinkingLevel ?? fixed.thinkingLevel, serviceTier: fixed.serviceTier ?? seat.serviceTier };
+}
+
+/** A house handle's badges by kind, its fixed level and tier (houseLabel) as the Leaderboard shows them; none for an
+ * unlisted handle, which shows as UNLISTED_MODEL. */
+export function houseBadges(handle: string): BadgeKinds {
+  return houseDisplayName(handle) === UNLISTED_MODEL ? NO_BADGES : benchmarkBadges({ displayName: handle, ...houseLabel(handle) });
 }
 
 /** Who holds a recorded seat, as seatGroups keys it: its model label, else its handle, each tagged with its kind so a label
@@ -206,25 +219,28 @@ const seatWho = (seat: Pick<Recording["seats"][number], "modelLabel" | "handle">
 
 /** One player line's words and badges, in the order every Matches list draws them: the builder's username (none for a
  * house model, whose model name leads), the model it reported (none for a builder that named none), then its level and
- * Fast badges (only with a model). The rating, the seat count and the colony's result follow on the line (matches.ts). */
-export interface PlayerParts { readonly user: string | null; readonly model: string | null; readonly badges: readonly string[] }
+ * Fast badges (only with a model), by kind, so only the speed tier draws as Fast (matches.ts badgeGroup). The rating, the
+ * seat count and the colony's result follow on the line (matches.ts). */
+export interface PlayerParts { readonly user: string | null; readonly model: string | null; readonly badges: BadgeKinds }
 
 /** "model unknown": a recorded seat with neither a model nor a handle. */
 export const MODEL_UNKNOWN = "model unknown";
 
 /** A recorded seat's player line: a house handle by its own HOUSE_LABELS row and badges (recordedIdentity); a builder by its
  * recorded handle, then the model it reported (seatModelName) with that model's level and Fast badges, the model left out
- * where the label only repeats the handle ("coffee-ant/local" on coffee-ant), so a builder that named no model shows its
- * username alone. */
+ * where the label only repeats the handle ("coffee-ant/local" on coffee-ant); a seat that recorded no model is scripted and
+ * shows SCRIPTED_BOT alone (scripted-seat.ts). */
 export function recordedPlayer(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">): PlayerParts {
   if (seat.handle !== null && isHouseHandle(seat.handle)) {
     const house = recordedIdentity(seat);
-    return { user: null, model: house.name, badges: house.badges };
+    return { user: null, model: house.name, badges: house.name === UNLISTED_MODEL ? NO_BADGES : benchmarkBadges(recordedLevels(seat)) };
   }
+  if (isScriptedSeat(seat.handle, seat.modelLabel)) return { user: null, model: SCRIPTED_BOT, badges: NO_BADGES };
   const named = seat.modelLabel === null ? null : seatModelName(seat.modelLabel, seat.handle);
   const model = named !== null && named !== seat.handle ? named : null;
-  if (seat.handle === null && model === null) return { user: null, model: MODEL_UNKNOWN, badges: [] };
-  return { user: seat.handle, model, badges: model === null ? [] : recordedIdentity(seat).badges };
+  if (seat.handle === null && model === null) return { user: null, model: MODEL_UNKNOWN, badges: NO_BADGES };
+  const shown = model !== null && recordedIdentity(seat).name !== UNLISTED_MODEL;
+  return { user: seat.handle, model, badges: shown ? benchmarkBadges(recordedLevels(seat)) : NO_BADGES };
 }
 
 /** Each of a match's `colonies` colonies' recorded seats (two, or four in a Quadrants match), seat order, each with who
@@ -237,6 +253,8 @@ export function colonySeats(seats: Recording["seats"], colonies = 2): readonly (
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
       .map((seat): SeatEntry => {
         const parts = recordedPlayer(seat);
+        // Scripted seats are alike, whoever holds them, and show no rating.
+        if (isScriptedSeat(seat.handle, seat.modelLabel)) return { who: JSON.stringify(["scripted"]), parts, rating: null };
         return { who: JSON.stringify([seatWho(seat), parts.user, parts.model]), parts, rating: seat.startRating ?? null };
       });
     return list.length ? list : null;
@@ -255,7 +273,7 @@ export function colonyModels(seats: Recording["seats"]): readonly [readonly Name
 }
 
 /** What a grouped seat's parts must carry: its badges, and a quiet thinking level where its place shows one. */
-export interface SeatParts { readonly badges: readonly string[]; readonly quiet?: string | null }
+export interface SeatParts { readonly badges: readonly string[] | BadgeKinds; readonly quiet?: string | null }
 /** One seat as the Matches lists group it: who holds it (a recorded seat's handle and label, or a live player's identity
  * without its seat number), how it shows alone, where that differs how its group shows, and its rating where the list has
  * one for it. */

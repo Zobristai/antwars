@@ -87,14 +87,14 @@ describe("SSE arrival evidence", () => {
     expect(SPECTATOR_STREAM_VERSIONS.max).toBeGreaterThanOrEqual(streamFormat.RULES28_STREAM_VERSION);
     expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
   });
-  it("reads the tick of a first frame carrying a flyer, at the flyer stream version, the latest it accepts", () => {
+  it("reads the tick of a first frame carrying a flyer while accepting the newer kill-total version", () => {
     const state = createMatch(42, playable(DEFAULT_CONFIG));
     state.ants[0]!.flyer = true;
     const recorder = new SpectatorRecorder(state);
     const first = { ...recorder.initial(), full: recorder.initialFull() };
     const bytes = streamFormat.encodePublicMessage(first);
     expect(bytes[2]).toBe(streamFormat.FLYER_STREAM_VERSION);
-    expect(SPECTATOR_STREAM_VERSIONS.max).toBe(streamFormat.FLYER_STREAM_VERSION);
+    expect(SPECTATOR_STREAM_VERSIONS.max).toBe(streamFormat.KILLS_STREAM_VERSION);
     expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
   });
   it("holds the original connection to its deadline, timestamps every frame and closes the socket", async () => {

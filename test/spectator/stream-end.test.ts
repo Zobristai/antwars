@@ -52,6 +52,16 @@ function harness(decodeMs = 0) {
 beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+it("opts in on the browser transport and keeps existing query parameters when reconnecting", () => {
+  const paths: string[] = [];
+  const link = openLive("/watch/live/lobby?existing=value", () => {}, () => {}, {
+    source: path => { paths.push(path); return new Source(); },
+  });
+  link.reopen();
+  expect(paths).toEqual(["/watch/live/lobby?existing=value&kills=1", "/watch/live/lobby?existing=value&kills=1"]);
+  link.close();
+});
+
 describe("live link after a match's result", () => {
   it.each([
     ["the final delta", ["full", "delta", "end"]],
@@ -163,8 +173,8 @@ describe("live link after a match's result", () => {
   });
 });
 
-// stream.ts and source.ts are unchanged from the frozen decoder's build. Substitute
-// only that old decode boundary; the actual stream, lobby waiting and playback run.
+// Exercise the frozen decoder against its original non-telemetry wire format;
+// the actual stream, lobby waiting and playback run.
 const oldData = async (data: string): Promise<StreamMessage> => oldDecode(inflateRawSync(Buffer.from(data, "base64")));
 const wire = (message: StreamMessage) => deflateRawSync(encodePublicMessage(message)).toString("base64");
 const start = decodeMessage(scale2Packets(1)[0]!);
