@@ -12,6 +12,7 @@ import { openInviteStream } from "./invite-stream.ts";
 import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.ts";
 import { restateRatings, storedReplayRatings } from "./replay-ratings.ts";
 import { liveStarting } from "./waiting.ts";
+import { keep } from "./ui/format.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
 export const CONNECT_MS = 2000;
@@ -194,7 +195,7 @@ function laterFinishedReplay(lobbyId: string, signal: AbortSignal): Promise<stri
 
 /** What a lobby link shows while its lobby has no live match: its finished match's replay, else the Leaderboard page, loaded only when needed. */
 export interface LobbyScreens { leaderboard(doc: Document): void; replay(doc: Document, replayId: string): void }
-const LOBBY_SCREENS: LobbyScreens = {
+export const LOBBY_SCREENS: LobbyScreens = {
   leaderboard(doc) {
     const view = doc.defaultView;
     if (view) void import("./leaderboard-page/page.ts").then(({ mountLeaderboardPage }) => mountLeaderboardPage(doc, view), error => console.error(error));
@@ -202,7 +203,8 @@ const LOBBY_SCREENS: LobbyScreens = {
   replay(doc, replayId) {
     const view = doc.defaultView;
     const url = view && watchUrl(view.location.origin, { private: false, replayId, lobbyId: null });
-    if (url) view.location.replace(url);
+    // The chosen board (board=2d, picked or fallen back to) follows the viewer to the replay, as on the site's links.
+    if (url) view.location.replace(keep(url, view.location.search));
   },
 };
 

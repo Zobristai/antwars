@@ -473,8 +473,20 @@ it("a finished lobby's link replaces the page with that match's public replay li
   try {
     h.finish();
     expect(await h.open()).toBeNull();
-    expect(h.location.replace).toHaveBeenCalledExactlyOnceWith(`http://localhost/?replay=${encodeURIComponent(FINISHED_REPLAY)}`);
+    expect(h.location.replace).toHaveBeenCalledExactlyOnceWith(`/?replay=${encodeURIComponent(FINISHED_REPLAY)}`);
     expect(h.location.reload).not.toHaveBeenCalled();
+    expect(h.reject).not.toHaveBeenCalled();
+  } finally { h.cleanup(); }
+});
+
+it("a finished lobby's link opened on the 2D board keeps the 2D board in its replay link", async () => {
+  const h = handoverClient(false, 0, true);
+  try {
+    // board=2d, chosen by the viewer or set by the 3D board's fallback reload.
+    Object.assign(h.location, { search: "?lobby=selected&board=2d" });
+    h.finish();
+    expect(await h.open({ board: "2d" })).toBeNull();
+    expect(h.location.replace).toHaveBeenCalledExactlyOnceWith(`/?replay=${encodeURIComponent(FINISHED_REPLAY)}&board=2d`);
     expect(h.reject).not.toHaveBeenCalled();
   } finally { h.cleanup(); }
 });
