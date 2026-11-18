@@ -19,8 +19,9 @@ const unavailable = vi.fn(() => { throw new Error("Store temporarily unavailable
 const accounts = new Proxy({} as AccountStores, { get: unavailable });
 const registry = new Proxy({} as WatchRegistry, { get: unavailable });
 
-function assertMetadata(html: string, lobbies: boolean, publicMatches: boolean) {
-  const metadata = `<meta name="antwar-lobbies" content="${lobbies}"><meta name="antwar-public-matches" content="${publicMatches}">`;
+function assertMetadata(html: string, lobbies: boolean, publicMatches: boolean, localMatch = true) {
+  const metadata = `<meta name="antwar-lobbies" content="${lobbies}"><meta name="antwar-public-matches" content="${publicMatches}">`
+    + `<meta name="antwar-local-match" content="${localMatch}">`;
   expect(html).toContain(`<head>${metadata}`);
   expect(html.indexOf(metadata)).toBeLessThan(html.indexOf("<script"));
 }
@@ -39,6 +40,8 @@ describe("spectator service capabilities known before scripts", () => {
     // The bundled legacy recording and its route are deleted.
     expect((await fetch(`${origin}/replays/agents.bin`)).status).toBe(404);
     expect(server!.game.match).toBeNull();
+    // A local match's stream path is served here and nowhere below it.
+    expect((await fetch(`${origin}/watch/live/local/other`)).status).toBe(404);
   });
 
   it.each([
@@ -51,10 +54,18 @@ describe("spectator service capabilities known before scripts", () => {
     const lobbies = hasAccounts, publicMatches = hasAccounts && hasRegistry;
     for (const path of ["/", "/index.html?board=3d"]) {
       const response = await fetch(`${origin}${path}`);
-      assertMetadata(await response.text(), lobbies, publicMatches);
+      // A store-backed server is never a local match, and does not serve the local match's stream.
+      assertMetadata(await response.text(), lobbies, publicMatches, false);
       expect(response.headers.get("cache-control")).toBe("no-store");
     }
+    expect((await fetch(`${origin}/watch/live/local`)).headers.get("content-type")).not.toBe("text/event-stream");
     expect(unavailable).not.toHaveBeenCalled();
+  });
+
+  it("marks only the server running its own held match as a local match, never an entry point", async () => {
+    dir = tempDir();
+    server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir });
+    assertMetadata(await (await fetch(`http://127.0.0.1:${server.port}/`)).text(), false, false, false);
   });
 
   it("preserves HEAD length/cache semantics and refuses unsupported methods", async () => {
