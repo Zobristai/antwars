@@ -80,6 +80,20 @@ describe("entry-read allowed tools", () => {
     expect(h.output()).not.toContain(KEY);
   });
 
+  it("a comment line containing = does not redact matching text in the reply", async () => {
+    const h = await harness({
+      keyLines: `# expected queue state=waiting\n  # indented note=open\nnot a key line=holding\n${KEY_NAME}=${JSON.stringify(KEY)}\n`,
+      fakeOptions: { baseline: { state: "waiting", mode: "house-1v1", joinedAt: 1, expiresAt: 2 }, lobbies: { "lobby-9": "open" } },
+    });
+    expect(await h.cli("queue_status", "--key-name", KEY_NAME)).toBe(0);
+    expect(await h.cli("read_lobby", "--key-name", KEY_NAME, '{"lobbyId":"lobby-9"}')).toBe(0);
+    const [queue, lobby] = h.output().trim().split("\n").map((line) => JSON.parse(line));
+    expect(queue.queue.state).toBe("waiting");
+    expect(lobby.lobby.state).toBe("open");
+    expect(h.output()).not.toContain("[redacted]");
+    expect(h.output()).not.toContain(KEY);
+  });
+
   it("redacts the key from a successful reply that carries it", async () => {
     const h = await harness({ fakeOptions: { lobbies: { [KEY]: "open" } } });
     expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: KEY }))).toBe(0);

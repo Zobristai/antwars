@@ -8,11 +8,14 @@ import { addSecret } from "./redact.mjs";
 import { DEFAULT_ENTRY_URL, keyFilePath, readKey } from "./state.mjs";
 
 export const ENTRY_READ_TOOLS = Object.freeze(["read_lobby", "queue_status"]);
+const KEY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const ENTRY_READ_USAGE = "usage: antwars-seat entry-read <read_lobby|queue_status> --key-name NAME ['<json args>']";
 
 /**
- * Registers every value in the key file for redaction, so a value typed where a name belongs
- * (--key-name) is never echoed by the missing-key message. An unreadable file is left to readKey.
+ * Registers the value of every key line in the key file for redaction, so a value typed where a
+ * name belongs (--key-name) is never echoed by the missing-key message. A key line is NAME=value
+ * with NAME a plain identifier; comments and other lines are skipped, so their text is never
+ * redacted from real output. An unreadable file is left to readKey.
  */
 function redactKeyFileValues(env, cwd) {
   let text;
@@ -23,7 +26,7 @@ function redactKeyFileValues(env, cwd) {
   }
   for (const line of text.split(/\r?\n/)) {
     const at = line.indexOf("=");
-    if (at <= 0) continue;
+    if (at <= 0 || !KEY_NAME_PATTERN.test(line.slice(0, at).trim())) continue;
     const raw = line.slice(at + 1).trim();
     addSecret(raw);
     addSecret(raw.replace(/^"|"$/g, ""));
