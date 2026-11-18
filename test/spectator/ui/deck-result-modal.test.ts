@@ -57,7 +57,7 @@ function mount() {
   const dialog = teams.result as unknown as ElementPort;
   const score = deck.score as unknown as ElementPort;
   const show = (frame: Frame) => { deck.update(frame); teams.update(view(frame), false); };
-  return { dialog, score, show };
+  return { dialog, score, show, header: deck.header as unknown as ElementPort, economy: deck.economy as unknown as ElementPort[] };
 }
 const closeButton = (dialog: ElementPort) => dialog.byClass("d1-close")[0]!;
 
@@ -262,15 +262,14 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.byClass("rd-note")[0]!.hidden).toBe(true);
   });
 
-  it("leaves no result card in the score: the score keeps its clock and Balance, Win conditions give way at the end", () => {
-    const { score, show } = mount();
+  it("keeps final comparison, clock and queen HP outside the result modal", () => {
+    const { score, header, economy, show } = mount();
     show(frameOf({ ended: true }));
     expect(score.byClass("d1-result")).toHaveLength(0);
-    expect(score.byClass("d1-gauge")).toHaveLength(3);
-    expect(score.byClass("d1-clock")[0]!.textContent).toMatch(/ended/i);
-    expect(score.classes()).toContain("is-ended");
-    show(frameOf({ ended: false }));
-    expect(score.classes()).not.toContain("is-ended");
+    expect(score.byClass("sb-gauge")).toHaveLength(3);
+    expect(header.byClass("d1-clock")[0]!.textContent).toMatch(/ended/i);
+    expect(economy[0]!.byClass("d1-lamp").length).toBeGreaterThan(0);
+    expect(economy[0]!.byClass("sb-queens")[0]!.hidden).toBe(false);
   });
 
   it("closes with its Close button and stays closed on the frames that follow", () => {
