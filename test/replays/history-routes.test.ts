@@ -551,44 +551,51 @@ describe("GET /matches lists every match, rated or unrated, that the hide list d
     expect(reads).toEqual([undefined, `after:${id(19)}`]);
   });
 
-  it("with the hide list on, leaves out a recording whose players cannot be established and pages on past it", async () => {
+  it("with the hide list on, lists a recording only when its players are established and pages on past the rest", async () => {
     const excluded = "00000000-0000-4000-8000-000000000001", player = "00000000-0000-4000-8000-000000000002";
     const { store, docs } = memoryWatchStore();
     docs.set(`identities/${player}`, { kind: "username" });
     docs.set("lobbies/played", { seats: JSON.stringify([{ id: player }]) });
     docs.set("lobbies/unresolved", { seats: JSON.stringify([{ id: player }, { id: "gone" }]) });
-    // Newest first: id(3)'s lobby link is pending (never published, or a recording still in flight: hidden either way),
-    // id(22)'s lobby names a seat identity that does not resolve; the rest list.
+    docs.set("lobbies/unseated", { seats: "[]" });
+    // Newest first, every row lists through the played lobby except: id(3)'s lobby link is pending (never published, or a
+    // recording still in flight: hidden either way), id(7) has no lobby link at all, id(15)'s lobby records no seats and
+    // id(22)'s lobby names a seat identity that does not resolve. None of them establishes who played.
     const { all } = stored(25, () => false);
-    const links = new Map<string, ReplayLobby>([[id(3), { state: "pending" }], [id(10), { state: "found", lobbyId: "played" }],
-      [id(22), { state: "found", lobbyId: "unresolved" }]]);
+    const left = [id(3), id(7), id(15), id(22)];
+    const links = new Map<string, ReplayLobby>([[id(3), { state: "pending" }], [id(7), { state: "none" }],
+      [id(15), { state: "found", lobbyId: "unseated" }], [id(22), { state: "found", lobbyId: "unresolved" }]]);
     let failing = false;
     const registry = { async replayLobby(replayId: string): Promise<ReplayLobby> {
       if (failing) throw new Error("registry read failed");
-      return links.get(replayId) ?? { state: "none" };
+      return links.get(replayId) ?? { state: "found", lobbyId: "played" };
     } };
     const opened: string[] = [];
-    const source: HistorySource = { ...storage(all).source, async open(openedId) { opened.push(openedId); return null; } };
+    const source: HistorySource = { ...storage(all).source,
+      async open(openedId) { opened.push(openedId); return Readable.from([Buffer.from("{}")]); } };
     const handler = historyRoutes(source, undefined, { publicVisibility: createPublicVisibility(store, registry, [excluded])! });
     const server = createServer((req, res) => { void handler(req, res, undefined as never); });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
     close.push(() => new Promise(resolve => server.close(() => resolve())));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const shown = all.map(match => match.id).filter(shownId => shownId !== id(3) && shownId !== id(22));
+    const shown = all.map(match => match.id).filter(shownId => !left.includes(shownId));
     const first = await list(origin);
     expect(first.matches.map(match => match.id)).toEqual(shown.slice(0, 20));
     const second = await list(origin, first.nextPageToken);
     expect(second.matches.map(match => match.id)).toEqual(shown.slice(20));
     expect(second.nextPageToken).toBeNull();
-    for (const page of [first, second]) for (const left of [id(3), id(22)]) expect(JSON.stringify(page)).not.toContain(left);
-    // Its own record answers as not found, without opening it.
-    for (const left of [id(3), id(22)]) expect((await fetch(`${origin}/matches/${left}`)).status).toBe(404);
+    for (const page of [first, second]) for (const hidden of left) expect(JSON.stringify(page)).not.toContain(hidden);
+    // Its own record answers as not found, without opening it; an established recording is served.
+    for (const hidden of left) expect((await fetch(`${origin}/matches/${hidden}`)).status).toBe(404);
     expect(opened).toEqual([]);
-    // A failed read still fails the page.
+    const served = await fetch(`${origin}/matches/${id(0)}`);
+    expect(served.status).toBe(200);
+    await served.text();
+    expect(opened).toEqual([id(0)]);
+    // A failed read still fails the page and the record.
     failing = true;
-    const failed = await fetch(`${origin}/matches`);
-    expect(failed.status).toBe(503);
+    expect((await fetch(`${origin}/matches`)).status).toBe(503);
     expect((await fetch(`${origin}/matches/${id(0)}`)).status).toBe(503);
   });
 

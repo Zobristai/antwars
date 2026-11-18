@@ -96,12 +96,16 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
       const owners = await readReplayOwners(store, id);
       if (owners !== null) return owners.every(owner => !excluded.has(owner));
       const found = await registry.replayLobby(id);
-      // Older recordings without ownership retain their historical behavior; pending is not absence. A recording whose
-      // players cannot be established (its lobby link not published, whether still in flight or never, or a lobby whose
-      // seats or seat identities do not resolve) is hidden rather than failing the read; a failed read still fails.
-      if (found.state === "pending") return false;
-      if (found.state === "none") return true;
-      try { return await lobbyVisible(found.lobbyId); } catch (error) {
+      // A recording without ownership is shown only when its lobby establishes every player and none is excluded. One
+      // whose players cannot be established is hidden rather than failing the read: no lobby link (a scheduled match, or
+      // a link never published), a link still pending (in flight or never completed), or a lobby whose seats are missing,
+      // unreadable or empty, or whose seat identities do not resolve. A failed read still fails.
+      if (found.state !== "found") return false;
+      try {
+        const seats = seatIds(await store.get(`lobbies/${found.lobbyId}`));
+        if (seats.length === 0) return false;
+        return (await groupsVisible([seats]))[0]!;
+      } catch (error) {
         if (error instanceof Undetermined) return false;
         throw error;
       }
