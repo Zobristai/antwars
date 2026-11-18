@@ -37,6 +37,12 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
   const excluded = new Set(ownerIds);
   const unavailable = () => new Error("Public visibility temporarily unavailable");
   /**
+   * The stored records cannot say who played (no readable seats, or a seat identity that does not resolve). Every public
+   * check fails on it as unavailable, except a recording's, which is then hidden (replayVisible).
+   */
+  class Undetermined extends Error {}
+  const undetermined = () => new Undetermined("Public visibility undetermined");
+  /**
    * Whether every id of each group is visible. A group naming an excluded id is hidden without reading it; the
    * rest are read together in one transaction.
    */
@@ -51,7 +57,7 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
         // Read retained identity relations directly, independently of current name/credential validity.
         // A handle's owner must be a well-formed identity id, so it can be compared with the hide list.
         if (!fields || (fields.kind !== "username" && fields.kind !== "handle") ||
-          (fields.kind === "handle" && !IDENTITY_ID.test(fields.ownerId ?? ""))) throw unavailable();
+          (fields.kind === "handle" && !IDENTITY_ID.test(fields.ownerId ?? ""))) throw undetermined();
         return [id, fields.kind === "handle" ? fields.ownerId! : id];
       }));
       return { result, writes: [] };
@@ -60,12 +66,12 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
   };
   const seatIds = (lobby: Fields | null): string[] => {
     // A lobby whose seats are not recorded cannot show who played, so it is not shown at all.
-    if (!lobby || lobby.seats === undefined) throw unavailable();
+    if (!lobby || lobby.seats === undefined) throw undetermined();
     let seats: unknown;
-    try { seats = JSON.parse(lobby.seats); } catch { throw unavailable(); }
-    if (!Array.isArray(seats)) throw unavailable();
+    try { seats = JSON.parse(lobby.seats); } catch { throw undetermined(); }
+    if (!Array.isArray(seats)) throw undetermined();
     return seats.map((seat: unknown) => {
-      if (typeof seat !== "object" || seat === null || !("id" in seat) || typeof seat.id !== "string") throw unavailable();
+      if (typeof seat !== "object" || seat === null || !("id" in seat) || typeof seat.id !== "string") throw undetermined();
       return seat.id;
     });
   };
@@ -90,9 +96,19 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
       const owners = await readReplayOwners(store, id);
       if (owners !== null) return owners.every(owner => !excluded.has(owner));
       const found = await registry.replayLobby(id);
-      if (found.state === "pending") throw unavailable();
-      // Older recordings without ownership retain their historical behavior; pending is not absence.
-      return found.state === "none" || lobbyVisible(found.lobbyId);
+      // A recording without ownership is shown only when its lobby establishes every player and none is excluded. One
+      // whose players cannot be established is hidden rather than failing the read: no lobby link (a scheduled match, or
+      // a link never published), a link still pending (in flight or never completed), or a lobby whose seats are missing,
+      // unreadable or empty, or whose seat identities do not resolve. A failed read still fails.
+      if (found.state !== "found") return false;
+      try {
+        const seats = seatIds(await store.get(`lobbies/${found.lobbyId}`));
+        if (seats.length === 0) return false;
+        return (await groupsVisible([seats]))[0]!;
+      } catch (error) {
+        if (error instanceof Undetermined) return false;
+        throw error;
+      }
     }),
   };
 }

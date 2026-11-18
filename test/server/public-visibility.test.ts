@@ -11,7 +11,7 @@ import type { HistorySummary } from "../../src/replays/history-source.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
 const hidden = "2026-10-20T10-00-00-000Z-1", shown = "2026-10-20T11-00-00-000Z-1";
-const owner = "00000000-0000-4000-8000-000000000001";
+const owner = "00000000-0000-4000-8000-000000000001", player = "00000000-0000-4000-8000-000000000003";
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); });
 const row = (id: string): HistorySummary => ({ id, startedAt: "2026-10-20T10:00:00Z", endedAt: null,
@@ -20,9 +20,11 @@ const row = (id: string): HistorySummary => ({ id, startedAt: "2026-10-20T10:00:
 async function fixture(enabled: boolean, failing = false) {
   const { store, docs } = memoryWatchStore();
   docs.set("lobbies/hidden", { seats: JSON.stringify([{ id: owner }]) });
+  docs.set(`identities/${player}`, { kind: "username" });
+  docs.set("lobbies/shown", { seats: JSON.stringify([{ id: player }]) });
   const policy = createPublicVisibility(store, { replayLobby: async id => {
     if (failing) throw new Error("private source detail");
-    return id === hidden ? { state: "found", lobbyId: "hidden" } : { state: "none" };
+    return { state: "found", lobbyId: id === hidden ? "hidden" : "shown" };
   } }, enabled ? [owner] : []);
   const opens: string[] = [];
   const dataDir = mkdtempSync(join(tmpdir(), "public-visibility-"));
