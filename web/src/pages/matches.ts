@@ -15,7 +15,8 @@ import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-pag
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { SUPERCOLONY_NAMES, colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
-import { benchmarkLabel } from "../leaderboard-page/view.ts";
+import { C } from "../leaderboard-page/copy.ts";
+import { NO_BADGES, badgeWords, benchmarkBadges, hasBadges, type BadgeKinds } from "../leaderboard-page/view.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
@@ -24,7 +25,7 @@ import { mountFrame, rebuild, stateLine } from "./chrome.ts";
 import { rowRatingNode } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
-  RECORDINGS_LIST, colonySeats, liveKind, liveLine, loadedText, loadsSettled, matchesLists, recordingsLine, seatGroups, seatModelName, stampWord,
+  RECORDINGS_LIST, colonySeats, houseBadges, liveKind, liveLine, loadedText, loadsSettled, matchesLists, recordingsLine, seatGroups, seatModelName, stampWord,
   whenParts, winnerOf, type CardState, type LoadsSeen, type PlayerParts, type SeatEntry, type SeatGroup,
 } from "./model.ts";
 
@@ -56,6 +57,10 @@ export interface ColonyCell {
   readonly result: ColonyResult | null;
   /** Shown in place of lines where there are none ("did not join", "no opponent yet"), or after them ("seat open"). */
   readonly note: string | null;
+  /** No one is in this colony: a recorded colony nobody joined, or a waiting row's colony with no one in it yet. A phone lists
+   * only the colonies with players, so it draws no line for it; the wide table keeps its column and its note. Missing data
+   * ("not recorded") is not absent. */
+  readonly absent?: true;
 }
 /** One row of any Matches list, as the one row builder draws it in both forms. */
 export interface MatchRow {
@@ -163,8 +168,8 @@ export function livePlayers(seats: readonly LiveSeat[]): SeatGroup[] {
     const reported = seat.modelLabel && !house ? seatModelName(seat.modelLabel, who) : null;
     const model = reported !== null && reported !== who ? reported : null;
     const shown = (name: string): PlayerParts => {
-      if (house) { const row = rowName(name, undefined); return { user: null, model: row.name, badges: row.badges }; }
-      const badges = model === null ? [] : benchmarkLabel({ displayName: "", thinkingLevel: seat.thinkingLevel ?? null, serviceTier: seat.serviceTier ?? null }).badges;
+      if (house) return { user: null, model: rowName(name, undefined).name, badges: houseBadges(who) };
+      const badges = model === null ? NO_BADGES : benchmarkBadges({ displayName: "", thinkingLevel: seat.thinkingLevel ?? null, serviceTier: seat.serviceTier ?? null });
       return { user: name, model, badges };
     };
     const rating = seat.rating === null ? null : { rating: seat.rating, rd: seat.rd, ratedMatches: seat.ratedMatches };
@@ -272,7 +277,7 @@ function rowParts(doc: Document) {
     if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
     name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
     node.append(name);
-    if (parts.badges.length > 0) node.append(badgeGroup(doc, parts.badges));
+    if (hasBadges(parts.badges)) node.append(badgeGroup(doc, parts.badges));
     if (rating) node.append(rowRatingNode(doc, rating, `${key}|rating`));
     if (seats > 1) {
       const count = h(doc, "span", "d1p-count");
@@ -319,10 +324,11 @@ function rowParts(doc: Document) {
     return node;
   };
   /** The stacked rows' colonies, and a four-colony row's Colonies cell: each colony's name in its ink over (or beside) its
-   * lines. */
-  const colonyList = (row: MatchRow, key: string) => {
+   * lines. The stacked (phone) rows list only the colonies with players: an absent colony gets no line. */
+  const colonyList = (row: MatchRow, key: string, stacked = false) => {
     const list = h(doc, "dl", "d1p-colonies");
     row.colonies.forEach((cell, colony) => {
+      if (stacked && cell.absent) return;
       const block = h(doc, "dd");
       block.append(...colonyLines(cell, colony, key));
       list.append(colonyLabel("dt", row, colony), block);
@@ -410,7 +416,7 @@ function rowParts(doc: Document) {
             agent.style.setProperty("min-width", "0");
             agent.style.setProperty("margin-top", "4px");
             item.append(agent);
-          } else item.append(colonyList(row, narrow));
+          } else item.append(colonyList(row, narrow, true));
           if (row.action) item.append(rowPill(row.action.text, row.action.href, row.action.label, narrow));
           list.append(item);
         }
@@ -449,7 +455,7 @@ export function recordingMatchRow(r: Recording, row: ReturnType<typeof recording
   const colony = (index: number): ColonyCell => {
     if (seats === null) return { lines: [], result: null, note: NOT_RECORDED };
     const entries = seats[index];
-    if (entries === null) return { lines: [], result: null, note: NOT_JOINED };
+    if (entries === null) return { lines: [], result: null, note: NOT_JOINED, absent: true };
     return { lines: seatGroups(entries), result: colonyResult(r, index, true), note: null };
   };
   return {
@@ -520,28 +526,24 @@ export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] 
 }
 
 /** A player's badges, the one style every Matches table uses: the level, with Fast drawn as a bolt in the same badge
- * ("Fast" read by screen readers and in the group's title with the other words), then any other badge (retired). Fast
- * with no level is a badge of its bolt alone. */
-export function badgeGroup(doc: Document, badges: readonly string[]): HTMLElement {
+ * ("Fast" read by screen readers and in the group's title with the other words), then retired. Only the speed tier is the
+ * bolt; a level that reads "fast" is a level like any other. Fast with no level is a badge of its bolt alone. */
+export function badgeGroup(doc: Document, badges: BadgeKinds): HTMLElement {
   const tags = h(doc, "span", "d1p-tags");
-  tags.title = badges.join(" ");
-  let last: HTMLElement | null = null;
-  for (const badge of badges) {
-    if (badge.toLowerCase() === "fast") {
-      const holder = last ?? h(doc, "span", "d1p-tag");
-      if (last === null) tags.append(holder);
+  tags.title = badgeWords(badges).join(" ");
+  if (badges.level !== null || badges.fast) {
+    const tag = h(doc, "span", "d1p-tag");
+    // The word as its own text node, so the bolt can follow it in the same badge.
+    if (badges.level !== null) tag.append(badges.level);
+    if (badges.fast) {
       const bolt = h(doc, "span", "d1p-bolt");
       bolt.setAttribute("aria-hidden", "true");
-      holder.classList.add("is-fast");
-      holder.append(bolt, h(doc, "span", "d1p-sr", ` ${badge}`));
-      last = null;
-      continue;
+      tag.classList.add("is-fast");
+      tag.append(bolt, h(doc, "span", "d1p-sr", ` ${C.fastBadge}`));
     }
-    // The word as its own text node, so the bolt can follow it in the same badge.
-    last = h(doc, "span", "d1p-tag");
-    last.append(badge);
-    tags.append(last);
+    tags.append(tag);
   }
+  if (badges.retired) tags.append(h(doc, "span", "d1p-tag", C.retiredBadge));
   return tags;
 }
 
@@ -634,6 +636,8 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
     return slot;
   }
   const cell = row.colonies[colony]!;
+  // A phone lists only the colonies that played (archive.css): an absent colony keeps its column on a wide card only.
+  if (cell.absent) slot.classList.add("is-absent");
   const names = row.colonyNames ?? COLONY_NAMES;
   const name = names[colony]!;
   if (cell.result === "Winner") {
@@ -665,9 +669,9 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   line.append(name);
-  if (parts.badges.length === 0 && seats <= 1 && !rating) return line;
+  if (!hasBadges(parts.badges) && seats <= 1 && !rating) return line;
   const badges = h(doc, "span", "d1p-rec-badges");
-  if (parts.badges.length > 0) badges.append(badgeGroup(doc, parts.badges));
+  if (hasBadges(parts.badges)) badges.append(badgeGroup(doc, parts.badges));
   if (seats > 1) {
     const count = h(doc, "span", "d1p-count");
     const shown = h(doc, "span", undefined, `×${seats}`);

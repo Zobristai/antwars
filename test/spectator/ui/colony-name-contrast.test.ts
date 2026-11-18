@@ -17,7 +17,7 @@ import type { Recording } from "../../../web/src/recording.ts";
 import type { ReplayEvent } from "../../../web/src/replay-events.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
-import type { LiveMatch, Recording as MatchRecording, WaitingLobby } from "../../../web/src/matches-page/data.ts";
+import type { LiveMatch, Recording as MatchRecording, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
 
@@ -667,6 +667,51 @@ describe("Recordings on a phone list only the colonies that played", () => {
         await tab.setContent(quadrantsPage().page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
         for (const row of await tab.evaluate(shown)) expect(row.map(slot => slot.dash)).toEqual([false, false, false, false]);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
+/** The Matches page with a one-colony Waiting row (a queued agent with no opponent yet) and a partial four-colony recording
+ * whose last colony nobody joined. */
+function absentColoniesPage() {
+  const port = dom({ search: "" });
+  const host = port.doc.createElement("div") as unknown as ElementPort;
+  port.body.append(host);
+  const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
+  const seats = ["alice", "bob", "cat"].map((handle, colony) => ({ seat: colony, colony: colony as 0 | 1 | 2, modelLabel: null, thinkingLevel: null, serviceTier: null, handle }));
+  const partial: MatchRecording = { id: "2026-11-14T07-00-00-000Z-1", startedAt: "2026-11-14T07:00:00.000Z", endedAt: null, simulationEndedAt: null, winner: null,
+    reason: null, decidedBy: null, seats, status: "partial", unavailable: [], matchType: { kind: "quadrants", size: 1 }, colonyNames: names };
+  const queued: WaitingAgent = { displayName: "coffee-ant", mode: "1v1", waitingSeconds: 90, since: Date.parse("2026-11-11T05:01:00Z"), rating: null };
+  const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
+  mounted.update({ waiting: { status: "ready", rows: [queued] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows: [partial] }, next: null });
+  const body = markup(host);
+  mounted.destroy();
+  return `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>`;
+}
+
+describe("a phone lists no line for a colony nobody joined", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps the partial recording's and the Waiting row's empty colony in its wide column, and gives it no line on a phone, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(absentColoniesPage());
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const seen = await tab.evaluate(() => {
+          const visible = (node: Element) => node.checkVisibility();
+          const slots = [...document.querySelectorAll(".d1p-rec-rows > li > .d1p-rec-slot")].filter(visible).map(slot => slot.textContent ?? "");
+          const card = document.querySelectorAll(".d1p-card")[0]!;
+          const waiting = [...card.querySelectorAll(".d1p-model")].filter(visible).map(line => line.textContent ?? "");
+          return { slots, waiting };
+        });
+        if (width === 1280) {
+          expect(seen.slots.map(text => text.includes("did not join"))).toEqual([false, false, false, true]);
+          expect(seen.waiting).toEqual(["coffee-ant", "no opponent yet"]);
+        } else {
+          expect(seen.slots).toHaveLength(3);
+          expect(seen.slots.join(" ")).not.toContain("did not join");
+          expect(seen.waiting).toEqual(["coffee-ant"]);
+        }
       } finally { await tab.close(); }
     });
   }

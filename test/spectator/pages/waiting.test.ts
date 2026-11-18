@@ -92,6 +92,20 @@ describe("the Waiting card's lobby rows", () => {
     p.mounted.destroy();
   });
 
+  it("lists only the colonies with someone in them on a phone, each colony kept with its note in the wide table", () => {
+    const p = page();
+    const solo: WaitingAgent = { displayName: "coffee-ant", mode: "1v1", waitingSeconds: 90, since: T, rating: rating(1540) };
+    p.mounted.update(view({ status: "ready", rows: [solo, lobbies[2]!, lobbies[0]!] }));
+    expect(tableRows(p.card()).map(row => row.slice(2, 4))).toEqual([[["coffee-ant1540 ± 80"], ["no opponent yet"]], [["not joined yet"], ["kain"]],
+      [["omp-dolphin", "omp-dolphin/spar"], ["coffee-ant1540 ± 80", "seat open"]]]);
+    const stacked = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li").map(item => item.byClass("d1p-colonies")[0]!.children
+      .map(node => node.tag === "dt" ? `${node.tag}:${node.textContent}` : node.byClass("d1p-model").map(line => line.textContent).join("|")));
+    expect(stacked).toEqual([["dt:Very Large Colony", "coffee-ant1540 ± 80"], ["dt:Lake Hodges Colony", "kain"],
+      ["dt:Very Large Colony", "omp-dolphin|omp-dolphin/spar", "dt:Lake Hodges Colony", "coffee-ant1540 ± 80|seat open"]]);
+    expect(p.card().byClass("d1p-narrow")[0]!.textContent).not.toMatch(/no opponent yet|not joined yet/);
+    p.mounted.destroy();
+  });
+
   it("tells every lobby's kind by the server's rule for a recording's lobby, Unranked for a public or invite-only lobby", () => {
     expect(lobbyKind({ mode: "house-3v3" })).toBe("index");
     expect(lobbyKind({ mode: "2v2" })).toBe("ranked");

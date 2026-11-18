@@ -226,12 +226,17 @@ describe("Matches", () => {
     expect(colonySeats([seat(0, "coffee-ant/local", "coffee-ant"), seat(1, "coffee-ant/local", "kite")])!.map(c => c?.map(e => shown(e.parts)) ?? null))
       .toEqual([["coffee-ant", "kite local"], null]);
     expect(recordedPlayer(seat(0, "openai/gpt-6.1-sol", "antwars/gpt-6-1-sol"))).toMatchObject({ user: null, model: "GPT-6.1 Sol" });
-    expect(recordedPlayer(seat(0, null, "omp-dolphin"))).toEqual({ user: "omp-dolphin", model: null, badges: [] });
+    expect(recordedPlayer(seat(0, null, "omp-dolphin"))).toEqual({ user: "omp-dolphin", model: null, badges: { level: null, fast: false, retired: false } });
     expect(recordedPlayer({ ...seat(0, "openai/gpt-6.1-terra", "kain"), thinkingLevel: "high", serviceTier: "fast" }))
-      .toEqual({ user: "kain", model: "GPT-6.1 Terra", badges: ["high", "Fast"] });
+      .toEqual({ user: "kain", model: "GPT-6.1 Terra", badges: { level: "high", fast: true, retired: false } });
+    // Fast is the recorded speed tier only: a level that reads "fast" stays a level, on a standard or a fast seat.
+    expect(recordedPlayer({ ...seat(0, "openai/gpt-6.1-terra", "kain"), thinkingLevel: "fast", serviceTier: "standard" }).badges)
+      .toEqual({ level: "fast", fast: false, retired: false });
+    expect(recordedPlayer({ ...seat(0, "openai/gpt-6.1-terra", "kain"), thinkingLevel: "fast", serviceTier: "fast" }).badges)
+      .toEqual({ level: "fast", fast: true, retired: false });
     // A builder that named no model shows no level or Fast, whatever it recorded.
-    expect(recordedPlayer({ ...seat(0, null, "kain"), thinkingLevel: "high" }).badges).toEqual([]);
-    expect(recordedPlayer(seat(0, null, null))).toEqual({ user: null, model: "model unknown", badges: [] });
+    expect(recordedPlayer({ ...seat(0, null, "kain"), thinkingLevel: "high" }).badges).toEqual({ level: null, fast: false, retired: false });
+    expect(recordedPlayer(seat(0, null, null))).toEqual({ user: null, model: "model unknown", badges: { level: null, fast: false, retired: false } });
     // Only an exact provider part before the first "/" counts; every other label keeps modelName's words.
     expect(seatModelName("coffee-ant/local", "coffee-ant")).toBe("coffee-ant");
     expect(seatModelName("coffee-ant/local", "Coffee-Ant")).toBe("local");
@@ -245,12 +250,12 @@ describe("Matches", () => {
     // A recorded seat of a retired house handle carries the retired badge after its level; a current one, a builder on
     // the same model, or a builder handle spelled like it carries none.
     expect(recordedIdentity(seat(0, "anthropic/claude-fable-5.1", "antwars/claude-fable-5-1"))).toEqual({ name: "Claude Fable 5.1", badges: ["max", "retired"], quiet: null });
-    expect(recordedPlayer(seat(0, "anthropic/claude-fable-5.1", "antwars/claude-fable-5-1"))).toEqual({ user: null, model: "Claude Fable 5.1", badges: ["max", "retired"] });
+    expect(recordedPlayer(seat(0, "anthropic/claude-fable-5.1", "antwars/claude-fable-5-1"))).toEqual({ user: null, model: "Claude Fable 5.1", badges: { level: "max", fast: false, retired: true } });
     expect(recordedIdentity(seat(0, "anthropic/claude-fable-5.2", "antwars/claude-fable-5-2")).badges).toEqual(["max"]);
-    expect(recordedPlayer(seat(0, "anthropic/claude-fable-5.1", "kite")).badges).not.toContain("retired");
+    expect(recordedPlayer(seat(0, "anthropic/claude-fable-5.1", "kite")).badges.retired).toBe(false);
     expect(recordedIdentity(seat(0, null, "claude-fable-5-1")).badges).toEqual([]);
     const groups = colonySeats([seat(0, null, "omp-dolphin"), seat(1, null, "coffeebot-ant"), seat(2, null, "omp-dolphin")])![0]!;
-    expect(seatGroups(groups)).toEqual([{ parts: { user: "omp-dolphin", model: null, badges: [] }, seats: 2 }, { parts: { user: "coffeebot-ant", model: null, badges: [] }, seats: 1 }]);
+    expect(seatGroups(groups)).toEqual([{ parts: { user: "omp-dolphin", model: null, badges: { level: null, fast: false, retired: false } }, seats: 2 }, { parts: { user: "coffeebot-ant", model: null, badges: { level: null, fast: false, retired: false } }, seats: 1 }]);
     // Seats group only where they show alike and are one player: one username and one label.
     const named = (list: Recording["seats"]) => seatGroups(colonySeats(list)![0]!).map(group => [shown(group.parts), group.seats]);
     expect(named([seat(0, "coffee-ant/local", "kite"), seat(1, "coffee-ant/local", "coffee-ant")])).toEqual([["kite local", 1], ["coffee-ant", 1]]);

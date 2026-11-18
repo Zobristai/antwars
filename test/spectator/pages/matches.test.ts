@@ -263,7 +263,8 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
     expect(r!.byClass("d1p-rec-when")[0]!.textContent).toBe("27 Oct 2026 · 09:00 UTC");
     expect([w, l].map(item => item!.children[1]!.children.map(node => node.textContent)))
       .toEqual([["Ranked · 1v1", "Status Waiting"], ["Index · 1v1", "Status Live"]]);
-    expect(colonies(w!)).toEqual([["Very Large Colony", ["coffee-ant1540 ± 80"]], ["Lake Hodges Colony", ["no opponent yet"]]]);
+    // A phone lists only the colonies with someone in them: the queued agent's, not its opponent's empty one.
+    expect(colonies(w!)).toEqual([["Very Large Colony", ["coffee-ant1540 ± 80"]]]);
     p.mounted.destroy();
   });
 
@@ -305,6 +306,24 @@ describe("the one player line", () => {
     expect([badge.tag, badge.children[0]!.textContent ?? "", badge.byClass("d1p-elo-rd")[0]!.textContent]).toEqual(["button", "1540", " ± 80"]);
     expect(recordings.card.byClass("d1p-prov")).toEqual([]);
     expect(recordings.card.textContent).not.toMatch(/provisional/i);
+    p.mounted.destroy();
+  });
+
+  it("draws the bolt for the recorded speed tier only, never for a level that reads fast", () => {
+    const fastLevel = (serviceTier: string) => seat(0, 0, "openai/gpt-6.1-terra", "kain", { thinkingLevel: "fast", serviceTier });
+    const recorded = at("rec-fast-level", { winner: 0, decidedBy: "queens", seats: [fastLevel("standard"), { ...fastLevel("fast"), seat: 1, colony: 1, handle: "kite" }] });
+    const liveFast: LiveMatch = { ...live("lobby-fast"), colonies: [
+      [{ displayName: "kain", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "fast", serviceTier: "standard", rating: null, rd: null, ratedMatches: null }],
+      [{ displayName: "kite", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "fast", serviceTier: "fast", rating: null, rd: null, ratedMatches: null }]] };
+    const { p, live: liveList, recordings } = show({ live: { status: "ready", rows: [liveFast] }, recordings: { status: "ready", rows: [recorded] } });
+    const lines = [recordings.list.byClass("d1p-rec-player"), bodyRows(liveList.table)[0]!.byClass("d1p-model")];
+    for (const [standard, fast] of lines) {
+      // A standard player keeps its "fast" level as a word, with no bolt; a fast one shows that word and exactly one bolt.
+      expect(standard!.byClass("d1p-tag").map(tag => tag.textContent)).toEqual(["fast"]);
+      expect(standard!.byClass("d1p-bolt")).toHaveLength(0);
+      expect(fast!.byClass("d1p-tag").map(tag => tag.textContent)).toEqual(["fast Fast"]);
+      expect(fast!.byClass("d1p-bolt")).toHaveLength(1);
+    }
     p.mounted.destroy();
   });
 
@@ -488,6 +507,10 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
     expect(recordings.list.children.map(row => row.byClass("d1p-rec-player").map(line => line.textContent))).toEqual([
       ["ann", "bob", "cat", "dan"], ["ann", "bob", "cat", "dan"], ["ann", "bob", "cat", "did not join"]]);
     expect(recordings.list.children.map(row => row.byClass("d1p-rec-note").map(node => node.textContent))).toEqual([["Draw"], ["Abandoned"], ["Record partial"]]);
+    // The colony that did not join keeps its column on a wide card; a phone hides it (archive.css), so it gets no line.
+    const absent = recordings.list.children[2]!.byClass("d1p-rec-slot");
+    expect(absent.map(slot => slot.classes().includes("is-absent"))).toEqual([false, false, false, true]);
+    expect(css()).toMatch(/@container d1p-card \(width < 72rem\) \{[^@]*\.d1p-rec-slot:is\(\.is-none, \.is-absent\) \{ display: none; \}/);
     p.mounted.destroy();
   });
 
