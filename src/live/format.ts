@@ -86,6 +86,8 @@
  *            figures, four varints: full queen HP (milli-HP), worker cost, soldier cost and soldier hatch interval
  *            (ticks). Only a setup carrying the marker selects 28; every other message keeps its version and bytes,
  *            so a setup without it reads as rules 27 or earlier.
+ *   version 30: optional four-colony kill totals after the full snapshot (presence byte, four varints),
+ *            and event 23 with four cumulative varints. Only messages carrying totals select it.
  *   version 29: extends version 28 with flyers. Ant bits gain bit 5 (flyer); after the agent bytes, each flyer in
  *            ant order has u8 state (0 grounded, 1 flying, 2 hovering, 3 locked out), then v takeOffTick when locked
  *            out, or u16 destX | u16 destY (sub-tile units) when flying or hovering. There is no lifetime field.
@@ -153,6 +155,8 @@ export const FOUR_COLONY_STREAM_VERSION = 27;
 export const RULES28_STREAM_VERSION = 28;
 /** Flyers on the ants, the count-mark caste flyer, take-offs, landings and air fights; selected only when a message carries one. */
 export const FLYER_STREAM_VERSION = 29;
+/** Optional authoritative four-colony kill totals; older recordings retain their bytes. */
+export const KILLS_STREAM_VERSION = 30;
 /** Append-only count-mark caste wire indexes; flyer is carried only by a flyer mark (version 29). */
 export const STREAM_COUNT_CASTES = ["any", "worker", "soldier", "flyer"] as const;
 /** A flyer's state on the wire (index). */
@@ -399,6 +403,8 @@ export interface StreamFull {
   overrunRequired: number;
   /** Ants of each colony that have died so far. */
   deaths: number[];
+  /** Authoritative last-hit totals, absent in recordings that did not carry them. */
+  kills?: number[];
   /** Present only once playback has reached the final tick. */
   result: StreamResult | null;
   /** Food on each tile, row-major. Optional for senders; decode always sets it. */
@@ -412,6 +418,7 @@ export interface StreamFull {
 }
 
 export type StreamEvent =
+  | { kind: "kills"; totals: number[] }
   | { kind: "territoryWin"; progress: StreamTerritoryWin | null }
   | { kind: "birth"; antId: number }
   | { kind: "death"; antId: number; colony: Colony; x: number; y: number }
@@ -446,6 +453,14 @@ export interface StreamMessage {
   events: StreamEvent[];
 }
 
+/** Preserve the existing wire format for live viewers that have not opted into kill totals. */
+export function withoutKillTotals(message: StreamMessage): StreamMessage {
+  const events = message.events.filter(event => event.kind !== "kills");
+  if (message.full?.kills === undefined) return { ...message, events };
+  const { kills: _kills, ...full } = message.full;
+  return { ...message, full, events };
+}
+
 /** Message tick is the completed state: the last processed simulation tick is tick - 1. */
 export function isIdle(agent: StreamAgent, tick: number, idleTicks: number, houseIdleTicks?: number): boolean {
   if (houseIdleTicks !== undefined) return tick - 1 - (agent.lastHouseCallTick ?? agent.joinTick) >= houseIdleTicks;
@@ -477,6 +492,7 @@ const EVENT_CODES = {
   eliminated: 20,
   takeoff: 21,
   landing: 22,
+  kills: 23,
 } as const satisfies Record<StreamEvent["kind"], number>;
 
 const NO_STORE: StreamStore = { food: 0, nextHatchTick: 0, nextCost: 0 };
@@ -798,9 +814,19 @@ function readTerritoryWin(r: Reader, version: number): StreamTerritoryWin | unde
   return { colony: (present - 1) as Colony, startTick, winTick };
 }
 
+function killTotals(totals: readonly number[]): void {
+  if (totals.length !== 4 || totals.some(n => !Number.isSafeInteger(n) || n < 0 || n > 0xffff_ffff)) {
+    throw new Error("kill totals need four unsigned integers");
+  }
+}
+
 function writeEvent(w: Writer, e: StreamEvent, version: number) {
   w.u8(EVENT_CODES[e.kind]);
   switch (e.kind) {
+    case "kills":
+      killTotals(e.totals);
+      for (const total of e.totals) w.v(total);
+      return;
     case "territoryWin":
       writeTerritoryWin(w, e.progress);
       return;
@@ -915,6 +941,12 @@ function writeEvent(w: Writer, e: StreamEvent, version: number) {
 function readEvent(r: Reader, version: number): StreamEvent {
   const code = r.u8();
   switch (code) {
+    case EVENT_CODES.kills: {
+      if (version < KILLS_STREAM_VERSION) throw new Error("kill totals need version 30");
+      const totals = Array.from({ length: 4 }, () => r.v());
+      killTotals(totals);
+      return { kind: "kills", totals };
+    }
     case EVENT_CODES.territoryWin:
       if (version < TERRITORY_WIN_STREAM_VERSION) throw new Error("territory-win event needs version 11");
       return { kind: "territoryWin", progress: readTerritoryWin(r, version) ?? null };
@@ -1074,7 +1106,8 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
     m.events.some(event => event.kind === "join" && event.identity?.rd !== undefined);
   const flyer = m.ants.flyers?.some((f) => f !== null) === true || m.full?.marks.some(mark => mark.caste === "flyer") === true ||
     m.events.some(e => e.kind === "takeoff" || e.kind === "landing" || (e.kind === "fight" && e.air === true) || (e.kind === "mark" && e.mark.caste === "flyer"));
-  const version = flyer ? FLYER_STREAM_VERSION : m.full?.setup.rules28 === true ? RULES28_STREAM_VERSION : carriesFourColonies(m) ? FOUR_COLONY_STREAM_VERSION : m.full?.setup.colonyNames !== undefined ? COLONY_NAMES_STREAM_VERSION : deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
+  const kills = m.full?.kills !== undefined || m.events.some(e => e.kind === "kills");
+  const version = kills ? KILLS_STREAM_VERSION : flyer ? FLYER_STREAM_VERSION : m.full?.setup.rules28 === true ? RULES28_STREAM_VERSION : carriesFourColonies(m) ? FOUR_COLONY_STREAM_VERSION : m.full?.setup.colonyNames !== undefined ? COLONY_NAMES_STREAM_VERSION : deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
   w.u8(version);
   const queenEnd = m.events.some(e => e.kind === "end" && e.result.decidedBy === "queen_kills");
   if (queenEnd && m.events.some(e => e.kind === "end" && e.result.decidedBy !== "queen_kills")) {
@@ -1245,6 +1278,14 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
         w.v(f.queenHp); w.v(f.workerCost); w.v(f.soldierCost); w.v(f.soldierIntervalTicks);
       }
     }
+    if (version >= KILLS_STREAM_VERSION) {
+      w.u8(f.kills === undefined ? 0 : 1);
+      if (f.kills !== undefined) {
+        if (colonies !== 4) throw new Error("kill totals need four colonies");
+        killTotals(f.kills);
+        for (const total of f.kills) w.v(total);
+      }
+    }
   }
 
   w.v(m.events.length);
@@ -1284,7 +1325,7 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
   const r = new Reader(bytes);
   if (r.u16() !== SNAPSHOT_MAGIC) throw new Error("not a stream message");
   const version = r.u8();
-  if (version !== FLYER_STREAM_VERSION && version !== RULES28_STREAM_VERSION && version !== FOUR_COLONY_STREAM_VERSION && version !== COLONY_NAMES_STREAM_VERSION && version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
+  if (version !== KILLS_STREAM_VERSION && version !== FLYER_STREAM_VERSION && version !== RULES28_STREAM_VERSION && version !== FOUR_COLONY_STREAM_VERSION && version !== COLONY_NAMES_STREAM_VERSION && version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
   const flags = r.u8();
   const tick = r.v();
 
@@ -1470,6 +1511,11 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
         full.setup.rules28 = true;
         full.setup.rules28Figures = { queenHp: r.v(), workerCost: r.v(), soldierCost: r.v(), soldierIntervalTicks: r.v() };
       }
+    }
+    if (version >= KILLS_STREAM_VERSION) {
+      const present = r.u8();
+      if (present > 1 || (present && colonies !== 4)) throw new Error("invalid kill totals presence");
+      if (present) { full.kills = perColonyRead(() => r.v()); killTotals(full.kills); }
     }
   }
 
