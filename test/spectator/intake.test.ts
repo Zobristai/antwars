@@ -426,3 +426,27 @@ describe("the production worker feed retains bounded catch-up", () => {
     } finally { live.link.close(); }
   }, 20_000);
 });
+
+
+it("keeps four-colony kill totals at their playback tick through worker transfer and reconnect", async () => {
+  const m = structuredClone(messages[0]!);
+  const full = m.full!;
+  full.setup = { ...full.setup, colonies: 4, queens: [...full.setup.queens, ...full.setup.queens], colonyNames: ["A", "B", "C", "D"], startBoxes: undefined, startingQueenIds: undefined };
+  full.overrun = [0, 0, 0, 0]; full.deaths = [5, 6, 7, 8]; full.hatched = [0, 0, 0, 0];
+  full.stores = [...full.stores!, ...full.stores!]; full.kills = [0, 1, 2, 3]; full.eliminations = [];
+  const worker = new WorkerIntake(createWorker), played = new Playback();
+  try {
+    const first = await worker.decode(raw(m)); played.pushPrepared(first.prepared!, 0);
+    const next = { ...m, tick: m.tick + 1, full: null, events: [{ kind: "kills" as const, totals: [0, 1, 2, 9] }] };
+    const reply = await worker.decode(raw(next)); played.pushPrepared(reply.prepared!, 100);
+    const frame = new Frame(); played.sample(RENDER_DELAY_MS, frame);
+    expect(frame.board!.kills).toEqual([0, 1, 2, 3]);
+    played.sample(RENDER_DELAY_MS + 100, frame);
+    expect(frame.board!.kills).toEqual([0, 1, 2, 9]);
+    expect(frame.board!.deaths).toEqual([5, 6, 7, 8]);
+    worker.reset(); full.kills = [0, 4, 5, 12];
+    const snapshot = await worker.decode(raw({ ...m, tick: m.tick + 20 }));
+    played.pushPrepared(snapshot.prepared!, 2000); played.sample(2000 + RENDER_DELAY_MS, frame);
+    expect(frame.board!.kills).toEqual([0, 4, 5, 12]);
+  } finally { worker.close(); }
+});

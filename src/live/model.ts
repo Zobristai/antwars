@@ -212,6 +212,7 @@ export class SpectatorRecorder {
   private owner: number[];
   private food: number[];
   private stores: StreamStore[];
+  private kills: number[] | undefined;
   /** Four-colony matches: the colonies already sent as eliminated (or eliminated before a resume). */
   private readonly eliminated: Set<number>;
   private marks: Map<number, StreamMark>;
@@ -232,6 +233,8 @@ export class SpectatorRecorder {
     this.owner = initial.owner.slice();
     this.food = initial.food.slice();
     this.stores = storesOf(initial);
+    // A resumed older stream needs a complete authoritative baseline on its next tick.
+    this.kills = resume === undefined && initial.colonies.length === 4 ? initial.colonies.map(c => c.kills ?? 0) : undefined;
     this.eliminated = new Set(initial.colonies.flatMap((c) => (c.eliminated === undefined ? [] : [c.id])));
     if (resume !== undefined) {
       this.initialState = null;
@@ -300,6 +303,7 @@ export class SpectatorRecorder {
       overrun: s.colonies.map((c) => Math.max(0, ...activeQueens(c).map((q) => q.overrunTicks))),
       overrunRequired: s.config.overrunTicks,
       deaths: s.colonies.map((_, i) => s.stats.deaths[i]!),
+      ...(s.colonies.length === 4 ? { kills: s.colonies.map(c => c.kills ?? 0) } : {}),
       ...(s.colonies.length > 2 ? { eliminations: eliminationsOf(s) } : {}),
       result: null,
       food: Uint32Array.from(s.food),
@@ -316,6 +320,11 @@ export class SpectatorRecorder {
   record(out: StepOutput): TickRecord {
     const state = out.state;
     const events: StreamEvent[] = [];
+    if (state.colonies.length === 4) {
+      const totals = state.colonies.map(c => c.kills ?? 0);
+      if (!this.kills || totals.some((n, c) => n !== this.kills![c])) events.push({ kind: "kills", totals });
+      this.kills = totals;
+    }
     const marks = this.marksOf(state);
     // A four-colony elimination has no sim event: it is read from the state and sent before the step's end.
     const leaving = this.eliminations(out);
@@ -574,6 +583,10 @@ export class SpectatorState {
     const t = rec.tick - 1;
     for (const e of rec.events) {
       switch (e.kind) {
+        case "kills":
+          if (f.setup.queens.length !== 4) throw new Error("kill totals need four colonies");
+          f.kills = [...e.totals];
+          break;
         case "territoryWin":
           if (e.progress === null) delete f.territoryWin;
           else f.territoryWin = { ...e.progress };

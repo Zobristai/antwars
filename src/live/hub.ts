@@ -28,7 +28,7 @@ import { promisify } from "node:util";
 import { deflateRaw, deflateRawSync, inflateRaw } from "node:zlib";
 import type { SimState, StepOutput } from "../sim/types.js";
 import { DEFAULT_LIVE_CONFIG, type LiveConfig } from "./config.js";
-import { decodeMessage, encodeMessage, encodePublicMessage, type StreamAgent, type StreamMessage, type StreamRatingChange } from "./format.js";
+import { decodeMessage, encodeMessage, encodePublicMessage, withoutKillTotals, type StreamAgent, type StreamMessage, type StreamRatingChange } from "./format.js";
 import { SpectatorRecorder, SpectatorState, type RecorderResume, type SpectatorPlayerOptions, type TickRecord } from "./model.js";
 import { ReplayRecording } from "../replays/recording.js";
 import type { RecordHandoff } from "../records/handoff.js";
@@ -210,6 +210,7 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
 interface Spectator {
   readonly res: ServerResponse;
   readonly stream: MatchStream;
+  readonly kills: boolean;
   needsFull: boolean;
   timer: unknown;
   finalFlushTimer: unknown;
@@ -475,6 +476,7 @@ class MatchStream {
     }
     if (this.access) this.hub.recordReleased(this.access, this.released.full.agents);
     let full: string | null = null;
+    let legacyFull: string | null = null, legacyDelta: string | null = null;
     if (this.recording !== null) {
       if (first) {
         const opening = this.fullPayload(this.released);
@@ -486,11 +488,21 @@ class MatchStream {
     }
     for (const s of this.spectators) {
       if (s.needsFull) {
-        full ??= this.fullFrame(this.released);
-        this.hub.write(s, full);
+        if (s.kills) {
+          full ??= this.fullFrame(this.released);
+          this.hub.write(s, full);
+        } else {
+          legacyFull ??= this.fullFrame(this.released, false);
+          this.hub.write(s, legacyFull);
+        }
         s.needsFull = false;
       } else {
-        this.hub.write(s, delta);
+        // Both forms come from the same already-released tick, never the live sim state.
+        if (s.kills) this.hub.write(s, delta);
+        else {
+          legacyDelta ??= this.hub.frame(withoutKillTotals({ ...record, full: null }));
+          this.hub.write(s, legacyDelta);
+        }
       }
       // A dropped slow reader must not be written to or have its timer re-armed.
       if (record.events.some(event => event.kind === "end") && this.spectators.has(s)) this.hub.flushFinal(s);
@@ -508,19 +520,20 @@ class MatchStream {
   }
 
   /** The full snapshot at the delayed playback position, naming this match by its identity. */
-  private fullFrame(released: SpectatorState): string {
-    return sseFrame(this.fullPayload(released));
+  private fullFrame(released: SpectatorState, kills = true): string {
+    return sseFrame(this.fullPayload(released, kills));
   }
 
-  private fullPayload(released: SpectatorState): Uint8Array {
+  private fullPayload(released: SpectatorState, kills = true): Uint8Array {
     const m = released.message();
-    return this.hub.payload({ ...m, full: { ...m.full!, match: this.identity } });
+    const message = { ...m, full: { ...m.full!, match: this.identity } };
+    return this.hub.payload(kills ? message : withoutKillTotals(message));
   }
 
   attach(s: Spectator): void {
     this.spectators.add(s);
     if (this.released !== null) {
-      this.hub.write(s, this.fullFrame(this.released));
+      this.hub.write(s, this.fullFrame(this.released, s.kills));
       if (this.released.full.result !== null && this.spectators.has(s)) this.hub.flushFinal(s);
       s.needsFull = false;
     }
@@ -694,13 +707,14 @@ export class LiveHub {
   }
 
   private async handlePublic(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    let path: string;
+    let url: URL;
     try {
-      path = new URL(req.url ?? "/", "http://localhost").pathname;
+      url = new URL(req.url ?? "/", "http://localhost");
     } catch {
       res.writeHead(400).end();
       return;
     }
+    const path = url.pathname;
     if (path === "/live/status") {
       if (req.method !== "GET") {
         res.writeHead(405, { allow: "GET" }).end();
@@ -774,7 +788,7 @@ export class LiveHub {
       "x-antwar-match": String(stream.seq),
     });
     res.flushHeaders();
-    const s: Spectator = { res, stream, needsFull: true, timer: null, finalFlushTimer: null };
+    const s: Spectator = { res, stream, kills: url.searchParams.get("kills") === "1", needsFull: true, timer: null, finalFlushTimer: null };
     // An intermediary may hold the headers until the first body byte, which the delay can postpone for minutes.
     this.write(s, HEARTBEAT);
     req.on("close", () => {

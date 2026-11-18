@@ -56,6 +56,7 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
   const owner = new LiveHub({ clock, currentInvite: accounts.lobbies.isInviteCurrent, relayKey: relay.ownerKey });
   /** The relay signature each request to the slot's /watch/live carried. */
   const relaySignatures: (string | undefined)[] = [];
+  const ownerPaths: string[] = [];
   const gateway = new LiveHub(); close.push(() => owner.close(), () => gateway.close());
   const blobs = new Map<string, Uint8Array>();
   const archive = createPrivateArchive({ create: async object => { blobs.set(object.name, object.body); } },
@@ -64,8 +65,8 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
     let origin = "";
     let handle: ReturnType<typeof watchRoutes> | undefined;
     const server: Server = createServer((req, res) => {
-      if (req.url === `/watch/live/${id}`) {
-        if (hub === owner) relaySignatures.push(req.headers[RELAY_HEADER] as string | undefined);
+      if (new URL(req.url!, "http://localhost").pathname === `/watch/live/${id}`) {
+        if (hub === owner) { relaySignatures.push(req.headers[RELAY_HEADER] as string | undefined); ownerPaths.push(req.url!); }
         const stream = { origin, writes: [] as string[], endedAfter: null as number | null, closed: new Promise<void>(resolve => res.once("close", () => resolve())) }; streams.push(stream);
         const write = res.write.bind(res) as (chunk: unknown, ...rest: unknown[]) => boolean;
         res.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
@@ -94,7 +95,7 @@ async function fixture(kind: "public" | "private", rated = true, relayMaxMs?: nu
   owner.startMatch(1, initial, { lobbyId: id, visibility: kind, rated });
   let state = initial;
   while (!state.result) { const out = step(state, []); clock.advance(100); owner.pushTick(1, out); state = out.state; }
-  return { registry, accounts, archive, blobs, owner, clock, lobbies, streams, ownerOrigin, gatewayOrigin, relaySignatures, revoke: () => { invite = "fresh"; } };
+  return { registry, accounts, archive, blobs, owner, clock, lobbies, streams, ownerOrigin, gatewayOrigin, relaySignatures, ownerPaths, revoke: () => { invite = "fresh"; } };
 }
 function request(origin: string, path: string, invite?: string) {
   const abort = new AbortController(); close.push(() => abort.abort());
@@ -102,6 +103,16 @@ function request(origin: string, path: string, invite?: string) {
 }
 
 describe("shared spectator HTTP routes", () => {
+  it.each(["public", "private"] as const)("forwards only the kill opt-in through a %s relay", async kind => {
+    const f = await fixture(kind), invite = kind === "private" ? "current" : undefined;
+    for (const query of ["?kills=1&unrelated=value", "?kills=0", ""]) {
+      const response = await request(f.gatewayOrigin, `/watch/live/${id}${query}`, invite);
+      held.push(response);
+      expect(response.status).toBe(200);
+    }
+    expect(f.ownerPaths).toEqual([`/watch/live/${id}?kills=1`, `/watch/live/${id}`, `/watch/live/${id}`]);
+  });
+
   it.each([
     ["public", true], ["public", false], ["private", true], ["private", false],
   ] as const)("preserves immediate and delayed final heartbeats, then ends, for attached and late %s rated=%s owner/proxy viewers", async (kind, rated) => {

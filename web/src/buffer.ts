@@ -110,6 +110,8 @@ export interface Board {
   overrun: number[];
   overrunRequired: number;
   deaths: number[];
+  /** Unknown for older four-colony recordings; never inferred from deaths. */
+  kills?: readonly number[];
   /** Cumulative births from the v5 stream, unknown in older recordings. */
   hatched?: readonly number[];
   result: StreamResult | null;
@@ -529,6 +531,7 @@ function cloneFull(f: StreamFull): StreamFull {
     overrun: [...f.overrun],
     overrunRequired: f.overrunRequired,
     deaths: [...f.deaths],
+    ...(f.kills === undefined ? {} : { kills: [...f.kills] }),
     result: f.result,
     ...(f.food !== undefined ? { food: f.food.slice() } : {}),
     ...(f.hatch !== undefined ? { hatch: { ...f.hatch } } : {}),
@@ -972,6 +975,7 @@ export class TickPreparation {
         overrun: [...f.overrun],
         overrunRequired: f.overrunRequired,
         deaths: [...f.deaths],
+    ...(f.kills === undefined ? {} : { kills: [...f.kills] }),
         hatched,
         result: f.result,
         food: f.food?.slice() ?? new Uint32Array(f.setup.mapW * f.setup.mapH),
@@ -998,6 +1002,7 @@ export class TickPreparation {
       overrun: overrunChanged ? [...f.overrun] : prev.overrun,
       overrunRequired: f.overrunRequired,
       deaths: deathsChanged ? [...f.deaths] : prev.deaths,
+      kills: f.kills === undefined ? undefined : kinds.has("kills") ? [...f.kills] : prev.kills,
       hatched,
       result: f.result,
       food: kinds.has("food") && f.food ? f.food.slice() : prev.food,

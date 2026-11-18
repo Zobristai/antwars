@@ -72,7 +72,8 @@ export function watchRoutes(options: {
     let routeClass = "/watch";
     const unavailable = (cause: unknown) => { logUnavailable(req.method, routeClass, cause); reply(res, 503); };
     try {
-      const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const pathname = url.pathname;
       if (pathname === "/watch/catalog") {
         routeClass = pathname;
         const [rawMatches, rawLobbies] = await Promise.all([options.registry.publicMatches(), options.accounts.lobbies.listPublic()]);
@@ -151,6 +152,7 @@ export function watchRoutes(options: {
         if (!retained || retained.origin === options.origin || req.headers["x-antwar-watch-proxy"] !== undefined) { reply(res, 404); return; }
         // Registry origins are captured from operator configuration, never a request URL.
         const target = new URL(`/watch/${kind}/${encodeURIComponent(lobbyId)}`, retained.origin);
+        if (kind === "live" && url.searchParams.get("kills") === "1") target.searchParams.set("kills", "1");
         // A live relay holds a place for as long as it streams; past the cap, the viewer's page retries.
         if (kind === "live" && !relays.admit(res, clientSource(req.headers))) return;
         const headers: Record<string, string> = { "x-antwar-watch-proxy": "1", accept: kind === "live" ? "text/event-stream" : "application/json" };

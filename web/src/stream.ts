@@ -126,7 +126,11 @@ export function openLive(path: string, sink: Sink, onState: (s: LinkState) => vo
     const my = gen;
     let draining = false;
     report("connecting");
-    const source = open(path);
+    // Old open tabs omit this opt-in and keep receiving the earlier wire format.
+    const [route, query = ""] = path.split("?", 2);
+    const params = new URLSearchParams(query);
+    params.set("kills", "1");
+    const source = open(`${route}?${params}`);
     es = source;
     source.onopen = () => {
       if (my === gen && es === source && !finished) report("open");
