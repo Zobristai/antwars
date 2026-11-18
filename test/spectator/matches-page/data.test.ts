@@ -10,17 +10,16 @@ const saved = (minute: number): Recording => ({
     { seat: 1, colony: 1, modelLabel: "other model", thinkingLevel: null, serviceTier: null, handle: null }], status: "complete", unavailable: [],
 });
 const turn = () => new Promise<void>(resolve => setImmediate(resolve));
-/** A full server page (twenty rows), newest first: a load stops on it and leaves older history to Load more. */
-const fullPage = Array.from({ length: 20 }, (_, n) => saved(59 - n));
 describe("matches page data", () => {
-  it("follows an empty page's continuation within the load, reads catalog independently and closes outstanding work", async () => {
+  it("retains empty-page continuation, reads catalog independently and closes outstanding work", async () => {
     const request = vi.fn(async (path: RequestInfo | URL) => new Response(JSON.stringify(
       path === "/watch/catalog" ? { matches: [] } : { matches: [], nextPageToken: path === "/matches" ? "next" : null },
     )));
     const publish = vi.fn(); const data = createMatchesData(request, publish); data.refresh();
     await vi.waitFor(() => expect(data.view.recordings.status).toBe("ready"));
-    await vi.waitFor(() => expect(data.view.next).toBeNull()); expect(data.view.live).toEqual({ status: "ready", rows: [] });
-    data.more(); await turn();
+    expect(data.view.next).toBe("next"); expect(data.view.live).toEqual({ status: "ready", rows: [] });
+    data.more(); await vi.waitFor(() => expect(data.view.next).toBeNull());
+    expect(request.mock.calls.map(call => call[0])).toContain("/matches?pageToken=next");
     expect(request.mock.calls.map(call => call[0])).toEqual(["/watch/catalog", "/matches", "/matches?pageToken=next"]);
     data.destroy(); const count = publish.mock.calls.length; data.refresh(); expect(publish.mock.calls.length).toBe(count);
   });
@@ -97,7 +96,7 @@ describe("newest saved history without recent-upload discovery", () => {
       }
       expect(path).toBe("/matches");
       if (order === "catalog first") await held;
-      return Response.json({ matches: fullPage, nextPageToken: "older" });
+      return Response.json({ matches: [saved(40)], nextPageToken: "older" });
     }, () => {});
     data.refresh();
     await vi.waitFor(() => expect(order === "history first" ? data.view.recordings.status : data.view.live.status).toBe("ready"));
@@ -147,64 +146,15 @@ describe("newest saved history without recent-upload discovery", () => {
     const data = createMatchesData(async input => {
       const path = String(input); calls.push(path);
       if (path === "/watch/catalog") return Response.json({ matches: [] });
-      if (path === "/matches") return Response.json({ matches: fullPage, nextPageToken: "older" });
+      if (path === "/matches") return Response.json({ matches: [saved(40)], nextPageToken: "older" });
       expect(path).toBe("/matches?pageToken=older");
       return mode === "failure" ? new Response("", { status: 503 }) : Response.json({ matches: [], nextPageToken: "older" });
     }, () => {});
     data.refresh(); await vi.waitFor(() => expect(data.view.recordings.status).toBe("ready"));
     await turn(); data.more();
     await vi.waitFor(() => expect(data.view.recordings.status).toBe("error"));
-    expect(data.view.recordings.rows.map(row => row.id)).toEqual(fullPage.map(row => row.id));
+    expect(data.view.recordings.rows.map(row => row.id)).toEqual([saved(40).id]);
     expect(calls.filter(path => path.startsWith("/matches"))).toHaveLength(2); data.destroy();
-  });
-
-  /** Served pages by token: each page's rows and continuation; every request is recorded. */
-  function served(pages: Record<string, { rows: number; next: string | null }>) {
-    const calls: string[] = [];
-    let minute = 59;
-    const bodies = new Map(Object.entries(pages).map(([token, page]) =>
-      [token, { matches: Array.from({ length: page.rows }, () => saved(minute--)), nextPageToken: page.next }]));
-    const request = async (input: RequestInfo | URL) => {
-      const path = String(input); calls.push(path);
-      if (path === "/watch/catalog") return Response.json({ matches: [] });
-      const token = new URL(path, "http://fixture").searchParams.get("pageToken") ?? "";
-      return Response.json(bodies.get(token)!);
-    };
-    return { calls, request, history: () => calls.filter(path => path.startsWith("/matches")) };
-  }
-
-  it("follows a short page's continuation in the same load until twenty rows are loaded", async () => {
-    const f = served({ "": { rows: 3, next: "a" }, a: { rows: 0, next: "b" }, b: { rows: 18, next: "c" }, c: { rows: 20, next: null } });
-    const data = createMatchesData(f.request, () => {}); data.refresh();
-    await vi.waitFor(() => expect(data.view.recordings.rows).toHaveLength(21));
-    await turn();
-    expect(f.history()).toEqual(["/matches", "/matches?pageToken=a", "/matches?pageToken=b"]);
-    expect(data.view.next).toBe("c"); expect(data.view.recordings.status).toBe("ready");
-    data.destroy();
-  });
-
-  it("stops following where no continuation remains", async () => {
-    const f = served({ "": { rows: 2, next: "a" }, a: { rows: 1, next: null } });
-    const data = createMatchesData(f.request, () => {}); data.refresh();
-    await vi.waitFor(() => expect(data.view.recordings.rows).toHaveLength(3));
-    await turn();
-    expect(f.history()).toEqual(["/matches", "/matches?pageToken=a"]); expect(data.view.next).toBeNull();
-    data.destroy();
-  });
-
-  it("stops after four follow-up requests, leaving the rest to Load more, and Load more fills the same way", async () => {
-    const f = served({ "": { rows: 1, next: "a" }, a: { rows: 0, next: "b" }, b: { rows: 0, next: "c" }, c: { rows: 0, next: "d" },
-      d: { rows: 0, next: "e" }, e: { rows: 1, next: "f" }, f: { rows: 20, next: null } });
-    const data = createMatchesData(f.request, () => {}); data.refresh();
-    await vi.waitFor(() => expect(data.view.next).toBe("e"));
-    await turn();
-    expect(f.history()).toEqual(["/matches", "/matches?pageToken=a", "/matches?pageToken=b", "/matches?pageToken=c", "/matches?pageToken=d"]);
-    expect(data.view.recordings.rows).toHaveLength(1);
-    data.more();
-    await vi.waitFor(() => expect(data.view.next).toBeNull());
-    expect(f.history().slice(5)).toEqual(["/matches?pageToken=e", "/matches?pageToken=f"]);
-    expect(data.view.recordings.rows).toHaveLength(22);
-    data.destroy();
   });
 
   it("preserves refresh/pagination serialization and cancels an outstanding stored page", async () => {
@@ -215,7 +165,7 @@ describe("newest saved history without recent-upload discovery", () => {
     const data = createMatchesData(async (input, init) => {
       const path = String(input); calls.push(path);
       if (path === "/watch/catalog") return Response.json({ matches: [] });
-      if (path === "/matches") return Response.json({ matches: fullPage, nextPageToken: "older" });
+      if (path === "/matches") return Response.json({ matches: [saved(40)], nextPageToken: "older" });
       expect(path).toBe("/matches?pageToken=older"); entered();
       return new Promise((_resolve, reject) => init!.signal!.addEventListener("abort", () => { canceled = true; reject(init!.signal!.reason); }, { once: true }));
     }, publish);

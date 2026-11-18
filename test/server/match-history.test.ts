@@ -17,7 +17,7 @@ import { vi } from "vitest";
 const id = "2026-10-20T02-00-00-000Z-18";
 const summary = { id, startedAt: "2026-10-20T02:00:00.000Z", endedAt: null, simulationEndedAt: "2026-10-20T02:30:00.000Z",
   winner: 0 as const, reason: "time_up", decidedBy: "territory", seats: Array.from({ length: 8 }, (_, seat) => ({ seat, colony: (seat % 2) as 0 | 1, modelLabel: "claude-sonnet-5-5", thinkingLevel: null, serviceTier: null, handle: null })),
-  status: "partial" as const, unavailable: ["Historical refusal reasons unavailable."], rated: true };
+  status: "partial" as const, unavailable: ["Historical refusal reasons unavailable."] };
 const full = { format: "antwar.match", version: 1, ...summary, setup: { mapW: 64, rated: true, modelIndex: true },
   result: { winner: 0, reason: "time_up", decidedBy: "territory", tick: 17999 },
   seats: summary.seats.map(seat => ({ ...seat, commands: [{ tick: 121, type: "order", accepted: false, request: null, error: null }] })), events: [{ kind: "order" }] };
@@ -44,10 +44,9 @@ it("serves bucket history anonymously across pages and restarts, independent of 
   const f = fixture();
   for (let run = 0; run < 2; run++) {
     const s = await server(f.source);
-    // An empty storage page is followed within the request, so the first public page already lists the match.
-    expect(await (await fetch(`${s.url}/matches`)).json()).toEqual({ matches: [{ ...summary, matchType: null }], nextPageToken: null });
+    expect(await (await fetch(`${s.url}/matches`)).json()).toEqual({ matches: [], nextPageToken: "second" });
     const page = await (await fetch(`${s.url}/matches?pageToken=second`)).json() as HistoryPage;
-    // A rated summary without the record's Model Index marker or seat handles lists with no match type.
+    // A summary without the record's setup fields lists with no match type.
     expect(page).toEqual({ matches: [{ ...summary, matchType: null }], nextPageToken: null });
     expect(JSON.stringify(page)).not.toContain("commands");
     expect(JSON.stringify(page)).not.toContain("events");

@@ -68,12 +68,9 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
   };
 }
 
-/**
- * Stable order and continuation ownership stay with the caller. Rejections fail the read, not open the policy. Once signal
- * aborts, no further check starts and the read fails.
- */
-export async function publiclyVisible<T>(rows: readonly T[], visible: (row: T) => Promise<boolean>, signal?: AbortSignal): Promise<T[]> {
+/** Stable order and continuation ownership stay with the caller. Rejections fail the read, not open the policy. */
+export async function publiclyVisible<T>(rows: readonly T[], visible: (row: T) => Promise<boolean>): Promise<T[]> {
   const out: T[] = [];
-  for (const row of rows) { signal?.throwIfAborted(); if (await visible(row)) out.push(row); }
+  for (const row of rows) if (await visible(row)) out.push(row);
   return out;
 }
