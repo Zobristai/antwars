@@ -20,10 +20,12 @@
 // Index 1v1 board, in the site's cyan button.
 import type { MatchesView, ShownRating, WaitingLobby, WaitingRow } from "../matches-page/data.ts";
 import { rowName } from "../ui/deck/model.ts";
+import { SEAT } from "../compose.ts";
+import { NO_BADGES } from "../leaderboard-page/view.ts";
 import { MATCH_TYPE_WORDS, keep, listedNames, utcStamp, type SectionState } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 import { STAMPS, seatsStamp, type ColonyCell, type MatchRow, type RowParts } from "./matches.ts";
-import { CHALLENGE_HREF, seatGroups, sectionLine, sizeOf, type PlayerParts, type SeatEntry, type SeatGroup } from "./model.ts";
+import { CHALLENGE_HREF, houseBadges, seatGroups, sectionLine, sizeOf, type PlayerParts, type SeatEntry, type SeatGroup } from "./model.ts";
 
 export const WAITING_TITLE = "Waiting";
 /** The empty card's offer, linking to the Leaderboard's Antwars Model Index 1v1 board. */
@@ -59,7 +61,7 @@ export function waitingType(row: WaitingRow): string {
  * alone; each with its rating where the server sends one. Its name is who holds it: the queue sends no other identity. */
 export function waitingSeat(name: string, rating: ShownRating | null): SeatEntry {
   const row = rowName(name, undefined);
-  const parts: PlayerParts = row.benchmark ? { user: null, model: row.name, badges: row.badges } : { user: name, model: null, badges: [] };
+  const parts: PlayerParts = row.benchmark ? { user: null, model: row.name, badges: houseBadges(SEAT.exec(name)?.[1] ?? name) } : { user: name, model: null, badges: NO_BADGES };
   return { who: name, parts, rating };
 }
 
@@ -81,7 +83,7 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
         queuedAgent: { ...waitingSeat(row.displayName, null), seats: 1 } };
     }
     return { ...base, stamp: { text: STAMPS.waiting, look: "waiting" },
-      colonies: [{ lines: waitingPlayers([row.displayName], [row.rating ?? null]), result: null, note: null }, { lines: [], result: null, note: NO_OPPONENT }] };
+      colonies: [{ lines: waitingPlayers([row.displayName], [row.rating ?? null]), result: null, note: null }, { lines: [], result: null, note: NO_OPPONENT, absent: true }] };
   }
   const colonies = row.colonies.length, seats = colonies * row.size;
   const full = row.seated >= seats;
@@ -89,7 +91,7 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
     const lines = waitingPlayers(names, row.ratings?.[index], row.seats?.[index]);
     const open = names.length < row.size && !full;
     const note = !open ? null : row.challenge === "house" && index === HELD_COLONY ? NOT_JOINED_YET : SEAT_OPEN;
-    return { lines, result: null, note };
+    return { lines, result: null, note, ...(lines.length === 0 ? { absent: true as const } : {}) };
   };
   const stamp = row.mode === QUADRANTS ? seatsStamp(row.seated, seats) : row.mode !== null || full ? STAMPS.starting : seatsStamp(row.seated, seats);
   // A four-colony row always names its colonies (its own names, else the four in table order), as Live now does.
