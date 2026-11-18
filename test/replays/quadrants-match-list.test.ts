@@ -19,12 +19,12 @@ const setupOf = (colonies: 2 | 4, extra: Record<string, unknown>) => ({ gridScal
 const seatOf = (seat: number, colony: number, handle: string | null) => ({ seat, colony, modelLabel: `model-${seat}`, thinkingLevel: "high",
   serviceTier: null, handle, joinedTick: 0, commands: [{ tick: 3, request: "record-only" }] });
 
-/** A four-colony record: one seat per colony; colony 2 wins once colonies 0, 3 and 1 are eliminated. Unrated unless rated. */
-function quadrantsRecord(handles: readonly (string | null)[] = ["ada", "bea", "cyd", "dee"], rated = false) {
+/** A four-colony record: one seat per colony; colony 2 wins once colonies 0, 3 and 1 are eliminated. */
+function quadrantsRecord(handles: readonly (string | null)[] = ["ada", "bea", "cyd", "dee"]) {
   return { format: "antwar.match", version: 1, id: QUADRANTS, source: "match-log", status: "complete", unavailable: [],
     startedAt: "2026-11-14T09:00:00.000Z", endedAt: "2026-11-14T09:08:00.000Z", simulationEndedAt: "2026-11-14T09:07:12.100Z",
     rules: { version: 27, holdBehaviour: "hold", config: {} },
-    setup: setupOf(4, { colonies: 4, rated, colonyNames: QUADRANT_NAMES }),
+    setup: setupOf(4, { colonies: 4, rated: false, colonyNames: QUADRANT_NAMES }),
     result: { winner: 2, reason: "queens_killed", decidedBy: "queens_killed", tick: 4321 },
     seats: handles.map((handle, colony) => seatOf(colony, colony, handle)),
     events: [{ tick: 1200, event: { kind: "eliminated", colony: 0, tick: 1200 } }, { tick: 2500, event: { kind: "eliminated", colony: 3, tick: 2500 } },
@@ -45,10 +45,12 @@ const QUADRANTS_ROW = { id: QUADRANTS, startedAt: "2026-11-14T09:00:00.000Z", en
   simulationEndedAt: "2026-11-14T09:07:12.100Z", winner: 2, reason: "queens_killed", decidedBy: "queens_killed",
   seats: [listedSeat(0, 0, "ada"), listedSeat(1, 1, "bea"), listedSeat(2, 2, "cyd"), listedSeat(3, 3, "dee")],
   status: "complete", unavailable: [], rated: false, modelIndex: false, colonyNames: QUADRANT_NAMES, matchType: { kind: "quadrants", size: 1 } };
-// The two-colony rated row exactly as GET /matches served it before four-colony records existed.
+// The two-colony rows exactly as GET /matches served them before four-colony records existed.
 const RATED_ROW = { id: RATED, startedAt: "2026-11-14T08:00:00.000Z", endedAt: "2026-11-14T08:30:00.000Z", simulationEndedAt: null,
   winner: 1, reason: "time_up", decidedBy: "territory", seats: [listedSeat(0, 0, "ada"), listedSeat(1, 1, "bea")],
   status: "complete", unavailable: [], rated: true, modelIndex: false, matchType: { kind: "ranked", size: 1 } };
+const UNRATED_ROW = { ...RATED_ROW, id: UNRATED, startedAt: "2026-11-14T07:00:00.000Z", winner: null, decidedBy: "draw", rated: false,
+  colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"], matchType: { kind: "unrated", size: 1 } };
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
@@ -82,33 +84,23 @@ const quadrantsLobby: RecordingLobby = { kind: "public", size: 1, mode: "quadran
   colonies: [[lobbySeat("a", "ada")], [lobbySeat("b", "bea")], [lobbySeat("c", "cyd")], [lobbySeat("d", "dee")]] };
 
 describe("a Quadrants match's row in the recorded match list", () => {
-  it("leaves an unrated Quadrants match and an unrated two-colony match out of the list, and keeps the rated one", async () => {
+  it("lists it with its four colony names, the quadrants mode and its result, typed from its record where no lobby is read", async () => {
     const records = [quadrantsRecord(), ratedRecord(), unratedRecord()];
-    expect(await listMatches(records)).toEqual([RATED_ROW]);
-    expect(await listMatches(records, async () => null)).toEqual([RATED_ROW]);
-    expect(await listMatches(records, async replayId => replayId === QUADRANTS ? quadrantsLobby : null)).toEqual([RATED_ROW]);
-  });
-
-  it("lists a rated four-colony record with its four colony names, the quadrants mode and its result, typed from its record where no lobby is read", async () => {
-    const rated = quadrantsRecord(undefined, true), row = { ...QUADRANTS_ROW, rated: true };
-    expect(await listMatches([rated])).toEqual([row]);
+    expect(await listMatches(records)).toEqual([QUADRANTS_ROW, RATED_ROW, UNRATED_ROW]);
     // A lookup that finds no lobby, or fails, types the row from its record the same way.
-    expect(await listMatches([rated], async () => null)).toEqual([row]);
-    expect(await listMatches([rated], async () => { throw new Error("lobby read failed"); })).toEqual([row]);
+    expect(await listMatches(records, async () => null)).toEqual([QUADRANTS_ROW, RATED_ROW, UNRATED_ROW]);
+    expect(await listMatches([quadrantsRecord()], async () => { throw new Error("lobby read failed"); })).toEqual([QUADRANTS_ROW]);
     // A match no agent joined records no seats, and is still one agent per colony.
-    const unjoined = { ...rated, seats: [] };
-    expect(await listMatches([unjoined])).toEqual([{ ...row, seats: [] }]);
-    expect(await listMatches([unjoined], async () => null)).toEqual([{ ...row, seats: [] }]);
+    const unjoined = { ...quadrantsRecord(), seats: [] };
+    expect(await listMatches([unjoined])).toEqual([{ ...QUADRANTS_ROW, seats: [] }]);
+    expect(await listMatches([unjoined], async () => null)).toEqual([{ ...QUADRANTS_ROW, seats: [] }]);
   });
 
   it("types it from its readable quadrants lobby, and takes each colony's missing handle from that lobby", async () => {
-    // A lobby with no recorded outcome yet keeps the record's rated flag (recordingRated), so the row is listed.
-    const settling = { ...quadrantsLobby, outcome: null };
-    const lookup = async (replayId: string) => replayId === QUADRANTS ? settling : null;
-    const row = { ...QUADRANTS_ROW, rated: true };
-    expect(await listMatches([quadrantsRecord(undefined, true)], lookup)).toEqual([row]);
+    const lookup = async (replayId: string) => replayId === QUADRANTS ? quadrantsLobby : null;
+    expect(await listMatches([quadrantsRecord()], lookup)).toEqual([QUADRANTS_ROW]);
     // A record without seat handles takes all four colonies' handles from its lobby.
-    expect(await listMatches([quadrantsRecord([null, "bea", null, null], true)], lookup)).toEqual([row]);
+    expect(await listMatches([quadrantsRecord([null, "bea", null, null])], lookup)).toEqual([QUADRANTS_ROW]);
     expect(lobbyMatchType(quadrantsLobby)).toEqual({ kind: "quadrants", size: 1 });
   });
 

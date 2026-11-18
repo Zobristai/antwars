@@ -89,7 +89,7 @@ describe("the serve points log an unlisted house handle", () => {
     const source: HistorySource = {
       async list() {
         return { matches: [{ id: "2026-11-07T08-00-00-000Z-1", startedAt: "2026-11-07T08:00:00.000Z", endedAt: null, simulationEndedAt: null, winner: 0,
-          reason: "time_up", decidedBy: "territory", seats: [seat(UNLISTED, 0), seat("antwars/glm-5-3", 1)], status: "complete", unavailable: [], rated: true }], nextPageToken: null };
+          reason: "time_up", decidedBy: "territory", seats: [seat(UNLISTED, 0), seat("antwars/glm-5-3", 1)], status: "complete", unavailable: [] }], nextPageToken: null };
       },
       async open() { return null; },
     };

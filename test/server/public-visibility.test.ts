@@ -14,9 +14,8 @@ const hidden = "2026-10-20T10-00-00-000Z-1", shown = "2026-10-20T11-00-00-000Z-1
 const owner = "00000000-0000-4000-8000-000000000001";
 const cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); });
-// Rated, so the list's match-type rule (publiclyListedMatch) admits every row and only the hide list decides.
 const row = (id: string): HistorySummary => ({ id, startedAt: "2026-10-20T10:00:00Z", endedAt: null,
-  simulationEndedAt: null, winner: null, reason: null, decidedBy: null, seats: [], status: "complete", unavailable: [], rated: true });
+  simulationEndedAt: null, winner: null, reason: null, decidedBy: null, seats: [], status: "complete", unavailable: [] });
 
 async function fixture(enabled: boolean, failing = false) {
   const { store, docs } = memoryWatchStore();
