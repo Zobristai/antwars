@@ -1,9 +1,8 @@
-import { mountHud } from "./ui/hud.ts";
 import { mountDeckHud } from "./ui/deck/hud.ts";
 import type { HudView, Mounted } from "./ui/types.ts";
 import type { ModeCopy } from "./replay.ts";
 /**
- * The spectator page's host for its HUD (the 3D board's deck, web/src/ui/deck/hud.ts; the 2D board's web/src/ui/hud.ts),
+ * The spectator page's host for its shared Score Band HUD (web/src/ui/deck/hud.ts),
  * and the words both HUDs share: the score's figures, the timeline's entries, the agents' cards. The host mounts the HUD,
  * hands it the board's live controls and tooltips, publishes what it draws (HudView), and keeps the viewer's selection,
  * hover and pointed order for the board, with the board's area and what the board labels keep clear of.
@@ -435,7 +434,7 @@ export class Overlays {
 
   /**
    * Mount the HUD with the board's own live controls (HudHost), which it takes in with their listeners. The 3D
-   * board mounts the Instrument deck (ui/deck/hud.ts); the 2D board keeps today's HUD (ui/hud.ts).
+   * board mounts the same Score Band (ui/deck/hud.ts), whether its renderer is 2D or 3D.
    */
   mountHud(board: HudControls): void {
     if (this.hud) return;
@@ -445,7 +444,7 @@ export class Overlays {
     host.hidden = !this.visible;
     this.hudHost = host;
     this.parent.append(host);
-    this.hud = (board.deck ? mountDeckHud : mountHud)({
+    this.hud = mountDeckHud({
       doc, host, tips: [this.tips.mark.el, this.tips.squad.el],
       replay: board.replay, teamView: board.teamView, waiting: board.waiting, boardAspect: this.boardAspect,
       actions: { ...this.handlers, select: info => this.select(info), selectAgent: agent => this.selectAgent(agent), pointOrder: agent => this.pointOrder(agent) },

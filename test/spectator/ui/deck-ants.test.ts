@@ -1,27 +1,24 @@
-// The Ants row in the deck's Balance, a total-ants bar beside the individual unit numbers: the mount's contract for where the row sits and how it is painted. Its figures and fill are read by
-// model.ts balance (deck-model.test.ts); visual evidence comes from browser captures, never these tests.
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
+import { dom, type ElementPort } from "../pages/dom.ts";
+import { scoreFrame } from "./score-band-frame.ts";
 
-const DECK = readFileSync(new URL("../../../web/src/ui/deck/deck.ts", import.meta.url), "utf8");
-const CSS = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
-
-describe("the deck's Ants balance row", () => {
-  it("is a gauge like Kills and Territory, labelled with the page's own word", () => {
-    expect(DECK).toContain("const kills = gauge(PAGE_WORDS.kills);");
-    expect(DECK).toContain("const territory = gauge(SCORE_COPY.territory);");
-    expect(DECK).toContain("const ants = gauge(SCORE_COPY.ants);");
-  });
-  it("sits under Territory and above Win conditions", () => {
-    expect(DECK).toMatch(/score\.append\(clockEl, h\(doc, "h3", "d1-kicker", D1_COPY\.balance\), kills\.row, territory\.row, ants\.row, winGroup, mapRow\);/);
-  });
-  it("is painted from the model's ants gauge with no lead line", () => {
-    expect(DECK).toContain("paintGauge(ants, bal.ants, null);");
-  });
-  it("gives the wide deck 20 px more height for the row, so the score shows its Map row without scrolling", () => {
-    expect(CSS).toMatch(/\.d1-hud \{[^}]*grid-template-rows: 48px 4px minmax\(0, 232px\) 12px /);
-  });
-  it("keeps the per-unit numbers in each team's economy, flyers apart from workers", () => {
-    expect(DECK).toContain('const measures: [Key, string][] = [["workers", PAGE_WORDS.workers], ["soldiers", PAGE_WORDS.soldiers], ["flyers", PAGE_WORDS.flyers], ["food", PAGE_WORDS.food], ["next", PAGE_WORDS.nextSpawn], ["ants", SCORE_COPY.ants]];');
+describe("Score Band colony comparison", () => {
+  for (const count of [2, 4]) it(`shows ants alongside kills and territory for ${count} colonies`, () => {
+    const deck = mountDeck(dom().doc), f = scoreFrame(count);
+    f.ensure(count); f.count = count;
+    for (let i = 0; i < count; i++) { f.colony[i] = i; f.caste[i] = i === 0 ? 0 : 1; f.alpha[i] = 1; }
+    deck.update(f);
+    const gauges = (deck.score as unknown as ElementPort).byClass("sb-gauge");
+    expect(gauges.map(g => g.byClass("d1-ml")[0]!.textContent)).toEqual(["Kills", "Territory", "Ants"]);
+    const ants = gauges[2]!;
+    expect(ants.byClass("sb-figure").filter(n => !n.hidden).map(n => n.byClass("sb-value")[0]!.textContent)).toEqual(Array(count).fill("1"));
+    expect(ants.byClass("sb-lead").every(n => n.hidden)).toBe(true);
+    for (let c = 0; c < count; c++) {
+      const economy = deck.economy[c] as unknown as ElementPort;
+      expect(economy.byClass("sb-workers")[0]!.textContent).toBe(`Workers${c === 0 ? 1 : 0}`);
+      expect(economy.byClass("sb-soldiers")[0]!.textContent).toBe(`Soldiers${c === 0 ? 0 : 1}`);
+      expect(economy.byClass("sb-ants")[0]!.textContent).toBe("Ants1/512");
+    }
   });
 });
