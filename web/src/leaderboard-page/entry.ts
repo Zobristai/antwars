@@ -1,3 +1,4 @@
+import { storeFeatureEnabled } from "../store-capabilities.ts";
 import { dispatchPage } from "./route.ts";
 
 void dispatchPage(new URL(window.location.href), {
@@ -14,4 +15,4 @@ void dispatchPage(new URL(window.location.href), {
     mountLandingPage(document, window);
   },
   spectator: () => import("../main.ts"),
-});
+}, storeFeatureEnabled(document, "local-match"));
