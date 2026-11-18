@@ -510,10 +510,10 @@ td.c-model > .d1p-colony { display: block; }
    phone's, each row is its four colonies one line each, in the columns' order, each beside its column's name in
    the head's neutral caps, with the start, type and Replay on a line under them; the shared head row hides. */
 /* The slots sit edge to edge: each keeps the cell gap inside it on both sides, so two slots' texts stand two gaps apart
-   and a winner's tint keeps one gap inside its edges. Time holds its date (68 px in Liberation Sans) and Game type its
-   head (74 px), each with room before the next column; Replay its word (37 px). On a narrower card the row's own inset
+   and a winner's tint keeps one gap inside its edges. Time holds its date (68 px in Liberation Sans) and Replay its word
+   (37 px), each with the cell gap beside it, and Game type its head (74 px). On a narrower card the row's own inset
    narrows to 4 px, the slot's padding then setting its text 11 px in. */
-.d1p-rec4 { --rec-gap: 0px; --rec-when: 76px; --rec-type: 76px; --rec-go: 40px; --rec-pad: var(--d1p-cell-gap); --rec-inset: 8px; }
+.d1p-rec4 { --rec-gap: 0px; --rec-when: 75px; --rec-type: 75px; --rec-go: 45px; --rec-pad: var(--d1p-cell-gap); --rec-inset: 8px; }
 /* The phone forms' colony label column, Recordings' and the stacked rows' alike, and the one cell gap: every Matches
    colony cell's inner padding on each side, and the space between the parts of its player lines. */
 .d1p-card { --d1p-label: 80px; --d1p-cell-gap: 7px; }

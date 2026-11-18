@@ -481,7 +481,14 @@ const CELL_SPACING = () => {
     const spaced = parts.filter(part => !part.pushed);
     return { text: line.textContent!.replace(/\s+/g, " ").trim(), gaps: spaced.slice(1).map((part, i) => part.left - spaced[i]!.right) };
   });
-  return { gap, cells, lines };
+  // On a wide card, the last slot (a winner's tint, or its text) and the Replay link stand at least the gap apart.
+  const replay = [...document.querySelectorAll(".d1p-rec-rows > li")].filter(row => row.checkVisibility() && getComputedStyle(row).gridTemplateColumns.split(" ").length > 1).map(row => {
+    const slot = [...row.querySelectorAll(":scope > .d1p-rec-slot")].at(-1)!, link = row.querySelector(".d1p-rec-replay")!;
+    const right = slot.matches(".is-won") ? slot.getBoundingClientRect().right : Math.max(...boxesOf(slot).map(b => b.right));
+    const range = document.createRange(); range.selectNodeContents(link);
+    return range.getBoundingClientRect().left - right;
+  });
+  return { gap, cells, lines, replay };
 };
 
 describe("every Matches colony cell keeps one padding on both sides", () => {
@@ -493,7 +500,7 @@ describe("every Matches colony cell keeps one padding on both sides", () => {
           await tab.setContent(page);
           await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
           await tab.evaluate(() => document.fonts.ready);
-          const { gap, cells, lines } = await tab.evaluate(CELL_SPACING);
+          const { gap, cells, lines, replay } = await tab.evaluate(CELL_SPACING);
           expect(gap).toBeGreaterThan(4);
           expect(cells.length).toBeGreaterThan(0);
           for (const cell of cells) {
@@ -504,6 +511,7 @@ describe("every Matches colony cell keeps one padding on both sides", () => {
           }
           expect(lines.length).toBeGreaterThan(0);
           for (const line of lines) for (const between of line.gaps) expect(between, line.text).toBeCloseTo(gap, 0);
+          for (const clear of replay) expect(clear).toBeGreaterThanOrEqual(gap - 0.5);
         } finally { await tab.close(); }
       }
     });
