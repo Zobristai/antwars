@@ -72,7 +72,7 @@ describe("Benchmark model names and badges", () => {
     ["antwars/gpt-6-astra", "max", "Fast", "GPT-6 Astra", ["max", "Fast"]],
     ["antwars/gpt-6-1-sol-high", "high", "standard", "GPT-6.1 Sol", ["high"]],
     ["antwars/gpt-6-astra", "max", "ultrafast", "GPT-6 Astra", ["max"]],
-    ["antwars/Qwen3-8-Max", "xhigh", null, "Qwen3.8 Max", ["xhigh"]],
+    ["antwars/Qwen3-8-Max", "xhigh", null, "Qwen3.8 Max", ["xhigh", "retired"]],
     ["antwars/grok-composer-2-5-fast", null, null, "Grok Composer 2.5 Fast", []],
     // A retired handle keeps its name and level and adds the retired badge last; its successor shows none.
     ["antwars/claude-fable-5-1", "max", null, "Claude Fable 5.1", ["max", "retired"]],
