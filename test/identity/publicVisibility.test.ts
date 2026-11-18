@@ -66,6 +66,26 @@ describe("private public-visibility configuration", () => {
     await expect(policy.lobbiesVisibleEach(new Map([["a", seats([other])], ["b", { seats: "{" }]]))).rejects.toThrow(failed);
     await expect(policy.lobbiesVisibleEach(new Map([["a", { seats: JSON.stringify([{ name: "x" }]) }]]))).rejects.toThrow(failed);
   });
+  it("fails on a lobby without recorded seats", async () => {
+    const { store, docs } = memoryWatchStore();
+    docs.set(`identities/${other}`, { kind: "username" });
+    docs.set("lobbies/unseated", { startsAt: "1760000000000" });
+    const policy = createPublicVisibility(store, registry, [owner])!;
+    const failed = "Public visibility temporarily unavailable";
+    await expect(policy.lobbyVisible("unseated")).rejects.toThrow(failed);
+    await expect(policy.lobbiesVisibleEach(new Map<string, Record<string, string>>([["a", { seats: JSON.stringify([{ id: other }]) }], ["b", { startsAt: "1" }]])))
+      .rejects.toThrow(failed);
+  });
+  it.each(["not-an-id", "0000000A-0000-4000-8000-00000000000B", ` ${owner}`])("fails on a handle whose owner id is malformed: %j", async ownerId => {
+    const { store, docs } = memoryWatchStore();
+    docs.set("identities/leaf", { kind: "handle", ownerId });
+    docs.set("lobbies/played", { seats: JSON.stringify([{ id: "leaf" }]) });
+    const policy = createPublicVisibility(store, registry, [owner])!;
+    const failed = "Public visibility temporarily unavailable";
+    await expect(policy.identitiesVisible(["leaf"])).rejects.toThrow(failed);
+    await expect(policy.identitiesVisibleEach(["leaf"])).rejects.toThrow(failed);
+    await expect(policy.lobbyVisible("played")).rejects.toThrow(failed);
+  });
   it("treats failed or pending membership as unavailable, with no negative cache", async () => {
     const { store, docs } = memoryWatchStore();
     const policy = createPublicVisibility(store, { replayLobby: async () => ({ state: "pending" }) }, [owner])!;

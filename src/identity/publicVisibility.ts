@@ -1,12 +1,15 @@
 import type { Fields, Store } from "../store/firestore.js";
 import { readReplayOwners, type WatchRegistry } from "../live/watch-registry.js";
 
+/** A username identity id as stored: a lowercase UUID. */
+const IDENTITY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 /** Private operator configuration. Its contents never belong in an error or public response. */
 export function publicExcludedOwnerIdsFromEnv(env: Readonly<Record<string, string | undefined>>): readonly string[] {
   const value = env.ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS;
   if (value === undefined || value.trim() === "") return [];
   const ids = value.split(",").map(id => id.trim().toLowerCase());
-  if (ids.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))) {
+  if (ids.some(id => !IDENTITY_ID.test(id))) {
     throw new Error("invalid ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS: use comma-separated username identity UUIDs");
   }
   return [...new Set(ids)];
@@ -46,8 +49,9 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
       const result = new Map(unique.map(id => {
         const fields = docs.get(`identities/${id}`);
         // Read retained identity relations directly, independently of current name/credential validity.
+        // A handle's owner must be a well-formed identity id, so it can be compared with the hide list.
         if (!fields || (fields.kind !== "username" && fields.kind !== "handle") ||
-          (fields.kind === "handle" && !fields.ownerId)) throw unavailable();
+          (fields.kind === "handle" && !IDENTITY_ID.test(fields.ownerId ?? ""))) throw unavailable();
         return [id, fields.kind === "handle" ? fields.ownerId! : id];
       }));
       return { result, writes: [] };
@@ -55,9 +59,10 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
     return groups.map((ids, index) => open[index]! && ids.every(id => !excluded.has(owners.get(id)!)));
   };
   const seatIds = (lobby: Fields | null): string[] => {
-    if (!lobby) throw unavailable();
+    // A lobby whose seats are not recorded cannot show who played, so it is not shown at all.
+    if (!lobby || lobby.seats === undefined) throw unavailable();
     let seats: unknown;
-    try { seats = JSON.parse(lobby.seats ?? "[]"); } catch { throw unavailable(); }
+    try { seats = JSON.parse(lobby.seats); } catch { throw unavailable(); }
     if (!Array.isArray(seats)) throw unavailable();
     return seats.map((seat: unknown) => {
       if (typeof seat !== "object" || seat === null || !("id" in seat) || typeof seat.id !== "string") throw unavailable();
