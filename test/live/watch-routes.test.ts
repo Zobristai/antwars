@@ -348,13 +348,14 @@ describe("shared spectator HTTP routes", () => {
     const third = "00000000-0000-4000-8000-000000000003";
     await f.registry.register({ lobbyId: third, visibility: "public", rated: true, mode: "1v1", startedAt: 9, origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     // The slot published the labels of the seats that reported one; a seat that reported none, or has not joined, carries null.
-    // The builder's seat also reported its level and tier; the house seat reported neither.
+    // The builder's seat also reported its level and tier; the house seat reported neither. Every seat but alice #1 has
+    // been seen joining: bob joined and reported no model.
     expect(await f.registry.seatLabels(second, "run", { "alice #2": "openai/gpt-6.1-terra", "antwars/gpt-6-luna": "openai/gpt-6-luna" },
-      { thinkingLevels: { "alice #2": "high" }, serviceTiers: { "alice #2": "fast" } })).toBe(true);
+      { thinkingLevels: { "alice #2": "high" }, serviceTiers: { "alice #2": "fast" }, joined: ["alice #2", "antwars/gpt-6-luna", "bob"] })).toBe(true);
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     expect(catalog.matches.find((match: { lobbyId: string }) => match.lobbyId === second).colonies).toEqual([
-      [{ displayName: "alice #1", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", rating: 1612.4, rd: 80, ratedMatches: 12 }],
-      [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "alice #1", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }, { displayName: "alice #2", modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast", joined: true, rating: 1612.4, rd: 80, ratedMatches: 12 }],
+      [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, joined: true, rating: 1490, rd: 80, ratedMatches: 12 }, { displayName: "antwars/gpt-6-luna", modelLabel: "openai/gpt-6-luna", thinkingLevel: null, serviceTier: null, joined: true, rating: 1490, rd: 80, ratedMatches: 12 }],
     ]);
     // One read per identity per match: the 2v2 match's in 2v2, the fixture's modeless match's in public 1v1.
     expect(reads.sort()).toEqual(["a:1v1", "a:2v2", "b:1v1", "b:2v2", "c:2v2"]);
