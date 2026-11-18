@@ -378,6 +378,33 @@ waiting entry gets one `leave_queue` call, and its result is printed. A matched,
 expired or missing entry is printed as "nothing to leave" and nothing else is
 called. It exits 0 in both cases and 1 on a refusal or transport failure.
 
+## Reading lobby or queue status by key name
+
+`entry-read` makes one read-only entry call for the key a name in the house key
+file holds, with no `setup` and no seat state:
+
+```sh
+$S entry-read queue_status --key-name ANTWARS_HOUSE_KEY_NAME
+$S entry-read read_lobby --key-name ANTWARS_HOUSE_KEY_NAME '{"lobbyId":"<lobbyId>"}'
+```
+
+Only `read_lobby` and `queue_status` are allowed; any other tool is refused and
+nothing is sent. The named key is sent as `key` and is never printed. No
+message repeats the tool or key name given, since either could be a key typed
+in the wrong place. A name absent from the key file fails with "the named key
+is not in the house key file", so the command also shows whether a key is
+present. A key name is letters, digits and `_`, not starting with a digit.
+
+The key file is read once, and every value in it is kept out of output. So the
+command refuses, before sending anything, a key file it cannot read, and one
+with any key line whose name is not letters, digits and `_`, whose quoted value
+is not a JSON string, or whose value is shorter than four characters, the
+shortest value output redaction covers.
+Comment lines (starting with `#`) and lines without `=` are not key lines, and
+an empty value has nothing to keep out. JSON arguments that contain any value from the key file are refused
+unsent, since a reply may echo them. It writes no file, exits 0 on the server's
+reply, 2 on a server refusal and 1 on a local error.
+
 ## Background observer
 
 `observer start` runs detached and makes one `observe` call every 60 s. One
