@@ -455,6 +455,61 @@ const PLAYER_LINES = () => [...document.querySelectorAll(".d1p-rec-player, .d1p-
     title: name.getAttribute("title"), nameStyle: [getComputedStyle(name).whiteSpace, getComputedStyle(name).overflowX, getComputedStyle(name).textOverflow] };
 });
 
+/** Every colony cell's padding and its player lines' spacing: a Recordings slot, a table's colony cell, or a stacked row's
+ * colonies (whose edges are its row's). Painted content is text runs and badge boxes, screen-reader text left out. */
+const CELL_SPACING = () => {
+  const shown = (node: Element) => node.checkVisibility() && !node.closest(".d1p-sr, .d1p-elo-rd, .d1p-colony-tail");
+  const boxesOf = (root: Element) => { const out: { left: number; right: number }[] = [];
+    const walk = (parent: Node) => { for (const child of parent.childNodes) {
+      if (child.nodeType === 3) { if (!child.textContent!.trim() || !shown(child.parentElement!)) continue; const range = document.createRange(); range.selectNodeContents(child); out.push(...[...range.getClientRects()].filter(box => box.width > 0.5)); }
+      else if (child.nodeType === 1 && shown(child as Element)) { if ((child as Element).matches(".d1p-tag, .d1-tag, .d1p-elo-badge")) out.push((child as Element).getBoundingClientRect()); walk(child); } } };
+    walk(root); return out; };
+  const gap = parseFloat(getComputedStyle(document.querySelector(".d1p-card")!).getPropertyValue("--d1p-cell-gap"));
+  const cells = [...document.querySelectorAll(".d1p-rec-slot, td.c-model, .d1p-match-rows .d1p-colonies")].filter(node => node.checkVisibility()).flatMap(node => {
+    const edge = node.matches(".d1p-colonies") ? node.closest("li")! : node, box = edge.getBoundingClientRect(), style = getComputedStyle(edge);
+    const content = boxesOf(node); if (content.length === 0) return [];
+    const ended = !!node.querySelector(".d1p-rec-badges > .d1p-elo-badge");
+    return [{ text: node.textContent!.replace(/\s+/g, " ").trim(), padLeft: parseFloat(style.paddingLeft), padRight: parseFloat(style.paddingRight),
+      left: Math.min(...content.map(b => b.left)) - box.left, right: box.right - Math.max(...content.map(b => b.right)), ended }];
+  });
+  const lines = [...document.querySelectorAll(".d1p-rec-player, .d1p-model")].filter(shown).map(line => {
+    const parts = [...line.querySelectorAll(".d1p-rec-name, .d1p-name, .d1p-tag, .d1p-count, .d1p-elo-badge")].filter(part => shown(part) && !part.parentElement!.closest(".d1p-tag, .d1p-elo-badge"))
+      .map(part => { const boxes = part.matches(".d1p-rec-name, .d1p-name, .d1p-count") ? boxesOf(part) : [part.getBoundingClientRect()];
+        return { left: Math.min(...boxes.map(b => b.left)), right: Math.max(...boxes.map(b => b.right)), pushed: part.matches(".d1p-rec-badges > .d1p-elo-badge") }; })
+      .filter(part => Number.isFinite(part.left)).sort((a, b) => a.left - b.left);
+    // A rating set at a Recordings slot's end follows free space, not a gap.
+    const spaced = parts.filter(part => !part.pushed);
+    return { text: line.textContent!.replace(/\s+/g, " ").trim(), gaps: spaced.slice(1).map((part, i) => part.left - spaced[i]!.right) };
+  });
+  return { gap, cells, lines };
+};
+
+describe("every Matches colony cell keeps one padding on both sides", () => {
+  for (const width of [1280, 390]) {
+    it(`pads each cell alike on its left and right, sets a rating at the cell's end that padding from its edge, and spaces every part of a line by it, at ${width}px`, async () => {
+      for (const page of [quadrantsPage("max", "CedarGrove", 1).page, matchesPage(undefined).page]) {
+        const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+        try {
+          await tab.setContent(page);
+          await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+          await tab.evaluate(() => document.fonts.ready);
+          const { gap, cells, lines } = await tab.evaluate(CELL_SPACING);
+          expect(gap).toBeGreaterThan(4);
+          expect(cells.length).toBeGreaterThan(0);
+          for (const cell of cells) {
+            expect(cell.padLeft, cell.text).toBe(cell.padRight);
+            expect(cell.left, cell.text).toBeGreaterThanOrEqual(cell.padLeft - 0.5);
+            expect(cell.right, cell.text).toBeGreaterThanOrEqual(cell.padRight - 0.5);
+            if (cell.ended) expect(cell.right, cell.text).toBeCloseTo(cell.padRight, 0);
+          }
+          expect(lines.length).toBeGreaterThan(0);
+          for (const line of lines) for (const between of line.gaps) expect(between, line.text).toBeCloseTo(gap, 0);
+        } finally { await tab.close(); }
+      }
+    });
+  }
+});
+
 describe("every Matches player is one line", () => {
   for (const width of [1280, 390]) {
     it(`keeps username, model, level with Fast, seats and rating on one line, uncut, at ${width}px`, async () => {
