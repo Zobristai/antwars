@@ -9,7 +9,7 @@
 // colony holds its players one line each, in one order everywhere: username (builders only), model, level,
 // Fast, the cyan rating badge (figure only, ± on hover, tap or focus), ×N seats, then the colony's result (WINNER, DRAW or
 // ABANDONED, in its ink; none while waiting or live). In a card too narrow for the table each row stacks in the same
-// order in every list (archive.css): time, game type and status, each colony's name over its player lines, the button.
+// order in every list (archive.css): time, game type and status, each colony's name beside its player lines, the button.
 // Rows and links come from today's helpers (ui/format.ts), read-only.
 import type { LiveMatch, LiveSeat, MatchesView, Recording } from "../matches-page/data.ts";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
@@ -272,12 +272,7 @@ function rowParts(doc: Document) {
     if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
     name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
     node.append(name);
-    if (parts.badges.length > 0) {
-      const tags = h(doc, "span", "d1p-tags");
-      tags.append(...parts.badges.map(badge => h(doc, "span", "d1p-tag", badge)));
-      tags.title = parts.badges.join(" ");
-      node.append(tags);
-    }
+    if (parts.badges.length > 0) node.append(badgeGroup(doc, parts.badges));
     if (rating) node.append(rowRatingNode(doc, rating, `${key}|rating`));
     if (seats > 1) {
       const count = h(doc, "span", "d1p-count");
@@ -313,7 +308,12 @@ function rowParts(doc: Document) {
   /** A colony's name in its ink; a drawn name has its source as its tooltip, and the rated names are shown as they were. */
   const colonyLabel = (tag: "dt" | "span", row: MatchRow, colony: number) => {
     const name = (row.colonyNames ?? COLONY_NAMES)[colony];
-    const node = h(doc, tag, `d1p-colony d1p-c${colony}`, name);
+    // The closing " Colony" is its own part, so a phone's stacked row can show the short name in the label column the
+    // Recordings phone form uses (archive.css), keeping the whole name for screen readers.
+    const short = slotName(name);
+    const node = h(doc, tag, `d1p-colony d1p-c${colony}`);
+    node.append(short);
+    if (short !== name) node.append(h(doc, "span", "d1p-colony-tail", name.slice(short.length)));
     const note = row.colonyNames === undefined ? null : colonyNameNote(name);
     if (note) node.title = note;
     return node;
@@ -519,6 +519,32 @@ export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] 
   return words;
 }
 
+/** A player's badges, the one style every Matches table uses: the level, with Fast drawn as a bolt in the same badge
+ * ("Fast" read by screen readers and in the group's title with the other words), then any other badge (retired). Fast
+ * with no level is a badge of its bolt alone. */
+export function badgeGroup(doc: Document, badges: readonly string[]): HTMLElement {
+  const tags = h(doc, "span", "d1p-tags");
+  tags.title = badges.join(" ");
+  let last: HTMLElement | null = null;
+  for (const badge of badges) {
+    if (badge.toLowerCase() === "fast") {
+      const holder = last ?? h(doc, "span", "d1p-tag");
+      if (last === null) tags.append(holder);
+      const bolt = h(doc, "span", "d1p-bolt");
+      bolt.setAttribute("aria-hidden", "true");
+      holder.classList.add("is-fast");
+      holder.append(bolt, h(doc, "span", "d1p-sr", ` ${badge}`));
+      last = null;
+      continue;
+    }
+    // The word as its own text node, so the bolt can follow it in the same badge.
+    last = h(doc, "span", "d1p-tag");
+    last.append(badge);
+    tags.append(last);
+  }
+  return tags;
+}
+
 /** The Recordings list: its one head row, then one row per recording (still bars in place of rows while it first loads). */
 function recordingSlots(doc: Document, rows: readonly MatchRow[], loading: boolean): HTMLElement[] {
   const head = h(doc, "div", "d1p-rec-head");
@@ -554,8 +580,14 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   when.append(h(doc, "span", "d1p-rec-date", parts.date));
   if (parts.time) when.append(h(doc, "span", "d1p-rec-sep", " · "), h(doc, "span", "d1p-rec-time", parts.time));
   const type = h(doc, "p", "d1p-rec-type");
+  // A type is its kind over its size ("Challenge" over "1v1"), as the date stands over its time; one line, dotted, in
+  // the narrow form.
   const typeWords = row.type ?? row.typeNote;
-  if (typeWords) type.append(h(doc, "span", undefined, typeWords));
+  if (typeWords) {
+    const at = typeWords.lastIndexOf(" · ");
+    if (at < 0) type.append(h(doc, "span", undefined, typeWords));
+    else type.append(h(doc, "span", undefined, typeWords.slice(0, at)), h(doc, "span", "d1p-rec-sep", " · "), h(doc, "span", undefined, typeWords.slice(at + 3)));
+  }
   for (const word of rowOutcome(row)) type.append(" ", h(doc, "span", "d1p-rec-note", word));
   meta.append(when, type);
   const slots = recordingSlotIndexes(row);
@@ -589,8 +621,8 @@ export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNam
 
 /** One colony slot: player lines (or a quiet note) under the shared header, or a dash where the match has no such
  * colony. `column` is the fixed column it stands in (null for a noncanonical colony below the columns, which carries
- * its own name): the phone form, where the shared head row hides, shows that column's name over the slot in the
- * neutral head ink (archive.css, from data-colony). Only the winner's slot carries its colony's colour, over the whole
+ * its own name): the narrow form, where the shared head row hides, shows that column's name beside the slot's line in
+ * the neutral head ink (archive.css, from data-colony). Only the winner's slot carries its colony's colour, over the whole
  * slot (--rec-win); every other slot is neutral. Its own name stays for screen readers, including historical names. */
 function recordingSlot(doc: Document, row: MatchRow, colony: number | null, column: number | null): HTMLElement {
   const slot = h(doc, "div", "d1p-rec-slot");
@@ -621,10 +653,10 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
   return slot;
 }
 
-/** One player, in the parts and badges every Matches table uses (rowParts playerLine): the username (builders only)
- * and model, each held whole, the model under the username where both do not fit (a piece wider than the whole slot,
- * which no real name is, ends in an ellipsis, its whole text the name's title and read in full); then the level and Fast badges, the
- * seat count and the cyan rating badge (figure only, its "± RD" on hover, tap or focus), the rating at the slot's end. */
+/** One player on one line, in the parts and badges every Matches table uses (rowParts playerLine): the username
+ * (builders only) and model, then the level badge (Fast as its bolt), the seat count and the cyan rating badge (figure
+ * only, its "± RD" on hover, tap or focus) at the slot's end. Only the name gives way, ending in an ellipsis past what
+ * any real name needs, its whole text the name's title and read in full. */
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
@@ -635,12 +667,7 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   line.append(name);
   if (parts.badges.length === 0 && seats <= 1 && !rating) return line;
   const badges = h(doc, "span", "d1p-rec-badges");
-  if (parts.badges.length > 0) {
-    const tags = h(doc, "span", "d1p-tags");
-    tags.append(...parts.badges.map(badge => h(doc, "span", "d1p-tag", badge)));
-    tags.title = parts.badges.join(" ");
-    badges.append(tags);
-  }
+  if (parts.badges.length > 0) badges.append(badgeGroup(doc, parts.badges));
   if (seats > 1) {
     const count = h(doc, "span", "d1p-count");
     const shown = h(doc, "span", undefined, `×${seats}`);

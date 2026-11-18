@@ -115,7 +115,7 @@ function mounted(names: ColonyNamePair | undefined, surface: Surface, moment: "e
 
 /** In the page: every visible text drawn in one of the colony colours, tagged, with its line boxes cut to what shows. */
 function findTexts(colours: string[]) {
-  const out: { i: number; text: string; rgb: string; opacity: number; interactive: boolean; background: string; shadow: string; badge: boolean; rects: { x: number; y: number; w: number; h: number }[] }[] = [];
+  const out: { i: number; text: string; rgb: string; opacity: number; interactive: boolean; background: string; shadow: string; badge: boolean; head: boolean; rects: { x: number; y: number; w: number; h: number }[] }[] = [];
   const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let i = 0;
   for (let n = tw.nextNode(); n; n = tw.nextNode()) {
@@ -143,7 +143,7 @@ function findTexts(colours: string[]) {
     if (rects.length === 0) continue;
     const interactive = el.closest("button,a[href],[role=button],.aw-mark-row");
     interactive?.setAttribute("data-ct", String(i));
-    out.push({ i, text: n.textContent.trim(), rgb: `${m[1]},${m[2]},${m[3]}`, opacity, interactive: !!interactive, background: ownStyle.backgroundColor, shadow: ownStyle.boxShadow, badge: el.matches(".d1p-result-tag"), rects });
+    out.push({ i, text: n.textContent.trim(), rgb: `${m[1]},${m[2]},${m[3]}`, opacity, interactive: !!interactive, background: ownStyle.backgroundColor, shadow: ownStyle.boxShadow, badge: el.matches(".d1p-result-tag"), head: !!el.closest(".d1p-rec-head"), rects });
     i++;
   }
   return out;
@@ -301,13 +301,13 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage(thinkingLevel: string | null = null, longName?: string) {
+function quadrantsPage(thinkingLevel: string | null = null, longName?: string, perColony?: number) {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
   const handles = longName ? Array<string>(4).fill(longName) : ["alice", "bob", "cat", "dan"];
-  const seats = handles.flatMap((handle, colony) => Array.from({ length: thinkingLevel === null ? 1 : 2 }, (_, index) => ({
+  const seats = handles.flatMap((handle, colony) => Array.from({ length: perColony ?? (thinkingLevel === null ? 1 : 2) }, (_, index) => ({
     seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
     thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
     ...(thinkingLevel === null ? {} : { startRating: { rating: 1500, rd: 80, ratedMatches: 12 } }),
@@ -337,8 +337,10 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             const extra = row.querySelector(".d1p-rec-extra")!;
             const rect = (node: Element) => { const b = node.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; };
             const bounds = rect(extra);
+            // On a wide card the shared head row's headings; on a narrow one, where it hides, each slot's own label.
             const heading = row.closest(".d1p-rec4")!.querySelector(".d1p-rec-head .d1p-rec-colony")!;
-            const style = getComputedStyle(heading);
+            const shown = getComputedStyle(row.closest(".d1p-rec4")!.querySelector(".d1p-rec-head")!).display !== "none";
+            const style = shown ? getComputedStyle(heading) : getComputedStyle(row.querySelector(".d1p-rec-slot[data-colony]")!, "::before");
             return { bounds, canonical: [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => ({ ...rect(slot), empty: slot.classList.contains("is-none") })),
               meta: rect(row.querySelector(".d1p-rec-meta")!), replay: rect(row.querySelector(".d1p-rec-replay")!),
               labels: [...extra.querySelectorAll(".d1p-rec-colony")].map(node => {
@@ -362,7 +364,7 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             expect(row.labels).toHaveLength(names[1] === "Very Large Colony" ? 1 : 2);
             for (const label of row.labels) {
               expect(names).toContain(label.title);
-              // A supplemental colony's label takes the shared headings' size and weight, in the neutral quiet ink.
+              // A supplemental colony's label takes the colony labels' size and weight, in the neutral quiet ink.
               expect(label.size).toBe(label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
@@ -414,9 +416,11 @@ describe("Recordings contain a self-reported thinking level", () => {
         }));
         expect(rows).toHaveLength(16);
         for (const row of rows) {
+          // One badge: the level with Fast as its bolt, read in full.
           expect(row.text).toBe(`${longLevel} Fast`);
           expect(row.title).toBe(`${longLevel} Fast`);
-          // The badges stop short of the count and the rating, clipped; their whole text is their title.
+          // Past what any real level needs, the badges stop at 12em, short of the count and the rating, clipped; their whole
+          // text is their title.
           expect(row.clipped).toBe(true);
           expect(row.overflow).toBe("hidden");
           expect(row.count).toContain("×2");
@@ -432,45 +436,62 @@ describe("Recordings contain a self-reported thinking level", () => {
   }
 });
 
-describe("Recordings keep each piece of a player name whole on its own line, an ellipsis only past the slot", () => {
+/** Each Matches player line (Recordings, Waiting, Live now) as drawn: how many lines its visible text and badges take,
+ * whether its name ends in its ellipsis, and whether it stands inside its slot or cell. */
+const PLAYER_LINES = () => [...document.querySelectorAll(".d1p-rec-player, .d1p-model")].filter(node => node.checkVisibility()).map(node => {
+  const boxes: DOMRect[] = [];
+  const walk = (parent: Node) => { for (const child of parent.childNodes) {
+    if (child.nodeType === 3) { if (!child.textContent!.trim()) continue; const range = document.createRange(); range.selectNodeContents(child); boxes.push(...[...range.getClientRects()].filter(box => box.width > 0.5)); }
+    else if (child instanceof Element) { if (child.matches(".d1p-sr, .d1p-elo-rd") || !child.checkVisibility()) continue; if (child.matches(".d1p-tag, .d1-tag, .d1p-bolt")) boxes.push(child.getBoundingClientRect()); walk(child); }
+  } };
+  walk(node);
+  const centres = boxes.map(box => (box.top + box.bottom) / 2).sort((a, b) => a - b);
+  let lines = 0, last = -Infinity;
+  for (const centre of centres) { if (centre - last > 6) lines++; last = centre; }
+  const name = node.querySelector(":scope > .d1p-rec-name, :scope > :first-child")!;
+  const holder = (node.closest(".d1p-rec-slot") ?? node.parentElement!).getBoundingClientRect(), own = node.getBoundingClientRect();
+  return { text: `${node.textContent!.replace(/\s+/g, " ").trim()} (name ${name.scrollWidth}/${name.clientWidth}, line ${Math.round(node.getBoundingClientRect().width)})`, lines, nameCut: name.scrollWidth > name.clientWidth + 1,
+    inside: own.left >= holder.left - 0.5 && own.right <= holder.right + 0.5,
+    title: name.getAttribute("title"), nameStyle: [getComputedStyle(name).whiteSpace, getComputedStyle(name).overflowX, getComputedStyle(name).textOverflow] };
+});
+
+describe("every Matches player is one line", () => {
   for (const width of [1280, 390]) {
-    it(`contains long builder/model names and preserves hover and accessible text at ${width}px`, async () => {
+    it(`keeps username, model, level with Fast, seats and rating on one line, uncut, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        // The widest real player on the public list (one seat per colony, so no seat count): a builder, its model, max and
+        // Fast, and its rating; in the face that sets it widest.
+        await tab.setContent(quadrantsPage("max", "CedarGrove", 1).page);
+        await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+        await tab.evaluate(() => document.fonts.ready);
+        const lines = await tab.evaluate(PLAYER_LINES);
+        // Four recordings, a CedarGrove seat in each colony.
+        expect(lines.filter(line => line.text.startsWith("CedarGrove"))).toHaveLength(16);
+        for (const line of lines) {
+          expect(line.lines, line.text).toBe(1);
+          expect(line.nameCut, line.text).toBe(false);
+          expect(line.inside, line.text).toBe(true);
+        }
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      } finally { await tab.close(); }
+    });
+
+    it(`gives way only in the name, past any real length, keeping its text whole for hover and screen readers, at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
         await tab.setContent(quadrantsPage("m".repeat(32), "long-builder-" + "x".repeat(64)).page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const names = tab.locator(".d1p-rec-name");
-        expect(await names.count()).toBe(16);
-        for (const name of await names.all()) {
-          const result = await name.evaluate(node => {
-            const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
-            return { text: node.textContent, title: node.getAttribute("title"),
-              pieces: [...node.children].map(piece => {
-                const style = getComputedStyle(piece), rect = piece.getBoundingClientRect();
-                const range = document.createRange(); range.selectNodeContents(piece);
-                return { clipped: piece.scrollWidth > piece.clientWidth, whiteSpace: style.whiteSpace, overflow: style.overflowX, ellipsis: style.textOverflow,
-                  lines: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size,
-                  top: rect.top, left: rect.left - slot.left, right: slot.right - rect.right, width: rect.width };
-              }) };
-          });
-          expect(result.text).toContain("long-builder-" + "x".repeat(64));
-          expect(result.title).toBe(result.text);
-          expect(result.pieces).toHaveLength(2);
-          // The username is wider than any slot: the model takes the next line, and the username alone ends in an ellipsis
-          // inside the slot.
-          expect(result.pieces[1]!.top).toBeGreaterThan(result.pieces[0]!.top);
-          expect(result.pieces[0]!.clipped).toBe(true);
-          for (const piece of result.pieces) {
-            expect(piece.lines).toBe(1);
-            expect(piece.whiteSpace).toBe("nowrap");
-            expect(piece.overflow).toBe("hidden");
-            expect(piece.ellipsis).toBe("ellipsis");
-            expect(piece.width).toBeGreaterThan(0);
-            expect(piece.left).toBeGreaterThanOrEqual(0);
-            expect(piece.right).toBeGreaterThanOrEqual(0);
-          }
-          expect(await name.ariaSnapshot()).toContain(result.text!);
+        const lines = (await tab.evaluate(PLAYER_LINES)).filter(line => line.text.startsWith("long-builder-"));
+        expect(lines).toHaveLength(16);
+        for (const line of lines) {
+          expect(line.lines, line.text).toBe(1);
+          expect(line.nameCut).toBe(true);
+          expect(line.nameStyle).toEqual(["nowrap", "hidden", "ellipsis"]);
+          expect(line.title).toContain("long-builder-" + "x".repeat(64));
+          expect(line.inside).toBe(true);
         }
+        for (const name of await tab.locator(".d1p-rec-name").all()) expect(await name.ariaSnapshot()).toContain("long-builder-" + "x".repeat(64));
         expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
       } finally { await tab.close(); }
     });
@@ -526,7 +547,7 @@ describe("Recordings colony headings stay inside their columns", () => {
     });
   }
 
-  it("on a phone hides the shared head and labels each of the 2 by 2 slots with its column's name, whole, in the neutral ink", async () => {
+  it("on a phone hides the shared head and gives each colony its own line, beside its column's name, whole, in the neutral ink", async () => {
     const tab = await browser.newPage({ viewport: { width: 390, height: 2400 }, deviceScaleFactor: 3 });
     try {
       await tab.setContent(quadrantsPage().page);
@@ -537,23 +558,25 @@ describe("Recordings colony headings stay inside their columns", () => {
         quiet: getComputedStyle(document.querySelector(".d1p-rec-time")!).color,
         rows: [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => {
           const before = getComputedStyle(slot, "::before"), box = slot.getBoundingClientRect();
+          const player = slot.querySelector(".d1p-rec-player")?.getBoundingClientRect();
           return { label: before.content, colour: before.color, whiteSpace: before.whiteSpace, transform: before.textTransform,
-            overflowing: slot.scrollWidth > slot.clientWidth, left: Math.round(box.left), top: Math.round(box.top) };
+            labelWidth: parseFloat(before.width), column: parseFloat(getComputedStyle(slot).gridTemplateColumns),
+            overflowing: slot.scrollWidth > slot.clientWidth, left: Math.round(box.left), top: Math.round(box.top), bottom: Math.round(box.bottom),
+            playerTop: player ? Math.round(player.top) : null };
         })),
       }));
       expect(view.head).toBe("none");
       expect(view.rows.length).toBeGreaterThan(0);
       for (const slots of view.rows) {
         expect(slots.map(slot => slot.label)).toEqual(SUPERCOLONY_NAMES.map(name => `"${name.label.replace(/ Colony$/, "")}"`));
-        // Two columns and two rows, in the columns' order.
-        expect(new Set(slots.map(slot => slot.left)).size).toBe(2);
-        expect(slots[0]!.top).toBe(slots[1]!.top);
-        expect(slots[2]!.top).toBe(slots[3]!.top);
-        expect(slots[2]!.top).toBeGreaterThan(slots[0]!.top);
+        // One colony a line, in the columns' order, each line under the last.
+        expect(new Set(slots.map(slot => slot.left)).size).toBe(1);
+        for (let index = 1; index < slots.length; index++) expect(slots[index]!.top).toBeGreaterThanOrEqual(slots[index - 1]!.bottom);
         for (const slot of slots) {
           expect(slot.colour).toBe(view.quiet);
           expect(slot.whiteSpace).toBe("nowrap");
           expect(slot.transform).toBe("uppercase");
+          expect(slot.labelWidth).toBeLessThanOrEqual(slot.column);
           expect(slot.overflowing).toBe(false);
         }
       }
@@ -570,11 +593,13 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
       expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
       expectNoBacking(rows);
       const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
-      // Live keeps the full name; Recordings shows one shared short heading in the same original colony ink.
+      // Live names each colony ("Very Large", then its " Colony"), and Recordings' shared head shows the short name, both in
+      // the same original colony ink.
       for (const { label, colour } of SUPERCOLONY_NAMES) {
-        expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
+        const short = rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest");
+        expect(short.filter(r => !r.head).map(r => r.rgb)).toEqual([rgb(colour)]);
         // On a phone the shared head hides; each slot's label there is in the neutral ink.
-        expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb(colour)]);
+        expect(short.filter(r => r.head).map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb(colour)]);
       }
       expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
     });
@@ -592,7 +617,7 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
         // The shared header names all four colonies once, regardless of the pair these recordings used.
         SUPERCOLONY_NAMES.forEach(({ label, colour }) => {
           const rgb = [(colour >> 16) & 255, (colour >> 8) & 255, colour & 255].join(",");
-          expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb]);
+          expect(rows.filter(r => r.head && r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb]);
         });
         expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
         expect(body, "no row draws a text backing").not.toContain("data-aw-ground");

@@ -285,13 +285,22 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 /* On the Leaderboard a builder's model follows its bold username in regular weight, as on a Matches player line (identity.ts builderNameNodes). */
 :is(.d1p-lb th.c-name, .d1p-lb-rows .is-lead) .d1p-mname { font-weight: 400; }
 /* The line's rating badge (identity.ts rowRatingNode) after its name and badges, spaced as a badge is. */
-.d1p-model > .d1p-elo-badge { margin-left: 6px; }
+.d1p-model > .d1p-elo-badge { margin-left: 4px; }
 .d1p-model > :not(:first-child) { flex: none; }
 /* A self-reported level may run to 32 characters (src/mcp/config.ts), wider than a seat's whole line: the badges stop at
    12em, so the name always keeps room on the line. Every real set (MINIMAL FAST, the widest, is under 10em) shows whole; a
    wider one is clipped, its whole text its title and read in full (matches.ts seatBlock). */
 .d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
 .d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
+/* The Matches tables' one badge style, so each colony's player stays on one line: level, rating and result badges alike
+   in 10 px caps, tight tracking and padding; Fast is a bolt inside the level's badge (matches.ts badgeGroup), drawn here
+   so it does not depend on a typeface. The Leaderboard keeps its own badges. */
+:is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 4px; padding: 0 3px; font-size: 10px; letter-spacing: 0.02em; }
+:is(.d1p-model, .d1p-rec-player) .d1p-tag { line-height: 14px; }
+:is(.d1p-model, .d1p-rec-player) .d1p-tag + .d1p-tag { margin-left: 3px; }
+.d1p-tag.is-fast { padding-right: 2px; }
+.d1p-bolt { display: inline-block; width: 6px; height: 9px; margin-left: 2px; background: currentColor; vertical-align: -1px; clip-path: polygon(70% 0, 0 58%, 42% 58%, 30% 100%, 100% 40%, 58% 40%); }
+:is(.d1p-model, .d1p-rec-player) .d1p-count { margin-left: 4px; }
 .d1p-unknown { color: var(--aw-ink-3); }
 /* Colony colour only as ink: on a colony's name, which always names it too, and on the words of its WINNER, DRAW or
    ABANDONED badge (matches.ts playerLine), which stands in that colony's column or under its name; the badge keeps its
@@ -343,12 +352,14 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-match-rows .d1p-kicker { margin-right: 3px; }
 .d1p-match-rows .d1p-colonies { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 4px 0 0; }
 .d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: 12px; line-height: 18px; }
-/* In a card under 28rem, a phone's, each colony's name stands over its seats, so a seat line has the item's whole width:
-   beside the names' column a 390 px phone left 193 px, too little for a team seat with two badges ("GPT-6.1 Terra XHIGH
-   FAST ×4", 196 px). 4 px part a colony's last seat from the next colony's name. */
+/* In a card under 28rem, a phone's, each colony's name keeps its seats' line: the short name ("Very Large", its " Colony"
+   read by screen readers only) in the narrow caps label column the Recordings phone form uses, still in its colony's
+   ink, so a seat line keeps 234 px of a 390 px phone, enough for every real player on one line. */
+.d1p-colony-tail { white-space: pre; }
 @container d1p-card (width < 28rem) {
-  .d1p-match-rows .d1p-colonies { grid-template-columns: minmax(0, 1fr); }
-  .d1p-match-rows .d1p-colonies > dd + dt { margin-top: 4px; }
+  .d1p-match-rows .d1p-colonies { grid-template-columns: var(--d1p-label) minmax(0, 1fr); column-gap: 6px; }
+  .d1p-match-rows .d1p-colonies > dt { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+  .d1p-match-rows .d1p-colonies .d1p-colony-tail { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
 }
 .d1p-rows-head { display: flex; align-items: center; min-height: 36px; padding: 0 var(--d1p-inset); border-top: 1px solid var(--aw-line); }
 .d1p-line { grid-column: 1; font-size: 13px; line-height: 19px; color: var(--aw-ink-2); }
@@ -485,17 +496,20 @@ td.c-model > .d1p-colony { display: block; }
 /* ---------------------------------------------------------------- Recordings: one row per recording, four colony slots */
 /* Colony heads (matches.ts recordingSlots). One grid for the head row and every row:
    Time, Game type, four equal colony slots, Replay. A row's items share their first baseline. Each slot holds its
-   players in the parts and badges Waiting and Live now use: the name (a builder's bold username, then its model), and
-   under it the grey level and Fast badges, the seat count and the cyan rating badge at the slot's end, so each column's
-   ratings stand on one edge. Neither name piece is ever cut: the model goes under the username where both do not fit.
-   Only the winner's slot is in colour: its colony's, as a faint ground over the whole slot with an edge, and its names
-   in that ink; every other slot is neutral. Rows part by the hairline. Under 60rem of card each row puts its four slots
-   first and its start, type and Replay on one line under them; under 42rem (phones) the slots stand two by two, each
-   under its column's name in the head's neutral caps, and the shared head row hides. */
-.d1p-rec4 { --rec-gap: 12px; --rec-when: 80px; --rec-type: 100px; --rec-go: 44px; --rec-pad: 8px; }
+   players one line each, in the parts and badges Waiting and Live now use: the name (a builder's bold username, then its
+   model), the level badge (Fast as its bolt), the seat count and the cyan rating badge at the slot's end, so each column's
+   ratings stand on one edge. Only the name gives way, past what any real name needs. Only the winner's slot is in colour:
+   its colony's, as a faint ground over the whole slot with an edge, and its names in that ink; every other slot is
+   neutral. Rows part by the hairline. The four slots stand side by side only in a card 72rem wide, where each keeps
+   231 px (the widest real player, "CedarGrove GPT-6.1 Terra MAX Fast 1500", is 225 px in Liberation Sans); in a narrower
+   card, a phone's, each row is its four colonies one line each, in the columns' order, each beside its column's name in
+   the head's neutral caps, with the start, type and Replay on a line under them; the shared head row hides. */
+.d1p-rec4 { --rec-gap: 6px; --rec-when: 72px; --rec-type: 72px; --rec-go: 44px; --rec-pad: 4px; }
+/* The phone forms' colony label column, Recordings' and the stacked rows' alike. */
+.d1p-card { --d1p-label: 84px; }
 .d1p-rec-head, .d1p-rec-rows > li {
   display: grid; grid-template-columns: var(--rec-when) var(--rec-type) repeat(4, minmax(0, 1fr)) var(--rec-go);
-  column-gap: var(--rec-gap); padding: 0 var(--d1p-inset);
+  column-gap: var(--rec-gap); padding: 0 8px;
 }
 .d1p-rec-head {
   align-items: end; padding-block: 9px 7px; border-top: 1px solid var(--aw-line);
@@ -512,63 +526,53 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-meta { display: contents; }
 .d1p-rec-when, .d1p-rec-type { display: flex; flex-direction: column; min-width: 0; white-space: nowrap; }
 .d1p-rec-time, .d1p-rec-type { color: var(--aw-ink-3); }
-/* The date stands over its time on a wide card, so the dot between them is for the phone's one line only. */
+/* The date stands over its time, and the type's kind over its size, on a wide card, so the dots between them are for the
+   phone's one line only. */
 .d1p-rec-sep { display: none; color: var(--aw-ink-3); }
 .d1p-rec-slot { display: flex; flex-direction: column; min-width: 0; padding: 4px var(--rec-pad); border-radius: 4px; }
 /* The winner's slot, the row's one colour: its colony's ink on its names, a faint ground and an edge of it. */
-.d1p-rec-slot.is-won { background: color-mix(in srgb, var(--rec-win) 14%, transparent); box-shadow: inset 3px 0 0 var(--rec-win); }
+.d1p-rec-slot.is-won { background: color-mix(in srgb, var(--rec-win) 14%, transparent); box-shadow: inset 2px 0 0 var(--rec-win); }
 .d1p-rec-slot.is-won .d1p-rec-name > * { color: var(--rec-win); }
 /* Noncanonical stored colonies sit outside the named columns, using the same label and player parts. */
 .d1p-rec-extra { grid-column: 3 / 7; min-width: 0; }
 .d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .d1p-rec-extra .d1p-rec-colony { overflow: hidden; text-overflow: ellipsis; color: var(--aw-ink-3); }
-.d1p-rec-player { display: flex; flex-direction: column; min-width: 0; }
-.d1p-rec-player + .d1p-rec-player { margin-top: 6px; }
-/* The name's two pieces, each whole: the model moves under the username rather than either being cut. */
-.d1p-rec-name { display: flex; flex-wrap: wrap; column-gap: 0.3em; min-width: 0; }
-/* Only a piece wider than the whole slot, which no real name is, ends in an ellipsis (its title holds it whole). */
-.d1p-rec-name > * { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The badges' line: level and Fast, the seat count, then the rating at the slot's end. Where a narrow slot cannot hold
-   them all, whole badges move to a next line (the rating keeps the slot's end) rather than any being cut. */
-.d1p-rec-badges { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; row-gap: 2px; margin-top: 2px; white-space: nowrap; }
-.d1p-rec-badges .d1p-tags > .d1p-tag:first-child, .d1p-rec-badges > .d1p-count { margin-left: 0; }
-/* A self-reported level may run to 32 characters (src/mcp/config.ts): the badges then stop short of the count and the
-   rating, clipped, their whole text their title. Every real set shows whole. */
-.d1p-rec-badges > .d1p-tags { min-width: 0; overflow: hidden; }
-.d1p-rec-badges > :not(.d1p-tags) { flex: none; }
-.d1p-rec-badges > .d1p-elo-badge { margin-left: auto; vertical-align: baseline; }
+/* A player, one line: the name, then the badges with the rating at the slot's end. */
+.d1p-rec-player { display: flex; align-items: baseline; column-gap: 4px; min-width: 0; white-space: nowrap; }
+.d1p-rec-player + .d1p-rec-player { margin-top: 2px; }
+/* The name (username, then model) is the one part that gives way: past what any real name needs it ends in an ellipsis,
+   its whole text its title and read in full. */
+.d1p-rec-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.d1p-rec-badges { display: flex; flex: 1 0 auto; align-items: baseline; }
+.d1p-rec-badges .d1p-tags > .d1p-tag:first-child, .d1p-rec-badges > :first-child { margin-left: 0; }
+/* A self-reported level may run to 32 characters (src/mcp/config.ts): the badges stop at 12em, as on Live now's line,
+   clipped, their whole text their title. Every real set shows whole. */
+.d1p-rec-badges > .d1p-tags { max-width: 12em; overflow: hidden; }
+.d1p-rec-badges > .d1p-elo-badge { margin-left: auto; padding-left: 3px; vertical-align: baseline; }
 .d1p-rec-dash { color: var(--aw-ink-3); }
 .d1p-rec4 .d1p-rec-replay { justify-self: end; min-height: 0; font-size: 12px; }
-@container d1p-card (width < 60rem) {
-  .d1p-rec-head { grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 8px; }
-  .d1p-rec-head > :is(.is-when, .is-type) { display: none; }
-  .d1p-rec-rows > li { position: relative; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 8px; row-gap: 8px; align-items: start; padding-block: 8px 12px; }
-  .d1p-rec-slot { grid-row: 1; }
-  .d1p-rec-extra { grid-column: 1 / -1; grid-row: 2; }
-  .d1p-rec-rows > .has-extra > .d1p-rec-meta { grid-row: 3; }
-  /* The start and the type on one line under the slots, Replay at its end; where the line breaks, the next part starts
-     its line without the dot that parts it from the last (the dot sits in the gap, clipped at the line's start). */
-  .d1p-rec-meta { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; grid-row: 2; grid-column: 1 / -1; min-width: 0; padding-right: 56px; padding-left: var(--rec-pad); overflow: hidden; color: var(--aw-ink-3); }
+@container d1p-card (width < 72rem) {
+  .d1p-rec-head { display: none; }
+  .d1p-rec-rows > li { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; align-items: start; padding: 8px 12px 12px; }
+  .d1p-rec-rows > li:first-child { border-top-color: var(--aw-line); }
+  /* A colony a line: its column's name in the label column, its players beside it. */
+  .d1p-rec-slot { display: grid; grid-template-columns: var(--d1p-label) minmax(0, 1fr); column-gap: 6px; align-items: baseline; padding-block: 2px; }
+  .d1p-rec-slot > * { grid-column: 2; }
+  .d1p-rec-slot[data-colony]::before { content: attr(data-colony); grid-column: 1; grid-row: 1; font-size: 10px; font-weight: 700; line-height: 16px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; color: var(--aw-ink-3); }
+  .d1p-rec-slot > .d1p-rec-colony { grid-column: 1; font-size: 10px; letter-spacing: 0.04em; }
+  .d1p-rec-extra { grid-column: 1; }
+  /* The start and the type on one line under the colonies, Replay at its end; where the line breaks, the next part
+     starts its line without the dot that parts it from the last (the dot sits in the gap, clipped at the line's start). */
+  .d1p-rec-meta { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; order: 2; margin-top: 4px; min-width: 0; padding-right: 56px; padding-left: var(--rec-pad); overflow: hidden; color: var(--aw-ink-3); }
   .d1p-rec-when, .d1p-rec-type { display: inline; position: relative; white-space: normal; }
   .d1p-rec-when > *, .d1p-rec-type > * { white-space: nowrap; }
   .d1p-rec-sep { display: inline; white-space: pre; }
   .d1p-rec-type::before { content: "·"; position: absolute; left: -8px; }
   .d1p-rec-note::before { content: "· "; }
   .d1p-rec-date { color: var(--aw-ink); }
-  .d1p-rec4 .d1p-rec-replay { position: absolute; bottom: 12px; right: var(--d1p-inset); }
+  .d1p-rec4 .d1p-rec-replay { position: absolute; bottom: 12px; right: 12px; }
   /* A 44 px tap around the word, as every phone target is here. */
   .d1p-rec4 .d1p-rec-replay::before { content: ""; position: absolute; inset: -14px -8px; }
-}
-/* Phones: four slots side by side leave too little for a whole name, so they stand two by two, each under its column's
-   name in the head's neutral caps (matches.ts data-colony), in the columns' order; the shared head row hides. */
-@container d1p-card (width < 42rem) {
-  .d1p-rec-head { display: none; }
-  .d1p-rec-rows > li:first-child { border-top-color: var(--aw-line); }
-  .d1p-rec-rows > li { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .d1p-rec-slot { grid-row: auto; }
-  .d1p-rec-slot[data-colony]::before { content: attr(data-colony); margin-bottom: 2px; font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; color: var(--aw-ink-3); }
-  .d1p-rec-extra { grid-row: auto; order: 1; }
-  .d1p-rec-meta, .d1p-rec-rows > .has-extra > .d1p-rec-meta { grid-row: auto; order: 2; }
 }
 
 @media (forced-colors: active) {

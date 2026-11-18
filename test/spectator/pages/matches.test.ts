@@ -288,8 +288,11 @@ describe("the one player line", () => {
     const { p, recordings } = show({ recordings: { status: "ready", rows: [team] } });
     for (const layout of [recordings.list]) {
       const [winner, other] = layout.byClass("d1p-rec-player");
-      expect(lineParts(winner!)).toEqual([["name", ["d1p-user:coffee-ant", "d1p-mname:GPT-6.1 Terra"]], ["badges", ["high", "Fast"]],
+      expect(lineParts(winner!)).toEqual([["name", ["d1p-user:coffee-ant", "d1p-mname:GPT-6.1 Terra"]], ["badges", ["high Fast"]],
         ["seats", "×2"], ["rating", "1540 ± 80"]]);
+      // Fast is a bolt inside the level's badge, its word read by screen readers.
+      expect(winner!.byClass("d1p-tag")[0]!.byClass("d1p-bolt")).toHaveLength(1);
+      expect(winner!.byClass("d1p-tag")[0]!.byClass("d1p-sr")[0]!.textContent).toBe(" Fast");
       // A builder that named no model: its username alone, then its rating; no result on the losing colony.
       expect(lineParts(other!)).toEqual([["name", ["d1p-user:omp-dolphin"]], ["seats", "×2"], ["rating", "1460 ± 80"]]);
       expect(layout.byClass("is-won")[0]!.byClass("d1p-sr").at(-1)!.textContent).toBe(", winner");
@@ -334,7 +337,7 @@ describe("the one player line", () => {
     ] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [row] } });
     const shown = recordings.list.byClass("d1p-tags")[0]!;
-    expect([shown.children.map(tag => tag.textContent), shown.title]).toEqual([[level, "Fast"], `${level} Fast`]);
+    expect([shown.children.map(tag => tag.textContent), shown.title]).toEqual([[`${level} Fast`], `${level} Fast`]);
     p.mounted.destroy();
   });
 
@@ -359,10 +362,10 @@ describe("Live now rows", () => {
     const { p, live: liveList } = show({ live: { status: "ready", rows: [match] } });
     const [row] = bodyRows(liveList.table);
     expect(cells(row!)).toEqual([
-      ["c-start", "11 Nov 202603:50 UTC"], ["c-type", "Challenge · 1v1"], ["c-model", ["GPT-6 LunamaxFast1979 ± 60"]],
-      ["c-model", ["kain GPT-6.1 TerrahighFast1612 ± 80"]], ["c-status", "Status Live"], ["c-go", "Watch"]]);
+      ["c-start", "11 Nov 202603:50 UTC"], ["c-type", "Challenge · 1v1"], ["c-model", ["GPT-6 Lunamax Fast1979 ± 60"]],
+      ["c-model", ["kain GPT-6.1 Terrahigh Fast1612 ± 80"]], ["c-status", "Status Live"], ["c-go", "Watch"]]);
     // The builder's line in the drawing's order: username, model, then the level and Fast it reported on joining.
-    expect(lineParts(row!.byClass("d1p-model")[1]!).filter(part => part[0] !== "rating")).toEqual([["name", ["d1p-user:kain", "d1p-mname:GPT-6.1 Terra"]], ["badges", ["high", "Fast"]]]);
+    expect(lineParts(row!.byClass("d1p-model")[1]!).filter(part => part[0] !== "rating")).toEqual([["name", ["d1p-user:kain", "d1p-mname:GPT-6.1 Terra"]], ["badges", ["high Fast"]]]);
     const watch = row!.byClass("d1p-row-pill")[0]!;
     expect(watch.href).toBe("/?lobby=00000000-0000-4000-8000-0000000000aa&watch=1");
     expect(watch.getAttribute("aria-label")).toBe("Watch, Unrated match started 11 Nov 2026 · 03:50 UTC");
@@ -411,7 +414,7 @@ describe("Recordings rows", () => {
     expect(rows.map(row => row.byClass("is-won").length)).toEqual([1, 0, 0, 1, 0]);
     // The winner's slot is the row's one coloured slot.
     expect(rows.map(row => row.byClass("d1p-rec-slot").filter(slot => slot.style.properties.size > 0).length)).toEqual([1, 0, 0, 1, 0]);
-    expect(rows[3]!.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["GPT-6.1 SolmaxFast", "did not join"]);
+    expect(rows[3]!.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["GPT-6.1 Solmax Fast", "did not join"]);
     expect(rows[4]!.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["not recorded", "not recorded"]);
     expect(recordings.card.byClass("d1p-stamp")).toEqual([]);
     expect(recordings.card.textContent).not.toMatch(/Lobby|Unrated/);

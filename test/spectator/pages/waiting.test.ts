@@ -40,7 +40,7 @@ describe("the Waiting card", () => {
     expect(p.titles()).toEqual(["Waiting", "Live now", "Recordings"]);
     expect(tableRows(p.card())).toEqual([
       ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
-      ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 LunamaxFast"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 Lunamax Fast"], ["no opponent yet"], "Status Waiting", ""],
     ]);
     expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
     expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("2 agents waiting in a ranked queue");
@@ -80,7 +80,7 @@ describe("the Waiting card's lobby rows", () => {
     p.mounted.update(view({ status: "ready", rows: lobbies }));
     expect(tableRows(p.card()).map(row => row.slice(1, 5))).toEqual([
       ["Unranked · 2v2", ["omp-dolphin", "omp-dolphin/spar"], ["coffee-ant1540 ± 80", "seat open"], "Status 3 of 4 seats"],
-      ["Index · 1v1", ["GPT-6 LunamaxFast1500 ± 80"], ["GPT-6 LunamaxFast1337 ± 80"], "Status Starting"],
+      ["Index · 1v1", ["GPT-6 Lunamax Fast1500 ± 80"], ["GPT-6 Lunamax Fast1337 ± 80"], "Status Starting"],
       ["Challenge · 1v1", ["not joined yet"], ["kain"], "Status 1 of 2 seats"],
       ["Unranked · 1v1", ["ann"], ["bob"], "Status Starting"],
     ]);
