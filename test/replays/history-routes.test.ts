@@ -176,15 +176,19 @@ describe("Recordings carry each recording's match type", () => {
       [pending]: "pending", [broken]: new Error("store unavailable"), [scheduled]: null, [found]: lobby({ mode: "2v2" }),
     };
     const { lookup, reads } = lobbies(byReplay);
-    const types = recordingMatchTypes(cachedLobbyLookup(lookup));
+    const logged: { message: string; detail: object }[] = [];
+    const types = recordingMatchTypes(cachedLobbyLookup(lookup), (message, detail) => logged.push({ message, detail }));
     const listing = page(...[pending, broken, scheduled, found].map(id => ({ ...row(id, twoVsTwo), rated: false, modelIndex: false })));
     const kinds = async () => ((await types(listing)).matches as TypedHistorySummary[]).map(match => match.matchType?.kind ?? null);
     expect(await kinds()).toEqual(["unrated", "unrated", "unrated", "ranked"]);
+    // Only the failed lookup is logged; a pending link is an expected wait.
+    expect(logged).toEqual([{ message: "antwar recording lobby lookup failed", detail: { replayId: broken, error: "store unavailable" } }]);
     expect(reads.sort()).toEqual([pending, broken, scheduled, found].sort());
     byReplay[pending] = lobby({ size: 1, challenge: { kind: "house" } });
     byReplay[broken] = lobby({ mode: "house-2v2" });
     reads.length = 0;
     expect(await kinds()).toEqual(["challenge", "index", "unrated", "ranked"]);
+    expect(logged).toHaveLength(1);
     // Only the pending and failed rows are read again; no lobby and a found lobby were cached.
     expect(reads.sort()).toEqual([pending, broken].sort());
     reads.length = 0;

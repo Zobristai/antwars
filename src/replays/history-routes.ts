@@ -137,12 +137,18 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
 /**
  * Each listed row with its match type (recordingMatchType), its rated flag as its lobby's outcome decides (recordingRated),
  * and a Model Index row with its harness phase by match time (recordingMatchTime). A pending or failed lookup types the row from its record for
- * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again.
+ * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again. A failed
+ * lookup is logged.
  */
-export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
+export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined,
+  log: (message: string, detail: object) => void = console.warn): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
   async function lobbyOf(replayId: string): Promise<RecordingLobby | null | undefined> {
     if (lookup === undefined) return null;
-    try { const lobby = await lookup(replayId); return lobby === "pending" ? undefined : lobby; } catch { return undefined; }
+    try { const lobby = await lookup(replayId); return lobby === "pending" ? undefined : lobby; } catch (error) {
+      // The row is typed from its record for this listing (a challenge then lists only once a later lookup succeeds).
+      log("antwar recording lobby lookup failed", { replayId, error: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
   }
   return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row => {
     const lobby = await lobbyOf(row.id);
