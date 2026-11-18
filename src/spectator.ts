@@ -131,8 +131,9 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   // Only this server serves LOCAL_WATCH_PATH, the hub's current match; store-backed servers gain no route.
   const localMatch = !entryPoint && options.slot === undefined && options.accounts === undefined && options.watchRegistry === undefined;
   if (localMatch) server.mount(LOCAL_WATCH_PATH, (req, res) => {
-    if (new URL(req.url ?? "/", "http://localhost").pathname !== LOCAL_WATCH_PATH) { res.writeHead(404).end(); return; }
-    req.url = "/live/current";
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (url.pathname !== LOCAL_WATCH_PATH) { res.writeHead(404).end(); return; }
+    req.url = url.searchParams.get("kills") === "1" ? "/live/current?kills=1" : "/live/current";
     return hub.handle(req, res);
   });
   if (options.accounts && options.watchRegistry) server.mount("/watch", watchRoutes({ accounts: options.accounts, registry: options.watchRegistry,
