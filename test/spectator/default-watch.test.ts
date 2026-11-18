@@ -44,6 +44,11 @@ it("2D, 3D and boardless use the same source and advance through its automatic-o
 
 it("no user-served module contains a retired main-match request path", () => {
   const files = readdirSync(new URL("../../web/src/", import.meta.url), { recursive: true, encoding: "utf8" }).filter(path => path.endsWith(".ts"));
-  const users = files.filter(path => /["'`]\/live\//.test(readFileSync(new URL(`../../web/src/${path}`, import.meta.url), "utf8")));
+  // The one exception: a local match (README's "Run it locally") has no lobby, so its page names /live/current.
+  const local = 'export const LOCAL_STREAM_PATH = "/live/current";';
+  const users = files.filter(path => {
+    const text = readFileSync(new URL(`../../web/src/${path}`, import.meta.url), "utf8");
+    return /["'`]\/live\//.test(path === "stream.ts" ? text.replace(local, "") : text);
+  });
   expect(users).toEqual([]);
 });
