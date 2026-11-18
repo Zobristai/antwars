@@ -168,16 +168,17 @@ describe("the control-group meter", () => {
     } finally { tree.remove(); }
   });
 
-  // Credible regression: the fallback dropping a restrictive level read before an ancestor failed, so a nearly full own
-  // group is given the configured limit's room.
-  it("on a partial read, keeps every level read before the failure: the smallest of those and the configured limit less this process's memory", () => {
+  // Credible regression: the fallback dropping a restrictive level read before an ancestor failed, or never reading a
+  // restrictive ancestor above a failed level, so a nearly full group is given the configured limit's room.
+  it("on a partial read, keeps every other level, below or above the failure: the smallest of those and the configured limit less this process's memory", () => {
     const restrictive = { max: `${2048 * MIB}\n`, current: 1900 };
-    for (const ancestor of [{ current: 100 }, { max: "lots\n", current: 100 }, { max: "0\n", current: 100 }, { max: `${8192 * MIB}\n` }]) {
-      const levels = [{}, ancestor, restrictive];
-      const r = read(levels, "4Gi");
-      expect(r, JSON.stringify(ancestor)).toEqual({ headroomMiB: 148, source: "process" });
-      expect(admits(r!)).toBe(false);
-      expect(read(levels), JSON.stringify(ancestor)).toBeNull();
+    for (const broken of [{ current: 100 }, { max: "lots\n", current: 100 }, { max: "0\n", current: 100 }, { max: `${8192 * MIB}\n` }]) {
+      for (const levels of [[{}, broken, restrictive], [{}, restrictive, broken], [{}, restrictive, broken, { max: "max\n", current: 100 }]]) {
+        const r = read(levels, "4Gi");
+        expect(r, JSON.stringify(levels)).toEqual({ headroomMiB: 148, source: "process" });
+        expect(admits(r!)).toBe(false);
+        expect(read(levels), JSON.stringify(levels)).toBeNull();
+      }
     }
     // A roomier level read before the failure leaves the configured fallback the smaller.
     expect(read([{}, { max: "lots\n", current: 100 }, { max: `${8192 * MIB}\n`, current: 100 }], "4Gi")).toEqual({ headroomMiB: 3796, source: "process" });

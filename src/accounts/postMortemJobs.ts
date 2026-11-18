@@ -161,37 +161,38 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
   const read = (file: string): string | null => { try { return readFileSync(file, "utf8"); } catch { return null; } };
   /**
    * The headroom of each numeric level, and of the configured limit less the own group's usage. `complete` is false where
-   * any reading cannot be taken or parsed; `headrooms` then holds every level read before it.
+   * any reading cannot be taken or parsed; `headrooms` then holds every other level, read on past the failed one.
    */
   const groups = (configuredBytes: number | null): { headrooms: number[]; numeric: boolean; complete: boolean } => {
     const headrooms: number[] = [];
-    let numeric = false;
-    const partial = () => ({ headrooms, numeric, complete: false });
+    let numeric = false, complete = true;
     const cgroupText = read(cgroupFile), mountinfoText = read(mountinfoFile);
-    if (cgroupText === null || mountinfoText === null) return partial();
+    if (cgroupText === null || mountinfoText === null) return { headrooms, numeric, complete: false };
     const own = ownCgroup(cgroupText, mountinfoText);
-    if (own === null) return partial();
-    for (let dir = own.dir; ; dir = resolve(dir, "..")) {
+    if (own === null) return { headrooms, numeric, complete: false };
+    /** One level's headroom; undefined where it has no limit, null where it cannot be read or parsed. */
+    const level = (dir: string): number | null | undefined => {
       const maxText = read(`${dir}/memory.max`);
-      if (maxText === null) {
-        // Only the mount's root may have no memory.max.
-        if (dir !== own.mount) return partial();
-      } else if (maxText !== "max\n" && maxText !== "max") {
-        const limit = parseCgroupBytes(maxText);
-        if (limit === null || limit <= 0) return partial();
-        const current = parseCgroupBytes(read(`${dir}/memory.current`));
-        if (current === null) return partial();
-        numeric = true;
-        headrooms.push(limit - current);
-      }
+      // Only the mount's root may have no memory.max.
+      if (maxText === null) return dir === own.mount ? undefined : null;
+      if (maxText === "max\n" || maxText === "max") return undefined;
+      const limit = parseCgroupBytes(maxText);
+      if (limit === null || limit <= 0) return null;
+      const current = parseCgroupBytes(read(`${dir}/memory.current`));
+      return current === null ? null : limit - current;
+    };
+    for (let dir = own.dir; ; dir = resolve(dir, "..")) {
+      const headroom = level(dir);
+      if (headroom === null) complete = false;
+      else if (headroom !== undefined) { numeric = true; headrooms.push(headroom); }
       if (dir === own.mount) break;
     }
     if (configuredBytes !== null) {
       const current = parseCgroupBytes(read(`${own.dir}/memory.current`));
-      if (current === null) return partial();
-      headrooms.push(configuredBytes - current);
+      if (current === null) complete = false;
+      else headrooms.push(configuredBytes - current);
     }
-    return { headrooms, numeric, complete: true };
+    return { headrooms, numeric, complete };
   };
   return (children = []) => {
     let configuredBytes: number | null = null;
