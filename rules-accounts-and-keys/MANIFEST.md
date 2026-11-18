@@ -17,6 +17,7 @@
 - **Images per set** (`<typeface>/<base|head>-<sha8>-<typeface>-rules-<width>`):
   - `.png`: the first screen.
   - `-scroll-NN.png`: the whole page, as normal-height frames of the scrolling container. Each frame overlaps the previous one by 100 px, and the last reaches the bottom.
+  - `-full.png`: the whole page as one image, joined from the scroll frames: the first frame whole, then from each later frame only the rows its scroll uncovered, so the sticky top bar appears once. Its height is the container's scroll height.
   - `-section-accounts-and-keys.png` (head only) and `-section-lobbies.png`: each section cut out whole, using a 3,000 px viewport for the cut only.
 - **Measured per set:** the browser’s own font report for every visible text part (`CSS.getPlatformFontsForNode`). Every heading, index link, button, chip, badge, label, one-line item and one-line state line is checked for wrapping, cuts and overlaps. Its spare width is (available − needed) / available, where available is found by widening an invisible spacer until the item or its line changes. Run records are in `<typeface>/runs-*.json`, and every item is listed in `INVENTORY.md`. `SHA256SUMS` covers every file.
 

@@ -1,5 +1,6 @@
 be24e00640accfd850cc52bfa9d1de028c5f85bfc3397c4a2f442ac53eff314d  ./INVENTORY.md
-a4c6a25abdf2675136e617e881c7be2aff8368541fd2450bf7ac3d1bc0405490  ./MANIFEST.md
+288567bdd58f5cc1dbd1783e40c71ecb2fc8de535fa388c2bf1ed2a63859982b  ./MANIFEST.md
+103823f680d335eaade7c4233365b5b1322824cec88ff993bdc60b043e4f4b48  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280-full.png
 fed170d0f0cd49d41a94e73e0b171ace157419a33cc6a79072e587e68f152b19  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280-scroll-01.png
 1c7fa6849eca5f38d925e3373728a46bf97cbf524490958e07b8086fb54df5ce  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280-scroll-02.png
 a947f426ddf050778257f0443f69bcded710ebd9908a3f5c657ea17dcc2f2749  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280-scroll-03.png
@@ -17,6 +18,7 @@ fa705bbc0fbc4f1e4f637dc3eb1293e406ff4c7200971b0ba15513dc9e6ffcf7  ./liberation-s
 b12078d6021a9e94e919cff2c291b7f4074d2cbb1f5e5741a472a601bfb8565a  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280-scroll-15.png
 b919f18af57c990776c8876cacaa6b9d2b744a3db7501aed877ed350fe3ac091  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280-section-lobbies.png
 fed170d0f0cd49d41a94e73e0b171ace157419a33cc6a79072e587e68f152b19  ./liberation-sans/base-4994cfc5-liberation-sans-rules-1280.png
+0d3232ce5a8265ebf2ba716c4765f9e0e4574466b67774731bf6ca82e9ab65dd  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390-full.png
 e3ea47eada39c60b16ac4c27b9d459e42d6f680de54cbeb5ff8f67089e6dbf84  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390-scroll-01.png
 65d90872d3a3d964a6cb0de0e0f0e3e276f21c77b31cf4517d6247164b4889cf  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390-scroll-02.png
 be3a67810eb85b6823e8b24edb5fbfacfd76d63c3ad501dfa16ef205d308936f  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390-scroll-03.png
@@ -42,6 +44,7 @@ e383dd79b6445b9db102940c4a8946247d162ec079c7ef4c6db6cea772213f13  ./liberation-s
 1439f561fc4933248a9ebc0d175a10f7b0bec3b93dd820ca7a8b018af980137e  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390-scroll-23.png
 a8458cfae0d00175b328bc2b6ce3e377de5c47009d7139b971601c5ec3de5e84  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390-section-lobbies.png
 e3ea47eada39c60b16ac4c27b9d459e42d6f680de54cbeb5ff8f67089e6dbf84  ./liberation-sans/base-4994cfc5-liberation-sans-rules-390.png
+c91b3b79f5846a02bb9d0a9717dc5cfea9aaeb396a5a9e2f32a8fa9293fa4d4e  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280-full.png
 fed170d0f0cd49d41a94e73e0b171ace157419a33cc6a79072e587e68f152b19  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280-scroll-01.png
 a6c6d19d8c43472e900191c24047bd5e66ba23f36387b10665761b6bf440a41e  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280-scroll-02.png
 e9bd39d94cf1f587e8768040fc5509bc3ef54752903e61ef933558a5e2857a33  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280-scroll-03.png
@@ -61,6 +64,7 @@ d722e62e2c4709e2f099cb10253c40fc21ba7e32876e25fda52ad68218d09224  ./liberation-s
 2ca0f855bb677e518ad9a73e0d1371e9ee30abba59204a8fdd705c7602e68bbe  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280-section-accounts-and-keys.png
 b919f18af57c990776c8876cacaa6b9d2b744a3db7501aed877ed350fe3ac091  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280-section-lobbies.png
 fed170d0f0cd49d41a94e73e0b171ace157419a33cc6a79072e587e68f152b19  ./liberation-sans/head-9a707e16-liberation-sans-rules-1280.png
+9131e922ebd95d8a59f390be0457316129ffcacb6866498a4a8e985b7876eefc  ./liberation-sans/head-9a707e16-liberation-sans-rules-390-full.png
 7e3df36cc5a5906dc5ea7f2aa94f7cbae93929731cbdae027c311ccc951e740d  ./liberation-sans/head-9a707e16-liberation-sans-rules-390-scroll-01.png
 65d90872d3a3d964a6cb0de0e0f0e3e276f21c77b31cf4517d6247164b4889cf  ./liberation-sans/head-9a707e16-liberation-sans-rules-390-scroll-02.png
 be3a67810eb85b6823e8b24edb5fbfacfd76d63c3ad501dfa16ef205d308936f  ./liberation-sans/head-9a707e16-liberation-sans-rules-390-scroll-03.png
@@ -90,6 +94,7 @@ a8458cfae0d00175b328bc2b6ce3e377de5c47009d7139b971601c5ec3de5e84  ./liberation-s
 7e3df36cc5a5906dc5ea7f2aa94f7cbae93929731cbdae027c311ccc951e740d  ./liberation-sans/head-9a707e16-liberation-sans-rules-390.png
 75ea7bbca1ab7e117bb4bf46890b9b56c81e831b17f7ec373980fc01642d480d  ./liberation-sans/runs-base-4994cfc5-liberation-sans-rules.json
 aa1ee368b8cba4b2979b76016add179e90feb5cc6ac3c589dd96d6068bb07388  ./liberation-sans/runs-head-9a707e16-liberation-sans-rules.json
+47d8a64d93a1ae3db6600bd3b64ab1f6dffd59a6cdd3cf53241cce4810eb4496  ./roboto/base-4994cfc5-roboto-rules-1280-full.png
 b6ae601e2440ba2f069269c74e12f586369c9e36bebc3368b92a4b0330bcfd19  ./roboto/base-4994cfc5-roboto-rules-1280-scroll-01.png
 884142d836641e8b6397cdd9cc1b0132bca9eb2ab15b4ad65b31321f9b536654  ./roboto/base-4994cfc5-roboto-rules-1280-scroll-02.png
 e05ccd98b93cd4cd39241f194fdf1cc47a072965d849a90bf09407e74e9024a5  ./roboto/base-4994cfc5-roboto-rules-1280-scroll-03.png
@@ -107,6 +112,7 @@ fba855293c56fe8f2b9938dbffb039784111f68dff78cd8780e4c195d750b933  ./roboto/base-
 0e5e4b3712b3e4d40fbd0dcbdb3c3e1e40bb7049b636027293b6a8209f79ad86  ./roboto/base-4994cfc5-roboto-rules-1280-scroll-15.png
 be48027abffaa7e866cc67c7dc1b0c58275156df29960076bca1783e5667fdee  ./roboto/base-4994cfc5-roboto-rules-1280-section-lobbies.png
 b6ae601e2440ba2f069269c74e12f586369c9e36bebc3368b92a4b0330bcfd19  ./roboto/base-4994cfc5-roboto-rules-1280.png
+7031c1989c74bc8825bb9c8d9c2bd2b3dd6d655552495b08024c0171df44b485  ./roboto/base-4994cfc5-roboto-rules-390-full.png
 5ae35fd57525837698ba700fbe4b2d8e57d4bf6e8a3733e7d179157356c51b33  ./roboto/base-4994cfc5-roboto-rules-390-scroll-01.png
 a7192849d7cff3909e93bc35b584054b249b1057ac274c40433ace539301deda  ./roboto/base-4994cfc5-roboto-rules-390-scroll-02.png
 ff4cd88328ab95e3ddf6e72b7724bb1732410003b2c6a1454f5ec48465298dbb  ./roboto/base-4994cfc5-roboto-rules-390-scroll-03.png
@@ -131,6 +137,7 @@ a782dec8f300cb0f08aab287e0f194a4f4e9b65243d98151e91e41924dad2171  ./roboto/base-
 3c6210e8ab575847a6e309895254c8310da3c50c020351b52ce609763269d8bb  ./roboto/base-4994cfc5-roboto-rules-390-scroll-22.png
 03aec65a0f2257e0612506573806d6d128b4f470f9a2946d078bc5d50c75093f  ./roboto/base-4994cfc5-roboto-rules-390-section-lobbies.png
 5ae35fd57525837698ba700fbe4b2d8e57d4bf6e8a3733e7d179157356c51b33  ./roboto/base-4994cfc5-roboto-rules-390.png
+7baddb7b2a2525af736999c21b0b5aaf0bdbbd33ee43f0c653a5fa834218db77  ./roboto/head-9a707e16-roboto-rules-1280-full.png
 b6ae601e2440ba2f069269c74e12f586369c9e36bebc3368b92a4b0330bcfd19  ./roboto/head-9a707e16-roboto-rules-1280-scroll-01.png
 a0b579f5273e7bbde639cbcbe992e02fc601d33090c24ef9098c6d8f28c3157a  ./roboto/head-9a707e16-roboto-rules-1280-scroll-02.png
 b6d0cdc5db4741f02b692ca800dbcfe3b7fb49cd9367d23412b8252a9df75f37  ./roboto/head-9a707e16-roboto-rules-1280-scroll-03.png
@@ -150,6 +157,7 @@ c29d1d1e4ea49ab941e40437b73aed23cbcfd4b00d5d24b5a514867be3b5194a  ./roboto/head-
 5660a4ec9bd9a2e572520ec6fd0dbee8cd858e077421f90e1fa4924aea4703da  ./roboto/head-9a707e16-roboto-rules-1280-section-accounts-and-keys.png
 be48027abffaa7e866cc67c7dc1b0c58275156df29960076bca1783e5667fdee  ./roboto/head-9a707e16-roboto-rules-1280-section-lobbies.png
 b6ae601e2440ba2f069269c74e12f586369c9e36bebc3368b92a4b0330bcfd19  ./roboto/head-9a707e16-roboto-rules-1280.png
+2049e8cd70b737e9da8977b8d7c961f68283084fa3608b79adb190bc2c8dc8f3  ./roboto/head-9a707e16-roboto-rules-390-full.png
 b70794e177c44df396c35800b0a8ba82598720407a20c8e1cc341436d31ffd19  ./roboto/head-9a707e16-roboto-rules-390-scroll-01.png
 a7192849d7cff3909e93bc35b584054b249b1057ac274c40433ace539301deda  ./roboto/head-9a707e16-roboto-rules-390-scroll-02.png
 ff4cd88328ab95e3ddf6e72b7724bb1732410003b2c6a1454f5ec48465298dbb  ./roboto/head-9a707e16-roboto-rules-390-scroll-03.png
