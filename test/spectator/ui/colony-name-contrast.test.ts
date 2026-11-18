@@ -648,6 +648,30 @@ describe("Recordings colony headings stay inside their columns", () => {
   });
 });
 
+describe("Recordings on a phone list only the colonies that played", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps four fixed columns, a dash for a colony not in the match, on a wide card, and only the played colonies' lines on a phone, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        // A 1v1 (two colonies) and a four-colony match.
+        await tab.setContent(matchesPage(undefined).page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const shown = () => [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => [...row.querySelectorAll(":scope > .d1p-rec-slot")]
+          .filter(slot => slot.checkVisibility()).map(slot => ({ colony: slot.getAttribute("data-colony"), dash: !!slot.querySelector(".d1p-rec-dash") })));
+        const pair = await tab.evaluate(shown);
+        expect(pair).toHaveLength(2);
+        for (const row of pair) {
+          if (width === 1280) expect(row.map(slot => slot.dash)).toEqual([false, false, true, true]);
+          else expect(row).toEqual([{ colony: "Very Large", dash: false }, { colony: "Lake Hodges", dash: false }]);
+        }
+        await tab.setContent(quadrantsPage().page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        for (const row of await tab.evaluate(shown)) expect(row.map(slot => slot.dash)).toEqual([false, false, false, false]);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
 describe("the Matches page's text in a colony's colour has no backing", () => {
   for (const width of [1280, 390]) {
     it(`a four-colony (Quadrants) match: Matches at ${width}px`, async () => {

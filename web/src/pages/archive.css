@@ -507,8 +507,9 @@ td.c-model > .d1p-colony { display: block; }
    neutral. Each slot keeps the one cell gap inside it on both sides, the gap between its line's parts. Rows part by the
    hairline. The four slots stand side by side only in a card 72rem wide, where each keeps 234 px inside its padding (the
    widest real player, "CedarGrove GPT-6.1 Terra MAX Fast 1500", is 228 px in Liberation Sans); in a narrower card, a
-   phone's, each row is its four colonies one line each, in the columns' order, each beside its column's name in
-   the head's neutral caps, with the start, type and Replay on a line under them; the shared head row hides. */
+   phone's, each row lists the colonies that played one line each, in the columns' order, each beside its column's
+   name in the head's neutral caps (a colony the match did not have gets no line), with the start, type and Replay on a
+   line under them; the shared head row hides. */
 /* The slots sit edge to edge: each keeps the cell gap inside it on both sides, so two slots' texts stand two gaps apart
    and a winner's tint keeps one gap inside its edges. Time holds its date (68 px in Liberation Sans) and Replay its word
    (37 px), each with the cell gap beside it, and Game type its head (74 px). On a narrower card the row's own inset
@@ -566,7 +567,9 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-rows { --rec-inset: 4px; }
   .d1p-rec-rows > li { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; align-items: start; padding: 8px var(--rec-inset) 12px; }
   .d1p-rec-rows > li:first-child { border-top-color: var(--aw-line); }
-  /* A colony a line: its column's name in the label column, its players beside it. */
+  /* A colony a line: its column's name in the label column, its players beside it. Only the colonies that played: the
+     wide form's dash for a colony the match did not have gets no line here. */
+  .d1p-rec-slot.is-none { display: none; }
   .d1p-rec-slot { display: grid; grid-template-columns: var(--d1p-label) minmax(0, 1fr); column-gap: var(--d1p-cell-gap); align-items: baseline; padding-block: 2px; }
   .d1p-rec-slot > * { grid-column: 2; }
   .d1p-rec-slot[data-colony]::before { content: attr(data-colony); grid-column: 1; grid-row: 1; font-size: 10px; font-weight: 700; line-height: 16px; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; color: var(--aw-ink-3); }

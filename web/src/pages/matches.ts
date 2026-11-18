@@ -620,7 +620,7 @@ export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNam
 }
 
 /** One colony slot: player lines (or a quiet note) under the shared header, or a dash where the match has no such
- * colony. `column` is the fixed column it stands in (null for a noncanonical colony below the columns, which carries
+ * colony (wide form only: the narrow form lists only the colonies that played, archive.css). `column` is the fixed column it stands in (null for a noncanonical colony below the columns, which carries
  * its own name): the narrow form, where the shared head row hides, shows that column's name beside the slot's line in
  * the neutral head ink (archive.css, from data-colony). Only the winner's slot carries its colony's colour, over the whole
  * slot (--rec-win); every other slot is neutral. Its own name stays for screen readers, including historical names. */
