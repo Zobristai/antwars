@@ -71,7 +71,17 @@ try {
         clipped: e.scrollWidth > e.clientWidth + 1, horizontalOverflow: rect.left < -1 || rect.right > innerWidth + 1,
         box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
     });
-    return { labels, tightFits: labels.filter(x => x.spare !== null && x.spare < 0.08), board: window.__antwar.board(), width: innerWidth, scrollWidth: document.documentElement.scrollWidth };
+    // Retain raw fit findings above. An explicit field-limit fixture may intentionally elide
+    // identity text; record its painted box and full hover text rather than suppressing clipping.
+    const identityLabels = [...document.querySelectorAll<HTMLElement>(".sb-identity .d1-title,.sb-identity .d1-model")]
+      .filter(e => e.checkVisibility()).map(e => {
+        const box = e.getBoundingClientRect(), owner = e.closest(".sb-identity")!.getBoundingClientRect(), style = getComputedStyle(e);
+        return { text: e.textContent, title: e.title, fontSize: style.fontSize, whiteSpace: style.whiteSpace,
+          textOverflow: style.textOverflow, overflowX: style.overflowX, elided: e.scrollWidth > e.clientWidth + 1,
+          contained: box.left >= Math.max(0, owner.left) - 1 && box.right <= Math.min(innerWidth, owner.right) + 1,
+          box: { x: box.x, y: box.y, width: box.width, height: box.height }, owner: { x: owner.x, width: owner.width } };
+      });
+    return { labels, identityLabels, tightFits: labels.filter(x => x.spare !== null && x.spare < 0.08), board: window.__antwar.board(), width: innerWidth, scrollWidth: document.documentElement.scrollWidth };
   });
   const prefix = `${values.label}-${values.board}-${font.replaceAll(" ", "-")}-${width}`;
   const images: { file: string; sha256: string; view: string }[] = [];

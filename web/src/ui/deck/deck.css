@@ -678,13 +678,16 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .score-band .d1-name { flex: none !important; display: inline-flex; align-items: center; gap: 5px; font-size: 15px; color: var(--sb-ink); overflow: visible; text-overflow: clip; }
 .score-band .d1-team-members { flex: none; flex-wrap: nowrap; gap: 4px; }
 .score-band .d1-team-player { flex: 1 0 100%; padding-left: 13px; font-size: 12px; flex-wrap: wrap; row-gap: 3px; }
-.score-band .d1-team-player-name { overflow: visible; }
+/* Name and model may occupy separate lines; each label remains one line in its own box. */
+.score-band .d1-team-player-name { display: inline-flex; flex-wrap: wrap; gap: 3px 4px; max-width: 100%; overflow: visible; }
 .score-band .d1-agents { max-height: none; overflow: visible; }
 .score-band .d1-agent { padding: 2px 0 2px 13px; grid-template-columns: minmax(0, 1fr); min-height: 24px; box-shadow: none; font-size: 12px; }
 .score-band .d1-agent > .d1-badge { display: none; }
 .score-band .d1-who { display: flex; flex-wrap: wrap; gap: 3px 5px; overflow: visible; }
-.score-band :is(.d1-title-box, .d1-model-box) { display: inline-flex; flex: none; align-items: baseline; gap: 4px; overflow: visible; }
-.score-band :is(.d1-title, .d1-model, .d1-team-player-name) { white-space: nowrap; text-overflow: clip; overflow: visible; }
+/* Match the tables: extreme identity text ends inside its box, never across a score cell.
+   The complete label stays in the DOM and its hover title; badges never shrink. */
+.score-band :is(.d1-title-box, .d1-model-box) { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 100%; align-items: baseline; gap: 4px; }
+.score-band :is(.d1-title, .d1-model) { min-width: 0; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .score-band .d1-model, .score-band .d1-title { font-size: 12px; }
 .score-band .d1-econ, .score-band .d1-econ.has-flyers { display: contents; }
 .score-band .d1-cell { grid-row: 1; display: flex; align-items: center; min-width: 0; }

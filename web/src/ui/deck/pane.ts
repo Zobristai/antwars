@@ -243,10 +243,12 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     setAttr(node.button, "aria-current", isSelected ? "true" : null);
     setMarkup(node.badge, row.badge);
     setText(node.title, row.title);
+    node.title.title = row.title;
     // Provider text is set as text, never markup.
     node.tags.replaceChildren(...row.badges.map(text => h(doc, "span", "d1-tag", text)));
     setHidden(node.tags, row.badges.length === 0);
     setText(node.model, row.model);
+    node.model.title = row.model;
     node.modelTags.replaceChildren(...row.modelBadges.map(text => h(doc, "span", "d1-tag", text)));
     setHidden(node.modelTags, row.modelBadges.length === 0);
     setHidden(node.model.parentElement!, row.model === "");
@@ -293,7 +295,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     if (tipFor === team.playerElo && !team.playerRd) hideTip();
     if (p === null) return;
     setText(team.playerTitle, p.name);
+    team.playerTitle.title = p.name;
     setText(team.playerModel, p.model);
+    team.playerModel.title = p.model;
     setHidden(team.playerModel, p.model === "");
     team.playerName.title = [p.name, p.model].filter(Boolean).join(" ");
     team.playerTags.replaceChildren(...p.badges.map(text => h(doc, "span", "d1-tag", text)));

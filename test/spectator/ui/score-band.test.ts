@@ -29,6 +29,33 @@ describe("one Score Band for every match", () => {
       expect(host.byClass("d1-btn-board")[0]!.textContent).toBe(board === "2d" ? "3D" : "2D");
     });
   }
+  it("keeps complete field-limit names and models in the text, hover titles and row accessibility", () => {
+    const name = "N".repeat(32), model = "W".repeat(64);
+    for (const seats of [4, 8]) {
+      const { host, show } = mount("2d"), frame = scoreFrame(4, seats);
+      frame.board!.agents[0]!.identity = { displayName: name, elo: 1500 };
+      frame.board!.agents[0]!.modelLabel = model;
+      show(frame);
+      const names = host.byClass("d1-title").filter(visible), models = host.byClass("d1-model").filter(visible);
+      expect(names.some(n => n.textContent === name && n.title === name)).toBe(true);
+      expect(models.some(n => n.textContent === model && n.title === model)).toBe(true);
+      if (seats === 8) expect(host.byClass("d1-agent").some(n => n.getAttribute("aria-label")?.includes(model))).toBe(true);
+    }
+  });
+  it("retains full hover text when one player owns all four team seats", () => {
+    const name = "N".repeat(32), model = "W".repeat(64);
+    const { host, show } = mount("3d"), frame = scoreFrame(2, 8);
+    frame.board!.agents.forEach((a, i) => {
+      a.identity = { displayName: `${i % 2 ? "OtherPlayer" : name} #${Math.floor(i / 2) + 1}`, elo: 1500 };
+      a.modelLabel = model;
+    });
+    show(frame);
+    const players = host.byClass("d1-team-player").filter(visible);
+    expect(players).toHaveLength(2);
+    expect(players[0]!.byClass("d1-title")[0]!.title).toBe(name);
+    expect(players[0]!.byClass("d1-model")[0]!.title).toBe(model);
+    expect(players[0]!.byClass("d1-team-player-name")[0]!.title).toBe(`${name} ${model}`);
+  });
   it("routes both actual board hosts to the shared component", () => {
     const source = readFileSync(new URL("../../../web/src/overlays.ts", import.meta.url), "utf8");
     expect(source).toContain("this.hud = mountDeckHud({");
