@@ -15,7 +15,7 @@ import { PRE_FRONTLINE_PUBLIC_CONFIG } from "../sim/fixtures.js";
 import { playable } from "../playable.ts";
 import { rules27Redesign } from "../rules27.ts";
 import { comparison, startComparisonMatch } from "../server/helpers.ts";
-import { LOG_EXPLAINER, MODEL_INDEX_MATCH_LINES, VISUAL_KEY, count, queensRoute, renderRules, ruleSections, sectionId } from "../../web/rules.ts";
+import { ACCOUNTS_AND_KEYS_LINES, LOG_EXPLAINER, MODEL_INDEX_MATCH_LINES, VISUAL_KEY, count, queensRoute, renderRules, ruleSections, sectionId } from "../../web/rules.ts";
 import { ruleGroups } from "../../web/src/pages/model.ts";
 import { createHash } from "node:crypto";
 import { keyText } from "../../web/src/overlays.ts";
@@ -484,6 +484,27 @@ describe("the key and the public route, as the spectator page shows them", () =>
     const route = queensRoute(simConfig!.queenHp, simConfig!.queenFounding);
     expect(route).toBe("all queens killed");
     expect(renderRules(simConfig!)).toContain(`Three ways a match ends: ${route}`);
+  });
+});
+
+describe("the Accounts and keys section", () => {
+  it("sits directly before Lobbies under Reference with the approved six paragraphs, word for word", () => {
+    const sections = ruleSections(PUBLIC_CONFIG);
+    const at = sections.findIndex(section => section.title === "Accounts and keys");
+    expect(sections.filter(section => section.title === "Accounts and keys")).toHaveLength(1);
+    expect(sections[at + 1]!.title).toBe("Lobbies");
+    expect(sections[at]).toEqual({ title: "Accounts and keys", lines: [...ACCOUNTS_AND_KEYS_LINES] });
+    expect(ruleGroups(sections).reference.map(section => section.title)).toContain("Accounts and keys");
+    // The approved text: six paragraphs separated by one blank line, no trailing newline.
+    const text = ACCOUNTS_AND_KEYS_LINES.join("\n\n");
+    expect(ACCOUNTS_AND_KEYS_LINES).toHaveLength(6);
+    expect(Buffer.byteLength(text)).toBe(1315);
+    expect(createHash("sha256").update(text).digest("hex")).toBe("0eff599a9d8e81aac8d262a88e0eb9b7f088f69a54805e043a633482abff83d6");
+    const html = renderRules(PUBLIC_CONFIG);
+    expect(html).toContain('<a href="#accounts-and-keys">Accounts and keys</a><a href="#lobbies">Lobbies</a>');
+    expect(html).toContain('<section id="accounts-and-keys"><h2>Accounts and keys</h2>');
+    for (const line of ACCOUNTS_AND_KEYS_LINES) expect(html).toContain(`<p>${line.replace(/'/g, "&#39;")}</p>`);
+    expect(html.indexOf('<section id="accounts-and-keys">')).toBeLessThan(html.indexOf('<section id="lobbies">'));
   });
 });
 
