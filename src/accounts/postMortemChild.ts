@@ -6,7 +6,8 @@
  * acceptance and error code, every 100-tick block of stored events, and the whole stored result (less its rating changes).
  *
  * An accepted command has no effect when stepping its tick without it leaves the whole state the same, ignoring only its
- * own seat's lastCommandTick and lastCallTick: at most restarting this seat's own timers. Where the
+ * own seat's lastCommandTick, lastCallTick and pendingEvents: at most restarting this seat's own timers and, as any
+ * accepted call's reply does, handing it the sighted events queued for it. Where the
  * record's house-idle clock puts the seat at its deadline on that tick, whether the command kept the seat from going idle
  * turns on the seat's same-tick observes, classified from the record's reply lines; one the record cannot settle is not
  * listed but counted for its seat. Imports only the simulation, the spectator recorder and the record scan.
@@ -87,7 +88,13 @@ const NOT_COUNTING = new Set(["bad_arguments", "bad_event_cursor", "bad_cells_cu
 /** Observe codes of a call that passed eligibility as its arguments allow. */
 const COUNTING_IF_PLAIN = new Set(["", "observe_reply_too_large"]);
 
-/** Key-order-insensitive equality of two plain states, ignoring only the agent `skipAgent`'s lastCallTick and lastCommandTick. */
+/** The judged agent's reply bookkeeping, left out of sameState. */
+const SKIPPED_AGENT_KEYS = new Set(["lastCallTick", "lastCommandTick", "pendingEvents"]);
+
+/**
+ * Key-order-insensitive equality of two plain states, ignoring only the agent `skipAgent`'s lastCallTick, lastCommandTick
+ * and pendingEvents (its reply bookkeeping: every accepted call's reply empties its queue of sighted events).
+ */
 export function sameState(a: unknown, b: unknown, skipAgent: string): boolean {
   const equal = (x: unknown, y: unknown, agent: boolean): boolean => {
     if (Object.is(x, y)) return true;
@@ -103,7 +110,7 @@ export function sameState(a: unknown, b: unknown, skipAgent: string): boolean {
     const ox = x as Record<string, unknown>, oy = y as Record<string, unknown>;
     const isSkipped = agent && ox.id === skipAgent;
     const keys = (o: Record<string, unknown>) => Object.keys(o).filter(k => o[k] !== undefined &&
-      !(isSkipped && (k === "lastCallTick" || k === "lastCommandTick")));
+      !(isSkipped && SKIPPED_AGENT_KEYS.has(k)));
     const kx = keys(ox), ky = keys(oy);
     if (kx.length !== ky.length) return false;
     for (const k of kx) {
@@ -112,7 +119,7 @@ export function sameState(a: unknown, b: unknown, skipAgent: string): boolean {
     }
     return true;
   };
-  // `agents` is an array: its elements are the agent objects whose timers may be skipped.
+  // `agents` is an array: its elements are the agent objects whose bookkeeping may be skipped.
   const top = (x: unknown, y: unknown): boolean => {
     if (typeof x !== "object" || x === null || typeof y !== "object" || y === null) return Object.is(x, y);
     const ox = x as Record<string, unknown>, oy = y as Record<string, unknown>;
