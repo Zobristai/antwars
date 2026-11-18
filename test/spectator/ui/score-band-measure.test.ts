@@ -4,6 +4,54 @@ import { chromium } from "playwright-core";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("keeps phone headers whole and fills every metric row through the Queens edge", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      for (const flyers of [false, true]) {
+        const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        const cells = [["workers", "Workers"], ["soldiers", "Soldiers"], ...(flyers ? [["flyers", "Flyers"]] : []), ["food", "Food"], ["next", "Next spawn"], ["ants", "Ants"]];
+        const team = (name: string) => `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">${name}</h2><span class="d1-team-members">${Array.from({ length: 4 }, () => '<button class="d1-member"><span class="sb-seat-badge"><svg width="16" height="16"></svg></span><span class="sb-idle"><svg width="14" height="14"></svg></span></button>').join("")}</span><span class="d1-team-player">Player</span></header><ol class="d1-agents"><li>Identity divider</li></ol></div><div class="d1-econ${flyers ? " has-flyers" : ""}">${cells.map(([key, label]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">123</span></div>`).join("")}<div class="d1-cell sb-queens"><span>Queens</span><span class="sb-queen-value">100</span></div><div class="d1-cell sb-queen-kills"><span class="d1-ml">Queen kills</span><span class="d1-mv">—</span></div></div><button class="sb-history">≡</button></section>`;
+        await page.setContent(`<style>body{margin:0;font:13px/1.35 'Liberation Sans'}*{box-sizing:border-box}:root{--aw-ink-bright:white}${css}</style><main class="d1 score-band"><div class="d1-deck">${team("Very Large Colony")}${team("Lake Hodges Colony")}</div></main>`);
+        const geometry = await page.locator(".d1-team").evaluateAll(teams => teams.map(team => {
+          const rect = (e: Element) => { const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, right: b.right, width: b.width, height: b.height }; };
+          const members = [...team.querySelectorAll(".d1-member")].map(rect);
+          const cells = [...team.querySelectorAll(".d1-cell:not(.sb-queens)")].map(rect);
+          const rows: typeof cells[] = [];
+          for (const cell of cells) { let row = rows.find(r => Math.abs(r[0]!.y - cell.y) < 1); if (!row) rows.push(row = []); row.push(cell); }
+          rows.sort((a, b) => a[0]!.y - b[0]!.y);
+          return { head: rect(team.querySelector(".d1-team-head")!), name: rect(team.querySelector(".d1-name")!), members, rows,
+            queens: rect(team.querySelector(".sb-queens")!), divider: rect(team.querySelector(".d1-agents")!) };
+        }));
+        for (const g of geometry) {
+          expect(g.members.every(m => Math.abs(m.y - g.name.y) < 2), "badges must share the colony name line").toBe(true);
+          expect(g.members.at(-1)!.right).toBeLessThanOrEqual(g.head.right + 1);
+          expect(g.rows.map(r => r.length)).toEqual(flyers ? [4, 3] : [3, 3]);
+          for (const row of g.rows) {
+            expect(Math.min(...row.map(c => c.x))).toBeCloseTo(g.queens.x, 0);
+            expect(Math.max(...row.map(c => c.right))).toBeCloseTo(g.queens.right, 0);
+            expect(Math.max(...row.map(c => c.width)) - Math.min(...row.map(c => c.width))).toBeLessThan(1);
+          }
+          expect(g.divider.right).toBeCloseTo(g.queens.right, 0);
+        }
+        expect(geometry[0]!.head.height).toBeCloseTo(geometry[1]!.head.height, 0);
+        await page.close();
+      }
+    } finally { await browser.close(); }
+  });
+
+  it("puts persistent selected emphasis on the badge, not its empty idle slot", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<style>:root{--aw-ink-bright:rgb(248,252,252);--aw-raise:rgb(38,50,55)}${css}</style><main class="score-band"><button class="d1-member" aria-expanded="true"><span class="sb-seat-badge"><svg width="16" height="16"></svg></span><span class="sb-idle"></span></button></main>`);
+      await page.mouse.move(500, 500);
+      const selected = await page.locator(".d1-member").evaluate(e => ({ button: getComputedStyle(e).backgroundColor,
+        badge: getComputedStyle(e.querySelector(".sb-seat-badge")!).outlineStyle, idle: getComputedStyle(e.querySelector(".sb-idle")!).outlineStyle }));
+      expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
+    } finally { await browser.close(); }
+  });
   it("reserves idle slots and lets the footer Key expand without clipping or breaking its controls", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });

@@ -159,6 +159,12 @@ describe("one Score Band for every match", () => {
         expect(visible(selected)).toBe(true);
         expect(doc.activeElement).toBe(selected);
         expect(control.getAttribute("aria-expanded")).toBe("true");
+        const glyph = (html: string) => /<polygon points="([^"]+)"/.exec(html)?.[1];
+        const rowGlyph = glyph(control.byClass("sb-seat-badge")[0]!.html);
+        expect(rowGlyph).toBeDefined();
+        expect(glyph(selected.byClass("d1-badge")[0]!.html)).toBe(rowGlyph);
+        expect(control.getAttribute("aria-label")).toContain(selected.byClass("d1-sel-name")[0]!.textContent);
+        expect(controls.filter(c => c.getAttribute("aria-expanded") === "true")).toEqual([control]);
         expect(selected.textContent).toContain(`seat-thought-${index}`);
         expect(selected.textContent).toContain(`Squad order: ${index % 2 ? "hold" : "forage"}`);
         expect(selected.byClass("d1-history-line").some(line => line.getAttribute("aria-label")?.includes("Mark,"))).toBe(true);

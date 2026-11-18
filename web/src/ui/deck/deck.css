@@ -683,6 +683,10 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-team-members { flex: none; flex-wrap: nowrap; gap: 4px; }
 /* Every seat reserves the old idle glyph's space, so activity never moves its badge or focus target. */
 .score-band .d1-member { display: inline-flex; align-items: center; gap: 2px; }
+/* The seat, not its reserved idle slot, carries hover and persistent selection. */
+.score-band .d1-member:hover { background: transparent; }
+.score-band .d1-member:hover > .sb-seat-badge { background: var(--aw-raise); }
+.score-band .d1-member[aria-expanded="true"] > .sb-seat-badge { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .sb-seat-badge { display: inline-grid; place-items: center; flex: none; }
 .sb-idle { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; visibility: hidden; color: var(--aw-ink-3); }
 .sb-idle.is-idle { visibility: visible; }
@@ -742,14 +746,28 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .sb-clock-map { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; padding: 12px 0; border: 0; gap: 8px; }
   .sb-columns { display: none; }
   .score-band .d1-team { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 12px 6px; padding: 12px 0; border-top: 1px solid var(--d1-hair); border-bottom: 0; }
-  .sb-identity { grid-column: 1 / -1; padding-right: 50px; }
-  .score-band .d1-team-head { gap: 5px; }
+  .sb-identity { grid-column: 1 / -1; padding-right: 0; }
+  /* Only the heading shares a row with History; identity rows and their divider use the whole card. */
+  .score-band .d1-team-head { gap: 4px; padding-right: 50px; }
+  /* Existing seat padding keeps the glyphs apart; a second inter-seat gap needlessly wraps the longer colony name. */
+  .score-band .d1-team-members { gap: 0; }
   .score-band .d1-team-player { padding-left: 0; }
   .score-band .d1-agent { padding: 3px 0; min-height: 44px; }
-  .score-band .d1-econ, .score-band .d1-econ.has-flyers { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; padding: 0; border: 0; }
+  /* Twelve tracks let each occupied row fill the card: three plus three, or four plus three with Flyers. */
+  .score-band .d1-econ, .score-band .d1-econ.has-flyers { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px 12px; padding: 0; border: 0; }
+  .score-band .sb-workers { grid-column: 1 / 5; }
+  .score-band .sb-soldiers { grid-column: 5 / 9; }
+  .score-band .sb-food { grid-column: 9 / 13; }
+  .score-band .d1-econ.has-flyers > .sb-workers { grid-column: 1 / 4; }
+  .score-band .d1-econ.has-flyers > .sb-soldiers { grid-column: 4 / 7; }
+  .score-band .d1-econ.has-flyers > .sb-flyers { grid-column: 7 / 10; }
+  .score-band .d1-econ.has-flyers > .sb-food { grid-column: 10 / 13; }
+  .score-band .d1-econ > .sb-next { grid-column: 1 / 5; grid-row: 2; }
+  .score-band .d1-econ > .sb-ants { grid-column: 5 / 9; grid-row: 2; }
+  .score-band .d1-econ > .sb-queen-kills { grid-column: 9 / 13; grid-row: 2; }
   .score-band .d1-cell { grid-row: auto; display: grid; grid-template-rows: 14px 20px; align-items: start; gap: 2px; }
   .score-band .d1-cell > .d1-ml { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
-  .score-band .sb-queens { grid-column: 1 / -1; grid-row: 4; display: flex; align-items: center; gap: 10px; }
+  .score-band .sb-queens { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 10px; }
   .sb-queen-value { flex: 1; }
   .sb-history { grid-column: 2; grid-row: 1; align-self: start; }
   .score-band .d1-timeline, .score-band .d1-selected { grid-row: 3; padding-top: 0; }
