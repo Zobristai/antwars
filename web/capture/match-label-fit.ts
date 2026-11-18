@@ -72,6 +72,8 @@ export function measureLabels(targets: string) {
   const elements = [...document.querySelectorAll<HTMLElement>("body *")].filter(e => {
     if (e.matches("script, style, option") || e.closest(".d1-sr, .d2-sr, [hidden]")) return false;
     const box = e.getBoundingClientRect();
+    // Column headers replace these screen-reader labels visually, not semantically.
+    if (getComputedStyle(e).clipPath === "inset(50%)" && box.width <= 1 && box.height <= 1) return false;
     for (let a = e.parentElement; a; a = a.parentElement) {
       // Measure the whole outer HUD, but not rows scrolled out of a nested history/list viewport.
       if (a.matches(".aw-hud, body, html")) continue;
@@ -107,6 +109,17 @@ export function measureLabels(targets: string) {
       const r = a.getBoundingClientRect();
       if (getComputedStyle(a).overflowX !== "visible" && rects.some(t => t.left < r.left - 1 || t.right > r.right + 1)) clipped = true;
     }
+    // Overlap is about painted text, not the portion of a scrolling row outside its clip.
+    // Keep the original rectangles for line/fit measurements and intersect only the overlap evidence.
+    let left = 0, top = 0, right = innerWidth, bottom = innerHeight;
+    for (let a = e.parentElement; a; a = a.parentElement) {
+      const style = getComputedStyle(a), r = a.getBoundingClientRect();
+      if (style.overflowX !== "visible") { left = Math.max(left, r.left); right = Math.min(right, r.right); }
+      if (style.overflowY !== "visible") { top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom); }
+    }
+    const visibleRects = rects.map(r => ({ x: Math.max(left, r.left), y: Math.max(top, r.top),
+      width: Math.min(right, r.right) - Math.max(left, r.left), height: Math.min(bottom, r.bottom) - Math.max(top, r.top) }))
+      .filter(r => r.width > 0 && r.height > 0);
     const target = e.matches(targets) || e.closest(targets) !== null;
     const inventory = target || e.matches("button, th, [role=columnheader], [role=button], label, dt") ||
       /nowrap/.test(cs.whiteSpace) || /tag|badge|pill|chip|state|mode|status|clock|label|heading|kicker|d1-ml/.test(e.className);
@@ -114,11 +127,11 @@ export function measureLabels(targets: string) {
       spare: available > 0 ? 100 * (1 - needed / available) : null, clipped,
       outside: rects.some(r => r.left < -1 || r.right > innerWidth + 1),
       box: { x: box.x, y: box.y, width: box.width, height: box.height },
-      rects: rects.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })) };
+      rects: rects.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })), visibleRects };
   });
   return measured.map((item, i) => ({ ...item, overlaps: measured.flatMap((other, j) => {
     if (j === i || elements[i]!.contains(elements[j]!) || elements[j]!.contains(elements[i]!)) return [];
-    const hit = item.rects.some(a => other.rects.some(b => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 2 &&
+    const hit = item.visibleRects.some(a => other.visibleRects.some(b => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 2 &&
       Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 2));
     return hit ? [other.index] : [];
   }) }));

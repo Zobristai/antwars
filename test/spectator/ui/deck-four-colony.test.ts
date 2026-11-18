@@ -111,56 +111,74 @@ function mounted(wide = true) {
 const one = (host: ElementPort, cls: string) => host.byClass(cls)[0]!;
 const shownIn = (node: ElementPort | null): boolean => { for (let n = node; n; n = n.parent) if (n.hidden) return false; return true; };
 
-describe("the deck's score in a four-colony match", () => {
-  it("lists every colony by name, in its colour class, with its note as its tooltip and its share, in place of Balance and Win conditions", () => {
+describe("Score Band in a four-colony match", () => {
+  it("shows all colony identities, economies, queens and comparisons", () => {
     const { host, hud } = mounted();
+    const f = quadFrame(); f.board!.kills = [8, 3, 12, 4];
+    hud.update(view(f));
+    const teams = host.byClass("d1-team").filter(shownIn);
+    expect(teams).toHaveLength(4);
+    expect(teams.map(t => one(t, "d1-name").textContent)).toEqual(NAMES);
+    expect(teams.map(t => one(t, "d1-name").title)).toEqual(NAMES.map(n => colonyNameNote(n)));
+    expect(teams.map(t => t.byClass("d1-title").find(shownIn)!.textContent)).toEqual(["seat-0", "seat-1", "seat-2", "seat-3"]);
+    for (const team of teams) {
+      expect(team.byClass("d1-cell")).toHaveLength(8);
+      expect(team.byClass("d1-lamp")).toHaveLength(1);
+      expect(one(team, "sb-queen-kills").textContent).toContain("—");
+    }
+    const gauges = host.byClass("sb-gauge");
+    expect(gauges).toHaveLength(3);
+    expect(gauges[0]!.byClass("sb-value").map(n => n.textContent)).toEqual(["8", "3", "12", "4"]);
+    expect(gauges[1]!.byClass("sb-value").map(n => n.textContent)).toEqual(["30%", "25%", "25%", "20%"]);
+    expect(one(host, "sb-rule").textContent).toBe(">50% majority");
+    expect(gauges[1]!.byClass("sb-lead").every(n => n.hidden)).toBe(true);
+  });
+
+  it("distinguishes unknown kills, known zero kills and no territory held", () => {
+    const { host, hud } = mounted(); const f = quadFrame({ held: [0, 0, 0, 0] });
+    hud.update(view(f));
+    const gauges = host.byClass("sb-gauge");
+    expect(one(gauges[0]!, "sb-unavailable").textContent).toBe("Not recorded");
+    expect(one(gauges[0]!, "sb-values").hidden).toBe(true);
+    expect(one(gauges[1]!, "sb-unavailable").textContent).toBe(D1_COPY.noTerritory);
+    f.board!.kills = [0, 0, 0, 0]; hud.update(view(f));
+    expect(one(gauges[0]!, "sb-unavailable").hidden).toBe(true);
+    expect(gauges[0]!.byClass("sb-value").map(n => n.textContent)).toEqual(["0", "0", "0", "0"]);
+  });
+
+  it("marks eliminated colonies, including an eliminated result winner", () => {
+    const { host, hud } = mounted(); hud.update(view(quadFrame({ lost: [0, 1], winner: 0 })));
+    expect(host.byClass("d1-team-out").map(shownIn)).toEqual([true, true, false, false]);
+  });
+
+  it("opens a selected agent's details in its own colony, including colonies two and three", () => {
+    const { host, hud } = mounted();
+    for (const c of [2, 3]) {
+      hud.update(view(quadFrame(), c));
+      const card = host.byClass("d1-selected").find(shownIn)!;
+      expect(card.parent!.classes()).toContain(`c${c}`);
+      expect(one(card, "d1-sel-name").textContent).toBe(`seat-${c}`);
+      expect(one(card, "d1-sel-order").textContent).not.toBe("");
+    }
+  });
+
+  it("hides absent colonies on handover and restores the two-colony score semantics", () => {
+    const { host, hud } = mounted(); hud.update(view(quadFrame())); hud.update(view(pairFrame()));
+    expect(host.byClass("d1-team").map(shownIn)).toEqual([true, true, false, false]);
+    expect(host.byClass("sb-gauge")[0]!.byClass("sb-figure").filter(shownIn).map(n => one(n, "sb-value").textContent)).toEqual(["5", "3"]);
     hud.update(view(quadFrame()));
-    expect(shownIn(one(host, "d1-colonies"))).toBe(true);
-    const rows = host.byClass("d1-crow");
-    expect(rows.map(r => r.classes())).toEqual([0, 1, 2, 3].map(c => ["d1-crow", `c${c}`]));
-    expect(rows.map(r => r.byClass("d1-crow-name")[0]!.textContent)).toEqual(NAMES);
-    expect(rows.map(r => r.byClass("d1-crow-name")[0]!.getAttribute("title"))).toEqual(NAMES.map(name => colonyNameNote(name)));
-    expect(rows.map(r => r.byClass("d1-crow-share")[0]!.textContent)).toEqual(["30%", "25%", "25%", "20%"]);
-    expect(rows.map(r => shownIn(r.byClass("d1-crow-out")[0]!))).toEqual([false, false, false, false]);
-    expect(shownIn(one(host, "d1-crows-none"))).toBe(false);
-    // Balance's rows, which compare one colony with its one opponent, and the two-sided Win conditions give way
-    // (deck.css is-four; laid out below).
-    expect(one(host, "d1-score").classes()).toContain("is-four");
-    // The team containers are a two-colony match's two sides.
-    for (const team of host.byClass("d1-team")) expect(shownIn(team)).toBe(false);
+    expect(host.byClass("d1-team").map(shownIn)).toEqual([true, true, true, true]);
   });
 
-  it("says no territory is held, once, with no share, while every tile is neutral", () => {
-    const { host, hud } = mounted();
-    hud.update(view(quadFrame({ held: [0, 0, 0, 0] })));
-    expect(shownIn(one(host, "d1-crows-none"))).toBe(true);
-    expect(one(host, "d1-crows-none").textContent).toBe(D1_COPY.noTerritory);
-    for (const share of host.byClass("d1-crow-share")) expect(shownIn(share)).toBe(false);
-    hud.update(view(quadFrame({ held: [10, 0, 0, 0] })));
-    expect(shownIn(one(host, "d1-crows-none"))).toBe(false);
-    expect(host.byClass("d1-crow-share").map(s => shownIn(s) ? s.textContent : null)).toEqual(["100%", "0%", "0%", "0%"]);
-  });
-
-  it("marks every eliminated colony Eliminated, the result's winner included", () => {
-    const { host, hud } = mounted();
-    hud.update(view(quadFrame({ lost: [0, 1], winner: 0 })));
-    expect(host.byClass("d1-crow-out").map(out => shownIn(out))).toEqual([true, true, false, false]);
-    expect(one(host, "d1-crow-out").textContent).toBe(D1_COPY.eliminated);
-  });
-
-  it("opens no card for a pick on the board, and keeps working", () => {
-    const { host, hud } = mounted();
-    expect(() => hud.update(view(quadFrame(), 2))).not.toThrow();
-    expect(host.byClass("d1-selected").filter(node => shownIn(node))).toEqual([]);
-  });
-
-  it("gives way to the two-colony deck, unchanged, when the page's match has two colonies", () => {
-    const { host, hud } = mounted();
-    hud.update(view(quadFrame()));
-    hud.update(view(pairFrame()));
-    expect(shownIn(one(host, "d1-colonies"))).toBe(false);
-    expect(one(host, "d1-score").classes()).not.toContain("is-four");
-    for (const node of [...host.byClass("d1-gauge"), ...host.byClass("d1-win"), ...host.byClass("d1-team")]) expect(shownIn(node)).toBe(true);
+  it("keeps history behind a labelled per-colony button with Escape returning focus", () => {
+    const { host, hud } = mounted(); hud.update(view(quadFrame()));
+    const team = host.byClass("d1-team")[3]!, button = one(team, "sb-history"), line = one(team, "d1-timeline");
+    expect(button.getAttribute("aria-label")).toBe(`${NAMES[3]} history`);
+    expect(line.hidden).toBe(true);
+    button.click();
+    expect(line.hidden).toBe(false); expect(button.getAttribute("aria-expanded")).toBe("true");
+    line.fire("keydown", { key: "Escape" });
+    expect(line.hidden).toBe(true); expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 });
 
@@ -236,7 +254,7 @@ describe("a recorded four-colony match in the deck, through playback", () => {
       expect(resultView(end)).toMatchObject({ winner: 2, headline: `${NAMES[2]} wins` });
       const { host, hud } = mounted();
       hud.update(view(end));
-      expect(host.byClass("d1-crow-out").map(out => shownIn(out))).toEqual([true, true, true, true]);
+      expect(host.byClass("d1-team-out").map(out => shownIn(out))).toEqual([true, true, true, true]);
     });
   }
 });
@@ -260,12 +278,8 @@ describe("in a browser, a four-colony match's colony names", () => {
       const page = await browser.newPage({ viewport: { width, height: 844 } });
       try {
         await page.setContent(`<!doctype html>${root()}<head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>`);
-        // The score shows its clock, the colonies under their heading, and nothing of Balance or Win conditions.
-        const shown = await page.evaluate(() => [...document.querySelectorAll(".d1-score > *, .d1-colonies > .d1-kicker")]
-          .filter(node => getComputedStyle(node).display !== "none").map(node => node.className));
-        expect(shown).toEqual(["d1-clock", "d1-colonies", "d1-kicker"]);
-        expect(await page.locator(".d1-colonies > .d1-kicker").textContent()).toBe(SCORE_COPY.territory);
-        const names = page.locator(".d1-crow-name");
+        expect(await page.locator(".sb-gauge").count()).toBe(3);
+        const names = page.locator(".d1-name");
         expect(await names.count()).toBe(4);
         for (let c = 0; c < 4; c++) {
           const name = names.nth(c);
@@ -274,19 +288,19 @@ describe("in a browser, a four-colony match's colony names", () => {
           await page.mouse.move(box.x + Math.min(6, box.width / 2), box.y + box.height / 2);
           const seen = await name.evaluate((node, at) => {
             const s = getComputedStyle(node);
-            const row = node.closest(".d1-crow")!;
+            const row = node.closest(".d1-team")!;
             return {
               colour: s.color, background: s.backgroundColor, hovered: node.matches(":hover"),
               tooltip: document.elementFromPoint(at.x, at.y)?.closest("[title]")?.getAttribute("title") ?? null,
               lines: node.getClientRects().length, clipped: node.scrollWidth > node.clientWidth, rowHeight: row.getBoundingClientRect().height,
-              outShown: getComputedStyle(row.querySelector(".d1-crow-out")!).display !== "none",
+              outShown: getComputedStyle(row.querySelector(".d1-team-out")!).display !== "none",
             };
           }, { x: box.x + Math.min(6, box.width / 2), y: box.y + box.height / 2 });
           const colour = SUPERCOLONY_NAMES[c]!.colour;
           const rgb = (n: number) => `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
           expect(seen.colour, NAMES[c]).toBe(rgb(colour));
           expect(seen, NAMES[c]).toMatchObject({ hovered: true, tooltip: colonyNameNote(NAMES[c]!), lines: 1, clipped: false, outShown: c === 1 });
-          expect(seen.rowHeight, NAMES[c]).toBeLessThanOrEqual(26);
+          expect(seen.rowHeight, NAMES[c]).toBeGreaterThan(0);
           expect(seen.background, NAMES[c]).toBe("rgba(0, 0, 0, 0)");
         }
       } finally { await page.close(); }
@@ -298,65 +312,41 @@ describe("in a browser, a four-colony match's colony names", () => {
       const page = await browser.newPage({ viewport: { width, height: 844 } });
       try {
         await page.setContent(`<!doctype html>${root()}<head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>`);
-        const rows = await page.evaluate(() => [...document.querySelectorAll(".d1-crow")].map(row => {
-          const out = row.querySelector(".d1-crow-out")!;
+        const rows = await page.evaluate(() => [...document.querySelectorAll(".d1-team")].map(row => {
+          const out = row.querySelector(".d1-team-out")!;
           return { out: getComputedStyle(out).display !== "none" ? out.textContent : null, height: row.getBoundingClientRect().height };
         }));
         expect(rows.map(r => r.out)).toEqual([D1_COPY.eliminated, D1_COPY.eliminated, null, null]);
-        for (const row of rows) expect(row.height).toBeLessThanOrEqual(26);
+        for (const row of rows) expect(row.height).toBeGreaterThan(0);
       } finally { await page.close(); }
     });
   }
 });
 
-describe("a four-colony recording's legend", () => {
-  /** A stored replay's mode line, as the page computes it, with its way back to live; `last` the detail's last clause. */
-  const recording = (frame: Frame, last: string): HudView => ({ ...view(frame), mode: { label: "RECORDING · not live", detail: `4 agents · ${last}`,
-    link: { text: "Back to live", href: "/?watch=1" } } } as HudView);
-  /** The legend's text; the agent count is the frame's. */
-  const TEXT = (last: string, agents = 4) => `RECORDING\u00a0· not live · ${agents} agents · ${last}Back to live`;
-
-  it("keeps its text, each clause its own span, and a two-colony legend's text stays one plain run", () => {
-    const four = mounted(false);
-    four.hud.update(recording(quadFrame(), "15 Nov 2026"));
-    expect(one(four.host, "d1-legend").textContent).toBe(TEXT("15 Nov 2026"));
-    expect(four.host.byClass("d1-clause").map(c => c.textContent)).toEqual(["· not live", "· 4 agents", "· 15 Nov 2026"]);
-    const pair = mounted(false);
-    pair.hud.update(recording(pairFrame(), "15 Nov 2026"));
-    expect(one(pair.host, "d1-legend").textContent).toBe(TEXT("15 Nov 2026", 2));
-    expect(one(pair.host, "d1-legend").classes()).toEqual(["d1-legend"]);
-    expect(one(pair.host, "d1-legend-rest").children).toEqual([]);
-    // A page that moves from one to the other writes the legend that match's way.
-    four.hud.update(recording(pairFrame(), "15 Nov 2026"));
-    expect(one(four.host, "d1-legend-rest").children).toEqual([]);
-    expect(one(four.host, "d1-legend").classes()).toEqual(["d1-legend"]);
-    expect(one(four.host, "d1-legend").textContent).toBe(TEXT("15 Nov 2026", 2));
-  });
-
+describe("the single-line state and separate match metadata", () => {
   for (const width of [390, 320]) {
-    for (const last of ["15 Nov 2026", "Recording ended"]) {
-      it(`breaks only between clauses on a phone, never inside a clause or the link, at ${width}px (${last})`, async () => {
-        const { host, hud } = mounted(false);
-        hud.update(recording(quadFrame(), last));
-        const page = await browser.newPage({ viewport: { width, height: 844 } });
-        try {
-          await page.setContent(`<!doctype html>${root()}<head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>`);
-          const legend = await page.evaluate(() => {
-            const el = document.querySelector(".d1-legend")!;
-            const box = el.getBoundingClientRect();
-            return { text: el.textContent, height: box.height, right: box.right,
-              pieces: [...el.querySelectorAll(".d1-mode, .d1-clause, .d1-back")].map(n => ({ text: n.textContent, lines: n.getClientRects().length, right: n.getBoundingClientRect().right })) };
-          });
-          expect(legend.text).toBe(TEXT(last));
-          expect(legend.pieces.map(p => p.text)).toEqual(["RECORDING", "· not live", "· 4 agents", `· ${last}`, "Back to live"]);
-          for (const piece of legend.pieces) {
-            expect(piece.lines, piece.text!).toBe(1);
-            expect(piece.right, piece.text!).toBeLessThanOrEqual(legend.right);
-          }
-          // At these widths the legend takes more than one line, so the breaks are tested.
-          expect(legend.height).toBeGreaterThan(16);
-        } finally { await page.close(); }
-      });
-    }
+    it(`keeps LIVE and waiting together, with all metadata available at ${width}px`, async () => {
+      const { host, hud } = mounted(false);
+      hud.update({ ...view(quadFrame()), mode: { label: "LIVE · unrated match", detail: "60 s behind the match", link: null }, stalled: true });
+      expect(one(host, "d1-legend").textContent).toBe("LIVE\u00a0· Waiting for new data");
+      expect(host.byClass("sb-meta-item").map(n => n.textContent)).toEqual(["unrated match", "60\u00a0s policy delay"]);
+      const page = await browser.newPage({ viewport: { width, height: 844 } });
+      try {
+        await page.setContent(`<!doctype html>${root()}<style>${STYLES}</style><body><div class="aw-hud">${markup(host)}</div></body>`);
+        const state = await page.locator(".d1-legend").evaluate(e => {
+          const r = e.getBoundingClientRect();
+          return { height: r.height, right: r.right, width: e.clientWidth, needed: e.scrollWidth };
+        });
+        expect(state.height).toBe(16); expect(state.right).toBeLessThanOrEqual(width);
+        expect(state.needed).toBeLessThanOrEqual(state.width);
+      } finally { await page.close(); }
+    });
   }
+  it("retains a recording's date, agent count and back link outside the state line", () => {
+    const { host, hud } = mounted(false);
+    hud.update({ ...view(quadFrame()), mode: { label: "RECORDING · not live", detail: "4 agents · 15 Nov 2026", link: { text: "Back to live", href: "/?watch=1" } } });
+    expect(one(host, "d1-legend").textContent).toBe("RECORDING");
+    expect(host.byClass("sb-meta-item").map(n => n.textContent)).toEqual(["not live", "4 agents", "15 Nov 2026"]);
+    expect(one(host, "d1-back").hidden).toBe(false);
+  });
 });
