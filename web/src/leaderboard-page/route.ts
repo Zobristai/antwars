@@ -13,15 +13,16 @@ export function isLandingPage(url: URL): boolean {
   return isRoot(url) && !["watch", "lobby", "replay", "recording", "capture", "page"].some(key => params.has(key));
 }
 
-/** Keep the existing entry modules off the standalone pages, including their side effects. */
+/** Keep the existing entry modules off the standalone pages, including their side effects.
+ * On a local match's server (localMatch) the front page is that match's spectator view, not the landing. */
 export async function dispatchPage(url: URL, start: {
   leaderboard(): Promise<unknown>;
   matches(): Promise<unknown>;
   landing(): Promise<unknown>;
   spectator(): Promise<unknown>;
-}): Promise<void> {
+}, localMatch = false): Promise<void> {
   if (isLeaderboardPage(url)) { await start.leaderboard(); return; }
   if (isMatchesPage(url)) { await start.matches(); return; }
-  if (isLandingPage(url)) { await start.landing(); return; }
+  if (isLandingPage(url) && !localMatch) { await start.landing(); return; }
   await start.spectator();
 }

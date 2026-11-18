@@ -8,7 +8,7 @@
 // session is gone, and stops on matchOver or when the stop file appears.
 import { existsSync, rmSync } from "node:fs";
 import { errorCode } from "./mcp.mjs";
-import { isMatchOver, matchClient, savedMatch } from "./match.mjs";
+import { isMatchOver, matchClient, noteMatchReply, savedMatch } from "./match.mjs";
 import { envNumber, progress, readJson, statePath, writeJson } from "./state.mjs";
 
 export const DEFAULT_INTERVAL_S = 60;
@@ -43,6 +43,7 @@ export async function runObserver(ctx, { intervalMs, retryMs }) {
     try {
       const reply = await client.callTool("observe", {});
       status.calls += 1;
+      noteMatchReply("observe", {}, reply, ctx);
       if (isMatchOver(reply.data)) {
         Object.assign(status, { state: "match_over", stoppedAt: new Date(clock.now()).toISOString(),
           winner: reply.data.winner ?? null, lastOkAt: new Date(clock.now()).toISOString() });

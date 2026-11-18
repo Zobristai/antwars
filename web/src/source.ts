@@ -6,7 +6,8 @@ import type { Arrival } from "./inbox.ts";
 import type { PreparedTick } from "./buffer.ts";
 import { openRecording, type Recording } from "./recording.ts";
 import { newestStoredReplay, noStoredReplays, recordingError, replayDate, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
-import { loadRecording, streamPath, type LinkState } from "./stream.ts";
+import { LOCAL_STREAM_PATH, loadRecording, streamPath, type LinkState } from "./stream.ts";
+import { storeFeatureEnabled } from "./store-capabilities.ts";
 import { randomMatch, watchMatchStatus, type MatchStatus } from "./match-status.ts";
 import { openInviteStream } from "./invite-stream.ts";
 import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.ts";
@@ -212,8 +213,10 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const replay = params.has("replay");
   let storedId = replay ? params.get("replay") || null : null;
   const name = replay ? null : params.get("recording");
+  // A local match's server has no catalog: its page plays that one match, pinned like an explicit link.
+  const local = !replay && !name && !params.has("lobby") && !params.has("capture") && storeFeatureEnabled(doc, "local-match");
   // Numeric main-match links now enter ordinary Watch discovery, never a retired route.
-  const automatic = !replay && !name && !params.has("lobby");
+  const automatic = !replay && !name && !params.has("lobby") && !local;
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
   let feed: PreparedFeed | null = null;
@@ -332,6 +335,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     const liveLobbyId = rendererHandover?.lobbyId ?? (automatic ? selected?.lobbyId : params.get("lobby"));
     const path = replay ? (lobbyRecording ? lobbyRecordingPath(params) : replayPath(replayParams))
       : name ? `recordings/${encodeURIComponent(name)}.bin`
+      : local ? LOCAL_STREAM_PATH
       : liveLobbyId ? streamPath(new URLSearchParams({ lobby: liveLobbyId })) : null;
     let head: StreamMessage;
     if (replay) {
@@ -368,7 +372,13 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
           measure: view?.__antwarRealNow, ...liveOptions, onMessage, onArrival: heard, source: liveOptions.source ?? privateSource,
         });
       }
-      if (!automatic) {
+      if (local) {
+        // Until every agent has joined and the stream's delay has passed there is nothing to send: say the match is
+        // starting, and wait for its first frame, or the final one of a match that has already ended.
+        if (!await Promise.race([arrival, limit()])) liveStarting(doc);
+        clearTimeout(connectTimer);
+        head = await feed!.first;
+      } else if (!automatic) {
         if (!feed) throw new Error("This watch link has no lobby id.");
         // Renderer handovers wait for the snapshot with the same bound as automatic Watch, even if status
         // already says finished. Ordinary links still open once the server sends anything, however slowly

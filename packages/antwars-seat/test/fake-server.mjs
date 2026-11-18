@@ -60,6 +60,8 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  *   box, terrain   the nest selection offered on join
  *   cellsMore      observe replies that more cells follow (cellsCursor snap:2)
  *   matchOverAfterObserves  observe replies matchOver from this call number on
+ *   endedAfterObserves  observe answers from this call number on as the server does once the match has ended:
+ *                  the match_over error with its message, howToFix (MATCH_OVER_NEXT), matchOver, winner and result
  *   refuseReadLobby how many read_lobby calls are refused (unavailable) first
  *   failReadLobbyHttp how many read_lobby calls then fail with HTTP 503
  *   refuseJoinLobby error code every join_lobby is refused with (e.g. "full"); with "already_seated" the key
@@ -67,6 +69,8 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  *   lobbyHoldsAfterLocates a joined lobby stays "open" (locate_match null) for this many locate_match calls
  *   distinctLobbies each pairing gets its own lobby (fresh-lobby-1, -2, ...) and match URL /match/<lobbyId>/mcp
  *   noNestWindow   join replies without nestSelection and observe shows a started match (tick > 0)
+ *   waitingObserves how many observe calls answer, as the server does before the match starts, waiting with
+ *                  matchStarts and "keep calling observe" (after failObserves); later ones show the started match
  *   seatsHeld      seats the key holds in the match (default 1); above 1 a join without seat is refused seat_required
  *   notApplied     { tool, times, retryAfterMs }: the next `times` calls of that match tool answer
  *                  not_applied (with retryAfterMs unless it is null) and are not applied
@@ -95,6 +99,9 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  * (<url>/wait/<token>), and queue_status carries the same while that join's entry is waiting or matched (a baseline
  * entry has one only when given waitToken); join_lobby's carries lobby-wait-<lobbyId>, and read_lobby carries it to a key seated there.
  */
+/** The next instruction the fake server gives in its match-over error, as the real server words it. */
+export const MATCH_OVER_NEXT = "Call observe for the final result and view; join a new lobby at the entry point to play again.";
+
 export async function startFake(options = {}) {
   const clock = options.clock ?? { now: () => Date.now() };
   const calls = [];
@@ -111,6 +118,9 @@ export async function startFake(options = {}) {
   const seatedLobbies = new Set();
   let openLocates = options.lobbyHoldsAfterLocates ?? 0;
   let picked = null;
+  let nestClosesAt = null;
+  const NOT_STARTED_JOIN = "Your lobby's match has not started; you are seated in it. Call observe until it starts.";
+  const NOT_STARTED_OBSERVE = "Your match has not started; keep calling observe.";
   const notApplied = { times: 0, ...options.notApplied };
   let lostReply = false;
   let forgetInitialized = 0;
@@ -239,8 +249,10 @@ export async function startFake(options = {}) {
       session.joined = true;
       session.seat = `${args.key}#${args.seat ?? 1}`;
       if (options.noNestWindow) return ok({ agentId: "agent-1", colony: "red", briefing: "long briefing text" });
-      return ok({ agentId: "agent-1", colony: "red", briefing: "long briefing text", nestSelection: { required: true, box, closesAt: new Date(clock.now() + 120_000).toISOString(),
-        ...(options.terrain ? { terrain: { rows: options.terrain, legend: "." } } : {}), picks: [] } });
+      // As the server's join of a seated lobby before its start: the nest window, matchStarts and what to do until then.
+      nestClosesAt = new Date(clock.now() + 120_000).toISOString();
+      return ok({ agentId: "agent-1", colony: "red", briefing: "long briefing text", nestSelection: { required: true, box, closesAt: nestClosesAt,
+        ...(options.terrain ? { terrain: { rows: options.terrain, legend: "." } } : {}), picks: [] }, matchStarts: nestClosesAt, message: NOT_STARTED_JOIN });
     }
     if (!session.joined) return err("not_joined");
     if (name === notApplied.tool && notApplied.times > 0) {
@@ -253,11 +265,15 @@ export async function startFake(options = {}) {
         if (!(tileX >= box.x && tileX < box.x + box.width && tileY >= box.y && tileY < box.y + box.height)) return err("nest_outside_box");
         if (options.terrain && options.terrain[tileY - box.y][tileX - box.x] !== ".") return err("nest_water");
         picked = { tileX, tileY };
-        return ok({ accepted: true });
+        return ok({ accepted: true, nestSelection: { required: true, box, closesAt: nestClosesAt, picks: [{ tileX, tileY }] } });
       }
       case "observe": {
         observes += 1;
         if (observes <= (options.failObserves ?? 0)) return err("unavailable");
+        if (observes <= (options.failObserves ?? 0) + (options.waitingObserves ?? 0)) return ok({ waiting: true, matchStarts: nestClosesAt ?? "not scheduled yet", message: NOT_STARTED_OBSERVE });
+        if (options.endedAfterObserves != null && observes >= options.endedAfterObserves) {
+          return text({ error: { code: "match_over", message: "This match has ended.", howToFix: MATCH_OVER_NEXT }, tick: null, matchOver: true, winner: "red", result: { winner: 0 } }, true, true);
+        }
         if (options.matchOverAfterObserves != null && observes >= options.matchOverAfterObserves) return ok({ matchOver: true, winner: "red", result: { winner: 0 } });
         // Cells and territory as the server encodes them (denseCells, packTerritory) for a 8x2 board.
         return ok({ view: { tick: 10 + observes, colony: 0, secondsLeft: 900, squad: [{ antId: 7, tileX: 5, tileY: 1, hp: 4000 }], events: [],

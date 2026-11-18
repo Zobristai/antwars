@@ -468,6 +468,37 @@ it.each(["expired", "future", "wrong route", "wrong board", "malformed"])("refus
   } finally { h.cleanup(); }
 });
 
+it("a local match's page plays /watch/live/local without the catalog, saying the match is starting until its first frame", async () => {
+  vi.stubGlobal("Worker", BrowserWorker);
+  const { doc, listeners } = documentPort();
+  const line = { textContent: "Connecting…" };
+  Object.assign(doc, { querySelector: (selector: string) => selector === 'meta[name="antwar-local-match"]' ? { getAttribute: () => "true" }
+    : selector === ".aw-wait-state" ? line : null });
+  const location = { pathname: "/", hash: "", origin: "http://127.0.0.1:8080", reload: vi.fn() };
+  Object.assign(doc.defaultView!, { location });
+  const request = vi.fn(async (path: string) => { throw new Error(`Unexpected request ${path}`); });
+  vi.stubGlobal("fetch", request);
+  const es = new Source(), paths: string[] = [], reject = vi.fn();
+  // No agent has joined yet: the stream sends nothing past the connection wait.
+  setTimeout(() => es.emit(packets[0]!), 2500);
+  const opening = openSource(new URLSearchParams(), { now: () => 0 }, doc, reject, { source: path => { paths.push(path); return es; } });
+  await new Promise(resolve => setTimeout(resolve, 2200));
+  expect(line.textContent).toBe("Live match starting");
+  const source = (await opening)!;
+  try {
+    expect(paths).toEqual(["/watch/live/local"]);
+    expect(source.recorded).toBe(false);
+    expect(source.head.full).not.toBeNull();
+    expect(source.head.full!.result).toBeNull();
+    expect(source.share).toBeNull();
+    // The one local match stays on screen: no move to another match.
+    source.nextMatch();
+    expect(location.reload).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+  } finally { source.close(); listeners.get("pagehide")?.(); }
+});
+
 it("a finished lobby's link replaces the page with that match's public replay link", async () => {
   const h = handoverClient(false, 0, true);
   try {

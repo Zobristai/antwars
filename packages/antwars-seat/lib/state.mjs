@@ -2,7 +2,8 @@
 // Nothing written here ever contains the seat key: config.json names the key,
 // and every write passes through redact().
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addSecret, redact } from "./redact.mjs";
 
@@ -33,18 +34,114 @@ export function writeJson(path, value) {
   renameSync(tmp, path);
 }
 
+const LOCK_WAIT = new Int32Array(new SharedArrayBuffer(4));
+
+/** Creates path holding token, its content complete the moment it exists; false when path already exists. */
+function createOwned(path, token) {
+  const tmp = `${path}.${token}.tmp`;
+  writeFileSync(tmp, token);
+  try {
+    linkSync(tmp, path);
+    return true;
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+/** The token a lock file holds, or null when there is none. */
+function readToken(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** A lock token names its owner's pid first. */
+function ownerAlive(token) {
+  return alive(Number.parseInt(token, 10));
+}
+
+/**
+ * Removes the lock at path only while it still holds deadToken, the token of an owner that died. The right to remove
+ * that one lock is itself an owned file, path.takeover.<deadToken>, created exclusively: of several processes
+ * recovering it at once exactly one removes it, and none can ever remove a later lock, which holds another token. A
+ * lock with deadToken is removed by nothing else, so it cannot change between the check and the removal. A recoverer
+ * that died holding the right is recovered the same way.
+ */
+export function removeDeadLock(path, deadToken, token) {
+  const claim = `${path}.takeover.${deadToken}`;
+  while (!createOwned(claim, token)) {
+    const holder = readToken(claim);
+    if (holder === null) continue;
+    if (ownerAlive(holder)) return;
+    removeDeadLock(claim, holder, token);
+  }
+  try {
+    if (readToken(path) === deadToken) rmSync(path);
+  } finally {
+    rmSync(claim, { force: true });
+  }
+}
+
+/**
+ * Runs fn holding state/status.lock, so the read, merge and write of status.json by this seat's processes (go, match
+ * commands, the observer) never interleave and one cannot overwrite another's fields. The lock holds its owner's token
+ * (pid and a random part); it is released only by that owner, and taken over through removeDeadLock only once the
+ * owner's pid is no longer running. A live owner's lock is never taken, however long it is held.
+ */
+function withStatusLock(env, fn) {
+  mkdirSync(stateDir(env), { recursive: true });
+  const lock = statePath("status.lock", env);
+  const token = `${process.pid}-${randomUUID()}`;
+  while (!createOwned(lock, token)) {
+    const holder = readToken(lock);
+    if (holder === null) continue;
+    if (ownerAlive(holder)) Atomics.wait(LOCK_WAIT, 0, 0, 5);
+    else removeDeadLock(lock, holder, token);
+  }
+  try {
+    return fn();
+  } finally {
+    if (readToken(lock) === token) rmSync(lock, { force: true });
+  }
+}
+
+function writeProgress(step, detail, env, status) {
+  const at = new Date().toISOString();
+  const line = redact(JSON.stringify({ at, step, ...detail }));
+  appendFileSync(statePath("progress.log", env), line + "\n");
+  writeJson(statePath("status.json", env), { ...status, step, at, ...detail });
+  return line;
+}
+
 /**
  * One timestamped line in progress.log; also mirrored to status.json, which keeps the
  * earlier fields of the current run. fresh starts status.json over (a new go or join-lobby run).
  */
 export function progress(step, detail = {}, env = process.env, { fresh = false } = {}) {
-  const at = new Date().toISOString();
-  const line = redact(JSON.stringify({ at, step, ...detail }));
-  mkdirSync(stateDir(env), { recursive: true });
-  appendFileSync(statePath("progress.log", env), line + "\n");
-  const status = fresh ? {} : readJson(statePath("status.json", env), {});
-  writeJson(statePath("status.json", env), { ...status, step, at, ...detail });
-  return line;
+  return withStatusLock(env, () => writeProgress(step, detail, env, fresh ? {} : readJson(statePath("status.json", env), {})));
+}
+
+/**
+ * progress() decided from the current status under the same lock: decide(current) returns { step, detail } to write,
+ * or null to write nothing. Returns the logged line, or null.
+ */
+export function progressFrom(decide, env = process.env) {
+  return withStatusLock(env, () => {
+    const current = readJson(statePath("status.json", env), {});
+    const next = decide(current);
+    return next === null ? null : writeProgress(next.step, next.detail, env, current);
+  });
+}
+
+/** progress() detail that removes these fields from status.json: a field set to undefined is not written. */
+export function dropped(fields) {
+  return Object.fromEntries(fields.map((field) => [field, undefined]));
 }
 
 const CONFIG_FIELDS = ["handle", "keyName", "mode", "seat", "queuing", "parallel", "modelLabel", "thinkingLevel", "serviceTier", "entryUrl"];
