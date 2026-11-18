@@ -1,7 +1,8 @@
 # Every push to main, every pull request and every manual dispatch runs the
 # typecheck, lint, the essential/full test-set diff and the essential suite
 # (without coverage instrumentation) against the Firestore emulator. The full
-# suite runs daily and on manual dispatch.
+# suite runs daily and on manual dispatch. Every pull request and every manual
+# dispatch also runs the render check (web/render-check/README.md).
 # ANTWAR_REQUIRE_EMULATOR=1 makes a run without the emulator fail instead of
 # skipping the emulator-gated suites green (scripts/ci/emulator-guard.ts).
 name: antwar ci
@@ -112,6 +113,38 @@ jobs:
         if: always()
         # Needs no Firestore emulator: the file never reads FIRESTORE_EMULATOR_HOST.
         run: npx vitest run deploy/cloud-run/deploy.test.ts
+  render-check:
+    # Renders the built site's pages and a Free-for-all match HUD at 1280 and 390 px in Roboto and Liberation Sans
+    # from the committed data snapshot, and fails on a layout defect not on the reviewed held list.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      # The same pinned Playwright image as the checks job (see there).
+      image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
+      options: --user 1001 --ipc=host
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      # npm ci also builds the site (the prepare script runs build:web).
+      - run: npm ci --no-audit --no-fund
+      - name: Playwright image matches playwright-core
+        run: node scripts/ci/playwright-image.ts
+      - name: Render check
+        # A pull request's checkout is its head merged with its base. Failures are annotations on the pull
+        # request and the report is this job's summary.
+        run: npm run render-check
+      - name: Renders and report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: render-check
+          path: out/render-check
+          if-no-files-found: ignore
+          retention-days: 14
   history-isolation-tests:
     # The history-isolation guard's offline cases (synthetic identifiers, no network beyond the
     # checkout), on pull requests and pushes to main only. Not a required check. It reads no
