@@ -132,6 +132,20 @@ describe("entry-read refuses arguments carrying a key-file value", () => {
     expect(h.output()).not.toContain("4711");
   });
 
+  it("a comment line's text does not block an ordinary read", async () => {
+    const h = await harness({ keyLines: `# resource=lobby\n  # note=lobby-9\n${KEY_NAME}=${JSON.stringify(KEY)}\n`, fakeOptions: { lobbies: { "lobby-9": "open" } } });
+    expect(await h.cli("read_lobby", "--key-name", KEY_NAME, '{"lobbyId":"lobby-9"}')).toBe(0);
+    expect(h.fake.toolCalls("read_lobby")[0].args).toEqual({ lobbyId: "lobby-9", key: KEY });
+    expect(JSON.parse(h.output())).toEqual({ lobby: { id: "lobby-9", state: "open" } });
+  });
+
+  it("an empty key line blocks no argument", async () => {
+    const h = await harness({ keyLines: `EMPTY_RAW=\nEMPTY_QUOTED=""\nEMPTY_SPACED=   \n${KEY_NAME}=${JSON.stringify(KEY)}\n`, fakeOptions: { lobbies: { 'lobby-""-9': "open" } } });
+    expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: 'lobby-""-9' }))).toBe(0);
+    expect(h.fake.toolCalls("read_lobby")).toHaveLength(1);
+    expect(JSON.parse(h.output()).lobby.id).toBe('lobby-""-9');
+  });
+
   it("the fake echoes a lobby id it is sent, so an unrefused short key would print", async () => {
     const h = await harness({ fakeOptions: { lobbies: { [SHORT]: "open" } } });
     expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: SHORT }))).toBe(0);

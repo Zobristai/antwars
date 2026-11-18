@@ -395,9 +395,10 @@ in the wrong place. A name absent from the key file fails with "the named key
 is not in the house key file", so the command also shows whether a key is
 present. A key name is letters, digits and `_`, not starting with a digit, and
 a key shorter than four characters is refused unsent, because output redaction
-covers only longer values. JSON arguments that contain any value from the key
-file, under any name and of any length, are refused unsent, since a reply may
-echo them. It writes no file, exits 0 on the server's reply, 2 on a server
+covers only longer values. JSON arguments that contain any non-empty value from
+a key line of the key file, under any name and of any length, are refused
+unsent, since a reply may echo them; comment lines (starting with `#`) are not
+key lines. It writes no file, exits 0 on the server's reply, 2 on a server
 refusal and 1 on a local error.
 
 ## Background observer

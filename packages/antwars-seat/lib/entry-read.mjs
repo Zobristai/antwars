@@ -20,8 +20,8 @@ const KEY_FAILURES = {
 };
 
 /**
- * The values in the house key file, read once. The returned set holds the right-hand side of every
- * line with an =, whatever its name or length (parsed as readKey parses it, or the raw text where it does not
+ * The values in the house key file, read once. The returned set holds the non-empty right-hand side
+ * of every line with an = that is not a comment (first non-space character #), whatever its name or length (parsed as readKey parses it, or the raw text where it does not
  * parse): no argument may carry one. Every value readKey would return for a name entry-read takes
  * (NAME a plain identifier) is registered for redaction; comments and other lines are not keys
  * entry-read can read, so their text is never redacted from real output. An unreadable file is left
@@ -37,11 +37,13 @@ function keyFileValues(env, cwd) {
   }
   for (const line of text.split(/\r?\n/)) {
     const at = line.indexOf("=");
-    if (at < 0) continue;
+    // A comment holds no key, and its text would otherwise refuse ordinary arguments.
+    if (at < 0 || line.trimStart().startsWith("#")) continue;
     const raw = line.slice(at + 1).trim();
     const parsed = parseKeyValue(raw);
-    const value = parsed.value ?? raw;
-    if (value !== "") all.add(value);
+    // An empty value (NAME= or NAME="") holds no key and would match every argument.
+    if (parsed.error === "empty") continue;
+    all.add(parsed.value ?? raw);
     if (parsed.value !== undefined && KEY_NAME_PATTERN.test(line.slice(0, at).trim())) addSecret(parsed.value);
   }
   return all;
