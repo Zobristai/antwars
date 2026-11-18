@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages, TICK_MS } from "../../src/live/snapshot.ts";
-import { openRecording, PLAYBACK_RATES, SCAN_RETRY_MS, serveMarks, type MarksPort, type MarksWorker, type Recording } from "../../web/src/recording.ts";
+import { openRecording, PLAYBACK_RATES, RESUME_RETRY_MS, SCAN_RETRY_MS, serveMarks, type MarksPort, type MarksWorker, type Recording } from "../../web/src/recording.ts";
 import { groupMarks, markWords, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
 import { colonyNameNote, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import type { ReplayEvent } from "../../web/src/replay-events.ts";
@@ -636,6 +636,65 @@ it("keeps trying the marks' read after the listed waits, and at once when the br
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+describe("with fake timers", () => {
+  /** Lets streams, promises and zero-delay timers run without moving the clock. */
+  const settle = async () => { for (let i = 0; i < 20; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise(resolve => setImmediate(resolve)); } };
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("shows Recording unavailable only once the last reopen of a dropped download has failed", async () => {
+    /** The recording's first `cut` bytes, then the connection drops as a browser reports it. */
+    const dropping = (cut: number) => {
+      let sent = false;
+      return new ReadableStream<Uint8Array>({ pull(controller) {
+        if (sent) controller.error(new TypeError("network error"));
+        else { controller.enqueue(bytes.slice(0, cut)); sent = true; }
+      } });
+    };
+    /** Partway through message `k`: messages before it arrive whole. */
+    const mid = (k: number) => packets.slice(0, k + 1).reduce((at, p) => at + 4 + p.length, 0) - 2;
+    let requests = 0;
+    const errors: Error[] = [];
+    // Every reopen drops sooner than the first download did, so none reaches a new tick.
+    const r = openRecording("/replay", e => errors.push(e), async () => new Response(dropping(requests++ === 0 ? mid(8) : mid(5))), { controls: true });
+    active.push(r);
+    await r.first;
+    await settle();
+    const controls = mountReplayControls(fakeDoc(), r);
+    const state = (controls.el as unknown as Element).children[3]!;
+    for (const [i, wait] of RESUME_RETRY_MS.entries()) {
+      controls.update();
+      expect(state.textContent).not.toBe("Recording unavailable");
+      expect(r.error).toBeNull();
+      await vi.advanceTimersByTimeAsync(wait - 1); await settle();
+      expect(requests).toBe(1 + i);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(2 + i);
+    }
+    controls.update();
+    expect(state.textContent).toBe("Recording unavailable");
+    expect(r.error?.message).toBe("network error");
+    expect(errors).toEqual([r.error]);
+    controls.close();
+  });
+
+  it("stops trying the marks' read once it finds an undecodable message", async () => {
+    const undecodable = new Uint8Array([...packMessages(packets.slice(0, 3)), 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let requests = 0;
+    const r = openRecording("/replay", undefined, async () => new Response(++requests === 1 ? new Uint8Array(bytes) : undecodable),
+      { controls: true, endTick: async () => decodeMessage(packets.at(-1)!).tick, marksWorker: null });
+    active.push(r);
+    await r.first;
+    for (let i = 0; i < 20 && requests < 2; i++) { r.take(i * 100); await settle(); }
+    expect(requests).toBe(2);
+    await vi.advanceTimersByTimeAsync(SCAN_RETRY_MS.reduce((a, b) => a + b, 0) * 2); await settle();
+    expect(requests).toBe(2);
+    expect(r.events).toBeNull();
+    expect(r.error).toBeNull();
+    expect(r.durationError).toBeNull(); // the stored record gave the end, so the slider still works
+  });
 });
 
 describe("the marks' read in a background worker", () => {

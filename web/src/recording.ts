@@ -8,6 +8,11 @@ import { ReplayEventScan, type ReplayEvent } from "./replay-events.ts";
 export const RECORDING_AHEAD = 20;
 export const MAX_RECORDING_MESSAGE_BYTES = 4 * 1024 * 1024;
 
+/** A recording that cannot be used, however often it is read: trying again would not help. */
+export class CorruptRecording extends Error {}
+/** A request the server answered with an error status. */
+class RecordingRefused extends Error {}
+
 /** Arbitrary network boundaries, including a split u32 prefix; retain only the current chunk and packet. */
 export async function* recordingMessages(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<{ message: StreamMessage; bytes: number }> {
   const reader = body.getReader();
@@ -24,7 +29,8 @@ export async function* recordingMessages(body: ReadableStream<Uint8Array>, signa
         const next = await reader.read();
         if (next.done) {
           if (filled === 0 && eofAllowed) return null;
-          throw new Error("Recording download ended partway through a message.");
+          // A browser reports a dropped connection as a failed read; a body that ends cleanly here is cut short as sent.
+          throw new CorruptRecording("Recording download ended partway through a message.");
         }
         chunk = next.value;
         offset = 0;
@@ -43,9 +49,12 @@ export async function* recordingMessages(body: ReadableStream<Uint8Array>, signa
       const prefix = await read(4, true);
       if (prefix === null) return;
       const length = new DataView(prefix.buffer).getUint32(0, true);
-      if (length === 0 || length > MAX_RECORDING_MESSAGE_BYTES) throw new Error("Recording message size is invalid.");
+      if (length === 0 || length > MAX_RECORDING_MESSAGE_BYTES) throw new CorruptRecording("Recording message size is invalid.");
       const bytes = (await read(length))!;
-      yield { message: decodeMessage(bytes), bytes: length + 4 };
+      let message: StreamMessage;
+      try { message = decodeMessage(bytes); }
+      catch (cause: unknown) { throw new CorruptRecording(cause instanceof Error ? cause.message : String(cause)); }
+      yield { message, bytes: length + 4 };
     }
   } finally {
     signal?.removeEventListener("abort", cancel);
@@ -105,13 +114,16 @@ export interface RecordingOptions {
 /** The waits before the marks' read is tried again after a failure (a network error or a refused request); after the
  * last it keeps being tried at the last wait, and at once when the browser reports it is back online. */
 export const SCAN_RETRY_MS: readonly number[] = [2000, 8000, 30000];
+/** The waits before playback reopens a recording whose download failed partway (a dropped connection, or a refused or
+ * failed reopen), each also ended at once when the browser reports it is back online. Only ticks past the furthest
+ * already reached start the waits over; once the last wait's reopen fails too, the failure stands. An abort from the
+ * request's own signal, such as a startup timeout, is never a dropped connection: it stands at once. */
+export const RESUME_RETRY_MS: readonly number[] = [2000, 8000, 30000];
 /** Read on the page (no worker), the marks' read works at most this long between yields, so playback keeps drawing. */
 const SCAN_SLICE_MS = 8;
 /** At most this many downloaded chunks wait for the marks worker, so a slow phone does not hold the whole download. */
 const MARKS_CHUNKS_AHEAD = 4;
 
-/** A recording the marks' read cannot use, however often it is read: trying again would not help. */
-export class CorruptRecording extends Error {}
 /** The marks worker would not load or stopped; later reads run on the page. */
 class MarksWorkerFailed extends Error {}
 
@@ -130,6 +142,21 @@ export interface MarksWorker {
 export interface MarksPort {
   onmessage: ((event: MessageEvent<MarksRequest>) => void) | null;
   postMessage(reply: MarksReply): void;
+}
+
+/** Waits `delay`, ending early when the browser reports it is back online or `signal` aborts. */
+function retryWait(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>(resolve => {
+    const wake = () => {
+      clearTimeout(timer);
+      globalThis.removeEventListener?.("online", wake);
+      signal.removeEventListener("abort", wake);
+      resolve();
+    };
+    const timer = setTimeout(wake, delay);
+    globalThis.addEventListener?.("online", wake, { signal });
+    signal.addEventListener("abort", wake, { once: true });
+  });
 }
 
 const defaultMarksWorker = typeof Worker === "function"
@@ -316,18 +343,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         console.error("antwar: marks worker failed; reading marks on the page", cause);
         marksWorker = null;
       }
-      const delay = SCAN_RETRY_MS[Math.min(attempt, SCAN_RETRY_MS.length - 1)]!;
-      await new Promise<void>(resolve => {
-        const wake = () => {
-          clearTimeout(timer);
-          globalThis.removeEventListener?.("online", wake);
-          lifetime.signal.removeEventListener("abort", wake);
-          resolve();
-        };
-        const timer = setTimeout(wake, delay);
-        globalThis.addEventListener?.("online", wake, { signal: lifetime.signal });
-        lifetime.signal.addEventListener("abort", wake, { once: true });
-      });
+      await retryWait(SCAN_RETRY_MS[Math.min(attempt, SCAN_RETRY_MS.length - 1)]!, lifetime.signal);
       if (!closed) await scanWhole(attempt + 1);
     }
   };
@@ -336,61 +352,90 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     scanned = true;
     void scanWhole();
   };
-  const pump = async (version: number, signal: AbortSignal) => {
+  // One download of the recording from its first byte, queueing every tick past the newest already queued. `began` marks
+  // a response that has started streaming, so a later failure is a dropped download rather than a refused one.
+  const download = async (version: number, signal: AbortSignal, began: () => void) => {
+    const response = await request(url, { signal });
+    if (closed || version !== generation) { await response.body?.cancel(); return; }
+    if (!response.ok) throw new RecordingRefused(response.status === 404 ? "This recording was not found (HTTP 404)." : `Recording unavailable (HTTP ${response.status}).`);
+    if (!response.body) throw new Error("This browser cannot stream the recording.");
+    began();
+    const messages = recordingMessages(response.body, signal);
+    let previous: number | null = null;
     try {
-      const response = await request(url, { signal });
-      if (closed || version !== generation) { await response.body?.cancel(); return; }
-      if (!response.ok) throw new Error(response.status === 404 ? "This recording was not found (HTTP 404)." : `Recording unavailable (HTTP ${response.status}).`);
-      if (!response.body) throw new Error("This browser cannot stream the recording.");
-      const messages = recordingMessages(response.body, signal);
-      let previous: number | null = null;
-      try {
-        const restate = await options.restate;
-        for (;;) {
-          if (queue.length >= RECORDING_AHEAD) await new Promise<void>((resolve) => { changed = resolve; });
-          if (closed || version !== generation) return;
-          const next = await messages.next();
-          if (closed || version !== generation) return;
-          if (next.done) {
-            if (previous === null) throw new Error("Recording is empty.");
-            done = true;
-            endTick = newestTick;
-            startScan();
-            break;
-          }
-          const { bytes } = next.value;
-          const m = restate ? restate(next.value.message) : next.value.message;
-          if (previous === null) {
-            if (m.full === null) throw new Error("Recording has no opening snapshot.");
-            if (firstTick !== null && m.tick !== firstTick) throw new Error("Recording opening tick changed.");
-            firstTick = m.tick;
-          } else if (m.tick !== previous + 1 || m.full !== null) throw new Error("Recording ticks are not continuous.");
-          previous = newestTick = m.tick;
-          queue.push({ m, at: (m.tick - firstTick!) * TICK_MS, bytes });
-          stats.messages++;
-          stats.decodedBytes += bytes;
-          stats.bufferedMessages = queue.length;
-          stats.bufferedBytes += bytes;
-          stats.peakBufferedMessages = Math.max(stats.peakBufferedMessages, queue.length);
-          stats.peakBufferedBytes = Math.max(stats.peakBufferedBytes, stats.bufferedBytes);
-          if (stats.messages === 1) {
-            resolveFirst(m);
-            if (m.full?.result) endTick = m.full.result.tick + 1;
-          }
-          // Short recordings reach EOF without any second request. Discover an end independently only when the
-          // normal reader reaches backpressure; the marks' read follows the settled end (or a short recording's EOF).
-          if (stats.messages === RECORDING_AHEAD && options.controls) {
-            if (endTick === null) void discoverEnd().then(startScan);
-            else startScan();
-          }
+      const restate = await options.restate;
+      for (;;) {
+        if (queue.length >= RECORDING_AHEAD) await new Promise<void>((resolve) => { changed = resolve; });
+        if (closed || version !== generation) return;
+        const next = await messages.next();
+        if (closed || version !== generation) return;
+        if (next.done) {
+          if (previous === null) throw new CorruptRecording("Recording is empty.");
+          done = true;
+          endTick = newestTick;
+          startScan();
+          break;
         }
-      } finally { await messages.return(undefined); }
-      if (firstTick === null) throw new Error("Recording is empty.");
-    } catch (cause: unknown) {
-      if (closed || version !== generation) return;
-      error = cause instanceof Error ? cause : new Error(String(cause));
-      rejectFirst(error);
-      onError(error);
+        const { bytes, message } = next.value;
+        if (previous === null) {
+          if (message.full === null) throw new CorruptRecording("Recording has no opening snapshot.");
+          if (firstTick !== null && message.tick !== firstTick) throw new CorruptRecording("Recording opening tick changed.");
+          firstTick = message.tick;
+        } else if (message.tick !== previous + 1 || message.full !== null) throw new CorruptRecording("Recording ticks are not continuous.");
+        previous = message.tick;
+        // A download reopened after a drop reads from the first byte again: ticks already queued or played pass by.
+        if (message.tick <= newestTick) continue;
+        const m = restate ? restate(message) : message;
+        newestTick = m.tick;
+        queue.push({ m, at: (m.tick - firstTick!) * TICK_MS, bytes });
+        stats.messages++;
+        stats.decodedBytes += bytes;
+        stats.bufferedMessages = queue.length;
+        stats.bufferedBytes += bytes;
+        stats.peakBufferedMessages = Math.max(stats.peakBufferedMessages, queue.length);
+        stats.peakBufferedBytes = Math.max(stats.peakBufferedBytes, stats.bufferedBytes);
+        if (stats.messages === 1) {
+          resolveFirst(m);
+          if (m.full?.result) endTick = m.full.result.tick + 1;
+        }
+        // Short recordings reach EOF without any second request. Discover an end independently only when the
+        // normal reader reaches backpressure; the marks' read follows the settled end (or a short recording's EOF).
+        if (stats.messages === RECORDING_AHEAD && options.controls) {
+          if (endTick === null) void discoverEnd().then(startScan);
+          else startScan();
+        }
+      }
+    } finally { await messages.return(undefined); }
+    if (firstTick === null) throw new CorruptRecording("Recording is empty.");
+  };
+  // A download that drops after it began streaming is reopened after RESUME_RETRY_MS and resumes past the newest queued
+  // tick; a corrupt recording, or a first request that fails or is refused, stands at once, as does the last reopen's.
+  // Only a network failure (a fetch or read reports one as a TypeError) or a refused reopen is tried again: an abort or
+  // cancellation from the request's signal reports its reason instead, and stands at once, never reopened with that
+  // signal already aborted.
+  const pump = async (version: number, signal: AbortSignal) => {
+    let began = false;
+    let failures = 0;
+    for (;;) {
+      const reached = newestTick;
+      try {
+        await download(version, signal, () => { began = true; });
+        return;
+      } catch (cause: unknown) {
+        if (closed || version !== generation) return;
+        const failure = cause instanceof Error ? cause : new Error(String(cause));
+        // Only ticks past the furthest already reached count as progress, not ticks a reopen read again.
+        if (newestTick > reached) failures = 0;
+        const dropped = failure instanceof TypeError || failure instanceof RecordingRefused;
+        if (!began || !dropped || failures >= RESUME_RETRY_MS.length) {
+          error = failure;
+          rejectFirst(error);
+          onError(error);
+          return;
+        }
+        await retryWait(RESUME_RETRY_MS[failures++]!, signal);
+        if (closed || version !== generation) return;
+      }
     }
   };
   void pump(generation, abort.signal);
