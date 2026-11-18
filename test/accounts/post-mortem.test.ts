@@ -1449,13 +1449,15 @@ describe("no-effect answers that settle nothing now, or for good", () => {
     expect(held.started).toEqual([at.id]);
   });
 
-  // Credible regression: every temporary answer worded as short of memory, which only memory causes are.
-  it("words a stalled or failed re-run as not computed now, try later, and only memory causes as short of memory", () => {
+  // Credible regression: every temporary answer worded as short of memory, which only memory causes are; or the three
+  // memory causes worded alike, so a refusal cannot say which check stopped it.
+  it("words a stalled or failed re-run as not computed now, try later, and each memory cause as its own check", () => {
     expect(noEffectOf({ kind: "stopped", cause: "stalled" })).toEqual({ status: "not_computed_now", reason: "No-effect commands are not computed now (the re-run stalled). Try later." });
     expect(noEffectOf({ kind: "stopped", cause: "crashed" })).toEqual({ status: "not_computed_now", reason: "No-effect commands are not computed now (the re-run failed). Try later." });
-    for (const cause of ["admission", "memory", "meter"] as const) {
-      expect(noEffectOf({ kind: "stopped", cause })).toEqual({ status: "not_computed_now", reason: "No-effect commands are not available right now (the server is short of memory). Ask again later." });
-    }
+    for (const cause of ["admission", "memory", "meter"] as const) expect(noEffectOf({ kind: "stopped", cause })).toEqual(MEMORY_STOP_ANSWER[cause]);
+    expect(MEMORY_STOP_ANSWER.admission.reason).toBe("No-effect commands are not available right now (the server does not have enough free memory to start the check). Ask again later.");
+    expect(MEMORY_STOP_ANSWER.memory.reason).toBe("No-effect commands are not available right now (the check was stopped when the server ran low on memory). Ask again later.");
+    expect(MEMORY_STOP_ANSWER.meter.reason).toBe("No-effect commands are not available right now (the server could not measure its memory). Ask again later.");
   });
 
   // Credible regression: memory pressure or an unreadable meter answered as a permanent "not available".
@@ -1470,12 +1472,12 @@ describe("no-effect answers that settle nothing now, or for good", () => {
       held.finish(id, { kind: "stopped", cause });
       await new Promise(resolve => setTimeout(resolve, 0));
       const reply = await f.postMortem.query({ key: alice.key, lobbyId });
-      expect(bodyOf(reply).noEffect).toEqual({ status: "not_computed_now", reason: "No-effect commands are not available right now (the server is short of memory). Ask again later." });
+      expect(bodyOf(reply).noEffect).toEqual(MEMORY_STOP_ANSWER[cause]);
       expect((bodyOf(reply).seats as { refused: unknown[] }[])[0]!.refused).toHaveLength(2);
       expect(held.started).toEqual([id]);
       f.w.at(f.w.now() + 61_000);
       const again = await f.postMortem.query({ key: alice.key, lobbyId });
-      expect(bodyOf(again).noEffect).toEqual(SHORT_OF_MEMORY_ANSWER);
+      expect(bodyOf(again).noEffect).toEqual(MEMORY_STOP_ANSWER[cause]);
       await vi.waitFor(() => expect(held.started).toEqual([id, id]));
     }
   });
@@ -1495,7 +1497,7 @@ describe("no-effect answers that settle nothing now, or for good", () => {
     for (let ask = 1; ask <= 3; ask++) {
       f.w.at(f.w.now() + 10 * 60_000);
       const reply = await f.postMortem.query({ key: alice.key, lobbyId });
-      expect(bodyOf(reply).noEffect).toEqual(SHORT_OF_MEMORY_ANSWER);
+      expect(bodyOf(reply).noEffect).toEqual(MEMORY_STOP_ANSWER.admission);
       await vi.waitFor(() => expect(held.started).toHaveLength(ask + 1));
       held.finish(id, { kind: "stopped", cause: "admission" });
       await new Promise(resolve => setTimeout(resolve, 0));
@@ -1504,7 +1506,12 @@ describe("no-effect answers that settle nothing now, or for good", () => {
   });
 });
 
-const SHORT_OF_MEMORY_ANSWER = { status: "not_computed_now", reason: "No-effect commands are not available right now (the server is short of memory). Ask again later." };
+const memoryStopAnswer = (why: string) => ({ status: "not_computed_now", reason: `No-effect commands are not available right now (${why}). Ask again later.` });
+const MEMORY_STOP_ANSWER = {
+  admission: memoryStopAnswer("the server does not have enough free memory to start the check"),
+  memory: memoryStopAnswer("the check was stopped when the server ran low on memory"),
+  meter: memoryStopAnswer("the server could not measure its memory"),
+} as const;
 
 /** A record with its members in another order: `first` leads, `last` ends, the rest keep their stored order. */
 function reordered(record: Record<string, unknown>, first: readonly string[], last: readonly string[] = []): Record<string, unknown> {

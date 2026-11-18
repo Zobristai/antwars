@@ -7,8 +7,11 @@
  * Memory. The meter reads this process's own control group and every one above it up to the cgroup2 mount: each level
  * with a numeric memory.max leaves that limit less its own memory.current. A configured limit (ANTWAR_MEMORY_LIMIT, the
  * same quantity deploy/cloud-run/deploy.sh gives --memory) leaves that limit less this process's own control group's
- * memory.current. The headroom is the smallest of these; with no numeric level the configured limit is required. There
- * is no default: no usable limit, or any reading that cannot be read or parsed, admits nothing and stops a running child.
+ * memory.current. The headroom is the smallest of these; with no numeric level the configured limit is required. Where
+ * any control-group reading cannot be taken or parsed, the configured limit less this process's own resident memory and
+ * that of its running re-run child stands in for the configured reading, and the headroom is the smallest of it and every
+ * level that was read. There is no default: no usable limit, a configured limit that cannot be parsed, or a reading that
+ * cannot be taken without one admits nothing and stops a running child.
  * A re-run starts only while the headroom holds the child's reserve (its V8 heap cap's measured peak), two scans and the
  * margin, checked afresh before each attempt, and a watchdog reading the meter every 50 ms kills the child once the
  * headroom falls below the margin. These figures were measured in tests, not in production.
@@ -117,53 +120,92 @@ export function ownCgroup(cgroupText: string, mountinfoText: string): { dir: str
   return inside ? { dir, mount } : null;
 }
 
-export type LimitSource = "numeric" | "configured" | "both";
+/**
+ * "process": a control-group reading failed; the configured limit less this process's and its running child's resident
+ * memory, capped by every control-group level that was read.
+ */
+export type LimitSource = "numeric" | "configured" | "both" | "process";
 export interface MemoryReading { readonly headroomMiB: number; readonly source: LimitSource }
-/** The headroom left, or null when no usable limit can be read: callers then admit nothing and stop a running child. */
-export type Meter = () => MemoryReading | null;
+/**
+ * The headroom left, or null when no usable limit can be read: callers then admit nothing and stop a running child.
+ * `children` are the pids of this process's running re-run children, counted where the control groups cannot be read.
+ */
+export type Meter = (children?: readonly number[]) => MemoryReading | null;
 
 export interface CgroupMeterOptions {
   readonly cgroupFile?: string;
   readonly mountinfoFile?: string;
   /** The configured limit's text; absent where it is not set. */
   readonly configured?: string;
+  /** Resident bytes of this process and the given children; null where any cannot be read. Tests may give another. */
+  readonly processBytes?: (children: readonly number[]) => number | null;
+}
+
+/** This process's resident bytes plus each child's VmRSS; null where a child's cannot be read. */
+export function processBytes(children: readonly number[]): number | null {
+  let bytes = process.memoryUsage.rss();
+  for (const pid of children) {
+    let status: string;
+    try { status = readFileSync(`/proc/${pid}/status`, "utf8"); } catch { return null; }
+    const m = /^VmRSS:\s+([0-9]{1,15}) kB$/m.exec(status);
+    if (m === null) return null;
+    bytes += Number(m[1]) * 1024;
+  }
+  return bytes;
 }
 
 export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
   const cgroupFile = options.cgroupFile ?? "/proc/self/cgroup", mountinfoFile = options.mountinfoFile ?? "/proc/self/mountinfo";
   const configured = "configured" in options ? options.configured : process.env[MEMORY_LIMIT_ENV];
+  const ownBytes = options.processBytes ?? processBytes;
   const read = (file: string): string | null => { try { return readFileSync(file, "utf8"); } catch { return null; } };
-  return () => {
-    let configuredBytes: number | null = null;
-    if (configured !== undefined) {
-      configuredBytes = parseMemoryQuantity(configured);
-      if (configuredBytes === null) return null;
-    }
+  /**
+   * The headroom of each numeric level, and of the configured limit less the own group's usage. `complete` is false where
+   * any reading cannot be taken or parsed; `headrooms` then holds every other level, read on past the failed one, and
+   * `limits` the limit of each numeric level whose usage could not be read.
+   */
+  const groups = (configuredBytes: number | null): { headrooms: number[]; limits: number[]; numeric: boolean; complete: boolean } => {
+    const headrooms: number[] = [], limits: number[] = [];
+    let numeric = false, complete = true;
     const cgroupText = read(cgroupFile), mountinfoText = read(mountinfoFile);
-    if (cgroupText === null || mountinfoText === null) return null;
+    if (cgroupText === null || mountinfoText === null) return { headrooms, limits, numeric, complete: false };
     const own = ownCgroup(cgroupText, mountinfoText);
-    if (own === null) return null;
-    const headrooms: number[] = [];
-    let numeric = false;
+    if (own === null) return { headrooms, limits, numeric, complete: false };
     for (let dir = own.dir; ; dir = resolve(dir, "..")) {
       const maxText = read(`${dir}/memory.max`);
       if (maxText === null) {
         // Only the mount's root may have no memory.max.
-        if (dir !== own.mount) return null;
+        if (dir !== own.mount) complete = false;
       } else if (maxText !== "max\n" && maxText !== "max") {
         const limit = parseCgroupBytes(maxText);
-        if (limit === null || limit <= 0) return null;
-        const current = parseCgroupBytes(read(`${dir}/memory.current`));
-        if (current === null) return null;
-        numeric = true;
-        headrooms.push(limit - current);
+        const current = limit === null || limit <= 0 ? null : parseCgroupBytes(read(`${dir}/memory.current`));
+        if (limit === null || limit <= 0) complete = false;
+        else if (current === null) { complete = false; limits.push(limit); }
+        else { numeric = true; headrooms.push(limit - current); }
       }
       if (dir === own.mount) break;
     }
     if (configuredBytes !== null) {
       const current = parseCgroupBytes(read(`${own.dir}/memory.current`));
-      if (current === null) return null;
-      headrooms.push(configuredBytes - current);
+      if (current === null) complete = false;
+      else headrooms.push(configuredBytes - current);
+    }
+    return { headrooms, limits, numeric, complete };
+  };
+  return (children = []) => {
+    let configuredBytes: number | null = null;
+    if (configured !== undefined) {
+      configuredBytes = parseMemoryQuantity(configured);
+      if (configuredBytes === null) return null;
+    }
+    const { headrooms, limits, numeric, complete } = groups(configuredBytes);
+    if (!complete) {
+      // A control-group reading failed: the configured limit less this process's and its child's memory, capped by
+      // every level that was read, and by each limit whose usage could not be read less that same memory.
+      if (configuredBytes === null) return null;
+      const used = ownBytes(children);
+      if (used === null) return null;
+      return { headroomMiB: Math.min(configuredBytes - used, ...headrooms, ...limits.map(limit => limit - used)) / MIB, source: "process" };
     }
     if (headrooms.length === 0) return null;
     return { headroomMiB: Math.min(...headrooms) / MIB, source: numeric && configuredBytes !== null ? "both" : numeric ? "numeric" : "configured" };
@@ -248,6 +290,11 @@ export function validFindings(message: { counts?: unknown; bits?: unknown }, max
 
 type Attempt = Exclude<ChildMessage, { kind: "progress" }> | { readonly kind: "stopped"; readonly cause: StopCause; readonly heapLimit?: true };
 
+const LIMIT_SOURCE: Record<LimitSource, string> = {
+  both: "the control group and the configured limit", numeric: "the control group", configured: "the configured limit",
+  process: "the configured limit, less this process's own memory, and any control group read (the control groups could not all be read)",
+};
+
 export function createJobs(options: JobsOptions = {}): PostMortemJobs {
   const meter = options.meter ?? cgroupMeter();
   const forkChild = options.forkChild ?? (() => forkRerunChild());
@@ -260,7 +307,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
   const first = meter();
   log(first === null
     ? "antwar post-mortem: no usable memory limit can be read; no-effect re-runs cannot start on this instance"
-    : `antwar post-mortem: memory limit from ${first.source === "both" ? "the control group and the configured limit" : first.source === "numeric" ? "the control group" : "the configured limit"}; no-effect re-runs ${admits(first, policy) ? "can" : "cannot"} start now`);
+    : `antwar post-mortem: memory limit from ${LIMIT_SOURCE[first.source]}; no-effect re-runs ${admits(first, policy) ? "can" : "cannot"} start now`);
 
   let scanning = 0;
   const scanQueue: (() => void)[] = [];
@@ -315,7 +362,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
         child.kill("SIGKILL");
       };
       const watchdog = setInterval(() => {
-        const reading = meter();
+        const reading = meter(child.pid === undefined ? [] : [child.pid]);
         if (reading === null) stop("meter");
         else if (overLimit(reading, policy)) stop("memory");
         else if (now() - lastProgress > stallMs) stop("stalled");
@@ -333,7 +380,9 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
         if (child.pid === undefined) { cause ??= "crashed"; finish(null); } else stop("crashed");
       });
       // The exit can come before the child's stderr is read to its end: settle once that end is read, or soon after.
+      // An exited child has no memory left to read, so its sampling ends here; a stop that already fired stands.
       child.once("exit", (_code, signal) => {
+        clearInterval(watchdog);
         if (child.stderr === null || child.stderr.readableEnded) { finish(signal); return; }
         const timer = setTimeout(() => finish(signal), EXIT_STDERR_WAIT_MS);
         child.stderr.once("end", () => { clearTimeout(timer); finish(signal); });
