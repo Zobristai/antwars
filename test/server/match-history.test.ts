@@ -44,7 +44,8 @@ it("serves bucket history anonymously across pages and restarts, independent of 
   const f = fixture();
   for (let run = 0; run < 2; run++) {
     const s = await server(f.source);
-    expect(await (await fetch(`${s.url}/matches`)).json()).toEqual({ matches: [], nextPageToken: "second" });
+    // An empty storage page is followed within the request, so the first public page already lists the match.
+    expect(await (await fetch(`${s.url}/matches`)).json()).toEqual({ matches: [{ ...summary, matchType: null }], nextPageToken: null });
     const page = await (await fetch(`${s.url}/matches?pageToken=second`)).json() as HistoryPage;
     // A summary without the record's setup fields lists with no match type.
     expect(page).toEqual({ matches: [{ ...summary, matchType: null }], nextPageToken: null });

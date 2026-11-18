@@ -9,9 +9,10 @@ import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
 import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
-import { UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
+import { MAX_LISTING_STORAGE_PAGES, UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
+import type { PublicVisibility } from "../../src/identity/publicVisibility.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
 import { headerLine, tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
@@ -176,15 +177,19 @@ describe("Recordings carry each recording's match type", () => {
       [pending]: "pending", [broken]: new Error("store unavailable"), [scheduled]: null, [found]: lobby({ mode: "2v2" }),
     };
     const { lookup, reads } = lobbies(byReplay);
-    const types = recordingMatchTypes(cachedLobbyLookup(lookup));
+    const logged: { message: string; detail: object }[] = [];
+    const types = recordingMatchTypes(cachedLobbyLookup(lookup), (message, detail) => logged.push({ message, detail }));
     const listing = page(...[pending, broken, scheduled, found].map(id => ({ ...row(id, twoVsTwo), rated: false, modelIndex: false })));
     const kinds = async () => ((await types(listing)).matches as TypedHistorySummary[]).map(match => match.matchType?.kind ?? null);
     expect(await kinds()).toEqual(["unrated", "unrated", "unrated", "ranked"]);
+    // Only the failed lookup is logged; a pending link is an expected wait.
+    expect(logged).toEqual([{ message: "antwar recording lobby lookup failed", detail: { replayId: broken, error: "store unavailable" } }]);
     expect(reads.sort()).toEqual([pending, broken, scheduled, found].sort());
     byReplay[pending] = lobby({ size: 1, challenge: { kind: "house" } });
     byReplay[broken] = lobby({ mode: "house-2v2" });
     reads.length = 0;
     expect(await kinds()).toEqual(["challenge", "index", "unrated", "ranked"]);
+    expect(logged).toHaveLength(1);
     // Only the pending and failed rows are read again; no lobby and a found lobby were cached.
     expect(reads.sort()).toEqual([pending, broken].sort());
     reads.length = 0;
@@ -284,6 +289,18 @@ describe("Recordings list a match unrated where its lobby's outcome is one the r
     expect(recordingRated(rated(id), indexLobby("abandoned"))).toBe(false);
     expect(recordingRated(rated(id), indexLobby("not_played"))).toBe(false);
     for (const natural of ["colony_0_won", "colony_1_won", "draw"] as const) expect(recordingRated(rated(id), indexLobby(natural))).toBe(true);
+    // A rated Free-for-all match won by colony 2 or 3 is a result too.
+    for (const win of ["colony_2_won", "colony_3_won"] as const) expect(recordingRated(rated(id), indexLobby(win))).toBe(true);
+  });
+
+  it("lists a natural result unrated where its ended lobby was left unrated, as a refused Free-for-all rating leaves it", () => {
+    for (const natural of ["colony_0_won", "colony_1_won", "colony_3_won", "draw"] as const) {
+      expect(recordingRated(rated(id), { ...indexLobby(natural), rated: false })).toBe(false);
+      expect(recordingRated(rated(id), { ...indexLobby(natural), rated: true })).toBe(true);
+      expect(recordingRated(rated(id), { ...indexLobby(natural), rated: null })).toBe(true);
+    }
+    // Before its match ends, the lobby's flag decides nothing.
+    expect(recordingRated(rated(id), { ...indexLobby(null), rated: false })).toBe(true);
   });
 
   it("keeps the record's flag with no lobby read, a lobby with no outcome yet, or a record that is not rated", () => {
@@ -368,10 +385,11 @@ describe("GET /matches with a lobby lookup", () => {
   it("serves lobby-filled handles and still serves the listing when the lookup fails", async () => {
     const ok = "2026-10-31T10-00-00-000Z-1", failing = "2026-10-31T10-10-00-000Z-1";
     const source: HistorySource = {
-      async list() { return page(row(ok, [{ colony: 0 }, { colony: 1 }]), row(failing, [{ colony: 0 }, { colony: 1 }])); },
+      async list() { return page(row(ok, [{ colony: 0 }, { colony: 1 }]), { ...row(failing, [{ colony: 0 }, { colony: 1 }]), rated: true }); },
       async open() { return null; },
     };
-    const { lookup } = lobbies({ [ok]: { kind: "public", size: 1, mode: null, colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]] }, [failing]: new Error("store unavailable") });
+    const { lookup } = lobbies({ [ok]: { kind: "public", size: 1, mode: null, challenge: { kind: "house" }, colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]] },
+      [failing]: new Error("store unavailable") });
     const handler = historyRoutes(source, lookup);
     const server = createServer((req, res) => { void handler(req, res, undefined as never); });
     server.listen(0, "127.0.0.1");
@@ -381,8 +399,8 @@ describe("GET /matches with a lobby lookup", () => {
     expect(response.status).toBe(200);
     const listed = (await response.json()) as { matches: TypedHistorySummary[] };
     expect(listed.matches.map(handles)).toEqual([[HOUSE, HOUSE_FAST], [null, null]]);
-    // Each row carries its match type: the lobby's where it read, the record's (here unknown: no setup fields) where it failed.
-    expect(listed.matches.map(match => match.matchType)).toEqual([{ kind: "unranked", size: 1 }, null]);
+    // Each row carries its match type: the lobby's where it read, the record's (here unknown: rated, blank handles) where it failed.
+    expect(listed.matches.map(match => match.matchType)).toEqual([{ kind: "challenge", size: 1 }, null]);
   });
 
   it("reads each recording's lobby once for both the handle fill and the match type", async () => {
@@ -403,6 +421,225 @@ describe("GET /matches with a lobby lookup", () => {
       expect(listed.matches.map(match => [handles(match), match.matchType])).toEqual([[[HOUSE, "alice/bot"], { kind: "ranked", size: 1 }]]);
     }
     expect(reads).toEqual([id]);
+  });
+});
+
+describe("GET /matches lists every match, rated or unrated, that the hide list does not hide", () => {
+  const close: (() => Promise<void>)[] = [];
+  afterEach(async () => { for (const stop of close.splice(0)) await stop(); });
+  /** The route over source; hidden ids are left out as the test-account owner exclusion leaves them out when switched on. */
+  async function listen(source: HistorySource, lookup?: Parameters<typeof historyRoutes>[1], hidden?: ReadonlySet<string>) {
+    const publicVisibility: PublicVisibility | undefined = hidden === undefined ? undefined : {
+      async identitiesVisible() { return true; }, async lobbyVisible() { return true; }, async replayVisible(id) { return !hidden.has(id); },
+    };
+    const handler = historyRoutes(source, lookup, { publicVisibility });
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    close.push(() => new Promise(resolve => server.close(() => resolve())));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+  const rated = (id: string, flag: boolean | null, modelIndex = false): HistorySummary =>
+    ({ ...row(id, [{ colony: 0, handle: "alice/bot" }, { colony: 1, handle: "bob/bot" }]), rated: flag, modelIndex });
+  const lobbyOf = (fields: Partial<RecordingLobby>): RecordingLobby =>
+    ({ kind: "public", size: 1, mode: null, colonies: [[seat("a", "alice/bot")], [seat("b", "bob/bot")]], ...fields });
+
+  it("lists users' unrated matches alongside Model Index, challenge and rated ones", async () => {
+    const id = (minute: number) => `2026-11-18T05-${String(minute).padStart(2, "0")}-00-000Z-1`;
+    const ids = { index: id(10), stoppedIndex: id(9), challenge: id(8), ranked: id(7), stoppedRanked: id(6), unranked: id(5),
+      quadrants: id(4), unratedRecord: id(3), indexRecord: id(2), untyped: id(1) };
+    const rows = [rated(ids.index, true), rated(ids.stoppedIndex, true), rated(ids.challenge, false), rated(ids.ranked, true),
+      rated(ids.stoppedRanked, true), rated(ids.unranked, false), rated(ids.quadrants, false), rated(ids.unratedRecord, false),
+      rated(ids.indexRecord, true, true), { ...row(ids.untyped, [{ colony: 0 }, { colony: 1 }]), rated: true }];
+    const { lookup } = lobbies({
+      [ids.index]: lobbyOf({ mode: "house-1v1", outcome: "colony_0_won" }), [ids.stoppedIndex]: lobbyOf({ mode: "house-1v1", outcome: "stopped" }),
+      [ids.challenge]: lobbyOf({ challenge: { kind: "house" }, outcome: "colony_1_won" }), [ids.ranked]: lobbyOf({ mode: "1v1", outcome: "draw" }),
+      [ids.stoppedRanked]: lobbyOf({ mode: "1v1", outcome: "stopped" }), [ids.unranked]: lobbyOf({ outcome: "colony_0_won" }),
+      [ids.quadrants]: lobbyOf({ mode: "quadrants", outcome: "colony_2_won", colonies: [[seat("a", "a")], [seat("b", "b")], [seat("c", "c")], [seat("d", "d")]] }),
+    });
+    const origin = await listen({ async list() { return page(...rows); }, async open() { return null; } }, lookup);
+    const listed = (await (await fetch(`${origin}/matches`)).json()) as { matches: TypedHistorySummary[]; nextPageToken: string | null };
+    expect(listed.matches.map(match => [match.id, match.matchType?.kind ?? null, match.rated])).toEqual([
+      [ids.index, "index", true], [ids.stoppedIndex, "index", false], [ids.challenge, "challenge", false], [ids.ranked, "ranked", true],
+      [ids.stoppedRanked, "ranked", false], [ids.unranked, "unranked", false], [ids.quadrants, "quadrants", false],
+      [ids.unratedRecord, "unrated", false], [ids.indexRecord, "index", true], [ids.untyped, null, true]]);
+    expect(listed.nextPageToken).toBeNull();
+  });
+
+  it("serves a rated Free-for-all won by colony 2 or 3 as rated, and one its refused rating left unrated as unrated", async () => {
+    const id = (minute: number) => `2026-11-18T06-${String(minute).padStart(2, "0")}-00-000Z-1`;
+    const four = [[seat("a", "a")], [seat("b", "b")], [seat("c", "c")], [seat("d", "d")]];
+    const ids = { refusedWin: id(5), refusedDraw: id(4), refusedColony1: id(3), ratedColony2: id(2), ratedColony3: id(1) };
+    const rows = Object.values(ids).map(rowId => rated(rowId, true));
+    const { lookup } = lobbies({
+      [ids.refusedWin]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_0_won", rated: false }),
+      [ids.refusedDraw]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "draw", rated: false }),
+      [ids.refusedColony1]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_1_won", rated: false }),
+      [ids.ratedColony2]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_2_won", rated: true }),
+      [ids.ratedColony3]: lobbyOf({ mode: "quadrants", colonies: four, outcome: "colony_3_won", rated: true }),
+    });
+    const origin = await listen({ async list() { return page(...rows); }, async open() { return null; } }, lookup);
+    const listed = (await (await fetch(`${origin}/matches`)).json()) as { matches: TypedHistorySummary[] };
+    expect(listed.matches.map(match => [match.id, match.matchType?.kind ?? null, match.rated])).toEqual([
+      [ids.refusedWin, "quadrants", false], [ids.refusedDraw, "quadrants", false], [ids.refusedColony1, "quadrants", false],
+      [ids.ratedColony2, "quadrants", true], [ids.ratedColony3, "quadrants", true]]);
+  });
+
+  /** Stored rows newest first in storage pages of twenty, continued after an id, as the storage source pages them. */
+  function storage(all: HistorySummary[]) {
+    const reads: (string | undefined)[] = [];
+    const source: HistorySource = {
+      async list(token) {
+        reads.push(token);
+        const start = token === undefined ? 0 : all.findIndex(match => match.id === token.slice("after:".length)) + 1;
+        const matches = all.slice(start, start + 20);
+        return { matches, nextPageToken: start + 20 < all.length ? `after:${matches.at(-1)!.id}` : null };
+      },
+      continuationAfter: id => `after:${id}`,
+      async open() { return null; },
+    };
+    return { source, reads };
+  }
+  const id = (n: number) => `2026-11-18T04-00-00-000Z-${1000 - n}`;
+  /** Stored rows id(0)..id(length - 1), every one unrated (a user's match); those where hide(n) holds are hidden. */
+  const stored = (length: number, hide: (n: number) => boolean) => {
+    const all = Array.from({ length }, (_, n) => rated(id(n), false));
+    const hidden = new Set(all.filter((_, n) => hide(n)).map(match => match.id));
+    return { all, hidden, shownIds: all.filter(match => !hidden.has(match.id)).map(match => match.id), hiddenIds: [...hidden] };
+  };
+  type Listing = { matches: HistorySummary[]; nextPageToken: string | null };
+  const list = async (origin: string, token: string | null = null) =>
+    (await (await fetch(`${origin}/matches${token ? `?pageToken=${encodeURIComponent(token)}` : ""}`)).json()) as Listing;
+
+  it("fills a page whose newest rows are mostly hidden from the next storage pages, continuing after its last served row", async () => {
+    // Newest first: 18 hidden and 2 shown, then 20 shown, then 5 shown.
+    const { all, hidden, shownIds, hiddenIds } = stored(45, n => n < 18);
+    const { source, reads } = storage(all);
+    const origin = await listen(source, undefined, hidden);
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(shownIds.slice(0, 20));
+    expect(first.nextPageToken).toBe(`after:${shownIds[19]}`);
+    const second = await list(origin, first.nextPageToken);
+    expect(second.matches.map(match => match.id)).toEqual(shownIds.slice(20));
+    expect(second.nextPageToken).toBeNull();
+    expect(reads).toEqual([undefined, `after:${id(19)}`, `after:${shownIds[19]}`]);
+    for (const page of [first, second]) for (const left of hiddenIds) expect(JSON.stringify(page)).not.toContain(left);
+  });
+
+  it("follows storage pages with every row hidden", async () => {
+    // Newest first: 25 hidden, then 20 shown ending on a storage boundary, then 3 shown.
+    const { all, hidden } = stored(48, n => n < 25);
+    const origin = await listen(storage(all).source, undefined, hidden);
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(all.slice(25, 45).map(match => match.id));
+    expect(first.nextPageToken).toBe(`after:${id(44)}`);
+    const second = await list(origin, first.nextPageToken);
+    expect(second.matches.map(match => match.id)).toEqual(all.slice(45).map(match => match.id));
+    expect(second.nextPageToken).toBeNull();
+  });
+
+  it("keeps the storage continuation where a full page ends on a storage boundary, with no hide list", async () => {
+    const { all } = stored(25, () => false);
+    const { source, reads } = storage(all);
+    const origin = await listen(source);
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(all.slice(0, 20).map(match => match.id));
+    expect(first.nextPageToken).toBe(`after:${id(19)}`);
+    expect((await list(origin, first.nextPageToken)).matches.map(match => match.id)).toEqual(all.slice(20).map(match => match.id));
+    expect(reads).toEqual([undefined, `after:${id(19)}`]);
+  });
+
+  it("serves a short page only where the history ends", async () => {
+    const { all, hidden, shownIds } = stored(30, n => n % 3 !== 0);
+    const only = await list(await listen(storage(all).source, undefined, hidden));
+    expect(only.matches.map(match => match.id)).toEqual(shownIds);
+    expect(only.nextPageToken).toBeNull();
+  });
+
+  it("stops at the storage page cap with a short page and a sealed continuation that resumes after the last row read", async () => {
+    // Newest first: 2 shown, 118 hidden (past the cap's 100 rows), then 5 shown.
+    const { all, hidden, shownIds, hiddenIds } = stored(125, n => n >= 2 && n < 120);
+    const { source, reads } = storage(all);
+    const lookups = lobbies({});
+    const origin = await listen(source, lookups.lookup, hidden);
+    const capped = MAX_LISTING_STORAGE_PAGES * 20;
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(shownIds.slice(0, 2));
+    expect(reads).toHaveLength(MAX_LISTING_STORAGE_PAGES);
+    expect(lookups.reads.length).toBeLessThanOrEqual(capped);
+    expect(first.nextPageToken).toMatch(/^sealed-v1:[A-Za-z0-9_-]+$/);
+    const second = await list(origin, first.nextPageToken);
+    // It resumes after the last row the first request read, which was hidden.
+    expect(reads[MAX_LISTING_STORAGE_PAGES]).toBe(`after:${id(capped - 1)}`);
+    expect(second.matches.map(match => match.id)).toEqual(shownIds.slice(2));
+    expect(second.nextPageToken).toBeNull();
+    for (const listing of [first, second]) for (const left of hiddenIds) expect(JSON.stringify(listing)).not.toContain(left);
+  });
+
+  it("stops at the cap with an empty page where no row in reach is shown, and still reaches the rows past it", async () => {
+    const { all, hidden } = stored(2 * MAX_LISTING_STORAGE_PAGES * 20 + 3, n => n < 2 * MAX_LISTING_STORAGE_PAGES * 20);
+    const origin = await listen(storage(all).source, undefined, hidden);
+    const pages: Listing[] = [await list(origin)];
+    while (pages.at(-1)!.nextPageToken !== null) pages.push(await list(origin, pages.at(-1)!.nextPageToken));
+    expect(pages.map(listing => listing.matches.length)).toEqual([0, 0, 3]);
+    expect(pages.flatMap(listing => listing.matches.map(match => match.id))).toEqual(all.slice(-3).map(match => match.id));
+    for (const listing of pages) for (const left of all.slice(0, -3)) expect(JSON.stringify(listing)).not.toContain(left.id);
+  });
+
+  it("refuses a sealed continuation it cannot open, as a forged one or one from before a restart", async () => {
+    const { all, hidden } = stored(MAX_LISTING_STORAGE_PAGES * 20 + 1, n => n !== MAX_LISTING_STORAGE_PAGES * 20);
+    const before = await listen(storage(all).source, undefined, hidden);
+    const token = (await list(before)).nextPageToken!;
+    expect(token).toMatch(/^sealed-v1:/);
+    const { source, reads } = storage(all);
+    const restarted = await listen(source, undefined, hidden);
+    for (const refused of [token, "sealed-v1:AAAA", `sealed-v1:${"A".repeat(60)}`]) {
+      const response = await fetch(`${restarted}/matches?pageToken=${encodeURIComponent(refused)}`);
+      expect(response.status).toBe(400);
+    }
+    expect(reads).toEqual([]);
+    expect((await (await fetch(`${before}/matches?pageToken=${encodeURIComponent(token)}`)).json() as Listing).matches.map(match => match.id))
+      .toEqual([all.at(-1)!.id]);
+  });
+
+  it("stops waiting for outstanding lobby lookups and reads no further storage page once the request ends", async () => {
+    // The first storage page has 15 shown rows, so the page is not full and another storage page would be read.
+    const { all, hidden } = stored(45, n => n >= 15 && n < 20);
+    const { source, reads } = storage(all);
+    const started: string[] = [];
+    let release!: () => void;
+    const held = new Promise<null>(resolve => { release = () => resolve(null); });
+    const visibility: PublicVisibility = { async identitiesVisible() { return true; }, async lobbyVisible() { return true; },
+      async replayVisible(replayId) { return !hidden.has(replayId); } };
+    const handler = historyRoutes(source, async replayId => { started.push(replayId); return held; }, { publicVisibility: visibility });
+    let handled!: Promise<void>;
+    const server = createServer((req, res) => { handled = Promise.resolve(handler(req, res, undefined as never)); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    close.push(() => new Promise(resolve => server.close(() => resolve())));
+    const abort = new AbortController();
+    const request = fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`, { signal: abort.signal }).catch(() => undefined);
+    while (started.length < 15) await new Promise(resolve => setTimeout(resolve, 5));
+    abort.abort();
+    await request;
+    // The handler ends while every lookup it started is still outstanding.
+    await handled;
+    expect(reads).toEqual([undefined]);
+    release();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(reads).toEqual([undefined]);
+    expect(started).toHaveLength(15);
+  });
+
+  it("lists a user's unrated recording and serves its record by its id", async () => {
+    const id = "2026-11-18T03-00-00-000Z-1";
+    const origin = await listen({ async list() { return page(rated(id, false)); },
+      async open(opened) { return opened === id ? Readable.from([Buffer.from("{}")]) : null; } });
+    expect(((await (await fetch(`${origin}/matches`)).json()) as { matches: HistorySummary[] }).matches.map(match => [match.id, match.rated]))
+      .toEqual([[id, false]]);
+    const record = await fetch(`${origin}/matches/${id}`);
+    expect(record.status).toBe(200);
+    expect(await record.text()).toBe("{}");
   });
 });
 

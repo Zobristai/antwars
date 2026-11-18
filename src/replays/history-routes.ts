@@ -1,12 +1,12 @@
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { addAbortListener } from "node:events";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { peek } from "../net/relay.js";
 import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
 import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
-import { NATURAL_OUTCOMES } from "../rating/ratings.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
@@ -30,6 +30,8 @@ export interface RecordingLobby {
   readonly createdAt?: number;
   /** How its match ended once its slot was released; null or absent before then. */
   readonly outcome?: MatchOutcome | null;
+  /** The lobby's rated flag; an ended match its rating step refused is left rated false (src/lobby/lobbies.ts endMatch). */
+  readonly rated?: boolean | null;
 }
 /**
  * Replay id -> the lobby that recording came from; null when it has none (a scheduled match); "pending" when its lobby
@@ -51,7 +53,8 @@ type ColonyHandles = readonly (string | null)[];
  * Accepted residual: a lobby recording listed while its match registration itself has not yet published (the slot's
  * store failing since that match began) reads as no lobby and stays unfilled on this server until it restarts.
  */
-export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPage) => Promise<HistoryPage> {
+export function lobbySeatHandles(lookup: RecordingLobbyLookup): <Row extends HistorySummary>(page: Omit<HistoryPage, "matches"> & { matches: Row[] }) =>
+  Promise<Omit<HistoryPage, "matches"> & { matches: Row[] }> {
   const cache = new Map<string, Promise<ColonyHandles | null>>();
   function colonyHandles(replayId: string): Promise<ColonyHandles | null> {
     const hit = cache.get(replayId);
@@ -66,14 +69,14 @@ export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPa
     work.catch(forget);
     return work;
   }
-  async function fill(row: HistorySummary): Promise<HistorySummary> {
+  async function fill<Row extends HistorySummary>(row: Row): Promise<Row> {
     if (row.seats.every(seat => seat.handle !== null)) return row;
     let handles: ColonyHandles | null;
     try { handles = await colonyHandles(row.id); } catch { return row; }
     if (handles === null) return row;
     return { ...row, seats: row.seats.map(seat => seat.handle !== null ? seat : { ...seat, handle: handles[seat.colony] ?? null }) };
   }
-  return async page => ({ ...page, matches: await Promise.all(page.matches.map(fill)) });
+  return async page => ({ ...page, matches: await Promise.all(page.matches.map(row => fill(row))) });
 }
 
 /**
@@ -119,6 +122,7 @@ export function cachedLobbyLookup(lookup: RecordingLobbyLookup, options: CachedL
 export type { RecordingMatchKind, RecordingMatchType } from "./recorded-match-type.js";
 /** harnessPhase is present only on a Model Index row (src/rating/harnessPhase.ts). */
 export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null; readonly harnessPhase?: HarnessPhase };
+type ServedPage = Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] };
 
 /**
  * A recording's match type, from its lobby where one was read (undefined: pending or failed this listing; null: it has
@@ -135,12 +139,18 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
 /**
  * Each listed row with its match type (recordingMatchType), its rated flag as its lobby's outcome decides (recordingRated),
  * and a Model Index row with its harness phase by match time (recordingMatchTime). A pending or failed lookup types the row from its record for
- * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again.
+ * this listing only; the lookup is not cached as no lobby (cachedLobbyLookup), so the next listing reads it again. A failed
+ * lookup is logged.
  */
-export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
+export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined,
+  log: (message: string, detail: object) => void = console.warn): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
   async function lobbyOf(replayId: string): Promise<RecordingLobby | null | undefined> {
     if (lookup === undefined) return null;
-    try { const lobby = await lookup(replayId); return lobby === "pending" ? undefined : lobby; } catch { return undefined; }
+    try { const lobby = await lookup(replayId); return lobby === "pending" ? undefined : lobby; } catch (error) {
+      // The row is typed from its record for this listing (a challenge then lists only once a later lookup succeeds).
+      log("antwar recording lobby lookup failed", { replayId, error: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
   }
   return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row => {
     const lobby = await lobbyOf(row.id);
@@ -152,14 +162,20 @@ export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined): (
 }
 
 /**
- * Whether a recording lists as rated: its record's flag, except that a lobby whose match ended with an outcome the rating
- * table does not rate (src/rating/ratings.ts NATURAL_OUTCOMES: a stopped, abandoned or unplayed match) lists unrated, so the
- * Recordings list counts the same rated matches as the leaderboard. Only ever clears the flag; a row with no lobby read, or
- * a lobby with no recorded outcome, keeps its record's flag. Display only: nothing stored is rewritten.
+/** A match result a rating step rates: a draw or a colony's win, of two colonies or a Free-for-all's four (src/lobby/lobbies.ts endMatch). */
+const RATED_RESULT = /^(?:draw|colony_[0-3]_won)$/;
+
+/**
+ * Whether a recording lists as rated: its record's flag, except that a lobby whose match ended with no result a rating
+ * step rates (a stopped, abandoned or unplayed match), or whose match ended with the lobby left unrated (a Free-for-all
+ * result its rating step refused), lists unrated, so the Recordings list counts the same rated matches as the ratings.
+ * Only ever clears the flag; a row with no lobby read, or a lobby with no recorded outcome, keeps its record's flag.
+ * Display only: nothing stored is rewritten.
  */
 export function recordingRated(row: Pick<HistorySummary, "rated">, lobby: RecordingLobby | null | undefined): HistorySummary["rated"] {
   const outcome = lobby?.outcome;
-  return row.rated === true && outcome != null && !Object.hasOwn(NATURAL_OUTCOMES, outcome) ? false : row.rated;
+  if (row.rated !== true || outcome == null) return row.rated;
+  return !RATED_RESULT.test(outcome) || lobby?.rated === false ? false : row.rated;
 }
 
 /** A recording's match time: its lobby's startsAt, else createdAt, where the lobby was read; else the recorded start. */
@@ -199,32 +215,106 @@ export interface HistoryRouteOptions {
   readonly unsettledLobbyMs?: number;
 }
 
-async function visibleHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
-  visibility: PublicVisibility): Promise<HistoryPage> {
+/** Rows on one public listing page: a full storage page (history-source.ts list). */
+const PAGE_ROWS = 20;
+/**
+ * The most storage pages one listing request reads. Each storage page holds at most PAGE_ROWS rows and each row is looked up
+ * once (the type and the handle fill share cachedLobbyLookup), so one request does at most MAX_LISTING_STORAGE_PAGES *
+ * PAGE_ROWS lobby lookups and hide-list reads. A request that reaches the cap returns the rows it has, short, with a
+ * continuation that resumes after the last row it read.
+ */
+export const MAX_LISTING_STORAGE_PAGES = 5;
+/** The prefix of a continuation sealed by this process (listingContinuations). */
+const SEALED_PREFIX = "sealed-v1:";
+
+/** An unreadable sealed continuation: refused as a bad request, never retried as unavailable. */
+class InvalidContinuation extends Error {}
+
+/**
+ * Continuations that point past a row a listing leaves out (one the hide list hides), sealed with a key of this process so
+ * the caller can neither read nor forge one and the left-out row's id is never in list data. A restart voids them: such a
+ * continuation is refused (400) and the list is loaded again from its first page.
+ */
+function listingContinuations() {
+  const key = randomBytes(32), aad = Buffer.from("antwar public listing continuation v1");
+  return {
+    seal(storageToken: string): string {
+      const iv = randomBytes(12), cipher = createCipheriv("aes-256-gcm", key, iv);
+      cipher.setAAD(aad);
+      const body = Buffer.concat([cipher.update(storageToken, "utf8"), cipher.final()]);
+      return `${SEALED_PREFIX}${Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url")}`;
+    },
+    /** The storage continuation a listing token stands for: a sealed one opened, any other passed to storage as it is. */
+    open(token: string | undefined): string | undefined {
+      if (token === undefined || !token.startsWith(SEALED_PREFIX)) return token;
+      try {
+        const encoded = token.slice(SEALED_PREFIX.length), raw = Buffer.from(encoded, "base64url");
+        if (raw.length < 29 || raw.toString("base64url") !== encoded) throw new InvalidContinuation();
+        const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+        decipher.setAAD(aad);
+        decipher.setAuthTag(raw.subarray(12, 28));
+        return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+      } catch { throw new InvalidContinuation(); }
+    },
+  };
+}
+type ListingContinuations = ReturnType<typeof listingContinuations>;
+
+/** Work the request stops waiting for when it ends: shared lookups run on for other callers, but this request no longer waits. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const listener = addAbortListener(signal, () => reject(signal.reason));
+    work.then(value => { listener[Symbol.dispose](); resolve(value); }, error => { listener[Symbol.dispose](); reject(error); });
+  });
+}
+
+/**
+ * One public listing page. Each storage page's rows pass the hide list (when configured), then serve gives them their served
+ * values (type, handles, corrections). Every recording of any match type, rated or not, is listed unless the hide list
+ * leaves it out. Storage pages are read until PAGE_ROWS rows are listed, storage ends, or MAX_LISTING_STORAGE_PAGES have
+ * been read; so a page comes back short only at the end of the history or at that cap. A page that stops at a storage
+ * boundary it served up to, without the hide list, keeps the storage continuation; a full page continues after its last
+ * served row; a page stopped by the cap continues after the last row it read, sealed (listingContinuations). So no
+ * left-out or unserved row's id is in the listing.
+ */
+async function publicHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
+  visibility: PublicVisibility | undefined, continuations: ListingContinuations,
+  serve: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
+  token = continuations.open(token);
   const seen = new Set<string>();
   if (token !== undefined) seen.add(token);
-  for (;;) {
+  const listed: TypedHistorySummary[] = [];
+  for (let pages = 1; ; pages++) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
-    const matches = await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id));
-    if (raw.nextPageToken === null) return { matches, nextPageToken: null };
-    if (matches.length > 0) {
+    const visible = visibility ? await untilAborted(publiclyVisible(raw.matches, row => visibility.replayVisible(row.id), signal), signal) : raw.matches;
+    const served = await untilAborted(serve({ matches: visible, nextPageToken: raw.nextPageToken }), signal);
+    listed.push(...served.matches);
+    if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
+    if (listed.length >= PAGE_ROWS) {
+      const matches = listed.slice(0, PAGE_ROWS), last = matches.at(-1)!.id;
+      if (visibility === undefined && listed.length === PAGE_ROWS && last === raw.matches.at(-1)?.id && raw.nextPageToken !== null) {
+        return { ...served, matches, nextPageToken: raw.nextPageToken };
+      }
       if (source.continuationAfter === undefined) throw new Error("Public history continuation unavailable");
-      return { matches, nextPageToken: source.continuationAfter(matches.at(-1)!.id) };
+      return { ...served, matches, nextPageToken: source.continuationAfter(last) };
     }
-    // Hidden-only storage pages cannot disclose their boundary in an empty public page.
-    if (seen.has(raw.nextPageToken)) throw new Error("Invalid history continuation");
-    seen.add(raw.nextPageToken);
-    token = raw.nextPageToken;
+    // Storage continues and the page is not yet full: read on, never disclosing this storage boundary.
+    if (seen.has(raw.nextPageToken!)) throw new Error("Invalid history continuation");
+    seen.add(raw.nextPageToken!);
+    token = raw.nextPageToken!;
+    if (pages >= MAX_LISTING_STORAGE_PAGES) return { ...served, matches: listed, nextPageToken: continuations.seal(token) };
   }
 }
 
 /**
  * Anonymous, read-only history backed by storage rather than this process.
- * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}.
+ * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}: every recording, rated or unrated, that
+ * the hide list (when configured) does not leave out.
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
  * These paths are independent of /live/* and /replays/*.
- * A listing page is bounded as a whole (60 s). A record download has no total-time bound, so a slow but steady
+ * A listing page is bounded as a whole (60 s) and reads at most MAX_LISTING_STORAGE_PAGES storage pages. A record download has no total-time bound, so a slow but steady
  * client always gets the complete record; it is dropped only after 30 s in which no chunk was handed to the
  * response (a stalled client stops taking chunks under backpressure).
  */
@@ -234,6 +324,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies, { unsettledMs: options.unsettledLobbyMs });
   const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
   const types = recordingMatchTypes(cached);
+  const continuations = listingContinuations();
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const list = url.pathname === "/matches";
@@ -255,12 +346,14 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     res.once("close", cancel);
     try {
       if (list) {
-        const listed = options.publicVisibility ? await visibleHistoryPage(source, token, abort.signal, options.publicVisibility)
-          : await source.list(token, abort.signal);
-        const typed = await types(listed);
-        const filled = handles === undefined ? typed : await handles(typed);
-        // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
-        const page = source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+        const page = await publicHistoryPage(source, token, abort.signal, options.publicVisibility, continuations, async listed => {
+          const typed = await types(listed);
+          // A request that has ended starts no further lookups.
+          abort.signal.throwIfAborted();
+          const filled = handles === undefined ? typed : await handles(typed);
+          // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
+          return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+        });
         if (res.destroyed) return;
         // Recordings show an unlisted house seat handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("recordings", page.matches.flatMap(row => row.seats.map(seat => seat.handle)));
@@ -294,9 +387,10 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
           }, res, { signal: abort.signal });
         } finally { cancellation[Symbol.dispose](); body.destroy(); }
       }
-    } catch {
+    } catch (error) {
       if (res.destroyed) return;
       if (res.headersSent) { res.destroy(); return; }
+      if (error instanceof InvalidContinuation) { res.writeHead(400, { "cache-control": "no-store" }).end(); return; }
       const body = Buffer.from(JSON.stringify({ error: "Match history temporarily unavailable. Please try again." }));
       res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store", "content-length": String(body.length) });
       res.end(req.method === "HEAD" ? undefined : body);

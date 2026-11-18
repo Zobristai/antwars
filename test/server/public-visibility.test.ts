@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 import { afterEach, expect, it } from "vitest";
 import { correctedHistorySource } from "../../src/replays/correctedRecordings.ts";
 import { createWatchRegistry } from "../../src/live/watch-registry.ts";
-import { createPublicVisibility } from "../../src/identity/publicVisibility.ts";
+import { createPublicVisibility, publiclyVisible } from "../../src/identity/publicVisibility.ts";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.ts";
 import type { HistorySummary } from "../../src/replays/history-source.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
@@ -161,4 +161,13 @@ it("refuses a raw history continuation when its source cannot construct one from
   cleanup.push(() => server.close());
   const response = await fetch(`http://127.0.0.1:${server.port}/matches`);
   expect(response.status).toBe(503); expect(await response.text()).not.toContain(hidden);
+});
+
+it("starts no further visibility check once the read's signal aborts, and fails the read", async () => {
+  const abort = new AbortController(), checked: number[] = [];
+  const read = publiclyVisible([1, 2, 3, 4], async row => { checked.push(row); if (row === 2) abort.abort(); return true; }, abort.signal);
+  await expect(read).rejects.toThrow();
+  expect(checked).toEqual([1, 2]);
+  // Without a signal every row is checked, in order.
+  expect(await publiclyVisible([1, 2, 3], async row => row !== 2)).toEqual([1, 3]);
 });
