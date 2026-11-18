@@ -26,6 +26,8 @@ const RATED_OUTSIDE_DRAW: readonly string[] = [
   "claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
   "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
   "gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh",
+  "gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
+  "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh",
 ];
 
 /** Every seatable handle: the launchable list, the index draw and the rated seats outside the draw, each once. */
@@ -64,10 +66,25 @@ describe("every seatable handle has a HOUSE_LABELS row", () => {
     ["gemini-4-hydrogen-medium", "Gemini 4 Hydrogen", "medium"],
     ["gemini-4-hydrogen-high", "Gemini 4 Hydrogen", "high"],
     ["gemini-4-hydrogen-xhigh", "Gemini 4 Hydrogen", "xhigh"],
+    ["qwen4-max-low", "Qwen4 Max", "low"],
+    ["qwen4-max-high", "Qwen4 Max", "high"],
+    ["qwen4-max-xhigh", "Qwen4 Max", "xhigh"],
   ])("names %s %s at %s with no tier", (handle, name, level) => {
     expect(SEATABLE).toContain(handle);
     expect(houseDisplayName(`antwars/${handle}`)).toBe(name);
     expect(houseLabel(`antwars/${handle}`)).toEqual({ thinkingLevel: level, serviceTier: null });
+  });
+
+  it.each([
+    ["gpt-6-2-astra-low", "low"],
+    ["gpt-6-2-astra-medium", "medium"],
+    ["gpt-6-2-astra-high", "high"],
+    ["gpt-6-2-astra-xhigh", "xhigh"],
+    ["gpt-6-2-astra-max", "max"],
+  ])("names %s GPT-6.2 Astra at %s, Fast (the tier is in the row, not the handle)", (handle, level) => {
+    expect(SEATABLE).toContain(handle);
+    expect(houseDisplayName(`antwars/${handle}`)).toBe("GPT-6.2 Astra");
+    expect(houseLabel(`antwars/${handle}`)).toEqual({ thinkingLevel: level, serviceTier: "fast" });
   });
 
   it("fails for a seatable handle without a row, naming it", () => {
