@@ -19,8 +19,9 @@ const unavailable = vi.fn(() => { throw new Error("Store temporarily unavailable
 const accounts = new Proxy({} as AccountStores, { get: unavailable });
 const registry = new Proxy({} as WatchRegistry, { get: unavailable });
 
-function assertMetadata(html: string, lobbies: boolean, publicMatches: boolean) {
-  const metadata = `<meta name="antwar-lobbies" content="${lobbies}"><meta name="antwar-public-matches" content="${publicMatches}">`;
+function assertMetadata(html: string, lobbies: boolean, publicMatches: boolean, localMatch = true) {
+  const metadata = `<meta name="antwar-lobbies" content="${lobbies}"><meta name="antwar-public-matches" content="${publicMatches}">`
+    + `<meta name="antwar-local-match" content="${localMatch}">`;
   expect(html).toContain(`<head>${metadata}`);
   expect(html.indexOf(metadata)).toBeLessThan(html.indexOf("<script"));
 }
@@ -55,6 +56,12 @@ describe("spectator service capabilities known before scripts", () => {
       expect(response.headers.get("cache-control")).toBe("no-store");
     }
     expect(unavailable).not.toHaveBeenCalled();
+  });
+
+  it("marks only the server running its own held match as a local match, never an entry point", async () => {
+    dir = tempDir();
+    server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: dir });
+    assertMetadata(await (await fetch(`http://127.0.0.1:${server.port}/`)).text(), false, false, false);
   });
 
   it("preserves HEAD length/cache semantics and refuses unsupported methods", async () => {

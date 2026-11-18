@@ -160,9 +160,11 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
     res.end(req.method === "HEAD" ? undefined : body);
   });
   // Inert page metadata is known before any UI mounts. Configuration is not a store health check.
+  // A local match (the held match, no slot) has no lobby or catalog entry: the page watches it at /live/current.
   server.mount("/", (req, res) => servePage(req, res, {
     lobbies: options.accounts !== undefined,
     publicMatches: options.accounts !== undefined && options.watchRegistry !== undefined,
+    localMatch: !entryPoint && options.slot === undefined,
   }));
   return {
     ...server,
@@ -231,7 +233,7 @@ export function spectatorHandover(hub: HandoverHub, controller: HandoverWatch, l
 }
 
 /** GET a file of the built page; / is index.html. */
-export async function servePage(req: IncomingMessage, res: ServerResponse, capabilities: { lobbies: boolean; publicMatches: boolean } = { lobbies: false, publicMatches: false }): Promise<void> {
+export async function servePage(req: IncomingMessage, res: ServerResponse, capabilities: { lobbies: boolean; publicMatches: boolean; localMatch?: boolean } = { lobbies: false, publicMatches: false }): Promise<void> {
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.writeHead(405).end();
     return;
@@ -251,7 +253,8 @@ export async function servePage(req: IncomingMessage, res: ServerResponse, capab
   }
   if (file === join(WEB_DIST, "index.html")) {
     // Booleans only: never reflect request values, credentials or store errors into markup.
-    const metadata = `<meta name="antwar-lobbies" content="${capabilities.lobbies}"><meta name="antwar-public-matches" content="${capabilities.publicMatches}">`;
+    const metadata = `<meta name="antwar-lobbies" content="${capabilities.lobbies}"><meta name="antwar-public-matches" content="${capabilities.publicMatches}">`
+      + `<meta name="antwar-local-match" content="${capabilities.localMatch === true}">`;
     body = Buffer.from(body.toString("utf8").replace("<head>", `<head>${metadata}`));
     res.setHeader("cache-control", "no-store");
   }

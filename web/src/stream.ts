@@ -3,7 +3,8 @@
  * src/live/hub.ts).
  *
  * - Live: an EventSource on /watch/live/<lobbyId>, selected explicitly or from
- *   the public catalog. Reconnections preserve that lobby identity.
+ *   the public catalog. Reconnections preserve that lobby identity. A local
+ *   match (README's "Run it locally") has no lobby: its page opens LOCAL_STREAM_PATH.
  * - Recorded: a packed recording written by src/live/record.ts (uncompressed
  *   messages, the first a full snapshot), handed to the buffer one tick of
  *   client time apart, for the bench and whole-match capture.
@@ -22,6 +23,9 @@ export async function decodeData(data: string): Promise<StreamMessage> {
   const inflated = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
   return decodeMessage(new Uint8Array(await new Response(inflated).arrayBuffer()));
 }
+
+/** The local held match's stream (src/live/hub.ts /live/current), for a page whose server marks it local-match. */
+export const LOCAL_STREAM_PATH = "/live/current";
 
 /** Only stable lobby identities select streams; retired numeric match routes are never requested. */
 export function streamPath(params: URLSearchParams): string | null {
