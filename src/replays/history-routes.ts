@@ -10,7 +10,7 @@ import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
-import { lobbyMatchType, publiclyListedMatch, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
@@ -231,9 +231,9 @@ const SEALED_PREFIX = "sealed-v1:";
 class InvalidContinuation extends Error {}
 
 /**
- * Continuations that point past a row a listing leaves out, sealed with a key of this process so the caller can neither read
- * nor forge one and the left-out row's id is never in list data. A restart voids them: such a continuation is refused (400)
- * and the list is loaded again from its first page.
+ * Continuations that point past a row a listing leaves out (one the hide list hides), sealed with a key of this process so
+ * the caller can neither read nor forge one and the left-out row's id is never in list data. A restart voids them: such a
+ * continuation is refused (400) and the list is loaded again from its first page.
  */
 function listingContinuations() {
   const key = randomBytes(32), aad = Buffer.from("antwar public listing continuation v1");
@@ -271,11 +271,12 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 
 /**
  * One public listing page. Each storage page's rows pass the hide list (when configured), then serve gives them their served
- * values (type, handles, corrections), and only the rows publiclyListedMatch admits are kept. Storage pages are read until
- * PAGE_ROWS rows are listed, storage ends, or MAX_LISTING_STORAGE_PAGES have been read; so a page comes back short only at
- * the end of the history or at that cap. A page that stops at a storage boundary it served up to, without the hide list,
- * keeps the storage continuation; a full page continues after its last served row; a page stopped by the cap continues
- * after the last row it read, sealed (listingContinuations). So no left-out or unserved row's id is in the listing.
+ * values (type, handles, corrections). Every recording of any match type, rated or not, is listed unless the hide list
+ * leaves it out. Storage pages are read until PAGE_ROWS rows are listed, storage ends, or MAX_LISTING_STORAGE_PAGES have
+ * been read; so a page comes back short only at the end of the history or at that cap. A page that stops at a storage
+ * boundary it served up to, without the hide list, keeps the storage continuation; a full page continues after its last
+ * served row; a page stopped by the cap continues after the last row it read, sealed (listingContinuations). So no
+ * left-out or unserved row's id is in the listing.
  */
 async function publicHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
   visibility: PublicVisibility | undefined, continuations: ListingContinuations,
@@ -289,7 +290,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
     const raw = await source.list(token, signal);
     const visible = visibility ? await untilAborted(publiclyVisible(raw.matches, row => visibility.replayVisible(row.id), signal), signal) : raw.matches;
     const served = await untilAborted(serve({ matches: visible, nextPageToken: raw.nextPageToken }), signal);
-    listed.push(...served.matches.filter(publiclyListedMatch));
+    listed.push(...served.matches);
     if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
     if (listed.length >= PAGE_ROWS) {
       const matches = listed.slice(0, PAGE_ROWS), last = matches.at(-1)!.id;
@@ -309,8 +310,8 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
 
 /**
  * Anonymous, read-only history backed by storage rather than this process.
- * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}: the Model Index, challenge and rated
- * matches only (publiclyListedMatch); every other recording is still served by GET /matches/<id>.
+ * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}: every recording, rated or unrated, that
+ * the hide list (when configured) does not leave out.
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
  * These paths are independent of /live/* and /replays/*.
  * A listing page is bounded as a whole (60 s) and reads at most MAX_LISTING_STORAGE_PAGES storage pages. A record download has no total-time bound, so a slow but steady
