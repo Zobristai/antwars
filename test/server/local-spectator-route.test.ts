@@ -1,3 +1,11 @@
+import { inflateRawSync } from "node:zlib";
+import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.js";
+import { decodeMessage, type StreamMessage } from "../../src/live/format.js";
+import { decodeMessage as oldDecode } from "../live/fixtures/pre-queen-ranking-format.ts";
+import { rulesConfig, type MapDefinition } from "../../src/sim/config.js";
+import { newMatchConfig } from "../../src/sim/gridScale.js";
+import { createMatch } from "../../src/sim/map.js";
+import { step } from "../../src/sim/step.js";
 import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { comparisonOptions } from "../../src/server.js";
@@ -41,4 +49,56 @@ it("README's local route marks its page a local match and streams the running ma
   expect(stream.headers.get("content-type")).toBe("text/event-stream");
   expect(Number(stream.headers.get("x-antwar-match"))).toBe(server.game.match!.seq);
   expect(await (await fetch(`${origin}/live/status`)).json()).toMatchObject({ kind: "playing" });
+}, 30_000);
+
+const quadrantMap: MapDefinition = {
+  id: "fixture-quadrants", name: "Fixture Quadrants", water: [],
+  quadrant: {
+    referenceWidth: 64, referenceHeight: 64, centreHalfWidth: 8, centreHalfHeight: 6, nestTileX: 7, nestTileY: 11,
+    startArea: { x: 2, y: 4, width: 12, height: 15 }, foodPatches: [], centreFood: [{ radius: 2, perTile: 4 }],
+  },
+};
+
+/** Read real local-route frames without dropping data received in the same HTTP chunk. */
+async function* localMessages(response: Response, decode: (bytes: Uint8Array) => StreamMessage) {
+  let pending = "";
+  const text = new TextDecoder();
+  for await (const chunk of response.body!) {
+    pending += text.decode(chunk, { stream: true });
+    for (let end; (end = pending.indexOf("\n\n")) >= 0;) {
+      const frame = pending.slice(0, end); pending = pending.slice(end + 2);
+      if (frame.startsWith("data: ")) yield decode(inflateRawSync(Buffer.from(frame.slice(6), "base64")));
+    }
+  }
+}
+
+it.each(["?kills=1", "", "?kills=0"])("keeps local four-colony telemetry negotiated through the route rewrite (%s)", async query => {
+  server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(),
+    ...comparisonOptions({ ANTWAR_RULES: "redesign", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG) },
+    { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
+  const config = newMatchConfig(rulesConfig("redesign"));
+  // A labelled four-colony input fixture feeds the real local server's spectator hub.
+  // The existing MCP route test above covers starting the local game itself.
+  const state = createMatch(404, { ...config, terrain: { ...config.terrain!, maps: [quadrantMap] } });
+  expect(state.colonies).toHaveLength(4);
+  state.colonies.forEach((colony, i) => { colony.kills = i * 7; });
+  server.hub.startMatch(1, state);
+  const abort = new AbortController(); readers.push(abort);
+  const response = await fetch(`http://127.0.0.1:${server.port}/watch/live/local${query}`, { signal: abort.signal });
+  expect(response.status).toBe(200);
+  const optedIn = query === "?kills=1";
+  const messages = localMessages(response, optedIn ? decodeMessage : oldDecode);
+  try {
+    const opening = (await messages.next()).value!;
+    expect(opening.full!.setup.colonies).toBe(4);
+    expect(opening.full!.kills).toEqual(optedIn ? [0, 7, 14, 21] : undefined);
+    state.colonies[0]!.kills = 3;
+    const out = step(state, []);
+    server.hub.pushTick(1, out);
+    const delta = (await messages.next()).value!;
+    expect(delta.tick).toBe(out.state.tick);
+    expect(delta.full).toBeNull();
+    expect(delta.events.filter(event => event.kind === "kills")).toEqual(optedIn
+      ? [{ kind: "kills", totals: out.state.colonies.map(colony => colony.kills ?? 0) }] : []);
+  } finally { await messages.return(); }
 }, 30_000);

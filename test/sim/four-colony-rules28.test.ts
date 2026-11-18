@@ -1,10 +1,10 @@
 /**
  * A four-colony match on the served rules: rules 28 with flyers, as a two-colony match plays them. Its queens hatch
- * flyers that take off; its stream carries four colonies and flyers together, at the flyer version; its log replays
+ * flyers that take off; its stream carries four colonies, flyers and optional kill totals together; its log replays
  * to every tick's hash; and its seats are told rules 28 and the flyer rules.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { FLYER_STREAM_VERSION, RULES28_STREAM_VERSION, decodeMessage, encodeMessage, type StreamMessage } from "../../src/live/format.ts";
+import { FLYER_STREAM_VERSION, KILLS_STREAM_VERSION, RULES28_STREAM_VERSION, decodeMessage, encodeMessage, withoutKillTotals, type StreamMessage } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { briefing, flyerRulesLines } from "../../src/mcp/briefing.ts";
 import { rulesConfig, rulesVersionOf, RULES28_VERSION, SUB, type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
@@ -95,9 +95,11 @@ describe("a four-colony match on the served rules", () => {
     }
   });
 
-  it("streams four colonies and flyers together at the flyer version, and decodes both", () => {
+  it("streams four colonies and flyers with optional kill totals, and decodes them together", () => {
     const [first, ...rest] = run.messages.map(m => encodeMessage(m));
-    expect(first![2]).toBe(RULES28_STREAM_VERSION);
+    expect(first![2]).toBe(KILLS_STREAM_VERSION);
+    expect(decodeMessage(first!).full!.kills).toEqual(run.messages[0]!.full!.kills);
+    expect(encodeMessage(withoutKillTotals(run.messages[0]!))[2]).toBe(RULES28_STREAM_VERSION);
     const setup = decodeMessage(first!).full!.setup;
     expect([setup.colonies, setup.queens.length, setup.rules28]).toEqual([4, 4, true]);
     let both = 0;
@@ -105,7 +107,11 @@ describe("a four-colony match on the served rules", () => {
       const message = run.messages[i + 1]!, decoded = decodeMessage(bytes);
       expect(encodeMessage(decoded)).toEqual(bytes);
       const flyers = message.ants.flyers?.some(f => f !== null) === true;
-      if (flyers) expect(bytes[2]).toBe(FLYER_STREAM_VERSION);
+      const kills = message.events.some(event => event.kind === "kills");
+      if (kills) expect(bytes[2]).toBe(KILLS_STREAM_VERSION);
+      else if (flyers) expect(bytes[2]).toBe(FLYER_STREAM_VERSION);
+      expect(decoded.events.filter(event => event.kind === "kills")).toEqual(message.events.filter(event => event.kind === "kills"));
+      if (flyers) expect(encodeMessage(withoutKillTotals(message))[2]).toBe(FLYER_STREAM_VERSION);
       expect(Array.from(decoded.ants.colony)).toEqual(Array.from(message.ants.colony.subarray(0, message.ants.count)));
       expect(decoded.ants.flyers ?? null).toEqual(flyers ? message.ants.flyers : null);
       if (flyers && message.ants.flyers!.some((f, k) => f !== null && message.ants.colony[k]! > 1)) both++;
@@ -113,13 +119,18 @@ describe("a four-colony match on the served rules", () => {
     expect(both).toBeGreaterThan(0);
   });
 
-  it("sends a four-colony snapshot with flyers at the flyer version, with its colony count, marker and flyers", () => {
+  it("sends a four-colony snapshot with kill totals, preserving its colony count, rules marker and flyers", () => {
     const recorder = new SpectatorRecorder(run.state);
     const snapshot: StreamMessage = { ...recorder.initial(), full: recorder.initialFull() };
     const flyers = snapshot.ants.flyers!;
     expect(flyers.some((f, k) => f !== null && snapshot.ants.colony[k]! > 1)).toBe(true);
     const bytes = encodeMessage(snapshot), decoded = decodeMessage(bytes);
-    expect(bytes[2]).toBe(FLYER_STREAM_VERSION);
+    expect(bytes[2]).toBe(KILLS_STREAM_VERSION);
+    expect(decoded.full!.kills).toEqual(snapshot.full!.kills);
+    const legacy = encodeMessage(withoutKillTotals(snapshot));
+    expect(legacy[2]).toBe(FLYER_STREAM_VERSION);
+    expect(decodeMessage(legacy).full!.kills).toBeUndefined();
+    expect(decodeMessage(legacy).ants.flyers).toEqual(flyers);
     expect([decoded.full!.setup.colonies, decoded.full!.setup.queens.length, decoded.full!.setup.rules28]).toEqual([4, 4, true]);
     expect(decoded.full!.setup.rules28Figures).toEqual(snapshot.full!.setup.rules28Figures);
     expect(decoded.full!.eliminations).toEqual(snapshot.full!.eliminations ?? []);

@@ -262,3 +262,35 @@ it("round-trips queen-kill results in full snapshots and end events for rated an
     }
   }
 });
+
+describe("optional cumulative kill totals", () => {
+  it("roundtrips totals separately from deaths, retaining all colonies and same-tick terminal credit", () => {
+    const start = opening();
+    start.full!.kills = [12, 0, 35, 9];
+    const decoded = decodeMessage(encodePublicMessage(start));
+    expect(decoded.full!.kills).toEqual([12, 0, 35, 9]);
+    const model = new SpectatorState(decoded.full!, decoded.tick, decoded.ants);
+    const last = finalStep();
+    last.events.unshift({ kind: "kills", totals: [12, 0, 35, 11] });
+    model.apply(decodeMessage(encodeMessage(last)));
+    expect(model.full.kills).toEqual([12, 0, 35, 11]);
+    expect(model.full.result).toEqual(end);
+    expect(decodeMessage(encodeMessage(model.savedMessage())).full!.kills).toEqual(model.full.kills);
+  });
+
+  it("keeps historical four-colony bytes and unknown totals unchanged", () => {
+    const old = encodeMessage(opening());
+    expect(old[2]).toBe(FOUR_COLONY_STREAM_VERSION);
+    const decoded = decodeMessage(old);
+    expect(decoded.full!.kills).toBeUndefined();
+    expect(encodeMessage(decoded)).toEqual(old);
+    const model = new SpectatorState(decoded.full!, decoded.tick, decoded.ants);
+    model.apply({ ...finalStep(), events: [{ kind: "kills", totals: [0, 0, 0, 0] }] });
+    expect(model.full.kills).toEqual([0, 0, 0, 0]);
+  });
+
+  it.each([[1, 2], [-1, 0, 0, 0], [0.5, 0, 0, 0], [Infinity, 0, 0, 0], [0x1_0000_0000, 0, 0, 0]])("refuses malformed totals %j", (...totals) => {
+    expect(() => encodeMessage({ ...opening(), full: { ...fourColonyFull(), kills: totals } })).toThrow("kill totals");
+    expect(() => encodeMessage({ ...opening(), full: null, events: [{ kind: "kills", totals }] })).toThrow("kill totals");
+  });
+});

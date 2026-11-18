@@ -52,7 +52,7 @@ function watched(state: SimState) {
 
 /** The board a fresh recorder reads from the state now, beside the spectator's running picture of it. */
 function picture(full: StreamFull) {
-  return { queens: full.queens, territory: full.territory, deaths: full.deaths, hatched: full.hatched, stores: full.stores,
+  return { queens: full.queens, territory: full.territory, deaths: full.deaths, kills: full.kills, hatched: full.hatched, stores: full.stores,
     overrun: full.overrun, eliminations: full.eliminations };
 }
 function truth(state: SimState) {
@@ -77,6 +77,7 @@ describe("the spectator recorder on a four-colony match", () => {
     expect(full.stores).toEqual(storesOf(state));
     expect(full.eliminations).toEqual([]);
     expect(full.result).toBeNull();
+    expect(full.kills).toEqual(state.colonies.map(c => c.kills ?? 0));
     // Every colony's ants, by colony id.
     expect(new Set(opening.ants.colony)).toEqual(new Set([0, 1, 2, 3]));
     expect([0, 1, 2, 3].map(c => opening.ants.colony.filter(v => v === c).length)).toEqual([30, 30, 30, 30]);
@@ -110,10 +111,14 @@ describe("the spectator recorder on a four-colony match", () => {
     expect(state.ants.some(a => a.colony === 1)).toBe(true);
     for (let i = 0; i < 4; i++) addAnt(state, 0, qx, qy, { hp: 100_000 });
     const tick = state.tick;
+    const killsBefore = state.colonies.map(c => c.kills ?? 0);
     const { out, rec } = play();
     expect(out.events.filter(e => e.type === "queen_lost").map(e => e.type === "queen_lost" && e.colony)).toEqual([1]);
     expect(state.colonies[1]!.eliminated).toMatchObject({ tick, reason: "queens_killed" });
     expect(state.result).toBeNull();
+    expect(state.colonies[0]!.kills).toBeGreaterThan(killsBefore[0]!);
+    expect(spectator.full.kills).toEqual(state.colonies.map(c => c.kills ?? 0));
+    expect(rec.events.some(e => e.kind === "kills")).toBe(true);
     // The engine's queen loss is sent once, and the elimination after it.
     expect(rec.events.filter(e => e.kind === "queenLost")).toEqual([{ kind: "queenLost", queen: expect.objectContaining({ colony: 1, id: 0, lostTick: tick }) }]);
     expect(rec.events.filter(e => e.kind === "eliminated")).toEqual([{ kind: "eliminated", colony: 1, tick }]);
@@ -221,5 +226,41 @@ describe("the spectator recorder on a two-colony match", () => {
     expect(full.setup.queens).toHaveLength(2);
     for (const field of [full.overrun, full.deaths, full.hatched!, full.stores!]) expect(field).toHaveLength(2);
     expect("colonyNames" in new SpectatorRecorder(state).setup).toBe(false);
+  });
+});
+
+
+describe("authoritative kill totals across recorder resume", () => {
+  it("copies the current baseline, omits unchanged totals and emits a genuine later change", () => {
+    const state = createMatch(SEED, CONFIG);
+    state.colonies.forEach((colony, i) => { colony.kills = i * 7; });
+    const original = new SpectatorRecorder(state), first = original.initial();
+    const kills = [0, 7, 14, 21];
+    const recorder = new SpectatorRecorder(state, {}, { setup: original.setup, agents: original.agentIndexes(),
+      initialFull: () => original.initialFull(), ants: first.ants, kills });
+    kills[0] = 999; // A caller changing the saved array cannot change the recorder's baseline.
+    const unchanged = recorder.record(advance(state, []));
+    expect(unchanged.events.filter(event => event.kind === "kills")).toEqual([]);
+    state.colonies[2]!.kills!++;
+    const changed = recorder.record(advance(state, []));
+    expect(changed.events.filter(event => event.kind === "kills")).toEqual([{ kind: "kills", totals: [0, 7, 15, 21] }]);
+  });
+
+  it("establishes a complete baseline after an old handover without fabricating deaths", () => {
+    const state = createMatch(SEED, CONFIG);
+    const original = new SpectatorRecorder(state);
+    const first = original.initial(), oldFull = original.initialFull();
+    delete oldFull.kills;
+    state.colonies.forEach((c, i) => { c.kills = i * 7; });
+    const recorder = new SpectatorRecorder(state, {}, { setup: original.setup, agents: original.agentIndexes(),
+      initialFull: () => structuredClone(oldFull), ants: first.ants });
+    const spectator = new SpectatorState(oldFull, first.tick, first.ants);
+    const out = advance(state, [], undefined, undefined, undefined, { idle: [0, 1, 2, 3] }, true);
+    const recorded = recorder.record(out);
+    spectator.apply(recorded);
+    expect(spectator.full.kills).toEqual([0, 7, 14, 21]);
+    expect(spectator.full.result).not.toBeNull();
+    expect(recorded.events.filter(e => e.kind === "kills")).toEqual([{ kind: "kills", totals: [0, 7, 14, 21] }]);
+    expect(state.colonies.map(c => c.kills)).toEqual([0, 7, 14, 21]);
   });
 });
