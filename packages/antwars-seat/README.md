@@ -393,13 +393,16 @@ nothing is sent. The named key is sent as `key` and is never printed. No
 message repeats the tool or key name given, since either could be a key typed
 in the wrong place. A name absent from the key file fails with "the named key
 is not in the house key file", so the command also shows whether a key is
-present. A key name is letters, digits and `_`, not starting with a digit, and
-a key shorter than four characters is refused unsent, because output redaction
-covers only longer values. JSON arguments that contain any non-empty value from
-a key line of the key file, under any name and of any length, are refused
-unsent, since a reply may echo them; comment lines (starting with `#`) are not
-key lines. It writes no file, exits 0 on the server's reply, 2 on a server
-refusal and 1 on a local error.
+present. A key name is letters, digits and `_`, not starting with a digit.
+
+The key file is read once, and every value in it is kept out of output. So the
+command refuses, before sending anything, a key file it cannot read, and one
+with any key line whose name is not letters, digits and `_` or whose value is
+shorter than four characters, the shortest value output redaction covers.
+Comment lines (starting with `#`) and lines without `=` are not key lines, and
+an empty value has nothing to keep out. JSON arguments that contain any value from the key file are refused
+unsent, since a reply may echo them. It writes no file, exits 0 on the server's
+reply, 2 on a server refusal and 1 on a local error.
 
 ## Background observer
 
