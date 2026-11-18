@@ -161,30 +161,28 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
   const read = (file: string): string | null => { try { return readFileSync(file, "utf8"); } catch { return null; } };
   /**
    * The headroom of each numeric level, and of the configured limit less the own group's usage. `complete` is false where
-   * any reading cannot be taken or parsed; `headrooms` then holds every other level, read on past the failed one.
+   * any reading cannot be taken or parsed; `headrooms` then holds every other level, read on past the failed one, and
+   * `limits` the limit of each numeric level whose usage could not be read.
    */
-  const groups = (configuredBytes: number | null): { headrooms: number[]; numeric: boolean; complete: boolean } => {
-    const headrooms: number[] = [];
+  const groups = (configuredBytes: number | null): { headrooms: number[]; limits: number[]; numeric: boolean; complete: boolean } => {
+    const headrooms: number[] = [], limits: number[] = [];
     let numeric = false, complete = true;
     const cgroupText = read(cgroupFile), mountinfoText = read(mountinfoFile);
-    if (cgroupText === null || mountinfoText === null) return { headrooms, numeric, complete: false };
+    if (cgroupText === null || mountinfoText === null) return { headrooms, limits, numeric, complete: false };
     const own = ownCgroup(cgroupText, mountinfoText);
-    if (own === null) return { headrooms, numeric, complete: false };
-    /** One level's headroom; undefined where it has no limit, null where it cannot be read or parsed. */
-    const level = (dir: string): number | null | undefined => {
-      const maxText = read(`${dir}/memory.max`);
-      // Only the mount's root may have no memory.max.
-      if (maxText === null) return dir === own.mount ? undefined : null;
-      if (maxText === "max\n" || maxText === "max") return undefined;
-      const limit = parseCgroupBytes(maxText);
-      if (limit === null || limit <= 0) return null;
-      const current = parseCgroupBytes(read(`${dir}/memory.current`));
-      return current === null ? null : limit - current;
-    };
+    if (own === null) return { headrooms, limits, numeric, complete: false };
     for (let dir = own.dir; ; dir = resolve(dir, "..")) {
-      const headroom = level(dir);
-      if (headroom === null) complete = false;
-      else if (headroom !== undefined) { numeric = true; headrooms.push(headroom); }
+      const maxText = read(`${dir}/memory.max`);
+      if (maxText === null) {
+        // Only the mount's root may have no memory.max.
+        if (dir !== own.mount) complete = false;
+      } else if (maxText !== "max\n" && maxText !== "max") {
+        const limit = parseCgroupBytes(maxText);
+        const current = limit === null || limit <= 0 ? null : parseCgroupBytes(read(`${dir}/memory.current`));
+        if (limit === null || limit <= 0) complete = false;
+        else if (current === null) { complete = false; limits.push(limit); }
+        else { numeric = true; headrooms.push(limit - current); }
+      }
       if (dir === own.mount) break;
     }
     if (configuredBytes !== null) {
@@ -192,7 +190,7 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
       if (current === null) complete = false;
       else headrooms.push(configuredBytes - current);
     }
-    return { headrooms, numeric, complete };
+    return { headrooms, limits, numeric, complete };
   };
   return (children = []) => {
     let configuredBytes: number | null = null;
@@ -200,13 +198,14 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
       configuredBytes = parseMemoryQuantity(configured);
       if (configuredBytes === null) return null;
     }
-    const { headrooms, numeric, complete } = groups(configuredBytes);
+    const { headrooms, limits, numeric, complete } = groups(configuredBytes);
     if (!complete) {
       // A control-group reading failed: the configured limit less this process's and its child's memory, capped by
-      // every level that was read.
+      // every level that was read, and by each limit whose usage could not be read less that same memory.
       if (configuredBytes === null) return null;
       const used = ownBytes(children);
-      return used === null ? null : { headroomMiB: Math.min(configuredBytes - used, ...headrooms) / MIB, source: "process" };
+      if (used === null) return null;
+      return { headroomMiB: Math.min(configuredBytes - used, ...headrooms, ...limits.map(limit => limit - used)) / MIB, source: "process" };
     }
     if (headrooms.length === 0) return null;
     return { headroomMiB: Math.min(...headrooms) / MIB, source: numeric && configuredBytes !== null ? "both" : numeric ? "numeric" : "configured" };

@@ -186,6 +186,14 @@ describe("the control-group meter", () => {
     expect(read([{}, { max: `${2048 * MIB}\n`, current: 1900 }, { max: "max\n" }], "4Gi")).toEqual({ headroomMiB: 148, source: "process" });
   });
 
+  // Credible regression: a readable numeric limit dropped when its usage cannot be read, so the configured limit's room
+  // is given although that limit leaves far less.
+  it("caps the fallback by a level's limit less this process's memory where that level's usage cannot be read: 724 MiB refuses", () => {
+    const r = read([{}, { max: `${1024 * MIB}\n` }], "4Gi");
+    expect(r).toEqual({ headroomMiB: 724, source: "process" });
+    expect(admits(r!)).toBe(false);
+  });
+
   // Credible regression: a group path that climbs out of the mount, read as if it were inside it; or no cgroup2 line
   // (a cgroup v1 host) refusing every re-run although a configured limit is set.
   it("never reads a path escaping the mount, a path outside the mount's root, several cgroup2 mounts, or no cgroup2 line: configured limit less this process's memory, else fail closed", () => {
