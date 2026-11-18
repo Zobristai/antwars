@@ -21,12 +21,13 @@ describe("the next spawn", () => {
     expect(PAGE_WORDS).not.toHaveProperty("nextAnt");
     expect(DECK).toContain('["next", PAGE_WORDS.nextSpawn]');
     // One measures list builds both colonies' cells.
-    expect(DECK).toMatch(/const economies = COLONIES\.map\(c => \{\s*const root = h\(doc, "div", `d1-econ c\$\{c\}`\);\s*const values = measures\.map/);
+    expect(DECK).toContain("const economies = slots.map(c => {");
+    expect(DECK).toContain("const values = measures.map");
   });
 
   it("puts the coming unit's icon inside the ring, never beside it", () => {
     expect(DECK).toContain("ring.append(caste);");
-    expect(DECK).toContain("value.append(ring, words, said);");
+    expect(DECK).toContain("nextValue.append(ring, words, said);");
   });
 
   it("writes no seconds and no \"Full\": the cell's words are only the empty figure", () => {
@@ -36,7 +37,7 @@ describe("the next spawn", () => {
   });
 
   it("keeps the screen-reader description of the next hatch", () => {
-    expect(DECK).toContain("paintNext(c, ds[c].next, ds[c].nextText);");
+    expect(DECK).toContain("paintNext(c, d.next, d.nextText);");
     expect(DECK).toContain("setText(n.said, said);");
   });
 
