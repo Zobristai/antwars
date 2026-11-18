@@ -78,7 +78,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
     slotWaker = slotWakerFromEnv(process.env);
     comparison = comparisonOptions(process.env, DEFAULT_MCP_CONFIG);
     ffa = ffaSettingsFromEnv(process.env);
-    if (comparison.simConfig !== undefined) comparison = { ...comparison, simConfig: { ...comparison.simConfig, ffaTerritoryWinnerFirst: ffa.territoryWinnerFirst } };
+    if (comparison.simConfig !== undefined) comparison = { ...comparison, simConfig: { ...comparison.simConfig, ffaTerritoryWinnerFirst: true } };
     houseIdleSeconds = houseIdleSecondsFromEnv(process.env);
     // A slot server is not idle while a match's record inputs await storage.
     const handoffActivity = slotSettings === undefined ? undefined : slotActivity(slotSettings.slot);

@@ -78,6 +78,17 @@ describe("the Rules browser entry", () => {
     expect(split.children.map(node => node.classes()[0])).toEqual(["d1p-index", "d1p-reading"]);
     expect(split.byClass("d1p-reading")[0]!.byClass("d1p-rules-card")).toHaveLength(2);
   });
+  it("shows Accounts and keys under Reference, before Lobbies, in the index and the reading card", () => {
+    const { host } = served(true);
+    const section = ruleSections(PUBLIC_CONFIG).find(entry => entry.title === "Accounts and keys")!;
+    const reference = host!.byClass("d1p-rules-card")[1]!;
+    const titles = reference.byClass("d1p-rule-title").map(node => node.textContent);
+    expect(titles[titles.indexOf("Accounts and keys") + 1]).toBe("Lobbies");
+    const rule = reference.byClass("d1p-rule").find(node => node.id === "d1-accounts-and-keys")!;
+    expect(rule.children.filter(node => node.tag === "p").map(node => node.textContent)).toEqual(section.lines);
+    const links = host!.byClass("d1p-index")[0]!.querySelectorAll("a").map(node => node.textContent);
+    expect(links[links.indexOf("Accounts and keys") + 1]).toBe("Lobbies");
+  });
   it("leaves the server page alone without its data", () => {
     const { page, host } = served(false);
     expect(page.style.getPropertyValue("display")).toBe("");
