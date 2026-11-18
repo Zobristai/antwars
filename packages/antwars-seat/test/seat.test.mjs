@@ -10,7 +10,7 @@ import { noteMatchReply } from "../lib/match.mjs";
 import { progress, removeDeadLock } from "../lib/state.mjs";
 import { rpcReply } from "../lib/mcp.mjs";
 import { DEFAULT_MAX_WAIT_MS, WAIT_URL_NEXT } from "../lib/seat.mjs";
-import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
+import { MATCH_OVER_NEXT, fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-test-0f3c9a7e51d2";
 const KEY_NAME = "ANTWARS_HOUSE_TEST_SEAT";
@@ -766,6 +766,44 @@ describe("status after go: the nest pick and the match start", () => {
     }
   });
 
+  it("a live writer's lock is never taken, however long it is held; the waiting writer goes on once it is released", async () => {
+    const s = await seat();
+    const lock = join(s.dir, "state", "status.lock");
+    // This test process is the live owner, holding the lock well past the 10 s an age takeover once allowed.
+    writeFileSync(lock, `${process.pid}-holder`);
+    const script = join(s.dir, "writer.mjs");
+    writeFileSync(script, `import { progress } from ${JSON.stringify(new URL("../lib/state.mjs", import.meta.url).href)};\nprogress("after_live_lock", {}, process.env);\n`);
+    const writer = run(process.execPath, [script], { env: { ...process.env, ANTWARS_SEAT_STATE: join(s.dir, "state") } });
+    await new Promise((resolve) => setTimeout(resolve, 11_000));
+    expect(readFileSync(lock, "utf8")).toBe(`${process.pid}-holder`);
+    expect(existsSync(join(s.dir, "state", "status.json")) ? s.state("status.json").step : null).not.toBe("after_live_lock");
+    rmSync(lock);
+    await writer;
+    expect(s.state("status.json").step).toBe("after_live_lock");
+    expect(lockFiles(s)).toEqual([]);
+  });
+
+  it("a seat that picks, never observes, and is answered match over on its first observe shows match over and the server's next instruction", async () => {
+    for (const by of ["command", "observer"]) {
+      const s = await seat({ endedAfterObserves: 1 });
+      await s.cli("create-lobby");
+      expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+      expect(await s.cli("pick_nest", "--json", "{\"tileX\":3,\"tileY\":1}")).toBe(0);
+      s.clock.t += 60 * 60_000;
+      const ended = { ok: false, data: { error: { code: "match_over", message: "This match has ended.", howToFix: MATCH_OVER_NEXT }, matchOver: true, winner: "red", result: { winner: 0 } } };
+      if (by === "command") await s.cli("observe");
+      else noteMatchReply("observe", {}, ended, { env: s.env, clock: s.clock });
+      const status = await printedStatus(s);
+      expect(status).toMatchObject({ step: "match_over", winner: "red", pick: { tileX: 3, tileY: 1 },
+        fromServer: { from: "observe", matchOver: true, message: "This match has ended.", next: MATCH_OVER_NEXT } });
+      for (const field of ["closesAt", "box", "next", "matchStartsPassed", "matchStartsNote"]) expect(status).not.toHaveProperty(field);
+      expect(s.printed[0]).not.toContain("until it starts");
+      // A delayed pre-start reply recorded after it changes nothing.
+      noteMatchReply("observe", {}, { ok: true, data: { waiting: true, matchStarts: "2020-01-01T00:00:00Z", message: "Your match has not started; keep calling observe." } }, { env: s.env, clock: s.clock });
+      expect(s.state("status.json").step).toBe("match_over");
+    }
+  });
+
   it("go's final status drops the queue and lobby states read while pairing", async () => {
     const s = await seat({ pairAfterMs: 20_000 });
     const seen = recordStatuses(s);
@@ -813,7 +851,10 @@ describe("status after go: the nest pick and the match start", () => {
     expect(steps.indexOf("waiting_for_start")).toBeLessThan(steps.indexOf("match_started"));
     const final = s.state("status.json");
     expect(final).toMatchObject({ startSeenTick: 12, pick: { tileX: 3, tileY: 1 } });
-    for (const field of ["next", "closesAt", "box", "fromServer"]) expect(final).not.toHaveProperty(field);
+    for (const field of ["next", "closesAt", "box"]) expect(final).not.toHaveProperty(field);
+    // The observer ran to the match's end: the server's pre-start facts were replaced by its match-over reply.
+    expect(final.fromServer).toMatchObject({ from: "observe", matchOver: true });
+    expect(final.fromServer).not.toHaveProperty("matchStarts");
   });
 });
 

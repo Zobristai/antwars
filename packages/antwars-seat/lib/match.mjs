@@ -84,11 +84,26 @@ export function serverStartFacts(data, from, clock) {
 }
 
 /**
+ * The server's own words in a match-over reply, verbatim: its message and its next instruction (howToFix), from the
+ * reply named by from. They replace the pre-start facts, so no "call observe until it starts" message remains.
+ */
+function serverEndFacts(data, from, clock) {
+  const error = data.error !== null && typeof data.error === "object" ? data.error : {};
+  return { from, at: new Date(clock.now()).toISOString(), matchOver: true,
+    message: typeof error.message === "string" ? error.message : null, next: typeof error.howToFix === "string" ? error.howToFix : null };
+}
+
+/**
  * True once an observe has shown the match running. Replies can be recorded out of order (a pick or pre-start observe
  * whose reply was delayed past an observer's started view): from then on such an older pre-start reply changes nothing.
  */
 function startSeen(current) {
-  return current.startSeenTick !== undefined && current.startSeenTick !== null;
+  return (current.startSeenTick !== undefined && current.startSeenTick !== null) || ended(current);
+}
+
+/** True once a match-over reply was recorded: no later reply of the running or waiting match changes the status. */
+function ended(current) {
+  return current.fromServer?.matchOver === true;
 }
 
 /** Status fields that hold only before the match starts: the nest window, the pick instruction and the server's pre-start facts. */
@@ -100,11 +115,19 @@ const PRE_START_FIELDS = ["closesAt", "box", "next", "fromServer"];
  * answered "not started" writes waiting_for_start with the server's facts; an observe of the started match writes
  * match_started and drops every pre-start field, again after a transient step such as rejoined. The decision is made
  * from the current status under its lock, so a pick and an observer's observe never undo each other, and a pre-start
- * reply recorded after the start was seen never undoes it. An unchanged state adds no log line.
+ * reply recorded after the start was seen never undoes it. A match-over reply, on any call, writes match_over with the
+ * server's message and next instruction verbatim and drops the pre-start fields. An unchanged state adds no log line.
  */
 export function noteMatchReply(name, args, reply, { env, clock }) {
   const data = reply?.data;
-  if (!reply?.ok || !data || isMatchOver(data)) return;
+  if (data && isMatchOver(data)) {
+    const facts = serverEndFacts(data, name, clock);
+    progressFrom((current) => (ended(current) && current.fromServer?.message === facts.message
+      && current.fromServer?.next === facts.next ? null
+      : { step: "match_over", detail: { winner: data.winner ?? null, fromServer: facts, ...dropped(["closesAt", "box", "next"]) } }), env);
+    return;
+  }
+  if (!reply?.ok || !data) return;
   if (name === "pick_nest" && data.accepted === true) {
     progressFrom((current) => (startSeen(current) ? null : { step: "nest_picked", detail: { pick: { tileX: args?.tileX ?? null, tileY: args?.tileY ?? null },
       closesAt: data.nestSelection?.closesAt ?? current.closesAt ?? null, next: undefined } }), env);
@@ -118,7 +141,7 @@ export function noteMatchReply(name, args, reply, { env, clock }) {
     return;
   }
   if (data.view && data.view.tick > 0) {
-    progressFrom((current) => (current.step === "match_started" ? null
+    progressFrom((current) => (current.step === "match_started" || ended(current) ? null
       : { step: "match_started", detail: { startSeenTick: current.startSeenTick ?? data.view.tick, ...dropped(PRE_START_FIELDS) } }), env);
   }
 }

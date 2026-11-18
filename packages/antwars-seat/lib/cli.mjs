@@ -4,7 +4,7 @@ import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { fileURLToPath } from "node:url";
 import { renderView } from "./board.mjs";
 import { claimGameCommand, isGameCommand, procStat, refusalMessage } from "./guard.mjs";
-import { isMatchOver, matchClient, noteMatchReply, savedMatch, seatContext } from "./match.mjs";
+import { matchClient, noteMatchReply, savedMatch, seatContext } from "./match.mjs";
 import { observerSettings, observerStatus, runObserver } from "./observer.mjs";
 import { err, out, redact } from "./redact.mjs";
 import { STALE_WAIT_FIELDS, createLobby, go, joinLobby, leaveQueue, savedWaitLink } from "./seat.mjs";
@@ -216,7 +216,6 @@ async function matchCall(name, args, env, clock, { raw = false, readStat = procS
   const reply = await client.callTool(name, args);
   noteMatchReply(name, args, reply, ctx);
   print(reply.data?.view && typeof reply.data.view === "object" && !raw ? renderView(reply.data) : reply.data);
-  if (isMatchOver(reply.data)) progress("match_over", { winner: reply.data.winner ?? null }, env);
   return reply.ok ? 0 : 2;
 }
 

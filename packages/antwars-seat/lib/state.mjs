@@ -34,11 +34,6 @@ export function writeJson(path, value) {
   renameSync(tmp, path);
 }
 
-/**
- * A lock whose owner is alive but has held it, unchanged, this long is treated as abandoned (its pid reused, or the
- * process stuck); a status write holds it for a few file operations.
- */
-export const STATUS_LOCK_STALE_MS = 10_000;
 const LOCK_WAIT = new Int32Array(new SharedArrayBuffer(4));
 
 /** Creates path holding token, its content complete the moment it exists; false when path already exists. */
@@ -96,24 +91,18 @@ export function removeDeadLock(path, deadToken, token) {
 /**
  * Runs fn holding state/status.lock, so the read, merge and write of status.json by this seat's processes (go, match
  * commands, the observer) never interleave and one cannot overwrite another's fields. The lock holds its owner's token
- * (pid and a random part); it is released only by that owner, and taken over through removeDeadLock only when the
- * owner has died or held it unchanged past STATUS_LOCK_STALE_MS.
+ * (pid and a random part); it is released only by that owner, and taken over through removeDeadLock only once the
+ * owner's pid is no longer running. A live owner's lock is never taken, however long it is held.
  */
 function withStatusLock(env, fn) {
   mkdirSync(stateDir(env), { recursive: true });
   const lock = statePath("status.lock", env);
   const token = `${process.pid}-${randomUUID()}`;
-  let seen = null;
-  let seenSince = 0;
   while (!createOwned(lock, token)) {
     const holder = readToken(lock);
     if (holder === null) continue;
-    if (holder !== seen) {
-      seen = holder;
-      seenSince = Date.now();
-    }
-    if (!ownerAlive(holder) || Date.now() - seenSince >= STATUS_LOCK_STALE_MS) removeDeadLock(lock, holder, token);
-    else Atomics.wait(LOCK_WAIT, 0, 0, 5);
+    if (ownerAlive(holder)) Atomics.wait(LOCK_WAIT, 0, 0, 5);
+    else removeDeadLock(lock, holder, token);
   }
   try {
     return fn();

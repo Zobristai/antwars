@@ -60,6 +60,8 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  *   box, terrain   the nest selection offered on join
  *   cellsMore      observe replies that more cells follow (cellsCursor snap:2)
  *   matchOverAfterObserves  observe replies matchOver from this call number on
+ *   endedAfterObserves  observe answers from this call number on as the server does once the match has ended:
+ *                  the match_over error with its message, howToFix (MATCH_OVER_NEXT), matchOver, winner and result
  *   refuseReadLobby how many read_lobby calls are refused (unavailable) first
  *   failReadLobbyHttp how many read_lobby calls then fail with HTTP 503
  *   refuseJoinLobby error code every join_lobby is refused with (e.g. "full"); with "already_seated" the key
@@ -97,6 +99,9 @@ export const UPDATE_SEAT_CLIENT_MESSAGE = `This server no longer accepts seat cl
  * (<url>/wait/<token>), and queue_status carries the same while that join's entry is waiting or matched (a baseline
  * entry has one only when given waitToken); join_lobby's carries lobby-wait-<lobbyId>, and read_lobby carries it to a key seated there.
  */
+/** The next instruction the fake server gives in its match-over error, as the real server words it. */
+export const MATCH_OVER_NEXT = "Call observe for the final result and view; join a new lobby at the entry point to play again.";
+
 export async function startFake(options = {}) {
   const clock = options.clock ?? { now: () => Date.now() };
   const calls = [];
@@ -266,6 +271,9 @@ export async function startFake(options = {}) {
         observes += 1;
         if (observes <= (options.failObserves ?? 0)) return err("unavailable");
         if (observes <= (options.failObserves ?? 0) + (options.waitingObserves ?? 0)) return ok({ waiting: true, matchStarts: nestClosesAt ?? "not scheduled yet", message: NOT_STARTED_OBSERVE });
+        if (options.endedAfterObserves != null && observes >= options.endedAfterObserves) {
+          return text({ error: { code: "match_over", message: "This match has ended.", howToFix: MATCH_OVER_NEXT }, tick: null, matchOver: true, winner: "red", result: { winner: 0 } }, true, true);
+        }
         if (options.matchOverAfterObserves != null && observes >= options.matchOverAfterObserves) return ok({ matchOver: true, winner: "red", result: { winner: 0 } });
         // Cells and territory as the server encodes them (denseCells, packTerritory) for a 8x2 board.
         return ok({ view: { tick: 10 + observes, colony: 0, secondsLeft: 900, squad: [{ antId: 7, tileX: 5, tileY: 1, hp: 4000 }], events: [],
