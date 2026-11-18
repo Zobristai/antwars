@@ -37,6 +37,8 @@ import type { VersionSource } from "./accounts/postMortemVersion.js";
 
 /** The built spectator page. */
 export const WEB_DIST = resolve(import.meta.dirname, "..", "web", "dist");
+/** A local match's stream (web/src/stream.ts LOCAL_STREAM_PATH); see startSpectatedServer. */
+export const LOCAL_WATCH_PATH = "/watch/live/local";
 
 /** The built Rules enhancement, read from the build manifest; a server without a build serves the script-free page. */
 export function readRulesAssets(dist = WEB_DIST): RulesAssets | undefined {
@@ -125,6 +127,14 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
     versions: options.postMortemVersions, jobs: createJobs() }) : undefined;
   const server = await startServer({ ...options, feed: entryPoint ? undefined : feed, postMortem });
   if (!entryPoint) server.mount("/live", (req, res) => hub.handle(req, res));
+  // A local match (README's "Run it locally": the held match, no slot, no store) has no lobby or catalog entry.
+  // Only this server serves LOCAL_WATCH_PATH, the hub's current match; store-backed servers gain no route.
+  const localMatch = !entryPoint && options.slot === undefined && options.accounts === undefined && options.watchRegistry === undefined;
+  if (localMatch) server.mount(LOCAL_WATCH_PATH, (req, res) => {
+    if (new URL(req.url ?? "/", "http://localhost").pathname !== LOCAL_WATCH_PATH) { res.writeHead(404).end(); return; }
+    req.url = "/live/current";
+    return hub.handle(req, res);
+  });
   if (options.accounts && options.watchRegistry) server.mount("/watch", watchRoutes({ accounts: options.accounts, registry: options.watchRegistry,
     hub, publicVisibility: options.publicVisibility, origin: options.slot?.publicUrl, archive: options.privateArchive, replays: options.replaySource, relayKey: options.relayKey }));
   if (options.replaySource !== undefined) server.mount("/replays", replayRoutes(options.replaySource, options.publicVisibility));
@@ -160,11 +170,10 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
     res.end(req.method === "HEAD" ? undefined : body);
   });
   // Inert page metadata is known before any UI mounts. Configuration is not a store health check.
-  // A local match (the held match, no slot) has no lobby or catalog entry: the page watches it at /live/current.
   server.mount("/", (req, res) => servePage(req, res, {
     lobbies: options.accounts !== undefined,
     publicMatches: options.accounts !== undefined && options.watchRegistry !== undefined,
-    localMatch: !entryPoint && options.slot === undefined,
+    localMatch,
   }));
   return {
     ...server,

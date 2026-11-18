@@ -24,8 +24,8 @@ export async function decodeData(data: string): Promise<StreamMessage> {
   return decodeMessage(new Uint8Array(await new Response(inflated).arrayBuffer()));
 }
 
-/** The local held match's stream (src/live/hub.ts /live/current), for a page whose server marks it local-match. */
-export const LOCAL_STREAM_PATH = "/live/current";
+/** The local held match's stream, served only by a server that marks its page local-match (src/spectator.ts). */
+export const LOCAL_STREAM_PATH = "/watch/live/local";
 
 /** Only stable lobby identities select streams; retired numeric match routes are never requested. */
 export function streamPath(params: URLSearchParams): string | null {

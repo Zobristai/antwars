@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 // README's "Run it locally": ANTWAR_RULES=redesign ANTWAR_PLAYERS=2 npm start, two agents, the spectator view at /.
-it("README's local route marks its page a local match and streams the running match at /live/current", async () => {
+it("README's local route marks its page a local match and streams the running match at /watch/live/local", async () => {
   // The comparison match copies its log to stdout; keep the test output readable.
   vi.spyOn(process.stdout, "write").mockImplementation((() => true) as typeof process.stdout.write);
   server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(),
@@ -36,7 +36,7 @@ it("README's local route marks its page a local match and streams the running ma
 
   const abort = new AbortController();
   readers.push(abort);
-  const stream = await fetch(`${origin}/live/current`, { signal: abort.signal });
+  const stream = await fetch(`${origin}/watch/live/local`, { signal: abort.signal });
   expect(stream.status).toBe(200);
   expect(stream.headers.get("content-type")).toBe("text/event-stream");
   expect(Number(stream.headers.get("x-antwar-match"))).toBe(server.game.match!.seq);

@@ -468,7 +468,7 @@ it.each(["expired", "future", "wrong route", "wrong board", "malformed"])("refus
   } finally { h.cleanup(); }
 });
 
-it("a local match's page plays /live/current without the catalog, saying the match is starting until its first frame", async () => {
+it("a local match's page plays /watch/live/local without the catalog, saying the match is starting until its first frame", async () => {
   vi.stubGlobal("Worker", BrowserWorker);
   const { doc, listeners } = documentPort();
   const line = { textContent: "Connecting…" };
@@ -486,7 +486,7 @@ it("a local match's page plays /live/current without the catalog, saying the mat
   expect(line.textContent).toBe("Live match starting");
   const source = (await opening)!;
   try {
-    expect(paths).toEqual(["/live/current"]);
+    expect(paths).toEqual(["/watch/live/local"]);
     expect(source.recorded).toBe(false);
     expect(source.head.full).not.toBeNull();
     expect(source.head.full!.result).toBeNull();
