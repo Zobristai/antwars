@@ -10,12 +10,20 @@ import { C } from "./copy.ts";
  * the name, the row or its place.
  */
 export function benchmarkLabel(row: Pick<LeaderboardRow, "displayName" | "thinkingLevel" | "serviceTier">): { readonly name: string; readonly badges: readonly string[] } {
-  const badges: string[] = [];
-  if (row.thinkingLevel != null) badges.push(row.thinkingLevel);
-  if (row.serviceTier?.toLowerCase() === "fast") badges.push(C.fastBadge);
-  if (isRetiredHouse(row.displayName)) badges.push(C.retiredBadge);
-  return { name: houseDisplayName(row.displayName), badges };
+  return { name: houseDisplayName(row.displayName), badges: badgeWords(benchmarkBadges(row)) };
 }
+
+/** A row's badges by kind, as benchmarkLabel words them: the level it reports, whether its speed tier is fast, and whether
+ * its handle is retired. Fast comes only from the tier, so a level that reads "fast" stays a level. */
+export interface BadgeKinds { readonly level: string | null; readonly fast: boolean; readonly retired: boolean }
+export const NO_BADGES: BadgeKinds = Object.freeze({ level: null, fast: false, retired: false });
+export function benchmarkBadges(row: Pick<LeaderboardRow, "displayName" | "thinkingLevel" | "serviceTier">): BadgeKinds {
+  return { level: row.thinkingLevel ?? null, fast: row.serviceTier?.toLowerCase() === "fast", retired: isRetiredHouse(row.displayName) };
+}
+/** Badges as words, in benchmarkLabel's order: the level, Fast, retired. */
+export const badgeWords = (kinds: BadgeKinds): string[] =>
+  [...(kinds.level !== null ? [kinds.level] : []), ...(kinds.fast ? [C.fastBadge] : []), ...(kinds.retired ? [C.retiredBadge] : [])];
+export const hasBadges = (kinds: BadgeKinds): boolean => kinds.level !== null || kinds.fast || kinds.retired;
 
 /** Wins–losses, with draws only for a player who has any; empty without a reconciled tally, never a partial one. */
 export function recordText(tally: LeaderboardTally | null): string {

@@ -17,7 +17,7 @@ import type { Recording } from "../../../web/src/recording.ts";
 import type { ReplayEvent } from "../../../web/src/replay-events.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
-import type { LiveMatch, Recording as MatchRecording, WaitingLobby } from "../../../web/src/matches-page/data.ts";
+import type { LiveMatch, Recording as MatchRecording, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { dom, ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
 
@@ -115,7 +115,7 @@ function mounted(names: ColonyNamePair | undefined, surface: Surface, moment: "e
 
 /** In the page: every visible text drawn in one of the colony colours, tagged, with its line boxes cut to what shows. */
 function findTexts(colours: string[]) {
-  const out: { i: number; text: string; rgb: string; opacity: number; interactive: boolean; background: string; shadow: string; badge: boolean; rects: { x: number; y: number; w: number; h: number }[] }[] = [];
+  const out: { i: number; text: string; rgb: string; opacity: number; interactive: boolean; background: string; shadow: string; badge: boolean; head: boolean; rects: { x: number; y: number; w: number; h: number }[] }[] = [];
   const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let i = 0;
   for (let n = tw.nextNode(); n; n = tw.nextNode()) {
@@ -143,7 +143,7 @@ function findTexts(colours: string[]) {
     if (rects.length === 0) continue;
     const interactive = el.closest("button,a[href],[role=button],.aw-mark-row");
     interactive?.setAttribute("data-ct", String(i));
-    out.push({ i, text: n.textContent.trim(), rgb: `${m[1]},${m[2]},${m[3]}`, opacity, interactive: !!interactive, background: ownStyle.backgroundColor, shadow: ownStyle.boxShadow, badge: el.matches(".d1p-result-tag"), rects });
+    out.push({ i, text: n.textContent.trim(), rgb: `${m[1]},${m[2]},${m[3]}`, opacity, interactive: !!interactive, background: ownStyle.backgroundColor, shadow: ownStyle.boxShadow, badge: el.matches(".d1p-result-tag"), head: !!el.closest(".d1p-rec-head"), rects });
     i++;
   }
   return out;
@@ -301,13 +301,13 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage(thinkingLevel: string | null = null, longName?: string) {
+function quadrantsPage(thinkingLevel: string | null = null, longName?: string, perColony?: number) {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
   const handles = longName ? Array<string>(4).fill(longName) : ["alice", "bob", "cat", "dan"];
-  const seats = handles.flatMap((handle, colony) => Array.from({ length: thinkingLevel === null ? 1 : 2 }, (_, index) => ({
+  const seats = handles.flatMap((handle, colony) => Array.from({ length: perColony ?? (thinkingLevel === null ? 1 : 2) }, (_, index) => ({
     seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
     thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
     ...(thinkingLevel === null ? {} : { startRating: { rating: 1500, rd: 80, ratedMatches: 12 } }),
@@ -337,8 +337,10 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             const extra = row.querySelector(".d1p-rec-extra")!;
             const rect = (node: Element) => { const b = node.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; };
             const bounds = rect(extra);
+            // On a wide card the shared head row's headings; on a narrow one, where it hides, each slot's own label.
             const heading = row.closest(".d1p-rec4")!.querySelector(".d1p-rec-head .d1p-rec-colony")!;
-            const style = getComputedStyle(heading);
+            const shown = getComputedStyle(row.closest(".d1p-rec4")!.querySelector(".d1p-rec-head")!).display !== "none";
+            const style = shown ? getComputedStyle(heading) : getComputedStyle(row.querySelector(".d1p-rec-slot[data-colony]")!, "::before");
             return { bounds, canonical: [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => ({ ...rect(slot), empty: slot.classList.contains("is-none") })),
               meta: rect(row.querySelector(".d1p-rec-meta")!), replay: rect(row.querySelector(".d1p-rec-replay")!),
               labels: [...extra.querySelectorAll(".d1p-rec-colony")].map(node => {
@@ -350,8 +352,9 @@ describe("Recordings keep other stored colony names outside canonical columns", 
                   clipped: node.scrollWidth > node.clientWidth, whiteSpace: s.whiteSpace, overflow: s.overflowX, textOverflow: s.textOverflow,
                   size: s.fontSize, weight: s.fontWeight, expectedSize: style.fontSize, expectedWeight: style.fontWeight, background: s.backgroundColor };
               }),
-              players: [...extra.querySelectorAll(".d1p-rec-player")].map(node => ({ ...rect(node), colour: getComputedStyle(node).color,
-                lost: node.parentElement!.classList.contains("is-lost"), quiet: getComputedStyle(row.querySelector(".d1p-rec-time")!).color })),
+              players: [...extra.querySelectorAll(".d1p-rec-player")].map(node => rect(node)),
+              labelInk: [...extra.querySelectorAll(".d1p-rec-colony")].map(node => getComputedStyle(node).color),
+              quiet: getComputedStyle(row.querySelector(".d1p-rec-time")!).color,
             };
           }));
           expect(rows).toHaveLength(2);
@@ -361,8 +364,8 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             expect(row.labels).toHaveLength(names[1] === "Very Large Colony" ? 1 : 2);
             for (const label of row.labels) {
               expect(names).toContain(label.title);
-              // Row labels keep 10.5 px on a phone; only the shared headings above the rows are 10 px there.
-              expect(label.size).toBe(width === 390 ? "10.5px" : label.expectedSize);
+              // A supplemental colony's label takes the colony labels' size and weight, in the neutral quiet ink.
+              expect(label.size).toBe(label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
               expect(label.lines).toBe(1);
@@ -378,8 +381,8 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             for (const player of row.players) {
               expect(player.left).toBeGreaterThanOrEqual(row.bounds.left);
               expect(player.right).toBeLessThanOrEqual(row.bounds.right);
-              if (player.lost) expect(player.colour).toBe(player.quiet);
             }
+            for (const ink of row.labelInk) expect(ink).toBe(row.quiet);
             expect(row.bounds.top).toBeGreaterThanOrEqual(Math.max(...row.canonical.map(slot => slot.bottom)));
             if (width === 390) {
               expect(row.meta.top).toBeGreaterThanOrEqual(row.bounds.bottom);
@@ -401,23 +404,25 @@ describe("Recordings contain a self-reported thinking level", () => {
       try {
         await tab.setContent(quadrantsPage(longLevel).page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const rows = await tab.locator(".d1p-rec-level").evaluateAll(nodes => nodes.map(node => {
+        const rows = await tab.locator(".d1p-rec-badges > .d1p-tags").evaluateAll(nodes => nodes.map(node => {
           const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
           const style = getComputedStyle(node);
-          const line = node.closest(".d1p-rec-player")!;
-          return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
-            overflow: style.overflowX, textOverflow: style.textOverflow,
-            count: line.querySelector(".d1p-rec-count")?.textContent, rating: line.querySelector(".d1p-rec-rating")?.textContent,
+          const line = node.closest(".d1p-rec-badges")!;
+          return { text: [...node.children].map(tag => tag.textContent).join(" "), title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
+            overflow: style.overflowX,
+            count: line.querySelector(".d1p-count")?.textContent, rating: line.querySelector(".d1p-elo-badge")?.textContent,
             children: [...line.children].map(child => { const box = child.getBoundingClientRect();
               return { text: child.textContent, leftInset: box.left - slot.left, rightInset: slot.right - box.right }; }) };
         }));
         expect(rows).toHaveLength(16);
         for (const row of rows) {
+          // One badge: the level with Fast as its bolt, read in full.
           expect(row.text).toBe(`${longLevel} Fast`);
           expect(row.title).toBe(`${longLevel} Fast`);
+          // Past what any real level needs, the badges stop at 12em, short of the count and the rating, clipped; their whole
+          // text is their title.
           expect(row.clipped).toBe(true);
           expect(row.overflow).toBe("hidden");
-          expect(row.textOverflow).toBe("ellipsis");
           expect(row.count).toContain("×2");
           expect(row.rating).toContain("1500");
           for (const child of row.children) {
@@ -431,45 +436,155 @@ describe("Recordings contain a self-reported thinking level", () => {
   }
 });
 
-describe("Recordings keep the complete player name behind one-line ellipsis", () => {
+/** Each Matches player line (Recordings, Waiting, Live now) as drawn: how many lines its visible text and badges take,
+ * whether its name ends in its ellipsis, and whether it stands inside its slot or cell. */
+const PLAYER_LINES = () => [...document.querySelectorAll(".d1p-rec-player, .d1p-model")].filter(node => node.checkVisibility()).map(node => {
+  const boxes: DOMRect[] = [];
+  const walk = (parent: Node) => { for (const child of parent.childNodes) {
+    if (child.nodeType === 3) { if (!child.textContent!.trim()) continue; const range = document.createRange(); range.selectNodeContents(child); boxes.push(...[...range.getClientRects()].filter(box => box.width > 0.5)); }
+    else if (child instanceof Element) { if (child.matches(".d1p-sr, .d1p-elo-rd") || !child.checkVisibility()) continue; if (child.matches(".d1p-tag, .d1-tag, .d1p-bolt")) boxes.push(child.getBoundingClientRect()); walk(child); }
+  } };
+  walk(node);
+  const centres = boxes.map(box => (box.top + box.bottom) / 2).sort((a, b) => a - b);
+  let lines = 0, last = -Infinity;
+  for (const centre of centres) { if (centre - last > 6) lines++; last = centre; }
+  const name = node.querySelector(":scope > .d1p-rec-name, :scope > :first-child")!;
+  const holder = (node.closest(".d1p-rec-slot") ?? node.parentElement!).getBoundingClientRect(), own = node.getBoundingClientRect();
+  return { text: `${node.textContent!.replace(/\s+/g, " ").trim()} (name ${name.scrollWidth}/${name.clientWidth}, line ${Math.round(node.getBoundingClientRect().width)})`, lines, nameCut: name.scrollWidth > name.clientWidth + 1,
+    inside: own.left >= holder.left - 0.5 && own.right <= holder.right + 0.5,
+    title: name.getAttribute("title"), nameStyle: [getComputedStyle(name).whiteSpace, getComputedStyle(name).overflowX, getComputedStyle(name).textOverflow] };
+});
+
+/** Every colony cell's padding and its player lines' spacing: a Recordings slot, a table's colony cell, or a stacked row's
+ * colonies (whose edges are its row's). Painted content is text runs and badge boxes, screen-reader text left out. */
+const CELL_SPACING = () => {
+  const shown = (node: Element) => node.checkVisibility() && !node.closest(".d1p-sr, .d1p-elo-rd, .d1p-colony-tail");
+  const boxesOf = (root: Element) => { const out: { left: number; right: number }[] = [];
+    const walk = (parent: Node) => { for (const child of parent.childNodes) {
+      if (child.nodeType === 3) { if (!child.textContent!.trim() || !shown(child.parentElement!)) continue; const range = document.createRange(); range.selectNodeContents(child); out.push(...[...range.getClientRects()].filter(box => box.width > 0.5)); }
+      else if (child.nodeType === 1 && shown(child as Element)) { if ((child as Element).matches(".d1p-tag, .d1-tag, .d1p-elo-badge")) out.push((child as Element).getBoundingClientRect()); walk(child); } } };
+    walk(root); return out; };
+  const gap = parseFloat(getComputedStyle(document.querySelector(".d1p-card")!).getPropertyValue("--d1p-cell-gap"));
+  const cells = [...document.querySelectorAll(".d1p-rec-slot, td.c-model, .d1p-match-rows .d1p-colonies")].filter(node => node.checkVisibility()).flatMap(node => {
+    const edge = node.matches(".d1p-colonies") ? node.closest("li")! : node, box = edge.getBoundingClientRect(), style = getComputedStyle(edge);
+    const content = boxesOf(node); if (content.length === 0) return [];
+    const ended = !!node.querySelector(".d1p-rec-badges > .d1p-elo-badge");
+    return [{ text: node.textContent!.replace(/\s+/g, " ").trim(), padLeft: parseFloat(style.paddingLeft), padRight: parseFloat(style.paddingRight),
+      left: Math.min(...content.map(b => b.left)) - box.left, right: box.right - Math.max(...content.map(b => b.right)), ended }];
+  });
+  const lines = [...document.querySelectorAll(".d1p-rec-player, .d1p-model")].filter(shown).map(line => {
+    const parts = [...line.querySelectorAll(".d1p-rec-name, .d1p-name, .d1p-tag, .d1p-count, .d1p-elo-badge")].filter(part => shown(part) && !part.parentElement!.closest(".d1p-tag, .d1p-elo-badge"))
+      .map(part => { const boxes = part.matches(".d1p-rec-name, .d1p-name, .d1p-count") ? boxesOf(part) : [part.getBoundingClientRect()];
+        return { left: Math.min(...boxes.map(b => b.left)), right: Math.max(...boxes.map(b => b.right)), pushed: part.matches(".d1p-rec-badges > .d1p-elo-badge") }; })
+      .filter(part => Number.isFinite(part.left)).sort((a, b) => a.left - b.left);
+    // A rating set at a Recordings slot's end follows free space, not a gap.
+    const spaced = parts.filter(part => !part.pushed);
+    return { text: line.textContent!.replace(/\s+/g, " ").trim(), gaps: spaced.slice(1).map((part, i) => part.left - spaced[i]!.right) };
+  });
+  // On a wide card, the last slot (a winner's tint, or its text) and the Replay link stand at least the gap apart.
+  const replay = [...document.querySelectorAll(".d1p-rec-rows > li")].filter(row => row.checkVisibility() && getComputedStyle(row).gridTemplateColumns.split(" ").length > 1).map(row => {
+    const slot = [...row.querySelectorAll(":scope > .d1p-rec-slot")].at(-1)!, link = row.querySelector(".d1p-rec-replay")!;
+    const right = slot.matches(".is-won") ? slot.getBoundingClientRect().right : Math.max(...boxesOf(slot).map(b => b.right));
+    const range = document.createRange(); range.selectNodeContents(link);
+    return range.getBoundingClientRect().left - right;
+  });
+  return { gap, cells, lines, replay };
+};
+
+describe("every Matches colony cell keeps one padding on both sides", () => {
   for (const width of [1280, 390]) {
-    it(`contains long builder/model names and preserves hover and accessible text at ${width}px`, async () => {
+    it(`pads each cell alike on its left and right, sets a rating at the cell's end that padding from its edge, and spaces every part of a line by it, at ${width}px`, async () => {
+      for (const page of [quadrantsPage("max", "CedarGrove", 1).page, matchesPage(undefined).page]) {
+        const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+        try {
+          await tab.setContent(page);
+          await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+          await tab.evaluate(() => document.fonts.ready);
+          const { gap, cells, lines, replay } = await tab.evaluate(CELL_SPACING);
+          expect(gap).toBeGreaterThan(4);
+          expect(cells.length).toBeGreaterThan(0);
+          for (const cell of cells) {
+            expect(cell.padLeft, cell.text).toBe(cell.padRight);
+            expect(cell.left, cell.text).toBeGreaterThanOrEqual(cell.padLeft - 0.5);
+            expect(cell.right, cell.text).toBeGreaterThanOrEqual(cell.padRight - 0.5);
+            if (cell.ended) expect(cell.right, cell.text).toBeCloseTo(cell.padRight, 0);
+          }
+          expect(lines.length).toBeGreaterThan(0);
+          for (const line of lines) for (const between of line.gaps) expect(between, line.text).toBeCloseTo(gap, 0);
+          for (const clear of replay) expect(clear).toBeGreaterThanOrEqual(gap - 0.5);
+        } finally { await tab.close(); }
+      }
+    });
+  }
+});
+
+describe("every Matches player is one line", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps username, model, level with Fast, seats and rating on one line, uncut, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        // The widest real player on the public list (one seat per colony, so no seat count): a builder, its model, max and
+        // Fast, and its rating; in the face that sets it widest.
+        await tab.setContent(quadrantsPage("max", "CedarGrove", 1).page);
+        await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+        await tab.evaluate(() => document.fonts.ready);
+        const lines = await tab.evaluate(PLAYER_LINES);
+        // Four recordings, a CedarGrove seat in each colony.
+        expect(lines.filter(line => line.text.startsWith("CedarGrove"))).toHaveLength(16);
+        for (const line of lines) {
+          expect(line.lines, line.text).toBe(1);
+          expect(line.nameCut, line.text).toBe(false);
+          expect(line.inside, line.text).toBe(true);
+        }
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      } finally { await tab.close(); }
+    });
+
+    it(`gives way only in the name, past any real length, keeping its text whole for hover and screen readers, at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
         await tab.setContent(quadrantsPage("m".repeat(32), "long-builder-" + "x".repeat(64)).page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const names = tab.locator(".d1p-rec-name");
-        expect(await names.count()).toBe(16);
-        for (const name of await names.all()) {
-          const result = await name.evaluate(node => {
-            const style = getComputedStyle(node), rect = node.getBoundingClientRect();
-            const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
-            const range = document.createRange(); range.selectNodeContents(node);
-            return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
-              whiteSpace: style.whiteSpace, overflow: style.overflowX, ellipsis: style.textOverflow,
-              lines: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size,
-              left: rect.left - slot.left, right: slot.right - rect.right, width: rect.width };
-          });
-          expect(result.text).toContain("long-builder-" + "x".repeat(64));
-          expect(result.title).toBe(result.text);
-          expect(result.lines).toBe(1);
-          expect(result.whiteSpace).toBe("nowrap");
-          expect(result.overflow).toBe("hidden");
-          expect(result.ellipsis).toBe("ellipsis");
-          expect(result.clipped).toBe(true);
-          expect(result.width).toBeGreaterThan(0);
-          expect(result.left).toBeGreaterThanOrEqual(0);
-          expect(result.right).toBeGreaterThanOrEqual(0);
-          expect(await name.ariaSnapshot()).toContain(result.text!);
+        const lines = (await tab.evaluate(PLAYER_LINES)).filter(line => line.text.startsWith("long-builder-"));
+        expect(lines).toHaveLength(16);
+        for (const line of lines) {
+          expect(line.lines, line.text).toBe(1);
+          expect(line.nameCut).toBe(true);
+          expect(line.nameStyle).toEqual(["nowrap", "hidden", "ellipsis"]);
+          expect(line.title).toContain("long-builder-" + "x".repeat(64));
+          expect(line.inside).toBe(true);
         }
+        for (const name of await tab.locator(".d1p-rec-name").all()) expect(await name.ariaSnapshot()).toContain("long-builder-" + "x".repeat(64));
         expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
       } finally { await tab.close(); }
     });
   }
 });
 
-describe("Recordings colony headings stay inside their columns", () => {
+describe("the Fast bolt shows in forced colours", () => {
   for (const width of [1280, 390]) {
+    it(`fills every shown bolt in its badge's text colour, not its background, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(quadrantsPage("max", "CedarGrove", 1).page);
+        await tab.emulateMedia({ forcedColors: "active" });
+        const bolts = await tab.evaluate(() => [...document.querySelectorAll<HTMLElement>(".d1p-bolt")].filter(bolt => bolt.checkVisibility()).map(bolt => {
+          const badge = getComputedStyle(bolt.closest(".d1p-tag")!), rect = bolt.getBoundingClientRect();
+          return { fill: getComputedStyle(bolt).backgroundColor, ink: badge.color, ground: badge.backgroundColor, size: rect.width * rect.height };
+        }));
+        expect(bolts.length, "bolts are shown").toBeGreaterThan(0);
+        for (const bolt of bolts) {
+          expect(bolt.size).toBeGreaterThan(0);
+          expect(bolt.fill).toBe(bolt.ink);
+          expect(bolt.fill).not.toBe(bolt.ground);
+        }
+      } finally { await tab.close(); }
+    });
+  }
+});
+
+describe("Recordings colony headings stay inside their columns", () => {
+  for (const width of [1280]) {
     it(`keeps complete one-line headings within each slot at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 }, deviceScaleFactor: 3 });
       try {
@@ -510,9 +625,114 @@ describe("Recordings colony headings stay inside their columns", () => {
           expect(row.whiteSpace).toBe("nowrap");
           expect(row.overflow).toBe("visible");
           expect(row.textOverflow).not.toBe("ellipsis");
-          expect(row.size).toBe(width === 390 ? "10px" : "11px");
-          expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.85 : 0.99, 2);
-          if (width === 390) expect(row.width).toBe(75);
+          expect(row.size).toBe("11px");
+          expect(parseFloat(row.spacing)).toBeCloseTo(0.99, 2);
+        }
+      } finally { await tab.close(); }
+    });
+  }
+
+  it("on a phone hides the shared head and gives each colony its own line, beside its column's name, whole, in the neutral ink", async () => {
+    const tab = await browser.newPage({ viewport: { width: 390, height: 2400 }, deviceScaleFactor: 3 });
+    try {
+      await tab.setContent(quadrantsPage().page);
+      await tab.addStyleTag({ content: 'html, body { margin: 0; } .d1p-rec-slot::before { font-family: "Liberation Sans", sans-serif; }' });
+      await tab.evaluate(() => document.fonts.ready);
+      const view = await tab.evaluate(() => ({
+        head: getComputedStyle(document.querySelector(".d1p-rec-head")!).display,
+        quiet: getComputedStyle(document.querySelector(".d1p-rec-time")!).color,
+        rows: [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => {
+          const before = getComputedStyle(slot, "::before"), box = slot.getBoundingClientRect();
+          const player = slot.querySelector(".d1p-rec-player")?.getBoundingClientRect();
+          return { label: before.content, colour: before.color, whiteSpace: before.whiteSpace, transform: before.textTransform,
+            labelWidth: parseFloat(before.width), column: parseFloat(getComputedStyle(slot).gridTemplateColumns),
+            overflowing: slot.scrollWidth > slot.clientWidth, left: Math.round(box.left), top: Math.round(box.top), bottom: Math.round(box.bottom),
+            playerTop: player ? Math.round(player.top) : null };
+        })),
+      }));
+      expect(view.head).toBe("none");
+      expect(view.rows.length).toBeGreaterThan(0);
+      for (const slots of view.rows) {
+        expect(slots.map(slot => slot.label)).toEqual(SUPERCOLONY_NAMES.map(name => `"${name.label.replace(/ Colony$/, "")}"`));
+        // One colony a line, in the columns' order, each line under the last.
+        expect(new Set(slots.map(slot => slot.left)).size).toBe(1);
+        for (let index = 1; index < slots.length; index++) expect(slots[index]!.top).toBeGreaterThanOrEqual(slots[index - 1]!.bottom);
+        for (const slot of slots) {
+          expect(slot.colour).toBe(view.quiet);
+          expect(slot.whiteSpace).toBe("nowrap");
+          expect(slot.transform).toBe("uppercase");
+          expect(slot.labelWidth).toBeLessThanOrEqual(slot.column);
+          expect(slot.overflowing).toBe(false);
+        }
+      }
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    } finally { await tab.close(); }
+  });
+});
+
+describe("Recordings on a phone list only the colonies that played", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps four fixed columns, a dash for a colony not in the match, on a wide card, and only the played colonies' lines on a phone, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        // A 1v1 (two colonies) and a four-colony match.
+        await tab.setContent(matchesPage(undefined).page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const shown = () => [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => [...row.querySelectorAll(":scope > .d1p-rec-slot")]
+          .filter(slot => slot.checkVisibility()).map(slot => ({ colony: slot.getAttribute("data-colony"), dash: !!slot.querySelector(".d1p-rec-dash") })));
+        const pair = await tab.evaluate(shown);
+        expect(pair).toHaveLength(2);
+        for (const row of pair) {
+          if (width === 1280) expect(row.map(slot => slot.dash)).toEqual([false, false, true, true]);
+          else expect(row).toEqual([{ colony: "Very Large", dash: false }, { colony: "Lake Hodges", dash: false }]);
+        }
+        await tab.setContent(quadrantsPage().page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        for (const row of await tab.evaluate(shown)) expect(row.map(slot => slot.dash)).toEqual([false, false, false, false]);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
+/** The Matches page with a one-colony Waiting row (a queued agent with no opponent yet) and a partial four-colony recording
+ * whose last colony nobody joined. */
+function absentColoniesPage() {
+  const port = dom({ search: "" });
+  const host = port.doc.createElement("div") as unknown as ElementPort;
+  port.body.append(host);
+  const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
+  const seats = ["alice", "bob", "cat"].map((handle, colony) => ({ seat: colony, colony: colony as 0 | 1 | 2, modelLabel: null, thinkingLevel: null, serviceTier: null, handle }));
+  const partial: MatchRecording = { id: "2026-11-14T07-00-00-000Z-1", startedAt: "2026-11-14T07:00:00.000Z", endedAt: null, simulationEndedAt: null, winner: null,
+    reason: null, decidedBy: null, seats, status: "partial", unavailable: [], matchType: { kind: "quadrants", size: 1 }, colonyNames: names };
+  const queued: WaitingAgent = { displayName: "coffee-ant", mode: "1v1", waitingSeconds: 90, since: Date.parse("2026-11-11T05:01:00Z"), rating: null };
+  const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
+  mounted.update({ waiting: { status: "ready", rows: [queued] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows: [partial] }, next: null });
+  const body = markup(host);
+  mounted.destroy();
+  return `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>`;
+}
+
+describe("a phone lists no line for a colony nobody joined", () => {
+  for (const width of [1280, 390]) {
+    it(`keeps the partial recording's and the Waiting row's empty colony in its wide column, and gives it no line on a phone, at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(absentColoniesPage());
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const seen = await tab.evaluate(() => {
+          const visible = (node: Element) => node.checkVisibility();
+          const slots = [...document.querySelectorAll(".d1p-rec-rows > li > .d1p-rec-slot")].filter(visible).map(slot => slot.textContent ?? "");
+          const card = document.querySelectorAll(".d1p-card")[0]!;
+          const waiting = [...card.querySelectorAll(".d1p-model")].filter(visible).map(line => line.textContent ?? "");
+          return { slots, waiting };
+        });
+        if (width === 1280) {
+          expect(seen.slots.map(text => text.includes("did not join"))).toEqual([false, false, false, true]);
+          expect(seen.waiting).toEqual(["coffee-ant", "no opponent yet"]);
+        } else {
+          expect(seen.slots).toHaveLength(3);
+          expect(seen.slots.join(" ")).not.toContain("did not join");
+          expect(seen.waiting).toEqual(["coffee-ant"]);
         }
       } finally { await tab.close(); }
     });
@@ -527,10 +747,13 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
       expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
       expectNoBacking(rows);
       const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
-      // Live keeps the full name; Recordings shows one shared short heading in the same original colony ink.
+      // Live names each colony ("Very Large", then its " Colony"), and Recordings' shared head shows the short name, both in
+      // the same original colony ink.
       for (const { label, colour } of SUPERCOLONY_NAMES) {
-        expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
-        expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
+        const short = rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest");
+        expect(short.filter(r => !r.head).map(r => r.rgb)).toEqual([rgb(colour)]);
+        // On a phone the shared head hides; each slot's label there is in the neutral ink.
+        expect(short.filter(r => r.head).map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb(colour)]);
       }
       expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
     });
@@ -548,7 +771,7 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
         // The shared header names all four colonies once, regardless of the pair these recordings used.
         SUPERCOLONY_NAMES.forEach(({ label, colour }) => {
           const rgb = [(colour >> 16) & 255, (colour >> 8) & 255, colour & 255].join(",");
-          expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual([rgb]);
+          expect(rows.filter(r => r.head && r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb]);
         });
         expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
         expect(body, "no row draws a text backing").not.toContain("data-aw-ground");
