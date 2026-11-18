@@ -102,7 +102,8 @@ describe.each(OUTAGES)("while the match server %s", (_label, outage, todayError)
     expect(r.calls).toEqual(["initialize", "join", "observe"]);
     expect(s.fake.toolCalls("join").at(-1).args.key).toBe(KEY);
     expect(s.fake.outageHits.map((hit) => hit.tool ?? hit.method)).toContain(on);
-    expect(s.state("status.json").step).toBe("rejoined");
+    // The re-join is logged, then the completed observe of the started match moves status on to match_started.
+    expect(readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step).slice(-2)).toEqual(["rejoined", "match_started"]);
     expect(r.elapsedMs).toBeGreaterThanOrEqual(45_000);
     expect(r.elapsedMs).toBeLessThan(60_000);
   });
@@ -277,7 +278,8 @@ describe("a 404 to the initialized notification", () => {
     expect(s.fake.toolCalls("join").at(-1).args.key).toBe(KEY);
     const steps = readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(steps.filter((line) => line.step === "session_gone").map((line) => line.method)).toEqual(["tools/call", "notifications/initialized"]);
-    expect(s.state("status.json").step).toBe("rejoined");
+    // The re-join is logged, then the completed observe of the started match moves status on to match_started.
+    expect(readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step).slice(-2)).toEqual(["rejoined", "match_started"]);
     expect(r.elapsedMs).toBeLessThan(60_000);
   });
 
