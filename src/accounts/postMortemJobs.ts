@@ -8,9 +8,10 @@
  * with a numeric memory.max leaves that limit less its own memory.current. A configured limit (ANTWAR_MEMORY_LIMIT, the
  * same quantity deploy/cloud-run/deploy.sh gives --memory) leaves that limit less this process's own control group's
  * memory.current. The headroom is the smallest of these; with no numeric level the configured limit is required. Where
- * the control groups cannot be read or parsed at all, the configured limit alone is used, less this process's own
- * resident memory and that of its running re-run child. There is no default: no usable limit, a configured limit that
- * cannot be parsed, or a reading that cannot be taken admits nothing and stops a running child.
+ * any control-group reading cannot be taken or parsed, the configured limit less this process's own resident memory and
+ * that of its running re-run child stands in for the configured reading, and the headroom is the smallest of it and every
+ * level that was read. There is no default: no usable limit, a configured limit that cannot be parsed, or a reading that
+ * cannot be taken without one admits nothing and stops a running child.
  * A re-run starts only while the headroom holds the child's reserve (its V8 heap cap's measured peak), two scans and the
  * margin, checked afresh before each attempt, and a watchdog reading the meter every 50 ms kills the child once the
  * headroom falls below the margin. These figures were measured in tests, not in production.
@@ -119,7 +120,10 @@ export function ownCgroup(cgroupText: string, mountinfoText: string): { dir: str
   return inside ? { dir, mount } : null;
 }
 
-/** "process": the configured limit, less this process's and its running child's resident memory (no control group read). */
+/**
+ * "process": a control-group reading failed; the configured limit less this process's and its running child's resident
+ * memory, capped by every control-group level that was read.
+ */
 export type LimitSource = "numeric" | "configured" | "both" | "process";
 export interface MemoryReading { readonly headroomMiB: number; readonly source: LimitSource }
 /**
@@ -155,24 +159,28 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
   const configured = "configured" in options ? options.configured : process.env[MEMORY_LIMIT_ENV];
   const ownBytes = options.processBytes ?? processBytes;
   const read = (file: string): string | null => { try { return readFileSync(file, "utf8"); } catch { return null; } };
-  /** The headroom of each numeric level, and of the configured limit less the own group's usage; null where any cannot be read. */
-  const groups = (configuredBytes: number | null): { headrooms: number[]; numeric: boolean } | null => {
-    const cgroupText = read(cgroupFile), mountinfoText = read(mountinfoFile);
-    if (cgroupText === null || mountinfoText === null) return null;
-    const own = ownCgroup(cgroupText, mountinfoText);
-    if (own === null) return null;
+  /**
+   * The headroom of each numeric level, and of the configured limit less the own group's usage. `complete` is false where
+   * any reading cannot be taken or parsed; `headrooms` then holds every level read before it.
+   */
+  const groups = (configuredBytes: number | null): { headrooms: number[]; numeric: boolean; complete: boolean } => {
     const headrooms: number[] = [];
     let numeric = false;
+    const partial = () => ({ headrooms, numeric, complete: false });
+    const cgroupText = read(cgroupFile), mountinfoText = read(mountinfoFile);
+    if (cgroupText === null || mountinfoText === null) return partial();
+    const own = ownCgroup(cgroupText, mountinfoText);
+    if (own === null) return partial();
     for (let dir = own.dir; ; dir = resolve(dir, "..")) {
       const maxText = read(`${dir}/memory.max`);
       if (maxText === null) {
         // Only the mount's root may have no memory.max.
-        if (dir !== own.mount) return null;
+        if (dir !== own.mount) return partial();
       } else if (maxText !== "max\n" && maxText !== "max") {
         const limit = parseCgroupBytes(maxText);
-        if (limit === null || limit <= 0) return null;
+        if (limit === null || limit <= 0) return partial();
         const current = parseCgroupBytes(read(`${dir}/memory.current`));
-        if (current === null) return null;
+        if (current === null) return partial();
         numeric = true;
         headrooms.push(limit - current);
       }
@@ -180,10 +188,10 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
     }
     if (configuredBytes !== null) {
       const current = parseCgroupBytes(read(`${own.dir}/memory.current`));
-      if (current === null) return null;
+      if (current === null) return partial();
       headrooms.push(configuredBytes - current);
     }
-    return { headrooms, numeric };
+    return { headrooms, numeric, complete: true };
   };
   return (children = []) => {
     let configuredBytes: number | null = null;
@@ -191,14 +199,14 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
       configuredBytes = parseMemoryQuantity(configured);
       if (configuredBytes === null) return null;
     }
-    const group = groups(configuredBytes);
-    if (group === null) {
-      // The control groups cannot be read: the configured limit alone, less this process's and its child's memory.
+    const { headrooms, numeric, complete } = groups(configuredBytes);
+    if (!complete) {
+      // A control-group reading failed: the configured limit less this process's and its child's memory, capped by
+      // every level that was read.
       if (configuredBytes === null) return null;
       const used = ownBytes(children);
-      return used === null ? null : { headroomMiB: (configuredBytes - used) / MIB, source: "process" };
+      return used === null ? null : { headroomMiB: Math.min(configuredBytes - used, ...headrooms) / MIB, source: "process" };
     }
-    const { headrooms, numeric } = group;
     if (headrooms.length === 0) return null;
     return { headroomMiB: Math.min(...headrooms) / MIB, source: numeric && configuredBytes !== null ? "both" : numeric ? "numeric" : "configured" };
   };
@@ -284,7 +292,7 @@ type Attempt = Exclude<ChildMessage, { kind: "progress" }> | { readonly kind: "s
 
 const LIMIT_SOURCE: Record<LimitSource, string> = {
   both: "the control group and the configured limit", numeric: "the control group", configured: "the configured limit",
-  process: "the configured limit, less this process's own memory (no control group could be read)",
+  process: "the configured limit, less this process's own memory, and any control group read (the control groups could not all be read)",
 };
 
 export function createJobs(options: JobsOptions = {}): PostMortemJobs {
