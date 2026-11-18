@@ -223,6 +223,18 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.byClass("rd-numbers").map(n => n.textContent)).toEqual(["1860 (0)", ""]);
   });
 
+  it("shows a scripted seat in a rated match with no rating or change, and a model seat's as before", () => {
+    const { dialog, show } = mount();
+    const f = frameOf({ ended: true, rated: true });
+    // The board shows a scripted seat (no model) as Scripted bot (scripted-seat.ts shownAgent).
+    f.board!.agents = [f.board!.agents[0]!, { ...f.board!.agents[1]!, identity: { displayName: "Scripted bot" }, modelLabel: "" }];
+    f.board!.result!.ratingChanges = [{ agent: 0, before: 1850.2, after: 1860.3 }, { agent: 1, before: 1850.4, after: 1830.1 }];
+    show(f);
+    expect(dialog.byClass("rd-numbers").map(n => n.textContent)).toEqual(["1860 (+10)", ""]);
+    expect(dialog.byClass("d1-ratings")[0]!.textContent).toContain("Scripted bot");
+    expect(dialog.byClass("d1-ratings")[0]!.textContent).not.toMatch(/1830|−20/);
+  });
+
   it("keeps the existing pending-rating message until the played result supplies changes", () => {
     const { dialog, show } = mount();
     const f = frameOf({ ended: true, rated: true });

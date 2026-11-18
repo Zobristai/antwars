@@ -33,6 +33,59 @@ describe("private public-visibility configuration", () => {
     expect(await policy.lobbyVisible("mixed")).toBe(false);
     expect(docs.get("identities/child")?.nameState).toBe("purged");
   });
+  it("answers many checks with one identities read, leaving excluded ids unread", async () => {
+    const { store, docs } = memoryWatchStore();
+    docs.set("identities/child", { kind: "handle", ownerId: owner });
+    docs.set(`identities/${other}`, { kind: "username" });
+    let reads = 0;
+    const counted = { ...store, transaction: ((step: never) => { reads++; return store.transaction(step); }) as typeof store.transaction };
+    const policy = createPublicVisibility(counted, registry, [owner])!;
+    expect(await policy.identitiesVisibleEach([owner, "child", other, other])).toEqual(new Map([[owner, false], ["child", false], [other, true]]));
+    expect(reads).toBe(1);
+    const lobbies = new Map([
+      ["mixed", { seats: JSON.stringify([{ id: other }, { id: "child" }]) }],
+      ["direct", { seats: JSON.stringify([{ id: owner }, { id: "unread" }]) }],
+      ["clear", { seats: JSON.stringify([{ id: other }]) }],
+      ["empty", { seats: "[]" }],
+    ]);
+    expect(await policy.lobbiesVisibleEach(lobbies)).toEqual(new Map([["mixed", false], ["direct", false], ["clear", true], ["empty", true]]));
+    expect(reads).toBe(2);
+    expect(await policy.identitiesVisibleEach([owner])).toEqual(new Map([[owner, false]]));
+    expect(reads).toBe(2);
+  });
+  it("fails a batch on any unreadable or malformed record", async () => {
+    const { store, docs } = memoryWatchStore();
+    docs.set(`identities/${other}`, { kind: "username" });
+    docs.set("identities/odd", { kind: "handle" });
+    const policy = createPublicVisibility(store, registry, [owner])!;
+    const failed = "Public visibility temporarily unavailable";
+    await expect(policy.identitiesVisibleEach([other, "missing"])).rejects.toThrow(failed);
+    await expect(policy.identitiesVisibleEach([other, "odd"])).rejects.toThrow(failed);
+    const seats = (ids: string[]) => ({ seats: JSON.stringify(ids.map(id => ({ id }))) });
+    await expect(policy.lobbiesVisibleEach(new Map([["a", seats([other])], ["b", null]]))).rejects.toThrow(failed);
+    await expect(policy.lobbiesVisibleEach(new Map([["a", seats([other])], ["b", { seats: "{" }]]))).rejects.toThrow(failed);
+    await expect(policy.lobbiesVisibleEach(new Map([["a", { seats: JSON.stringify([{ name: "x" }]) }]]))).rejects.toThrow(failed);
+  });
+  it("fails on a lobby without recorded seats", async () => {
+    const { store, docs } = memoryWatchStore();
+    docs.set(`identities/${other}`, { kind: "username" });
+    docs.set("lobbies/unseated", { startsAt: "1760000000000" });
+    const policy = createPublicVisibility(store, registry, [owner])!;
+    const failed = "Public visibility temporarily unavailable";
+    await expect(policy.lobbyVisible("unseated")).rejects.toThrow(failed);
+    await expect(policy.lobbiesVisibleEach(new Map<string, Record<string, string>>([["a", { seats: JSON.stringify([{ id: other }]) }], ["b", { startsAt: "1" }]])))
+      .rejects.toThrow(failed);
+  });
+  it.each(["not-an-id", "0000000A-0000-4000-8000-00000000000B", ` ${owner}`])("fails on a handle whose owner id is malformed: %j", async ownerId => {
+    const { store, docs } = memoryWatchStore();
+    docs.set("identities/leaf", { kind: "handle", ownerId });
+    docs.set("lobbies/played", { seats: JSON.stringify([{ id: "leaf" }]) });
+    const policy = createPublicVisibility(store, registry, [owner])!;
+    const failed = "Public visibility temporarily unavailable";
+    await expect(policy.identitiesVisible(["leaf"])).rejects.toThrow(failed);
+    await expect(policy.identitiesVisibleEach(["leaf"])).rejects.toThrow(failed);
+    await expect(policy.lobbyVisible("played")).rejects.toThrow(failed);
+  });
   it("treats failed or pending membership as unavailable, with no negative cache", async () => {
     const { store, docs } = memoryWatchStore();
     const policy = createPublicVisibility(store, { replayLobby: async () => ({ state: "pending" }) }, [owner])!;

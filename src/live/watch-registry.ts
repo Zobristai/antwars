@@ -19,11 +19,16 @@ export interface WatchMatch extends CatalogMatch {
    * absent where none was published. A seat that reported none is left out. */
   readonly thinkingLevels?: Readonly<Record<string, string>>;
   readonly serviceTiers?: Readonly<Record<string, string>>;
+  /** The stream display names of the seats spectators have seen join, published with the labels; absent where none was
+   * published (an older server or row). A joined seat absent from modelLabels reported no model. */
+  readonly joined?: readonly string[];
 }
-/** A seat's self-reported level and tier by its stream display name, as seatLabels publishes them beside its model label. */
+/** A seat's self-reported level and tier by its stream display name, as seatLabels publishes them beside its model label,
+ * and the names of the seats seen joined so far. */
 export interface SeatDetails {
   readonly thinkingLevels: Readonly<Record<string, string>>;
   readonly serviceTiers: Readonly<Record<string, string>>;
+  readonly joined?: readonly string[];
 }
 export interface WatchRegistry {
   /** Persist private ownership before either recording publication path may proceed. */
@@ -90,7 +95,17 @@ function decode(lobbyId: string, row: Fields): WatchMatch {
   return { ...access, startedAt,
     playbackFinished: row.playbackFinished === "true", origin: origin(row.origin!), slot: row.slot!, runId: row.runId,
     ...(row.replayId === undefined ? {} : { replayId: row.replayId }),
-    ...seatMap("modelLabels", row.modelLabels), ...seatMap("thinkingLevels", row.thinkingLevels), ...seatMap("serviceTiers", row.serviceTiers) };
+    ...seatMap("modelLabels", row.modelLabels), ...seatMap("thinkingLevels", row.thinkingLevels), ...seatMap("serviceTiers", row.serviceTiers),
+    ...joinedSeats(row.joined) };
+}
+
+/** The stored joined seat names read back: a JSON array of non-empty strings. Absent or malformed reads as none. */
+function joinedSeats(value: string | undefined): { joined: readonly string[] } | undefined {
+  if (value === undefined) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { return undefined; }
+  if (!Array.isArray(parsed)) return undefined;
+  return { joined: parsed.filter((name): name is string => typeof name === "string" && name !== "") };
 }
 
 /** A stored per-seat field (modelLabels, thinkingLevels, serviceTiers) read back: a JSON object of non-empty strings.
@@ -266,7 +281,8 @@ export function createWatchRegistry(store: Store): WatchRegistry {
     },
     playbackFinished: (lobbyId, runId) => update(lobbyId, runId, { playbackFinished: "true" }, "remove"),
     seatLabels: (lobbyId, runId, labels, details) => update(lobbyId, runId, { modelLabels: JSON.stringify(labels),
-      ...(details === undefined ? {} : { thinkingLevels: JSON.stringify(details.thinkingLevels), serviceTiers: JSON.stringify(details.serviceTiers) }) }, "update"),
+      ...(details === undefined ? {} : { thinkingLevels: JSON.stringify(details.thinkingLevels), serviceTiers: JSON.stringify(details.serviceTiers) }),
+      ...(details?.joined === undefined ? {} : { joined: JSON.stringify(details.joined) }) }, "update"),
     replaySaved(lobbyId, runId, replayId) {
       if (!isReplayId(replayId)) throw new Error("Invalid spectator replay id");
       return update(lobbyId, runId, { replayId });

@@ -47,6 +47,7 @@ import { Playout } from "./playout.ts";
 import { Pivots } from "./pivot.ts";
 import { isStartingQueen } from "./start-boxes.ts";
 import { gridScale } from "./grid-scale.ts";
+import { shownAgent } from "./scripted-seat.ts";
 
 /** A colony id: 0 and 1 in a two-colony match, 0 to 3 in a four-colony one. */
 export type Colony = number;
@@ -971,7 +972,8 @@ export class TickPreparation {
         territory,
         held: heldTiles(territory, colonies),
         marks: f.marks.map((x) => ({ ...x })),
-        agents: f.agents.map((a) => ({ ...a })),
+        // A scripted seat is named as every surface shows it (scripted-seat.ts), so each reader of the board takes it.
+        agents: f.agents.map((a) => shownAgent({ ...a })),
         overrun: [...f.overrun],
         overrunRequired: f.overrunRequired,
         deaths: [...f.deaths],
@@ -998,7 +1000,7 @@ export class TickPreparation {
       territory,
       held: territory === prev.territory ? prev.held : heldTiles(territory, colonies),
       marks: marksChanged ? f.marks.map((x) => ({ ...x })) : prev.marks,
-      agents: agentsChanged ? f.agents.map((a) => ({ ...a })) : prev.agents,
+      agents: agentsChanged ? f.agents.map((a) => shownAgent({ ...a })) : prev.agents,
       overrun: overrunChanged ? [...f.overrun] : prev.overrun,
       overrunRequired: f.overrunRequired,
       deaths: deathsChanged ? [...f.deaths] : prev.deaths,
