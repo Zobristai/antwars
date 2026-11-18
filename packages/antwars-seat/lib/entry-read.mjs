@@ -63,8 +63,8 @@ function carriesAny(args, values) {
   const has = (text) => [...values].some((value) => text.includes(value));
   const walk = (node) => {
     if (typeof node === "string") return has(node);
-    if (typeof node === "number" || typeof node === "boolean") return has(String(node));
-    if (node === null || typeof node !== "object") return false;
+    if (node === null || typeof node === "number" || typeof node === "boolean") return has(String(node));
+    if (typeof node !== "object") return false;
     return Object.entries(node).some(([name, child]) => has(name) || walk(child));
   };
   return walk(args);

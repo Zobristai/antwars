@@ -183,9 +183,9 @@ describe("entry-read refuses arguments carrying a key-file value", () => {
     });
   }
 
-  it("a key-file value as a property name, nested value or number is refused unsent", async () => {
-    const h = await harness({ keyLines: `NUM_KEY=4711\nOTHER_KEY="${OTHER}"\n${KEY_NAME}=${JSON.stringify(KEY)}\n` });
-    for (const args of [{ [OTHER]: 1 }, { filter: { ids: ["a", OTHER] } }, { lobbyId: 4711 }]) {
+  it("a key-file value as a property name, nested value, number, boolean or null is refused unsent", async () => {
+    const h = await harness({ keyLines: `NUM_KEY=4711\nBOOL_KEY=true\nNULL_KEY=null\nOTHER_KEY="${OTHER}"\n${KEY_NAME}=${JSON.stringify(KEY)}\n` });
+    for (const args of [{ [OTHER]: 1 }, { filter: { ids: ["a", OTHER] } }, { lobbyId: 4711 }, { open: true }, { lobbyId: null }]) {
       expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify(args))).toBe(1);
     }
     expect(h.fake.calls).toEqual([]);
