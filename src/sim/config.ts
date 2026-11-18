@@ -259,7 +259,8 @@ export interface SimConfig {
   readonly adjudication?: "kills-first";
   /** New matches prepend credited queen kills; absence preserves the recorded scoring order. */
   readonly queenKillsFirst?: true;
-  /** Record complete Free-for-all placement; absence preserves historical result shape. */
+  /** Record complete Free-for-all placement; absence preserves historical result shape. New matches record true
+   * (an early territory winner places first); a recorded false replays as recorded. */
   readonly ffaTerritoryWinnerFirst?: boolean;
   /** Fine terrain tiles per original tile edge. Every playable config carries 2; only a rules
    * template (the input to withGridScale) omits it. */
