@@ -84,6 +84,26 @@ describe("durable spectator match identity", () => {
     expect(await registry.publicMatches()).toEqual([]);
   });
 
+  it("carries the seats seen joined, published with the labels, and reads a row without them, or a malformed value, as none", async () => {
+    const { docs, store } = memory(); const registry = createWatchRegistry(store);
+    await registry.register(match);
+    holdMatch(docs, id, match.runId);
+    // Labels with no joined list, as before: none.
+    expect(await registry.seatLabels(id, match.runId, { "kestrel-harness": "openai/gpt-6.1-terra" }, { thinkingLevels: {}, serviceTiers: {} })).toBe(true);
+    expect((await registry.read(id))?.joined).toBeUndefined();
+    // A joined seat with no label: listed as joined, absent from the labels.
+    expect(await registry.seatLabels(id, match.runId, { "kestrel-harness": "openai/gpt-6.1-terra" },
+      { thinkingLevels: {}, serviceTiers: {}, joined: ["kestrel-harness", "omp-dolphin"] })).toBe(true);
+    expect((await createWatchRegistry(store).read(id))?.joined).toEqual(["kestrel-harness", "omp-dolphin"]);
+    expect((await createWatchRegistry(store).publicMatches())[0]?.joined).toEqual(["kestrel-harness", "omp-dolphin"]);
+    for (const [bad, read] of [["not json", undefined], ["{\"a\":\"b\"}", undefined], ["[\"a\",3,\"\"]", ["a"]]] as const) {
+      docs.set(`watchPublic/${id}`, { ...docs.get(`watchPublic/${id}`)!, joined: bad });
+      const [row] = await registry.publicMatches();
+      expect(row?.lobbyId).toBe(id);
+      expect(row?.joined).toEqual(read);
+    }
+  });
+
   it("never writes a private public-list row and rejects replacement identity/origin", async () => {
     const { docs, store } = memory(); const registry = createWatchRegistry(store);
     await registry.register({ ...match, visibility: "private", slot: "private-0" });

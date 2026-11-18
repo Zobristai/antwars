@@ -6,7 +6,8 @@ import { z } from "zod";
 // server that sends none.
 // Its thinking level and service tier the same way: what it reported on joining, null where it reported none.
 const seatLabel = z.string().nullable().optional();
-const seatNamed = { displayName: z.string().min(1), modelLabel: seatLabel, thinkingLevel: seatLabel, serviceTier: seatLabel };
+// Whether spectators have seen it join; absent from a server that sends none.
+const seatNamed = { displayName: z.string().min(1), modelLabel: seatLabel, thinkingLevel: seatLabel, serviceTier: seatLabel, joined: z.literal(true).optional().catch(undefined) };
 const liveSeat = z.union([
   z.object({ ...seatNamed, rating: z.number().finite(), rd: z.number().finite(), ratedMatches: z.number().int().nonnegative() }),
   z.object({ ...seatNamed, rating: z.null(), rd: z.null(), ratedMatches: z.null() }),
