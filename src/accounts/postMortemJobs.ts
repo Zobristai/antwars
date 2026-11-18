@@ -7,8 +7,10 @@
  * Memory. The meter reads this process's own control group and every one above it up to the cgroup2 mount: each level
  * with a numeric memory.max leaves that limit less its own memory.current. A configured limit (ANTWAR_MEMORY_LIMIT, the
  * same quantity deploy/cloud-run/deploy.sh gives --memory) leaves that limit less this process's own control group's
- * memory.current. The headroom is the smallest of these; with no numeric level the configured limit is required. There
- * is no default: no usable limit, or any reading that cannot be read or parsed, admits nothing and stops a running child.
+ * memory.current. The headroom is the smallest of these; with no numeric level the configured limit is required. Where
+ * the control groups cannot be read or parsed at all, the configured limit alone is used, less this process's own
+ * resident memory and that of its running re-run child. There is no default: no usable limit, a configured limit that
+ * cannot be parsed, or a reading that cannot be taken admits nothing and stops a running child.
  * A re-run starts only while the headroom holds the child's reserve (its V8 heap cap's measured peak), two scans and the
  * margin, checked afresh before each attempt, and a watchdog reading the meter every 50 ms kills the child once the
  * headroom falls below the margin. These figures were measured in tests, not in production.
@@ -117,28 +119,44 @@ export function ownCgroup(cgroupText: string, mountinfoText: string): { dir: str
   return inside ? { dir, mount } : null;
 }
 
-export type LimitSource = "numeric" | "configured" | "both";
+/** "process": the configured limit, less this process's and its running child's resident memory (no control group read). */
+export type LimitSource = "numeric" | "configured" | "both" | "process";
 export interface MemoryReading { readonly headroomMiB: number; readonly source: LimitSource }
-/** The headroom left, or null when no usable limit can be read: callers then admit nothing and stop a running child. */
-export type Meter = () => MemoryReading | null;
+/**
+ * The headroom left, or null when no usable limit can be read: callers then admit nothing and stop a running child.
+ * `children` are the pids of this process's running re-run children, counted where the control groups cannot be read.
+ */
+export type Meter = (children?: readonly number[]) => MemoryReading | null;
 
 export interface CgroupMeterOptions {
   readonly cgroupFile?: string;
   readonly mountinfoFile?: string;
   /** The configured limit's text; absent where it is not set. */
   readonly configured?: string;
+  /** Resident bytes of this process and the given children; null where any cannot be read. Tests may give another. */
+  readonly processBytes?: (children: readonly number[]) => number | null;
+}
+
+/** This process's resident bytes plus each child's VmRSS; null where a child's cannot be read. */
+export function processBytes(children: readonly number[]): number | null {
+  let bytes = process.memoryUsage.rss();
+  for (const pid of children) {
+    let status: string;
+    try { status = readFileSync(`/proc/${pid}/status`, "utf8"); } catch { return null; }
+    const m = /^VmRSS:\s+([0-9]{1,15}) kB$/m.exec(status);
+    if (m === null) return null;
+    bytes += Number(m[1]) * 1024;
+  }
+  return bytes;
 }
 
 export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
   const cgroupFile = options.cgroupFile ?? "/proc/self/cgroup", mountinfoFile = options.mountinfoFile ?? "/proc/self/mountinfo";
   const configured = "configured" in options ? options.configured : process.env[MEMORY_LIMIT_ENV];
+  const ownBytes = options.processBytes ?? processBytes;
   const read = (file: string): string | null => { try { return readFileSync(file, "utf8"); } catch { return null; } };
-  return () => {
-    let configuredBytes: number | null = null;
-    if (configured !== undefined) {
-      configuredBytes = parseMemoryQuantity(configured);
-      if (configuredBytes === null) return null;
-    }
+  /** The headroom of each numeric level, and of the configured limit less the own group's usage; null where any cannot be read. */
+  const groups = (configuredBytes: number | null): { headrooms: number[]; numeric: boolean } | null => {
     const cgroupText = read(cgroupFile), mountinfoText = read(mountinfoFile);
     if (cgroupText === null || mountinfoText === null) return null;
     const own = ownCgroup(cgroupText, mountinfoText);
@@ -165,6 +183,22 @@ export function cgroupMeter(options: CgroupMeterOptions = {}): Meter {
       if (current === null) return null;
       headrooms.push(configuredBytes - current);
     }
+    return { headrooms, numeric };
+  };
+  return (children = []) => {
+    let configuredBytes: number | null = null;
+    if (configured !== undefined) {
+      configuredBytes = parseMemoryQuantity(configured);
+      if (configuredBytes === null) return null;
+    }
+    const group = groups(configuredBytes);
+    if (group === null) {
+      // The control groups cannot be read: the configured limit alone, less this process's and its child's memory.
+      if (configuredBytes === null) return null;
+      const used = ownBytes(children);
+      return used === null ? null : { headroomMiB: (configuredBytes - used) / MIB, source: "process" };
+    }
+    const { headrooms, numeric } = group;
     if (headrooms.length === 0) return null;
     return { headroomMiB: Math.min(...headrooms) / MIB, source: numeric && configuredBytes !== null ? "both" : numeric ? "numeric" : "configured" };
   };
@@ -248,6 +282,11 @@ export function validFindings(message: { counts?: unknown; bits?: unknown }, max
 
 type Attempt = Exclude<ChildMessage, { kind: "progress" }> | { readonly kind: "stopped"; readonly cause: StopCause; readonly heapLimit?: true };
 
+const LIMIT_SOURCE: Record<LimitSource, string> = {
+  both: "the control group and the configured limit", numeric: "the control group", configured: "the configured limit",
+  process: "the configured limit, less this process's own memory (no control group could be read)",
+};
+
 export function createJobs(options: JobsOptions = {}): PostMortemJobs {
   const meter = options.meter ?? cgroupMeter();
   const forkChild = options.forkChild ?? (() => forkRerunChild());
@@ -260,7 +299,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
   const first = meter();
   log(first === null
     ? "antwar post-mortem: no usable memory limit can be read; no-effect re-runs cannot start on this instance"
-    : `antwar post-mortem: memory limit from ${first.source === "both" ? "the control group and the configured limit" : first.source === "numeric" ? "the control group" : "the configured limit"}; no-effect re-runs ${admits(first, policy) ? "can" : "cannot"} start now`);
+    : `antwar post-mortem: memory limit from ${LIMIT_SOURCE[first.source]}; no-effect re-runs ${admits(first, policy) ? "can" : "cannot"} start now`);
 
   let scanning = 0;
   const scanQueue: (() => void)[] = [];
@@ -315,7 +354,7 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
         child.kill("SIGKILL");
       };
       const watchdog = setInterval(() => {
-        const reading = meter();
+        const reading = meter(child.pid === undefined ? [] : [child.pid]);
         if (reading === null) stop("meter");
         else if (overLimit(reading, policy)) stop("memory");
         else if (now() - lastProgress > stallMs) stop("stalled");

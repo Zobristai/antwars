@@ -716,8 +716,15 @@ class ReadTimedOut extends Error {}
 function tryLater(why: string): NoEffectStatus {
   return { status: "not_computed_now", reason: `No-effect commands are not computed now (${why}). Try later.` };
 }
-/** The temporary status of a re-run the server had no memory for. */
-const SHORT_OF_MEMORY: NoEffectStatus = { status: "not_computed_now", reason: "No-effect commands are not available right now (the server is short of memory). Ask again later." };
+/** The temporary status of a re-run stopped for memory, saying which check stopped it. */
+function memoryStop(why: string): NoEffectStatus {
+  return { status: "not_computed_now", reason: `No-effect commands are not available right now (${why}). Ask again later.` };
+}
+const MEMORY_STOP = {
+  admission: memoryStop("the server does not have enough free memory to start the check"),
+  memory: memoryStop("the check was stopped when the server ran low on memory"),
+  meter: memoryStop("the server could not measure its memory"),
+} as const;
 
 export function noEffectOf(outcome: RerunOutcome): NoEffectStatus {
   switch (outcome.kind) {
@@ -727,7 +734,7 @@ export function noEffectOf(outcome: RerunOutcome): NoEffectStatus {
     case "no_idle_data": return { status: "not_available", reason: "This match's stored record lacks the idle-clock data its re-run needs, so no-effect commands are not available for this match." };
     case "engine_error": return { status: "not_available", reason: "This match could not be re-run on the current game version, so no-effect commands are not available for this match." };
     case "too_large": return { status: "not_available", reason: TOO_LARGE };
-    case "stopped": return outcome.cause === "admission" || outcome.cause === "memory" || outcome.cause === "meter" ? SHORT_OF_MEMORY
+    case "stopped": return outcome.cause === "admission" || outcome.cause === "memory" || outcome.cause === "meter" ? MEMORY_STOP[outcome.cause]
       : tryLater(outcome.cause === "stalled" ? "the re-run stalled" : "the re-run failed");
   }
 }

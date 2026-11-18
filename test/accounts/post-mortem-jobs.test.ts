@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  admits, cgroupMeter, CHILD_ENV, CHILD_FLAGS, createJobs, DELIVERY_BUDGET_MIB, forkRerunChild, JobsBusy, MAX_RERUN_BITS, MEMORY_POLICY, overLimit, ownCgroup, paddedBits,
+  admits, cgroupMeter, CHILD_ENV, CHILD_FLAGS, createJobs, DELIVERY_BUDGET_MIB, forkRerunChild, JobsBusy, MAX_RERUN_BITS, MEMORY_POLICY, overLimit, ownCgroup, paddedBits, processBytes,
   parseCgroupBytes, parseMemoryQuantity, RERUN_QUEUE, SAMPLE_MS, SCAN_CONCURRENCY, SCAN_QUEUE, STALL_MS, STDERR_TAIL_BYTES, validFindings, type Meter, type RerunOutcome,
 } from "../../src/accounts/postMortemJobs.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
@@ -89,10 +89,14 @@ function cgroupTree(levels: { max?: string; current?: number }[], options: { mou
   writeFileSync(join(dir, "mountinfo"), options.mountinfo?.(escaped)
     ?? `24 30 0:22 / /proc rw,nosuid shared:13 - proc proc rw\n36 25 0:30 ${options.mountRoot ?? "/"} ${escaped} rw,nosuid,nodev shared:10 master:2 - cgroup2 cgroup2 rw,nsdelegate\n`);
   return {
-    meter: (configured?: string) => cgroupMeter({ cgroupFile: join(dir, "cgroup"), mountinfoFile: join(dir, "mountinfo"), configured }),
+    meter: (configured?: string, ownBytes: (children: readonly number[]) => number | null = PROCESS_BYTES) =>
+      cgroupMeter({ cgroupFile: join(dir, "cgroup"), mountinfoFile: join(dir, "mountinfo"), configured, processBytes: ownBytes }),
     remove: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
+
+/** A stand-in for this process's resident memory: 300 MiB, and 400 MiB more for each running child. */
+const PROCESS_BYTES = (children: readonly number[]) => (300 + 400 * children.length) * MIB;
 
 describe("the control-group meter", () => {
   const read = (levels: Parameters<typeof cgroupTree>[0], configured?: string, options?: Parameters<typeof cgroupTree>[1]) => {
@@ -145,27 +149,66 @@ describe("the control-group meter", () => {
     for (const bad of ["2GB", "0Mi", "", "9999999Gi"]) expect(read([{}, { max: `${2048 * MIB}\n`, current: 100 }], bad), bad).toBeNull();
   });
 
-  it("fails closed on a garbled or zero memory.max, one missing below the mount root, and unreadable or garbled usage", () => {
-    expect(read([{}, { max: "lots\n", current: 100 }], "2Gi")).toBeNull();
-    expect(read([{}, { max: "0\n", current: 100 }], "2Gi")).toBeNull();
-    expect(read([{}, { current: 100 }, { max: "max\n", current: 100 }], "2Gi")).toBeNull();
-    expect(read([{}, { max: `${2048 * MIB}\n` }])).toBeNull();
-    expect(read([{}, { max: "max\n" }], "2Gi")).toBeNull();
+  // Credible regression: an unreadable control group refusing every re-run although a configured limit is set.
+  it("on a garbled or zero memory.max, one missing below the mount root, or unreadable usage, takes the configured limit less this process's memory, or fails closed without one", () => {
+    const broken = [
+      [{}, { max: "lots\n", current: 100 }],
+      [{}, { max: "0\n", current: 100 }],
+      [{}, { current: 100 }, { max: "max\n", current: 100 }],
+      [{}, { max: `${2048 * MIB}\n` }],
+      [{}, { max: "max\n" }],
+    ];
+    for (const levels of broken) {
+      expect(read(levels), JSON.stringify(levels)).toBeNull();
+      expect(read(levels, "2Gi"), JSON.stringify(levels)).toEqual({ headroomMiB: 1748, source: "process" });
+    }
     const tree = cgroupTree([{}, { max: `${2048 * MIB}\n`, current: 100 }]);
     try {
       expect(tree.meter()()).not.toBeNull();
     } finally { tree.remove(); }
   });
 
-  // Credible regression: a group path that climbs out of the mount, read as if it were inside it.
-  it("fails closed on a path escaping the mount, a path outside the mount's root, several cgroup2 mounts, or no cgroup2 line", () => {
+  // Credible regression: a group path that climbs out of the mount, read as if it were inside it; or no cgroup2 line
+  // (a cgroup v1 host) refusing every re-run although a configured limit is set.
+  it("never reads a path escaping the mount, a path outside the mount's root, several cgroup2 mounts, or no cgroup2 line: configured limit less this process's memory, else fail closed", () => {
     const numeric = [{}, { max: `${2048 * MIB}\n`, current: 100 }];
-    expect(read(numeric, "2Gi", { cgroupLine: "0::/level1/../..\n" })).toBeNull();
-    expect(read(numeric, "2Gi", { cgroupLine: "0::/level1/./x\n" })).toBeNull();
-    expect(read(numeric, "2Gi", { cgroupLine: "0::/level1\n", mountRoot: "/elsewhere" })).toBeNull();
-    expect(read(numeric, "2Gi", { cgroupLine: "4:memory:/level1\n" })).toBeNull();
-    expect(read(numeric, "2Gi", { mountinfo: m => `36 25 0:30 / ${m} rw - cgroup2 cgroup2 rw\n37 25 0:31 / ${m}2 rw - cgroup2 cgroup2 rw\n` })).toBeNull();
+    for (const options of [
+      { cgroupLine: "0::/level1/../..\n" },
+      { cgroupLine: "0::/level1/./x\n" },
+      { cgroupLine: "0::/level1\n", mountRoot: "/elsewhere" },
+      { cgroupLine: "4:memory:/level1\n" },
+      { mountinfo: (m: string) => `36 25 0:30 / ${m} rw - cgroup2 cgroup2 rw\n37 25 0:31 / ${m}2 rw - cgroup2 cgroup2 rw\n` },
+    ]) {
+      expect(read(numeric, undefined, options), JSON.stringify(options)).toBeNull();
+      expect(read(numeric, "4Gi", options), JSON.stringify(options)).toEqual({ headroomMiB: 3796, source: "process" });
+    }
   });
+
+  it("without control-group files, takes the configured limit less this process's and each running child's memory, and fails closed where that cannot be read", () => {
+    const none = (configured?: string, ownBytes: (children: readonly number[]) => number | null = PROCESS_BYTES) =>
+      cgroupMeter({ cgroupFile: "/nonexistent/cgroup", mountinfoFile: "/nonexistent/mountinfo", configured, processBytes: ownBytes });
+    expect(none("4Gi")()).toEqual({ headroomMiB: 3796, source: "process" });
+    expect(none("4Gi")([4242])).toEqual({ headroomMiB: 3396, source: "process" });
+    expect(admits(none("4Gi")()!)).toBe(true);
+    expect(none()()).toBeNull();
+    expect(none("4GB")()).toBeNull();
+    expect(none("4Gi", () => null)()).toBeNull();
+    const seen: (readonly number[])[] = [];
+    none("4Gi", children => { seen.push(children); return 0; })([7, 8]);
+    expect(seen).toEqual([[7, 8]]);
+  });
+
+  // Credible regression: the fallback counting only this process, blind to the re-run child the watchdog guards.
+  it("measures this process's resident memory plus each listed child's, and nothing for a child that cannot be read", async () => {
+    const ballast = spawn(process.execPath, ["-e", "const b = Buffer.alloc(200 * 2 ** 20, 1); console.log('ready'); setInterval(() => b[0]++, 1000);"],
+      { stdio: ["ignore", "pipe", "ignore"] });
+    children.push(ballast);
+    await new Promise<void>(resolve => ballast.stdout!.once("data", () => resolve()));
+    const alone = processBytes([])!, both = processBytes([ballast.pid!])!;
+    expect(alone).toBeGreaterThan(0);
+    expect((both - alone) / MIB).toBeGreaterThan(150);
+    expect(processBytes([2 ** 31 - 1])).toBeNull();
+  }, 30_000);
 
   it("finds the filesystem type after any number of optional mountinfo fields", () => {
     for (const optional of ["", " shared:1", " shared:1 master:2 propagate_from:3"]) {
@@ -181,10 +224,12 @@ describe("the startup line", () => {
     createJobs({ meter: () => null, log: line => lines.push(line) });
     createJobs({ meter: () => ({ headroomMiB: 1600, source: "configured" }), log: line => lines.push(line) });
     createJobs({ meter: () => ({ headroomMiB: 300, source: "both" }), log: line => lines.push(line) });
+    createJobs({ meter: () => ({ headroomMiB: 1600, source: "process" }), log: line => lines.push(line) });
     expect(lines).toEqual([
       "antwar post-mortem: no usable memory limit can be read; no-effect re-runs cannot start on this instance",
       "antwar post-mortem: memory limit from the configured limit; no-effect re-runs can start now",
       "antwar post-mortem: memory limit from the control group and the configured limit; no-effect re-runs cannot start now",
+      "antwar post-mortem: memory limit from the configured limit, less this process's own memory (no control group could be read); no-effect re-runs can start now",
     ]);
   });
 });
@@ -234,6 +279,21 @@ describe("re-run supervision", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(child.killed).toEqual(["SIGKILL"]);
     expect(await outcome).toEqual({ kind: "stopped", cause: "memory" });
+  });
+
+  // Credible regression: the watchdog not naming the running child, so a meter without control groups cannot count it.
+  it("reads the meter with no child at admission and with the running child's pid while it runs", async () => {
+    vi.useFakeTimers();
+    const calls: (readonly number[] | undefined)[] = [];
+    const child = fakeChild({ pid: 4242 });
+    const jobs = createJobs({ meter: children => { calls.push(children); return reading(2000); }, forkChild: () => child as unknown as ChildProcess, log: () => {} });
+    calls.length = 0;
+    const outcome = jobs.rerun("m", VERSION, OPEN).outcome!;
+    await vi.advanceTimersByTimeAsync(SAMPLE_MS * 2);
+    expect(calls[0]).toBeUndefined();
+    expect(calls.slice(1)).toEqual([[4242], [4242]]);
+    child.emit("exit", 1, null);
+    await outcome;
   });
 
   it("stops the child when the meter becomes unreadable, and refuses to start without one", async () => {
