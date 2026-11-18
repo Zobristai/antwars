@@ -1,0 +1,26 @@
+{
+ "note": "Responses the public site cannot give on demand, each named for the state it stands for. The report lists every fixture a render used. Replay excerpts are cut from the public recordings by excerpt.ts.",
+ "fixtures": {
+  "/watch/catalog": {
+   "label": "no live match: the public match catalog is empty",
+   "body": {
+    "matches": [],
+    "lobbies": []
+   }
+  },
+  "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
+   "label": "Free-for-all replay: public recording 2026-11-17T08-55-08-583Z-151632020035470, ticks 6000-6300 (excerpt.ts; source sha256 eba9ca7c…, excerpt sha256 d396c1a3…)",
+   "type": "application/octet-stream",
+   "file": "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6300.bin.gz"
+  },
+  "/matches/2026-11-17T08-55-08-583Z-151632020035470": {
+   "label": "Free-for-all replay's full record, left out: it is 8.4 MB and the page stops reading a record after 256 KiB, as it does on a 404",
+   "status": 404
+  },
+  "/replays/2026-11-18T09-37-33-466Z-22423161369746": {
+   "label": "Watch's newest recording when the snapshot was recorded: public recording 2026-11-18T09-37-33-466Z-22423161369746, ticks 3000-3300 (excerpt.ts; source sha256 77287072…, excerpt sha256 586a8ea4…)",
+   "type": "application/octet-stream",
+   "file": "snapshot/bodies/2026-11-18T09-37-33-466Z-22423161369746-3000-3300.bin.gz"
+  }
+ }
+}

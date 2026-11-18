@@ -1,0 +1,257 @@
+{
+ "note": "Failures already on main (81db121) when the render check was introduced, reviewed. Each entry holds that many findings of one rule on one element of one surface, width and typeface. Only a failure not held here, or found more often than its count, fails the check; held failures show as warnings. Changes to this file are reviewed like code; shrink it as fixes land.",
+ "held": [
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "count": 3,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "count": 1,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "count": 3,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "count": 1,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "count": 1,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the check was introduced (ANT-429)."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "count": 22,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "count": 5,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "count": 22,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "count": 5,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.d1.d1-hud > div.d1-below > div.d1-deck-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.d1.d1-hud > div.d1-below > div.d1-deck-end > button.d1-agent-button",
+   "count": 1,
+   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+  }
+ ]
+}

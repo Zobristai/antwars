@@ -1,0 +1,315 @@
+/**
+ * The in-page rules the render check judges every surface by. judgePage runs inside the page (page.evaluate),
+ * so it must use nothing outside its own body. Every finding names its rule, the element (class path and text)
+ * and the measure that broke the rule, with the element's box in page pixels for the marked render.
+ *
+ * Fails:
+ * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings) laid out on 2+ lines
+ * - clipped / cut / offscreen: text cut by an overflow box, an ellipsis, or the viewport's sides
+ * - sideways / page-wider: a scroller with sideways overflow, or a page wider than the viewport
+ * - row-uneven / grid-uneven: tiles of one kind (2+ side by side) of unequal height, in a row or across the grid
+ * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text
+ * - part-uneven: a tile part shown on some tiles of the grid but not others
+ * - page-empty: an empty horizontal band on the page taller than RULE_LIMITS.pageBandPx
+ * Lists, without failing:
+ * - tight: a one-line item with under RULE_LIMITS.tightSpare of its width to spare
+ */
+
+export const RULE_IDS = ["wrap", "clipped", "cut", "offscreen", "sideways", "page-wider", "row-uneven", "grid-uneven",
+  "tile-empty", "part-uneven", "page-empty", "tight"] as const;
+export type RuleId = (typeof RULE_IDS)[number];
+
+export const RULE_LIMITS = {
+  /** The largest designed gap on main is 45 px; the band the Top matches review rejected measured 60 px. */
+  pageBandPx: 48,
+  /** An empty band inside a tile may be at most this many lines of the tile's text. */
+  tileBandLines: 1.5,
+  /** Two tiles count as the same height within this many px. */
+  heightSlackPx: 1,
+  /** A one-line item with less than this share of its width spare is listed as a tight fit. */
+  tightSpare: 0.08,
+} as const;
+
+export interface Box { x: number; y: number; w: number; h: number }
+export interface Finding { rule: RuleId; element: string; text: string; measure: string; box: Box | null; spare?: number }
+export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
+
+export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
+  const vw = document.documentElement.clientWidth;
+  const failures: Finding[] = [];
+  const tight: Finding[] = [];
+  const box = (r: DOMRect): Box => ({ x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) });
+  const style = (e: Element) => getComputedStyle(e);
+  const ancestors = function* (el: Element) { for (let a = el.parentElement; a; a = a.parentElement) yield a; };
+  const keepClass = (c: string) => !/^(is-|has-|c\d+$|d1p-c\d)/.test(c);
+  const name = (el: Element): string => {
+    const parts: string[] = [];
+    for (let e: Element | null = el; e && e !== document.body && parts.length < 4; e = e.parentElement) {
+      const cls = [...e.classList].filter(keepClass).slice(0, 2).join(".");
+      parts.unshift(e.tagName.toLowerCase() + (cls ? "." + cls : ""));
+    }
+    return parts.join(" > ");
+  };
+  const text = (el: Element) => ((el as HTMLElement).innerText ?? el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const skipped = (el: Element) => el.closest("canvas, svg, [data-render-check='skip']") !== null;
+  /** Shown to a sighted reader: not hidden, not transparent, and not a visually-hidden screen-reader box. */
+  const shown = (el: Element): boolean => {
+    for (let e: Element | null = el; e; e = e.parentElement) {
+      const cs = style(e);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.visibility === "collapse" || Number(cs.opacity) === 0) return false;
+      if (cs.clip !== "auto" && cs.clip !== "" && cs.position === "absolute") return false;
+      if (/inset\(50%|circle\(0/.test(cs.clipPath)) return false;
+      if (e !== document.body && e !== document.documentElement && cs.overflow !== "visible") {
+        const r = e.getBoundingClientRect();
+        if (r.width <= 2 || r.height <= 2) return false;
+      }
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const textRects = (root: Element) => {
+    const found: { r: DOMRect; el: Element }[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!(n as Text).data.trim()) continue;
+      const p = n.parentElement;
+      if (!p || skipped(p) || !shown(p)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) if (r.width > 0.5 && r.height > 0.5) found.push({ r, el: p });
+    }
+    return found;
+  };
+  const lineCount = (rects: DOMRect[]) => {
+    const bands: { top: number; bottom: number }[] = [];
+    for (const r of [...rects].sort((a, b) => a.top - b.top)) {
+      const mid = (r.top + r.bottom) / 2;
+      const band = bands.find(b => mid > b.top && mid < b.bottom);
+      if (band) { band.top = Math.min(band.top, r.top); band.bottom = Math.max(band.bottom, r.bottom); }
+      else bands.push({ top: r.top, bottom: r.bottom });
+    }
+    return bands.length;
+  };
+  const inline = (d: string) => d === "inline" || d === "inline-block" || d === "inline-flex" || d === "contents";
+  // A row of flex items is laid out as one line whether or not it may wrap: wrapping it is the defect judged.
+  const rowFlex = (cs: CSSStyleDeclaration) => cs.display.includes("flex") && cs.flexDirection.startsWith("row");
+  /** Laid out as one line by design: only inline content, or a no-wrap row of such content. */
+  const lineable = (el: Element, top: boolean): boolean => {
+    const cs = style(el);
+    if (cs.display === "none") return true;
+    if (cs.display.includes("grid") || cs.display.startsWith("table") || cs.display === "list-item" && !top) return false;
+    if (cs.display.includes("flex") && !rowFlex(cs)) return false;
+    // A group of links or buttons allowed to wrap is a set of controls, not a line of text.
+    if (cs.flexWrap !== "nowrap" && [...el.children].some(c => c.matches("a, button"))) return false;
+    if (!top && !inline(cs.display) && !(el.parentElement && rowFlex(style(el.parentElement)))) return false;
+    for (const c of el.children) {
+      if (!c.textContent?.trim() && !c.querySelector("img, svg")) continue;
+      const d = style(c).display;
+      if (d === "none") continue;
+      if (!rowFlex(cs) && !inline(d)) return false;
+      if (!lineable(c, false)) return false;
+    }
+    return true;
+  };
+  const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary, label";
+  const all = [...document.body.querySelectorAll("*")].filter(el => !skipped(el));
+
+  // One-line items: the outermost line-able blocks with text.
+  const items: Element[] = [];
+  const isItem = new Set<Element>();
+  for (const el of all) {
+    const cs = style(el);
+    if (cs.display === "inline" || cs.display === "contents" || !el.textContent?.trim() || !shown(el)) continue;
+    if (!lineable(el, true)) continue;
+    if ([...ancestors(el)].some(a => isItem.has(a))) continue;
+    isItem.add(el);
+    items.push(el);
+  }
+  for (const el of items) {
+    const rects = textRects(el).map(t => t.r);
+    for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0) rects.push(r); }
+    const lines = lineCount(rects) - el.querySelectorAll("br").length;
+    const words = text(el);
+    const prose = el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80;
+    if (lines > 1 && !prose) {
+      failures.push({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, box: box(el.getBoundingClientRect()) });
+    } else if (lines === 1 && !prose && rects.length > 0) {
+      const cs = style(el);
+      const r = el.getBoundingClientRect();
+      const avail = r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+      const used = Math.max(...rects.map(x => x.right)) - Math.min(...rects.map(x => x.left));
+      // Only items whose width is set by their container: a shrink-wrapped box always fits exactly.
+      const sized = cs.display === "block" || cs.display === "flex" || cs.display === "list-item" || cs.width.endsWith("px") && cs.flexGrow !== "0";
+      if (sized && avail > 0 && (avail - used) / avail < limits.tightSpare) {
+        tight.push({ rule: "tight", element: name(el), text: words, measure: `${Math.round(used)} of ${Math.round(avail)} px (${Math.round((1 - used / avail) * 100)}% spare)`, box: box(r), spare: (avail - used) / avail });
+      }
+    }
+  }
+
+  // Text cut by an overflow box, an ellipsis, or the viewport.
+  const cutBy = (el: Element, r: DOMRect): Element | null => {
+    for (const a of ancestors(el)) {
+      if (a === document.body || a === document.documentElement) break;
+      const cs = style(a);
+      const x = cs.overflowX !== "visible", y = cs.overflowY !== "visible";
+      if (!x && !y) continue;
+      if (cs.overflowX === "auto" || cs.overflowX === "scroll") continue; // a scroller shows it by scrolling; judged as sideways
+      const b = a.getBoundingClientRect();
+      const left = b.left + parseFloat(cs.borderLeftWidth), top = b.top + parseFloat(cs.borderTopWidth);
+      const right = left + a.clientWidth, bottom = top + a.clientHeight;
+      if ((x && (r.right > right + 0.5 || r.left < left - 0.5)) || (y && cs.overflowY !== "auto" && cs.overflowY !== "scroll" && (r.bottom > bottom + 1 || r.top < top - 1))) return a;
+    }
+    return null;
+  };
+  const reported = new Set<Element>();
+  for (const { r, el } of textRects(document.body)) {
+    if (reported.has(el)) continue;
+    if (r.right > vw + 0.5 || r.left < -0.5) {
+      reported.add(el);
+      failures.push({ rule: "offscreen", element: name(el), text: text(el), measure: `text at ${Math.round(r.left)}-${Math.round(r.right)} px, viewport 0-${vw}`, box: box(r) });
+      continue;
+    }
+    const by = cutBy(el, r);
+    if (by) {
+      reported.add(el);
+      failures.push({ rule: "clipped", element: name(el), text: text(el), measure: `cut by ${name(by)}`, box: box(r) });
+    }
+  }
+  for (const el of all) {
+    const cs = style(el);
+    if (cs.textOverflow !== "ellipsis" || el.scrollWidth <= el.clientWidth + 0.5 || reported.has(el) || !shown(el)) continue;
+    if ([...el.querySelectorAll("*")].some(c => reported.has(c))) continue;
+    failures.push({ rule: "cut", element: name(el), text: text(el), measure: `${el.scrollWidth} px of text in ${el.clientWidth} px`, box: box(el.getBoundingClientRect()) });
+  }
+  for (const el of all) {
+    const cs = style(el);
+    if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1 && el.textContent?.trim() && shown(el)) {
+      failures.push({ rule: "sideways", element: name(el), text: text(el), measure: `${el.scrollWidth} px wide in ${el.clientWidth} px`, box: box(el.getBoundingClientRect()) });
+    }
+  }
+  const pageWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+  if (pageWidth > vw + 0.5) failures.push({ rule: "page-wider", element: "html", text: "", measure: `${pageWidth} px wide, viewport ${vw} px`, box: null });
+
+  // Grids of like tiles: 2+ children of one kind, at least two side by side.
+  const boxed = (el: Element) => {
+    const cs = style(el);
+    return parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderLeftWidth) > 0 || cs.boxShadow !== "none" ||
+      (cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent");
+  };
+  const tileOf = (el: Element): Element | null => {
+    if (boxed(el)) return el;
+    const kids = [...el.children].filter(shown);
+    return kids.length === 1 && boxed(kids[0]!) ? kids[0]! : null;
+  };
+  const kind = (k: Element) => k.tagName + "." + [...k.classList].filter(keepClass).sort().join(".");
+  let grids = 0, tiles = 0;
+  for (const el of all) {
+    const cs = style(el);
+    if (!(cs.display.includes("grid") || (cs.display.includes("flex") && cs.flexWrap === "wrap"))) continue;
+    const kids = [...el.children].filter(shown);
+    if (kids.length < 2 || new Set(kids.map(kind)).size !== 1) continue;
+    const cards = kids.map(tileOf);
+    if (cards.some(c => c === null)) continue;
+    const rects = (cards as Element[]).map(c => c.getBoundingClientRect());
+    const rows = new Map<number, number[]>();
+    rects.forEach((r, i) => { const top = Math.round(r.top); rows.set(top, [...(rows.get(top) ?? []), i]); });
+    if (![...rows.values()].some(row => row.length >= 2)) continue;
+    grids++;
+    tiles += cards.length;
+    const where = name(el);
+    for (const row of rows.values()) {
+      const h = row.map(i => rects[i]!.height);
+      if (row.length >= 2 && Math.max(...h) - Math.min(...h) > limits.heightSlackPx) {
+        failures.push({ rule: "row-uneven", element: where, text: text(cards[row[0]!]!), measure: `row heights ${h.map(Math.round).join(", ")} px`, box: box(el.getBoundingClientRect()) });
+      }
+    }
+    const heights = rects.map(r => r.height);
+    if (Math.max(...heights) - Math.min(...heights) > limits.heightSlackPx) {
+      failures.push({ rule: "grid-uneven", element: where, text: "", measure: `tile heights ${Math.round(Math.min(...heights))}-${Math.round(Math.max(...heights))} px over ${cards.length} tiles`, box: box(el.getBoundingClientRect()) });
+    }
+    // Empty bands inside each tile.
+    for (const c of cards as Element[]) {
+      const cr = c.getBoundingClientRect(), ccs = style(c);
+      const top = cr.top + parseFloat(ccs.borderTopWidth) + parseFloat(ccs.paddingTop);
+      const bottom = cr.bottom - parseFloat(ccs.borderBottomWidth) - parseFloat(ccs.paddingBottom);
+      const spans: [number, number][] = textRects(c).map(t => [t.r.top, t.r.bottom]);
+      for (const m of c.querySelectorAll("img, svg, canvas, video, input, button, select")) {
+        const r = m.getBoundingClientRect();
+        if (r.height > 0 && shown(m)) spans.push([r.top, r.bottom]);
+      }
+      spans.sort((a, b) => a[0] - b[0]);
+      let at = top, gap = 0, gapAt = top;
+      for (const [t, b] of spans) { if (t - at > gap) { gap = t - at; gapAt = at; } at = Math.max(at, b); }
+      if (bottom - at > gap) { gap = bottom - at; gapAt = at; }
+      const line = parseFloat(ccs.lineHeight) || parseFloat(ccs.fontSize) * 1.35;
+      if (gap > limits.tileBandLines * line) {
+        failures.push({ rule: "tile-empty", element: name(c), text: text(c), measure: `${Math.round(gap)} px empty (limit ${Math.round(limits.tileBandLines * line)} px)`,
+          box: { x: Math.round(cr.left + scrollX), y: Math.round(gapAt + scrollY), w: Math.round(cr.width), h: Math.round(gap) } });
+      }
+    }
+    // A part (a classed element with text) shown on some tiles but not others.
+    const partsOf = (c: Element) => {
+      const found = new Set<string>();
+      for (const p of c.querySelectorAll("[class]")) {
+        if (!p.textContent?.trim() || skipped(p) || !shown(p)) continue;
+        const cls = [...p.classList].filter(keepClass).sort().join(".");
+        if (cls) found.add(p.tagName.toLowerCase() + "." + cls);
+      }
+      return found;
+    };
+    const each = (cards as Element[]).map(partsOf);
+    const union = new Set(each.flatMap(s => [...s]));
+    for (const part of union) {
+      const on = each.filter(s => s.has(part)).length;
+      if (on < cards.length) {
+        failures.push({ rule: "part-uneven", element: `${where} > ${part}`, text: "", measure: `shown on ${on} of ${cards.length} tiles`, box: box(el.getBoundingClientRect()) });
+      }
+    }
+  }
+
+  // Empty horizontal bands down the page: no text, media, control or panel edge.
+  const spans: [number, number, Element][] = textRects(document.body).map(t => [t.r.top, t.r.bottom, t.el]);
+  // An image or board drawn behind a later opaque panel that covers it whole (a board under a page) shows nothing.
+  const opaque = all.filter(e => /^rgba?\(\d+, \d+, \d+\)$/.test(style(e).backgroundColor) && shown(e));
+  const hiddenBehind = (el: Element, left: number, top: number, right: number, bottom: number) => opaque.some(e => {
+    if (e.contains(el) || el.contains(e) || !(el.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)) return false;
+    const b = e.getBoundingClientRect();
+    return b.left <= left + 0.5 && b.top <= top + 0.5 && b.right >= right - 0.5 && b.bottom >= bottom - 0.5;
+  });
+  // Every element counts here, a board's canvas and drawings included (only their insides are skipped elsewhere).
+  for (const el of document.body.querySelectorAll("*")) {
+    if (el.closest("[data-render-check='skip']") || !shown(el)) continue;
+    const r = el.getBoundingClientRect();
+    const media = ["IMG", "CANVAS", "VIDEO", "INPUT", "SELECT", "TEXTAREA", "BUTTON", "IFRAME"].includes(el.tagName) || el.tagName.toLowerCase() === "svg";
+    if (media) {
+      // Only the part of an image or board its clipping boxes let show (a hero image cropped by its frame).
+      let top = r.top, bottom = r.bottom;
+      for (const a of ancestors(el)) {
+        if (a === document.body || a === document.documentElement) break;
+        if (style(a).overflowY === "visible") continue;
+        const b = a.getBoundingClientRect();
+        top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom);
+      }
+      if (bottom > top && !hiddenBehind(el, r.left, top, r.right, bottom)) spans.push([top, bottom, el]);
+    }
+    // A panel's edges are drawn; the space inside it is empty unless something is drawn there.
+    else if (boxed(el)) spans.push([r.top, r.top + 1, el], [r.bottom - 1, r.bottom, el]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  let at = -scrollY;
+  let above: Element | null = null;
+  const bands: { top: number; bottom: number; above: Element | null; below: Element }[] = [];
+  for (const [t, b, el] of spans) {
+    if (t - at > 0) bands.push({ top: at + scrollY, bottom: t + scrollY, above, below: el });
+    if (b > at) { at = b; above = el; }
+  }
+  // Space after the last content is not a gap between parts of the page, so it is not judged.
+  for (const band of bands) {
+    const tall = band.bottom - band.top;
+    if (tall <= limits.pageBandPx) continue;
+    const where = `band below ${band.above ? name(band.above) : "page top"}`;
+    failures.push({ rule: "page-empty", element: where, text: band.below ? `above: ${text(band.below)}` : "",
+      measure: `${Math.round(tall)} px empty (limit ${limits.pageBandPx} px)`, box: { x: 0, y: Math.round(band.top), w: vw, h: Math.round(tall) } });
+  }
+  return { failures, tight, counted: { items: items.length, grids, tiles } };
+}
