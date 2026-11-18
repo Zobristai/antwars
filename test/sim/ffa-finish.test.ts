@@ -66,11 +66,32 @@ it("both territory settings keep the winner, and only the on setting promotes it
   }
 });
 
+it("places an early territory winner first, with the others in the usual order", () => {
+  const ending = (survivorTiles: readonly [number, number], level: boolean) => {
+    const { state, kill } = world(true, 100);
+    if (level) for (const c of [0, 2]) { state.colonies[c]!.queenKills = 1; state.colonies[c]!.kills = 30; }
+    kill(1, 5);
+    expect(fourColonyEnd(state, 5, false)).toBeNull();
+    state.owner.fill(-1);
+    state.owner.fill(3, 0, 60);
+    state.owner.fill(0, 60, 60 + survivorTiles[0]);
+    state.owner.fill(2, 100, 100 + survivorTiles[1]);
+    return fourColonyEnd(state, 100, false)!;
+  };
+  // Survivors by queen kills (colony 0 has two, colony 2 one) despite less territory; the winner has none; the eliminated colony is last.
+  const byKills = ending([10, 20], false);
+  expect(byKills).toMatchObject({ winner: 3, reason: "sustained_territory" });
+  expect(byKills.ffa).toEqual({ version: 1, order: [3, 0, 2, 1], territoryWinnerFirst: true, rateable: true });
+  // Level on queen and unit kills: more territory held at match end ranks higher.
+  expect(ending([10, 20], true).ffa?.order).toEqual([3, 2, 0, 1]);
+  expect(ending([20, 10], true).ffa?.order).toEqual([3, 0, 2, 1]);
+});
+
 it.each(["territory", "ants_alive", "food_delivered"] as const)(
   "rates survivor and same-tick elimination finishes resolved by %s after equal queen and unit kills", async decidedBy => {
-    for (const ending of ["survivors", "all_eliminated", "two_eliminated"] as const) {
-      // Exercise score adjudication, not an early territory win after neutralising eliminated tiles.
-      const { state, kill } = world(false, 100);
+    for (const [policy, ending] of [false, true].flatMap(p => (["survivors", "all_eliminated", "two_eliminated"] as const).map(e => [p, e] as const))) {
+      // Exercise score adjudication, not an early territory win after neutralising eliminated tiles; either policy records the same order.
+      const { state, kill } = world(policy, 100);
       state.colonies.forEach(c => { c.queenKills = 0; c.kills = 0; });
       // Later score steps deliberately disagree, so each fallback's precedence is exercised.
       const territory = decidedBy === "territory" ? [8, 12, 4, 0] : [4, 4, 4, 4];

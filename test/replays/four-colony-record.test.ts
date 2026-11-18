@@ -178,12 +178,13 @@ it("the live Game writes the complete final order after a save and resume", asyn
   expect(replay(logs, Infinity).result).toEqual(resumed.match!.state.result);
 });
 
-it("new quadrants lobbies pin the off policy, while ordinary match configurations are unchanged", () => {
+it("new quadrants lobbies pin the territory-winner-first policy, while ordinary match configurations are unchanged", () => {
   const game = new Game();
   expect(game.undrawnConfig).toBe(game.simConfig);
   game.seatLobby("fixture-lobby", [], "quadrants");
-  expect(game.undrawnConfig.ffaTerritoryWinnerFirst).toBe(false);
-  const configured = new Game({ simConfig: { ...CONFIG, ffaTerritoryWinnerFirst: true } });
+  expect(game.undrawnConfig.ffaTerritoryWinnerFirst).toBe(true);
+  // A configuration that already records a policy keeps it, as saved and replayed matches do.
+  const configured = new Game({ simConfig: { ...CONFIG, ffaTerritoryWinnerFirst: false } });
   configured.seatLobby("fixture-lobby", [], "quadrants");
-  expect(configured.undrawnConfig.ffaTerritoryWinnerFirst).toBe(true);
+  expect(configured.undrawnConfig.ffaTerritoryWinnerFirst).toBe(false);
 });
