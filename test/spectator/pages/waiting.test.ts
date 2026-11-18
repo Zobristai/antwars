@@ -40,7 +40,7 @@ describe("the Waiting card", () => {
     expect(p.titles()).toEqual(["Waiting", "Live now", "Recordings"]);
     expect(tableRows(p.card())).toEqual([
       ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
-      ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 LunamaxFast"], ["no opponent yet"], "Status Waiting", ""],
+      ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 Lunamax Fast"], ["no opponent yet"], "Status Waiting", ""],
     ]);
     expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
     expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("2 agents waiting in a ranked queue");
@@ -80,7 +80,7 @@ describe("the Waiting card's lobby rows", () => {
     p.mounted.update(view({ status: "ready", rows: lobbies }));
     expect(tableRows(p.card()).map(row => row.slice(1, 5))).toEqual([
       ["Unranked · 2v2", ["omp-dolphin", "omp-dolphin/spar"], ["coffee-ant1540 ± 80", "seat open"], "Status 3 of 4 seats"],
-      ["Index · 1v1", ["GPT-6 LunamaxFast1500 ± 80"], ["GPT-6 LunamaxFast1337 ± 80"], "Status Starting"],
+      ["Index · 1v1", ["GPT-6 Lunamax Fast1500 ± 80"], ["GPT-6 Lunamax Fast1337 ± 80"], "Status Starting"],
       ["Challenge · 1v1", ["not joined yet"], ["kain"], "Status 1 of 2 seats"],
       ["Unranked · 1v1", ["ann"], ["bob"], "Status Starting"],
     ]);
@@ -89,6 +89,20 @@ describe("the Waiting card's lobby rows", () => {
     // The stacked rows carry the same lines.
     const item = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li")[0]!;
     expect(item.byClass("d1p-model").map(line => line.textContent)).toEqual(["omp-dolphin", "omp-dolphin/spar", "coffee-ant1540 ± 80", "seat open"]);
+    p.mounted.destroy();
+  });
+
+  it("lists only the colonies with someone in them on a phone, each colony kept with its note in the wide table", () => {
+    const p = page();
+    const solo: WaitingAgent = { displayName: "coffee-ant", mode: "1v1", waitingSeconds: 90, since: T, rating: rating(1540) };
+    p.mounted.update(view({ status: "ready", rows: [solo, lobbies[2]!, lobbies[0]!] }));
+    expect(tableRows(p.card()).map(row => row.slice(2, 4))).toEqual([[["coffee-ant1540 ± 80"], ["no opponent yet"]], [["not joined yet"], ["kain"]],
+      [["omp-dolphin", "omp-dolphin/spar"], ["coffee-ant1540 ± 80", "seat open"]]]);
+    const stacked = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li").map(item => item.byClass("d1p-colonies")[0]!.children
+      .map(node => node.tag === "dt" ? `${node.tag}:${node.textContent}` : node.byClass("d1p-model").map(line => line.textContent).join("|")));
+    expect(stacked).toEqual([["dt:Very Large Colony", "coffee-ant1540 ± 80"], ["dt:Lake Hodges Colony", "kain"],
+      ["dt:Very Large Colony", "omp-dolphin|omp-dolphin/spar", "dt:Lake Hodges Colony", "coffee-ant1540 ± 80|seat open"]]);
+    expect(p.card().byClass("d1p-narrow")[0]!.textContent).not.toMatch(/no opponent yet|not joined yet/);
     p.mounted.destroy();
   });
 
