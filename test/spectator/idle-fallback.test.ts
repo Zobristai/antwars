@@ -5,7 +5,7 @@ import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
 import { playerLabel, ratingResultRows } from "../../web/src/compose.ts";
 import type { Intake, IntakeTick } from "../../web/src/intake.ts";
 import { modeCopy, setFallback } from "../../web/src/replay.ts";
-import { CONNECT_MS, DROP_CHECKS, HANDOVER_KEY, LOBBY_STATUS_RECHECK_MS, openSource, type SpectatorSource } from "../../web/src/source.ts";
+import { CONNECT_MS, DROP_CHECKS, FINISHED_REPLAY_RECHECKS, HANDOVER_KEY, LOBBY_STATUS_RECHECK_MS, openSource, type SpectatorSource } from "../../web/src/source.ts";
 import { decodeData, type EventSourceLike } from "../../web/src/stream.ts";
 import { STARTING_COPY } from "../../web/src/waiting.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
@@ -418,6 +418,42 @@ it("a silent lobby whose match finished playing opens that match's replay, not t
   lobby.stream().emit(packets[0]!);
   await vi.advanceTimersByTimeAsync(1000);
   expect(reload).not.toHaveBeenCalled();
+});
+
+it("a finished lobby whose replay id reaches the server after the Leaderboard shows opens that replay on a re-read", async () => {
+  vi.useFakeTimers();
+  const server = serve([], [newest]);
+  server.status = { lobbyId: "ended", started: true, playbackFinished: true, delaySeconds: 300 };
+  const { doc, reload } = page();
+  const lobby = openLobby(doc, "silent", "ended");
+  await vi.advanceTimersByTimeAsync(CONNECT_MS);
+  expect(await lobby.pending).toBeNull();
+  expect(lobby.leaderboard).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(LOBBY_STATUS_RECHECK_MS);
+  expect(lobby.replay).not.toHaveBeenCalled();
+  // The saved replay's id is now on the lobby's record.
+  server.replayId = older;
+  await vi.advanceTimersByTimeAsync(LOBBY_STATUS_RECHECK_MS);
+  expect(lobby.replay).toHaveBeenCalledExactlyOnceWith(doc, older);
+  expect(lobby.stream().readyState).toBe(2);
+  const reads = server.paths.filter(path => path === "/watch/recording/ended").length;
+  await vi.advanceTimersByTimeAsync(3 * LOBBY_STATUS_RECHECK_MS);
+  expect(server.paths.filter(path => path === "/watch/recording/ended").length).toBe(reads);
+  expect(reload).not.toHaveBeenCalled();
+});
+
+it("a lobby with no recorded match re-reads its replay id a bounded number of times, then keeps the Leaderboard", async () => {
+  vi.useFakeTimers();
+  const server = serve([], [newest]);
+  server.status = { lobbyId: "ended", started: true, playbackFinished: true, delaySeconds: 300 };
+  const { doc } = page();
+  const lobby = openLobby(doc, "silent", "ended");
+  await vi.advanceTimersByTimeAsync(CONNECT_MS);
+  expect(await lobby.pending).toBeNull();
+  await vi.advanceTimersByTimeAsync((FINISHED_REPLAY_RECHECKS + 3) * LOBBY_STATUS_RECHECK_MS);
+  expect(server.paths.filter(path => path === "/watch/recording/ended")).toHaveLength(1 + FINISHED_REPLAY_RECHECKS);
+  expect(lobby.leaderboard).toHaveBeenCalledTimes(1);
+  expect(lobby.replay).not.toHaveBeenCalled();
 });
 
 it.each(["fail", "not-a-replay-id"])("a finished lobby whose replay lookup answers %s shows the Leaderboard", async answer => {

@@ -172,6 +172,26 @@ export async function finishedLobbyReplay(lobbyId: string, signal: AbortSignal, 
   } catch { return null; }
 }
 
+/** How many times a lobby link standing in with the Leaderboard re-reads its finished match's replay id,
+ * LOBBY_STATUS_RECHECK_MS apart: a just-saved replay's id reaches the lobby's record shortly after its playback ends. */
+export const FINISHED_REPLAY_RECHECKS = 8;
+
+/** Settles with the lobby's replay id once the server names one, or null after FINISHED_REPLAY_RECHECKS reads or on abort. */
+function laterFinishedReplay(lobbyId: string, signal: AbortSignal): Promise<string | null> {
+  return new Promise(resolve => {
+    let timer: ReturnType<typeof setTimeout>, left = FINISHED_REPLAY_RECHECKS;
+    const next = () => {
+      if (left-- <= 0) { resolve(null); return; }
+      timer = setTimeout(() => void finishedLobbyReplay(lobbyId, signal).then(id => {
+        if (signal.aborted) return;
+        if (id !== null) resolve(id); else next();
+      }), LOBBY_STATUS_RECHECK_MS);
+    };
+    signal.addEventListener("abort", () => { clearTimeout(timer); resolve(null); }, { once: true });
+    next();
+  });
+}
+
 /** What a lobby link shows while its lobby has no live match: its finished match's replay, else the Leaderboard page, loaded only when needed. */
 export interface LobbyScreens { leaderboard(doc: Document): void; replay(doc: Document, replayId: string): void }
 const LOBBY_SCREENS: LobbyScreens = {
@@ -375,7 +395,8 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         // No match to wait for (ended, unknown, or no status), or a finished one: a just-ended lobby's retained stream
         // sends its final snapshot at once. A public lobby whose match finished playing opens that match's replay.
         // Otherwise the Leaderboard; the live subscription stays open, so a running snapshot (a match that starts
-        // here) takes over (reload). A private lobby's replay needs its invite, so it keeps the Leaderboard.
+        // here) takes over (reload), and a replay whose id the server names a little later still opens. A private lobby's
+        // replay needs its invite, so it keeps the Leaderboard.
         if (opening === null || (opening.full?.result != null && !rendererHandover)) {
           if (abort.signal.aborted) return null;
           const replayId = invite ? null : await finishedLobbyReplay(params.get("lobby")!, abort.signal);
@@ -384,6 +405,10 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
           lobbyIdle = true;
           void firstRunning!.then(() => reload(true));
           screens.leaderboard(doc);
+          if (!invite) void laterFinishedReplay(params.get("lobby")!, abort.signal).then(id => {
+            if (id === null || reloading || abort.signal.aborted) return;
+            close(); screens.replay(doc, id);
+          });
           return null;
         }
         head = opening;
