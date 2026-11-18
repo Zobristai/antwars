@@ -12,7 +12,9 @@ import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
 import { MAX_LISTING_STORAGE_PAGES, UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
-import type { PublicVisibility } from "../../src/identity/publicVisibility.ts";
+import { createPublicVisibility, type PublicVisibility } from "../../src/identity/publicVisibility.ts";
+import type { ReplayLobby } from "../../src/live/watch-registry.ts";
+import { memoryWatchStore } from "../live/watch-fixtures.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
 import { headerLine, tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
@@ -547,6 +549,47 @@ describe("GET /matches lists every match, rated or unrated, that the hide list d
     expect(first.nextPageToken).toBe(`after:${id(19)}`);
     expect((await list(origin, first.nextPageToken)).matches.map(match => match.id)).toEqual(all.slice(20).map(match => match.id));
     expect(reads).toEqual([undefined, `after:${id(19)}`]);
+  });
+
+  it("with the hide list on, leaves out a recording whose players cannot be established and pages on past it", async () => {
+    const excluded = "00000000-0000-4000-8000-000000000001", player = "00000000-0000-4000-8000-000000000002";
+    const { store, docs } = memoryWatchStore();
+    docs.set(`identities/${player}`, { kind: "username" });
+    docs.set("lobbies/played", { seats: JSON.stringify([{ id: player }]) });
+    docs.set("lobbies/unresolved", { seats: JSON.stringify([{ id: player }, { id: "gone" }]) });
+    // Newest first: id(3)'s lobby link is pending (never published, or a recording still in flight: hidden either way),
+    // id(22)'s lobby names a seat identity that does not resolve; the rest list.
+    const { all } = stored(25, () => false);
+    const links = new Map<string, ReplayLobby>([[id(3), { state: "pending" }], [id(10), { state: "found", lobbyId: "played" }],
+      [id(22), { state: "found", lobbyId: "unresolved" }]]);
+    let failing = false;
+    const registry = { async replayLobby(replayId: string): Promise<ReplayLobby> {
+      if (failing) throw new Error("registry read failed");
+      return links.get(replayId) ?? { state: "none" };
+    } };
+    const opened: string[] = [];
+    const source: HistorySource = { ...storage(all).source, async open(openedId) { opened.push(openedId); return null; } };
+    const handler = historyRoutes(source, undefined, { publicVisibility: createPublicVisibility(store, registry, [excluded])! });
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    close.push(() => new Promise(resolve => server.close(() => resolve())));
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const shown = all.map(match => match.id).filter(shownId => shownId !== id(3) && shownId !== id(22));
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(shown.slice(0, 20));
+    const second = await list(origin, first.nextPageToken);
+    expect(second.matches.map(match => match.id)).toEqual(shown.slice(20));
+    expect(second.nextPageToken).toBeNull();
+    for (const page of [first, second]) for (const left of [id(3), id(22)]) expect(JSON.stringify(page)).not.toContain(left);
+    // Its own record answers as not found, without opening it.
+    for (const left of [id(3), id(22)]) expect((await fetch(`${origin}/matches/${left}`)).status).toBe(404);
+    expect(opened).toEqual([]);
+    // A failed read still fails the page.
+    failing = true;
+    const failed = await fetch(`${origin}/matches`);
+    expect(failed.status).toBe(503);
+    expect((await fetch(`${origin}/matches/${id(0)}`)).status).toBe(503);
   });
 
   it("serves a short page only where the history ends", async () => {

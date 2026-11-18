@@ -86,14 +86,41 @@ describe("private public-visibility configuration", () => {
     await expect(policy.identitiesVisibleEach(["leaf"])).rejects.toThrow(failed);
     await expect(policy.lobbyVisible("played")).rejects.toThrow(failed);
   });
-  it("treats failed or pending membership as unavailable, with no negative cache", async () => {
+  it("hides a recording whose lobby link is pending, in flight or never published, with no negative cache", async () => {
     const { store, docs } = memoryWatchStore();
-    const policy = createPublicVisibility(store, { replayLobby: async () => ({ state: "pending" }) }, [owner])!;
-    await expect(policy.replayVisible("record")).rejects.toThrow("Public visibility temporarily unavailable");
+    let state: "pending" | "none" = "pending";
+    const policy = createPublicVisibility(store, { replayLobby: async () => ({ state }) }, [owner])!;
+    expect(await policy.replayVisible("record")).toBe(false);
+    state = "none";
+    expect(await policy.replayVisible("record")).toBe(true);
     await expect(policy.lobbyVisible("absent")).rejects.toThrow();
     await expect(policy.identitiesVisible(["missing"])).rejects.toThrow();
     docs.set("identities/missing", { kind: "handle", ownerId: owner });
     expect(await policy.identitiesVisible(["missing"])).toBe(false);
+  });
+  it("hides a recording whose lobby cannot say who played, and still fails a failed read", async () => {
+    const { store, docs } = memoryWatchStore();
+    docs.set(`identities/${other}`, { kind: "username" });
+    docs.set("identities/odd", { kind: "handle", ownerId: "not-an-id" });
+    docs.set("lobbies/clear", { seats: JSON.stringify([{ id: other }]) });
+    docs.set("lobbies/unseated", { startsAt: "1760000000000" });
+    docs.set("lobbies/garbled", { seats: "{" });
+    docs.set("lobbies/nameless", { seats: JSON.stringify([{ name: "x" }]) });
+    docs.set("lobbies/unknown", { seats: JSON.stringify([{ id: other }, { id: "missing" }]) });
+    docs.set("lobbies/malformed", { seats: JSON.stringify([{ id: "odd" }]) });
+    const policy = createPublicVisibility(store, { replayLobby: async id => ({ state: "found", lobbyId: id }) }, [owner])!;
+    expect(await policy.replayVisible("clear")).toBe(true);
+    for (const id of ["absent", "unseated", "garbled", "nameless", "unknown", "malformed"]) expect(await policy.replayVisible(id)).toBe(false);
+    // Other public checks keep failing on the same records.
+    await expect(policy.lobbyVisible("unknown")).rejects.toThrow("Public visibility temporarily unavailable");
+    const failed = "Public visibility temporarily unavailable";
+    const broken = { ...store, transaction: (async () => { throw new Error("transport"); }) as typeof store.transaction };
+    await expect(createPublicVisibility(broken, { replayLobby: async () => ({ state: "found", lobbyId: "clear" }) }, [owner])!
+      .replayVisible("record")).rejects.toThrow(failed);
+    const unreadable = { ...store, get: (async () => { throw new Error("transport"); }) as typeof store.get };
+    await expect(createPublicVisibility(unreadable, registry, [owner])!.replayVisible("2026-10-20T10-00-00-000Z-1")).rejects.toThrow(failed);
+    await expect(createPublicVisibility(store, { replayLobby: async () => { throw new Error("transport"); } }, [owner])!
+      .replayVisible("record")).rejects.toThrow(failed);
   });
   it("hides a found recording and leaves scheduled historical recordings visible", async () => {
     const { store, docs } = memoryWatchStore();
