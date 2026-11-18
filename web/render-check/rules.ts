@@ -4,15 +4,22 @@
  * and the measure that broke the rule, with the element's box in page pixels for the marked render.
  *
  * Fails:
- * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings) laid out on 2+ lines
- * - clipped / cut / offscreen: text cut by an overflow box, an ellipsis, or the viewport's sides
+ * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings;
+ *   labels and table headings are one-line items) laid out on 2+ lines
+ * - clipped / cut / offscreen: text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport's
+ *   sides; an image, board or control cut by an overflow box or the viewport, unless it is cropped to fill that box
  * - sideways / page-wider: a scroller with sideways overflow, or a page wider than the viewport
- * - row-uneven / grid-uneven: tiles of one kind (2+ side by side) of unequal height, in a row or across the grid
+ * - row-uneven / grid-uneven: tiles of one kind (2+ in a grid, one column or several) of unequal height, in a row or
+ *   across the grid. In one column the tiles must each fit on the screen: taller sections are a reading column.
  * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text
  * - part-uneven: a tile part shown on some tiles of the grid but not others
  * - page-empty: an empty horizontal band on the page taller than RULE_LIMITS.pageBandPx
  * Lists, without failing:
  * - tight: a one-line item with under RULE_LIMITS.tightSpare of its width to spare
+ *
+ * Every finding carries its extent (how far it breaks the rule: lines, or px, or tiles missing a part), so a held
+ * finding that gets worse is new. judgePage also leaves each finding's element in window.__renderCheckAnchors, so the
+ * marked renders can be taken by scrolling the judged layout rather than by laying it out again.
  */
 
 export const RULE_IDS = ["wrap", "clipped", "cut", "offscreen", "sideways", "page-wider", "row-uneven", "grid-uneven",
@@ -31,7 +38,14 @@ export const RULE_LIMITS = {
 } as const;
 
 export interface Box { x: number; y: number; w: number; h: number }
-export interface Finding { rule: RuleId; element: string; text: string; measure: string; box: Box | null; spare?: number }
+/** Where a finding's box sits against its element (window.__renderCheckAnchors[index]), in px. */
+export interface Anchor { index: number; dx: number; dy: number }
+export interface Finding {
+  rule: RuleId; element: string; text: string; measure: string;
+  /** How far the rule is broken: lines for wrap, tiles missing the part for part-uneven, otherwise px. */
+  extent: number;
+  box: Box | null; anchor?: Anchor; spare?: number;
+}
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
 export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
@@ -39,6 +53,17 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   const failures: Finding[] = [];
   const tight: Finding[] = [];
   const box = (r: DOMRect): Box => ({ x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) });
+  const anchors: Element[] = [];
+  (window as unknown as { __renderCheckAnchors: Element[] }).__renderCheckAnchors = anchors;
+  /** Record a failure, anchored to the element it is about so its box can be found again after scrolling. */
+  const fail = (f: Omit<Finding, "anchor">, at: Element | null) => {
+    let anchor: Anchor | undefined;
+    if (at && f.box) {
+      const r = at.getBoundingClientRect();
+      anchor = { index: anchors.push(at) - 1, dx: f.box.x - Math.round(r.left + scrollX), dy: f.box.y - Math.round(r.top + scrollY) };
+    }
+    failures.push(anchor ? { ...f, anchor } : f);
+  };
   const style = (e: Element) => getComputedStyle(e);
   const ancestors = function* (el: Element) { for (let a = el.parentElement; a; a = a.parentElement) yield a; };
   const keepClass = (c: string) => !/^(is-|has-|c\d+$|d1p-c\d)/.test(c);
@@ -97,7 +122,9 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   const lineable = (el: Element, top: boolean): boolean => {
     const cs = style(el);
     if (cs.display === "none") return true;
-    if (cs.display.includes("grid") || cs.display.startsWith("table") || cs.display === "list-item" && !top) return false;
+    // A table heading is one line of text in its cell; other table parts hold rows and cells, not a line.
+    const heading = top && el.matches("th");
+    if (cs.display.includes("grid") || cs.display.startsWith("table") && !heading || cs.display === "list-item" && !top) return false;
     if (cs.display.includes("flex") && !rowFlex(cs)) return false;
     // A group of links or buttons allowed to wrap is a set of controls, not a line of text.
     if (cs.flexWrap !== "nowrap" && [...el.children].some(c => c.matches("a, button"))) return false;
@@ -106,12 +133,14 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       if (!c.textContent?.trim() && !c.querySelector("img, svg")) continue;
       const d = style(c).display;
       if (d === "none") continue;
-      if (!rowFlex(cs) && !inline(d)) return false;
-      if (!lineable(c, false)) return false;
+      // A block inside a heading cell (a sort button, a wrapper) is still the heading's one line.
+      if (!rowFlex(cs) && !inline(d) && !(heading && d === "block")) return false;
+      if (!lineable(c, heading && d === "block")) return false;
     }
     return true;
   };
-  const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary, label";
+  // Running text, which may wrap. Labels and table headings are not here: they are one-line items.
+  const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
   const all = [...document.body.querySelectorAll("*")].filter(el => !skipped(el));
 
   // One-line items: the outermost line-able blocks with text.
@@ -132,7 +161,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const words = text(el);
     const prose = el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80;
     if (lines > 1 && !prose) {
-      failures.push({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, box: box(el.getBoundingClientRect()) });
+      fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
       const cs = style(el);
       const r = el.getBoundingClientRect();
@@ -141,14 +170,15 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       // Only items whose width is set by their container: a shrink-wrapped box always fits exactly.
       const sized = cs.display === "block" || cs.display === "flex" || cs.display === "list-item" || cs.width.endsWith("px") && cs.flexGrow !== "0";
       if (sized && avail > 0 && (avail - used) / avail < limits.tightSpare) {
-        tight.push({ rule: "tight", element: name(el), text: words, measure: `${Math.round(used)} of ${Math.round(avail)} px (${Math.round((1 - used / avail) * 100)}% spare)`, box: box(r), spare: (avail - used) / avail });
+        tight.push({ rule: "tight", element: name(el), text: words, measure: `${Math.round(used)} of ${Math.round(avail)} px (${Math.round((1 - used / avail) * 100)}% spare)`, extent: 0, box: box(r), spare: (avail - used) / avail });
       }
     }
   }
 
-  // Text cut by an overflow box, an ellipsis, or the viewport.
-  const cutBy = (el: Element, r: DOMRect): Element | null => {
-    for (const a of ancestors(el)) {
+  // Text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport.
+  /** The box that clips el's content, and how far r reaches past it, in px; null when nothing cuts r. */
+  const cutBy = (el: Element, r: DOMRect, slackY: number): { by: Element; past: number } | null => {
+    for (const a of [el, ...ancestors(el)]) {
       if (a === document.body || a === document.documentElement) break;
       const cs = style(a);
       const x = cs.overflowX !== "visible", y = cs.overflowY !== "visible";
@@ -157,40 +187,81 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const b = a.getBoundingClientRect();
       const left = b.left + parseFloat(cs.borderLeftWidth), top = b.top + parseFloat(cs.borderTopWidth);
       const right = left + a.clientWidth, bottom = top + a.clientHeight;
-      if ((x && (r.right > right + 0.5 || r.left < left - 0.5)) || (y && cs.overflowY !== "auto" && cs.overflowY !== "scroll" && (r.bottom > bottom + 1 || r.top < top - 1))) return a;
+      const pastX = x ? Math.max(r.right - right, left - r.left, 0) : 0;
+      const pastY = y && cs.overflowY !== "auto" && cs.overflowY !== "scroll" ? Math.max(r.bottom - bottom, top - r.top, 0) : 0;
+      if (pastX > 0.5 || pastY > slackY) return { by: a, past: Math.max(pastX, pastY > slackY ? pastY : 0) };
     }
     return null;
   };
-  const reported = new Set<Element>();
+  const textCuts = new Map<Element, { rule: "clipped" | "offscreen"; by: Element | null; past: number; r: DOMRect }>();
   for (const { r, el } of textRects(document.body)) {
-    if (reported.has(el)) continue;
-    if (r.right > vw + 0.5 || r.left < -0.5) {
-      reported.add(el);
-      failures.push({ rule: "offscreen", element: name(el), text: text(el), measure: `text at ${Math.round(r.left)}-${Math.round(r.right)} px, viewport 0-${vw}`, box: box(r) });
+    const had = textCuts.get(el);
+    const off = Math.max(r.right - vw, -r.left, 0);
+    if (off > 0.5) {
+      if (!had || had.rule !== "offscreen" || off > had.past) textCuts.set(el, { rule: "offscreen", by: null, past: off, r });
       continue;
     }
-    const by = cutBy(el, r);
-    if (by) {
-      reported.add(el);
-      failures.push({ rule: "clipped", element: name(el), text: text(el), measure: `cut by ${name(by)}`, box: box(r) });
+    if (had?.rule === "offscreen") continue;
+    // A glyph box is taller than a tight line box; only text reaching further than that is cut.
+    const cut = cutBy(el, r, Math.max(1, r.height * 0.2));
+    if (cut && (!had || cut.past > had.past)) textCuts.set(el, { rule: "clipped", by: cut.by, past: cut.past, r });
+  }
+  const reported = new Set<Element>(textCuts.keys());
+  for (const [el, c] of textCuts) {
+    const past = Math.round(c.past);
+    if (c.rule === "offscreen") {
+      fail({ rule: "offscreen", element: name(el), text: text(el), measure: `text at ${Math.round(c.r.left)}-${Math.round(c.r.right)} px, viewport 0-${vw}`, extent: past, box: box(c.r) }, el);
+    } else {
+      fail({ rule: "clipped", element: name(el), text: text(el), measure: `${past} px cut by ${c.by === el ? "its own box" : name(c.by!)}`, extent: past, box: box(c.r) }, el);
     }
+  }
+  // An image, board or control cut by an overflow box or the viewport, unless it is cropped to fill that box.
+  for (const el of document.body.querySelectorAll("img, svg, canvas, video, iframe, button, input, select, textarea")) {
+    if (el.closest("[data-render-check='skip']") || el.parentElement?.closest("svg, button") || !shown(el)) continue;
+    if ([el, ...el.querySelectorAll("*")].some(c => reported.has(c))) continue;
+    const r = el.getBoundingClientRect();
+    let edges: { by: Element | null; left: number; top: number; right: number; bottom: number } | null = null;
+    for (const a of ancestors(el)) {
+      if (a === document.body || a === document.documentElement) break;
+      const cs = style(a);
+      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+      if (/auto|scroll/.test(cs.overflowX + cs.overflowY)) continue;
+      const b = a.getBoundingClientRect();
+      const left = b.left + parseFloat(cs.borderLeftWidth), top = b.top + parseFloat(cs.borderTopWidth);
+      const e = { by: a, left, top, right: left + a.clientWidth, bottom: top + a.clientHeight };
+      if (r.left < e.left - 0.5 || r.right > e.right + 0.5 || r.top < e.top - 0.5 || r.bottom > e.bottom + 0.5) { edges = e; break; }
+    }
+    if (!edges && (r.left < -0.5 || r.right > vw + 0.5)) edges = { by: null, left: 0, top: -Infinity, right: vw, bottom: Infinity };
+    if (!edges) continue;
+    // An image or board cropped to fill spans the whole box on the side it is cut (a hero image in its frame, a board
+    // in its window). A control is never cropped by design.
+    const media = !el.matches("button, input, select, textarea");
+    const coverX = media && r.left <= edges.left + 0.5 && r.right >= edges.right - 0.5;
+    const coverY = media && r.top <= edges.top + 0.5 && r.bottom >= edges.bottom - 0.5;
+    const pastX = coverX ? 0 : Math.max(r.right - edges.right, edges.left - r.left, 0);
+    const pastY = coverY ? 0 : Math.max(r.bottom - edges.bottom, edges.top - r.top, 0);
+    const past = Math.round(Math.max(pastX, pastY));
+    if (past < 1) continue;
+    reported.add(el);
+    fail({ rule: edges.by ? "clipped" : "offscreen", element: name(el), text: text(el), measure: `${el.tagName.toLowerCase()} ${past} px cut by ${edges.by ? name(edges.by) : "the viewport"}`,
+      extent: past, box: box(r) }, el);
   }
   for (const el of all) {
     const cs = style(el);
     if (cs.textOverflow !== "ellipsis" || el.scrollWidth <= el.clientWidth + 0.5 || reported.has(el) || !shown(el)) continue;
     if ([...el.querySelectorAll("*")].some(c => reported.has(c))) continue;
-    failures.push({ rule: "cut", element: name(el), text: text(el), measure: `${el.scrollWidth} px of text in ${el.clientWidth} px`, box: box(el.getBoundingClientRect()) });
+    fail({ rule: "cut", element: name(el), text: text(el), measure: `${el.scrollWidth} px of text in ${el.clientWidth} px`, extent: el.scrollWidth - el.clientWidth, box: box(el.getBoundingClientRect()) }, el);
   }
   for (const el of all) {
     const cs = style(el);
     if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1 && el.textContent?.trim() && shown(el)) {
-      failures.push({ rule: "sideways", element: name(el), text: text(el), measure: `${el.scrollWidth} px wide in ${el.clientWidth} px`, box: box(el.getBoundingClientRect()) });
+      fail({ rule: "sideways", element: name(el), text: text(el), measure: `${el.scrollWidth} px wide in ${el.clientWidth} px`, extent: el.scrollWidth - el.clientWidth, box: box(el.getBoundingClientRect()) }, el);
     }
   }
   const pageWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
-  if (pageWidth > vw + 0.5) failures.push({ rule: "page-wider", element: "html", text: "", measure: `${pageWidth} px wide, viewport ${vw} px`, box: null });
+  if (pageWidth > vw + 0.5) fail({ rule: "page-wider", element: "html", text: "", measure: `${pageWidth} px wide, viewport ${vw} px`, extent: Math.round(pageWidth - vw), box: null }, null);
 
-  // Grids of like tiles: 2+ children of one kind, at least two side by side.
+  // Grids of like tiles: 2+ children of one kind, in one column or several.
   const boxed = (el: Element) => {
     const cs = style(el);
     return parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderLeftWidth) > 0 || cs.boxShadow !== "none" ||
@@ -213,19 +284,21 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const rects = (cards as Element[]).map(c => c.getBoundingClientRect());
     const rows = new Map<number, number[]>();
     rects.forEach((r, i) => { const top = Math.round(r.top); rows.set(top, [...(rows.get(top) ?? []), i]); });
-    if (![...rows.values()].some(row => row.length >= 2)) continue;
+    // In one column, like tiles each fit on the screen; sections taller than the screen are a page's reading column.
+    if (![...rows.values()].some(row => row.length >= 2) && rects.some(r => r.height > innerHeight)) continue;
     grids++;
     tiles += cards.length;
     const where = name(el);
     for (const row of rows.values()) {
       const h = row.map(i => rects[i]!.height);
       if (row.length >= 2 && Math.max(...h) - Math.min(...h) > limits.heightSlackPx) {
-        failures.push({ rule: "row-uneven", element: where, text: text(cards[row[0]!]!), measure: `row heights ${h.map(Math.round).join(", ")} px`, box: box(el.getBoundingClientRect()) });
+        fail({ rule: "row-uneven", element: where, text: text(cards[row[0]!]!), measure: `row heights ${h.map(Math.round).join(", ")} px`, extent: Math.round(Math.max(...h) - Math.min(...h)), box: box(el.getBoundingClientRect()) }, el);
       }
     }
     const heights = rects.map(r => r.height);
     if (Math.max(...heights) - Math.min(...heights) > limits.heightSlackPx) {
-      failures.push({ rule: "grid-uneven", element: where, text: "", measure: `tile heights ${Math.round(Math.min(...heights))}-${Math.round(Math.max(...heights))} px over ${cards.length} tiles`, box: box(el.getBoundingClientRect()) });
+      fail({ rule: "grid-uneven", element: where, text: "", measure: `tile heights ${Math.round(Math.min(...heights))}-${Math.round(Math.max(...heights))} px over ${cards.length} tiles`,
+        extent: Math.round(Math.max(...heights) - Math.min(...heights)), box: box(el.getBoundingClientRect()) }, el);
     }
     // Empty bands inside each tile.
     for (const c of cards as Element[]) {
@@ -243,8 +316,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       if (bottom - at > gap) { gap = bottom - at; gapAt = at; }
       const line = parseFloat(ccs.lineHeight) || parseFloat(ccs.fontSize) * 1.35;
       if (gap > limits.tileBandLines * line) {
-        failures.push({ rule: "tile-empty", element: name(c), text: text(c), measure: `${Math.round(gap)} px empty (limit ${Math.round(limits.tileBandLines * line)} px)`,
-          box: { x: Math.round(cr.left + scrollX), y: Math.round(gapAt + scrollY), w: Math.round(cr.width), h: Math.round(gap) } });
+        fail({ rule: "tile-empty", element: name(c), text: text(c), measure: `${Math.round(gap)} px empty (limit ${Math.round(limits.tileBandLines * line)} px)`, extent: Math.round(gap),
+          box: { x: Math.round(cr.left + scrollX), y: Math.round(gapAt + scrollY), w: Math.round(cr.width), h: Math.round(gap) } }, c);
       }
     }
     // A part (a classed element with text) shown on some tiles but not others.
@@ -262,7 +335,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     for (const part of union) {
       const on = each.filter(s => s.has(part)).length;
       if (on < cards.length) {
-        failures.push({ rule: "part-uneven", element: `${where} > ${part}`, text: "", measure: `shown on ${on} of ${cards.length} tiles`, box: box(el.getBoundingClientRect()) });
+        fail({ rule: "part-uneven", element: `${where} > ${part}`, text: "", measure: `shown on ${on} of ${cards.length} tiles`, extent: cards.length - on, box: box(el.getBoundingClientRect()) }, el);
       }
     }
   }
@@ -308,8 +381,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const tall = band.bottom - band.top;
     if (tall <= limits.pageBandPx) continue;
     const where = `band below ${band.above ? name(band.above) : "page top"}`;
-    failures.push({ rule: "page-empty", element: where, text: band.below ? `above: ${text(band.below)}` : "",
-      measure: `${Math.round(tall)} px empty (limit ${limits.pageBandPx} px)`, box: { x: 0, y: Math.round(band.top), w: vw, h: Math.round(tall) } });
+    fail({ rule: "page-empty", element: where, text: band.below ? `above: ${text(band.below)}` : "",
+      measure: `${Math.round(tall)} px empty (limit ${limits.pageBandPx} px)`, extent: Math.round(tall), box: { x: 0, y: Math.round(band.top), w: vw, h: Math.round(tall) } }, band.below);
   }
   return { failures, tight, counted: { items: items.length, grids, tiles } };
 }

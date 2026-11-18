@@ -1,5 +1,5 @@
 {
- "note": "Failures already on main (81db121) when the render check was introduced, reviewed. Each entry holds that many findings of one rule on one element of one surface, width and typeface. Only a failure not held here, or found more often than its count, fails the check; held failures show as warnings. Changes to this file are reviewed like code; shrink it as fixes land.",
+ "note": "Failures already on main (81db121) when the render check was introduced, reviewed. Each entry holds one finding: one rule on one element and text of one surface, width and typeface, at the extent it was found (lines for wrap, tiles missing the part for part-uneven, otherwise px). A finding not held here, or found further than its held extent, fails the check; held findings show as warnings. Changes to this file are reviewed like code; shrink it as fixes land.",
  "held": [
   {
    "surface": "landing",
@@ -7,7 +7,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
-   "count": 1,
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # RANK NAME RATING RATED MATCHES RECORD LAST ",
+   "extent": 96,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -16,7 +17,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
-   "count": 1,
+   "text": "above: Bring your agent",
+   "extent": 96,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -25,8 +27,19 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
-   "count": 1,
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 96,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
+   "text": "RATED MATCHES",
+   "extent": 2,
+   "why": "The landing page's leaderboard heading “Rated matches” wraps to two lines at 1280 px; on main before this check."
   },
   {
    "surface": "landing",
@@ -34,7 +47,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
-   "count": 1,
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # RANK NAME RATING RATED MATCHES RECORD LAST ",
+   "extent": 96,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -43,7 +57,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
-   "count": 1,
+   "text": "above: Bring your agent",
+   "extent": 94,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -52,8 +67,19 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
-   "count": 1,
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 96,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "wrap",
+   "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
+   "text": "RATED MATCHES",
+   "extent": 2,
+   "why": "The landing page's leaderboard heading “Rated matches” wraps to two lines at 1280 px; on main before this check."
   },
   {
    "surface": "landing",
@@ -61,7 +87,28 @@
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
-   "count": 3,
+   "text": "DeepSeek V4.1 Flash",
+   "extent": 44,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 47,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -70,7 +117,8 @@
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
-   "count": 1,
+   "text": "antwarsos-harness",
+   "extent": 29,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -79,7 +127,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
-   "count": 1,
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # NAME RATING Rank 1 GPT-6.1 TerraMAXFAST Rat",
+   "extent": 56,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -88,7 +137,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
-   "count": 1,
+   "text": "above: Bring your agent",
+   "extent": 56,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -97,7 +147,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
-   "count": 1,
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 56,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -106,7 +157,28 @@
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
-   "count": 3,
+   "text": "DeepSeek V4.1 Flash",
+   "extent": 38,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 45,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -115,7 +187,8 @@
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
-   "count": 1,
+   "text": "antwarsos-harness",
+   "extent": 28,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -124,7 +197,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
-   "count": 1,
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # NAME RATING Rank 1 GPT-6.1 TerraMAXFAST Rat",
+   "extent": 56,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -133,7 +207,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
-   "count": 1,
+   "text": "above: Bring your agent",
+   "extent": 55,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -142,7 +217,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
-   "count": 1,
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 56,
    "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
   },
   {
@@ -151,7 +227,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -160,7 +237,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -169,7 +247,218 @@
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
-   "count": 22,
+   "text": "Claude Fable 5.2",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Opus 5.5",
+   "extent": 17,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Opus 5.5",
+   "extent": 17,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Sonnet 5.5",
+   "extent": 27,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Sonnet 5.5",
+   "extent": 27,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Sonnet 5.5",
+   "extent": 27,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "DeepSeek V4.1 Flash",
+   "extent": 44,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 31,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 21,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 21,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 21,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 47,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder Full 1.0",
+   "extent": 44,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -178,7 +467,48 @@
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
-   "count": 5,
+   "text": "antwars-flow-test",
+   "extent": 17,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 29,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -187,7 +517,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -196,7 +527,218 @@
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
-   "count": 22,
+   "text": "Claude Fable 5.2",
+   "extent": 16,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 16,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 16,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 16,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Fable 5.2",
+   "extent": 16,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Opus 5.5",
+   "extent": 14,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Opus 5.5",
+   "extent": 14,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Sonnet 5.5",
+   "extent": 24,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Sonnet 5.5",
+   "extent": 24,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Claude Sonnet 5.5",
+   "extent": 24,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "DeepSeek V4.1 Flash",
+   "extent": 38,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Gemini 4 Hydrogen",
+   "extent": 29,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 19,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder 1.0",
+   "extent": 45,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-mname",
+   "text": "Muse Wonder Full 1.0",
+   "extent": 42,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -205,7 +747,48 @@
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
-   "count": 5,
+   "text": "antwars-flow-test",
+   "extent": 18,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 28,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 28,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 28,
+   "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.d1p-rec-slot > span.d1p-rec-player > span.d1p-rec-name > span.d1p-user",
+   "text": "antwarsos-harness",
+   "extent": 28,
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
@@ -214,7 +797,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -223,7 +807,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -232,7 +817,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -241,7 +827,8 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.d1.d1-hud > div.d1-below > div.d1-deck-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   },
   {
@@ -250,7 +837,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.d1.d1-hud > div.d1-below > div.d1-deck-end > button.d1-agent-button",
-   "count": 1,
+   "text": "above: Rules",
+   "extent": 50,
    "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
   }
  ]

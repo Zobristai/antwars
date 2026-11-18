@@ -1,7 +1,7 @@
 /**
  * The render check's verdict and its outputs: report.json, report.md, GitHub annotations and the job summary.
- * A failure counts against the build only when the reviewed held list (held.json) does not already hold it,
- * or holds fewer of it than this run found.
+ * A failure counts against the build unless the reviewed held list (held.json) holds that very finding: the same
+ * rule on the same element and text of the same surface, width and typeface, broken no further than it was held at.
  */
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,8 +15,10 @@ export interface Render {
   typeface: Typeface;
   failures: Finding[];
   tight: Finding[];
-  /** Where the marked render was saved, relative to the output directory. */
-  image: string;
+  /** The marked renders saved, relative to the output directory: the first shows the top of the surface. */
+  images: string[];
+  /** For each failure, the marked render that shows it. */
+  failureImages: string[];
   fonts: Record<string, number>;
   /** Problems that make this render itself invalid: wrong typeface, unanswered requests, a page that did not load. */
   invalid: string[];
@@ -24,11 +26,15 @@ export interface Render {
   fixtures: string[];
 }
 
-export interface HeldEntry { surface: string; width: number; typeface: Typeface; rule: RuleId; element: string; count: number; why: string }
+/** One finding already on main: held at its extent (lines, px or tiles, as its rule measures it). */
+export interface HeldEntry { surface: string; width: number; typeface: Typeface; rule: RuleId; element: string; text: string; extent: number; why: string }
 export interface HeldList { note: string; held: HeldEntry[] }
 
-export const heldKey = (e: { surface: string; width: number; typeface: string; rule: string; element: string }): string =>
-  [e.surface, e.width, e.typeface, e.rule, e.element].join(" | ");
+export const heldKey = (e: { surface: string; width: number; typeface: string; rule: string; element: string; text: string }): string =>
+  [e.surface, e.width, e.typeface, e.rule, e.element, e.text].join(" | ");
+
+/** How much further than its held extent a finding may measure and still be the held one: rounding, not change. */
+export const heldSlack = (rule: RuleId): number => rule === "wrap" || rule === "part-uneven" ? 0 : 1;
 
 export async function readHeld(file: string): Promise<HeldList> {
   return JSON.parse(await readFile(file, "utf8")) as HeldList;
@@ -41,42 +47,45 @@ export interface Verdict {
   heldFailures: Judged[];
   tight: Judged[];
   invalid: { surface: string; width: number; typeface: Typeface; problem: string }[];
-  /** Held entries this run no longer found, or found fewer of: the list can shrink. */
-  heldUnused: { entry: HeldEntry; found: number }[];
+  /** Held entries this run did not match: fixed, or now worse (then also a new failure). The list can shrink. */
+  heldUnused: HeldEntry[];
 }
 
 export function judge(renders: readonly Render[], held: HeldList): Verdict {
-  const allowance = new Map(held.held.map(e => [heldKey(e), e.count]));
-  const found = new Map<string, number>();
+  const open = new Map<string, HeldEntry[]>();
+  for (const e of held.held) open.set(heldKey(e), [...(open.get(heldKey(e)) ?? []), e]);
   const newFailures: Judged[] = [], heldFailures: Judged[] = [], tight: Judged[] = [];
   const invalid: Verdict["invalid"] = [];
   for (const r of renders) {
-    const at = { surface: r.surface, width: r.width, typeface: r.typeface, image: r.image };
-    for (const f of r.failures) {
-      const key = heldKey({ ...at, rule: f.rule, element: f.element });
-      const n = (found.get(key) ?? 0) + 1;
-      found.set(key, n);
-      const isHeld = n <= (allowance.get(key) ?? 0);
-      (isHeld ? heldFailures : newFailures).push({ ...f, ...at, held: isHeld });
+    const at = { surface: r.surface, width: r.width, typeface: r.typeface };
+    // The worst findings take the largest held extents first, so a held finding that worsens is the one left over.
+    const order = r.failures.map((f, i) => i).sort((a, b) => r.failures[b]!.extent - r.failures[a]!.extent);
+    for (const i of order) {
+      const f = r.failures[i]!;
+      const candidates = open.get(heldKey({ ...at, rule: f.rule, element: f.element, text: f.text })) ?? [];
+      candidates.sort((a, b) => b.extent - a.extent);
+      const match = candidates.findIndex(e => f.extent <= e.extent + heldSlack(f.rule));
+      const judged = { ...f, ...at, image: r.failureImages[i] ?? r.images[0] ?? "", held: match >= 0 };
+      if (match >= 0) { candidates.splice(match, 1); heldFailures.push(judged); continue; }
+      const was = candidates[0];
+      newFailures.push(was ? { ...judged, measure: `${judged.measure}; held at ${was.extent}, now ${f.extent}` } : judged);
     }
-    for (const f of r.tight) tight.push({ ...f, ...at, held: false });
+    for (const f of r.tight) tight.push({ ...f, ...at, image: r.images[0] ?? "", held: false });
     for (const problem of r.invalid) invalid.push({ surface: r.surface, width: r.width, typeface: r.typeface, problem });
   }
-  const heldUnused = held.held.map(entry => ({ entry, found: found.get(heldKey(entry)) ?? 0 })).filter(u => u.found < u.entry.count);
+  const heldUnused = [...open.values()].flat();
   return { passed: newFailures.length === 0 && invalid.length === 0, newFailures, heldFailures, tight, invalid, heldUnused };
 }
 
-/** The held list that would hold exactly this run's failures, keeping each existing entry's reason. */
+/** The held list that would hold exactly this run's failures, keeping the reason of each element already held. */
 export function heldFrom(renders: readonly Render[], previous: HeldList, why: string): HeldList {
-  const reasons = new Map(previous.held.map(e => [heldKey(e), e.why]));
-  const counts = new Map<string, HeldEntry>();
+  const reasons = new Map(previous.held.map(e => [heldKey({ ...e, text: "" }), e.why]));
+  const held: HeldEntry[] = [];
   for (const r of renders) for (const f of r.failures) {
-    const entry = { surface: r.surface, width: r.width, typeface: r.typeface, rule: f.rule, element: f.element };
-    const key = heldKey(entry);
-    const had = counts.get(key);
-    counts.set(key, had ? { ...had, count: had.count + 1 } : { ...entry, count: 1, why: reasons.get(key) ?? why });
+    const entry = { surface: r.surface, width: r.width, typeface: r.typeface, rule: f.rule, element: f.element, text: f.text, extent: f.extent };
+    held.push({ ...entry, why: reasons.get(heldKey({ ...entry, text: "" })) ?? why });
   }
-  return { note: previous.note, held: [...counts.values()].sort((a, b) => heldKey(a).localeCompare(heldKey(b))) };
+  return { note: previous.note, held: held.sort((a, b) => heldKey(a).localeCompare(heldKey(b)) || a.extent - b.extent) };
 }
 
 /** Tight fits are listed, not failed; the report shows only the tightest. */
@@ -105,8 +114,8 @@ export function markdown(v: Verdict, renders: readonly Render[], context: { buil
   const tightest = [...v.tight].sort((a, b) => (a.spare ?? 1) - (b.spare ?? 1)).slice(0, TIGHT_SHOWN);
   table(v.tight.length > TIGHT_SHOWN ? `Tight fits (the ${TIGHT_SHOWN} tightest of ${v.tight.length}; all are in report.json)` : "Tight fits", tightest);
   if (v.heldUnused.length) {
-    out.push("## Held entries no longer found", "", "The held list can shrink by these:", "",
-      ...v.heldUnused.map(u => `- ${heldKey(u.entry)}: held ${u.entry.count}, found ${u.found}`), "");
+    out.push("## Held entries not matched", "", "Fixed, or now worse (then also listed as new failures). The held list can shrink by the fixed ones:", "",
+      ...v.heldUnused.map(e => `- ${heldKey(e)}: held at ${e.extent}`), "");
   }
   return out.join("\n");
 }

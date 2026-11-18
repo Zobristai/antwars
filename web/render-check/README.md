@@ -18,7 +18,9 @@ Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liber
 | matches | `/?page=matches` |
 | leaderboard | `/?page=leaderboard` |
 | rules | `/rules`, as the server renders it before a map is drawn |
-| replay-free-for-all | `/?replay=<id>` of a public Free-for-all recording: the four-colony match HUD over the 3D board |
+| replay-free-for-all | `/?replay=<id>&capture=1` of a public Free-for-all recording: the four-colony match HUD over the 3D board |
+
+On Watch and the replay the client's animation clock (`performance.now`, which `web/src/clock.ts` reads) is the check's: it stands still except when the check steps it. Where the page shows a board, the check plays its recording to 10 s and draws that frame, so the HUD shows one fixed moment while it is judged and its renders are saved, and the 3D board never measures itself too slow in CI's software renderer and reloads as 2D. The replay also loads with `capture=1`, as `web/capture/` does, so its board draws only when stepped; Watch loads as a visitor sees it, because there `capture=1` also changes what the page shows with no live match.
 
 The typeface is bound to `system-ui` and `sans-serif` through a per-run fontconfig that offers only that typeface (`fonts.ts`). Roboto comes from the pinned devDependency `@expo-google-fonts/roboto` (OFL); Liberation Sans from the Playwright image. The browser's own report of the fonts it drew with is checked on every render; a render drawn in another face is invalid and fails the run.
 
@@ -35,23 +37,25 @@ Any other request fails the render. To refresh the data: `npm run render-check -
 
 A render fails on:
 
-- **wrap**: a one-line item (a block holding only inline content: a name, a label, a button) laid out on two or more lines. Prose and headings may wrap.
-- **clipped / cut / offscreen**: text cut by an overflow box, by an ellipsis, or by the viewport's sides. Visually hidden screen-reader text is not judged.
+- **wrap**: a one-line item (a block holding only inline content: a name, a label, a button, a table heading) laid out on two or more lines. Prose and headings may wrap.
+- **clipped / cut / offscreen**: text cut by an overflow box (its own or an ancestor's), by an ellipsis, or by the viewport's sides; an image, board or control cut by an overflow box or the viewport. An image or board that spans the whole box on the side it is cut (a hero image cropped to its frame) is not judged; a control always is. Visually hidden screen-reader text is not judged.
 - **sideways / page-wider**: a box that scrolls sideways, or a page wider than the viewport.
-- **row-uneven / grid-uneven**: tiles of one kind, two or more side by side, of unequal height in a row or across the grid.
+- **row-uneven / grid-uneven**: tiles of one kind, two or more in a grid, of unequal height in a row or across the grid. A grid laid out in one column (as at phone width) is judged too, when each tile fits on the screen: a column of sections taller than the screen is a page's reading column, not tiles.
 - **tile-empty**: an empty band inside such a tile taller than 1.5 lines of its text.
 - **part-uneven**: a tile part (an element with text) shown on some tiles of a grid but not others.
 - **page-empty**: an empty band between parts of the page taller than 48 px. The largest designed gap on main is 45 px; the band the Top matches review rejected measured 60 px.
 
 A one-line item with under 8% of its width to spare is listed as a **tight** fit, not failed.
 
-Each failure names its surface, width, typeface, rule, element (class path and text) and measure, and is outlined on that render (`renders/`, red for new, amber for held). In CI the failures are annotations on the pull request and the report is the job summary; the renders are the job's `render-check` artifact.
+Each failure names its surface, width, typeface, rule, element (class path and text), measure and extent (lines for wrap, tiles missing the part for part-uneven, otherwise px), and the render that shows it outlined (red for new, amber for held).
+
+The renders (`renders/`) are taken of the layout exactly as judged: the viewport never changes size. The first render is the surface as it opens; each further one scrolls the first finding not yet shown into view (scrolling moves the layout, it does not lay it out again). After the renders are saved the surface is judged again from the top; if it finds anything different, the render is invalid and the check fails. In CI the failures are annotations on the pull request and the report is the job summary; the renders are the job's `render-check` artifact.
 
 Wording, case and whether a part belongs on a tile at all are not measured: they stay with the reviewer.
 
 ## The held list (`held.json`)
 
-Failures already on main are held: each entry holds a number of findings of one rule on one element of one surface, width and typeface, with the reason. A failure fails the check only when it is not held, or found more often than its count. Held failures show as warnings. `--update-held` rewrites the list to this run's failures; changes to it are reviewed like code. The report lists held entries no longer found, so the list can shrink as fixes land.
+Failures already on main are held: each entry holds one finding (one rule on one element and text of one surface, width and typeface) at the extent it was found, with the reason. A finding fails the check when it is not held, or when it measures further than its held extent: a held clipped name cut further, a held band grown taller. Held failures show as warnings. `--update-held` rewrites the list to this run's failures; changes to it are reviewed like code. The report lists held entries not matched (fixed, or now worse), so the list can shrink as fixes land.
 
 ## Options
 

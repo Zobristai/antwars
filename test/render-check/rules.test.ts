@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
-import { judge, type HeldList, type Render } from "../../web/render-check/report.ts";
+import { heldFrom, judge, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
 
 let browser: Browser;
@@ -28,6 +28,14 @@ describe("render check rules", () => {
     expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines.</p>'))).not.toContain("wrap");
   });
 
+  it("fails a label or a table heading that wraps", async () => {
+    expect(rules(await judged('<label style="display:block;width:100px">Show rated matches</label>', 390))).toContain("wrap");
+    expect(rules(await judged('<label style="display:block;width:300px">Show rated matches</label>', 390))).not.toContain("wrap");
+    const table = (w: number) => `<table style="width:${w}px;border-collapse:collapse"><thead><tr><th>Rated matches</th><th>Win rate</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>`;
+    expect(rules(await judged(table(120), 390))).toContain("wrap");
+    expect(rules(await judged(table(360), 390))).not.toContain("wrap");
+  });
+
   it("fails text cut by an overflow box or an ellipsis", async () => {
     const clipped = await judged('<div style="width:80px;overflow:hidden;white-space:nowrap"><span>A long colony name</span></div>');
     expect(rules(clipped).some(r => r === "clipped" || r === "cut")).toBe(true);
@@ -35,6 +43,19 @@ describe("render check rules", () => {
     expect(rules(ellipsis).some(r => r === "clipped" || r === "cut")).toBe(true);
     const fits = await judged('<div style="width:300px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">A long colony name</div>');
     expect(rules(fits)).toEqual([]);
+  });
+
+  it("fails text cut by its own box, and an image or control cut by its container, but not one cropped to fill it", async () => {
+    expect(rules(await judged('<div style="width:80px;white-space:nowrap;overflow:hidden">A long colony name</div>', 390))).toContain("clipped");
+    expect(rules(await judged('<div style="width:80px;overflow:hidden"><img style="display:block;margin-left:40px;width:60px;height:20px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>'))).toContain("clipped");
+    expect(rules(await judged('<div style="width:80px;overflow:hidden"><button style="width:120px">Go</button></div>'))).toContain("clipped");
+    expect(rules(await judged('<p>Top</p><div style="width:200px;height:40px;overflow:hidden"><img style="display:block;width:200px;height:120px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>'))).not.toContain("clipped");
+  });
+
+  it("measures how far a finding breaks its rule", async () => {
+    const cut = (w: number) => judged(`<div style="width:${w}px;white-space:nowrap;overflow:hidden">A long colony name</div>`, 390);
+    const [a, b] = [await cut(120), await cut(60)];
+    expect(b.failures[0]!.extent).toBeGreaterThan(a.failures[0]!.extent + 50);
   });
 
   it("ignores visually hidden screen-reader text", async () => {
@@ -55,6 +76,16 @@ describe("render check rules", () => {
     expect(rules(even)).toEqual([]);
     const empty = await judged('<ol class="grid"><li class="tile" style="height:120px"><span>One</span></li><li class="tile" style="height:120px"><span>Two</span></li></ol>');
     expect(rules(empty)).toContain("tile-empty");
+  });
+
+  it("judges a grid laid out in one column, as at phone width", async () => {
+    const column = (a: number, b: number) => `<ol class="grid" style="grid-template-columns:1fr"><li class="tile" style="height:${a}px"><span>One</span></li><li class="tile" style="height:${b}px"><span>Two</span></li></ol>`;
+    expect(rules(await judged(column(30, 50), 390))).toContain("grid-uneven");
+    expect(rules(await judged(column(30, 30), 390))).toEqual([]);
+    expect(rules(await judged(column(120, 120), 390))).toContain("tile-empty");
+    // Sections taller than the screen are a reading column, not tiles.
+    expect(rules(await judged(column(700, 1000), 390))).not.toEqual(expect.arrayContaining(["grid-uneven"]));
+    expect(rules(await judged(column(700, 1000), 390))).not.toContain("tile-empty");
   });
 
   it("fails a tile part shown on some tiles but not others", async () => {
@@ -78,20 +109,31 @@ describe("render check rules", () => {
 });
 
 describe("render check verdict", () => {
-  const finding = (element: string): Finding => ({ rule: "clipped", element, text: "", measure: "", box: null });
-  const render = (failures: Finding[]): Render => ({ surface: "matches", url: "/", width: 390, typeface: "Roboto", failures, tight: [], image: "", fonts: {}, invalid: [], pageErrors: [], fixtures: [] });
-  const held: HeldList = { note: "", held: [{ surface: "matches", width: 390, typeface: "Roboto", rule: "clipped", element: "a", count: 2, why: "" }] };
+  const finding = (text: string, extent: number): Finding => ({ rule: "clipped", element: "a", text, measure: "", extent, box: null });
+  const render = (failures: Finding[]): Render => ({ surface: "matches", url: "/", width: 390, typeface: "Roboto", failures, tight: [], images: [""], failureImages: failures.map(() => ""), fonts: {}, invalid: [], pageErrors: [], fixtures: [] });
+  const entry = (text: string, extent: number) => ({ surface: "matches", width: 390, typeface: "Roboto" as const, rule: "clipped" as const, element: "a", text, extent, why: "" });
+  const held: HeldList = { note: "", held: [entry("Gemini 4 Hydrogen", 20), entry("Gemini 4 Hydrogen", 12)] };
 
-  it("passes failures the held list holds, up to its count", () => {
-    expect(judge([render([finding("a"), finding("a")])], held).passed).toBe(true);
+  it("passes the findings the held list holds, no worse than held", () => {
+    expect(judge([render([finding("Gemini 4 Hydrogen", 12), finding("Gemini 4 Hydrogen", 21)])], held).passed).toBe(true);
   });
-  it("fails a failure above its held count, or one not held", () => {
-    expect(judge([render([finding("a"), finding("a"), finding("a")])], held).newFailures).toHaveLength(1);
-    expect(judge([render([finding("b")])], held).passed).toBe(false);
+  it("fails a held finding that gets worse, one more of it, or one not held", () => {
+    const worse = judge([render([finding("Gemini 4 Hydrogen", 12), finding("Gemini 4 Hydrogen", 40)])], held);
+    expect(worse.passed).toBe(false);
+    expect(worse.newFailures[0]!.measure).toContain("held at 20, now 40");
+    expect(judge([render([finding("Gemini 4 Hydrogen", 1), finding("Gemini 4 Hydrogen", 1), finding("Gemini 4 Hydrogen", 1)])], held).newFailures).toHaveLength(1);
+    expect(judge([render([finding("Claude Opus 5.5", 1)])], held).passed).toBe(false);
   });
-  it("fails an invalid render and reports held entries no longer found", () => {
+  it("fails an invalid render and reports held entries not matched", () => {
     const v = judge([{ ...render([]), invalid: ["wrong typeface"] }], held);
     expect(v.passed).toBe(false);
-    expect(v.heldUnused).toHaveLength(1);
+    expect(v.heldUnused).toHaveLength(2);
+  });
+  it("writes a held list that holds exactly the run it came from", () => {
+    const r = render([finding("Gemini 4 Hydrogen", 7), finding("Claude Opus 5.5", 3)]);
+    const list = heldFrom([r], { note: "", held: [] }, "reason");
+    expect(list.held.map(e => e.why)).toEqual(["reason", "reason"]);
+    expect(judge([r], list).passed).toBe(true);
+    expect(judge([render([finding("Gemini 4 Hydrogen", 9)])], list).passed).toBe(false);
   });
 });
