@@ -61,8 +61,8 @@ async function listMatches(records: readonly { readonly id: string }[], lobbies?
 
 
 const NAMES = ["Lake Skinner Colony", "Very Large Colony", "Sweetwater Colony"];
-function threeRecord() {
-  return { ...quadrantsRecord(), setup: setupOf(3, { colonies: 3, colonyNames: NAMES, rated: false }),
+function threeRecord(rated = false) {
+  return { ...quadrantsRecord(), setup: setupOf(3, { colonies: 3, colonyNames: NAMES, rated }),
     seats: [seatOf(0, 0, "ada"), seatOf(1, 1, "bea"), seatOf(2, 2, "cyd")],
     result: { winner: 0, reason: "queens_killed", decidedBy: "queens_killed", tick: 4321 } };
 }
@@ -70,9 +70,10 @@ const encode = (record: unknown) => new TextEncoder().encode(JSON.stringify(reco
 
 describe("three-colony recordings", () => {
   it("survives storage summary, GET /matches, client parsing and fixed-column rendering", async () => {
-    const served = await listMatches([threeRecord()]);
+    // Rated, so GET /matches lists it (publiclyListedMatch), typed from its record by its handles: Ranked.
+    const served = await listMatches([threeRecord(true)]);
     expect(served).toHaveLength(1);
-    expect(served[0]).toMatchObject({ colonyNames: NAMES, winner: 0, matchType: { kind: "unrated", size: 1 } });
+    expect(served[0]).toMatchObject({ colonyNames: NAMES, winner: 0, matchType: { kind: "ranked", size: 1 } });
     const data = createMatchesData(async input => Response.json(String(input) === "/matches"
       ? { matches: served, nextPageToken: null } : { matches: [] }), () => {});
     cleanup.push(async () => data.destroy());
@@ -95,7 +96,7 @@ describe("three-colony recordings", () => {
     expect(rows[0]!.byClass("is-won")).toEqual([slots[3]]);
     expect(slots[3]!.byClass("d1p-sr").at(-1)!.textContent).toBe(", winner");
     expect(rows[0]!.byClass("is-lost")).toHaveLength(2);
-    expect(rows[0]!.byClass("d1p-rec-type")[0]!.textContent).toBe("Unranked · 1v1v1");
+    expect(rows[0]!.byClass("d1p-rec-type")[0]!.textContent).toBe("Ranked · 1v1v1");
     expect(rows[0]!.byClass("d1p-rec-replay")[0]!.href).toBe(`/?replay=${QUADRANTS}&board=2d`);
   });
 

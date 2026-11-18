@@ -124,7 +124,8 @@ describe("the matches the rating corrections changed, as served", () => {
     // Every tick and event is kept: only the result and the rated flag change.
     expect(record.events.length).toBe(JSON.parse(Buffer.from(stored.record).toString()).events.length);
     const rows = await w.list();
-    expect(rows.find(row => row.id === NEVER_JOINED.replayId)).toMatchObject({ ...stored.row, winner: null, reason: "abandoned", decidedBy: "draw", rated: false });
+    // Served unrated by its correction, it is no longer listed (publiclyListedMatch); stored, it is rated and would be.
+    expect(rows.map(row => row.id)).not.toContain(NEVER_JOINED.replayId);
     expect(rows.filter(row => row.rated === true).map(row => row.id)).toEqual([SOL.replayId, SOL2.replayId, OTHER]);
     // The Sol match is not touched by the never-joined correction.
     expect(new Uint8Array((await w.get(`/replays/${SOL.replayId}`)).body)).toEqual(w.objects.get(SOL.replayId)!.binary);
