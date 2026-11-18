@@ -11,7 +11,7 @@ import { dom, type ElementPort } from "./dom.ts";
 const live = (lobbyId: string): LiveMatch => ({ lobbyId, startedAt: Date.parse("2026-10-27T10:00:00Z"), rated: true, delaySeconds: 60, colonies: [[], []] });
 const recording: Recording = {
   id: "2026-10-27T09-00-00-000Z-1", startedAt: "2026-10-27T09:00:00.000Z", endedAt: null, simulationEndedAt: null, winner: 0,
-  reason: "queens_killed", decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: null, thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "complete", unavailable: [],
+  reason: "queens_killed", decidedBy: null, seats: [{ seat: 0, colony: 0, modelLabel: "alice/local", thinkingLevel: null, serviceTier: null, handle: "alice" }, { seat: 1, colony: 1, modelLabel: "bob/local", thinkingLevel: null, serviceTier: null, handle: "bob" }], status: "complete", unavailable: [],
 };
 
 function page() {
@@ -285,7 +285,7 @@ describe("the one player line", () => {
     const team = at("rec-team", { winner: 0, decidedBy: "territory", matchType: { kind: "ranked", size: 2 }, seats: [
       seat(0, 0, "openai/gpt-6.1-terra", "coffee-ant", { thinkingLevel: "high", serviceTier: "fast", startRating: rated(1540) }),
       seat(1, 0, "openai/gpt-6.1-terra", "coffee-ant", { thinkingLevel: "high", serviceTier: "fast", startRating: rated(1540) }),
-      seat(0, 1, null, "omp-dolphin", { startRating: rated(1460) }), seat(1, 1, null, "omp-dolphin", { startRating: rated(1460) })] });
+      seat(0, 1, "omp-dolphin/local", "omp-dolphin", { startRating: rated(1460) }), seat(1, 1, "omp-dolphin/local", "omp-dolphin", { startRating: rated(1460) })] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [team] } });
     for (const layout of [recordings.list]) {
       const [winner, other] = layout.byClass("d1p-rec-player");
@@ -294,7 +294,7 @@ describe("the one player line", () => {
       // Fast is a bolt inside the level's badge, its word read by screen readers.
       expect(winner!.byClass("d1p-tag")[0]!.byClass("d1p-bolt")).toHaveLength(1);
       expect(winner!.byClass("d1p-tag")[0]!.byClass("d1p-sr")[0]!.textContent).toBe(" Fast");
-      // A builder that named no model: its username alone, then its rating; no result on the losing colony.
+      // A builder whose label only repeats its username: its username alone, then its rating; no result on the losing colony.
       expect(lineParts(other!)).toEqual([["name", ["d1p-user:omp-dolphin"]], ["seats", "×2"], ["rating", "1460 ± 80"]]);
       expect(layout.byClass("is-won")[0]!.byClass("d1p-sr").at(-1)!.textContent).toBe(", winner");
       // Only the winner's slot carries a colony colour; the other is neutral.
@@ -415,6 +415,22 @@ describe("Live now rows", () => {
     expect(lineParts(b!)).toEqual([["name", ["d1p-user:kain", "d1p-mname:antwars/gpt-6-luna"]]]);
     p.mounted.destroy();
   });
+
+  it("shows a seat seen joining with no model as Scripted bot with no badges or rating, and a seat not yet seen joining as before", () => {
+    const seen: LiveMatch = { ...live("lobby-x"), colonies: [
+      [{ displayName: "antwars/gemini-4-hydrogen-low", modelLabel: "antigravity/gemini-4-hydrogen", thinkingLevel: "low", joined: true, rating: 1167, rd: 60, ratedMatches: 40 }],
+      [{ displayName: "test-account", modelLabel: null, thinkingLevel: "low", joined: true, rating: 1500, rd: 350, ratedMatches: 0 }]] };
+    const unseen: LiveMatch = { ...live("lobby-y"), colonies: [[{ displayName: "kain", rating: 1612, rd: 80, ratedMatches: 12 }], []] };
+    const { p, live: liveList } = show({ live: { status: "ready", rows: [seen, unseen] } });
+    for (const layout of [liveList.table, liveList.list]) {
+      const [house, scripted, waiting] = layout.byClass("d1p-model");
+      expect(lineParts(house!).map(part => part[0])).toEqual(["name", "badges", "rating"]);
+      expect(lineParts(scripted!)).toEqual([["name", ["d1p-mname:Scripted bot"]]]);
+      expect(lineParts(waiting!).filter(part => part[0] !== "rating")).toEqual([["name", ["d1p-user:kain"]]]);
+    }
+    expect(liveList.card.textContent).not.toMatch(/test-account/);
+    p.mounted.destroy();
+  });
 });
 
 describe("Recordings rows", () => {
@@ -440,6 +456,17 @@ describe("Recordings rows", () => {
     p.mounted.destroy();
   });
 
+  it("shows a seat that recorded no model as Scripted bot with no badges or rating, and a model seat as before", () => {
+    const scripted = at("rec-scripted", { seats: [seat(0, 0, "antigravity/gemini-4-hydrogen", "antwars/gemini-4-hydrogen-low", { thinkingLevel: "low" }),
+      seat(1, 1, null, "test-account", { startRating: { rating: 1500, rd: 350, ratedMatches: 0 } })] });
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [scripted] } });
+    const lines = recordings.list.byClass("d1p-rec-player");
+    expect(lines.map(line => line.children[0]!.textContent)).toEqual(["Gemini 4 Hydrogen", "Scripted bot"]);
+    expect(lines[1]!.byClass("d1p-tags")).toEqual([]);
+    expect(recordings.card.textContent).not.toMatch(/test-account|1500/);
+    p.mounted.destroy();
+  });
+
   it("lists no match a colony never joined", () => {
     const never = at("rec-never", { seats: [seat(0, 0, null, "alice")] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [never, recording] } });
@@ -453,7 +480,7 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
   const player = (displayName: string) => [{ displayName, rating: null, rd: null, ratedMatches: null }];
   const liveQuadrants: LiveMatch = { ...live("lobby-q"), rated: false, matchType: { kind: "quadrants", size: 1 },
     colonies: [player("ann"), player("bob"), player("cat"), player("dan")], colonyNames: [...QUADRANTS] };
-  const quadSeat = (n: number, colony: 0 | 1 | 2 | 3, handle: string) => ({ seat: n, colony, modelLabel: null, thinkingLevel: null, serviceTier: null, handle });
+  const quadSeat = (n: number, colony: 0 | 1 | 2 | 3, handle: string) => ({ seat: n, colony, modelLabel: `${handle}/local`, thinkingLevel: null, serviceTier: null, handle });
   const recordedQuadrants: Recording = { ...recording, id: "2026-11-14T09-00-00-000Z-1", startedAt: "2026-11-14T09:00:00.000Z", winner: 2, reason: "queens_killed",
     decidedBy: "queens_killed", seats: [quadSeat(0, 0, "ann"), quadSeat(1, 1, "bob"), quadSeat(2, 2, "cat"), quadSeat(3, 3, "dan")],
     matchType: { kind: "quadrants", size: 1 }, colonyNames: [...QUADRANTS] };
@@ -644,7 +671,7 @@ describe("a model label with nothing after its provider prefix", () => {
     const permutations = [[1, 0], [3, 2], [2, 0, 3], [3, 1, 0, 2]];
     for (const order of permutations) {
       const rec: Recording = { ...recording, colonyNames: order.map(index => names[index]!) as NonNullable<Recording["colonyNames"]>, winner: 0,
-        seats: order.map((index, colony) => ({ ...seat(colony, 0, null, `player-${index}`, { startRating: rated(1500 + index) }), colony: colony as 0 | 1 | 2 | 3 })) };
+        seats: order.map((index, colony) => ({ ...seat(colony, 0, `player-${index}/local`, `player-${index}`, { startRating: rated(1500 + index) }), colony: colony as 0 | 1 | 2 | 3 })) };
       const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
       const slots = recordings.list.children[0]!.byClass("d1p-rec-slot");
       expect(slots).toHaveLength(4);
@@ -691,7 +718,7 @@ describe("a model label with nothing after its provider prefix", () => {
   it("keeps a historical colony outside canonical columns, with its own name, players, rating and result", () => {
     for (const winner of [0, 1] as const) {
       const rec: Recording = { ...recording, winner, colonyNames: ["Historical Colony", "Very Large Colony"],
-        seats: [seat(0, 0, null, "historical-player", { startRating: rated(1510) }), seat(1, 1, null, "canonical-player")] };
+        seats: [seat(0, 0, "historical-player/local", "historical-player", { startRating: rated(1510) }), seat(1, 1, "canonical-player/local", "canonical-player")] };
       const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
       const row = recordings.list.children[0]!;
       const slots = row.children.filter(node => node.classes().includes("d1p-rec-slot"));
@@ -712,7 +739,7 @@ describe("a model label with nothing after its provider prefix", () => {
 
   it("leaves all canonical columns empty when every stored colony has another name, preserving all players", () => {
     const rec: Recording = { ...recording, colonyNames: ["Old First Colony", "Old Second Colony", "Old Third Colony", "Old Fourth Colony"],
-      seats: [0, 1, 2, 3].map(colony => seat(colony, colony as 0 | 1 | 2 | 3, null, `old-player-${colony}`)), winner: 2 };
+      seats: [0, 1, 2, 3].map(colony => seat(colony, colony as 0 | 1 | 2 | 3, `old-player-${colony}/local`, `old-player-${colony}`)), winner: 2 };
     const { p, recordings } = show({ recordings: { status: "ready", rows: [rec] } });
     const row = recordings.list.children[0]!;
     expect(row.children.filter(node => node.classes().includes("d1p-rec-slot")).map(slot => slot.textContent)).toEqual(["—", "—", "—", "—"]);

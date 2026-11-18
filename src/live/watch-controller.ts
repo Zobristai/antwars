@@ -82,7 +82,7 @@ export function createWatchController(options: {
     if (published.get(lobbyId) === text) return;
     published.set(lobbyId, text);
     const { modelLabels, ...details } = seen;
-    if ([modelLabels, details.thinkingLevels, details.serviceTiers].some(map => Object.keys(map).length > 0)) {
+    if (details.joined.length > 0 || [modelLabels, details.thinkingLevels, details.serviceTiers].some(map => Object.keys(map).length > 0)) {
       publishOwned(lobbyId, runId => registry.seatLabels(lobbyId, runId, modelLabels, details), "seat labels");
     }
   };
@@ -236,26 +236,30 @@ export function createWatchController(options: {
   };
 }
 
-/** What delayed playback has shown of each seat that joined, by its stream display name: model label, level and tier. */
-interface ShownSeats extends SeatDetails { readonly modelLabels: Readonly<Record<string, string>> }
+/** What delayed playback has shown of each seat that joined, by its stream display name: model label, level and tier, and
+ * which seats have joined. */
+interface ShownSeats extends SeatDetails { readonly modelLabels: Readonly<Record<string, string>>; readonly joined: readonly string[] }
 
 /**
  * Each seat's self-reported model label, thinking level and service tier by its stream display name, from the agents
  * delayed playback shows: for each, the first agent of that name that reported one; a seat that reported none is left out.
+ * Every shown seat's name is listed as joined, so a joined seat that reported no model can be told from one not yet shown.
  */
 function releasedLabels(agents: readonly StreamAgent[]): ShownSeats {
   const modelLabels: Record<string, string> = {}, thinkingLevels: Record<string, string> = {}, serviceTiers: Record<string, string> = {};
+  const joined: string[] = [];
   const keep = (map: Record<string, string>, name: string, value: string | undefined) => {
     if (value !== undefined && value !== "" && !Object.hasOwn(map, name)) map[name] = value;
   };
   for (const agent of agents) {
     const name = agent.identity?.displayName;
     if (name === undefined) continue;
+    if (!joined.includes(name)) joined.push(name);
     keep(modelLabels, name, agent.modelLabel);
     keep(thinkingLevels, name, agent.thinkingLevel);
     keep(serviceTiers, name, agent.serviceTier);
   }
-  return { modelLabels, thinkingLevels, serviceTiers };
+  return { modelLabels, thinkingLevels, serviceTiers, joined };
 }
 
 /** Each stream agent's spectator identity, found by the seat it plays. */

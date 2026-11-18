@@ -10,6 +10,7 @@ import { LEADERBOARD_HREF } from "../leaderboard-page/route.ts";
 import { NO_BADGES, benchmarkBadges, benchmarkLabel, recordText, type BadgeKinds, type RankingView } from "../leaderboard-page/view.ts";
 import { RECORD_LABEL, RETRY, keep, liveState, recordingsState, type SectionState } from "../ui/format.ts";
 import type { ShownRating } from "./identity.ts";
+import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 
 // ---------------------------------------------------------------- shared
 
@@ -227,13 +228,14 @@ export const MODEL_UNKNOWN = "model unknown";
 
 /** A recorded seat's player line: a house handle by its own HOUSE_LABELS row and badges (recordedIdentity); a builder by its
  * recorded handle, then the model it reported (seatModelName) with that model's level and Fast badges, the model left out
- * where the label only repeats the handle ("coffee-ant/local" on coffee-ant), so a builder that named no model shows its
- * username alone. */
+ * where the label only repeats the handle ("coffee-ant/local" on coffee-ant); a seat that recorded no model is scripted and
+ * shows SCRIPTED_BOT alone (scripted-seat.ts). */
 export function recordedPlayer(seat: Pick<Recording["seats"][number], "modelLabel" | "thinkingLevel" | "serviceTier" | "handle">): PlayerParts {
   if (seat.handle !== null && isHouseHandle(seat.handle)) {
     const house = recordedIdentity(seat);
     return { user: null, model: house.name, badges: house.name === UNLISTED_MODEL ? NO_BADGES : benchmarkBadges(recordedLevels(seat)) };
   }
+  if (isScriptedSeat(seat.handle, seat.modelLabel)) return { user: null, model: SCRIPTED_BOT, badges: NO_BADGES };
   const named = seat.modelLabel === null ? null : seatModelName(seat.modelLabel, seat.handle);
   const model = named !== null && named !== seat.handle ? named : null;
   if (seat.handle === null && model === null) return { user: null, model: MODEL_UNKNOWN, badges: NO_BADGES };
@@ -251,6 +253,8 @@ export function colonySeats(seats: Recording["seats"], colonies = 2): readonly (
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
       .map((seat): SeatEntry => {
         const parts = recordedPlayer(seat);
+        // Scripted seats are alike, whoever holds them, and show no rating.
+        if (isScriptedSeat(seat.handle, seat.modelLabel)) return { who: JSON.stringify(["scripted"]), parts, rating: null };
         return { who: JSON.stringify([seatWho(seat), parts.user, parts.model]), parts, rating: seat.startRating ?? null };
       });
     return list.length ? list : null;
