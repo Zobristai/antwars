@@ -4,7 +4,7 @@
 // Only the match client rides out a server handover (HANDOVER_RETRY_MS per
 // command); the entry client reports a failed send at once, as before.
 import { ALLOW_HTTP_ENV, HANDOVER_RETRY_MS, McpClient, errorCode } from "./mcp.mjs";
-import { envNumber, makeLimiter, progress, readJson, readKey, statePath, writeJson } from "./state.mjs";
+import { dropped, envNumber, makeLimiter, progress, progressFrom, readJson, readKey, statePath, writeJson } from "./state.mjs";
 
 export const DEFAULT_MIN_CALL_MS = 600;
 
@@ -72,4 +72,92 @@ export function savedMatch(env = process.env) {
 export function isMatchOver(data) {
   return data?.matchOver === true || (data?.view && data.view.result !== null && data.view.result !== undefined)
     || errorCode(data) === "match_over" || errorCode(data) === "match_not_played";
+}
+
+/**
+ * The server's own pre-start facts in a join or observe reply, copied as the server gave them: matchStarts and its
+ * message (e.g. "Call observe until it starts"). from names the reply, at when it was received. Null when it gave none.
+ */
+export function serverStartFacts(data, from, clock) {
+  if (data?.matchStarts === undefined && typeof data?.message !== "string") return null;
+  return { from, at: new Date(clock.now()).toISOString(), matchStarts: data.matchStarts ?? null, message: data.message ?? null };
+}
+
+/**
+ * The server's own words in a match-over reply, verbatim: its message and its next instruction (howToFix), from the
+ * reply named by from. A refusal carries them in error; the final observe of an ended match carries its message at the
+ * top level and no instruction. They replace the pre-start facts, so no "call observe until it starts" message remains.
+ */
+function serverEndFacts(data, from, clock) {
+  const error = data.error !== null && typeof data.error === "object" ? data.error : {};
+  const text = (value) => (typeof value === "string" ? value : null);
+  return { from, at: new Date(clock.now()).toISOString(), matchOver: true,
+    message: text(error.message) ?? text(data.message), next: text(error.howToFix) ?? text(data.howToFix) };
+}
+
+/**
+ * The match-over facts to keep: the first match-over reply's, with a later reply filling in only what it lacked. A later
+ * reply that supplies no message or instruction (the final observe, after a refusal that said to call it) never
+ * erases the server's earlier words. Null when nothing changes.
+ */
+function mergedEndFacts(current, facts) {
+  if (!ended(current)) return facts;
+  const saved = current.fromServer;
+  const merged = { ...saved, message: saved.message ?? facts.message, next: saved.next ?? facts.next };
+  return merged.message === saved.message && merged.next === saved.next ? null : merged;
+}
+
+/**
+ * True once an observe has shown the match running. Replies can be recorded out of order (a pick or pre-start observe
+ * whose reply was delayed past an observer's started view): from then on such an older pre-start reply changes nothing.
+ */
+function startSeen(current) {
+  return (current.startSeenTick !== undefined && current.startSeenTick !== null) || ended(current);
+}
+
+/** True once a match-over reply was recorded: no later reply of the running or waiting match changes the status. */
+function ended(current) {
+  return current.fromServer?.matchOver === true;
+}
+
+/** Status fields that hold only before the match starts: the nest window, the pick instruction and the server's pre-start facts. */
+const PRE_START_FIELDS = ["closesAt", "box", "next", "fromServer"];
+
+/**
+ * Keeps status current from a reply to a call the seat itself made (a match command or the observer's observe); it
+ * never makes a call of its own. An accepted pick_nest writes nest_picked and drops the pick instruction; an observe
+ * answered "not started" writes waiting_for_start with the server's facts; an observe of the started match writes
+ * match_started and drops every pre-start field, again after a transient step such as rejoined. The decision is made
+ * from the current status under its lock, so a pick and an observer's observe never undo each other, and a pre-start
+ * reply recorded after the start was seen never undoes it. A match-over reply, on any call, writes match_over with the
+ * server's message and next instruction verbatim and drops the pre-start fields. An unchanged state adds no log line.
+ */
+export function noteMatchReply(name, args, reply, { env, clock }) {
+  const data = reply?.data;
+  if (data && isMatchOver(data)) {
+    const facts = serverEndFacts(data, name, clock);
+    progressFrom((current) => {
+      const fromServer = mergedEndFacts(current, facts);
+      return fromServer === null ? null
+        : { step: "match_over", detail: { winner: data.winner ?? current.winner ?? null, fromServer, ...dropped(["closesAt", "box", "next"]) } };
+    }, env);
+    return;
+  }
+  if (!reply?.ok || !data) return;
+  if (name === "pick_nest" && data.accepted === true) {
+    progressFrom((current) => (startSeen(current) ? null : { step: "nest_picked", detail: { pick: { tileX: args?.tileX ?? null, tileY: args?.tileY ?? null },
+      closesAt: data.nestSelection?.closesAt ?? current.closesAt ?? null, next: undefined } }), env);
+    return;
+  }
+  if (name !== "observe") return;
+  if (data.waiting === true) {
+    const facts = serverStartFacts(data, "observe", clock);
+    progressFrom((current) => (startSeen(current) || (current.step === "waiting_for_start" && current.fromServer?.matchStarts === facts?.matchStarts
+      && current.fromServer?.message === facts?.message) ? null : { step: "waiting_for_start", detail: { fromServer: facts } }), env);
+    return;
+  }
+  if (data.view && data.view.tick > 0) {
+    progressFrom((current) => (current.step === "match_started" || ended(current) ? null
+      : { step: "match_started", detail: { startSeenTick: current.startSeenTick ?? data.view.tick, ...dropped(PRE_START_FIELDS) } }), env);
+  }
 }
