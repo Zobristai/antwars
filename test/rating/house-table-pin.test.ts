@@ -51,6 +51,14 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "gemini-4-hydrogen-medium": ["Gemini 4 Hydrogen", "medium", null],
   "gemini-4-hydrogen-high": ["Gemini 4 Hydrogen", "high", null],
   "gemini-4-hydrogen-xhigh": ["Gemini 4 Hydrogen", "xhigh", null],
+  "gpt-6-2-astra-low": ["GPT-6.2 Astra", "low", "fast"],
+  "gpt-6-2-astra-medium": ["GPT-6.2 Astra", "medium", "fast"],
+  "gpt-6-2-astra-high": ["GPT-6.2 Astra", "high", "fast"],
+  "gpt-6-2-astra-xhigh": ["GPT-6.2 Astra", "xhigh", "fast"],
+  "gpt-6-2-astra-max": ["GPT-6.2 Astra", "max", "fast"],
+  "qwen4-max-low": ["Qwen4 Max", "low", null],
+  "qwen4-max-high": ["Qwen4 Max", "high", null],
+  "qwen4-max-xhigh": ["Qwen4 Max", "xhigh", null],
   "mistral-large-latest": ["Mistral Large", null, null],
   "abliterated-model-large": ["Abliterated GLM-5.2", "max", "standard"],
   "abliterated-model": ["Abliterated Model", "high", "standard"],
@@ -84,8 +92,8 @@ describe("House table pinned at main 3cad75d2", () => {
     expect(HOUSE_USERNAME).toBe("antwars");
   });
 
-  it("lists exactly 52 handles, each with its display name, level and tier", () => {
-    expect(Object.keys(HOUSE_LABELS)).toHaveLength(52);
+  it("lists exactly 60 handles, each with its display name, level and tier", () => {
+    expect(Object.keys(HOUSE_LABELS)).toHaveLength(60);
     expect(Object.keys(HOUSE_LABELS)).toEqual(Object.keys(PINNED));
     const shown = Object.fromEntries(Object.entries(HOUSE_LABELS)
       .map(([handle, label]) => [handle, [label.displayName, label.thinkingLevel, label.serviceTier]]));
