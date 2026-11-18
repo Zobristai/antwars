@@ -22,10 +22,12 @@ export interface CatalogLobby {
  * One seated player as the Matches page's Live now row names it: the stream's seat display name, the model label, thinking
  * level and service tier the seat self-reported when it joined, as its stream shows them (each null, or absent from a caller,
  * before it joins or where it reported none), and the player's rating, RD and rated-match count as the match shows it
- * (src/live/seat-rating.ts); the three are null where the seat shows none.
+ * (src/live/seat-rating.ts); the three are null where the seat shows none. joined is true once spectators have seen the
+ * seat join, absent before (or where no joined seats were published), so a joined seat with no model label reported none.
  */
 export type PublicSeat = {
   readonly displayName: string; readonly modelLabel?: string | null; readonly thinkingLevel?: string | null; readonly serviceTier?: string | null;
+  readonly joined?: true;
 } & (
   | { readonly rating: number; readonly rd: number; readonly ratedMatches: number }
   | { readonly rating: null; readonly rd: null; readonly ratedMatches: null });
@@ -120,12 +122,13 @@ function publicType(type: RecordingMatchType | undefined): RecordingMatchType | 
 }
 
 /**
- * An explicit copy of each seat's seven public fields, one list per colony given and never fewer than two; anything else a
- * caller attached is dropped.
+ * An explicit copy of each seat's public fields (joined only where true), one list per colony given and never fewer than
+ * two; anything else a caller attached is dropped.
  */
 function publicColonies(colonies: PublicColonies | undefined): PublicColonies {
   const seats = (list: readonly PublicSeat[] | undefined): PublicSeat[] => (list ?? []).map(seat => {
-    const named = { displayName: seat.displayName, modelLabel: seat.modelLabel ?? null, thinkingLevel: seat.thinkingLevel ?? null, serviceTier: seat.serviceTier ?? null };
+    const named = { displayName: seat.displayName, modelLabel: seat.modelLabel ?? null, thinkingLevel: seat.thinkingLevel ?? null, serviceTier: seat.serviceTier ?? null,
+      ...(seat.joined === true ? { joined: true as const } : {}) };
     return seat.rating === null
       ? { ...named, rating: null, rd: null, ratedMatches: null }
       : { ...named, rating: seat.rating, rd: seat.rd, ratedMatches: seat.ratedMatches };
