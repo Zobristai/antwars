@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { StreamAgent, StreamMessage } from "../../src/live/format.ts";
 import { TICK_MS } from "../../src/live/snapshot.ts";
 import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
-import { SCRIPTED_BOT, isScriptedSeat, shownAgent } from "../../web/src/scripted-seat.ts";
+import { SCRIPTED_BOT, isScriptedAgent, isScriptedSeat, shownAgent } from "../../web/src/scripted-seat.ts";
+import { ratingResultRows } from "../../web/src/compose.ts";
 
 const agent = (displayName: string | null, modelLabel: string, more: Partial<StreamAgent> = {}): StreamAgent => ({
   ...(displayName === null ? {} : { identity: { displayName, elo: 1500, rd: 350 } }), colony: 1, modelLabel,
@@ -21,6 +22,19 @@ describe("scripted seats", () => {
     // No seated player: an older recording's generated handle stays as it was.
     expect(isScriptedSeat(null, null)).toBe(false);
     expect(isScriptedSeat(undefined, "")).toBe(false);
+  });
+
+  it("have no line in a rated result's ratings, as received or as the board shows them; a model seat keeps its own", () => {
+    const model = agent("kestrel-harness", "openai/gpt-6.1-terra", { colony: 0 });
+    const result = { winner: 0 as const, reason: "queens_killed" as const, decidedBy: "queens_killed" as const, tick: 10, nextStartMs: null,
+      ratingChanges: [{ agent: 0, before: 1500, after: 1510 }, { agent: 1, before: 1500, after: 1490 }] };
+    for (const scripted of [agent("test-account", ""), shownAgent(agent("test-account", ""))]) {
+      expect(isScriptedAgent(scripted)).toBe(true);
+      const rows = ratingResultRows(true, [model, scripted], result);
+      expect(rows.map(row => row.text)).toEqual(["Rating 1500 → 1510 (+10)"]);
+      expect(JSON.stringify(rows)).not.toMatch(/test-account|1490/);
+    }
+    expect(isScriptedAgent(model)).toBe(false);
   });
 
   it("show on the board as Scripted bot with no rating, level or tier; every other agent is unchanged", () => {

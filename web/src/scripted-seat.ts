@@ -15,10 +15,15 @@ export function isScriptedSeat(handle: string | null | undefined, modelLabel: st
   return !!handle && !modelLabel && !handle.toLowerCase().startsWith(`${HOUSE_USERNAME}/`);
 }
 
+/** Whether a stream agent, as received or as shownAgent shows it, holds a scripted seat. */
+export function isScriptedAgent(a: Pick<StreamAgent, "identity" | "modelLabel"> | undefined): boolean {
+  return a !== undefined && isScriptedSeat(a.identity?.displayName, a.modelLabel);
+}
+
 /** An agent as the board shows it: a scripted seat's identity is SCRIPTED_BOT with no rating, level or tier; any other
  * agent unchanged. */
 export function shownAgent(a: StreamAgent): StreamAgent {
-  if (!isScriptedSeat(a.identity?.displayName, a.modelLabel)) return a;
+  if (!isScriptedAgent(a)) return a;
   const shown: StreamAgent = { ...a, identity: { displayName: SCRIPTED_BOT } };
   delete shown.thinkingLevel;
   delete shown.serviceTier;

@@ -10,6 +10,7 @@ import type { Frame } from "../../buffer.ts";
 import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
 import { rowName, agentHandle } from "../../compose.ts";
+import { isScriptedAgent } from "../../scripted-seat.ts";
 import { D1_ICON } from "./icons.ts";
 import { PAGE_WORDS, resultView, shareHref, type ResultView } from "./model.ts";
 
@@ -131,7 +132,8 @@ export function mountResultModal(doc: Document): ResultModal {
       identity.append(colony, " ", badgeLine);
       li.append(identity);
       if (hasRatings) {
-        const change = changes.find(c => c.agent === index);
+        // A scripted seat shows no rating or change (scripted-seat.ts): its numbers stay empty, as a seat with no change's.
+        const change = isScriptedAgent(agent) ? undefined : changes.find(c => c.agent === index);
         const numbers = h(doc, "span", "rd-numbers");
         if (change) {
           const before = Math.round(change.before), after = Math.round(change.after), difference = after - before;
