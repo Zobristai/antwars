@@ -5,12 +5,14 @@
  *
  * Fails:
  * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings;
- *   labels and table headings are one-line items) laid out on 2+ lines
+ *   every label and table heading, wherever it stands) laid out on 2+ rendered lines, explicit breaks included
  * - clipped / cut / offscreen: text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport's
- *   sides; an image, board or control cut by an overflow box or the viewport, unless it is cropped to fill that box
+ *   sides; an image, board or control cut by an overflow box or the viewport. Each axis is judged on its own: a box
+ *   that scrolls on an axis cuts nothing on it (the reader scrolls), and past it the content counts where scrolling
+ *   brings it
  * - sideways / page-wider: a scroller with sideways overflow, or a page wider than the viewport
  * - row-uneven / grid-uneven: tiles of one kind (2+ in a grid, one column or several) of unequal height, in a row or
- *   across the grid. In one column the tiles must each fit on the screen: taller sections are a reading column.
+ *   across the grid. In one column, children that each hold a heading and running text are reading sections, not tiles.
  * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text
  * - part-uneven: a tile part shown on some tiles of the grid but not others
  * - page-empty: an empty horizontal band on the page taller than RULE_LIMITS.pageBandPx
@@ -143,23 +145,27 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
   const all = [...document.body.querySelectorAll("*")].filter(el => !skipped(el));
 
-  // One-line items: the outermost line-able blocks with text.
+  // One-line items: the outermost line-able blocks with text, and every label and table heading wherever it stands
+  // (inside a paragraph too): those are one line by what they are, not by where they are.
+  const ONE_LINE = "label, th";
   const items: Element[] = [];
   const isItem = new Set<Element>();
   for (const el of all) {
     const cs = style(el);
-    if (cs.display === "inline" || cs.display === "contents" || !el.textContent?.trim() || !shown(el)) continue;
+    const oneLine = el.matches(ONE_LINE);
+    if ((cs.display === "inline" && !oneLine) || cs.display === "contents" || !el.textContent?.trim() || !shown(el)) continue;
     if (!lineable(el, true)) continue;
-    if ([...ancestors(el)].some(a => isItem.has(a))) continue;
+    if (!oneLine && [...ancestors(el)].some(a => isItem.has(a))) continue;
     isItem.add(el);
     items.push(el);
   }
   for (const el of items) {
     const rects = textRects(el).map(t => t.r);
     for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0) rects.push(r); }
-    const lines = lineCount(rects) - el.querySelectorAll("br").length;
+    // Rendered lines, an explicit <br> included: a one-line item broken by hand is still broken.
+    const lines = lineCount(rects);
     const words = text(el);
-    const prose = el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80;
+    const prose = el.matches(ONE_LINE) ? words.length >= 80 : el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80;
     if (lines > 1 && !prose) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
@@ -176,75 +182,81 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   }
 
   // Text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport.
-  /** The box that clips el's content, and how far r reaches past it, in px; null when nothing cuts r. */
-  const cutBy = (el: Element, r: DOMRect, slackY: number): { by: Element; past: number } | null => {
-    for (const a of [el, ...ancestors(el)]) {
+  interface Edges { left: number; top: number; right: number; bottom: number }
+  /**
+   * Walk the boxes that clip `start`'s content, from the inside out, with `r` where the reader can see it. A box that
+   * scrolls on an axis cuts nothing on it: the reader scrolls the content into its box, so past that box the content
+   * is judged where scrolling brings it (moved into the box on that axis). A box that clips without scrolling cuts
+   * whatever reaches past it by more than `cuts` allows. Returns the first such box, its edges and the content's box
+   * there, or the content's box as seen from the page when nothing cuts it.
+   */
+  const clipWalk = (start: Element, r: Edges, cuts: (r: Edges, e: Edges, x: boolean, y: boolean) => number) => {
+    let at = { ...r };
+    for (const a of [start, ...ancestors(start)]) {
       if (a === document.body || a === document.documentElement) break;
       const cs = style(a);
-      const x = cs.overflowX !== "visible", y = cs.overflowY !== "visible";
-      if (!x && !y) continue;
-      if (cs.overflowX === "auto" || cs.overflowX === "scroll") continue; // a scroller shows it by scrolling; judged as sideways
+      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
       const b = a.getBoundingClientRect();
       const left = b.left + parseFloat(cs.borderLeftWidth), top = b.top + parseFloat(cs.borderTopWidth);
-      const right = left + a.clientWidth, bottom = top + a.clientHeight;
-      const pastX = x ? Math.max(r.right - right, left - r.left, 0) : 0;
-      const pastY = y && cs.overflowY !== "auto" && cs.overflowY !== "scroll" ? Math.max(r.bottom - bottom, top - r.top, 0) : 0;
-      if (pastX > 0.5 || pastY > slackY) return { by: a, past: Math.max(pastX, pastY > slackY ? pastY : 0) };
+      const e = { left, top, right: left + a.clientWidth, bottom: top + a.clientHeight };
+      const scrollX = /auto|scroll/.test(cs.overflowX), scrollY = /auto|scroll/.test(cs.overflowY);
+      const past = cuts(at, e, !scrollX && cs.overflowX !== "visible", !scrollY && cs.overflowY !== "visible");
+      if (past > 0) return { by: a, edges: e, at, past };
+      const into = (lo: number, hi: number, min: number, max: number): [number, number] => {
+        const size = Math.min(hi - lo, max - min);
+        if (lo < min) return [min, min + size];
+        if (hi > max) return [max - size, max];
+        return [lo, hi];
+      };
+      if (scrollX) [at.left, at.right] = into(at.left, at.right, e.left, e.right);
+      if (scrollY) [at.top, at.bottom] = into(at.top, at.bottom, e.top, e.bottom);
     }
-    return null;
+    return { by: null, edges: null, at, past: 0 };
   };
+  const edgesOf = (r: DOMRect): Edges => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
   const textCuts = new Map<Element, { rule: "clipped" | "offscreen"; by: Element | null; past: number; r: DOMRect }>();
   for (const { r, el } of textRects(document.body)) {
     const had = textCuts.get(el);
-    const off = Math.max(r.right - vw, -r.left, 0);
-    if (off > 0.5) {
-      if (!had || had.rule !== "offscreen" || off > had.past) textCuts.set(el, { rule: "offscreen", by: null, past: off, r });
+    // A glyph box is taller than a tight line box; only text reaching further than that is cut.
+    const slackY = Math.max(1, r.height * 0.2);
+    const walk = clipWalk(el, edgesOf(r), (at, e, x, y) => {
+      const pastX = x ? Math.max(at.right - e.right, e.left - at.left, 0) : 0;
+      const pastY = y ? Math.max(at.bottom - e.bottom, e.top - at.top, 0) : 0;
+      return Math.max(pastX > 0.5 ? pastX : 0, pastY > slackY ? pastY : 0);
+    });
+    if (walk.by) {
+      if (had?.rule !== "offscreen" && (!had || walk.past > had.past)) textCuts.set(el, { rule: "clipped", by: walk.by, past: walk.past, r });
       continue;
     }
-    if (had?.rule === "offscreen") continue;
-    // A glyph box is taller than a tight line box; only text reaching further than that is cut.
-    const cut = cutBy(el, r, Math.max(1, r.height * 0.2));
-    if (cut && (!had || cut.past > had.past)) textCuts.set(el, { rule: "clipped", by: cut.by, past: cut.past, r });
+    const off = Math.max(walk.at.right - vw, -walk.at.left, 0);
+    if (off > 0.5 && (!had || had.rule !== "offscreen" || off > had.past)) textCuts.set(el, { rule: "offscreen", by: null, past: off, r });
   }
   const reported = new Set<Element>(textCuts.keys());
   for (const [el, c] of textCuts) {
     const past = Math.round(c.past);
     if (c.rule === "offscreen") {
-      fail({ rule: "offscreen", element: name(el), text: text(el), measure: `text at ${Math.round(c.r.left)}-${Math.round(c.r.right)} px, viewport 0-${vw}`, extent: past, box: box(c.r) }, el);
+      fail({ rule: "offscreen", element: name(el), text: text(el), measure: `${past} px of text past the viewport's side (0-${vw} px)`, extent: past, box: box(c.r) }, el);
     } else {
       fail({ rule: "clipped", element: name(el), text: text(el), measure: `${past} px cut by ${c.by === el ? "its own box" : name(c.by!)}`, extent: past, box: box(c.r) }, el);
     }
   }
-  // An image, board or control cut by an overflow box or the viewport, unless it is cropped to fill that box.
+  // An image, board or control cut by an overflow box or the viewport. (An image cropped by design, object-fit: cover,
+  // keeps its box inside its frame and crops within it, so it is not cut here.)
   for (const el of document.body.querySelectorAll("img, svg, canvas, video, iframe, button, input, select, textarea")) {
     if (el.closest("[data-render-check='skip']") || el.parentElement?.closest("svg, button") || !shown(el)) continue;
     if ([el, ...el.querySelectorAll("*")].some(c => reported.has(c))) continue;
-    const r = el.getBoundingClientRect();
-    let edges: { by: Element | null; left: number; top: number; right: number; bottom: number } | null = null;
-    for (const a of ancestors(el)) {
-      if (a === document.body || a === document.documentElement) break;
-      const cs = style(a);
-      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
-      if (/auto|scroll/.test(cs.overflowX + cs.overflowY)) continue;
-      const b = a.getBoundingClientRect();
-      const left = b.left + parseFloat(cs.borderLeftWidth), top = b.top + parseFloat(cs.borderTopWidth);
-      const e = { by: a, left, top, right: left + a.clientWidth, bottom: top + a.clientHeight };
-      if (r.left < e.left - 0.5 || r.right > e.right + 0.5 || r.top < e.top - 0.5 || r.bottom > e.bottom + 0.5) { edges = e; break; }
-    }
-    if (!edges && (r.left < -0.5 || r.right > vw + 0.5)) edges = { by: null, left: 0, top: -Infinity, right: vw, bottom: Infinity };
-    if (!edges) continue;
-    // An image or board cropped to fill spans the whole box on the side it is cut (a hero image in its frame, a board
-    // in its window). A control is never cropped by design.
-    const media = !el.matches("button, input, select, textarea");
-    const coverX = media && r.left <= edges.left + 0.5 && r.right >= edges.right - 0.5;
-    const coverY = media && r.top <= edges.top + 0.5 && r.bottom >= edges.bottom - 0.5;
-    const pastX = coverX ? 0 : Math.max(r.right - edges.right, edges.left - r.left, 0);
-    const pastY = coverY ? 0 : Math.max(r.bottom - edges.bottom, edges.top - r.top, 0);
-    const past = Math.round(Math.max(pastX, pastY));
-    if (past < 1) continue;
+    const cut = (at: Edges, e: Edges, x: boolean, y: boolean) => {
+      const pastX = x ? Math.max(at.right - e.right, e.left - at.left, 0) : 0;
+      const pastY = y ? Math.max(at.bottom - e.bottom, e.top - at.top, 0) : 0;
+      const past = Math.round(Math.max(pastX, pastY));
+      return past >= 1 ? past : 0;
+    };
+    const walk = clipWalk(el.parentElement ?? el, edgesOf(el.getBoundingClientRect()), cut);
+    const past = walk.by ? walk.past : cut(walk.at, { left: 0, top: -Infinity, right: vw, bottom: Infinity }, true, false);
+    if (!past) continue;
     reported.add(el);
-    fail({ rule: edges.by ? "clipped" : "offscreen", element: name(el), text: text(el), measure: `${el.tagName.toLowerCase()} ${past} px cut by ${edges.by ? name(edges.by) : "the viewport"}`,
-      extent: past, box: box(r) }, el);
+    fail({ rule: walk.by ? "clipped" : "offscreen", element: name(el), text: text(el), measure: `${el.tagName.toLowerCase()} ${past} px cut by ${walk.by ? name(walk.by) : "the viewport"}`,
+      extent: past, box: box(el.getBoundingClientRect()) }, el);
   }
   for (const el of all) {
     const cs = style(el);
@@ -284,8 +296,9 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const rects = (cards as Element[]).map(c => c.getBoundingClientRect());
     const rows = new Map<number, number[]>();
     rects.forEach((r, i) => { const top = Math.round(r.top); rows.set(top, [...(rows.get(top) ?? []), i]); });
-    // In one column, like tiles each fit on the screen; sections taller than the screen are a page's reading column.
-    if (![...rows.values()].some(row => row.length >= 2) && rects.some(r => r.height > innerHeight)) continue;
+    // In one column, children that each hold a heading and running text are a page's reading sections, not tiles.
+    const section = (c: Element) => c.querySelector("h1, h2, h3, h4, h5, h6") !== null && c.querySelector("p") !== null;
+    if (![...rows.values()].some(row => row.length >= 2) && (cards as Element[]).every(section)) continue;
     grids++;
     tiles += cards.length;
     const where = name(el);
@@ -355,11 +368,16 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const r = el.getBoundingClientRect();
     const media = ["IMG", "CANVAS", "VIDEO", "INPUT", "SELECT", "TEXTAREA", "BUTTON", "IFRAME"].includes(el.tagName) || el.tagName.toLowerCase() === "svg";
     if (media) {
-      // Only the part of an image or board its clipping boxes let show (a hero image cropped by its frame).
+      // Only the part of an image or board its clipping boxes let show (a hero image cropped by its frame). A box that
+      // scrolls hides nothing for good: the reader scrolls to it, and the page's bands are judged with it unrolled,
+      // as its text is. So only the clipping boxes inside the nearest box that scrolls crop it; a box that clips
+      // around that scroller does not hide what the reader scrolls into view.
       let top = r.top, bottom = r.bottom;
       for (const a of ancestors(el)) {
         if (a === document.body || a === document.documentElement) break;
-        if (style(a).overflowY === "visible") continue;
+        const oy = style(a).overflowY;
+        if (/auto|scroll/.test(oy)) break;
+        if (!/hidden|clip/.test(oy)) continue;
         const b = a.getBoundingClientRect();
         top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom);
       }

@@ -62,11 +62,25 @@ const viewport = (width: number) => width < 600
   ? { viewport: { width, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 }
   : { viewport: { width, height: 800 }, deviceScaleFactor: 1 };
 
-/** Every scroll position back at the top: the state the page is judged in. */
+/** The page and every box that scrolls back at its start: the state the page is judged in. A box that clips without
+ * scrolling (overflow hidden or clip) is left exactly as the page set it. */
 const scrollHome = (page: Page) => page.evaluate(() => {
   scrollTo(0, 0);
-  for (const e of document.querySelectorAll("*")) if (e.scrollTop || e.scrollLeft) { e.scrollTop = 0; e.scrollLeft = 0; }
+  for (const e of document.querySelectorAll("*")) {
+    if (!e.scrollTop && !e.scrollLeft) continue;
+    const cs = getComputedStyle(e);
+    if (/auto|scroll/.test(cs.overflowY)) e.scrollTop = 0;
+    if (/auto|scroll/.test(cs.overflowX)) e.scrollLeft = 0;
+  }
 });
+
+/** Where every box that clips without scrolling is scrolled to (the page can set it; the reader cannot). */
+const clipOffsets = (page: Page) => page.evaluate(() => [...document.querySelectorAll("*")].flatMap((e, i) => {
+  if (e === document.documentElement || e === document.body) return []; // the page's own scroll
+  const cs = getComputedStyle(e);
+  const top = /auto|scroll/.test(cs.overflowY) ? 0 : e.scrollTop, left = /auto|scroll/.test(cs.overflowX) ? 0 : e.scrollLeft;
+  return top || left ? [`${i}:${e.tagName.toLowerCase()}.${[...e.classList].join(".")}@${top},${left}`] : [];
+}).join(" "));
 
 /**
  * Let the page fetch and lay out its data (a HUD: play its recording to HUD_PLAY_MS). The page is then scrolled
@@ -111,7 +125,7 @@ async function settle(page: Page, surface: Surface): Promise<void> {
   await scrollHome(page);
 }
 
-interface Mark { box: Box; anchor: NonNullable<Finding["anchor"]>; label: string; held: boolean }
+export interface Mark { box: Box; anchor: NonNullable<Finding["anchor"]>; label: string; held: boolean }
 
 /**
  * The marked renders of the layout exactly as judged. The viewport never changes size: the first render is the
@@ -119,22 +133,41 @@ interface Mark { box: Box; anchor: NonNullable<Finding["anchor"]>; label: string
  * judged layout, it does not lay it out again) and outlines every finding then in view. Returns the renders saved
  * and, for each mark, the render that shows it.
  */
-async function shoot(page: Page, marks: Mark[], base: string, out: string): Promise<{ images: string[]; shownIn: string[] }> {
+export async function shoot(page: Page, marks: Mark[], base: string, out: string): Promise<{ images: string[]; shownIn: string[]; marksMoved: string | null; clipScrolled: string | null }> {
   const images: string[] = [];
+  let marksMoved: string | null = null;
+  let clipScrolled: string | null = null;
+  const judgedClips = await clipOffsets(page);
   const shownIn: string[] = Array.from({ length: marks.length }, () => "");
   const MAX_RENDERS = 24;
   for (let target = -1; images.length < MAX_RENDERS; ) {
     if (target >= 0) {
-      await page.evaluate(m => (window as unknown as { __renderCheckAnchors: Element[] }).__renderCheckAnchors[m.anchor.index]!
-        .scrollIntoView({ block: "center", inline: "nearest" }), marks[target]!);
+      // Bring the finding into view the way a reader can: by scrolling the boxes that scroll (and the page), never a box
+      // that clips (overflow hidden or clip), whose cut is the finding. scrollIntoView would scroll those too.
+      await page.evaluate(m => {
+        const el = (window as unknown as { __renderCheckAnchors: Element[] }).__renderCheckAnchors[m.anchor.index]!;
+        const centre = () => { const r = el.getBoundingClientRect(); return { x: r.left + m.anchor.dx + m.box.w / 2, y: r.top + m.anchor.dy + m.box.h / 2 }; };
+        for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+          const cs = getComputedStyle(a), b = a.getBoundingClientRect();
+          if (/auto|scroll/.test(cs.overflowY) && a.scrollHeight > a.clientHeight) a.scrollTop += centre().y - (b.top + a.clientHeight / 2);
+          if (/auto|scroll/.test(cs.overflowX) && a.scrollWidth > a.clientWidth) a.scrollLeft += centre().x - (b.left + a.clientWidth / 2);
+        }
+        scrollBy(0, centre().y - innerHeight / 2);
+      }, marks[target]!);
     }
-    const inView: boolean[] = await page.evaluate(ms => {
+    const drawn = await page.evaluate(ms => {
       document.querySelector("[data-render-check-marks]")?.remove();
       const anchors = (window as unknown as { __renderCheckAnchors: Element[] }).__renderCheckAnchors;
+      // The page's size as laid out, which the marks must not change.
+      const size = () => [innerWidth, innerHeight, visualViewport?.width, document.documentElement.clientWidth,
+        document.documentElement.scrollWidth, document.documentElement.scrollHeight].join(" × ");
+      const before = size();
+      // Fixed to the viewport, clipped to it and contained: the layer adds nothing to the page's scrollable size, so
+      // a mark past the edge cannot widen a phone's layout viewport.
       const layer = document.createElement("div");
       layer.setAttribute("data-render-check", "skip");
       layer.setAttribute("data-render-check-marks", "");
-      layer.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;overflow:visible;z-index:2147483647;pointer-events:none";
+      layer.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;overflow:hidden;contain:strict;z-index:2147483647;pointer-events:none";
       const seen = ms.map(m => {
         const r = anchors[m.anchor.index]!.getBoundingClientRect();
         const x = r.left + m.anchor.dx, y = r.top + m.anchor.dy, w = Math.max(m.box.w, 2), h = Math.max(m.box.h, 2);
@@ -149,10 +182,16 @@ async function shoot(page: Page, marks: Mark[], base: string, out: string): Prom
         return x < innerWidth && x + w > 0 && y < innerHeight && y + h > 0;
       });
       document.body.append(layer);
-      return seen;
+      const after = size();
+      return { seen, moved: after === before ? null : `${before} before the marks, ${after} with them` };
     }, marks);
+    const inView = drawn.seen;
+    marksMoved ??= drawn.moved;
     const image = `${base}${images.length ? `-${images.length + 1}` : ""}.png`;
     await page.screenshot({ path: join(out, image) });
+    // The render must show every clipping box as judged.
+    const offsets = await clipOffsets(page);
+    if (offsets !== judgedClips) clipScrolled ??= `judged at [${judgedClips || "none scrolled"}], rendered at [${offsets || "none scrolled"}]`;
     images.push(image);
     inView.forEach((v, i) => { if (v && !shownIn[i]) shownIn[i] = image; });
     // A finding that scrolling cannot bring into view (off the screen of a HUD) is shown where it was tried.
@@ -163,7 +202,7 @@ async function shoot(page: Page, marks: Mark[], base: string, out: string): Prom
   for (let i = 0; i < shownIn.length; i++) if (!shownIn[i]) shownIn[i] = images[0]!;
   await page.evaluate(() => document.querySelector("[data-render-check-marks]")?.remove());
   await scrollHome(page);
-  return { images, shownIn };
+  return { images, shownIn, marksMoved, clipScrolled };
 }
 
 /** The findings that must be identical on the layout saved and the layout judged. */
@@ -222,6 +261,8 @@ async function renderAll(o: Options): Promise<Render[]> {
             ? [{ i, mark: { box: f.box, anchor: f.anchor, label: `${f.rule}: ${f.measure}`, held: heldAt.has([f.rule, f.element, f.text].join("|")) } }] : []);
           const shot = await shoot(page, marked.map(m => m.mark), base, o.out);
           images = shot.images;
+          if (shot.marksMoved) invalid.push(`the marks changed the page's size: ${shot.marksMoved}`);
+          if (shot.clipScrolled) invalid.push(`a box that clips was scrolled while its renders were saved: ${shot.clipScrolled}`);
           failureImages = judged.failures.map(() => images[0]!);
           marked.forEach((m, k) => { failureImages[m.i] = shot.shownIn[k]!; });
           // The renders show the layout judged: judged again after they are saved, it finds the same.

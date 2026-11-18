@@ -28,7 +28,9 @@ describe("render check rules", () => {
     expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines.</p>'))).not.toContain("wrap");
   });
 
-  it("fails a label or a table heading that wraps", async () => {
+  it("fails a label or a table heading that wraps, inside prose too, or broken by hand", async () => {
+    expect(rules(await judged('<p>Show <label style="display:inline-block;width:60px">Rated matches</label> only.</p>', 390))).toContain("wrap");
+    expect(rules(await judged('<label style="display:block;width:300px">Rated<br>Matches</label>', 390))).toContain("wrap");
     expect(rules(await judged('<label style="display:block;width:100px">Show rated matches</label>', 390))).toContain("wrap");
     expect(rules(await judged('<label style="display:block;width:300px">Show rated matches</label>', 390))).not.toContain("wrap");
     const table = (w: number) => `<table style="width:${w}px;border-collapse:collapse"><thead><tr><th>Rated matches</th><th>Win rate</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>`;
@@ -45,11 +47,23 @@ describe("render check rules", () => {
     expect(rules(fits)).toEqual([]);
   });
 
-  it("fails text cut by its own box, and an image or control cut by its container, but not one cropped to fill it", async () => {
+  it("fails text cut by its own box, and an image or control cut by its container, but not an image cropped within its box", async () => {
     expect(rules(await judged('<div style="width:80px;white-space:nowrap;overflow:hidden">A long colony name</div>', 390))).toContain("clipped");
     expect(rules(await judged('<div style="width:80px;overflow:hidden"><img style="display:block;margin-left:40px;width:60px;height:20px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>'))).toContain("clipped");
     expect(rules(await judged('<div style="width:80px;overflow:hidden"><button style="width:120px">Go</button></div>'))).toContain("clipped");
-    expect(rules(await judged('<p>Top</p><div style="width:200px;height:40px;overflow:hidden"><img style="display:block;width:200px;height:120px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>'))).not.toContain("clipped");
+    expect(rules(await judged('<div style="width:80px;overflow:hidden"><img style="display:block;width:160px;height:20px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>', 390))).toContain("clipped");
+    expect(rules(await judged('<p>Top</p><div style="width:200px;height:40px;overflow:hidden"><img style="display:block;width:200px;height:40px;object-fit:cover" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>'))).not.toContain("clipped");
+    // Each axis on its own: a box that scrolls sideways still cuts what overflows it vertically.
+    expect(rules(await judged('<div style="width:150px;height:8px;white-space:nowrap;overflow-x:auto;overflow-y:hidden">Rated matches</div>', 390))).toContain("clipped");
+  });
+
+  it("does not fail content the reader can scroll to inside a box that clips, but fails the scroller cut by that box", async () => {
+    const rows = Array.from({ length: 20 }, (_, i) => `<div>Row ${i + 1}</div>`).join("");
+    const panel = (scrollerHeight: number) => `<div style="height:200px;overflow:hidden"><div style="height:${scrollerHeight}px;overflow-y:auto">${rows}</div></div>`;
+    expect(rules(await judged(panel(150), 390))).toEqual([]);
+    expect(rules(await judged(panel(300), 390))).toContain("clipped");
+    const wide = '<div style="width:200px;overflow:hidden"><div style="overflow-x:auto;white-space:nowrap">A long row of colony names that scrolls sideways</div></div>';
+    expect(rules(await judged(wide, 390))).not.toContain("clipped");
   });
 
   it("measures how far a finding breaks its rule", async () => {
@@ -83,15 +97,28 @@ describe("render check rules", () => {
     expect(rules(await judged(column(30, 50), 390))).toContain("grid-uneven");
     expect(rules(await judged(column(30, 30), 390))).toEqual([]);
     expect(rules(await judged(column(120, 120), 390))).toContain("tile-empty");
-    // Sections taller than the screen are a reading column, not tiles.
-    expect(rules(await judged(column(700, 1000), 390))).not.toEqual(expect.arrayContaining(["grid-uneven"]));
-    expect(rules(await judged(column(700, 1000), 390))).not.toContain("tile-empty");
+    // A card taller than the screen is still a card.
+    const tall = (h: number) => `<li class="tile" style="height:${h}px"><canvas width="10" height="10" style="display:block;width:100%;height:100%"></canvas></li>`;
+    expect(rules(await judged(`<ol class="grid" style="grid-template-columns:1fr">${tall(850)}${tall(50)}</ol>`, 390))).toContain("grid-uneven");
+    // Sections that each hold a heading and running text are a reading column, not tiles.
+    const section = (n: number) => `<section class="tile"><h2>Part</h2>${"<p>Running text of the rules page.</p>".repeat(n)}</section>`;
+    expect(rules(await judged(`<div class="grid" style="grid-template-columns:1fr">${section(2)}${section(9)}</div>`, 390))).not.toContain("grid-uneven");
   });
 
   it("fails a tile part shown on some tiles but not others", async () => {
     const tile = (rating: boolean) => `<li class="tile"><span class="who">Name</span>${rating ? '<span class="rating"> 1500</span>' : '<span class="x"> </span>'}</li>`;
     expect(rules(await judged(`<ol class="grid">${tile(true)}${tile(false)}</ol>`))).toContain("part-uneven");
     expect(rules(await judged(`<ol class="grid">${tile(true)}${tile(true)}</ol>`))).not.toContain("part-uneven");
+  });
+
+  it("measures a page band to a button in a box that scrolls, scrolled out of view", async () => {
+    const page = (gap: number) => `<div style="height:200px;overflow-y:auto">${"<p>Line</p>".repeat(20)}<button style="display:block;height:60px">Bring your agent</button><div style="height:${gap}px"></div><p>Rules</p></div>`;
+    expect(rules(await judged(page(30), 390))).not.toContain("page-empty");
+    expect(rules(await judged(page(RULE_LIMITS.pageBandPx + 12), 390))).toContain("page-empty");
+    // The same scroller inside a box that clips (a HUD's panel): the button still counts where the reader scrolls to it.
+    const inPanel = (gap: number) => `<div style="height:300px;overflow:hidden">${page(gap)}</div>`;
+    expect(rules(await judged(inPanel(30), 390))).not.toContain("page-empty");
+    expect(rules(await judged(inPanel(RULE_LIMITS.pageBandPx + 12), 390))).toContain("page-empty");
   });
 
   it("fails an empty page band over the limit, counting a board's canvas as content", async () => {

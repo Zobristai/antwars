@@ -223,23 +223,73 @@
   },
   {
    "surface": "leaderboard",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "leaderboard",
    "width": 390,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   },
   {
    "surface": "leaderboard",
    "width": 390,
    "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   },
   {
    "surface": "matches",
@@ -514,12 +564,12 @@
   {
    "surface": "matches",
    "width": 390,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   },
   {
    "surface": "matches",
@@ -792,54 +842,44 @@
    "why": "Recordings rows cut long model and handle names at 390 px; on main before this check."
   },
   {
-   "surface": "matches",
-   "width": 390,
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
    "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   },
   {
    "surface": "rules",
    "width": 390,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   },
   {
    "surface": "rules",
    "width": 390,
    "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below div.d1p > div.d1p-page > div.d1p-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below div.d1.d1-hud > div.d1-below > div.d1-deck-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below div.d1.d1-hud > div.d1-below > div.d1-deck-end > button.d1-agent-button",
-   "text": "above: Rules",
-   "extent": 50,
-   "why": "The phone footer's designed spacing above its Rules link (50 px against the 48 px limit); on main before this check."
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   }
  ]
 }

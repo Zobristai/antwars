@@ -37,19 +37,19 @@ Any other request fails the render. To refresh the data: `npm run render-check -
 
 A render fails on:
 
-- **wrap**: a one-line item (a block holding only inline content: a name, a label, a button, a table heading) laid out on two or more lines. Prose and headings may wrap.
-- **clipped / cut / offscreen**: text cut by an overflow box (its own or an ancestor's), by an ellipsis, or by the viewport's sides; an image, board or control cut by an overflow box or the viewport. An image or board that spans the whole box on the side it is cut (a hero image cropped to its frame) is not judged; a control always is. Visually hidden screen-reader text is not judged.
+- **wrap**: a one-line item (a block holding only inline content: a name, a button; and every label and table heading, wherever it stands) laid out on two or more rendered lines, an explicit `<br>` included. Prose and headings may wrap.
+- **clipped / cut / offscreen**: text cut by an overflow box (its own or an ancestor's), by an ellipsis, or by the viewport's sides; an image, board or control cut by an overflow box or the viewport (an image cropped by design with `object-fit` stays inside its box and is not cut). Each axis is judged on its own. A box that scrolls on an axis cuts nothing on it, because the reader can scroll to the content; past that box the content is judged where scrolling brings it, so a scroller cut by its own container still fails. Visually hidden screen-reader text is not judged.
 - **sideways / page-wider**: a box that scrolls sideways, or a page wider than the viewport.
-- **row-uneven / grid-uneven**: tiles of one kind, two or more in a grid, of unequal height in a row or across the grid. A grid laid out in one column (as at phone width) is judged too, when each tile fits on the screen: a column of sections taller than the screen is a page's reading column, not tiles.
+- **row-uneven / grid-uneven**: tiles of one kind, two or more in a grid, of unequal height in a row or across the grid. A grid laid out in one column (as at phone width) is judged too, however tall its tiles; only a column whose children each hold a heading and running text is a page's reading sections, not tiles.
 - **tile-empty**: an empty band inside such a tile taller than 1.5 lines of its text.
 - **part-uneven**: a tile part (an element with text) shown on some tiles of a grid but not others.
-- **page-empty**: an empty band between parts of the page taller than 48 px. The largest designed gap on main is 45 px; the band the Top matches review rejected measured 60 px.
+- **page-empty**: an empty band between parts of the page taller than 48 px, measured with every box that scrolls unrolled (its content counts where it lies, as the reader scrolls to it). The largest designed gap on main is 45 px; the band the Top matches review rejected measured 60 px.
 
 A one-line item with under 8% of its width to spare is listed as a **tight** fit, not failed.
 
 Each failure names its surface, width, typeface, rule, element (class path and text), measure and extent (lines for wrap, tiles missing the part for part-uneven, otherwise px), and the render that shows it outlined (red for new, amber for held).
 
-The renders (`renders/`) are taken of the layout exactly as judged: the viewport never changes size. The first render is the surface as it opens; each further one scrolls the first finding not yet shown into view (scrolling moves the layout, it does not lay it out again). After the renders are saved the surface is judged again from the top; if it finds anything different, the render is invalid and the check fails. In CI the failures are annotations on the pull request and the report is the job summary; the renders are the job's `render-check` artifact.
+The renders (`renders/`) are taken of the layout exactly as judged: the viewport never changes size. The first render is the surface as it opens; each further one brings the first finding not yet shown into view by scrolling the boxes that scroll and the page, never a box that clips (scrolling moves the layout, it does not lay it out again). The marks are drawn in a layer fixed to the viewport and clipped to it, so they add nothing to the page's size. A render is invalid, and the check fails, if the marks change the page's size, if a box that clips is not where it was judged, or if the surface judged again after its renders are saved finds anything different. In CI the failures are annotations on the pull request and the report is the job summary; the renders are the job's `render-check` artifact.
 
 Wording, case and whether a part belongs on a tile at all are not measured: they stay with the reviewer.
 
