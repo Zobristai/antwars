@@ -9,7 +9,7 @@ import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
 import { publiclyListedMatch, recordedMatchType, type RecordingMatchKind } from "../../src/replays/recorded-match-type.ts";
-import { UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
+import { MAX_LISTING_STORAGE_PAGES, UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
@@ -515,6 +515,79 @@ describe("GET /matches lists only Model Index, challenge and rated matches", () 
     const only = await list(origin);
     expect(only.matches.map(match => match.id)).toEqual(all.filter(match => match.rated).map(match => match.id));
     expect(only.nextPageToken).toBeNull();
+  });
+
+  it("stops at the storage page cap with a short page and a sealed continuation that resumes after the last row read", async () => {
+    // Newest first: 2 rated, 118 unrated (past the cap's 100 rows), then 5 rated.
+    const all = Array.from({ length: 125 }, (_, n) => rated(id(n), n < 2 || n >= 120));
+    const ratedIds = all.filter(match => match.rated).map(match => match.id), unratedIds = all.filter(match => !match.rated).map(match => match.id);
+    const { source, reads } = storage(all);
+    const lookups = lobbies({});
+    const origin = await listen(source, lookups.lookup);
+    const capped = MAX_LISTING_STORAGE_PAGES * 20;
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(ratedIds.slice(0, 2));
+    expect(reads).toHaveLength(MAX_LISTING_STORAGE_PAGES);
+    expect(lookups.reads.length).toBeLessThanOrEqual(capped);
+    expect(first.nextPageToken).toMatch(/^sealed-v1:[A-Za-z0-9_-]+$/);
+    const second = await list(origin, first.nextPageToken);
+    // It resumes after the last row the first request read, which was left out.
+    expect(reads[MAX_LISTING_STORAGE_PAGES]).toBe(`after:${id(capped - 1)}`);
+    expect(second.matches.map(match => match.id)).toEqual(ratedIds.slice(2));
+    expect(second.nextPageToken).toBeNull();
+    for (const listing of [first, second]) for (const left of unratedIds) expect(JSON.stringify(listing)).not.toContain(left);
+  });
+
+  it("stops at the cap with an empty page where no row in reach is listed, and still reaches the rows past it", async () => {
+    const all = Array.from({ length: 2 * MAX_LISTING_STORAGE_PAGES * 20 + 3 }, (_, n) => rated(id(n), n >= 2 * MAX_LISTING_STORAGE_PAGES * 20));
+    const origin = await listen(storage(all).source);
+    const pages: Listing[] = [await list(origin)];
+    while (pages.at(-1)!.nextPageToken !== null) pages.push(await list(origin, pages.at(-1)!.nextPageToken));
+    expect(pages.map(listing => listing.matches.length)).toEqual([0, 0, 3]);
+    expect(pages.flatMap(listing => listing.matches.map(match => match.id))).toEqual(all.slice(-3).map(match => match.id));
+    for (const listing of pages) for (const left of all.slice(0, -3)) expect(JSON.stringify(listing)).not.toContain(left.id);
+  });
+
+  it("refuses a sealed continuation it cannot open, as a forged one or one from before a restart", async () => {
+    const all = Array.from({ length: MAX_LISTING_STORAGE_PAGES * 20 + 1 }, (_, n) => rated(id(n), n === MAX_LISTING_STORAGE_PAGES * 20));
+    const before = await listen(storage(all).source);
+    const token = (await list(before)).nextPageToken!;
+    expect(token).toMatch(/^sealed-v1:/);
+    const { source, reads } = storage(all);
+    const restarted = await listen(source);
+    for (const refused of [token, "sealed-v1:AAAA", `sealed-v1:${"A".repeat(60)}`]) {
+      const response = await fetch(`${restarted}/matches?pageToken=${encodeURIComponent(refused)}`);
+      expect(response.status).toBe(400);
+    }
+    expect(reads).toEqual([]);
+    expect((await (await fetch(`${before}/matches?pageToken=${encodeURIComponent(token)}`)).json() as Listing).matches.map(match => match.id))
+      .toEqual([all.at(-1)!.id]);
+  });
+
+  it("stops waiting for outstanding lobby lookups and reads no further storage page once the request ends", async () => {
+    const all = Array.from({ length: 45 }, (_, n) => rated(id(n), false));
+    const { source, reads } = storage(all);
+    const started: string[] = [];
+    let release!: () => void;
+    const held = new Promise<null>(resolve => { release = () => resolve(null); });
+    const handler = historyRoutes(source, async replayId => { started.push(replayId); return held; });
+    let handled!: Promise<void>;
+    const server = createServer((req, res) => { handled = Promise.resolve(handler(req, res, undefined as never)); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    close.push(() => new Promise(resolve => server.close(() => resolve())));
+    const abort = new AbortController();
+    const request = fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/matches`, { signal: abort.signal }).catch(() => undefined);
+    while (started.length < 20) await new Promise(resolve => setTimeout(resolve, 5));
+    abort.abort();
+    await request;
+    // The handler ends while every lookup it started is still outstanding.
+    await handled;
+    expect(reads).toEqual([undefined]);
+    release();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(reads).toEqual([undefined]);
+    expect(started).toHaveLength(20);
   });
 
   it("still serves a left-out recording's record by its id", async () => {

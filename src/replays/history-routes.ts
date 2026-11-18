@@ -1,5 +1,6 @@
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { addAbortListener } from "node:events";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { peek } from "../net/relay.js";
 import type { MountHandler } from "../server.js";
@@ -209,24 +210,78 @@ export interface HistoryRouteOptions {
 
 /** Rows on one public listing page: a full storage page (history-source.ts list). */
 const PAGE_ROWS = 20;
+/**
+ * The most storage pages one listing request reads. Each storage page holds at most PAGE_ROWS rows and each row is looked up
+ * once (the type and the handle fill share cachedLobbyLookup), so one request does at most MAX_LISTING_STORAGE_PAGES *
+ * PAGE_ROWS lobby lookups and hide-list reads. A request that reaches the cap returns the rows it has, short, with a
+ * continuation that resumes after the last row it read.
+ */
+export const MAX_LISTING_STORAGE_PAGES = 5;
+/** The prefix of a continuation sealed by this process (listingContinuations). */
+const SEALED_PREFIX = "sealed-v1:";
+
+/** An unreadable sealed continuation: refused as a bad request, never retried as unavailable. */
+class InvalidContinuation extends Error {}
+
+/**
+ * Continuations that point past a row a listing leaves out, sealed with a key of this process so the caller can neither read
+ * nor forge one and the left-out row's id is never in list data. A restart voids them: such a continuation is refused (400)
+ * and the list is loaded again from its first page.
+ */
+function listingContinuations() {
+  const key = randomBytes(32), aad = Buffer.from("antwar public listing continuation v1");
+  return {
+    seal(storageToken: string): string {
+      const iv = randomBytes(12), cipher = createCipheriv("aes-256-gcm", key, iv);
+      cipher.setAAD(aad);
+      const body = Buffer.concat([cipher.update(storageToken, "utf8"), cipher.final()]);
+      return `${SEALED_PREFIX}${Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url")}`;
+    },
+    /** The storage continuation a listing token stands for: a sealed one opened, any other passed to storage as it is. */
+    open(token: string | undefined): string | undefined {
+      if (token === undefined || !token.startsWith(SEALED_PREFIX)) return token;
+      try {
+        const encoded = token.slice(SEALED_PREFIX.length), raw = Buffer.from(encoded, "base64url");
+        if (raw.length < 29 || raw.toString("base64url") !== encoded) throw new InvalidContinuation();
+        const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+        decipher.setAAD(aad);
+        decipher.setAuthTag(raw.subarray(12, 28));
+        return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+      } catch { throw new InvalidContinuation(); }
+    },
+  };
+}
+type ListingContinuations = ReturnType<typeof listingContinuations>;
+
+/** Work the request stops waiting for when it ends: shared lookups run on for other callers, but this request no longer waits. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const listener = addAbortListener(signal, () => reject(signal.reason));
+    work.then(value => { listener[Symbol.dispose](); resolve(value); }, error => { listener[Symbol.dispose](); reject(error); });
+  });
+}
 
 /**
  * One public listing page. Each storage page's rows pass the hide list (when configured), then serve gives them their served
  * values (type, handles, corrections), and only the rows publiclyListedMatch admits are kept. Storage pages are read until
- * PAGE_ROWS rows are listed or storage ends, so a page comes back short only at the end of the history. A page that stops
- * at a storage boundary it served up to, without the hide list, keeps the storage continuation; any other page continues
- * after its last served row, so no left-out or unserved row's id is in the listing.
+ * PAGE_ROWS rows are listed, storage ends, or MAX_LISTING_STORAGE_PAGES have been read; so a page comes back short only at
+ * the end of the history or at that cap. A page that stops at a storage boundary it served up to, without the hide list,
+ * keeps the storage continuation; a full page continues after its last served row; a page stopped by the cap continues
+ * after the last row it read, sealed (listingContinuations). So no left-out or unserved row's id is in the listing.
  */
 async function publicHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
-  visibility: PublicVisibility | undefined, serve: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
+  visibility: PublicVisibility | undefined, continuations: ListingContinuations,
+  serve: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
+  token = continuations.open(token);
   const seen = new Set<string>();
   if (token !== undefined) seen.add(token);
   const listed: TypedHistorySummary[] = [];
-  for (;;) {
+  for (let pages = 1; ; pages++) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
-    const visible = visibility ? await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id)) : raw.matches;
-    const served = await serve({ matches: visible, nextPageToken: raw.nextPageToken });
+    const visible = visibility ? await untilAborted(publiclyVisible(raw.matches, row => visibility.replayVisible(row.id)), signal) : raw.matches;
+    const served = await untilAborted(serve({ matches: visible, nextPageToken: raw.nextPageToken }), signal);
     listed.push(...served.matches.filter(publiclyListedMatch));
     if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
     if (listed.length >= PAGE_ROWS) {
@@ -241,6 +296,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
     if (seen.has(raw.nextPageToken!)) throw new Error("Invalid history continuation");
     seen.add(raw.nextPageToken!);
     token = raw.nextPageToken!;
+    if (pages >= MAX_LISTING_STORAGE_PAGES) return { ...served, matches: listed, nextPageToken: continuations.seal(token) };
   }
 }
 
@@ -250,7 +306,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
  * matches only (publiclyListedMatch); every other recording is still served by GET /matches/<id>.
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
  * These paths are independent of /live/* and /replays/*.
- * A listing page is bounded as a whole (60 s). A record download has no total-time bound, so a slow but steady
+ * A listing page is bounded as a whole (60 s) and reads at most MAX_LISTING_STORAGE_PAGES storage pages. A record download has no total-time bound, so a slow but steady
  * client always gets the complete record; it is dropped only after 30 s in which no chunk was handed to the
  * response (a stalled client stops taking chunks under backpressure).
  */
@@ -260,6 +316,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies, { unsettledMs: options.unsettledLobbyMs });
   const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
   const types = recordingMatchTypes(cached);
+  const continuations = listingContinuations();
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const list = url.pathname === "/matches";
@@ -281,8 +338,10 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     res.once("close", cancel);
     try {
       if (list) {
-        const page = await publicHistoryPage(source, token, abort.signal, options.publicVisibility, async listed => {
+        const page = await publicHistoryPage(source, token, abort.signal, options.publicVisibility, continuations, async listed => {
           const typed = await types(listed);
+          // A request that has ended starts no further lookups.
+          abort.signal.throwIfAborted();
           const filled = handles === undefined ? typed : await handles(typed);
           // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
           return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
@@ -320,9 +379,10 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
           }, res, { signal: abort.signal });
         } finally { cancellation[Symbol.dispose](); body.destroy(); }
       }
-    } catch {
+    } catch (error) {
       if (res.destroyed) return;
       if (res.headersSent) { res.destroy(); return; }
+      if (error instanceof InvalidContinuation) { res.writeHead(400, { "cache-control": "no-store" }).end(); return; }
       const body = Buffer.from(JSON.stringify({ error: "Match history temporarily unavailable. Please try again." }));
       res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store", "content-length": String(body.length) });
       res.end(req.method === "HEAD" ? undefined : body);
