@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, type MatchOutcome, type MatchResult } from "../../src/lobby/lobbies.ts";
 import { newWaitToken } from "../../src/lobby/waits.ts";
+import { applyFfaResult } from "../../src/rating/ffa.ts";
 import { createRatings, RANKED_MODES, ratingCollection } from "../../src/rating/ratings.ts";
 import { COLONY_NAMES, rulesConfig, type MapDefinition } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
@@ -401,4 +402,99 @@ it("an enabled gate still preserves historical results with no order and never r
   expect(JSON.parse((await w.raw(`lobbies/${lobbyId}`))!.result!)).toEqual(historical);
   for (const id of ids) expect(await w.raw(`ratings-ffa/${id}`)).toBeNull();
   expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
+});
+
+describe("a refused Free-for-all rating write", () => {
+  const FINISH = { version: 1 as const, order: [2, 0, 3, 1] as const, territoryWinnerFirst: false, rateable: true };
+  const RESULT: MatchResult = { reason: "time_up", eliminations: [], ffa: FINISH };
+
+  /** A rated quadrants lobby begun on public-0 under the enabled gate, with its colony-ordered participants. */
+  async function ratedBegun(w: World, prefix: string, store: Store = w.store) {
+    const { lobbyId, ids } = await quadrantsLobby(w, prefix);
+    await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
+    const gated = createLobbies(store, createIdentities(store), { publicSlots: 1, privateSlots: 1, ffaLiveEnabled: true, now: () => w.clock.t });
+    await gated.registerInstance("public-0", { runId: "run", ...INSTANCE });
+    value(await gated.beginMatch(lobbyId, "public-0", "run"));
+    const seats = JSON.parse((await w.raw(`lobbies/${lobbyId}`))!.seats!) as { id: string; colony: number }[];
+    const participants = [0, 1, 2, 3].map(colony => seats.find(seat => seat.colony === colony)!.id);
+    return { lobbyId, ids, gated, participants };
+  }
+
+  /** Every Free-for-all and ranked rating document of ids, and the history of the given matches. */
+  async function ratingDocs(w: World, ids: readonly string[], matches: readonly string[]) {
+    const paths = [...ids.flatMap(id => [`ratings-ffa/${id}`, ...RANKED_MODES.map(mode => `${ratingCollection(mode)}/${id}`)]),
+      ...matches.flatMap(id => [`ffaMatches/${id}`, `ratedMatches/${id}`])];
+    return new Map(await Promise.all(paths.map(async path => [path, await w.raw(path)] as const)));
+  }
+
+  it("releases the slot and leaves the match unrated with the failure recorded when a stored rating is invalid", async () => {
+    const w = world("memory");
+    // An earlier, already-rated Free-for-all match whose history and ratings must not move.
+    const earlier = await ratedBegun(w, "early");
+    value(await earlier.gated.endMatch(earlier.lobbyId, "run", "draw", undefined, undefined, undefined, undefined, RESULT));
+    const { lobbyId, ids, gated } = await ratedBegun(w, "bad");
+    await w.store.transaction(async () => ({ result: null, writes: [{ op: "create", path: `ratings-ffa/${ids[0]}`,
+      fields: { mu: "25", sigma: "8", ratedMatches: "3", estimator: "another-estimator" } }] }));
+    const before = await ratingDocs(w, [...earlier.ids, ...ids], [earlier.lobbyId, lobbyId]);
+    expect(value(await gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, RESULT))).toEqual({ next: null });
+    expect(await w.raw("slots/public-0")).toBeNull();
+    expect(await w.raw(`lobbies/${lobbyId}`)).toMatchObject({ state: "ended", slot: "", outcome: "colony_2_won", rated: "false",
+      ratingFailure: "invalid stored Free-for-all rating" });
+    expect(await w.raw(`ffaMatches/${lobbyId}`)).toBeNull();
+    expect(await ratingDocs(w, [...earlier.ids, ...ids], [earlier.lobbyId, lobbyId])).toEqual(before);
+    // Released once: a repeat is refused as no longer holding, and the freed slot takes the next match.
+    expect(await gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, RESULT)).toEqual({ ok: false, reason: "not_holding" });
+    const next = await quadrantsLobby(w, "next");
+    expect((await w.raw("slots/public-0"))?.lobbyId).toBe(next.lobbyId);
+  });
+
+  it("refuses a match already rated with another result the same way, keeping that rating's history", async () => {
+    const w = world("memory");
+    const { lobbyId, ids, gated, participants } = await ratedBegun(w, "conflict");
+    await applyFfaResult(w.store, { matchId: lobbyId, participants, reason: "time_up", finish: { ...FINISH, order: [0, 1, 2, 3] as const } });
+    const before = await ratingDocs(w, ids, [lobbyId]);
+    value(await gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, RESULT));
+    expect(await w.raw("slots/public-0")).toBeNull();
+    expect(await w.raw(`lobbies/${lobbyId}`)).toMatchObject({ state: "ended", rated: "false",
+      ratingFailure: "Free-for-all match was already rated with another result" });
+    expect(await ratingDocs(w, ids, [lobbyId])).toEqual(before);
+  });
+
+  it("releases a match already rated with the same result as rated, recording no failure and rating nothing twice", async () => {
+    const w = world("memory");
+    const { lobbyId, ids, gated, participants } = await ratedBegun(w, "same");
+    await applyFfaResult(w.store, { matchId: lobbyId, participants, reason: "time_up", finish: FINISH });
+    const before = await ratingDocs(w, ids, [lobbyId]);
+    value(await gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, RESULT));
+    expect(await w.raw("slots/public-0")).toBeNull();
+    const ended = (await w.raw(`lobbies/${lobbyId}`))!;
+    expect(ended).toMatchObject({ state: "ended", rated: "true" });
+    expect(ended.ratingFailure).toBeUndefined();
+    expect(await ratingDocs(w, ids, [lobbyId])).toEqual(before);
+  });
+
+  it("keeps the slot held and retries when the rating step's store read fails, then rates the match once", async () => {
+    const w = world("memory");
+    let failNext = false;
+    // The shared store, except that the next transactional read of a Free-for-all rating fails as a store error.
+    const flaky: Store = { ...w.store, transaction: step => w.store.transaction(read => step(async paths => {
+      if (failNext && paths.some(path => path.startsWith("ratings-ffa/"))) {
+        failNext = false;
+        throw new Error("store unavailable");
+      }
+      return read(paths);
+    })) };
+    const { lobbyId, ids, gated } = await ratedBegun(w, "flaky", flaky);
+    failNext = true;
+    await expect(gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, RESULT)).rejects.toThrow("store unavailable");
+    expect((await w.raw("slots/public-0"))?.lobbyId).toBe(lobbyId);
+    expect(await w.raw(`lobbies/${lobbyId}`)).toMatchObject({ state: "holding", rated: "true" });
+    expect(await w.raw(`ffaMatches/${lobbyId}`)).toBeNull();
+    value(await gated.endMatch(lobbyId, "run", "colony_2_won", undefined, undefined, undefined, undefined, RESULT));
+    expect(await w.raw("slots/public-0")).toBeNull();
+    const ended = (await w.raw(`lobbies/${lobbyId}`))!;
+    expect(ended).toMatchObject({ state: "ended", rated: "true" });
+    expect(ended.ratingFailure).toBeUndefined();
+    for (const id of ids) expect((await w.raw(`ratings-ffa/${id}`))?.ratedMatches).toBe("1");
+  });
 });
