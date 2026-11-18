@@ -8,7 +8,7 @@ import { encodePublicMessage } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { historyBytes, type HistoryInput } from "../../src/replays/history.ts";
-import { recordedMatchType } from "../../src/replays/recorded-match-type.ts";
+import { publiclyListedMatch, recordedMatchType, type RecordingMatchKind } from "../../src/replays/recorded-match-type.ts";
 import { UNSETTLED_LOBBY_MS, cachedLobbyLookup, historyRoutes, lobbySeatHandles, recordingMatchTime, recordingMatchType, recordingMatchTypes, recordingRated, type RecordingLobby,
   type TypedHistorySummary } from "../../src/replays/history-routes.ts";
 import type { HistoryPage, HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
@@ -368,10 +368,11 @@ describe("GET /matches with a lobby lookup", () => {
   it("serves lobby-filled handles and still serves the listing when the lookup fails", async () => {
     const ok = "2026-10-31T10-00-00-000Z-1", failing = "2026-10-31T10-10-00-000Z-1";
     const source: HistorySource = {
-      async list() { return page(row(ok, [{ colony: 0 }, { colony: 1 }]), row(failing, [{ colony: 0 }, { colony: 1 }])); },
+      async list() { return page(row(ok, [{ colony: 0 }, { colony: 1 }]), { ...row(failing, [{ colony: 0 }, { colony: 1 }]), rated: true }); },
       async open() { return null; },
     };
-    const { lookup } = lobbies({ [ok]: { kind: "public", size: 1, mode: null, colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]] }, [failing]: new Error("store unavailable") });
+    const { lookup } = lobbies({ [ok]: { kind: "public", size: 1, mode: null, challenge: { kind: "house" }, colonies: [[seat("h", HOUSE)], [seat("k", HOUSE_FAST)]] },
+      [failing]: new Error("store unavailable") });
     const handler = historyRoutes(source, lookup);
     const server = createServer((req, res) => { void handler(req, res, undefined as never); });
     server.listen(0, "127.0.0.1");
@@ -381,8 +382,8 @@ describe("GET /matches with a lobby lookup", () => {
     expect(response.status).toBe(200);
     const listed = (await response.json()) as { matches: TypedHistorySummary[] };
     expect(listed.matches.map(handles)).toEqual([[HOUSE, HOUSE_FAST], [null, null]]);
-    // Each row carries its match type: the lobby's where it read, the record's (here unknown: no setup fields) where it failed.
-    expect(listed.matches.map(match => match.matchType)).toEqual([{ kind: "unranked", size: 1 }, null]);
+    // Each row carries its match type: the lobby's where it read, the record's (here unknown: rated, blank handles) where it failed.
+    expect(listed.matches.map(match => match.matchType)).toEqual([{ kind: "challenge", size: 1 }, null]);
   });
 
   it("reads each recording's lobby once for both the handle fill and the match type", async () => {
@@ -403,6 +404,92 @@ describe("GET /matches with a lobby lookup", () => {
       expect(listed.matches.map(match => [handles(match), match.matchType])).toEqual([[[HOUSE, "alice/bot"], { kind: "ranked", size: 1 }]]);
     }
     expect(reads).toEqual([id]);
+  });
+});
+
+describe("GET /matches lists only Model Index, challenge and rated matches", () => {
+  const close: (() => Promise<void>)[] = [];
+  afterEach(async () => { for (const stop of close.splice(0)) await stop(); });
+  async function listen(source: HistorySource, lookup?: Parameters<typeof historyRoutes>[1]) {
+    const handler = historyRoutes(source, lookup);
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    close.push(() => new Promise(resolve => server.close(() => resolve())));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+  const rated = (id: string, flag: boolean | null, modelIndex = false): HistorySummary =>
+    ({ ...row(id, [{ colony: 0, handle: "alice/bot" }, { colony: 1, handle: "bob/bot" }]), rated: flag, modelIndex });
+  const lobbyOf = (fields: Partial<RecordingLobby>): RecordingLobby =>
+    ({ kind: "public", size: 1, mode: null, colonies: [[seat("a", "alice/bot")], [seat("b", "bob/bot")]], ...fields });
+
+  it("admits a Model Index or challenge match whatever its rated flag, and any other kind only when rated", () => {
+    const kinds: (RecordingMatchKind | null)[] = ["index", "challenge", "ranked", "unranked", "unrated", "quadrants", null];
+    const admitted = (flag: boolean | null | undefined) => kinds.filter(kind => publiclyListedMatch({ matchType: kind === null ? null : { kind, size: 1 }, rated: flag }));
+    expect(admitted(true)).toEqual(kinds);
+    for (const flag of [false, null, undefined]) expect(admitted(flag)).toEqual(["index", "challenge"]);
+    // A kind this build does not know stays out unless rated.
+    const future = { kind: "exhibition" as RecordingMatchKind, size: 1 as const };
+    expect(publiclyListedMatch({ matchType: future, rated: false })).toBe(false);
+    expect(publiclyListedMatch({ matchType: future, rated: true })).toBe(true);
+  });
+
+  it("serves the index, challenge and rated rows of a page and leaves out every unrated kind", async () => {
+    const id = (minute: number) => `2026-11-18T05-${String(minute).padStart(2, "0")}-00-000Z-1`;
+    const ids = { index: id(10), stoppedIndex: id(9), challenge: id(8), ranked: id(7), stoppedRanked: id(6), unranked: id(5),
+      quadrants: id(4), unratedRecord: id(3), indexRecord: id(2), untyped: id(1) };
+    const rows = [rated(ids.index, true), rated(ids.stoppedIndex, true), rated(ids.challenge, false), rated(ids.ranked, true),
+      rated(ids.stoppedRanked, true), rated(ids.unranked, false), rated(ids.quadrants, false), rated(ids.unratedRecord, false),
+      rated(ids.indexRecord, true, true), { ...row(ids.untyped, [{ colony: 0 }, { colony: 1 }]), rated: true }];
+    const { lookup } = lobbies({
+      [ids.index]: lobbyOf({ mode: "house-1v1", outcome: "colony_0_won" }), [ids.stoppedIndex]: lobbyOf({ mode: "house-1v1", outcome: "stopped" }),
+      [ids.challenge]: lobbyOf({ challenge: { kind: "house" }, outcome: "colony_1_won" }), [ids.ranked]: lobbyOf({ mode: "1v1", outcome: "draw" }),
+      [ids.stoppedRanked]: lobbyOf({ mode: "1v1", outcome: "stopped" }), [ids.unranked]: lobbyOf({ outcome: "colony_0_won" }),
+      [ids.quadrants]: lobbyOf({ mode: "quadrants", outcome: "colony_2_won", colonies: [[seat("a", "a")], [seat("b", "b")], [seat("c", "c")], [seat("d", "d")]] }),
+    });
+    const origin = await listen({ async list() { return page(...rows); }, async open() { return null; } }, lookup);
+    const listed = (await (await fetch(`${origin}/matches`)).json()) as { matches: TypedHistorySummary[]; nextPageToken: string | null };
+    expect(listed.matches.map(match => [match.id, match.matchType?.kind ?? null, match.rated])).toEqual([
+      [ids.index, "index", true], [ids.stoppedIndex, "index", false], [ids.challenge, "challenge", false], [ids.ranked, "ranked", true],
+      [ids.indexRecord, "index", true], [ids.untyped, null, true]]);
+    expect(listed.nextPageToken).toBeNull();
+  });
+
+  it("follows storage pages with no listed row, and continues after the last served row so no left-out id is listed", async () => {
+    const id = (minute: number) => `2026-11-18T04-${String(minute).padStart(2, "0")}-00-000Z-1`;
+    // Newest first: two unrated, a rated, two unrated, a rated; storage pages of two.
+    const all = [rated(id(6), false), rated(id(5), false), rated(id(4), true), rated(id(3), false), rated(id(2), false), rated(id(1), true)];
+    const unrated = new Set([id(6), id(5), id(3), id(2)]);
+    const reads: (string | undefined)[] = [];
+    const source: HistorySource = {
+      async list(token) {
+        reads.push(token);
+        const start = token === undefined ? 0 : all.findIndex(match => match.id === token.slice("after:".length)) + 1;
+        const matches = all.slice(start, start + 2);
+        return { matches, nextPageToken: start + 2 < all.length ? `after:${matches.at(-1)!.id}` : null };
+      },
+      continuationAfter: id => `after:${id}`,
+      async open() { return null; },
+    };
+    const origin = await listen(source);
+    const first = (await (await fetch(`${origin}/matches`)).json()) as { matches: HistorySummary[]; nextPageToken: string | null };
+    expect(first.matches.map(match => match.id)).toEqual([id(4)]);
+    expect(first.nextPageToken).toBe(`after:${id(4)}`);
+    const second = (await (await fetch(`${origin}/matches?pageToken=${encodeURIComponent(first.nextPageToken!)}`)).json()) as typeof first;
+    expect(second.matches.map(match => match.id)).toEqual([id(1)]);
+    expect(second.nextPageToken).toBeNull();
+    expect(reads).toEqual([undefined, `after:${id(5)}`, `after:${id(4)}`, `after:${id(2)}`]);
+    for (const served of [first, second]) for (const left of unrated) expect(JSON.stringify(served)).not.toContain(left);
+  });
+
+  it("still serves a left-out recording's record by its id", async () => {
+    const id = "2026-11-18T03-00-00-000Z-1";
+    const origin = await listen({ async list() { return page(rated(id, false)); },
+      async open(opened) { return opened === id ? Readable.from([Buffer.from("{}")]) : null; } });
+    expect(((await (await fetch(`${origin}/matches`)).json()) as { matches: unknown[] }).matches).toEqual([]);
+    const record = await fetch(`${origin}/matches/${id}`);
+    expect(record.status).toBe(200);
+    expect(await record.text()).toBe("{}");
   });
 });
 

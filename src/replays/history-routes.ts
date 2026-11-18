@@ -10,7 +10,7 @@ import { NATURAL_OUTCOMES } from "../rating/ratings.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
-import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { lobbyMatchType, publiclyListedMatch, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
@@ -51,7 +51,8 @@ type ColonyHandles = readonly (string | null)[];
  * Accepted residual: a lobby recording listed while its match registration itself has not yet published (the slot's
  * store failing since that match began) reads as no lobby and stays unfilled on this server until it restarts.
  */
-export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPage) => Promise<HistoryPage> {
+export function lobbySeatHandles(lookup: RecordingLobbyLookup): <Row extends HistorySummary>(page: Omit<HistoryPage, "matches"> & { matches: Row[] }) =>
+  Promise<Omit<HistoryPage, "matches"> & { matches: Row[] }> {
   const cache = new Map<string, Promise<ColonyHandles | null>>();
   function colonyHandles(replayId: string): Promise<ColonyHandles | null> {
     const hit = cache.get(replayId);
@@ -66,14 +67,14 @@ export function lobbySeatHandles(lookup: RecordingLobbyLookup): (page: HistoryPa
     work.catch(forget);
     return work;
   }
-  async function fill(row: HistorySummary): Promise<HistorySummary> {
+  async function fill<Row extends HistorySummary>(row: Row): Promise<Row> {
     if (row.seats.every(seat => seat.handle !== null)) return row;
     let handles: ColonyHandles | null;
     try { handles = await colonyHandles(row.id); } catch { return row; }
     if (handles === null) return row;
     return { ...row, seats: row.seats.map(seat => seat.handle !== null ? seat : { ...seat, handle: handles[seat.colony] ?? null }) };
   }
-  return async page => ({ ...page, matches: await Promise.all(page.matches.map(fill)) });
+  return async page => ({ ...page, matches: await Promise.all(page.matches.map(row => fill(row))) });
 }
 
 /**
@@ -119,6 +120,7 @@ export function cachedLobbyLookup(lookup: RecordingLobbyLookup, options: CachedL
 export type { RecordingMatchKind, RecordingMatchType } from "./recorded-match-type.js";
 /** harnessPhase is present only on a Model Index row (src/rating/harnessPhase.ts). */
 export type TypedHistorySummary = HistorySummary & { readonly matchType: RecordingMatchType | null; readonly harnessPhase?: HarnessPhase };
+type ServedPage = Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] };
 
 /**
  * A recording's match type, from its lobby where one was read (undefined: pending or failed this listing; null: it has
@@ -199,20 +201,31 @@ export interface HistoryRouteOptions {
   readonly unsettledLobbyMs?: number;
 }
 
-async function visibleHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
-  visibility: PublicVisibility): Promise<HistoryPage> {
+/**
+ * One public listing page. Each storage page's rows pass the hide list (when configured), then serve gives them their served
+ * values (type, handles, corrections), and only the rows publiclyListedMatch admits are kept. A page left with no row is
+ * followed to the next storage page, so an empty public page always ends the history. A page under the hide list, or one
+ * that left out its last storage row, continues after its last served row, so no left-out row's id is in the listing.
+ */
+async function publicHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
+  visibility: PublicVisibility | undefined, serve: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
   const seen = new Set<string>();
   if (token !== undefined) seen.add(token);
   for (;;) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
-    const matches = await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id));
+    const visible = visibility ? await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id)) : raw.matches;
+    const served = await serve({ matches: visible, nextPageToken: raw.nextPageToken });
+    const matches = served.matches.filter(publiclyListedMatch);
     if (raw.nextPageToken === null) return { matches, nextPageToken: null };
     if (matches.length > 0) {
+      const last = matches.at(-1)!.id;
+      // Without the hide list, a page that served its last storage row keeps the storage continuation unchanged.
+      if (visibility === undefined && last === raw.matches.at(-1)?.id) return { matches, nextPageToken: raw.nextPageToken };
       if (source.continuationAfter === undefined) throw new Error("Public history continuation unavailable");
-      return { matches, nextPageToken: source.continuationAfter(matches.at(-1)!.id) };
+      return { matches, nextPageToken: source.continuationAfter(last) };
     }
-    // Hidden-only storage pages cannot disclose their boundary in an empty public page.
+    // A page with no listed row cannot disclose its storage boundary in an empty public page.
     if (seen.has(raw.nextPageToken)) throw new Error("Invalid history continuation");
     seen.add(raw.nextPageToken);
     token = raw.nextPageToken;
@@ -221,7 +234,8 @@ async function visibleHistoryPage(source: HistorySource, token: string | undefin
 
 /**
  * Anonymous, read-only history backed by storage rather than this process.
- * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}.
+ * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}: the Model Index, challenge and rated
+ * matches only (publiclyListedMatch); every other recording is still served by GET /matches/<id>.
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
  * These paths are independent of /live/* and /replays/*.
  * A listing page is bounded as a whole (60 s). A record download has no total-time bound, so a slow but steady
@@ -255,12 +269,12 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     res.once("close", cancel);
     try {
       if (list) {
-        const listed = options.publicVisibility ? await visibleHistoryPage(source, token, abort.signal, options.publicVisibility)
-          : await source.list(token, abort.signal);
-        const typed = await types(listed);
-        const filled = handles === undefined ? typed : await handles(typed);
-        // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
-        const page = source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+        const page = await publicHistoryPage(source, token, abort.signal, options.publicVisibility, async listed => {
+          const typed = await types(listed);
+          const filled = handles === undefined ? typed : await handles(typed);
+          // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
+          return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+        });
         if (res.destroyed) return;
         // Recordings show an unlisted house seat handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("recordings", page.matches.flatMap(row => row.seats.map(seat => seat.handle)));
