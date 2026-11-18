@@ -380,7 +380,9 @@ export function createJobs(options: JobsOptions = {}): PostMortemJobs {
         if (child.pid === undefined) { cause ??= "crashed"; finish(null); } else stop("crashed");
       });
       // The exit can come before the child's stderr is read to its end: settle once that end is read, or soon after.
+      // An exited child has no memory left to read, so its sampling ends here; a stop that already fired stands.
       child.once("exit", (_code, signal) => {
+        clearInterval(watchdog);
         if (child.stderr === null || child.stderr.readableEnded) { finish(signal); return; }
         const timer = setTimeout(() => finish(signal), EXIT_STDERR_WAIT_MS);
         child.stderr.once("end", () => { clearTimeout(timer); finish(signal); });

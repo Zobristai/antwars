@@ -729,6 +729,32 @@ describe("too large to re-run", () => {
     expect(forkChild).toHaveBeenCalledTimes(2);
   });
 
+  // Credible regression: the exited child still sampled while its stderr drains, its memory now unreadable, so the
+  // meter's failure overrides the heap abort and no second attempt or too-large answer follows.
+  it("stops sampling an exited child while its stderr drains, so an unreadable meter then does not override the abort", async () => {
+    vi.useFakeTimers();
+    let exited = false;
+    // Readable for this process; the child's memory cannot be read once it has exited.
+    const meter: Meter = children => (exited && children !== undefined && children.length > 0 ? null : reading(4096));
+    const forkChild = vi.fn(() => {
+      exited = false;
+      const child = fakeChild();
+      child.removeAllListeners("exit");
+      setTimeout(() => {
+        exited = true;
+        child.emit("exit", null, "SIGABRT");
+        // The heap-limit line and the end arrive well after a sample would have been taken.
+        setTimeout(() => { child.stderr.write("FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n"); child.stderr.end(); }, SAMPLE_MS * 3);
+      }, 10);
+      return child as unknown as ChildProcess;
+    });
+    const jobs = createJobs({ ...quiet, meter, forkChild });
+    const outcome = jobs.rerun("m", VERSION, OPEN).outcome!;
+    await vi.advanceTimersByTimeAsync(10 * SAMPLE_MS);
+    expect(await outcome).toEqual({ kind: "too_large" });
+    expect(forkChild).toHaveBeenCalledTimes(2);
+  });
+
   it("is not the answer when the parent stopped the child, though it aborted at the heap limit", async () => {
     vi.useFakeTimers();
     let headroom = 2000;
