@@ -10,6 +10,8 @@ export const MAX_RECORDING_MESSAGE_BYTES = 4 * 1024 * 1024;
 
 /** A recording that cannot be used, however often it is read: trying again would not help. */
 export class CorruptRecording extends Error {}
+/** A request the server answered with an error status. */
+class RecordingRefused extends Error {}
 
 /** Arbitrary network boundaries, including a split u32 prefix; retain only the current chunk and packet. */
 export async function* recordingMessages(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<{ message: StreamMessage; bytes: number }> {
@@ -114,7 +116,8 @@ export interface RecordingOptions {
 export const SCAN_RETRY_MS: readonly number[] = [2000, 8000, 30000];
 /** The waits before playback reopens a recording whose download failed partway (a dropped connection, or a refused or
  * failed reopen), each also ended at once when the browser reports it is back online. Only ticks past the furthest
- * already reached start the waits over; once the last wait's reopen fails too, the failure stands. */
+ * already reached start the waits over; once the last wait's reopen fails too, the failure stands. An abort from the
+ * request's own signal, such as a startup timeout, is never a dropped connection: it stands at once. */
 export const RESUME_RETRY_MS: readonly number[] = [2000, 8000, 30000];
 /** Read on the page (no worker), the marks' read works at most this long between yields, so playback keeps drawing. */
 const SCAN_SLICE_MS = 8;
@@ -354,7 +357,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   const download = async (version: number, signal: AbortSignal, began: () => void) => {
     const response = await request(url, { signal });
     if (closed || version !== generation) { await response.body?.cancel(); return; }
-    if (!response.ok) throw new Error(response.status === 404 ? "This recording was not found (HTTP 404)." : `Recording unavailable (HTTP ${response.status}).`);
+    if (!response.ok) throw new RecordingRefused(response.status === 404 ? "This recording was not found (HTTP 404)." : `Recording unavailable (HTTP ${response.status}).`);
     if (!response.body) throw new Error("This browser cannot stream the recording.");
     began();
     const messages = recordingMessages(response.body, signal);
@@ -407,6 +410,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   };
   // A download that drops after it began streaming is reopened after RESUME_RETRY_MS and resumes past the newest queued
   // tick; a corrupt recording, or a first request that fails or is refused, stands at once, as does the last reopen's.
+  // Only a network failure (a fetch or read reports one as a TypeError) or a refused reopen is tried again: an abort or
+  // cancellation from the request's signal reports its reason instead, and stands at once, never reopened with that
+  // signal already aborted.
   const pump = async (version: number, signal: AbortSignal) => {
     let began = false;
     let failures = 0;
@@ -420,7 +426,8 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         const failure = cause instanceof Error ? cause : new Error(String(cause));
         // Only ticks past the furthest already reached count as progress, not ticks a reopen read again.
         if (newestTick > reached) failures = 0;
-        if (!began || failure instanceof CorruptRecording || failures >= RESUME_RETRY_MS.length) {
+        const dropped = failure instanceof TypeError || failure instanceof RecordingRefused;
+        if (!began || !dropped || failures >= RESUME_RETRY_MS.length) {
           error = failure;
           rejectFirst(error);
           onError(error);

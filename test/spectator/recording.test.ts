@@ -210,6 +210,38 @@ describe("a download that drops partway", () => {
     r.close();
   });
 
+  it("fails at the startup timeout, never reopening, when the headers arrive and the body stalls before the first snapshot", async () => {
+    // As a stand-in recording's request: startup is timed out by aborting the request's own signal.
+    const startup = new AbortController();
+    setTimeout(() => startup.abort(), 10_000);
+    let requests = 0;
+    const errors: Error[] = [];
+    const respond = async (_url: unknown, init?: RequestInit) => {
+      requests++;
+      const signal = init!.signal!;
+      // As fetch: an aborted signal refuses the request, and errors a body still streaming with its reason.
+      signal.throwIfAborted();
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+        signal.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+      } }));
+    };
+    const r = openRecording("/replays/stalled", (e) => errors.push(e), async (url, init) =>
+      respond(url, { ...init, signal: AbortSignal.any([startup.signal, ...(init?.signal ? [init.signal] : [])]) }));
+    const first = r.first.catch((e: unknown) => e);
+    await settle();
+    expect(requests).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000 - 1); await settle();
+    expect(r.error).toBeNull();
+    await vi.advanceTimersByTimeAsync(1); await settle();
+    expect(r.error?.name).toBe("AbortError");
+    expect(await first).toBe(r.error);
+    expect(errors).toEqual([r.error]);
+    await vi.advanceTimersByTimeAsync(120_000); await settle();
+    expect(requests).toBe(1);
+    expect(errors).toHaveLength(1);
+    r.close();
+  });
+
   it("ends a pending wait on close, never reopening or failing", async () => {
     let requests = 0;
     const errors: Error[] = [];
