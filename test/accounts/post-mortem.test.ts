@@ -795,6 +795,48 @@ describe("the reproduction gate and the idle data", () => {
   });
 });
 
+describe("a command made while its seat has unread events", () => {
+  /**
+   * Seat 0 sets its brood at tick 1 and sets the same brood again at tick 38, when its queue already holds sighted
+   * hatch events; seat 1 sets a brood for the first time at tick 38, a real change. Any accepted call's reply takes
+   * those events off its seat's queue, so stepping without the repeat leaves them queued.
+   */
+  const queuedRecord = (id: string) => houseMatch(id, { idleTicks: 1000, stopAt: 39, calls: {
+    0: [0, 1].map(seat => ({ type: "join", agentId: `seat-private-${seat}`, modelLabel: `model-${seat}` }) as SimInput),
+    1: [brood(0)], 38: [brood(0), brood(1, "soldiers")],
+  } });
+
+  // Fails if the issuing seat's own event queue is compared: emptying it by replying is its only difference.
+  it("lists a repeated identical brood setting as no effect, and not a brood setting that changes the game", async () => {
+    const record = queuedRecord(replayId(217));
+    const answer = rerunRecord((await scanRecord(Readable.from([Buffer.from(JSON.stringify(record))]), undefined, "rerun")).reduced);
+    expect(answer).toMatchObject({ kind: "done", undecided: [] });
+    const found = (answer as { findings: { seat: number; tick: number; type: string }[] }).findings.map(({ seat, tick, type }) => ({ seat, tick, type }));
+    expect(found).toEqual([{ seat: 0, tick: 38, type: "set_brood" }]);
+    expect(found).toEqual(fullRecordFindings(record));
+  });
+
+  it("judges the repeat by game state alone: its only difference without it is the events it read", () => {
+    const record = queuedRecord(replayId(218));
+    let state: SimState = createMatch(record.rerun.seed, record.rules.config);
+    const inputsAt = (tick: number): SimInput[] => record.seats.flatMap((seat: any) => seat.commands.filter((c: any) => c.tick === tick)
+      .map((c: any) => ({ ...c.request, agentId: `seat-${seat.seat}` }) as SimInput));
+    while (state.tick < 38) state = step(state, inputsAt(state.tick), undefined, undefined, undefined, false, true).state;
+    const inputs = inputsAt(38);
+    expect(inputs.map(i => i.agentId)).toEqual(["seat-0", "seat-1"]);
+    const queued = state.agents.find(a => a.id === "seat-0")!.pendingEvents;
+    expect(queued.length).toBeGreaterThan(0);
+    const withIt = step(state, inputs, undefined, undefined, undefined, false, true);
+    const without = step(state, inputs.slice(1), undefined, undefined, undefined, false, true);
+    const seat0 = (s: SimState) => s.agents.find(a => a.id === "seat-0")!;
+    expect(seat0(withIt.state).pendingEvents).toEqual([]);
+    expect(seat0(without.state).pendingEvents.length).toBeGreaterThanOrEqual(queued.length);
+    expect(sameState(withIt.state, without.state, "seat-0")).toBe(true);
+    // Seat 1's first brood setting is a real change, whatever its own queue holds.
+    expect(sameState(withIt.state, step(state, inputs.slice(0, 1), undefined, undefined, undefined, false, true).state, "seat-1")).toBe(false);
+  });
+});
+
 it("refuses as ownership unconfirmed a match whose stored link names a lobby that can't be read", async () => {
   const f = world();
   const alice = f.w.played("alice");
