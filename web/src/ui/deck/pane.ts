@@ -7,7 +7,7 @@ import type { Board, Frame } from "../../buffer.ts";
 import type { HudActions, HudView } from "../types.ts";
 import type { AgentLineModel } from "../hud-model.ts";
 import { tps } from "../hud-model.ts";
-import { crownIcon, markIcon, orderIcon } from "../icons.ts";
+import { ICON, crownIcon, markIcon, orderIcon } from "../icons.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
 import { keep } from "../format.ts";
 import { OFFER_TEXT } from "../../replay.ts";
@@ -181,7 +181,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
     return { section, name, out, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
       playerRd: "", playerKey: "", rows, line, entries, none, lineNodes, historyButton, hatched,
-      memberButtons: new Map<number, HTMLButtonElement>() };
+      memberButtons: new Map<number, HTMLButtonElement>(),
+      memberNodes: new Map<number, { icon: HTMLElement; idle: HTMLElement }>(),
+      memberModels: new Map<number, Member>() };
   });
 
   for (const team of teamNodes) {
@@ -271,21 +273,28 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   /** Grouped identities retain one line; their existing badges open each seat's Selected card. */
   const writeMembers = (team: (typeof teamNodes)[number], members: readonly Member[], grouped: boolean) => {
-    const keyNow = `${grouped}|${members.map(m => `${m.index}|${m.badge}|${m.lines.join("\n")}|${m.label}`).join("~")}`;
+    // Idle and identity updates patch the existing controls, never replacing a focused seat.
+    team.memberModels = new Map(members.map(m => [m.index, m]));
+    const keyNow = `${grouped}|${members.map(m => `${m.index}|${m.badge}`).join("~")}`;
     if (keyNow !== team.membersKey) {
       team.membersKey = keyNow;
       if (tipFor && team.members.contains(tipFor)) hideTip();
       team.memberButtons.clear();
+      team.memberNodes.clear();
       team.members.replaceChildren(...members.map(m => {
         const icon = h(doc, grouped ? "button" : "span", "d1-member");
         icon.setAttribute("aria-label", m.label);
-        icon.innerHTML = m.badge;
+        const glyph = h(doc, "span", "sb-seat-badge"), idle = h(doc, "span", "sb-idle");
+        glyph.setAttribute("aria-hidden", "true"); idle.setAttribute("aria-hidden", "true");
+        glyph.innerHTML = m.badge; idle.innerHTML = ICON.idle;
+        icon.append(glyph, idle);
+        team.memberNodes.set(m.index, { icon, idle });
         if (grouped) {
           const button = icon as HTMLButtonElement;
           button.type = "button";
           button.setAttribute("aria-controls", "score-band-selected");
           team.memberButtons.set(m.index, button);
-          const point = () => { actions.hover(m.index); light(m.index); showTip(button, m.lines); };
+          const point = () => { actions.hover(m.index); light(m.index); showTip(button, team.memberModels.get(m.index)!.lines); };
           const leave = () => { actions.hover(selectedAgent); light(targetFor); hideTip(); };
           button.addEventListener("pointerenter", point);
           button.addEventListener("focus", point);
@@ -296,11 +305,17 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
           });
         } else {
           icon.setAttribute("role", "img");
-          for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, m.lines));
+          for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, team.memberModels.get(m.index)!.lines));
           icon.addEventListener("pointerleave", leaveTip);
         }
         return icon;
       }));
+    }
+    for (const member of members) {
+      const node = team.memberNodes.get(member.index)!;
+      setAttr(node.icon, "aria-label", member.label);
+      flag(node.idle, "is-idle", member.idle);
+      if (tipFor === node.icon) showTip(node.icon, member.lines);
     }
     // Selection does not replace the focused button or collapse a retained tooltip's owner.
     for (const [index, button] of team.memberButtons) setAttr(button, "aria-expanded", String(index === selectedAgent));

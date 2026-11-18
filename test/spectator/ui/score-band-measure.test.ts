@@ -4,6 +4,46 @@ import { chromium } from "playwright-core";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("reserves idle slots and lets the footer Key expand without clipping or breaking its controls", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      for (const width of [390, 1280]) {
+        const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 900 } });
+        const footer = `<footer class="d1-foot"><span class="sb-rules-key"><a class="d2-link">Rules</a><button class="d2-link sb-key-toggle" aria-expanded="false" aria-controls="key">Key</button></span><a>Inspired by creator</a><div id="key" class="sb-key" hidden><p>Warm or cool = colony · colour and shape = agent · square badge = squad · ring = mark · crown = queen</p><p>Thoughts: an agent's stated intent, not observed action; only spectators see them. Marks are the only messages between teammates; a mark directs only squads whose agent ordered follow_trail, and moves no other ants.</p></div></footer>`;
+        const seats = Array.from({ length: 4 }, (_, i) => `<button class="d1-member" aria-label="Seat ${i}"><span class="sb-seat-badge"><svg width="16" height="16"></svg></span><span class="sb-idle" aria-hidden="true"><svg width="14" height="14"></svg></span></button>`).join("");
+        const deck = `<section class="d1-deck"><div class="sb-identity"><div class="d1-team-members">${seats}</div></div></section>`;
+        const frame = `<section class="d1-frame"><div class="sb-metadata">Match</div><div class="d1-window"></div><div class="d1-lane"></div></section>`;
+        await page.setContent(`<style>body{margin:0;font:12px/18px 'Liberation Sans',sans-serif}*{box-sizing:border-box}:root{--aw-bg:#111;--aw-ink:#eee;--aw-ink-3:#bbb;--aw-ink-bright:white}${css}</style><main class="d1 d1-hud score-band"><header class="d1-top">Match</header>${width === 390 ? frame + '<div class="d1-below">' + deck + footer + '</div>' : '<div class="d1-below">' + deck + '</div>' + frame + footer}</main>`);
+        const buttons = page.locator(".d1-member");
+        const before = await buttons.evaluateAll(nodes => nodes.map(e => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }));
+        await buttons.first().focus();
+        await page.locator(".sb-idle").evaluateAll(nodes => nodes.forEach(e => e.classList.add("is-idle")));
+        expect(await buttons.evaluateAll(nodes => nodes.map(e => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }))).toEqual(before);
+        expect(await buttons.first().evaluate(e => e === document.activeElement)).toBe(true);
+        expect(await page.locator(".sb-idle").first().evaluate(e => ({ width: e.getBoundingClientRect().width, visibility: getComputedStyle(e).visibility }))).toEqual({ width: 14, visibility: "visible" });
+        const closed = await page.locator(".d1-foot").evaluate(e => e.getBoundingClientRect().height);
+        await page.locator(".sb-key").evaluate(e => { (e as HTMLElement).hidden = false; });
+        await page.locator(".sb-key p").last().scrollIntoViewIfNeeded();
+        const geometry = await page.evaluate(() => {
+          const foot = document.querySelector(".d1-foot")!, key = document.querySelector(".sb-key")!, button = document.querySelector(".sb-key-toggle")!;
+          const f = foot.getBoundingClientRect(), k = key.getBoundingClientRect(), b = button.getBoundingClientRect();
+          const group = document.querySelector(".sb-rules-key")!.getBoundingClientRect();
+          return { footHeight: f.height, keyInside: k.top >= f.top && k.bottom <= f.bottom + 1, keyWidth: k.width,
+            buttonHeight: b.height, buttonWidth: b.width, groupRight: group.right, groupWhiteSpace: getComputedStyle(button.parentElement!).whiteSpace,
+            visibleBottom: k.bottom <= innerHeight + 1, pageWidth: document.documentElement.scrollWidth };
+        });
+        expect(geometry.footHeight).toBeGreaterThan(closed);
+        expect(geometry.keyInside).toBe(true); expect(geometry.visibleBottom).toBe(true);
+        expect(geometry.keyWidth).toBeLessThanOrEqual(width);
+        expect(geometry.groupRight).toBeLessThanOrEqual(width);
+        expect(geometry.groupWhiteSpace).toBe("nowrap"); expect(geometry.pageWidth).toBe(width);
+        if (width === 390) { expect(geometry.buttonHeight).toBeGreaterThanOrEqual(44); expect(geometry.buttonWidth).toBeGreaterThanOrEqual(44); }
+        await page.close();
+      }
+    } finally { await browser.close(); }
+  });
+
   it("keeps expanded-history labels and mark icons whole beside long arrival orders", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });

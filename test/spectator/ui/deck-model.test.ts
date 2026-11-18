@@ -350,7 +350,7 @@ describe("the team section's agents", () => {
     const modelIndex = split(b => { b.setup.houseIdleTicks = 1800; b.setup.modelIndex = true; });
     expect(modelIndex.groups[0]!.rows[0]!.asterisk).toBe(false);
     expect(modelIndex.groups[0]!.rows[0]!.badges).toEqual([]);
-    expect(modelIndex.groups[0]!.rows[0]!.label).toBe("ana · Rating 1600 · Very Large Colony · Claude Sonnet 5.5 · badge Diamond");
+    expect(modelIndex.groups[0]!.rows[0]!.label).toBe("ana · Rating 1600 · Very Large Colony · Claude Sonnet 5.5 · badge Diamond · idle");
   });
   it("names a Benchmark handle as the Leaderboard does: its house display name with its fixed level and Fast badges, no model or asterisk beside it", () => {
     const r = roster(frameOf(b => {

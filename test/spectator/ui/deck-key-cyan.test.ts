@@ -1,4 +1,4 @@
-// The Instrument deck has no Key, and its Bring your agent button is the emblem's
+// Score Band keeps the match Key in its footer, and Bring your agent stays the emblem's
 // cyan with the page's dark text. Visual evidence comes from browser captures, never these tests.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -6,8 +6,6 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
 const CSS = read("web/src/ui/deck/deck.css");
 const HUD = read("web/src/ui/deck/hud.ts");
-const PANE = read("web/src/ui/deck/pane.ts");
-const MODEL = read("web/src/ui/deck/model.ts");
 const INDEX = read("web/index.html");
 
 /** The declarations of the first rule whose selector is exactly `selector`. */
@@ -33,11 +31,17 @@ function contrast(a: number[], b: number[]): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
-describe("deck: no Key, a cyan Bring your agent", () => {
-  it("neither builds nor places the Key at any width", () => {
-    for (const source of [HUD, PANE]) expect(source).not.toMatch(/keyToggle|teams\.key\b|d1-key/);
-    expect(CSS).not.toContain(".d1-key");
-    expect(MODEL).not.toMatch(/\bkey: "Key"/);
+describe("deck: a footer Key and a cyan Bring your agent", () => {
+  it("places the existing Key beside Rules with a controlled expanding explanation", () => {
+    expect(HUD).toContain('rulesKey.append(rules, keyToggle)');
+    expect(HUD).toContain('foot.append(rulesKey, inspired, teams.offer,');
+    expect(HUD).toContain('keyToggle.type = "button"');
+    expect(HUD).toContain('keyToggle.setAttribute("aria-controls", "score-band-key")');
+    expect(HUD).toContain('setAttr(keyToggle, "aria-expanded", String(!key.hidden))');
+    expect(HUD).toContain('keyText(VISUAL_KEY)');
+    expect(HUD).toContain('config ? logExplainer(config) : LOG_EXPLAINER');
+    expect(rule(".sb-rules-key")).toContain("white-space: nowrap");
+    expect(rule(".sb-key")).toContain("white-space: normal");
   });
 
   it("paints the button the emblem's cyan with the page's dark text, at least 4.5:1", () => {

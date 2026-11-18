@@ -641,7 +641,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Score Band: shared comparison, aligned colony rows, then the unchanged board window.
    At narrow widths the clock/map lead colony cards and comparison follows them. */
-.score-band.d1-hud { grid-template-rows: 48px 4px auto 16px minmax(244px, 1fr) 36px; overflow-y: auto; }
+.score-band.d1-hud { grid-template-rows: 48px 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
 .score-band .d1-below { display: contents; }
 .score-band .d1-deck {
   --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) 54px;
@@ -681,6 +681,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-team-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; }
 .score-band .d1-name { flex: none !important; display: inline-flex; align-items: center; gap: 5px; font-size: 15px; color: var(--sb-ink); overflow: visible; text-overflow: clip; }
 .score-band .d1-team-members { flex: none; flex-wrap: nowrap; gap: 4px; }
+/* Every seat reserves the old idle glyph's space, so activity never moves its badge or focus target. */
+.score-band .d1-member { display: inline-flex; align-items: center; gap: 2px; }
+.sb-seat-badge { display: inline-grid; place-items: center; flex: none; }
+.sb-idle { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; visibility: hidden; color: var(--aw-ink-3); }
+.sb-idle.is-idle { visibility: visible; }
 .score-band .d1-team-player { flex: 1 0 100%; padding-left: 13px; font-size: 12px; flex-wrap: wrap; row-gap: 3px; }
 /* Name and model may occupy separate lines; each label remains one line in its own box. */
 .score-band .d1-team-player-name { display: inline-flex; flex-wrap: wrap; gap: 3px 4px; max-width: 100%; overflow: visible; }
@@ -718,6 +723,15 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-back { margin-left: auto; }
 .score-band .d1-legend { display: flex; white-space: nowrap; letter-spacing: .02em; }
 .score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
+.score-band .d1-foot { flex-wrap: wrap; min-height: 36px; align-content: center; }
+.sb-rules-key { display: inline-flex; align-items: center; gap: 12px; flex: none; white-space: nowrap; }
+.sb-key-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
+.sb-key-toggle:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.sb-key { flex: 0 0 100%; min-width: 0; white-space: normal; line-height: 1.5; }
+.sb-key p { margin: 8px 0; }
+@media (max-width: 1099px) {
+  .sb-key-toggle { min-width: 44px; min-height: 44px; }
+}
 
 @media (max-width: 1099px) {
   .score-band.d1-hud { grid-template-rows: 48px 8px auto 8px minmax(0, 1fr); overflow: hidden; }

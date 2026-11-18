@@ -17,6 +17,10 @@ import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
 import { D1_ICON } from "./icons.ts";
+import { ICON } from "../icons.ts";
+import { LOG_EXPLAINER, VISUAL_KEY, keyText } from "../../overlays.ts";
+import { logExplainer } from "../../../rules.ts";
+import { boardRules } from "../hud-model.ts";
 import { mountDeck } from "./deck.ts";
 import { deckBrand } from "./brand.ts";
 import { mountTeams } from "./pane.ts";
@@ -112,7 +116,22 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   rules.href = "/rules"; rules.target = "_blank"; rules.rel = "noopener";
   const inspired = h(doc, "a", "d2-link", "Inspired by @LambethEthan");
   inspired.href = INSPIRED_BY_URL; inspired.target = "_blank"; inspired.rel = "noopener noreferrer";
-  foot.append(rules, inspired, teams.offer, h(doc, "span", "d2-credit d1-foot-credit", PAGE_COPY.credit));
+  const rulesKey = h(doc, "span", "sb-rules-key"), keyToggle = h(doc, "button", "d2-link sb-key-toggle");
+  keyToggle.type = "button"; keyToggle.title = "Key";
+  keyToggle.setAttribute("aria-label", "Key");
+  keyToggle.setAttribute("aria-expanded", "false");
+  keyToggle.setAttribute("aria-controls", "score-band-key");
+  const keyIcon = h(doc, "span"); keyIcon.setAttribute("aria-hidden", "true"); keyIcon.innerHTML = ICON.info;
+  keyToggle.append(keyIcon, "Key");
+  const key = h(doc, "div", "sb-key"); key.id = "score-band-key"; key.hidden = true;
+  const keyLine = h(doc, "p", undefined, keyText(VISUAL_KEY)), explainer = h(doc, "p", undefined, LOG_EXPLAINER);
+  key.append(keyLine, explainer);
+  listen(keyToggle, "click", () => {
+    key.hidden = !key.hidden;
+    setAttr(keyToggle, "aria-expanded", String(!key.hidden));
+  });
+  rulesKey.append(rules, keyToggle);
+  foot.append(rulesKey, inspired, teams.offer, h(doc, "span", "d2-credit d1-foot-credit", PAGE_COPY.credit), key);
   below.append(deckEl, deckEnd, foot);
 
   // The result is a modal over the whole screen, not part of the score.
@@ -220,6 +239,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   function update(view: HudView) {
     const frame = view.frame;
     const b = frame?.board ?? null;
+    const config = b ? boardRules(b) : null;
+    setText(explainer, config ? logExplainer(config) : LOG_EXPLAINER);
     paintBoardToggle(view.board);
     paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled), b !== null && colonyCount(b.setup) > 2);
     paintCaption(caption(frame), frame?.board?.setup.colonyNames);
@@ -241,16 +262,18 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let legendH = -1;
   let deckH = -1;
   let metadataH = -1;
+  let footerH = -1;
   let refit = 0;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     const next = legendEl.offsetHeight;
-    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight;
-    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH) && !refit) refit = win.requestAnimationFrame(() => { refit = 0; win.dispatchEvent(new Event("resize")); });
-    legendH = next; deckH = nextDeck; metadataH = nextMetadata;
+    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight;
+    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH) && !refit) refit = win.requestAnimationFrame(() => { refit = 0; win.dispatchEvent(new Event("resize")); });
+    legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter;
   });
   watch?.observe(legendEl);
   watch?.observe(deckEl);
   watch?.observe(metadata);
+  watch?.observe(foot);
   listeners.push(() => { watch?.disconnect(); if (refit) win.cancelAnimationFrame(refit); });
 
   return {

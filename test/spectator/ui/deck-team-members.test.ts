@@ -35,7 +35,7 @@ describe("the team head's member icons", () => {
 
   it("shows the member's tip on a pointer over it and on a tap, and hides it as a pointer leaves", () => {
     const write = body("writeMembers");
-    expect(write).toContain('for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, m.lines))');
+    expect(write).toContain('for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, team.memberModels.get(m.index)!.lines))');
     expect(write).toContain('icon.addEventListener("pointerleave", leaveTip)');
     // A tap keeps the tip until the next tap elsewhere; the asterisk's tip is the default and unchanged.
     expect(PANE).toContain('if (p.pointerType === "touch") return;');

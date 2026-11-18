@@ -764,6 +764,7 @@ export interface Row {
  */
 export interface Member {
   readonly index: number;
+  readonly idle: boolean;
   /** The agent's badge, at the head's 16 px. */
   readonly badge: string;
   /** The shown name (AgentEntry.name, as the Leaderboard names it), the model (modelLabel) and "Rating n" (the stream's Elo, worded as the deck words it since the Glicko switch), each only where the stream carries it; the badge's shape word where it carries none. */
@@ -783,11 +784,12 @@ export interface Group {
 }
 
 /** A member's icon: what its tip shows, nothing the stream does not carry. */
-export function member(e: Pick<AgentEntry, "index" | "shade" | "name" | "model" | "elo">): Member {
+export function member(e: Pick<AgentEntry, "index" | "shade" | "name" | "model" | "elo" | "idle">): Member {
   const shape = `badge ${agentHandle(e.index)}`;
   const carried = [e.name ?? "", e.model, e.elo !== null ? `Rating ${e.elo}` : ""].filter(Boolean);
-  const lines = carried.length > 0 ? carried : [shape];
-  return { index: e.index, badge: badge(e.index, e.shade, 16), lines, label: carried.length > 0 ? `${carried.join(" · ")} · ${shape}` : shape };
+  const lines = [...(carried.length > 0 ? carried : [shape]), ...(e.idle ? ["idle"] : [])];
+  const label = carried.length > 0 ? `${carried.join(" · ")} · ${shape}` : shape;
+  return { index: e.index, idle: e.idle, badge: badge(e.index, e.shade, 16), lines, label: label + (e.idle ? " · idle" : "") };
 }
 export interface Roster {
   readonly groups: readonly Group[];
@@ -865,7 +867,7 @@ export function roster(frame: Frame): Roster {
       // The accessible name leads with the shown name in full, then its badges.
       const shown = named ? [named.name, ...badges].join(" ") : title ? [title, ...badges].join(" ") : handle;
       const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
-        result ?? "", e.name || e.model ? `badge ${handle}` : ""].filter(Boolean).join(" · ");
+        result ?? "", e.name || e.model ? `badge ${handle}` : "", e.idle ? "idle" : ""].filter(Boolean).join(" · ");
       return { index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
     });
     groups.push({ colony, heading: `${colonyNamesOf(b.setup)[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });

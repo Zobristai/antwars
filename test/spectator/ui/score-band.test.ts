@@ -19,6 +19,65 @@ function mount(board: "2d" | "3d") {
 }
 
 describe("one Score Band for every match", () => {
+  for (const board of ["2d", "3d"] as const) for (const grouped of [false, true]) {
+    it(`keeps each ${grouped ? "grouped" : "individual"} seat's identity and idle state in ${board}`, () => {
+      const { host, doc, show, chosen } = mount(board), frame = scoreFrame(2, 8);
+      if (grouped) frame.board!.agents.forEach((a, index) => {
+        a.identity = { displayName: `player-${index % 2} #${Math.floor(index / 2) + 1}`, elo: 1500 };
+      });
+      show(frame);
+      const members = host.byClass("d1-member").filter(visible);
+      expect(members).toHaveLength(8);
+      const first = members[0]!, label = first.getAttribute("aria-label")!;
+      const idle = first.byClass("sb-idle")[0]!;
+      expect(idle, "every seat reserves an idle slot").toBeDefined();
+      expect(idle.getAttribute("aria-hidden")).toBe("true");
+      expect(idle.hidden).toBe(false);
+      expect(idle.classList.contains("is-idle")).toBe(false);
+      if (grouped) first.focus();
+      frame.tick = 9000; show(frame);
+      expect(host.byClass("d1-member").filter(visible)[0]).toBe(first);
+      expect(first.getAttribute("aria-label")).toBe(`${label} · idle`);
+      expect(idle.classList.contains("is-idle")).toBe(true);
+      if (grouped) {
+        expect(doc.activeElement).toBe(first);
+        first.click(); show(frame); expect(chosen()).toBe(0);
+        const selected = host.byClass("d1-selected")[0]!;
+        selected.fire("keydown", { key: "Escape", preventDefault() {} }); show(frame);
+        expect(doc.activeElement).toBe(first);
+      } else {
+        for (const row of host.byClass("d1-agent").filter(visible)) {
+          expect(row.getAttribute("aria-label")).toContain("player-");
+          expect(row.getAttribute("aria-label")).toMatch(/ · idle$/);
+        }
+      }
+      frame.board!.agents.forEach(a => { a.lastCallTick = frame.tick; a.lastCommandTick = frame.tick; });
+      frame.tick += 10; show(frame);
+      expect(first.getAttribute("aria-label")).toBe(label);
+      expect(idle.classList.contains("is-idle")).toBe(false);
+      expect(idle.hidden).toBe(false);
+    });
+  }
+  for (const board of ["2d", "3d"] as const) {
+    it(`offers the existing match Key beside Rules in ${board}`, () => {
+      const { host, show } = mount(board); show(scoreFrame(2));
+      const button = host.byClass("sb-key-toggle")[0]!, key = host.byClass("sb-key")[0]!;
+      expect(button, "Key toggle exists").toBeDefined();
+      expect(button.tag).toBe("button"); expect(button.type).toBe("button");
+      expect(button.getAttribute("aria-label")).toBe("Key");
+      expect(button.getAttribute("aria-controls")).toBe(key.id);
+      expect(button.getAttribute("aria-expanded")).toBe("false"); expect(key.hidden).toBe(true);
+      const group = host.byClass("sb-rules-key")[0]!;
+      expect(group.children[0]!.textContent).toBe("Rules"); expect(group.children[1]).toBe(button);
+      button.click(); expect(button.getAttribute("aria-expanded")).toBe("true"); expect(visible(key)).toBe(true);
+      expect(key.textContent.replaceAll("\u00a0", " ")).toContain("colour and shape = agent");
+      expect(key.textContent).toContain("Thoughts: an agent's stated intent, not observed action");
+      expect(key.textContent).toContain("Agents direct squads with orders and free ants with count marks.");
+      show(null); expect(key.textContent).toContain("Marks are the only messages between teammates");
+      button.click(); expect(key.hidden).toBe(true); expect(button.getAttribute("aria-expanded")).toBe("false");
+    });
+  }
+
   for (const board of ["2d", "3d"] as const) {
     it(`shows all eight distinct agents and their badges in ${board}`, () => {
       const { host, show } = mount(board); show(scoreFrame(2, 8));
