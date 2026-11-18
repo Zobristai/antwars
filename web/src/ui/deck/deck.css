@@ -321,7 +321,9 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-log.is-arrival .d1-tl-what { white-space: normal; overflow-wrap: anywhere; }
 .d1-log-lead { margin-right: 6px; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
 .d1-log-mark { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: top; }
-.d1-log-mark-word { color: var(--aw-ink-3); }
+/* Fixed labels and symbols keep their full width beside the wrapping mark description. */
+.d1-log-mark-word { flex: none; white-space: nowrap; color: var(--aw-ink-3); }
+.d1-log-mark > .d1-log-icon { flex: none; }
 
 /* Selected: the card for whatever the board or an agent row picked, in its colony's container in place of its history. */
 .d1-team.is-picked > .d1-timeline { display: none; }

@@ -4,6 +4,35 @@ import { chromium } from "playwright-core";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("keeps expanded-history labels and mark icons whole beside long arrival orders", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      for (const width of [390, 1280]) {
+        const page = await browser.newPage({ viewport: { width, height: 900 } });
+        await page.setContent(`<style>body{margin:0;font:12px/18px 'Liberation Sans',sans-serif}*{box-sizing:border-box}${css}</style>
+          <div class="d1-timeline" style="width:${width === 390 ? 374 : 300}px;margin:8px">
+          <div class="d1-tl-entry d1-log is-arrival"><span class="d1-when"></span><span class="d1-log-who"></span><span class="d1-log-icon"></span>
+          <span class="d1-tl-what"><span class="d1-log-lead">On arrival</span><span class="d1-log-text">attack Lake Hodges Colony's Queen 1</span><span class="d1-log-intent">“attack exposed enemy queens”</span><span class="d1-log-mark"><span class="d1-log-mark-word">mark</span><span class="d1-log-icon"><svg width="13" height="13" viewBox="0 0 13 13"><path d="M1 1L12 12"/></svg></span><span class="d1-log-text">ATTACK · soldier · 10 requested · 10 answered</span></span></span></div>
+          <div class="d1-tl-entry d1-log is-refused"><span class="d1-when">10:00</span><span class="d1-log-who"></span><span class="d1-log-icon"></span><span class="d1-tl-what"><span class="d1-log-text">attack</span></span><span class="d1-log-refused">Refused</span></div>
+          </div>`);
+        const labels = await page.evaluate(measureLabels, ".d1-log-lead,.d1-log-mark-word,.d1-when,.d1-log-refused");
+        const fixed = labels.filter(item => item.target && item.text);
+        expect(fixed.map(item => item.text)).toEqual(["On arrival", "mark", "10:00", "Refused"]);
+        for (const label of fixed) {
+          expect(label.lines, label.text).toBe(1);
+          expect(label.clipped, label.text).toBe(false);
+          expect(label.outside, label.text).toBe(false);
+          expect(label.overlaps, label.text).toEqual([]);
+        }
+        const icon = await page.locator(".d1-log-mark > .d1-log-icon").boundingBox();
+        expect(icon?.width).toBe(13);
+        expect(await page.locator(".d1-log-mark-word").innerText()).toBe("mark");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+        await page.close();
+      }
+    } finally { await browser.close(); }
+  });
   it("contains supported-limit identity text without shrinking labels or badges", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
