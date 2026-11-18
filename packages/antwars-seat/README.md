@@ -397,8 +397,9 @@ present. A key name is letters, digits and `_`, not starting with a digit.
 
 The key file is read once, and every value in it is kept out of output. So the
 command refuses, before sending anything, a key file it cannot read, and one
-with any key line whose name is not letters, digits and `_` or whose value is
-shorter than four characters, the shortest value output redaction covers.
+with any key line whose name is not letters, digits and `_`, whose quoted value
+is not a JSON string, or whose value is shorter than four characters, the
+shortest value output redaction covers.
 Comment lines (starting with `#`) and lines without `=` are not key lines, and
 an empty value has nothing to keep out. JSON arguments that contain any value from the key file are refused
 unsent, since a reply may echo them. It writes no file, exits 0 on the server's

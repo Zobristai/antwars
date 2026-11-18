@@ -115,6 +115,7 @@ describe("entry-read refuses a key file it cannot keep out of output", () => {
     ["an unselected short quoted value", `SHORT_KEY="${SHORT}"\n`, SHORT],
     ["an unselected short raw value", `SHORT_RAW=${SHORT}\n`, SHORT],
     ["a short malformed value", `SHORT_BROKEN="${SHORT.slice(0, 2)}\n`, SHORT.slice(0, 2)],
+    ["an unselected malformed quoted value", `BROKEN="synthetic_malformed_7654321\n`, "synthetic_malformed_7654321"],
     ["a key under a name with a dash", `my-key=${JSON.stringify(ODD)}\n`, ODD],
     ["a raw key under a name with a space", `seat key=${ODD}\n`, ODD],
     ["a key with no name", `=${ODD}\n`, ODD],
@@ -125,7 +126,7 @@ describe("entry-read refuses a key file it cannot keep out of output", () => {
       const h = await harness({ keyLines: `${KEY_NAME}=${JSON.stringify(KEY)}\n${line}`, fakeOptions: { lobbies, baseline: { state: "waiting", mode: secret, joinedAt: 1, expiresAt: 2 } } });
       expect(await h.cli("queue_status", "--key-name", KEY_NAME)).toBe(1);
       expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: secret }))).toBe(1);
-      expect(h.output()).toContain(`${UNSAFE} (a name that is not letters, digits and _, or a value shorter than 4 characters); nothing was sent`);
+      expect(h.output()).toContain(`${UNSAFE} (a name that is not letters, digits and _, a value shorter than 4 characters, or a quoted value that is not a JSON string); nothing was sent`);
       expect(h.fake.calls).toEqual([]);
       for (const shown of [secret, KEY, KEY_NAME, line.slice(0, line.indexOf("="))].filter((text) => text !== "")) expect(h.output()).not.toContain(shown);
       h.wroteNothing();

@@ -14,7 +14,7 @@ const KEY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const ENTRY_READ_USAGE = "usage: antwars-seat entry-read <read_lobby|queue_status> --key-name NAME ['<json args>']";
 
 const UNREADABLE = "the house key file is not readable; nothing was sent";
-const UNSAFE_FILE = `the house key file has a line entry-read cannot keep out of output (a name that is not letters, digits and _, or a value shorter than ${MIN_SECRET_LENGTH} characters); nothing was sent`;
+const UNSAFE_FILE = `the house key file has a line entry-read cannot keep out of output (a name that is not letters, digits and _, a value shorter than ${MIN_SECRET_LENGTH} characters, or a quoted value that is not a JSON string); nothing was sent`;
 const KEY_FAILURES = {
   not_found: "the named key is not in the house key file; nothing was sent",
   not_json: "the named key's line is not a JSON string; nothing was sent",
@@ -24,10 +24,10 @@ const KEY_FAILURES = {
 /**
  * Reads the house key file once and returns { key, values }: the named key and every value in the
  * file. Key lines are NAME=value lines that are not comments (first non-space character #); lines
- * without = hold nothing. A value is parsed as the harness key reader parses it, or kept as its raw
- * text where it does not parse; empty values hold nothing. Unless every key line has a plain
- * identifier name and every value is long enough to redact, the command is refused, so every value
- * it can meet is registered for redaction. Any failure refuses before anything is sent.
+ * without = hold nothing. A value is parsed as the harness key reader parses it; empty values hold
+ * nothing. Unless every key line has a plain identifier name and a value that parses and is long
+ * enough to redact, the command is refused, so every value it can meet is registered for redaction
+ * exactly as a reply would carry it. Any failure refuses before anything is sent.
  */
 function readKeyFile(keyName, env, cwd) {
   const path = keyFilePath(env, cwd);
@@ -48,7 +48,8 @@ function readKeyFile(keyName, env, cwd) {
     const parsed = parseKeyValue(raw);
     if (selected === undefined && name === keyName) selected = parsed;
     if (parsed.error === "empty") continue;
-    const value = parsed.value ?? raw;
+    if (parsed.error) throw new Error(selected === parsed ? KEY_FAILURES[parsed.error] : UNSAFE_FILE);
+    const { value } = parsed;
     if (value.length < MIN_SECRET_LENGTH) throw new Error(UNSAFE_FILE);
     values.add(value);
   }
