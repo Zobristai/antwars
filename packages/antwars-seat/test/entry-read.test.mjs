@@ -1,14 +1,19 @@
 // entry-read: one read-only entry call (read_lobby or queue_status) by key name, against the local fake.
 // The key value must never appear in anything printed, and nothing may be written.
+import { execFile } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../lib/cli.mjs";
 import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
 
 const KEY = "sk-antwars-entry-read-7d41c0b9e2a6";
 const KEY_NAME = "ANTWARS_HOUSE_ENTRY_READ";
+const BIN = fileURLToPath(new URL("../bin/antwars-seat", import.meta.url));
+const run = promisify(execFile);
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -89,12 +94,27 @@ describe("entry-read refusals", () => {
     it(`refuses ${tool} without reading a key or sending anything`, async () => {
       const h = await harness();
       expect(await h.cli(tool, "--key-name", KEY_NAME, "{}")).toBe(1);
-      expect(h.output()).toContain(`${tool} is refused and nothing was sent`);
+      expect(h.output()).toContain("that tool is refused and nothing was sent");
+      expect(h.output()).not.toContain(tool);
       expect(h.fake.calls).toEqual([]);
       expect(h.output()).not.toContain(KEY);
       h.wroteNothing();
     });
   }
+
+  it("a key value typed in the tool position is refused without printing it (separate process)", async () => {
+    const value = "sk-antwars-misplaced-3e8b1f72";
+    const dir = mkdtempSync(join(tmpdir(), "antwars-seat-entry-read-bin-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "keys.env"), `${KEY_NAME}=${JSON.stringify(value)}\n`);
+    const env = { PATH: process.env.PATH, ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: "http://127.0.0.1:1/mcp" };
+    const result = await run(process.execPath, [BIN, "entry-read", value, "--key-name", KEY_NAME], { env, cwd: dir }).then(
+      () => ({ code: 0, stdout: "", stderr: "" }), (error) => error);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("that tool is refused and nothing was sent");
+    expect(result.stdout + result.stderr).not.toContain(value);
+    expect(readdirSync(dir)).toEqual(["keys.env"]);
+  });
 
   it("prints its usage without a tool or a key name", async () => {
     const h = await harness();

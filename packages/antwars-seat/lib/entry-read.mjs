@@ -11,7 +11,8 @@ export const ENTRY_READ_USAGE = "usage: antwars-seat entry-read <read_lobby|queu
 /** One entry call with the named key as `key`. Returns { ok, data }; throws before sending on any local problem. */
 export async function entryRead({ tool, keyName, argsText, env, clock, cwd = process.cwd() }) {
   if (typeof tool !== "string" || typeof keyName !== "string" || keyName === "") throw new Error(ENTRY_READ_USAGE);
-  if (!ENTRY_READ_TOOLS.includes(tool)) throw new Error(`entry-read reads only ${ENTRY_READ_TOOLS.join(" and ")}; ${tool} is refused and nothing was sent`);
+  // The refused argument is not echoed: it is untrusted and could be a key typed in the wrong place.
+  if (!ENTRY_READ_TOOLS.includes(tool)) throw new Error(`entry-read reads only ${ENTRY_READ_TOOLS.join(" and ")}; that tool is refused and nothing was sent`);
   // Read the key first: any later message that could carry it is redacted from here on.
   const key = readKey(keyName, env, cwd);
   let args = {};
