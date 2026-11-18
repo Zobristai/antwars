@@ -1,0 +1,83 @@
+[
+ {
+  "n": 1,
+  "request": "POST /api/leaderboard {\"limit\":50,\"mode\":\"house-1v1\"}",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:06:15.791Z",
+  "bodySha256": "1bbcf0deab163fcdc70bc7a3da56890ea803e728bdf5520aec72bf835820a4e5",
+  "bytes": 43829
+ },
+ {
+  "n": 2,
+  "request": "GET /matches ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:07:06.954Z",
+  "bodySha256": "24d9c558450878492f794f6da6f83879cad3468d93955d8d52837bd2ff69cca8",
+  "bytes": 20442
+ },
+ {
+  "n": 3,
+  "request": "GET /watch/queue ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:07:06.971Z",
+  "bodySha256": "69c85289c8c00786ed87528a0c9ad434e398648dffc8b0262fa53fccb904e6fd",
+  "bytes": 27
+ },
+ {
+  "n": 4,
+  "request": "GET /matches?pageToken=newest-v1%3A2026-11-13T12-39-51-207Z-44146181134910 ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:07:07.029Z",
+  "bodySha256": "cb912dd208b1743559b88fc1ef86df38cf8496e96f77d59e1199dc33d8b0a93c",
+  "bytes": 21245
+ },
+ {
+  "n": 5,
+  "request": "GET /watch/catalog ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:07:07.184Z",
+  "bodySha256": "1e6f60d44ccba8b87f4a2542542e7918c54f126fa1f53cf31c3d35b3bca002d7",
+  "bytes": 531
+ },
+ {
+  "n": 6,
+  "request": "GET /watch/ratings/2026-11-12T09-58-04-540Z-134589846669134 ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:08:49.156Z",
+  "bodySha256": "1295f35538167ca6fbc47a138be18cf7ab96ec1097114a9448dfcd1f629213a4",
+  "bytes": 303
+ },
+ {
+  "n": 7,
+  "request": "GET /replays/2026-11-12T09-58-04-540Z-134589846669134 ",
+  "status": 200,
+  "contentType": "application/octet-stream",
+  "fetchedAt": "2026-11-18T03:08:50.795Z",
+  "bodySha256": "04852bb6111c170b3179b51e4dba797516cc340adbfe98aebbc9977c96f3d5c6",
+  "bytes": 33674202
+ },
+ {
+  "n": 8,
+  "request": "GET /matches/2026-11-12T09-58-04-540Z-134589846669134 ",
+  "status": 200,
+  "contentType": "application/json",
+  "fetchedAt": "2026-11-18T03:08:52.959Z",
+  "bodySha256": "c1f33ae0a1de0538a7addf069cbd47e63f4125c04d1d99d6461a922a75047111",
+  "bytes": 2694984
+ },
+ {
+  "n": 9,
+  "request": "GET /matches/2026-11-18T02-00-00-000Z-100000000000001 ",
+  "status": 404,
+  "contentType": null,
+  "fetchedAt": "2026-11-18T03:11:13.648Z",
+  "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "bytes": 0
+ }
+]
