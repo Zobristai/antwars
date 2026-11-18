@@ -10,7 +10,7 @@ import { Texture, type Particle, type Renderer } from "pixi.js";
 import { Waiting } from "../../web/src/waiting.ts";
 import { INBOX_CAP } from "../../web/src/inbox.ts";
 import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/intake.ts";
-import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, openSource } from "../../web/src/source.ts";
+import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, finishedLobbyReplay, openSource } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 import { mountResultModal } from "../../web/src/ui/deck/result-modal.ts";
@@ -352,12 +352,13 @@ it("a public replay shares its own replay link; a lobby's recording shares none,
 
 
 /** Real source/worker, with external storage, catalog and transport ports controlled by the test. */
-function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0) {
+const FINISHED_REPLAY = "2026-11-17T11-19-28-720Z-151356484549026";
+function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0, defaultScreens = false) {
   vi.stubGlobal("Worker", BrowserWorker);
   const { doc, listeners } = documentPort();
   Object.assign(doc, { querySelector: () => null });
   const saved = new Map<string, string>();
-  const location = { pathname: "/", hash: "", origin: "http://localhost", reload: vi.fn() };
+  const location = { pathname: "/", hash: "", origin: "http://localhost", reload: vi.fn(), replace: vi.fn() };
   Object.assign(doc.defaultView!, { location, sessionStorage: {
     getItem: (key: string) => saved.get(key) ?? null,
     setItem: (key: string, value: string) => saved.set(key, value),
@@ -368,10 +369,11 @@ function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0) {
   vi.stubGlobal("fetch", async (path: string) => {
     if (path === "/watch/catalog") return Response.json({ matches: ended ? [] : [{ lobbyId: "selected", startedAt: 1, rated: false, delaySeconds: 0 }], lobbies: [] });
     if (path.startsWith("/watch/status/")) return Response.json({ lobbyId: "selected", delaySeconds: 0, playbackFinished: ended });
+    if (path === "/watch/recording/selected") return Response.json({ replayId: ended ? FINISHED_REPLAY : null });
     if (path === "/matches") return Response.json({ matches: [], nextPageToken: null });
     throw new Error(`Unexpected request ${path}`);
   });
-  const leaderboard = vi.fn(), reject = vi.fn();
+  const leaderboard = vi.fn(), replay = vi.fn(), reject = vi.fn();
   const open = (extra: Record<string, string> = {}) => openSource(new URLSearchParams({ ...(automatic ? {} : { lobby: "selected" }), ...extra }), { now: () => 0 }, doc, reject, {
     source: path => {
       paths.push(path);
@@ -383,8 +385,8 @@ function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0) {
       else queueMicrotask(() => es.emit(encodeMessage(m)));
       return es;
     },
-  }, { leaderboard });
-  return { open, saved, paths, leaderboard, reject, finish: () => { ended = true; }, cleanup: () => listeners.get("pagehide")?.() };
+  }, defaultScreens ? undefined : { leaderboard, replay });
+  return { open, saved, paths, leaderboard, replay, location, reject, finish: () => { ended = true; }, cleanup: () => listeners.get("pagehide")?.() };
 }
 
 it.each([false, true])("preserves a finishing selected lobby through fallback, consumes it once, then retains normal idle behavior (automatic=%s)", async automatic => {
@@ -410,7 +412,9 @@ it.each([false, true])("preserves a finishing selected lobby through fallback, c
     expect(frame.board!.result?.winner).toBe(1);
     resumed.close();
     expect(await h.open({ board: "2d" })).toBeNull();
-    if (!automatic) expect(h.leaderboard).toHaveBeenCalledTimes(1);
+    // A later plain visit to the finished lobby's link opens that match's replay, not the Leaderboard.
+    if (!automatic) expect(h.replay).toHaveBeenCalledExactlyOnceWith(expect.anything(), FINISHED_REPLAY);
+    expect(h.leaderboard).not.toHaveBeenCalled();
     expect(h.reject).not.toHaveBeenCalled();
   } finally { h.cleanup(); }
 });
@@ -458,7 +462,44 @@ it.each(["expired", "future", "wrong route", "wrong board", "malformed"])("refus
     if (invalid === "wrong route") saved.route = "/?lobby=another";
     h.saved.set(FALLBACK_HANDOVER_KEY, invalid === "malformed" ? "{" : JSON.stringify(saved));
     expect(await h.open({ board: invalid === "wrong board" ? "3d" : "2d" })).toBeNull();
-    expect(h.leaderboard).toHaveBeenCalledTimes(1);
+    expect(h.replay).toHaveBeenCalledExactlyOnceWith(expect.anything(), FINISHED_REPLAY);
+    expect(h.leaderboard).not.toHaveBeenCalled();
     expect(h.saved.has(FALLBACK_HANDOVER_KEY)).toBe(false);
   } finally { h.cleanup(); }
+});
+
+it("a finished lobby's link replaces the page with that match's public replay link", async () => {
+  const h = handoverClient(false, 0, true);
+  try {
+    h.finish();
+    expect(await h.open()).toBeNull();
+    expect(h.location.replace).toHaveBeenCalledExactlyOnceWith(`/?replay=${encodeURIComponent(FINISHED_REPLAY)}`);
+    expect(h.location.reload).not.toHaveBeenCalled();
+    expect(h.reject).not.toHaveBeenCalled();
+  } finally { h.cleanup(); }
+});
+
+it("a finished lobby's link opened on the 2D board keeps the 2D board in its replay link", async () => {
+  const h = handoverClient(false, 0, true);
+  try {
+    // board=2d, chosen by the viewer or set by the 3D board's fallback reload.
+    Object.assign(h.location, { search: "?lobby=selected&board=2d" });
+    h.finish();
+    expect(await h.open({ board: "2d" })).toBeNull();
+    expect(h.location.replace).toHaveBeenCalledExactlyOnceWith(`/?replay=${encodeURIComponent(FINISHED_REPLAY)}&board=2d`);
+    expect(h.reject).not.toHaveBeenCalled();
+  } finally { h.cleanup(); }
+});
+
+it("reads a finished lobby's replay id only when the server names a valid one", async () => {
+  const answer = (response: Response | Error) => vi.fn(async () => { if (response instanceof Error) throw response; return response; }) as unknown as typeof fetch;
+  const signal = new AbortController().signal;
+  const request = answer(Response.json({ replayId: FINISHED_REPLAY }));
+  expect(await finishedLobbyReplay("a b", signal, request)).toBe(FINISHED_REPLAY);
+  expect(vi.mocked(request).mock.calls[0]![0]).toBe("/watch/recording/a%20b");
+  expect(await finishedLobbyReplay("x", signal, answer(Response.json({ replayId: null })))).toBeNull();
+  expect(await finishedLobbyReplay("x", signal, answer(Response.json({ replayId: "../x" })))).toBeNull();
+  expect(await finishedLobbyReplay("x", signal, answer(Response.json([])))).toBeNull();
+  expect(await finishedLobbyReplay("x", signal, answer(new Response(null, { status: 404 })))).toBeNull();
+  expect(await finishedLobbyReplay("x", signal, answer(new Error("offline")))).toBeNull();
 });
