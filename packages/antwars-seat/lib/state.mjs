@@ -2,7 +2,8 @@
 // Nothing written here ever contains the seat key: config.json names the key,
 // and every write passes through redact().
 import { execFileSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addSecret, redact } from "./redact.mjs";
 
@@ -33,34 +34,91 @@ export function writeJson(path, value) {
   renameSync(tmp, path);
 }
 
-/** A lock not released within this long was left by a writer that died holding it, and is taken over. */
-export const STATUS_LOCK_STALE_MS = 2000;
+/**
+ * A lock whose owner is alive but has held it, unchanged, this long is treated as abandoned (its pid reused, or the
+ * process stuck); a status write holds it for a few file operations.
+ */
+export const STATUS_LOCK_STALE_MS = 10_000;
 const LOCK_WAIT = new Int32Array(new SharedArrayBuffer(4));
+
+/** Creates path holding token, its content complete the moment it exists; false when path already exists. */
+function createOwned(path, token) {
+  const tmp = `${path}.${token}.tmp`;
+  writeFileSync(tmp, token);
+  try {
+    linkSync(tmp, path);
+    return true;
+  } catch (error) {
+    if (error.code === "EEXIST") return false;
+    throw error;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+/** The token a lock file holds, or null when there is none. */
+function readToken(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** A lock token names its owner's pid first. */
+function ownerAlive(token) {
+  return alive(Number.parseInt(token, 10));
+}
+
+/**
+ * Removes the lock at path only while it still holds deadToken, the token of an owner that died. The right to remove
+ * that one lock is itself an owned file, path.takeover.<deadToken>, created exclusively: of several processes
+ * recovering it at once exactly one removes it, and none can ever remove a later lock, which holds another token. A
+ * lock with deadToken is removed by nothing else, so it cannot change between the check and the removal. A recoverer
+ * that died holding the right is recovered the same way.
+ */
+export function removeDeadLock(path, deadToken, token) {
+  const claim = `${path}.takeover.${deadToken}`;
+  while (!createOwned(claim, token)) {
+    const holder = readToken(claim);
+    if (holder === null) continue;
+    if (ownerAlive(holder)) return;
+    removeDeadLock(claim, holder, token);
+  }
+  try {
+    if (readToken(path) === deadToken) rmSync(path);
+  } finally {
+    rmSync(claim, { force: true });
+  }
+}
 
 /**
  * Runs fn holding state/status.lock, so the read, merge and write of status.json by this seat's processes (go, match
- * commands, the observer) never interleave and one cannot overwrite another's fields.
+ * commands, the observer) never interleave and one cannot overwrite another's fields. The lock holds its owner's token
+ * (pid and a random part); it is released only by that owner, and taken over through removeDeadLock only when the
+ * owner has died or held it unchanged past STATUS_LOCK_STALE_MS.
  */
 function withStatusLock(env, fn) {
   mkdirSync(stateDir(env), { recursive: true });
   const lock = statePath("status.lock", env);
-  let staleAt = Date.now() + STATUS_LOCK_STALE_MS;
-  for (;;) {
-    try {
-      closeSync(openSync(lock, "wx"));
-      break;
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-      if (Date.now() >= staleAt) {
-        rmSync(lock, { force: true });
-        staleAt = Date.now() + STATUS_LOCK_STALE_MS;
-      } else Atomics.wait(LOCK_WAIT, 0, 0, 5);
+  const token = `${process.pid}-${randomUUID()}`;
+  let seen = null;
+  let seenSince = 0;
+  while (!createOwned(lock, token)) {
+    const holder = readToken(lock);
+    if (holder === null) continue;
+    if (holder !== seen) {
+      seen = holder;
+      seenSince = Date.now();
     }
+    if (!ownerAlive(holder) || Date.now() - seenSince >= STATUS_LOCK_STALE_MS) removeDeadLock(lock, holder, token);
+    else Atomics.wait(LOCK_WAIT, 0, 0, 5);
   }
   try {
     return fn();
   } finally {
-    rmSync(lock, { force: true });
+    if (readToken(lock) === token) rmSync(lock, { force: true });
   }
 }
 

@@ -83,6 +83,14 @@ export function serverStartFacts(data, from, clock) {
   return { from, at: new Date(clock.now()).toISOString(), matchStarts: data.matchStarts ?? null, message: data.message ?? null };
 }
 
+/**
+ * True once an observe has shown the match running. Replies can be recorded out of order (a pick or pre-start observe
+ * whose reply was delayed past an observer's started view): from then on such an older pre-start reply changes nothing.
+ */
+function startSeen(current) {
+  return current.startSeenTick !== undefined && current.startSeenTick !== null;
+}
+
 /** Status fields that hold only before the match starts: the nest window, the pick instruction and the server's pre-start facts. */
 const PRE_START_FIELDS = ["closesAt", "box", "next", "fromServer"];
 
@@ -91,22 +99,22 @@ const PRE_START_FIELDS = ["closesAt", "box", "next", "fromServer"];
  * never makes a call of its own. An accepted pick_nest writes nest_picked and drops the pick instruction; an observe
  * answered "not started" writes waiting_for_start with the server's facts; an observe of the started match writes
  * match_started and drops every pre-start field, again after a transient step such as rejoined. The decision is made
- * from the current status under its lock, so a pick and an observer's observe never undo each other. An unchanged
- * state adds no log line.
+ * from the current status under its lock, so a pick and an observer's observe never undo each other, and a pre-start
+ * reply recorded after the start was seen never undoes it. An unchanged state adds no log line.
  */
 export function noteMatchReply(name, args, reply, { env, clock }) {
   const data = reply?.data;
   if (!reply?.ok || !data || isMatchOver(data)) return;
   if (name === "pick_nest" && data.accepted === true) {
-    progressFrom((current) => ({ step: "nest_picked", detail: { pick: { tileX: args?.tileX ?? null, tileY: args?.tileY ?? null },
+    progressFrom((current) => (startSeen(current) ? null : { step: "nest_picked", detail: { pick: { tileX: args?.tileX ?? null, tileY: args?.tileY ?? null },
       closesAt: data.nestSelection?.closesAt ?? current.closesAt ?? null, next: undefined } }), env);
     return;
   }
   if (name !== "observe") return;
   if (data.waiting === true) {
     const facts = serverStartFacts(data, "observe", clock);
-    progressFrom((current) => (current.step === "waiting_for_start" && current.fromServer?.matchStarts === facts?.matchStarts
-      && current.fromServer?.message === facts?.message ? null : { step: "waiting_for_start", detail: { fromServer: facts } }), env);
+    progressFrom((current) => (startSeen(current) || (current.step === "waiting_for_start" && current.fromServer?.matchStarts === facts?.matchStarts
+      && current.fromServer?.message === facts?.message) ? null : { step: "waiting_for_start", detail: { fromServer: facts } }), env);
     return;
   }
   if (data.view && data.view.tick > 0) {

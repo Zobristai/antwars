@@ -225,7 +225,10 @@ After the status line, `status` prints `{"history": ...}` and the last
 their `next` instruction and the lobby and queue states read while pairing are
 left out. Every process of the seat (`go`, match commands, the observer)
 updates `status.json` under `state/status.lock`, so none overwrites another's
-fields.
+fields. The lock names its owner; a lock whose owner has died is removed by
+exactly one waiting process, never a later owner's lock. Once an observe has
+shown the match running, a pick or pre-start observe reply recorded after it
+leaves `match_started` in place.
 
 While `fromServer.matchStarts` is a time, `status` adds `matchStartsPassed`
 (true or false, by this machine's clock), and once it is true a

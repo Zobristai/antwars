@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HISTORY_NOTE, main } from "../lib/cli.mjs";
 import { noteMatchReply } from "../lib/match.mjs";
-import { progress } from "../lib/state.mjs";
+import { progress, removeDeadLock } from "../lib/state.mjs";
 import { rpcReply } from "../lib/mcp.mjs";
 import { DEFAULT_MAX_WAIT_MS, WAIT_URL_NEXT } from "../lib/seat.mjs";
 import { fakeClock, freshShell, startFake } from "./fake-server.mjs";
@@ -575,6 +575,16 @@ async function printedStatus(s) {
   return JSON.parse(s.printed[0]);
 }
 
+/** The pid of a process that has exited. */
+function deadPid() {
+  return spawnSync(process.execPath, ["-e", ""]).pid;
+}
+
+/** The status lock and any takeover or temporary file of it left in the seat's state folder. */
+function lockFiles(s) {
+  return readdirSync(join(s.dir, "state")).filter((name) => name.startsWith("status.lock"));
+}
+
 function loggedSteps(s) {
   return readFileSync(join(s.dir, "state", "progress.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line).step);
 }
@@ -685,15 +695,75 @@ describe("status after go: the nest pick and the match start", () => {
     await Promise.all(["a", "b"].map((tag) => run(process.execPath, [script, tag], { env })));
     const status = s.state("status.json");
     for (const tag of ["a", "b"]) for (let i = 0; i < 150; i++) expect(status[`${tag}${i}`]).toBe(i);
-    expect(existsSync(join(s.dir, "state", "status.lock"))).toBe(false);
+    expect(lockFiles(s)).toEqual([]);
   });
 
   it("a status lock left by a writer that died is taken over", async () => {
     const s = await seat();
-    writeFileSync(join(s.dir, "state", "status.lock"), "");
+    writeFileSync(join(s.dir, "state", "status.lock"), `${deadPid()}-dead`);
     progress("after_stale_lock", {}, s.env);
     expect(s.state("status.json").step).toBe("after_stale_lock");
-    expect(existsSync(join(s.dir, "state", "status.lock"))).toBe(false);
+    expect(lockFiles(s)).toEqual([]);
+  });
+
+  it("several processes recovering one dead writer's lock at once never write together or lose a field", async () => {
+    const s = await seat();
+    writeFileSync(join(s.dir, "state", "status.lock"), `${deadPid()}-dead`);
+    const script = join(s.dir, "writer.mjs");
+    writeFileSync(script, `import { progress } from ${JSON.stringify(new URL("../lib/state.mjs", import.meta.url).href)};\n`
+      + "const tag = process.argv[2];\nfor (let i = 0; i < 60; i++) progress(`w_${tag}`, { [`${tag}${i}`]: i }, process.env);\n");
+    const env = { ...process.env, ANTWARS_SEAT_STATE: join(s.dir, "state") };
+    const tags = ["a", "b", "c", "d"];
+    await Promise.all(tags.map((tag) => run(process.execPath, [script, tag], { env })));
+    const status = s.state("status.json");
+    for (const tag of tags) for (let i = 0; i < 60; i++) expect(status[`${tag}${i}`]).toBe(i);
+    expect(lockFiles(s)).toEqual([]);
+  });
+
+  it("recovering a dead writer's lock never removes a later writer's lock, nor one another live process is recovering", async () => {
+    const s = await seat();
+    const lock = join(s.dir, "state", "status.lock");
+    const dead = `${deadPid()}-dead`;
+    // Another process already recovered the dead lock and now holds its own: a late recoverer leaves it alone.
+    writeFileSync(lock, `${process.pid}-successor`);
+    removeDeadLock(lock, dead, `${process.pid}-late`);
+    expect(readFileSync(lock, "utf8")).toBe(`${process.pid}-successor`);
+    // A live process holds the right to remove the dead lock: no one else removes it.
+    writeFileSync(lock, dead);
+    writeFileSync(`${lock}.takeover.${dead}`, `${process.pid}-recoverer`);
+    removeDeadLock(lock, dead, `${process.pid}-other`);
+    expect(readFileSync(lock, "utf8")).toBe(dead);
+    // That recoverer died holding the right: it is recovered in turn and the dead lock removed.
+    writeFileSync(`${lock}.takeover.${dead}`, `${deadPid()}-recoverer`);
+    removeDeadLock(lock, dead, `${process.pid}-other`);
+    expect(lockFiles(s)).toEqual([]);
+  });
+
+  it("a pick or pre-start observe whose reply is recorded after the start was seen leaves match_started in place", async () => {
+    for (const late of ["pick_nest", "observe"]) {
+      const s = await seat();
+      await s.cli("create-lobby");
+      expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+      const closesAt = s.state("status.json").closesAt;
+      const lateReply = late === "pick_nest"
+        ? { ok: true, data: { accepted: true, nestSelection: { closesAt } } }
+        : { ok: true, data: { waiting: true, matchStarts: closesAt, message: "Your match has not started; keep calling observe." } };
+      // The observer's started view is recorded first; the older pre-start reply arrives after it.
+      noteMatchReply("observe", {}, { ok: true, data: { view: { tick: 4 } } }, { env: s.env, clock: s.clock });
+      noteMatchReply(late, { tileX: 3, tileY: 1 }, lateReply, { env: s.env, clock: s.clock });
+      const status = s.state("status.json");
+      expect(status).toMatchObject({ step: "match_started", startSeenTick: 4 });
+      for (const field of ["closesAt", "box", "next", "fromServer"]) expect(status).not.toHaveProperty(field);
+      expect(loggedSteps(s).at(-1)).toBe("match_started");
+      // In the other order, the pre-start reply is recorded and the start still replaces it.
+      const t = await seat();
+      await t.cli("create-lobby");
+      expect(await t.cli("join-lobby", "lobby-1")).toBe(0);
+      noteMatchReply(late, { tileX: 3, tileY: 1 }, lateReply, { env: t.env, clock: t.clock });
+      noteMatchReply("observe", {}, { ok: true, data: { view: { tick: 4 } } }, { env: t.env, clock: t.clock });
+      expect(t.state("status.json")).toMatchObject({ step: "match_started", startSeenTick: 4 });
+      for (const field of ["closesAt", "box", "next", "fromServer"]) expect(t.state("status.json")).not.toHaveProperty(field);
+    }
   });
 
   it("go's final status drops the queue and lobby states read while pairing", async () => {
