@@ -116,6 +116,22 @@ describe("entry-read refusals", () => {
     expect(readdirSync(dir)).toEqual(["keys.env"]);
   });
 
+  it("a key value typed as --key-name is redacted from the missing-key message (separate process)", async () => {
+    const value = "sk-antwars-as-name-9c2d4e61";
+    const dir = mkdtempSync(join(tmpdir(), "antwars-seat-entry-read-bin-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "keys.env"), `OTHER_KEY=sk-antwars-raw-other-41aa\n${KEY_NAME}=${JSON.stringify(value)}\n`);
+    const env = { PATH: process.env.PATH, ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: "http://127.0.0.1:1/mcp" };
+    for (const typed of [value, "sk-antwars-raw-other-41aa"]) {
+      const result = await run(process.execPath, [BIN, "entry-read", "queue_status", "--key-name", typed], { env, cwd: dir }).then(
+        () => ({ code: 0, stdout: "", stderr: "" }), (error) => error);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("Key [redacted] not found");
+      expect(result.stdout + result.stderr).not.toContain(typed);
+    }
+    expect(readdirSync(dir)).toEqual(["keys.env"]);
+  });
+
   it("prints its usage without a tool or a key name", async () => {
     const h = await harness();
     expect(await h.cli()).toBe(1);
