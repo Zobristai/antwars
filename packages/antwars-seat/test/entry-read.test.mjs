@@ -94,12 +94,63 @@ describe("entry-read allowed tools", () => {
     expect(h.output()).not.toContain(KEY);
   });
 
-  it("redacts the key from a successful reply that carries it", async () => {
-    const h = await harness({ fakeOptions: { lobbies: { [KEY]: "open" } } });
-    expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: KEY }))).toBe(0);
-    expect(h.fake.toolCalls("read_lobby")[0].result.content[0].text).toContain(KEY);
-    expect(h.output()).toContain("[redacted]");
-    expect(h.output()).not.toContain(KEY);
+  it("redacts another long key from the key file when a reply carries it", async () => {
+    const other = "sk-other-1234";
+    const h = await harness({ fakeOptions: { baseline: { state: "waiting", mode: other, joinedAt: 1, expiresAt: 2 } } });
+    expect(await h.cli("queue_status", "--key-name", KEY_NAME)).toBe(0);
+    expect(h.fake.toolCalls("queue_status")[0].result.content[0].text).toContain(other);
+    expect(JSON.parse(h.output()).queue.mode).toBe("[redacted]");
+    expect(h.output()).not.toContain(other);
+  });
+});
+
+describe("entry-read refuses arguments carrying a key-file value", () => {
+  const SHORT = "x9Q";
+  const ODD = "sk-antwars-odd-name-31c8a0";
+  const KEY_LINES = `SHORT_KEY="${SHORT}"\nmy-key=${JSON.stringify(ODD)}\nhouse key=${ODD}-raw\n${KEY_NAME}=${JSON.stringify(KEY)}\n`;
+  // Each value is a lobby the fake would show, echoing its id, were the call sent.
+  const lobbies = { [SHORT]: "open", [ODD]: "open", [`${ODD}-raw`]: "open", [KEY]: "open", [`lobby-${SHORT}`]: "open" };
+
+  for (const [label, value] of [["a short key", SHORT], ["a key under a non-identifier name", ODD], ["a raw key under a name with a space", `${ODD}-raw`], ["the named key itself", KEY], ["a short key inside a longer string", `lobby-${SHORT}`]]) {
+    it(`${label} passed in the arguments is refused unsent and never printed`, async () => {
+      const h = await harness({ keyLines: KEY_LINES, fakeOptions: { lobbies } });
+      expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: value }))).toBe(1);
+      expect(h.output()).toContain("entry-read arguments contain a value from the house key file; nothing was sent");
+      expect(h.fake.calls).toEqual([]);
+      for (const secret of [SHORT, ODD, KEY]) expect(h.output()).not.toContain(secret);
+      h.wroteNothing();
+    });
+  }
+
+  it("a key-file value as a property name, nested value or number is refused unsent", async () => {
+    const h = await harness({ keyLines: `NUM_KEY=4711\n${KEY_LINES}` });
+    for (const args of [{ [SHORT]: 1 }, { filter: { ids: ["a", SHORT] } }, { lobbyId: 4711 }]) {
+      expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify(args))).toBe(1);
+    }
+    expect(h.fake.calls).toEqual([]);
+    expect(h.output()).not.toContain(SHORT);
+    expect(h.output()).not.toContain("4711");
+  });
+
+  it("the fake echoes a lobby id it is sent, so an unrefused short key would print", async () => {
+    const h = await harness({ fakeOptions: { lobbies: { [SHORT]: "open" } } });
+    expect(await h.cli("read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: SHORT }))).toBe(0);
+    expect(JSON.parse(h.output()).lobby.id).toBe(SHORT);
+  });
+
+  it("a short key and a non-identifier key in the arguments are refused (separate process)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "antwars-seat-entry-read-bin-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "keys.env"), KEY_LINES);
+    const env = { PATH: process.env.PATH, ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: "http://127.0.0.1:1/mcp" };
+    for (const value of [SHORT, ODD]) {
+      const result = await run(process.execPath, [BIN, "entry-read", "read_lobby", "--key-name", KEY_NAME, JSON.stringify({ lobbyId: value })], { env, cwd: dir }).then(
+        () => ({ code: 0, stdout: "", stderr: "" }), (error) => error);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("nothing was sent");
+      for (const secret of [SHORT, ODD, KEY]) expect(result.stdout + result.stderr).not.toContain(secret);
+    }
+    expect(readdirSync(dir)).toEqual(["keys.env"]);
   });
 });
 

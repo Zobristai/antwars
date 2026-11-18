@@ -20,31 +20,50 @@ const KEY_FAILURES = {
 };
 
 /**
- * Registers for redaction every value readKey would return for a name entry-read takes: lines
- * NAME=value with NAME a plain identifier, value parsed exactly as readKey parses it. Comments and
- * other lines are not keys entry-read can read, so their text is never redacted from real output.
- * An unreadable file is left to readKey.
+ * The values in the house key file, read once. The returned set holds the right-hand side of every
+ * line with an =, whatever its name or length (parsed as readKey parses it, or the raw text where it does not
+ * parse): no argument may carry one. Every value readKey would return for a name entry-read takes
+ * (NAME a plain identifier) is registered for redaction; comments and other lines are not keys
+ * entry-read can read, so their text is never redacted from real output. An unreadable file is left
+ * to readKey.
  */
-function redactKeyFileValues(env, cwd) {
+function keyFileValues(env, cwd) {
+  const all = new Set();
   let text;
   try {
     text = readFileSync(keyFilePath(env, cwd), "utf8");
   } catch {
-    return;
+    return all;
   }
   for (const line of text.split(/\r?\n/)) {
     const at = line.indexOf("=");
-    if (at <= 0 || !KEY_NAME_PATTERN.test(line.slice(0, at).trim())) continue;
-    const parsed = parseKeyValue(line.slice(at + 1).trim());
-    if (parsed.value !== undefined) addSecret(parsed.value);
+    if (at < 0) continue;
+    const raw = line.slice(at + 1).trim();
+    const parsed = parseKeyValue(raw);
+    const value = parsed.value ?? raw;
+    if (value !== "") all.add(value);
+    if (parsed.value !== undefined && KEY_NAME_PATTERN.test(line.slice(0, at).trim())) addSecret(parsed.value);
   }
+  return all;
+}
+
+/** Whether any string, property name or scalar anywhere in `args` contains one of `values`. */
+function carriesAny(args, values) {
+  const has = (text) => [...values].some((value) => text.includes(value));
+  const walk = (node) => {
+    if (typeof node === "string") return has(node);
+    if (typeof node === "number" || typeof node === "boolean") return has(String(node));
+    if (node === null || typeof node !== "object") return false;
+    return Object.entries(node).some(([name, child]) => has(name) || walk(child));
+  };
+  return walk(args);
 }
 
 /** Reads the named key; every failure is reported without the name. */
 function readNamedKey(keyName, env, cwd) {
   if (!KEY_NAME_PATTERN.test(keyName)) throw new Error("a key name is letters, digits and _ only, not starting with a digit; nothing was sent");
   // Before the lookup, so any value in the file is redacted from everything printed after it.
-  redactKeyFileValues(env, cwd);
+  const fileValues = keyFileValues(env, cwd);
   let key;
   try {
     key = readKey(keyName, env, cwd);
@@ -54,14 +73,14 @@ function readNamedKey(keyName, env, cwd) {
   }
   // Redaction covers values of MIN_SECRET_LENGTH or more, so a shorter key is never sent: no reply can echo it.
   if (key.length < MIN_SECRET_LENGTH) throw new Error(`the named key is shorter than ${MIN_SECRET_LENGTH} characters, too short to keep out of output; nothing was sent`);
-  return key;
+  return { key, fileValues };
 }
 
 /** One entry call with the named key as `key`. Returns { ok, data }; throws before sending on any local problem. */
 export async function entryRead({ tool, keyName, argsText, env, clock, cwd = process.cwd() }) {
   if (typeof tool !== "string" || typeof keyName !== "string" || keyName === "") throw new Error(ENTRY_READ_USAGE);
   if (!ENTRY_READ_TOOLS.includes(tool)) throw new Error(`entry-read reads only ${ENTRY_READ_TOOLS.join(" and ")}; that tool is refused and nothing was sent`);
-  const key = readNamedKey(keyName, env, cwd);
+  const { key, fileValues } = readNamedKey(keyName, env, cwd);
   let args = {};
   if (argsText !== undefined) {
     try {
@@ -70,6 +89,9 @@ export async function entryRead({ tool, keyName, argsText, env, clock, cwd = pro
       throw new Error("entry-read arguments are not valid JSON");
     }
     if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("entry-read arguments must be a JSON object");
+    // A server may echo its arguments, and a short value or one under a name entry-read does not read is not
+    // redacted, so no argument may carry any value from the key file.
+    if (carriesAny(args, fileValues)) throw new Error("entry-read arguments contain a value from the house key file; nothing was sent");
   }
   // No limiter, log or session file: nothing is written.
   const client = new McpClient({ url: env.ANTWARS_ENTRY_URL || DEFAULT_ENTRY_URL, clock, allowHttp: env[ALLOW_HTTP_ENV] === "1" });
