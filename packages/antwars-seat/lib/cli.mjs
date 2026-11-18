@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderView } from "./board.mjs";
+import { entryRead } from "./entry-read.mjs";
 import { claimGameCommand, isGameCommand, procStat, refusalMessage } from "./guard.mjs";
 import { isMatchOver, matchClient, savedMatch, seatContext } from "./match.mjs";
 import { observerSettings, observerStatus, runObserver } from "./observer.mjs";
@@ -24,6 +25,10 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
   wait-url                                  the waitUrl go or join-lobby saved (printed when saved): GET it and wait
                                             for the event done, whose data.state is slot_ready or expired
   leave                                     leave the queue only if this seat is waiting
+  entry-read <read_lobby|queue_status> --key-name <KEY_NAME> ['<json args>']
+                                            one read-only entry call with the named key; needs no setup,
+                                            writes nothing, never prints the key; fails naming a key
+                                            absent from the key file (a key presence check)
   create-lobby                              create an unrated public lobby, 1 per colony; prints lobbyId
   join-lobby <lobbyId> [--detach]           take a seat in that lobby (no queue), join; stops in the nest window like go
   observe [--raw] [--since N] [--wait S] [--cellsCursor C] [--map]
@@ -261,6 +266,11 @@ export async function main(argv, { env = process.env, clock = realClock, readSta
       case "leave":
         print(await leaveQueue(seatContext({ config: readConfig(env), env, clock })));
         return 0;
+      case "entry-read": {
+        const reply = await entryRead({ tool: positional[0], keyName: flags["key-name"], argsText: positional[1], env, clock });
+        print(reply.data);
+        return reply.ok ? 0 : 2;
+      }
       case "observe": {
         const args = {};
         if (flags.since !== undefined) args.since = Number(flags.since);

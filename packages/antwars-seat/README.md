@@ -337,6 +337,22 @@ waiting entry gets one `leave_queue` call, and its result is printed. A matched,
 expired or missing entry is printed as "nothing to leave" and nothing else is
 called. It exits 0 in both cases and 1 on a refusal or transport failure.
 
+## Reading lobby or queue status by key name
+
+`entry-read` makes one read-only entry call for the key a name in the house key
+file holds, with no `setup` and no seat state:
+
+```sh
+$S entry-read queue_status --key-name ANTWARS_HOUSE_KEY_NAME
+$S entry-read read_lobby --key-name ANTWARS_HOUSE_KEY_NAME '{"lobbyId":"<lobbyId>"}'
+```
+
+Only `read_lobby` and `queue_status` are allowed; any other tool is refused and
+nothing is sent. The named key is sent as `key` and is never printed. A name
+absent from the key file fails with `Key NAME not found`, so the command also
+shows whether a key is present. It writes no file, exits 0 on the server's
+reply, 2 on a server refusal and 1 on a local error.
+
 ## Background observer
 
 `observer start` runs detached and makes one `observe` call every 60 s. One
