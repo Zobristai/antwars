@@ -17,6 +17,18 @@ export function lobbyMatchType(lobby: { readonly mode: string | null; readonly s
   return { kind, size: lobby.size };
 }
 
+/**
+ * Whether a match belongs in a public recordings list: a Model Index or house challenge match, or a rated one. The rule is
+ * positive, so a match of any other kind (a player-made lobby, unrated Quadrants, an unrated record) and one whose kind
+ * cannot be told stay out unless they are rated. rated is the flag as served: a ranked match its lobby's outcome leaves
+ * unrated (history-routes.ts recordingRated) is not listed, while a stopped Model Index match keeps its Index type and is.
+ * GET /matches lists by this one rule; any other list of matches reuses it rather than restating it.
+ */
+export function publiclyListedMatch(match: { readonly matchType?: RecordingMatchType | null; readonly rated?: boolean | null }): boolean {
+  const kind = match.matchType?.kind;
+  return kind === "index" || kind === "challenge" || match.rated === true;
+}
+
 /** The recorded facts a recording with no readable lobby is typed by. */
 export interface RecordedMatch {
   readonly seats: readonly { readonly colony: number; readonly handle: string | null }[];
