@@ -1,21 +1,29 @@
 // entry-read: one read-only entry call, read_lobby or queue_status, for the key
 // a name in the house key file holds. It needs no seat setup, keeps no seat
 // state and writes no file. The key is read with readKey, which registers it
-// for redaction, so it never appears in anything printed.
+// for redaction, so it never appears in anything printed. No message echoes
+// the tool or key name it was given: either could be a key typed in the wrong place.
 import { readFileSync } from "node:fs";
 import { ALLOW_HTTP_ENV, McpClient } from "./mcp.mjs";
-import { addSecret } from "./redact.mjs";
-import { DEFAULT_ENTRY_URL, keyFilePath, readKey } from "./state.mjs";
+import { MIN_SECRET_LENGTH, addSecret } from "./redact.mjs";
+import { DEFAULT_ENTRY_URL, keyFilePath, parseKeyValue, readKey } from "./state.mjs";
 
 export const ENTRY_READ_TOOLS = Object.freeze(["read_lobby", "queue_status"]);
 const KEY_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const ENTRY_READ_USAGE = "usage: antwars-seat entry-read <read_lobby|queue_status> --key-name NAME ['<json args>']";
 
+/** readKey's failures for the named key, reworded without the name. */
+const KEY_FAILURES = {
+  KEY_NOT_FOUND: "the named key is not in the house key file; nothing was sent",
+  KEY_NOT_JSON: "the named key's line is not a JSON string; nothing was sent",
+  KEY_EMPTY: "the named key is empty; nothing was sent",
+};
+
 /**
- * Registers the value of every key line in the key file for redaction, so a value typed where a
- * name belongs (--key-name) is never echoed by the missing-key message. A key line is NAME=value
- * with NAME a plain identifier; comments and other lines are skipped, so their text is never
- * redacted from real output. An unreadable file is left to readKey.
+ * Registers for redaction every value readKey would return for a name entry-read takes: lines
+ * NAME=value with NAME a plain identifier, value parsed exactly as readKey parses it. Comments and
+ * other lines are not keys entry-read can read, so their text is never redacted from real output.
+ * An unreadable file is left to readKey.
  */
 function redactKeyFileValues(env, cwd) {
   let text;
@@ -27,25 +35,33 @@ function redactKeyFileValues(env, cwd) {
   for (const line of text.split(/\r?\n/)) {
     const at = line.indexOf("=");
     if (at <= 0 || !KEY_NAME_PATTERN.test(line.slice(0, at).trim())) continue;
-    const raw = line.slice(at + 1).trim();
-    addSecret(raw);
-    addSecret(raw.replace(/^"|"$/g, ""));
-    try {
-      addSecret(JSON.parse(raw));
-    } catch {
-      // Not JSON: its raw and unquoted forms are registered above.
-    }
+    const parsed = parseKeyValue(line.slice(at + 1).trim());
+    if (parsed.value !== undefined) addSecret(parsed.value);
   }
+}
+
+/** Reads the named key; every failure is reported without the name. */
+function readNamedKey(keyName, env, cwd) {
+  if (!KEY_NAME_PATTERN.test(keyName)) throw new Error("a key name is letters, digits and _ only, not starting with a digit; nothing was sent");
+  // Before the lookup, so any value in the file is redacted from everything printed after it.
+  redactKeyFileValues(env, cwd);
+  let key;
+  try {
+    key = readKey(keyName, env, cwd);
+  } catch (error) {
+    if (error && KEY_FAILURES[error.code]) throw new Error(KEY_FAILURES[error.code]);
+    throw error;
+  }
+  // Redaction covers values of MIN_SECRET_LENGTH or more, so a shorter key is never sent: no reply can echo it.
+  if (key.length < MIN_SECRET_LENGTH) throw new Error(`the named key is shorter than ${MIN_SECRET_LENGTH} characters, too short to keep out of output; nothing was sent`);
+  return key;
 }
 
 /** One entry call with the named key as `key`. Returns { ok, data }; throws before sending on any local problem. */
 export async function entryRead({ tool, keyName, argsText, env, clock, cwd = process.cwd() }) {
   if (typeof tool !== "string" || typeof keyName !== "string" || keyName === "") throw new Error(ENTRY_READ_USAGE);
-  // The refused argument is not echoed: it is untrusted and could be a key typed in the wrong place.
   if (!ENTRY_READ_TOOLS.includes(tool)) throw new Error(`entry-read reads only ${ENTRY_READ_TOOLS.join(" and ")}; that tool is refused and nothing was sent`);
-  // Read the key first: any later message that could carry it, or any other value in the file, is redacted from here on.
-  redactKeyFileValues(env, cwd);
-  const key = readKey(keyName, env, cwd);
+  const key = readNamedKey(keyName, env, cwd);
   let args = {};
   if (argsText !== undefined) {
     try {

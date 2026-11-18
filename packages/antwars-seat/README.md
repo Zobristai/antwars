@@ -389,10 +389,14 @@ $S entry-read read_lobby --key-name ANTWARS_HOUSE_KEY_NAME '{"lobbyId":"<lobbyId
 ```
 
 Only `read_lobby` and `queue_status` are allowed; any other tool is refused and
-nothing is sent. The named key is sent as `key` and is never printed. A name
-absent from the key file fails with `Key NAME not found`, so the command also
-shows whether a key is present. It writes no file, exits 0 on the server's
-reply, 2 on a server refusal and 1 on a local error.
+nothing is sent. The named key is sent as `key` and is never printed. No
+message repeats the tool or key name given, since either could be a key typed
+in the wrong place. A name absent from the key file fails with "the named key
+is not in the house key file", so the command also shows whether a key is
+present. A key name is letters, digits and `_`, and a key shorter than four
+characters is refused unsent, because output redaction covers only longer
+values. It writes no file, exits 0 on the server's reply, 2 on a server refusal
+and 1 on a local error.
 
 ## Background observer
 

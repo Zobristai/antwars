@@ -3,8 +3,11 @@
 // its JSON-escaped form.
 const secrets = new Set();
 
+/** Shorter values are not redacted: replacing every one- to three-character match would garble all output. */
+export const MIN_SECRET_LENGTH = 4;
+
 export function addSecret(value) {
-  if (typeof value === "string" && value.length >= 4) {
+  if (typeof value === "string" && value.length >= MIN_SECRET_LENGTH) {
     secrets.add(value);
     secrets.add(JSON.stringify(value).slice(1, -1));
   }

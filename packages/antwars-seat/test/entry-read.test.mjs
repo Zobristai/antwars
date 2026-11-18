@@ -130,7 +130,7 @@ describe("entry-read refusals", () => {
     expect(readdirSync(dir)).toEqual(["keys.env"]);
   });
 
-  it("a key value typed as --key-name is redacted from the missing-key message (separate process)", async () => {
+  it("a key value typed as --key-name is never echoed (separate process)", async () => {
     const value = "sk-antwars-as-name-9c2d4e61";
     const dir = mkdtempSync(join(tmpdir(), "antwars-seat-entry-read-bin-"));
     dirs.push(dir);
@@ -140,8 +140,57 @@ describe("entry-read refusals", () => {
       const result = await run(process.execPath, [BIN, "entry-read", "queue_status", "--key-name", typed], { env, cwd: dir }).then(
         () => ({ code: 0, stdout: "", stderr: "" }), (error) => error);
       expect(result.code).toBe(1);
-      expect(result.stderr).toContain("Key [redacted] not found");
+      expect(result.stderr).toContain("nothing was sent");
       expect(result.stdout + result.stderr).not.toContain(typed);
+    }
+    expect(readdirSync(dir)).toEqual(["keys.env"]);
+  });
+
+  it("a key shorter than four characters is refused unsent, and is never printed (separate process)", async () => {
+    const short = "q7Z";
+    const dir = mkdtempSync(join(tmpdir(), "antwars-seat-entry-read-bin-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "keys.env"), `${KEY_NAME}=${JSON.stringify(short)}\nRAW_SHORT=Wq9\n`);
+    const env = { PATH: process.env.PATH, ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: "http://127.0.0.1:1/mcp" };
+    const cases = [
+      [["--key-name", KEY_NAME], "shorter than 4 characters, too short to keep out of output; nothing was sent"],
+      [["--key-name", "RAW_SHORT"], "shorter than 4 characters"],
+      // A short value typed where its name belongs is not a key name in the file, and is not echoed.
+      [["--key-name", "Wq9"], "the named key is not in the house key file"],
+    ];
+    for (const [flags, message] of cases) {
+      const result = await run(process.execPath, [BIN, "entry-read", "queue_status", ...flags], { env, cwd: dir }).then(
+        () => ({ code: 0, stdout: "", stderr: "" }), (error) => error);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain(message);
+      expect(result.stdout + result.stderr).not.toContain(short);
+      expect(result.stdout + result.stderr).not.toContain("Wq9");
+    }
+    expect(readdirSync(dir)).toEqual(["keys.env"]);
+  });
+
+  it("a short key is refused before anything is sent", async () => {
+    const h = await harness({ keyLines: `${KEY_NAME}="q7Z"\n` });
+    expect(await h.cli("queue_status", "--key-name", KEY_NAME)).toBe(1);
+    expect(h.fake.calls).toEqual([]);
+    expect(h.output()).not.toContain("q7Z");
+    h.wroteNothing();
+  });
+
+  it("a key name that is not a plain identifier is refused without echoing it (separate process)", async () => {
+    const value = "sk-antwars-odd-name-6f0b2d";
+    const dir = mkdtempSync(join(tmpdir(), "antwars-seat-entry-read-bin-"));
+    dirs.push(dir);
+    // readKey would accept "my-key" and "house key" as names; entry-read takes neither, so neither value can be sent.
+    writeFileSync(join(dir, "keys.env"), `my-key=${JSON.stringify(value)}\nhouse key=${value}-raw\n${KEY_NAME}=${JSON.stringify(KEY)}\n`);
+    const env = { PATH: process.env.PATH, ANTWARS_KEY_FILE: join(dir, "keys.env"), ANTWARS_SEAT_STATE: join(dir, "state"), ANTWARS_ENTRY_URL: "http://127.0.0.1:1/mcp" };
+    for (const typed of ["my-key", "house key", value, `${value}-raw`, `"${value}"`]) {
+      const result = await run(process.execPath, [BIN, "entry-read", "queue_status", "--key-name", typed], { env, cwd: dir }).then(
+        () => ({ code: 0, stdout: "", stderr: "" }), (error) => error);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("a key name is letters, digits and _ only");
+      expect(result.stdout + result.stderr).not.toContain(typed);
+      expect(result.stdout + result.stderr).not.toContain(value);
     }
     expect(readdirSync(dir)).toEqual(["keys.env"]);
   });
@@ -156,32 +205,33 @@ describe("entry-read refusals", () => {
 });
 
 describe("entry-read key presence and failures never print the key", () => {
-  it("a key name absent from the key file fails naming it, with nothing sent", async () => {
+  it("a key name absent from the key file fails without echoing the name, with nothing sent", async () => {
     const h = await harness();
     expect(await h.cli("queue_status", "--key-name", "ANTWARS_HOUSE_ABSENT")).toBe(1);
-    expect(h.output()).toContain("Key ANTWARS_HOUSE_ABSENT not found");
+    expect(h.output()).toContain("the named key is not in the house key file; nothing was sent");
+    expect(h.output()).not.toContain("ANTWARS_HOUSE_ABSENT");
     expect(h.output()).not.toContain(KEY);
     expect(h.output()).not.toContain("sk-other-1234");
     expect(h.fake.calls).toEqual([]);
     h.wroteNothing();
   });
 
-  it("a malformed (non-JSON) quoted key line fails by key name without its content", async () => {
+  it("a malformed (non-JSON) quoted key line fails without its content or name", async () => {
     const broken = "sk-antwars-broken-5a1e9c";
     const h = await harness({ keyLines: `${KEY_NAME}="${broken}\n` });
     expect(await h.cli("queue_status", "--key-name", KEY_NAME)).toBe(1);
-    expect(h.output()).toContain(`Key ${KEY_NAME}`);
-    expect(h.output()).toContain("is not a JSON string");
+    expect(h.output()).toContain("the named key's line is not a JSON string");
+    expect(h.output()).not.toContain(KEY_NAME);
     expect(h.output()).not.toContain(broken);
     expect(h.fake.calls).toEqual([]);
     h.wroteNothing();
   });
 
-  it("an empty key line fails by key name", async () => {
+  it("an empty key line fails without the name", async () => {
     const h = await harness({ keyLines: `${KEY_NAME}=""\n` });
     expect(await h.cli("queue_status", "--key-name", KEY_NAME)).toBe(1);
-    expect(h.output()).toContain(`Key ${KEY_NAME}`);
-    expect(h.output()).toContain("is empty");
+    expect(h.output()).toContain("the named key is empty");
+    expect(h.output()).not.toContain(KEY_NAME);
     expect(h.fake.calls).toEqual([]);
   });
 

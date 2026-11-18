@@ -197,6 +197,25 @@ export function keyFilePath(env = process.env, cwd = process.cwd()) {
   throw new Error(NO_KEY_FILE);
 }
 
+/**
+ * The value of one key line's right-hand side, as readKey accepts it: a quoted JSON string or a raw
+ * value, non-empty. Returns { value } or { error: "not_json" | "empty" }.
+ */
+export function parseKeyValue(raw) {
+  let value;
+  try {
+    value = raw.startsWith('"') ? JSON.parse(raw) : raw;
+  } catch {
+    return { error: "not_json" };
+  }
+  if (typeof value !== "string" || value === "") return { error: "empty" };
+  return { value };
+}
+
+function keyError(message, code) {
+  return Object.assign(new Error(message), { code });
+}
+
 /** Read one key by name (lines NAME=<JSON string>). The value is registered for redaction and never returned to output. */
 export function readKey(keyName, env = process.env, cwd = process.cwd()) {
   const file = keyFilePath(env, cwd);
@@ -204,23 +223,18 @@ export function readKey(keyName, env = process.env, cwd = process.cwd()) {
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    throw new Error(`House key file not readable: ${file}`);
+    throw keyError(`House key file not readable: ${file}`, "KEY_FILE_UNREADABLE");
   }
   for (const line of text.split(/\r?\n/)) {
     const at = line.indexOf("=");
     if (at <= 0 || line.slice(0, at).trim() !== keyName) continue;
-    const raw = line.slice(at + 1).trim();
-    let value;
-    try {
-      value = raw.startsWith('"') ? JSON.parse(raw) : raw;
-    } catch {
-      throw new Error(`Key ${keyName} in ${file} is not a JSON string`);
-    }
-    if (typeof value !== "string" || value === "") throw new Error(`Key ${keyName} in ${file} is empty`);
-    addSecret(value);
-    return value;
+    const parsed = parseKeyValue(line.slice(at + 1).trim());
+    if (parsed.error === "not_json") throw keyError(`Key ${keyName} in ${file} is not a JSON string`, "KEY_NOT_JSON");
+    if (parsed.error === "empty") throw keyError(`Key ${keyName} in ${file} is empty`, "KEY_EMPTY");
+    addSecret(parsed.value);
+    return parsed.value;
   }
-  throw new Error(`Key ${keyName} not found in ${file}`);
+  throw keyError(`Key ${keyName} not found in ${file}`, "KEY_NOT_FOUND");
 }
 
 /**
