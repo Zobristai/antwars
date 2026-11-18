@@ -499,11 +499,11 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
 
 // ---------------------------------------------------------------- Recordings: one row per recording, four colony slots
 // Every recording is one row, whatever its colony count, with four colony slots side by side under one shared row of
-// colony names in their original ink. A slot with no colony shows a dash. A used slot holds one line per player:
-// name, then level, Fast and seat count in the quiet ink, then the rating at the slot's end. The
-// winner keeps the ink; the other colonies' players step down to the quiet ink, the row's own metadata treatment. Time
-// and Game type lead the row, a draw, an abandonment or an incomplete record said once under the type; Replay is a text
-// link at the row's end. One head row over the list, never repeated. Live now and Waiting keep their tables.
+// colony names in their original ink. A slot with no colony shows a dash. A used slot holds one player each, in the
+// parts and badges Waiting and Live now use: the name, then its level and Fast badges, seat count and rating badge.
+// Only the winner's slot is in colour, its colony's, over the whole slot; every other slot is neutral. Time and Game
+// type lead the row, a draw, an abandonment or an incomplete record said once under the type; Replay is a text link at
+// the row's end. One head row over the list, never repeated. Live now and Waiting keep their tables.
 
 /** Every Recordings row's colony slots: four, side by side, at every colony count. */
 export const SLOTS = 4;
@@ -548,8 +548,6 @@ function recordingSlots(doc: Document, rows: readonly MatchRow[], loading: boole
 function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   const item = h(doc, "li");
   item.dataset.recRow = row.id;
-  // A row naming its own colonies inks them in their names' colours, with no ground under the words.
-  if (row.colonyNames) colonyColours(row.colonyNames).forEach((colour, colony) => item.style.setProperty(`--aw-k${colony}`, colourCss(colour)));
   const meta = h(doc, "div", "d1p-rec-meta");
   const parts = whenParts(row.when);
   const when = h(doc, "p", "d1p-rec-when");
@@ -561,7 +559,7 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   for (const word of rowOutcome(row)) type.append(" ", h(doc, "span", "d1p-rec-note", word));
   meta.append(when, type);
   const slots = recordingSlotIndexes(row);
-  item.append(meta, ...slots.map(colony => recordingSlot(doc, row, colony)));
+  item.append(meta, ...slots.map((colony, column) => recordingSlot(doc, row, colony, column)));
   if (row.action) {
     const link = h(doc, "a", "d2-link d1p-rec-replay", row.action.text);
     link.href = row.action.href;
@@ -573,7 +571,7 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   if (other.length > 0) {
     item.classList.add("has-extra");
     const extra = h(doc, "div", "d1p-rec-extra");
-    extra.append(...other.map(colony => recordingSlot(doc, row, colony, true)));
+    extra.append(...other.map(colony => recordingSlot(doc, row, colony, null)));
     item.append(extra);
   }
   return item;
@@ -590,9 +588,13 @@ export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNam
 }
 
 /** One colony slot: player lines (or a quiet note) under the shared header, or a dash where the match has no such
- * colony. Keep its own name for screen readers, including historical names. A slot is the winner's, a loser's, or neither. */
-function recordingSlot(doc: Document, row: MatchRow, colony: number | null, showName = false): HTMLElement {
+ * colony. `column` is the fixed column it stands in (null for a noncanonical colony below the columns, which carries
+ * its own name): the phone form, where the shared head row hides, shows that column's name over the slot in the
+ * neutral head ink (archive.css, from data-colony). Only the winner's slot carries its colony's colour, over the whole
+ * slot (--rec-win); every other slot is neutral. Its own name stays for screen readers, including historical names. */
+function recordingSlot(doc: Document, row: MatchRow, colony: number | null, column: number | null): HTMLElement {
   const slot = h(doc, "div", "d1p-rec-slot");
+  if (column !== null) slot.dataset.colony = slotName(SUPERCOLONY_NAMES[column]!.label);
   if (colony === null) {
     slot.classList.add("is-none");
     slot.setAttribute("aria-hidden", "true");
@@ -600,12 +602,14 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, show
     return slot;
   }
   const cell = row.colonies[colony]!;
-  const name = (row.colonyNames ?? COLONY_NAMES)[colony]!;
-  const decided = row.colonies.some(other => other.result === "Winner");
-  if (cell.result === "Winner") slot.classList.add("is-won");
-  else if (decided) slot.classList.add("is-lost");
-  if (showName) {
-    const label = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(name));
+  const names = row.colonyNames ?? COLONY_NAMES;
+  const name = names[colony]!;
+  if (cell.result === "Winner") {
+    slot.classList.add("is-won");
+    slot.style.setProperty("--rec-win", colourCss(colonyColours(names)[colony]!));
+  }
+  if (column === null) {
+    const label = h(doc, "span", "d1p-rec-colony", slotName(name));
     label.title = name;
     label.setAttribute("aria-hidden", "true");
     slot.append(label);
@@ -617,8 +621,10 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, show
   return slot;
 }
 
-/** One player line: the username (builders only) and model as one name unit, cut with an ellipsis before anything else is;
- * then level and Fast and the seat count in the quiet ink; then the rating, figure only, its "± RD" on hover, tap or focus. */
+/** One player, in the parts and badges every Matches table uses (rowParts playerLine): the username (builders only)
+ * and model, each held whole, the model under the username where both do not fit (a piece wider than the whole slot,
+ * which no real name is, ends in an ellipsis, its whole text the name's title and read in full); then the level and Fast badges, the
+ * seat count and the cyan rating badge (figure only, its "± RD" on hover, tap or focus), the rating at the slot's end. */
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
@@ -627,23 +633,23 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   line.append(name);
+  if (parts.badges.length === 0 && seats <= 1 && !rating) return line;
+  const badges = h(doc, "span", "d1p-rec-badges");
   if (parts.badges.length > 0) {
-    const level = h(doc, "span", "d1p-rec-level", parts.badges.join(" "));
-    level.title = parts.badges.join(" ");
-    line.append(level);
+    const tags = h(doc, "span", "d1p-tags");
+    tags.append(...parts.badges.map(badge => h(doc, "span", "d1p-tag", badge)));
+    tags.title = parts.badges.join(" ");
+    badges.append(tags);
   }
   if (seats > 1) {
-    const count = h(doc, "span", "d1p-rec-count");
+    const count = h(doc, "span", "d1p-count");
     const shown = h(doc, "span", undefined, `×${seats}`);
     shown.setAttribute("aria-hidden", "true");
     count.append(shown, h(doc, "span", "d1p-sr", `, ${seats} seats`));
-    line.append(count);
+    badges.append(count);
   }
-  if (rating) {
-    const figure = h(doc, "span", "d1p-rec-rating");
-    figure.append(rowRatingNode(doc, rating, `${key}|rating`));
-    line.append(figure);
-  }
+  if (rating) badges.append(rowRatingNode(doc, rating, `${key}|rating`));
+  line.append(badges);
   return line;
 }
 

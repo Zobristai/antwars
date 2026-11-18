@@ -350,8 +350,9 @@ describe("Recordings keep other stored colony names outside canonical columns", 
                   clipped: node.scrollWidth > node.clientWidth, whiteSpace: s.whiteSpace, overflow: s.overflowX, textOverflow: s.textOverflow,
                   size: s.fontSize, weight: s.fontWeight, expectedSize: style.fontSize, expectedWeight: style.fontWeight, background: s.backgroundColor };
               }),
-              players: [...extra.querySelectorAll(".d1p-rec-player")].map(node => ({ ...rect(node), colour: getComputedStyle(node).color,
-                lost: node.parentElement!.classList.contains("is-lost"), quiet: getComputedStyle(row.querySelector(".d1p-rec-time")!).color })),
+              players: [...extra.querySelectorAll(".d1p-rec-player")].map(node => rect(node)),
+              labelInk: [...extra.querySelectorAll(".d1p-rec-colony")].map(node => getComputedStyle(node).color),
+              quiet: getComputedStyle(row.querySelector(".d1p-rec-time")!).color,
             };
           }));
           expect(rows).toHaveLength(2);
@@ -361,8 +362,8 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             expect(row.labels).toHaveLength(names[1] === "Very Large Colony" ? 1 : 2);
             for (const label of row.labels) {
               expect(names).toContain(label.title);
-              // Row labels keep 10.5 px on a phone; only the shared headings above the rows are 10 px there.
-              expect(label.size).toBe(width === 390 ? "10.5px" : label.expectedSize);
+              // A supplemental colony's label takes the shared headings' size and weight, in the neutral quiet ink.
+              expect(label.size).toBe(label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
               expect(label.lines).toBe(1);
@@ -378,8 +379,8 @@ describe("Recordings keep other stored colony names outside canonical columns", 
             for (const player of row.players) {
               expect(player.left).toBeGreaterThanOrEqual(row.bounds.left);
               expect(player.right).toBeLessThanOrEqual(row.bounds.right);
-              if (player.lost) expect(player.colour).toBe(player.quiet);
             }
+            for (const ink of row.labelInk) expect(ink).toBe(row.quiet);
             expect(row.bounds.top).toBeGreaterThanOrEqual(Math.max(...row.canonical.map(slot => slot.bottom)));
             if (width === 390) {
               expect(row.meta.top).toBeGreaterThanOrEqual(row.bounds.bottom);
@@ -401,13 +402,13 @@ describe("Recordings contain a self-reported thinking level", () => {
       try {
         await tab.setContent(quadrantsPage(longLevel).page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const rows = await tab.locator(".d1p-rec-level").evaluateAll(nodes => nodes.map(node => {
+        const rows = await tab.locator(".d1p-rec-badges > .d1p-tags").evaluateAll(nodes => nodes.map(node => {
           const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
           const style = getComputedStyle(node);
-          const line = node.closest(".d1p-rec-player")!;
-          return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
-            overflow: style.overflowX, textOverflow: style.textOverflow,
-            count: line.querySelector(".d1p-rec-count")?.textContent, rating: line.querySelector(".d1p-rec-rating")?.textContent,
+          const line = node.closest(".d1p-rec-badges")!;
+          return { text: [...node.children].map(tag => tag.textContent).join(" "), title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
+            overflow: style.overflowX,
+            count: line.querySelector(".d1p-count")?.textContent, rating: line.querySelector(".d1p-elo-badge")?.textContent,
             children: [...line.children].map(child => { const box = child.getBoundingClientRect();
               return { text: child.textContent, leftInset: box.left - slot.left, rightInset: slot.right - box.right }; }) };
         }));
@@ -415,9 +416,9 @@ describe("Recordings contain a self-reported thinking level", () => {
         for (const row of rows) {
           expect(row.text).toBe(`${longLevel} Fast`);
           expect(row.title).toBe(`${longLevel} Fast`);
+          // The badges stop short of the count and the rating, clipped; their whole text is their title.
           expect(row.clipped).toBe(true);
           expect(row.overflow).toBe("hidden");
-          expect(row.textOverflow).toBe("ellipsis");
           expect(row.count).toContain("×2");
           expect(row.rating).toContain("1500");
           for (const child of row.children) {
@@ -431,7 +432,7 @@ describe("Recordings contain a self-reported thinking level", () => {
   }
 });
 
-describe("Recordings keep the complete player name behind one-line ellipsis", () => {
+describe("Recordings keep each piece of a player name whole on its own line, an ellipsis only past the slot", () => {
   for (const width of [1280, 390]) {
     it(`contains long builder/model names and preserves hover and accessible text at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
@@ -442,24 +443,32 @@ describe("Recordings keep the complete player name behind one-line ellipsis", ()
         expect(await names.count()).toBe(16);
         for (const name of await names.all()) {
           const result = await name.evaluate(node => {
-            const style = getComputedStyle(node), rect = node.getBoundingClientRect();
             const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
-            const range = document.createRange(); range.selectNodeContents(node);
-            return { text: node.textContent, title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
-              whiteSpace: style.whiteSpace, overflow: style.overflowX, ellipsis: style.textOverflow,
-              lines: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size,
-              left: rect.left - slot.left, right: slot.right - rect.right, width: rect.width };
+            return { text: node.textContent, title: node.getAttribute("title"),
+              pieces: [...node.children].map(piece => {
+                const style = getComputedStyle(piece), rect = piece.getBoundingClientRect();
+                const range = document.createRange(); range.selectNodeContents(piece);
+                return { clipped: piece.scrollWidth > piece.clientWidth, whiteSpace: style.whiteSpace, overflow: style.overflowX, ellipsis: style.textOverflow,
+                  lines: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size,
+                  top: rect.top, left: rect.left - slot.left, right: slot.right - rect.right, width: rect.width };
+              }) };
           });
           expect(result.text).toContain("long-builder-" + "x".repeat(64));
           expect(result.title).toBe(result.text);
-          expect(result.lines).toBe(1);
-          expect(result.whiteSpace).toBe("nowrap");
-          expect(result.overflow).toBe("hidden");
-          expect(result.ellipsis).toBe("ellipsis");
-          expect(result.clipped).toBe(true);
-          expect(result.width).toBeGreaterThan(0);
-          expect(result.left).toBeGreaterThanOrEqual(0);
-          expect(result.right).toBeGreaterThanOrEqual(0);
+          expect(result.pieces).toHaveLength(2);
+          // The username is wider than any slot: the model takes the next line, and the username alone ends in an ellipsis
+          // inside the slot.
+          expect(result.pieces[1]!.top).toBeGreaterThan(result.pieces[0]!.top);
+          expect(result.pieces[0]!.clipped).toBe(true);
+          for (const piece of result.pieces) {
+            expect(piece.lines).toBe(1);
+            expect(piece.whiteSpace).toBe("nowrap");
+            expect(piece.overflow).toBe("hidden");
+            expect(piece.ellipsis).toBe("ellipsis");
+            expect(piece.width).toBeGreaterThan(0);
+            expect(piece.left).toBeGreaterThanOrEqual(0);
+            expect(piece.right).toBeGreaterThanOrEqual(0);
+          }
           expect(await name.ariaSnapshot()).toContain(result.text!);
         }
         expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
@@ -469,7 +478,7 @@ describe("Recordings keep the complete player name behind one-line ellipsis", ()
 });
 
 describe("Recordings colony headings stay inside their columns", () => {
-  for (const width of [1280, 390]) {
+  for (const width of [1280]) {
     it(`keeps complete one-line headings within each slot at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 }, deviceScaleFactor: 3 });
       try {
@@ -510,13 +519,47 @@ describe("Recordings colony headings stay inside their columns", () => {
           expect(row.whiteSpace).toBe("nowrap");
           expect(row.overflow).toBe("visible");
           expect(row.textOverflow).not.toBe("ellipsis");
-          expect(row.size).toBe(width === 390 ? "10px" : "11px");
-          expect(parseFloat(row.spacing)).toBeCloseTo(width === 390 ? -0.85 : 0.99, 2);
-          if (width === 390) expect(row.width).toBe(75);
+          expect(row.size).toBe("11px");
+          expect(parseFloat(row.spacing)).toBeCloseTo(0.99, 2);
         }
       } finally { await tab.close(); }
     });
   }
+
+  it("on a phone hides the shared head and labels each of the 2 by 2 slots with its column's name, whole, in the neutral ink", async () => {
+    const tab = await browser.newPage({ viewport: { width: 390, height: 2400 }, deviceScaleFactor: 3 });
+    try {
+      await tab.setContent(quadrantsPage().page);
+      await tab.addStyleTag({ content: 'html, body { margin: 0; } .d1p-rec-slot::before { font-family: "Liberation Sans", sans-serif; }' });
+      await tab.evaluate(() => document.fonts.ready);
+      const view = await tab.evaluate(() => ({
+        head: getComputedStyle(document.querySelector(".d1p-rec-head")!).display,
+        quiet: getComputedStyle(document.querySelector(".d1p-rec-time")!).color,
+        rows: [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => {
+          const before = getComputedStyle(slot, "::before"), box = slot.getBoundingClientRect();
+          return { label: before.content, colour: before.color, whiteSpace: before.whiteSpace, transform: before.textTransform,
+            overflowing: slot.scrollWidth > slot.clientWidth, left: Math.round(box.left), top: Math.round(box.top) };
+        })),
+      }));
+      expect(view.head).toBe("none");
+      expect(view.rows.length).toBeGreaterThan(0);
+      for (const slots of view.rows) {
+        expect(slots.map(slot => slot.label)).toEqual(SUPERCOLONY_NAMES.map(name => `"${name.label.replace(/ Colony$/, "")}"`));
+        // Two columns and two rows, in the columns' order.
+        expect(new Set(slots.map(slot => slot.left)).size).toBe(2);
+        expect(slots[0]!.top).toBe(slots[1]!.top);
+        expect(slots[2]!.top).toBe(slots[3]!.top);
+        expect(slots[2]!.top).toBeGreaterThan(slots[0]!.top);
+        for (const slot of slots) {
+          expect(slot.colour).toBe(view.quiet);
+          expect(slot.whiteSpace).toBe("nowrap");
+          expect(slot.transform).toBe("uppercase");
+          expect(slot.overflowing).toBe(false);
+        }
+      }
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    } finally { await tab.close(); }
+  });
 });
 
 describe("the Matches page's text in a colony's colour has no backing", () => {
@@ -530,7 +573,8 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
       // Live keeps the full name; Recordings shows one shared short heading in the same original colony ink.
       for (const { label, colour } of SUPERCOLONY_NAMES) {
         expect(rows.filter(r => r.text === label && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
-        expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual([rgb(colour)]);
+        // On a phone the shared head hides; each slot's label there is in the neutral ink.
+        expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb(colour)]);
       }
       expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
     });
@@ -548,7 +592,7 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
         // The shared header names all four colonies once, regardless of the pair these recordings used.
         SUPERCOLONY_NAMES.forEach(({ label, colour }) => {
           const rgb = [(colour >> 16) & 255, (colour >> 8) & 255, colour & 255].join(",");
-          expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual([rgb]);
+          expect(rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb]);
         });
         expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
         expect(body, "no row draws a text backing").not.toContain("data-aw-ground");

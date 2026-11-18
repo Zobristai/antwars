@@ -94,16 +94,19 @@ const cells = (row: ElementPort) => row.children.map(cell => {
   return [cell.className, lines.length > 0 ? lines.map(line => line.textContent) : cell.textContent];
 });
 /** A player line's parts in order, each by its role. */
-const lineParts = (line: ElementPort) => line.children.map(node => {
-  if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return ["name", node.children.map(part => `${part.className ?? ""}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")];
-  if (node.classes().includes("d1p-rec-level")) return ["badges", node.textContent.split(" ")];
-  if (node.classes().includes("d1p-rec-rating")) return ["rating", node.textContent];
+const lineParts = (line: ElementPort): (string | string[])[][] => line.children.flatMap(node => {
+  if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return [["name", node.children.map(part => `${part.className ?? ""}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")]];
+  // A Recordings player's badges line holds the same badges a table's player line does, in the same order.
+  if (node.classes().includes("d1p-rec-badges")) return lineParts(node);
+  return [linePart(node)];
+});
+const linePart = (node: ElementPort): (string | string[])[] => {
   if (node.classes().includes("d1p-tags")) return ["badges", node.children.map(tag => tag.textContent)];
   if (node.classes().includes("d1p-elo-badge")) return ["rating", node.textContent];
   if ((node.classes().includes("d1p-count") || node.classes().includes("d1p-rec-count"))) return ["seats", node.children[0]!.textContent];
   if (node.classes().includes("d1p-result-tag")) return ["result", node.textContent];
   return ["other", node.textContent];
-});
+};
 const css = () => readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
 /** A drawn node: its tag, classes, attributes, the element properties the pages set, inks, markup and words, and its children. */
 function drawnTree(node: ElementPort): unknown {
@@ -255,7 +258,7 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
     const [w] = waiting.list.querySelectorAll("li"), [l] = liveList.list.querySelectorAll("li"), [r] = recordings.list.querySelectorAll("li");
     expect(w!.children.map(node => node.tag)).toEqual(["p", "p", "dl"]);
     expect(l!.children.map(node => node.tag)).toEqual(["p", "p", "dl", "a"]);
-    expect(r!.children.map(node => node.className)).toEqual(["d1p-rec-meta", "d1p-rec-slot is-won", "d1p-rec-slot is-lost", "d1p-rec-slot is-none", "d1p-rec-slot is-none", "d2-link d1p-rec-replay"]);
+    expect(r!.children.map(node => node.className)).toEqual(["d1p-rec-meta", "d1p-rec-slot is-won", "d1p-rec-slot", "d1p-rec-slot is-none", "d1p-rec-slot is-none", "d2-link d1p-rec-replay"]);
     expect([w, l].map(item => item!.children[0]!.textContent)).toEqual(["11 Nov 2026 · 05:01 UTC", "27 Oct 2026 · 10:00 UTC"]);
     expect(r!.byClass("d1p-rec-when")[0]!.textContent).toBe("27 Oct 2026 · 09:00 UTC");
     expect([w, l].map(item => item!.children[1]!.children.map(node => node.textContent)))
@@ -290,7 +293,9 @@ describe("the one player line", () => {
       // A builder that named no model: its username alone, then its rating; no result on the losing colony.
       expect(lineParts(other!)).toEqual([["name", ["d1p-user:omp-dolphin"]], ["seats", "×2"], ["rating", "1460 ± 80"]]);
       expect(layout.byClass("is-won")[0]!.byClass("d1p-sr").at(-1)!.textContent).toBe(", winner");
-      expect(layout.byClass("is-lost")).toHaveLength(1);
+      // Only the winner's slot carries a colony colour; the other is neutral.
+      expect(layout.byClass("is-won")).toHaveLength(1);
+      expect(layout.byClass("d1p-rec-slot").map(slot => [...slot.style.properties.keys()])).toEqual([["--rec-win"], [], [], []]);
     }
     // The badge is figure only; its ± RD a tip, no provisional word on a row.
     const badge = recordings.list.byClass("d1p-elo-badge")[0]!;
@@ -328,8 +333,8 @@ describe("the one player line", () => {
       seat(0, 1, "zai/glm-5.3", "kite"),
     ] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [row] } });
-    const shown = recordings.list.byClass("d1p-rec-level")[0]!;
-    expect([shown.textContent, shown.title]).toEqual([`${level} Fast`, `${level} Fast`]);
+    const shown = recordings.list.byClass("d1p-tags")[0]!;
+    expect([shown.children.map(tag => tag.textContent), shown.title]).toEqual([[level, "Fast"], `${level} Fast`]);
     p.mounted.destroy();
   });
 
@@ -404,8 +409,9 @@ describe("Recordings rows", () => {
       "Index · 1v1", "Unranked · 1v1 Draw", "Unranked · 1v1 Abandoned", " Record partial", "not recorded Record unavailable",
     ]);
     expect(rows.map(row => row.byClass("is-won").length)).toEqual([1, 0, 0, 1, 0]);
-    expect(rows.map(row => row.byClass("is-lost").length)).toEqual([1, 0, 0, 1, 0]);
-    expect(rows[3]!.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["GPT-6.1 Solmax Fast", "did not join"]);
+    // The winner's slot is the row's one coloured slot.
+    expect(rows.map(row => row.byClass("d1p-rec-slot").filter(slot => slot.style.properties.size > 0).length)).toEqual([1, 0, 0, 1, 0]);
+    expect(rows[3]!.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["GPT-6.1 SolmaxFast", "did not join"]);
     expect(rows[4]!.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["not recorded", "not recorded"]);
     expect(recordings.card.byClass("d1p-stamp")).toEqual([]);
     expect(recordings.card.textContent).not.toMatch(/Lobby|Unrated/);
@@ -460,10 +466,12 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
     expect(row.byClass("d1p-rec-type")[0]!.textContent).toBe("Free-for-all");
     expect(recordings.card.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(QUADRANTS.map(name => name.replace(/ Colony$/, "")));
     expect(row.byClass("d1p-rec-colony")).toEqual([]);
-    expect(inks(row)).toEqual(colonyColours(QUADRANTS).map(colourCss));
+    // Only the winner's slot is in a colony's colour, its own.
+    expect(inks(row)).toEqual(["", "", "", ""]);
     expect(row.byClass("d1p-rec-player").map(line => line.textContent)).toEqual(["ann", "bob", "cat", "dan"]);
     expect(row.byClass("is-won")[0]!.byClass("d1p-rec-player")[0]!.textContent).toBe("cat");
-    expect(row.byClass("is-lost")).toHaveLength(3);
+    expect(row.byClass("is-won")[0]!.style.getPropertyValue("--rec-win")).toBe(colourCss(colonyColours(QUADRANTS)[2]!));
+    expect(row.byClass("d1p-rec-slot").filter(slot => slot.style.properties.size === 0)).toHaveLength(3);
     expect(row.getAttribute("data-aw-ground")).toBeNull();
     p.mounted.destroy();
   });
@@ -543,7 +551,7 @@ describe("no house slug on Live now, Waiting or Recordings", () => {
     for (const layout of [waiting.table, waiting.list]) {
       expect(models(layout)).toEqual([["Unlisted model", []], ["Mistral Large 4", ["high"]], ["Unlisted model", []]]);
     }
-    expect(recordings.list.byClass("d1p-rec-player").map(line => [line.children[0]!.textContent, line.byClass("d1p-rec-level").map(node => node.textContent)])).toEqual([["Abliterated GLM-5.3", ["max"]], ["Unlisted model", []]]);
+    expect(recordings.list.byClass("d1p-rec-player").map(line => [line.children[0]!.textContent, line.byClass("d1p-tag").map(node => node.textContent)])).toEqual([["Abliterated GLM-5.3", ["max"]], ["Unlisted model", []]]);
     for (const { card } of [waiting, liveList]) expect(card.textContent).not.toMatch(SLUG);
     p.mounted.destroy();
   });
@@ -621,7 +629,8 @@ describe("a model label with nothing after its provider prefix", () => {
         expect(slot.byClass("d1p-rec-name")[0]!.textContent).toBe(`player-${index}`);
         expect(slot.byClass("d1p-elo-badge")[0]!.textContent).toBe(`${1500 + index} ± 80`);
         expect(slot.classes().includes("is-won")).toBe(index === order[0]);
-        expect(slot.classes().includes("is-lost")).toBe(index !== order[0]);
+        // Only the winner's slot carries its colony's colour.
+        expect(slot.style.properties.has("--rec-win")).toBe(index === order[0]);
       });
       expect(recordings.card.byClass("d1p-rec-head")).toHaveLength(1);
       p.mounted.destroy();
@@ -667,7 +676,8 @@ describe("a model label with nothing after its provider prefix", () => {
       expect(extra.byClass("d1p-rec-colony").map(node => [node.textContent, node.title])).toEqual([["Historical", "Historical Colony"]]);
       expect(extra.byClass("d1p-rec-player")[0]!.textContent).toBe("historical-player1510 ± 80");
       expect(extra.byClass("d1p-rec-slot")[0]!.classes().includes("is-won")).toBe(winner === 0);
-      expect(extra.byClass("d1p-rec-slot")[0]!.classes().includes("is-lost")).toBe(winner === 1);
+      expect(extra.byClass("d1p-rec-slot")[0]!.style.properties.has("--rec-win")).toBe(winner === 0);
+      expect(slots[0]!.style.properties.has("--rec-win")).toBe(winner === 1);
       expect(extra.textContent.includes(", winner")).toBe(winner === 0);
       expect(recordings.list.byClass("d1p-rec-player")).toHaveLength(2);
       p.mounted.destroy();
@@ -684,7 +694,7 @@ describe("a model label with nothing after its provider prefix", () => {
     expect(extra.byClass("d1p-rec-colony").map(node => node.title)).toEqual(rec.colonyNames);
     expect(extra.byClass("d1p-rec-player").map(node => node.textContent)).toEqual(["old-player-0", "old-player-1", "old-player-2", "old-player-3"]);
     expect(extra.byClass("is-won")).toHaveLength(1);
-    expect(extra.byClass("is-lost")).toHaveLength(3);
+    expect(extra.byClass("d1p-rec-slot").filter(slot => !slot.style.properties.has("--rec-win"))).toHaveLength(3);
     expect(recordings.card.byClass("d1p-rec-head")).toHaveLength(1);
     p.mounted.destroy();
   });
