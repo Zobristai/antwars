@@ -201,34 +201,40 @@ export interface HistoryRouteOptions {
   readonly unsettledLobbyMs?: number;
 }
 
+/** Rows on one public listing page: a full storage page (history-source.ts list). */
+const PAGE_ROWS = 20;
+
 /**
  * One public listing page. Each storage page's rows pass the hide list (when configured), then serve gives them their served
- * values (type, handles, corrections), and only the rows publiclyListedMatch admits are kept. A page left with no row is
- * followed to the next storage page, so an empty public page always ends the history. A page under the hide list, or one
- * that left out its last storage row, continues after its last served row, so no left-out row's id is in the listing.
+ * values (type, handles, corrections), and only the rows publiclyListedMatch admits are kept. Storage pages are read until
+ * PAGE_ROWS rows are listed or storage ends, so a page comes back short only at the end of the history. A page that stops
+ * at a storage boundary it served up to, without the hide list, keeps the storage continuation; any other page continues
+ * after its last served row, so no left-out or unserved row's id is in the listing.
  */
 async function publicHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
   visibility: PublicVisibility | undefined, serve: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
   const seen = new Set<string>();
   if (token !== undefined) seen.add(token);
+  const listed: TypedHistorySummary[] = [];
   for (;;) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
     const visible = visibility ? await publiclyVisible(raw.matches, row => visibility.replayVisible(row.id)) : raw.matches;
     const served = await serve({ matches: visible, nextPageToken: raw.nextPageToken });
-    const matches = served.matches.filter(publiclyListedMatch);
-    if (raw.nextPageToken === null) return { matches, nextPageToken: null };
-    if (matches.length > 0) {
-      const last = matches.at(-1)!.id;
-      // Without the hide list, a page that served its last storage row keeps the storage continuation unchanged.
-      if (visibility === undefined && last === raw.matches.at(-1)?.id) return { matches, nextPageToken: raw.nextPageToken };
+    listed.push(...served.matches.filter(publiclyListedMatch));
+    if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
+    if (listed.length >= PAGE_ROWS) {
+      const matches = listed.slice(0, PAGE_ROWS), last = matches.at(-1)!.id;
+      if (visibility === undefined && listed.length === PAGE_ROWS && last === raw.matches.at(-1)?.id && raw.nextPageToken !== null) {
+        return { ...served, matches, nextPageToken: raw.nextPageToken };
+      }
       if (source.continuationAfter === undefined) throw new Error("Public history continuation unavailable");
-      return { matches, nextPageToken: source.continuationAfter(last) };
+      return { ...served, matches, nextPageToken: source.continuationAfter(last) };
     }
-    // A page with no listed row cannot disclose its storage boundary in an empty public page.
-    if (seen.has(raw.nextPageToken)) throw new Error("Invalid history continuation");
-    seen.add(raw.nextPageToken);
-    token = raw.nextPageToken;
+    // Storage continues and the page is not yet full: read on, never disclosing this storage boundary.
+    if (seen.has(raw.nextPageToken!)) throw new Error("Invalid history continuation");
+    seen.add(raw.nextPageToken!);
+    token = raw.nextPageToken!;
   }
 }
 

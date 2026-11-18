@@ -455,31 +455,62 @@ describe("GET /matches lists only Model Index, challenge and rated matches", () 
     expect(listed.nextPageToken).toBeNull();
   });
 
-  it("follows storage pages with no listed row, and continues after the last served row so no left-out id is listed", async () => {
-    const id = (minute: number) => `2026-11-18T04-${String(minute).padStart(2, "0")}-00-000Z-1`;
-    // Newest first: two unrated, a rated, two unrated, a rated; storage pages of two.
-    const all = [rated(id(6), false), rated(id(5), false), rated(id(4), true), rated(id(3), false), rated(id(2), false), rated(id(1), true)];
-    const unrated = new Set([id(6), id(5), id(3), id(2)]);
+  /** Stored rows newest first in storage pages of twenty, continued after an id, as the storage source pages them. */
+  function storage(all: HistorySummary[]) {
     const reads: (string | undefined)[] = [];
     const source: HistorySource = {
       async list(token) {
         reads.push(token);
         const start = token === undefined ? 0 : all.findIndex(match => match.id === token.slice("after:".length)) + 1;
-        const matches = all.slice(start, start + 2);
-        return { matches, nextPageToken: start + 2 < all.length ? `after:${matches.at(-1)!.id}` : null };
+        const matches = all.slice(start, start + 20);
+        return { matches, nextPageToken: start + 20 < all.length ? `after:${matches.at(-1)!.id}` : null };
       },
       continuationAfter: id => `after:${id}`,
       async open() { return null; },
     };
+    return { source, reads };
+  }
+  const id = (n: number) => `2026-11-18T04-00-00-000Z-${1000 - n}`;
+  type Listing = { matches: HistorySummary[]; nextPageToken: string | null };
+  const list = async (origin: string, token: string | null = null) =>
+    (await (await fetch(`${origin}/matches${token ? `?pageToken=${encodeURIComponent(token)}` : ""}`)).json()) as Listing;
+
+  it("fills a page whose newest rows are mostly unrated from the next storage pages, continuing after its last served row", async () => {
+    // Newest first: 18 unrated and 2 rated, then 20 rated, then 5 rated.
+    const all = Array.from({ length: 45 }, (_, n) => rated(id(n), n >= 18));
+    const ratedIds = all.filter(match => match.rated).map(match => match.id), unratedIds = all.filter(match => !match.rated).map(match => match.id);
+    const { source, reads } = storage(all);
     const origin = await listen(source);
-    const first = (await (await fetch(`${origin}/matches`)).json()) as { matches: HistorySummary[]; nextPageToken: string | null };
-    expect(first.matches.map(match => match.id)).toEqual([id(4)]);
-    expect(first.nextPageToken).toBe(`after:${id(4)}`);
-    const second = (await (await fetch(`${origin}/matches?pageToken=${encodeURIComponent(first.nextPageToken!)}`)).json()) as typeof first;
-    expect(second.matches.map(match => match.id)).toEqual([id(1)]);
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(ratedIds.slice(0, 20));
+    expect(first.nextPageToken).toBe(`after:${ratedIds[19]}`);
+    const second = await list(origin, first.nextPageToken);
+    expect(second.matches.map(match => match.id)).toEqual(ratedIds.slice(20));
     expect(second.nextPageToken).toBeNull();
-    expect(reads).toEqual([undefined, `after:${id(5)}`, `after:${id(4)}`, `after:${id(2)}`]);
-    for (const served of [first, second]) for (const left of unrated) expect(JSON.stringify(served)).not.toContain(left);
+    expect(reads).toEqual([undefined, `after:${id(19)}`, `after:${ratedIds[19]}`]);
+    for (const page of [first, second]) for (const left of unratedIds) expect(JSON.stringify(page)).not.toContain(left);
+  });
+
+  it("follows storage pages with no listed row, and keeps the storage continuation where a full page ends on one", async () => {
+    // Newest first: 25 unrated, then 20 rated ending on a storage boundary, then 3 rated.
+    const all = Array.from({ length: 48 }, (_, n) => rated(id(n), n >= 25));
+    const { source } = storage(all);
+    const origin = await listen(source);
+    const first = await list(origin);
+    expect(first.matches.map(match => match.id)).toEqual(all.slice(25, 45).map(match => match.id));
+    // The full page ends on the last row of the storage page it read: that page's own continuation.
+    expect(first.nextPageToken).toBe(`after:${id(44)}`);
+    const second = await list(origin, first.nextPageToken);
+    expect(second.matches.map(match => match.id)).toEqual(all.slice(45).map(match => match.id));
+    expect(second.nextPageToken).toBeNull();
+  });
+
+  it("serves a short page only where the history ends", async () => {
+    const all = Array.from({ length: 30 }, (_, n) => rated(id(n), n % 3 === 0));
+    const origin = await listen(storage(all).source);
+    const only = await list(origin);
+    expect(only.matches.map(match => match.id)).toEqual(all.filter(match => match.rated).map(match => match.id));
+    expect(only.nextPageToken).toBeNull();
   });
 
   it("still serves a left-out recording's record by its id", async () => {
