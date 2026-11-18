@@ -301,14 +301,14 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage(thinkingLevel: string | null = null, longName?: string) {
+function quadrantsPage(thinkingLevel: string | null = null, longName?: string, modelLabel = "openai/gpt-6.1-terra") {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
   const handles = longName ? Array<string>(4).fill(longName) : ["alice", "bob", "cat", "dan"];
   const seats = handles.flatMap((handle, colony) => Array.from({ length: thinkingLevel === null ? 1 : 2 }, (_, index) => ({
-    seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
+    seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : modelLabel,
     thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
     ...(thinkingLevel === null ? {} : { startRating: { rating: 1500, rd: 80, ratedMatches: 12 } }),
   })));
@@ -394,82 +394,35 @@ describe("Recordings keep other stored colony names outside canonical columns", 
   }
 });
 
-describe("Recordings contain a self-reported thinking level", () => {
-  const longLevel = "m".repeat(32);
+describe("Recordings show every supported player name and level whole, never cut", () => {
+  // The supported limits (src/mcp/config.ts): a 32-character username, a 64-character model label and a 32-character
+  // thinking level, in the widest capitals.
+  const level = "M".repeat(32), handle = "W".repeat(32), model = "W".repeat(64);
   for (const width of [1280, 390]) {
-    it(`bounds a 32-character level with seats and rating at ${width}px`, async () => {
-      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+    it(`keeps a 32-character username, a 64-character model and a 32-character level whole inside the slot at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 4000 } });
       try {
-        await tab.setContent(quadrantsPage(longLevel).page);
+        await tab.setContent(quadrantsPage(level, handle, model).page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const rows = await tab.locator(".d1p-rec-badges > .d1p-tags").evaluateAll(nodes => nodes.map(node => {
-          const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
-          const style = getComputedStyle(node);
-          const line = node.closest(".d1p-rec-badges")!;
-          return { text: [...node.children].map(tag => tag.textContent).join(" "), title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
-            overflow: style.overflowX,
-            count: line.querySelector(".d1p-count")?.textContent, rating: line.querySelector(".d1p-elo-badge")?.textContent,
-            children: [...line.children].map(child => { const box = child.getBoundingClientRect();
-              return { text: child.textContent, leftInset: box.left - slot.left, rightInset: slot.right - box.right }; }) };
-        }));
-        expect(rows).toHaveLength(16);
-        for (const row of rows) {
-          expect(row.text).toBe(`${longLevel} Fast`);
-          expect(row.title).toBe(`${longLevel} Fast`);
-          // The badges stop short of the count and the rating, clipped; their whole text is their title.
-          expect(row.clipped).toBe(true);
-          expect(row.overflow).toBe("hidden");
-          expect(row.count).toContain("×2");
-          expect(row.rating).toContain("1500");
-          for (const child of row.children) {
-            expect(child.leftInset, child.text!).toBeGreaterThanOrEqual(0);
-            expect(child.rightInset, child.text!).toBeGreaterThanOrEqual(0);
-          }
-        }
-        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
-      } finally { await tab.close(); }
-    });
-  }
-});
-
-describe("Recordings keep each piece of a player name whole on its own line, an ellipsis only past the slot", () => {
-  for (const width of [1280, 390]) {
-    it(`contains long builder/model names and preserves hover and accessible text at ${width}px`, async () => {
-      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
-      try {
-        await tab.setContent(quadrantsPage("m".repeat(32), "long-builder-" + "x".repeat(64)).page);
-        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const names = tab.locator(".d1p-rec-name");
-        expect(await names.count()).toBe(16);
-        for (const name of await names.all()) {
-          const result = await name.evaluate(node => {
-            const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
-            return { text: node.textContent, title: node.getAttribute("title"),
-              pieces: [...node.children].map(piece => {
-                const style = getComputedStyle(piece), rect = piece.getBoundingClientRect();
-                const range = document.createRange(); range.selectNodeContents(piece);
-                return { clipped: piece.scrollWidth > piece.clientWidth, whiteSpace: style.whiteSpace, overflow: style.overflowX, ellipsis: style.textOverflow,
-                  lines: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size,
-                  top: rect.top, left: rect.left - slot.left, right: slot.right - rect.right, width: rect.width };
-              }) };
+        const players = await tab.locator(".d1p-rec-player").evaluateAll(nodes => nodes.map(line => {
+          const slot = line.closest(".d1p-rec-slot")!.getBoundingClientRect();
+          const parts = [...line.querySelectorAll(".d1p-user, .d1p-mname, .d1p-tag, .d1p-count, .d1p-elo-badge")].map(node => {
+            const style = getComputedStyle(node), box = node.getBoundingClientRect();
+            return { cls: node.className, text: node.textContent, cut: node.scrollWidth > node.clientWidth + 1 && style.overflowX !== "visible",
+              ellipsis: style.textOverflow, left: box.left - slot.left, right: slot.right - box.right };
           });
-          expect(result.text).toContain("long-builder-" + "x".repeat(64));
-          expect(result.title).toBe(result.text);
-          expect(result.pieces).toHaveLength(2);
-          // The username is wider than any slot: the model takes the next line, and the username alone ends in an ellipsis
-          // inside the slot.
-          expect(result.pieces[1]!.top).toBeGreaterThan(result.pieces[0]!.top);
-          expect(result.pieces[0]!.clipped).toBe(true);
-          for (const piece of result.pieces) {
-            expect(piece.lines).toBe(1);
-            expect(piece.whiteSpace).toBe("nowrap");
-            expect(piece.overflow).toBe("hidden");
-            expect(piece.ellipsis).toBe("ellipsis");
-            expect(piece.width).toBeGreaterThan(0);
-            expect(piece.left).toBeGreaterThanOrEqual(0);
-            expect(piece.right).toBeGreaterThanOrEqual(0);
+          return { name: line.querySelector(".d1p-rec-name")!.getAttribute("title"), parts };
+        }));
+        expect(players).toHaveLength(16);
+        for (const player of players) {
+          expect(player.name).toBe(`${handle} ${model}`);
+          expect(player.parts.map(part => part.text)).toEqual([handle, model, level, "Fast", expect.stringContaining("×2"), expect.stringContaining("1500")]);
+          for (const part of player.parts) {
+            expect(part.cut, part.cls).toBe(false);
+            expect(part.ellipsis, part.cls).not.toBe("ellipsis");
+            expect(part.left, part.cls).toBeGreaterThanOrEqual(0);
+            expect(part.right, part.cls).toBeGreaterThanOrEqual(0);
           }
-          expect(await name.ariaSnapshot()).toContain(result.text!);
         }
         expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
       } finally { await tab.close(); }

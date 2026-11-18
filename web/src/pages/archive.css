@@ -524,17 +524,16 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-extra .d1p-rec-colony { overflow: hidden; text-overflow: ellipsis; color: var(--aw-ink-3); }
 .d1p-rec-player { display: flex; flex-direction: column; min-width: 0; }
 .d1p-rec-player + .d1p-rec-player { margin-top: 6px; }
-/* The name's two pieces, each whole: the model moves under the username rather than either being cut. */
+/* The name's two pieces, each whole: the model moves under the username rather than either being cut. Every piece and
+   badge is shown in full: one wider than the whole slot (a username runs to 32 characters, a model label to 64, a
+   self-reported level to 32: src/mcp/config.ts) continues on the slot's next line, never cut. */
 .d1p-rec-name { display: flex; flex-wrap: wrap; column-gap: 0.3em; min-width: 0; }
-/* Only a piece wider than the whole slot, which no real name is, ends in an ellipsis (its title holds it whole). */
-.d1p-rec-name > * { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d1p-rec-name > *, .d1p-rec-badges .d1p-tag { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 /* The badges' line: level and Fast, the seat count, then the rating at the slot's end. Where a narrow slot cannot hold
    them all, whole badges move to a next line (the rating keeps the slot's end) rather than any being cut. */
 .d1p-rec-badges { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; row-gap: 2px; margin-top: 2px; white-space: nowrap; }
-.d1p-rec-badges .d1p-tags > .d1p-tag:first-child, .d1p-rec-badges > .d1p-count { margin-left: 0; }
-/* A self-reported level may run to 32 characters (src/mcp/config.ts): the badges then stop short of the count and the
-   rating, clipped, their whole text their title. Every real set shows whole. */
-.d1p-rec-badges > .d1p-tags { min-width: 0; overflow: hidden; }
+.d1p-rec-badges > .d1p-tags { display: flex; flex-wrap: wrap; gap: 2px 4px; max-width: 100%; }
+.d1p-rec-badges .d1p-tag, .d1p-rec-badges > .d1p-count { margin-left: 0; }
 .d1p-rec-badges > :not(.d1p-tags) { flex: none; }
 .d1p-rec-badges > .d1p-elo-badge { margin-left: auto; vertical-align: baseline; }
 .d1p-rec-dash { color: var(--aw-ink-3); }
