@@ -71,7 +71,7 @@ describe("spectator metadata and final rating lifecycle", () => {
     const seatOf: Record<string, string> = { "sim-h": "h", "sim-b": "b", "sim-c": "c" };
     const live = { agentInfo: (agentId: string) => ({ displayName: "", modelLabel: null, seatKey: seatOf[agentId] ?? null }) } as unknown as LiveGame;
     // An unrated public match: spectators watch 60 s behind it. The house seat joined before the start with a label, the
-    // builder that reported none is never listed, and the labelled builder joins at the second tick.
+    // builder that reported none has no label but is listed as joined, and the labelled builder joins at the second tick.
     let state = step(createMatch(34, playable({ ...rulesConfig("redesign"), matchTicks: 4 })),
       [{ type: "join", agentId: "sim-h", placement: 0, modelLabel: "openai/gpt-6-luna" }, { type: "join", agentId: "sim-c", placement: 1 }]).state;
     controller.started(1, state, live, hub);
@@ -81,6 +81,7 @@ describe("spectator metadata and final rating lifecycle", () => {
       const match = await createWatchRegistry(store).read(id);
       return { thinkingLevels: match?.thinkingLevels, serviceTiers: match?.serviceTiers };
     };
+    const joined = async () => (await createWatchRegistry(store).read(id))?.joined;
     const settle = () => new Promise(resolve => setImmediate(resolve));
     for (let tick = 1; !state.result; tick++) {
       const out = step(state, tick === 2 ? [{ type: "join", agentId: "sim-b", placement: 1, modelLabel: "openai/gpt-6.1-terra", thinkingLevel: "high", serviceTier: "fast" }] : []);
@@ -95,10 +96,13 @@ describe("spectator metadata and final rating lifecycle", () => {
     await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna" }));
     // No seat shown so far reported a level or tier.
     expect(await details()).toEqual({ thinkingLevels: {}, serviceTiers: {} });
+    // Both seats shown so far are listed as joined, so the builder that reported no model can be told from one not yet shown.
+    expect(await joined()).toEqual(["antwars/gpt-6-luna", "omp-dolphin"]);
     // Playback reaches the builder's join: its label, level and tier together, from what its join reported.
     clock.advance(200);
     await vi.waitFor(async () => expect(await labels()).toEqual({ "antwars/gpt-6-luna": "openai/gpt-6-luna", "kestrel-harness": "openai/gpt-6.1-terra" }));
     expect(await details()).toEqual({ thinkingLevels: { "kestrel-harness": "high" }, serviceTiers: { "kestrel-harness": "fast" } });
+    expect(await joined()).toEqual(["antwars/gpt-6-luna", "omp-dolphin", "kestrel-harness"]);
     // Later records with no change write no labels again, through the end of playback.
     const writes = vi.spyOn(registry, "seatLabels");
     clock.advance(1_000);

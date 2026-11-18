@@ -238,11 +238,11 @@ async function queueRatings(accounts: AccountStores, agents: readonly WaitingAge
 /**
  * A listed match's players and type from its lobby, one seat list per colony of the lobby (four in a Quadrants match). Each
  * seat carries its stream display name (watch-controller seatDisplayNames) and the model label, thinking level and service
- * tier its slot published for it once spectators saw it join (each null otherwise). Each seat's rating is read fresh, by the
- * rule the match stream shows it by (seatRating), so an unrated match's seats show theirs too; a seat that shows none in the
- * stream shows none here.
+ * tier its slot published for it once spectators saw it join (each null otherwise), and whether spectators have seen it join.
+ * Each seat's rating is read fresh, by the rule the match stream shows it by (seatRating), so an unrated match's seats show
+ * theirs too; a seat that shows none in the stream shows none here.
  */
-async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "thinkingLevels" | "serviceTiers">):
+async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<WatchMatch, "modelLabels" | "thinkingLevels" | "serviceTiers" | "joined">):
   Promise<{ colonies: PublicColonies; matchType: RecordingMatchType | null; colonyNames?: readonly string[] }> {
   const lobby = await accounts.lobbies.readLobby(match.lobbyId);
   if (!lobby.ok) return { colonies: [[], []], matchType: null };
@@ -261,7 +261,8 @@ async function matchPlayers(accounts: AccountStores, match: MatchAccess & Pick<W
   seats.forEach((seat, index) => {
     const rating = ratings[index]!, displayName = names[index]!;
     const own = (map: Readonly<Record<string, string>> | undefined) => map !== undefined && Object.hasOwn(map, displayName) ? map[displayName]! : null;
-    const named = { displayName, modelLabel: own(match.modelLabels), thinkingLevel: own(match.thinkingLevels), serviceTier: own(match.serviceTiers) };
+    const named = { displayName, modelLabel: own(match.modelLabels), thinkingLevel: own(match.thinkingLevels), serviceTier: own(match.serviceTiers),
+      ...(match.joined?.includes(displayName) ? { joined: true as const } : {}) };
     colonies[seat.colony]!.push(rating === null
       ? { ...named, rating: null, rd: null, ratedMatches: null }
       : { ...named, rating: rating.rating, rd: rating.rd, ratedMatches: rating.ratedMatches });
