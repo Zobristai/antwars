@@ -85,12 +85,26 @@ export function serverStartFacts(data, from, clock) {
 
 /**
  * The server's own words in a match-over reply, verbatim: its message and its next instruction (howToFix), from the
- * reply named by from. They replace the pre-start facts, so no "call observe until it starts" message remains.
+ * reply named by from. A refusal carries them in error; the final observe of an ended match carries its message at the
+ * top level and no instruction. They replace the pre-start facts, so no "call observe until it starts" message remains.
  */
 function serverEndFacts(data, from, clock) {
   const error = data.error !== null && typeof data.error === "object" ? data.error : {};
+  const text = (value) => (typeof value === "string" ? value : null);
   return { from, at: new Date(clock.now()).toISOString(), matchOver: true,
-    message: typeof error.message === "string" ? error.message : null, next: typeof error.howToFix === "string" ? error.howToFix : null };
+    message: text(error.message) ?? text(data.message), next: text(error.howToFix) ?? text(data.howToFix) };
+}
+
+/**
+ * The match-over facts to keep: the first match-over reply's, with a later reply filling in only what it lacked. A later
+ * reply that supplies no message or instruction (the final observe, after a refusal that said to call it) never
+ * erases the server's earlier words. Null when nothing changes.
+ */
+function mergedEndFacts(current, facts) {
+  if (!ended(current)) return facts;
+  const saved = current.fromServer;
+  const merged = { ...saved, message: saved.message ?? facts.message, next: saved.next ?? facts.next };
+  return merged.message === saved.message && merged.next === saved.next ? null : merged;
 }
 
 /**
@@ -122,9 +136,11 @@ export function noteMatchReply(name, args, reply, { env, clock }) {
   const data = reply?.data;
   if (data && isMatchOver(data)) {
     const facts = serverEndFacts(data, name, clock);
-    progressFrom((current) => (ended(current) && current.fromServer?.message === facts.message
-      && current.fromServer?.next === facts.next ? null
-      : { step: "match_over", detail: { winner: data.winner ?? null, fromServer: facts, ...dropped(["closesAt", "box", "next"]) } }), env);
+    progressFrom((current) => {
+      const fromServer = mergedEndFacts(current, facts);
+      return fromServer === null ? null
+        : { step: "match_over", detail: { winner: data.winner ?? current.winner ?? null, fromServer, ...dropped(["closesAt", "box", "next"]) } };
+    }, env);
     return;
   }
   if (!reply?.ok || !data) return;

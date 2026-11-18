@@ -234,8 +234,9 @@ match running, a pick or pre-start observe reply recorded after it leaves
 A match-over reply, to any call (including a first observe after the seat
 idled out), writes `match_over` with `winner` and `fromServer` holding the
 server's own `message` and `next` instruction verbatim. The nest window, the
-pick instruction and the pre-start message are removed, and no later reply of
-that match changes it.
+pick instruction and the pre-start message are removed. A later reply of that
+match only fills in what the first lacked: the final observe, which carries its
+message but no instruction, never erases the instruction an earlier refusal gave.
 
 While `fromServer.matchStarts` is a time, `status` adds `matchStartsPassed`
 (true or false, by this machine's clock), and once it is true a

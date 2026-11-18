@@ -804,6 +804,28 @@ describe("status after go: the nest pick and the match start", () => {
     }
   });
 
+  it("the final observe after a match-over refusal keeps the server's message and next instruction; a final observe alone records its message", async () => {
+    const s = await seat({ endedAfterObserves: 1 });
+    await s.cli("create-lobby");
+    expect(await s.cli("join-lobby", "lobby-1")).toBe(0);
+    await s.cli("observe");
+    // Following the refusal's instruction, observe answers as the server does for an ended match: its message at the
+    // top level with the final view, and no instruction.
+    const finalObserve = { ok: true, data: { message: "This match has ended.", matchOver: true, winner: "red", result: { winner: 0 }, view: { tick: 40, result: { winner: 0 } } } };
+    noteMatchReply("observe", {}, finalObserve, { env: s.env, clock: s.clock });
+    expect(s.state("status.json")).toMatchObject({ step: "match_over", winner: "red",
+      fromServer: { matchOver: true, message: "This match has ended.", next: MATCH_OVER_NEXT } });
+    expect(loggedSteps(s).filter((step) => step === "match_over")).toHaveLength(1);
+
+    const t = await seat();
+    await t.cli("create-lobby");
+    expect(await t.cli("join-lobby", "lobby-1")).toBe(0);
+    noteMatchReply("observe", {}, finalObserve, { env: t.env, clock: t.clock });
+    const status = t.state("status.json");
+    expect(status).toMatchObject({ step: "match_over", winner: "red", fromServer: { matchOver: true, message: "This match has ended.", next: null } });
+    for (const field of ["closesAt", "box", "next"]) expect(status).not.toHaveProperty(field);
+  });
+
   it("go's final status drops the queue and lobby states read while pairing", async () => {
     const s = await seat({ pairAfterMs: 20_000 });
     const seen = recordStatuses(s);
