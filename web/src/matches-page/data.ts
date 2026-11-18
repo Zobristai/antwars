@@ -1,5 +1,6 @@
 // The Matches page's data: the live catalog, saved recordings, with no invented rows.
 import { z } from "zod";
+import { neverJoined } from "../ui/format.ts";
 // A seated player: the stream's seat name, and the rating, RD and rated-match count in the match's ranked mode,
 // all three null for an unrated match.
 // The model label a seat self-reported when it joined; null before it joins or where it reported none, absent from a
@@ -129,8 +130,9 @@ export function createMatchesData(request: typeof fetch, publish: (view: Matches
   };
   /**
    * One load of Recordings: a refresh (reset) or Load more. The server may return a short or empty page with a continuation
-   * (it reads a bounded number of stored pages per request, leaving out unlisted recordings), so a load that has added fewer
-   * than FILL_ROWS rows follows the continuation, at most MAX_FOLLOWS more requests, each committed as it arrives.
+   * (it reads a bounded number of stored pages per request, leaving out hidden recordings), so a load that has added fewer
+   * than FILL_ROWS rows the Recordings lists show follows the continuation, at most MAX_FOLLOWS more requests, each
+   * committed as it arrives. A match a colony never joined is not shown (recordingRows), so it does not count.
    */
   async function history(reset: boolean) {
     if (historyBusy || abort.signal.aborted || (!reset && view.next === null)) return;
@@ -148,7 +150,7 @@ export function createMatchesData(request: typeof fetch, publish: (view: Matches
         const rows = new Map((first ? [] : view.recordings.rows).map(row => [row.id, row]));
         for (const row of page.matches) rows.set(row.id, row);
         view = { ...view, recordings: { status: "ready", rows: [...rows.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)) }, next: page.nextPageToken };
-        added += page.matches.length;
+        added += page.matches.filter(row => !neverJoined(row)).length;
         token = page.nextPageToken;
         if (token === null || added >= FILL_ROWS || follow >= MAX_FOLLOWS) break;
       }
