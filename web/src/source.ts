@@ -5,7 +5,7 @@ import { openPreparedFeed, type PreparedFeed } from "./feed.ts";
 import type { Arrival } from "./inbox.ts";
 import type { PreparedTick } from "./buffer.ts";
 import { openRecording, type Recording } from "./recording.ts";
-import { newestStoredReplay, noStoredReplays, recordingError, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
+import { newestStoredReplay, noStoredReplays, recordingError, replayDate, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
 import { loadRecording, streamPath, type LinkState } from "./stream.ts";
 import { randomMatch, watchMatchStatus, type MatchStatus } from "./match-status.ts";
 import { openInviteStream } from "./invite-stream.ts";
@@ -157,12 +157,32 @@ function lobbyFinished(lobbyId: string, invite: string | null, signal: AbortSign
   });
 }
 
-/** What a lobby link shows while its lobby has no live match: the Leaderboard page, loaded only when needed. */
-export interface LobbyScreens { leaderboard(doc: Document): void }
+/** The stored replay of a lobby whose match has finished playing, or null: none recorded, not finished, or no answer. */
+export async function finishedLobbyReplay(lobbyId: string, signal: AbortSignal, request: typeof fetch = fetch): Promise<string | null> {
+  try {
+    const response = await request(`/watch/recording/${encodeURIComponent(lobbyId)}`, {
+      credentials: "same-origin", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+    });
+    if (!response.ok) return null;
+    const value: unknown = await response.json();
+    if (signal.aborted || typeof value !== "object" || value === null || !("replayId" in value)) return null;
+    const id = value.replayId;
+    return typeof id === "string" && replayDate(id) !== null ? id : null;
+  } catch { return null; }
+}
+
+/** What a lobby link shows while its lobby has no live match: its finished match's replay, else the Leaderboard page, loaded only when needed. */
+export interface LobbyScreens { leaderboard(doc: Document): void; replay(doc: Document, replayId: string): void }
 const LOBBY_SCREENS: LobbyScreens = {
   leaderboard(doc) {
     const view = doc.defaultView;
     if (view) void import("./leaderboard-page/page.ts").then(({ mountLeaderboardPage }) => mountLeaderboardPage(doc, view), error => console.error(error));
+  },
+  replay(doc, replayId) {
+    const view = doc.defaultView;
+    const url = view && watchUrl(view.location.origin, { private: false, replayId, lobbyId: null });
+    if (url) view.location.replace(url);
   },
 };
 
@@ -353,10 +373,14 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
           }
         }
         // No match to wait for (ended, unknown, or no status), or a finished one: a just-ended lobby's retained stream
-        // sends its final snapshot at once. The Leaderboard; the live subscription stays open, so a running snapshot
-        // (a match that starts here) takes over (reload).
+        // sends its final snapshot at once. A public lobby whose match finished playing opens that match's replay.
+        // Otherwise the Leaderboard; the live subscription stays open, so a running snapshot (a match that starts
+        // here) takes over (reload). A private lobby's replay needs its invite, so it keeps the Leaderboard.
         if (opening === null || (opening.full?.result != null && !rendererHandover)) {
           if (abort.signal.aborted) return null;
+          const replayId = invite ? null : await finishedLobbyReplay(params.get("lobby")!, abort.signal);
+          if (abort.signal.aborted) return null;
+          if (replayId !== null) { close(); screens.replay(doc, replayId); return null; }
           lobbyIdle = true;
           void firstRunning!.then(() => reload(true));
           screens.leaderboard(doc);
