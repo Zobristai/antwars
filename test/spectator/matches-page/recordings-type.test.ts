@@ -20,7 +20,7 @@ describe("Recordings rows show each recording's match type", () => {
     const card = recordingsCard(doc, view, { search: "" }) as unknown as ElementPort;
     const [list] = card.byClass("d1p-rec-rows");
     expect(list!.children).toHaveLength(3);
-    expect(list!.byClass("d1p-rec-type").map(node => node.textContent)).toEqual(["Index · 1v1", "Unranked · 2v2", ""]);
+    expect(list!.byClass("d1p-rec-type").map(node => node.textContent)).toEqual(["Index 1v1", "Unranked 2v2", ""]);
     expect(list!.byClass("d1p-rec-when").flatMap(cell => cell.byClass("d1p-rec-type"))).toEqual([]);
     expect(card.byClass("d1p-rec-head")).toHaveLength(1);
     expect(card.byClass("d1p-rec-colony").map(node => node.textContent)).toEqual(["Very Large", "Lake Hodges", "Sweetwater", "Lake Skinner"]);

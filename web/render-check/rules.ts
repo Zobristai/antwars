@@ -19,6 +19,11 @@
  * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text
  * - part-uneven: a tile part shown on some tiles of the grid but not others
  * - page-empty: an empty horizontal band on the page taller than RULE_LIMITS.pageBandPx
+ * - column-start: in a table whose head and row cells carry their column's key (data-col, inside [data-col-table]), a
+ *   row cell whose first text starts more than RULE_LIMITS.columnSlackPx from its column head's text. With the head
+ *   hidden (a phone's stacked rows), a key's cells must start at one x, except a cell that continues a line another keyed
+ *   cell of its row starts. Such a table's rows are table rows, not tiles: they may differ in height and in which parts
+ *   they show, so the tile rules do not judge them; every other rule does
  * Lists, without failing:
  * - tight: a one-line item with under RULE_LIMITS.tightSpare of its width to spare
  *
@@ -28,7 +33,7 @@
  */
 
 export const RULE_IDS = ["wrap", "clipped", "cut", "offscreen", "sideways", "page-wider", "row-uneven", "grid-uneven",
-  "tile-empty", "part-uneven", "page-empty", "tight"] as const;
+  "tile-empty", "part-uneven", "page-empty", "column-start", "tight"] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 export const RULE_LIMITS = {
@@ -40,6 +45,8 @@ export const RULE_LIMITS = {
   heightSlackPx: 1,
   /** A one-line item with less than this share of its width spare is listed as a tight fit. */
   tightSpare: 0.08,
+  /** A column's cells may start this many px from its head's text (subpixel layout). */
+  columnSlackPx: 0.5,
 } as const;
 
 export interface Box { x: number; y: number; w: number; h: number }
@@ -322,6 +329,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   for (const el of all) {
     const cs = style(el);
     if (!(cs.display.includes("grid") || (cs.display.includes("flex") && cs.flexWrap === "wrap"))) continue;
+    // A column-keyed table's rows are judged by column-start below, not as tiles.
+    if (el.closest("[data-col-table]")) continue;
     const kids = [...el.children].filter(shown);
     if (kids.length < 2 || new Set(kids.map(kind)).size !== 1) continue;
     const cards = kids.map(tileOf);
@@ -379,6 +388,52 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const on = each.filter(s => s.has(part)).length;
       if (on < cards.length) {
         fail({ rule: "part-uneven", element: `${where} > ${part}`, text: "", measure: `shown on ${on} of ${cards.length} tiles`, extent: cards.length - on, box: box(el.getBoundingClientRect()) }, el);
+      }
+    }
+  }
+
+  // Column start: every keyed row cell's first text on its column head's x (or, with the head hidden, on its key's x).
+  for (const table of document.body.querySelectorAll("[data-col-table]")) {
+    if (skipped(table) || !shown(table)) continue;
+    const head = table.querySelector("[data-col-head]");
+    const headShown = head !== null && shown(head);
+    const first = (el: Element) => textRects(el)[0]?.r ?? null;
+    const heads = new Map<string, DOMRect>();
+    if (head && headShown) for (const c of head.querySelectorAll("[data-col]")) {
+      const r = first(c);
+      if (r) heads.set((c as HTMLElement).dataset.col!, r);
+    }
+    const byKey = new Map<string, { cell: Element; r: DOMRect }[]>();
+    for (const cell of table.querySelectorAll("[data-col]")) {
+      // A cell drawn as display: contents (a phone's start line) has no box of its own: its shown text is what is judged.
+      if (head?.contains(cell) || (style(cell).display !== "contents" && !shown(cell))) continue;
+      const r = first(cell);
+      if (!r) continue;
+      const key = (cell as HTMLElement).dataset.col!;
+      byKey.set(key, [...(byKey.get(key) ?? []), { cell, r }]);
+    }
+    /** A cell continuing a line that an earlier keyed cell of its row starts (a phone's start line: date, then type). */
+    const continues = (cell: Element, r: DOMRect) => {
+      const row = cell.parentElement?.closest("li, tr, [role=row]");
+      if (!row) return false;
+      const mid = (r.top + r.bottom) / 2;
+      for (const other of row.querySelectorAll("[data-col]")) {
+        if (other === cell || !(other.compareDocumentPosition(cell) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+        if (textRects(other).some(t => t.r.right <= r.left + 0.5 && mid > t.r.top && mid < t.r.bottom)) return true;
+      }
+      return false;
+    };
+    for (const [key, cells] of byKey) {
+      const headAt = heads.get(key);
+      const judged = headShown ? cells : cells.filter(c => !continues(c.cell, c.r));
+      if (headShown && !headAt) continue;
+      const x = headAt ? headAt.left : judged[0]?.r.left;
+      if (x === undefined) continue;
+      for (const { cell, r } of judged) {
+        const off = Math.round(Math.abs(r.left - x) * 10) / 10;
+        if (off <= limits.columnSlackPx) continue;
+        fail({ rule: "column-start", element: name(cell), text: text(cell),
+          measure: `starts ${off} px from ${headAt ? "its column head" : "the other cells of its column"} (column ${key})`, extent: off, box: box(r) }, cell);
       }
     }
   }
