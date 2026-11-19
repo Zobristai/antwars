@@ -550,8 +550,9 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-extra { grid-column: 3 / 7; min-width: 0; }
 .d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .d1p-rec-extra .d1p-rec-colony { overflow: hidden; text-overflow: ellipsis; color: var(--aw-ink-3); }
-/* A player, one line: the name, then the badges with the rating at the slot's end. */
-.d1p-rec-player { display: flex; align-items: baseline; column-gap: var(--d1p-cell-gap); min-width: 0; white-space: nowrap; }
+/* A player, one line: the name, then the badges with the rating at the slot's end. A slot too narrow for both keeps the
+   name whole and drops the badge group, whole, onto a line below it; a badge never breaks inside itself. */
+.d1p-rec-player { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--d1p-cell-gap); min-width: 0; white-space: nowrap; }
 .d1p-rec-player + .d1p-rec-player { margin-top: 2px; }
 /* The name (username, then model) is the one part that gives way: past what any real name needs it ends in an ellipsis,
    its whole text its title and read in full. */

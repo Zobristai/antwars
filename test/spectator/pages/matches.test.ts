@@ -690,6 +690,14 @@ describe("a model label with nothing after its provider prefix", () => {
     }
   });
 
+  it("drops a Recordings player's badge group whole below the name when the slot is too narrow for both", () => {
+    const sheet = css();
+    expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; flex-wrap: wrap;[^}]*white-space: nowrap; \}/);
+    expect(sheet).toMatch(/\.d1p-rec-badges \{ display: flex; flex: 1 0 auto;[^}]*\}/);
+    expect(sheet).not.toMatch(/\.d1p-rec-badges \{[^}]*flex-wrap/);
+    expect(sheet).toMatch(/\.d1p-tag \{[^}]*white-space: nowrap;/);
+  });
+
   it("retains the entire long builder/model name in text and hover title", () => {
     const handle = "long-builder-" + "x".repeat(64), model = "synthetic/" + "long-model-".repeat(12);
     const rec: Recording = { ...recording, seats: [{ ...recording.seats[0]!, handle, modelLabel: model }, recording.seats[1]!] };
