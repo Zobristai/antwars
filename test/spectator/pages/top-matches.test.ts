@@ -129,7 +129,7 @@ describe("a top-match tile", () => {
     expect(players.map(text)).toEqual(["cat", "ann", "bob", "dan"]);
     expect(players.map(p => p.classes().includes("is-winner"))).toEqual([true, false, false, false]);
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all"]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann and bob and dan, Free-for-all,/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann, bob and dan, Free-for-all,/);
   });
 });
 

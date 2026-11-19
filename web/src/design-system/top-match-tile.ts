@@ -107,6 +107,11 @@ function sideWords(side: TileSide | null): string {
   return side.groups.map(group => playerWords(group.parts) + (group.seats > 1 ? `, ${group.seats} seats` : "")).join(" and ");
 }
 
+/** Words in a list: "a", "a and b", "a, b and c". */
+function listWords(words: readonly string[]): string {
+  return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
 /** One grid cell: the tile linking to the match's replay. */
 export function topMatchTile(doc: Document, r: Recording, search: string): HTMLLIElement {
   const listed = recordingRow(r, search);
@@ -145,7 +150,7 @@ export function topMatchTile(doc: Document, r: Recording, search: string): HTMLL
 
   const typeWords = type === null ? null : type.size === null ? type.kind : `${type.kind} · ${type.size}`;
   const sidesWords = winner === null ? order.map(colony => sideWords(sides[colony] ?? null)).join(" v ")
-    : `${sideWords(sides[winner] ?? null)} beat ${order.slice(1).map(colony => sideWords(sides[colony] ?? null)).join(" and ")}`;
+    : `${sideWords(sides[winner] ?? null)} beat ${listWords(order.slice(1).map(colony => sideWords(sides[colony] ?? null)))}`;
   const label = [sidesWords, typeWords, ended, length === null ? null : length.replace(" min", " minutes"), date].filter(word => word !== null && word !== "").join(", ");
   link.setAttribute("aria-label", label);
   link.title = label;
