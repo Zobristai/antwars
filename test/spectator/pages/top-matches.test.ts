@@ -3,7 +3,7 @@
 // ended, date with length); no rating is drawn; a builder is shown by its name as stored; a side fielding two seats says so;
 // and the page says why no live match shows. Test DOM only: never visual evidence.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { topMatchTile } from "../../../web/src/design-system/top-match-tile.ts";
+import { tileEnding, topMatchTile } from "../../../web/src/design-system/top-match-tile.ts";
 import type { Recording } from "../../../web/src/matches-page/data.ts";
 import { ALL_RECORDINGS_HREF, TOP_RETRY_MS, TOP_STATE, TOP_WORDS, mountTopMatchesPage } from "../../../web/src/pages/top-matches.ts";
 import { dom, type ElementPort } from "./dom.ts";
@@ -129,7 +129,15 @@ describe("a top-match tile", () => {
     expect(players.map(text)).toEqual(["cat", "ann", "bob", "dan"]);
     expect(players.map(p => p.classes().includes("is-winner"))).toEqual([true, false, false, false]);
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all"]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann, bob and dan, Free-for-all,/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann, bob and dan, Free-for-all, Last colony standing · queens killed,/);
+    expect(tile.byClass("aw-how").map(text)).toEqual(["Queens killed"]);
+  });
+
+  it("words a free-for-all's ending without its leading last colony standing, keeping the rest of the site's words", () => {
+    expect(tileEnding("Last colony standing · queens killed", 4)).toBe("Queens killed");
+    expect(tileEnding("Last colony standing · seats inactive", 4)).toBe("Seats inactive");
+    expect(tileEnding("Time-up · decided on kills", 4)).toBe("Time-up · decided on kills");
+    expect(tileEnding("Queens killed", 2)).toBe("Queens killed");
   });
 });
 

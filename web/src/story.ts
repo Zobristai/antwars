@@ -159,13 +159,16 @@ export function significant(story: readonly StoryEntry[], now: number, tps = 10)
  * colony falling. `colonies` is the match's colony count (setup.queens.length): with more than two, an end where the
  * last colonies left the match is told without naming two sides or one opponent (src/sim/elimination.ts).
  */
+/** The first part of a four-colony end where one colony was left standing (or every colony left on one tick). */
+export const LAST_COLONY_STANDING = "Last colony standing";
+
 export function resultHow(r: { reason: StreamResult["reason"] | string; decidedBy: StreamResult["decidedBy"] | string }, multipleQueens: boolean, colonies = 2): string {
   const reason: string = r.reason;
   const on = r.decidedBy.replace(/_/g, " ");
   if (colonies > 2) {
     // One colony left standing, or every colony still in the match left on the same tick and they were ranked.
-    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? "Last colony standing · queens killed" : `Queens killed · decided on ${on}`;
-    if (reason === "idle") return r.decidedBy === "idle" ? "Last colony standing · seats inactive" : `Seats inactive · decided on ${on}`;
+    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? `${LAST_COLONY_STANDING} · queens killed` : `Queens killed · decided on ${on}`;
+    if (reason === "idle") return r.decidedBy === "idle" ? `${LAST_COLONY_STANDING} · seats inactive` : `Seats inactive · decided on ${on}`;
   }
   switch (reason) {
     case "queens_killed":

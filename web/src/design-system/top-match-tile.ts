@@ -13,6 +13,7 @@ import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
 import { badgeWords, hasBadges, type BadgeKinds } from "../leaderboard-page/view.ts";
 import type { Recording } from "../matches-page/data.ts";
 import { colonySeats, seatGroups, whenParts, type PlayerParts, type SeatGroup } from "../pages/model.ts";
+import { LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 
@@ -112,6 +113,15 @@ function listWords(words: readonly string[]): string {
   return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }
 
+/** How it ended, as row 4 shows it: the site's own words, but on a free-for-all without the leading "Last colony standing"
+ * (the winner's line already says who was left), so the row keeps one line; the accessible name keeps the full words. */
+export function tileEnding(ended: string, colonies: number): string {
+  const lead = `${LAST_COLONY_STANDING} · `;
+  if (colonies <= 2 || !ended.startsWith(lead)) return ended;
+  const rest = ended.slice(lead.length);
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
 /** One grid cell: the tile linking to the match's replay. */
 export function topMatchTile(doc: Document, r: Recording, search: string): HTMLLIElement {
   const listed = recordingRow(r, search);
@@ -143,7 +153,7 @@ export function topMatchTile(doc: Document, r: Recording, search: string): HTMLL
   // The winner first, then each other side in colony order: two sides on most tiles, every side of a free-for-all.
   link.append(...order.map((colony, i) => playerLine(doc, sides[colony] ?? null, i === 0 && winner !== null)));
   const howRow = h(doc, "span", "aw-row aw-how");
-  howRow.append(h(doc, "span", "aw-name", ended));
+  howRow.append(h(doc, "span", "aw-name", tileEnding(ended, colonies)));
   const dateRow = h(doc, "span", "aw-row aw-date");
   dateRow.append(h(doc, "span", "aw-name", date), h(doc, "span", "aw-len", length ?? ""));
   link.append(howRow, dateRow);
