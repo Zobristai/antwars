@@ -138,6 +138,17 @@
   .d1p-states > .d1p-state + .d1p-state { padding-left: 0; gap: 0; }
   .d1p-states > .d1p-state + .d1p-state::before { content: " · "; white-space: pre; }
 }
+/* The items keep their width: where they do not fit beside the title they take the next line, never squeezed narrower. */
+.d1p-card-head > .d1p-states { flex-shrink: 0; max-width: 100%; }
+/* The Waiting card's state is in the body type (tokens.css: 13/20 at default text), so it grows with the browser's text
+   size. Its glyph stays an 8 px mark (7 px for the error), centred on the first line at any size. The head aligns to the
+   top and the title's line box takes the state's line height, so the title, the glyph and the state's first line share
+   one centre; the title's type is unchanged. */
+.d1p-waiting .d1p-state { font-size: var(--aw-text-body); line-height: var(--aw-lh-body); }
+.d1p-waiting .d1p-glyph { margin-top: calc((var(--aw-lh-body) - 8px) / 2); }
+.d1p-waiting .d1p-glyph[data-glyph="error"] { margin-top: calc((var(--aw-lh-body) - 7px) / 2); }
+.d1p-waiting .d1p-card-head { align-items: flex-start; }
+.d1p-waiting .d1p-card-title { line-height: var(--aw-lh-body); }
 .d1p-notice .d1p-card-head { padding-top: 14px; padding-bottom: 14px; }
 .d1p-notice .d1p-state { font-size: 14px; color: var(--aw-ink-bright); }
 .d1p-card-foot { padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); display: flex; flex-wrap: wrap; gap: 8px; }
@@ -380,7 +391,7 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rows-head { display: flex; align-items: center; min-height: 36px; padding: 0 var(--d1p-inset); border-top: 1px solid var(--aw-line); }
 .d1p-line { grid-column: 1; font-size: 13px; line-height: 19px; color: var(--aw-ink-2); }
 /* A stacked start's date and its time each stay whole (matches.ts startLine): a row too narrow for both breaks only
-   between them, never inside "04:19 UTC". */
+   between them, never inside "04:19 UTC". A state item's hyphenated word ("Free-for-all", chrome.ts stateList) too. */
 .d1p-keep { white-space: nowrap; }
 .d1p-line.is-lead { font-size: 14px; font-weight: 600; color: var(--aw-ink-bright); }
 .d1p-line.is-meta { font-size: 12px; color: var(--aw-ink-3); }
