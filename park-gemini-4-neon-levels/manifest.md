@@ -139,6 +139,29 @@ The 16 sets in each row are the same in each typeface: two recordings (MEDIUM v 
 - **Screenshots kept:** every Neon line crop captured again is byte-identical to the crop already on this branch, in both typefaces, at every shot. So each font report applies to the crops already here. 50 of the 72 full-page screenshots captured again are also byte-identical. The other 22 are HUD shots taken mid-playback: in each, the bytes differ while the Neon crops are identical. These 22 were replaced with the new captures, so each full-page file on the branch is the one its font report was taken from.
 - **New shots:** ended shots (result dialog closed) for the 2D board on both recordings and for the 3D board on MEDIUM v HIGH. The earlier gap in the MEDIUM v HIGH 2D 1280 record is closed: `replay-fonts.json` holds its full per-line record.
 
+## After merging main again: the Score Band HUD (new head 91e0e76)
+
+The pull request branch took main by a second plain merge: **91e0e76d959d11c7a1f315a5c9cec43a70021742** (`91e0e76`) = 2e92b3e + main 8252f859b822457f34648283a60f9a0b0ee377c2 (`8252f85`, main #187). Main #187 replaces the replay HUD with one Score Band on both boards (`web/src/overlays.ts`: the 2D board now mounts the same deck HUD as the 3D board), and rewrites the deck agent rows. The 2D Agents list in the replay sections above is therefore no longer what merges, and neither are the 3D deck rows. This section compares **base 8252f85 (main) with head 91e0e76** on both boards. The replay HUD, result and ended states sections above stay as the record for b0616ba.
+
+- **Captures:** both recordings (MEDIUM v HIGH, LOW v XHIGH), 2D and 3D board, HUD (about 20 s in), result dialog, and ended (dialog closed), at 1280 px and 390 px. Typefaces: Liberation Sans, and Roboto with Arial also mapped to Roboto (see Drawn fonts). Same browser, API snapshot and page clock as the replay sections; no request fell outside the snapshot. Captured 2026-11-19T17:40:22Z to 2026-11-19T18:40:00Z.
+- **Files:** `<typeface>/score-band/replay-<match>-<board>/replay-<match>-<board>-<state>-<build>-<width>.png`, with a crop of every Neon line beside it. `<typeface>/score-band/score-band-fonts.json` has one entry per capture set (recording, board, build and commit, width, typeface and font setup). Each shot in it carries its file and SHA-256, every Neon line's fit, the drawn-font check, and every text part with its computed `font-family` and drawn fonts.
+- **Drawn fonts:** all 16 capture sets in each typeface (2 recordings x 2 boards x 2 builds x 2 widths), at every shot, drew only the intended family: Liberation Sans, or Roboto. That covers the Score Band agent rows (name, level and RETIRED badges, rating, WINNER) and the result dialog's names and badges. Each part drew one family and no fallback.
+- **Every state, width, typeface and board, base and head:** every Neon line is on one line and nothing is cut, there are no page errors, the result dialog opened and the ended shots closed it. At head the Score Band rows of LOW, MEDIUM and XHIGH carry RETIRED after the level; HIGH and every rating are unchanged.
+
+Tightest fits at head (spare = (available − needed) / available; the 2D and 3D boards measure the same):
+
+| Screen | Line | Typeface | Width | Needs / has px | Spare | Base, same line |
+|---|---|---|---|---|---|---|
+| Score Band row, result and ended | Gemini 4 Neon XHIGH RETIRED 1567 WINNER | Liberation Sans | 1280 | 298 / 313.9 | **5.1%** | 25.0% |
+| same | same | Roboto | 1280 | 285.8 / 313.9 | 8.9% | 27.5% |
+| same | same | Liberation Sans | 390 | 305 / 374 | 18.4% | 35.2% |
+| Score Band row, during play | Gemini 4 Neon MEDIUM RETIRED 1433 | Liberation Sans | 1280 | 247.3 / 313.9 | 21.2% | 41.1% |
+| same | same | Roboto | 1280 | 237.9 / 313.9 | 24.2% | 42.8% |
+| Result dialog, Players | Gemini 4 Neon MEDIUM RETIRED | Liberation Sans | 390 | 253.3 / 326 | 22.3% | 46.9% |
+| same | same | Roboto | 390 | 240.8 / 326 | 26.1% | 49.1% |
+
+The WINNER row at 1280 px is now the tightest line in this evidence and the only one under 8%. It still fits on one line, uncut, in both typefaces. At 1280 px the Score Band's colony column is 313.9 px wide in every row, so this line has that width at every desktop width this capture used. Crop: `liberation-sans/score-band/replay-low-v-xhigh-3d/replay-low-v-xhigh-3d-ended-91e0e76-1280-neon-2.png`.
+
 ## Data and method
 
 - **Builds:** `git archive` of each commit, built with `vite build --config web/vite.config.ts`.
