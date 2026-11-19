@@ -22,7 +22,8 @@
  * - column-start: in a table whose head and row cells carry their column's key (data-col, inside [data-col-table]), a
  *   row cell whose first text starts more than RULE_LIMITS.columnSlackPx from its column head's text. With the head
  *   hidden (a phone's stacked rows), a key's cells must start at one x, except a cell that continues a line another keyed
- *   cell of its row starts. Such a table's rows are rows, not tiles: the tile rules do not judge them
+ *   cell of its row starts. Such a table's rows are table rows, not tiles: they may differ in height and in which parts
+ *   they show, so the tile rules do not judge them; every other rule does
  * Lists, without failing:
  * - tight: a one-line item with under RULE_LIMITS.tightSpare of its width to spare
  *

@@ -538,9 +538,13 @@ td.c-model > .d1p-colony { display: block; }
   font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink-3); font-variant-numeric: tabular-nums;
 }
 .d1p-rec-table .d1p-count { flex: none; margin: 0; }
-/* A colony cell: its lines in one 28 px band, its text 8 px inside. Every cell has the band's box; only the winner's is
-   drawn. */
-.d1p-rec-slot { display: flex; flex-direction: column; justify-content: center; min-width: 0; min-height: 1.75rem; padding: 0 var(--rec-pad); border-radius: var(--aw-radius-badge); }
+/* A colony cell: its lines in one band, its text 8 px inside. Every cell has the band's box; only the winner's is drawn.
+   A colony whose seats are not all alike lists one complete player line per seat group (model.ts seatGroups), in
+   first-seat order: each line starts 4 px below the one before, a 20 px pitch, and the band keeps 6 px above the first
+   line and below the last. A one-line band is 28 px; each further line adds 20 px, and only that row grows. A one-line
+   cell beside it keeps its own band, centred on the row. */
+.d1p-rec-slot { display: flex; flex-direction: column; justify-content: center; min-width: 0; min-height: 1.75rem; padding: 0.375rem var(--rec-pad); border-radius: var(--aw-radius-badge); }
+.d1p-rec-player + .d1p-rec-player { margin-top: 0.25rem; }
 /* WINNER: the band's fill (its colony colour over the surface) and 2 px rule, and the seat name in the colony colour.
    Nothing else on the line changes. */
 .d1p-rec-slot.is-won { background: color-mix(in srgb, var(--rec-win) var(--aw-winner-fill), var(--aw-surface)); box-shadow: inset 2px 0 0 var(--rec-win); }
@@ -587,6 +591,7 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-head { display: none; }
   .d1p-rec-rows > li { row-gap: 2px; padding-block: var(--aw-space-2) 10px; }
   .d1p-rec-slot { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 0; padding-block: 4px; }
+  /* A team's band spans all its lines: the colony label beside the first only, later lines at the name x. */
   /* Only the colonies that played: the wide form's dash for a colony the match did not have, and its "did not join" for
      a colony nobody joined, get no line here. */
   .d1p-rec-slot:is(.is-none, .is-absent) { display: none; }
@@ -612,6 +617,7 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-table { grid-template-columns: minmax(0, 1fr) max-content; }
   .d1p-rec-slot { grid-template-columns: minmax(0, 1fr); }
   .d1p-rec-slot[data-colony]::before, .d1p-rec-slot > * { grid-column: 1 / -1; }
+  .d1p-rec-slot[data-colony]::before { grid-row: auto; }
   .d1p-rec-meta { grid-column: 1; }
   .d1p-rec4 .d1p-rec-replay { grid-column: 2; }
 }

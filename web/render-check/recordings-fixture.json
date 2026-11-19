@@ -1,8 +1,8 @@
 {
- "note": "The recordings surface: the Matches page with a Recordings list of the cases the public data lacks or the snapshot does not show together. Row 1 is sample data, not a recorded match: a Scripted bot winning in the Lake Skinner column, the column next to Replay, against a house model (its name, level and rating as the snapshot has them). Rows 2 to 4 are public recordings copied from the snapshot: a parked GPT-6.2 Astra line, a builder before its model, and a 2v2 with two alike seats in each colony. The check focuses the first row's Replay link before judging (Surface.focus), so its focus ring is judged and rendered. The page's clock is fixed at the snapshot's time.",
+ "note": "The recordings surface: the Matches page with a Recordings list of the cases the public data lacks or the snapshot does not show together. Row 1 is sample data, not a recorded match: a Scripted bot winning in the Lake Skinner column, the column next to Replay, against a house model (its name, level and rating as the snapshot has them). Rows 2 to 4 are public recordings copied from the snapshot: a parked GPT-6.2 Astra line, a builder before its model, and a 2v2 with two alike seats in each colony. Rows 5 to 7 are sample teams with unlike seats, not recorded matches, built from the seats the Matches tests use: a builder's colony with one seat that recorded no model against a username alone; one builder's seats whose start ratings differ; and a colony with three scripted seats and a builder's seat against four seats of differing models and levels, winning in the Lake Skinner column. Each such colony lists one line per seat group. The check focuses the first row's Replay link before judging (Surface.focus), so its focus ring is judged and rendered. The page's clock is fixed at the snapshot's time.",
  "fixtures": {
   "/matches": {
-   "label": "recordings surface: Recordings with a sample Scripted bot win in Lake Skinner and three snapshot recordings",
+   "label": "recordings surface: Recordings with sample Scripted bot and unlike-seat rows and three snapshot recordings",
    "body": {
     "matches": [
      {
@@ -222,6 +222,259 @@
        "phase": "from round 31 onward",
        "possibleEffortMismatch": false
       }
+     },
+     {
+      "id": "2026-11-12T10-00-00-000Z-100000000000002",
+      "startedAt": "2026-11-12T10:00:00.000Z",
+      "endedAt": null,
+      "simulationEndedAt": null,
+      "winner": 0,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "openai/gpt-6.1-terra",
+        "thinkingLevel": "high",
+        "serviceTier": "fast",
+        "handle": "kain",
+        "startRating": null
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "coffee-ant/local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "coffee-ant",
+        "startRating": null
+       },
+       {
+        "seat": 2,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kain",
+        "startRating": null
+       },
+       {
+        "seat": 3,
+        "colony": 1,
+        "modelLabel": "coffee-ant/local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "coffee-ant",
+        "startRating": null
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": false,
+      "matchType": {
+       "kind": "ranked",
+       "size": 2
+      }
+     },
+     {
+      "id": "2026-11-12T09-00-00-000Z-100000000000003",
+      "startedAt": "2026-11-12T09:00:00.000Z",
+      "endedAt": null,
+      "simulationEndedAt": null,
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": {
+         "rating": 1540,
+         "rd": 80,
+         "ratedMatches": 12
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 2,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": {
+         "rating": 1540,
+         "rd": 80,
+         "ratedMatches": 12
+        }
+       },
+       {
+        "seat": 3,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 4,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": {
+         "rating": 1541,
+         "rd": 80,
+         "ratedMatches": 12
+        }
+       },
+       {
+        "seat": 5,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 6,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": null
+       },
+       {
+        "seat": 7,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": false,
+      "matchType": {
+       "kind": "ranked",
+       "size": 4
+      }
+     },
+     {
+      "id": "2026-11-12T08-00-00-000Z-100000000000004",
+      "startedAt": "2026-11-12T08:00:00.000Z",
+      "endedAt": null,
+      "simulationEndedAt": null,
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-sol",
+        "thinkingLevel": "max",
+        "serviceTier": "fast",
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 2,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 3,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-sol",
+        "thinkingLevel": "high",
+        "serviceTier": "fast",
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 4,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 5,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-sol",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 6,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": null
+       },
+       {
+        "seat": 7,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": false,
+      "matchType": {
+       "kind": "ranked",
+       "size": 4
+      },
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Lake Skinner Colony"
+      ]
      }
     ],
     "nextPageToken": null

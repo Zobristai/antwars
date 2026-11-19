@@ -713,6 +713,23 @@ describe("a model label with nothing after its provider prefix", () => {
     p.mounted.destroy();
   });
 
+  it("lists a team with unlike seats one complete line per seat group, in first-seat order, inside the colony's one band", () => {
+    const team: Recording = { ...recording, matchType: { kind: "ranked", size: 2 }, seats: [
+      seat(0, 0, "openai/gpt-6.1-terra", "kain", { thinkingLevel: "high", serviceTier: "fast" }), seat(1, 1, "coffee-ant/local", "coffee-ant"),
+      seat(2, 0, null, "kain"), seat(3, 1, "coffee-ant/local", "coffee-ant")] };
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [team] } });
+    const [winner, other] = recordings.list.children[0]!.byClass("d1p-rec-slot");
+    expect(winner!.classes()).toContain("is-won");
+    expect(winner!.children.filter(node => node.classes().includes("d1p-rec-player")).map(line => line.textContent))
+      .toEqual(["kain GPT-6.1 Terrahigh Fast", "Scripted bot"]);
+    // Alike seats stay one line with their count; the username is drawn as every username is.
+    const [alike] = other!.byClass("d1p-rec-player");
+    expect(alike!.byClass("d1p-user").map(node => node.textContent)).toEqual(["coffee-ant"]);
+    expect(alike!.byClass("d1p-count")[0]!.textContent).toBe("×2, 2 seats");
+    expect(css()).toContain(".d1p-rec-player + .d1p-rec-player { margin-top: 0.25rem; }");
+    p.mounted.destroy();
+  });
+
   it("keys every Recordings column's head and cells alike, so the render check can hold each cell to its head's x", () => {
     const { p, recordings } = show({ recordings: { status: "ready", rows: [recording] } });
     const table = recordings.card.byClass("d1p-rec-table")[0]!;
