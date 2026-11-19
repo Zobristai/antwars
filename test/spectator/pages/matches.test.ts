@@ -693,10 +693,11 @@ describe("a model label with nothing after its provider prefix", () => {
     }
   });
 
-  it("sets a Recordings player's parts one inline gap apart, a part moving whole to the next line rather than being cut", () => {
+  it("sets a Recordings player's parts one inline gap apart on one line, a too-wide name ending in an ellipsis", () => {
     const sheet = css();
-    expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; flex-wrap: wrap; align-items: center; gap: 0 var\(--aw-gap-inline\);/);
-    expect(sheet).not.toMatch(/\.d1p-rec-[a-z]+ \{[^}]*text-overflow: ellipsis/);
+    expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: center; gap: 0 var\(--aw-gap-inline\);[^}]*white-space: nowrap; \}/);
+    expect(sheet).not.toMatch(/\.d1p-rec-player \{[^}]*flex-wrap/);
+    expect(sheet).toMatch(/\.d1p-rec-name \{[^}]*min-width: 0; overflow: hidden; text-overflow: ellipsis;/);
     // Live now and Waiting keep their own badges.
     expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
   });
