@@ -24,9 +24,7 @@ show, the page says "No top matches yet." and links to all recordings.
 Edit `src/replays/top-matches.json` and open a pull request. The tests check that the shipped file is a valid list. The new
 list shows on Watch after the next deploy.
 
-Pick no match whose tile would need two or more extra lines. A tile has one line per side. A side whose seats differ
-(different builders on one team, or one builder on different models or levels) shows one line per seat group, and a
-free-for-all shows every colony's side, so a four-colony free-for-all needs two extra lines. Every tile in the grid grows to
-the tallest tile's height, so a tile with several extra lines leaves empty space in all the others. One extra line is the
-most a pick may add: for example a 2v2 in which one side has two different builders. Nothing checks this; it is up to
-whoever edits the list.
+A pick may be any game type. A tile has one line per side. A side whose seats differ (different builders on one team, or
+one builder on different models or levels) shows one line per seat group, and a free-for-all shows every colony's side, so
+some tiles need extra lines. Every tile in the grid grows to the tallest tile's height, so for now a tile with extra lines
+leaves space in the others. Matches that need extra lines will get their own container in the grid.

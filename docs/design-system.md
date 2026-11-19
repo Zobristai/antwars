@@ -41,8 +41,7 @@ the tile's accessible name and tooltip, not on the tile.
 
 Every tile in a grid is as tall as the tallest. A tile taller than its own lines keeps its last two rows at its foot, so how
 the match ended and the date line up across a row of tiles, and the space falls above them. Each extra line (a seat group,
-or a free-for-all's third or fourth side) adds 20 px to every tile, so no pick adds more than one extra line
-([top-matches.md](top-matches.md)).
+or a free-for-all's third or fourth side) adds 20 px to every tile in the grid ([top-matches.md](top-matches.md)).
 
 ## Layout rules
 
