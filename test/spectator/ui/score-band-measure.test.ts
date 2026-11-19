@@ -6,6 +6,43 @@ import { roster } from "../../../web/src/ui/deck/model.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("keeps metric cells inside the deck across the narrow-to-desktop boundary", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      for (const flyers of [false, true]) for (const font of ["Roboto", "Liberation Sans"]) {
+        const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+        const metrics = [["workers", "Workers"], ["soldiers", "Soldiers"], ...(flyers ? [["flyers", "Flyers"]] : []), ["food", "Food"], ["next", "Next spawn"], ["ants", "Ants"], ["queens", "Queens"], ["queen-kills", "Queen kills"]];
+        const team = `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">Very Large Colony</h2></header></div><div class="d1-econ${flyers ? " has-flyers" : ""}">${metrics.map(([key, label]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">123</span></div>`).join("")}</div><button class="sb-history">≡</button></section>`;
+        await page.setContent(`<style>body{margin:0}*{box-sizing:border-box}:root{--aw-sans:'${font}',sans-serif}${css}</style><main class="d1 d1-hud score-band"><div class="d1-below"><div class="d1-deck">${team}</div></div></main>`);
+        for (const width of [390, 1099, ...Array.from({ length: 181 }, (_, i) => 1100 + i)]) {
+          await page.setViewportSize({ width, height: 900 });
+          const result = await page.evaluate(() => {
+            const deck = document.querySelector(".d1-deck")!, b = deck.getBoundingClientRect();
+            const cells = [...document.querySelectorAll(".d1-name,.d1-cell,.sb-history")].map(e => e.getBoundingClientRect());
+            return { display: getComputedStyle(deck).display, outside: cells.some(r => r.left < b.left - 1 || r.right > b.right + 1 || r.right > innerWidth), overlap: cells.some((a, i) => cells.slice(i + 1).some(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1)) };
+          });
+          expect(result, `${width}px, ${font}, flyers=${flyers}`).toEqual({ display: width < 1200 ? "flex" : "grid", outside: false, overlap: false });
+        }
+        await page.close();
+      }
+    } finally { await browser.close(); }
+  }, 60_000);
+
+  it("aligns partial queen-health fill and dark text masks for all colonies", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage();
+      const lamps = [0, 1, 2, 3].map(c => `<span class="d1-lamps c${c}"><span class="d1-lamp" style="--d1-f:40%"><span class="d1-lamp-fill"></span><span class="d1-lamp-hp">40</span><span class="d1-lamp-hp is-on">40</span></span></span>`).join("");
+      await page.setContent(`<style>${css}</style><main class="d1 score-band">${lamps}</main>`);
+      for (const width of [390, 1100, 1199, 1200, 1280]) {
+        await page.setViewportSize({ width, height: 900 });
+        const masks = await page.locator(".d1-lamp").evaluateAll(nodes => nodes.map(e => ({ fill: getComputedStyle(e.querySelector(".d1-lamp-fill")!).clipPath, text: getComputedStyle(e.querySelector(".is-on")!).clipPath })));
+        expect(masks).toEqual(Array.from({ length: 4 }, () => ({ fill: "inset(0px 60% 0px 0px)", text: "inset(0px 60% 0px 0px)" })));
+      }
+    } finally { await browser.close(); }
+  });
   it("lays shuffled numbered seats left to right in both colonies at both widths and font stacks", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const frame = scoreFrame(2, 8), seats = [1, 1, 2, 4, 4, 3, 3, 2];

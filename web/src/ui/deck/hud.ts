@@ -30,7 +30,8 @@ import { caption, colonyCount, legend, type Caption, type Legend } from "./model
 /** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end. */
 const BUTTON_IN_BAR = "(min-width: 520px)";
 /** From this width aligned colony rows fit; narrower, the stacked deck follows the board. */
-const DECK_FIRST = "(min-width: 1100px)";
+// Keep in sync with deck.css: fit the Flyers grid before moving the deck above the board.
+const DECK_FIRST = "(min-width: 1200px)";
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
@@ -149,7 +150,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   placeButton();
   if (wide) listen(wide, "change", placeButton);
 
-  // From 1100 px wide the deck stands over the board and the footer closes the page; narrower, the board comes first and
+  // From 1200 px wide the deck stands over the board and the footer closes the page; narrower, the board comes first and
   // the deck, its end and the footer scroll beneath it. The nodes move, not only their boxes, so reading and focus order
   // follow what is seen.
   const deckFirst = typeof win.matchMedia === "function" ? win.matchMedia(DECK_FIRST) : null;

@@ -710,8 +710,9 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-queen-value { display: flex; gap: 8px; align-items: center; width: 100%; }
 .score-band .d1-lamps { flex: 1; flex-direction: row; gap: 3px; min-width: 0; }
 .score-band .d1-lamp { min-width: 22px; }
-.score-band .d1-lamp-fill { background: var(--sb-ink); clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
-.score-band .d1-lamps .d1-lamp-hp.is-on { clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
+.score-band .d1-lamp-fill { background: var(--sb-ink); }
+/* Match the legacy colony-specific specificity so both layers fill from the same edge. */
+.score-band .d1-lamps :is(.d1-lamp-fill, .d1-lamp-hp.is-on) { clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
 .sb-history { grid-row: 1; display: grid; place-items: center; justify-self: end; width: 44px; height: 44px; background: var(--aw-raise); color: var(--aw-ink); border: 0; border-radius: 50%; font-size: 20px !important; cursor: pointer; }
 .sb-history:hover { background: var(--aw-raise-hover); }
 .score-band .d1-timeline, .score-band .d1-selected { grid-column: 1 / -1; grid-row: 2; padding: 12px 0 0; max-height: none; overflow: visible; }
@@ -733,11 +734,12 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-key-toggle:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .sb-key { flex: 0 0 100%; min-width: 0; white-space: normal; line-height: 1.5; }
 .sb-key p { margin: 8px 0; }
-@media (max-width: 1099px) {
+@media (max-width: 1199px) {
   .sb-key-toggle { min-width: 44px; min-height: 44px; }
 }
 
-@media (max-width: 1099px) {
+/* Keep in sync with DECK_FIRST: the Flyers grid needs 1179 px including gutters. */
+@media (max-width: 1199px) {
   .score-band.d1-hud { grid-template-rows: 48px 8px auto 8px minmax(0, 1fr); overflow: hidden; }
   .score-band .d1-frame { grid-row: 3; grid-template-rows: auto var(--d1-window-h) var(--d1-lane); --d1-window-h: min(73vw, 42vh); }
   .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; background: var(--aw-surface); min-height: 0; pointer-events: auto; }

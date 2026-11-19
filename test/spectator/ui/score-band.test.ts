@@ -7,8 +7,12 @@ import { dom, type ElementPort } from "../pages/dom.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 const visible = (n: ElementPort): boolean => !n.hidden && (!n.parent || visible(n.parent));
-function mount(board: "2d" | "3d") {
+function mount(board: "2d" | "3d", width = 1280) {
   const port = dom({ wide: true });
+  port.win.matchMedia = (query = "") => ({
+    media: query, matches: width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? Infinity), onchange: null,
+    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent() { return true; },
+  });
   Object.assign(port.win.location, { href: `https://antwars.example/?board=${board}`, pathname: "/" });
   const host = port.doc.createElement("div") as unknown as ElementPort; port.body.append(host);
   let selectedAgent = -1;
@@ -19,6 +23,14 @@ function mount(board: "2d" | "3d") {
 }
 
 describe("one Score Band for every match", () => {
+  for (const width of [390, 1100, 1180, 1199, 1200, 1280]) {
+    it(`keeps reading order consistent with the ${width}px layout`, () => {
+      const { host, show } = mount("2d", width); show(scoreFrame(4));
+      const root = host.byClass("d1-hud")[0]!, frame = host.byClass("d1-frame")[0]!, below = host.byClass("d1-below")[0]!;
+      expect(root.children.indexOf(below) < root.children.indexOf(frame)).toBe(width >= 1200);
+      expect(host.byClass("d1-foot")[0]!.parent).toBe(width >= 1200 ? root : below);
+    });
+  }
   for (const board of ["2d", "3d"] as const) for (const grouped of [false, true]) {
     it(`keeps each ${grouped ? "grouped" : "individual"} seat's identity and idle state in ${board}`, () => {
       const { host, doc, show, chosen } = mount(board), frame = scoreFrame(2, 8);
