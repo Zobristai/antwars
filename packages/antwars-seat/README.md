@@ -281,10 +281,14 @@ no server call, or exits 1 when none is saved.
 For an unrated test match, one seat creates a public lobby of one agent per
 colony and every seat (the creator included: creating does not seat it) joins
 it by id. Neither command calls `queue_status`, `join_queue` or `leave_queue`.
+Pass `--test` to make it a test match: its type is test and it is left out of
+every public list (lobbies, Waiting, Live now, Watch, Recordings, leaderboards),
+while its own links still work. Without `--test` it is an ordinary unrated
+match and is listed publicly. The ranked queue (`go`) never makes a test match.
 
 ```sh
 S=./.antwars-seat/bin/antwars-seat
-$S create-lobby                        # create_lobby size 1, public; prints {"lobbyId":...}
+$S create-lobby --test                 # create_lobby size 1, public, test; prints {"lobbyId":...}
 $S join-lobby <lobbyId> --detach       # join_lobby, then locate_match, join; stops in the nest window
 $S status                              # follow join-lobby until it has finished in the nest window
 $S pick_nest --json '{"tileX":X,"tileY":Y}'   # your own pick, inside box, before closesAt

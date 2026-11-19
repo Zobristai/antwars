@@ -12,6 +12,7 @@ import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
+import type { TestRecordings } from "./test-recordings.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -32,6 +33,8 @@ export interface RecordingLobby {
   readonly outcome?: MatchOutcome | null;
   /** The lobby's rated flag; an ended match its rating step refused is left rated false (src/lobby/lobbies.ts endMatch). */
   readonly rated?: boolean | null;
+  /** Present, true, only on a test lobby (src/lobby/lobbies.ts Lobby.test): its recording is never listed. */
+  readonly test?: true;
 }
 /**
  * Replay id -> the lobby that recording came from; null when it has none (a scheduled match); "pending" when its lobby
@@ -213,6 +216,8 @@ export interface HistoryRouteOptions {
   readonly recordIdleMs?: number;
   /** How long a lobby answer that can still change is kept (cachedLobbyLookup); defaults to UNSETTLED_LOBBY_MS. */
   readonly unsettledLobbyMs?: number;
+  /** The recording-level test markers (test-recordings.ts); a marked recording is never listed. */
+  readonly testRecordings?: TestRecordings;
 }
 
 /** Rows on one public listing page: a full storage page (history-source.ts list). */
@@ -270,9 +275,9 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 /**
- * One public listing page. Each storage page's rows pass the hide list (when configured), then serve gives them their served
- * values (type, handles, corrections). Every recording of any match type, rated or not, is listed unless the hide list
- * leaves it out. Storage pages are read until PAGE_ROWS rows are listed, storage ends, or MAX_LISTING_STORAGE_PAGES have
+ * One public listing page. Each storage page's rows pass the hide list (when configured), then serve leaves out test
+ * matches and gives the rest their served values (type, handles, corrections). Every recording of any other match type,
+ * rated or not, is listed unless the hide list leaves it out. Storage pages are read until PAGE_ROWS rows are listed, storage ends, or MAX_LISTING_STORAGE_PAGES have
  * been read; so a page comes back short only at the end of the history or at that cap. A page that stops at a storage
  * boundary it served up to, without the hide list, keeps the storage continuation; a full page continues after its last
  * served row; a page stopped by the cap continues after the last row it read, sealed (listingContinuations). So no
@@ -311,7 +316,8 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
 /**
  * Anonymous, read-only history backed by storage rather than this process.
  * GET /matches?pageToken=<URL-encoded nextPageToken> -> {matches,nextPageToken}: every recording, rated or unrated, that
- * the hide list (when configured) does not leave out.
+ * the hide list (when configured) does not leave out, except a test match's, which is never listed; GET /matches/<id> still
+ * serves it.
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
  * These paths are independent of /live/* and /replays/*.
  * A listing page is bounded as a whole (60 s) and reads at most MAX_LISTING_STORAGE_PAGES storage pages. A record download has no total-time bound, so a slow but steady
@@ -347,7 +353,10 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     try {
       if (list) {
         const page = await publicHistoryPage(source, token, abort.signal, options.publicVisibility, continuations, async listed => {
-          const typed = await types(listed);
+          const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id))]);
+          // A test match is never listed: its lobby is a test lobby, or its recording carries the test marker, which also
+          // covers a recording with no lobby record.
+          const typed = { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
           // A request that has ended starts no further lookups.
           abort.signal.throwIfAborted();
           const filled = handles === undefined ? typed : await handles(typed);

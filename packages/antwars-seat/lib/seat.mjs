@@ -252,9 +252,12 @@ export function savedWaitLink(env) {
   return { waitUrl: seat.waitUrl, waitToken: seat.waitToken ?? null, waitFrom: seat.waitFrom ?? null, waitSavedAt: seat.waitSavedAt ?? null, next: WAIT_URL_NEXT };
 }
 
-/** `create-lobby`: one create_lobby, public, one agent per colony. Creating does not seat this seat. No queue call. */
-export async function createLobby(ctx) {
-  const { lobby } = await tool(entryClient(ctx), "create_lobby", { key: ctx.key, size: 1, kind: "public" });
+/**
+ * `create-lobby`: one create_lobby, public, one agent per colony. Creating does not seat this seat. No queue call. With
+ * test, a test lobby: its match is of type test and left out of every public list.
+ */
+export async function createLobby(ctx, { test = false } = {}) {
+  const { lobby } = await tool(entryClient(ctx), "create_lobby", { key: ctx.key, size: 1, kind: "public", ...(test ? { test: true } : {}) });
   const lobbyId = lobby?.id ?? null;
   progress("lobby_created", { lobbyId, state: lobby?.state ?? null }, ctx.env);
   return { lobbyId, state: lobby?.state ?? null, next: `antwars-seat join-lobby ${lobbyId} --detach` };
