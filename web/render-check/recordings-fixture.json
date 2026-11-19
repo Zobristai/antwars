@@ -1,0 +1,231 @@
+{
+ "note": "The recordings surface: the Matches page with a Recordings list of the cases the public data lacks or the snapshot does not show together. Row 1 is sample data, not a recorded match: a Scripted bot winning in the Lake Skinner column, the column next to Replay, against a house model (its name, level and rating as the snapshot has them). Rows 2 to 4 are public recordings copied from the snapshot: a parked GPT-6.2 Astra line, a builder before its model, and a 2v2 with two alike seats in each colony. The check focuses the first row's Replay link before judging (Surface.focus), so its focus ring is judged and rendered. The page's clock is fixed at the snapshot's time.",
+ "fixtures": {
+  "/matches": {
+   "label": "recordings surface: Recordings with a sample Scripted bot win in Lake Skinner and three snapshot recordings",
+   "body": {
+    "matches": [
+     {
+      "id": "2026-11-18T08-10-00-000Z-100000000000001",
+      "startedAt": "2026-11-18T08:10:00.000Z",
+      "endedAt": "2026-11-18T08:24:12.000Z",
+      "simulationEndedAt": "2026-11-18T08:24:12.050Z",
+      "winner": 0,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-terra",
+        "thinkingLevel": "max",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-1-terra-max-fast",
+        "startRating": {
+         "rating": 1984,
+         "rd": 72,
+         "ratedMatches": 30
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Lake Skinner Colony",
+       "Very Large Colony"
+      ],
+      "matchType": {
+       "kind": "challenge",
+       "size": 1
+      }
+     },
+     {
+      "id": "2026-11-18T06-59-49-405Z-274770546590936",
+      "startedAt": "2026-11-18T06:59:49.405Z",
+      "endedAt": "2026-11-18T07:08:58.334Z",
+      "simulationEndedAt": "2026-11-18T07:08:58.405Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "xhigh",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-xhigh",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 0,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "medium",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-medium",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": true,
+      "matchType": {
+       "kind": "index",
+       "size": 1
+      },
+      "harnessPhase": {
+       "phase": "from round 31 onward",
+       "possibleEffortMismatch": false
+      }
+     },
+     {
+      "id": "2026-11-18T06-59-42-328Z-29842489341679",
+      "startedAt": "2026-11-18T06:59:42.328Z",
+      "endedAt": "2026-11-18T07:19:50.171Z",
+      "simulationEndedAt": "2026-11-18T07:19:50.228Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "deepseek/deepseek-flash",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/deepseek-flash",
+        "startRating": {
+         "rating": 1435.2302931035026,
+         "rd": 95.08622267252382,
+         "ratedMatches": 24
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "kain",
+        "startRating": {
+         "rating": 1662.2120026057648,
+         "rd": 290.2305060910912,
+         "ratedMatches": 1
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Very Large Colony"
+      ],
+      "matchType": {
+       "kind": "challenge",
+       "size": 1
+      }
+     },
+     {
+      "id": "2026-11-16T09-21-43-735Z-11240848029112",
+      "startedAt": "2026-11-16T09:21:43.735Z",
+      "endedAt": "2026-11-16T09:30:26.927Z",
+      "simulationEndedAt": "2026-11-16T09:30:26.935Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/muse-wonder-1-0",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "zai/glm-5.3",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/glm-5-3",
+        "startRating": {
+         "rating": 1823.3674931390162,
+         "rd": 232.61421402654622,
+         "ratedMatches": 3
+        }
+       },
+       {
+        "seat": 2,
+        "colony": 1,
+        "modelLabel": "zai/glm-5.3",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/glm-5-3",
+        "startRating": {
+         "rating": 1823.3674931390162,
+         "rd": 232.61421402654622,
+         "ratedMatches": 3
+        }
+       },
+       {
+        "seat": 3,
+        "colony": 0,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/muse-wonder-1-0",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": true,
+      "matchType": {
+       "kind": "index",
+       "size": 2
+      },
+      "harnessPhase": {
+       "phase": "from round 31 onward",
+       "possibleEffortMismatch": false
+      }
+     }
+    ],
+    "nextPageToken": null
+   }
+  }
+ }
+}

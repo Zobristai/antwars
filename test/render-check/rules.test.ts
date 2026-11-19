@@ -183,6 +183,34 @@ describe("render check rules", () => {
     expect(rules(await judged('<p>Top</p><canvas width="300" height="300" style="display:block"></canvas><p>Below</p>'))).not.toContain("page-empty");
   });
 
+  it("fails a keyed column cell that does not start on its head's x, and judges a hidden head's cells against each other", async () => {
+    // As the Recordings list keys them: a head row and rows on one grid, each cell carrying its column's key.
+    // Stacked (a phone's rows): the head hidden, each cell on its own line.
+    const sub = "display:grid;grid-column:1/-1;grid-template-columns:subgrid";
+    const table = (offset: number, stacked = false) => `<div data-col-table style="display:grid;grid-template-columns:120px 120px;width:240px">`
+      + `<div data-col-head style="${stacked ? "display:none" : sub}"><span data-col="when">Time</span><span data-col="who">Player</span></div>`
+      + `<ol style="${sub};margin:0;padding:0;list-style:none">`
+      + ["alice", "bob"].map((who, i) => `<li style="${stacked ? "display:block;grid-column:1/-1" : sub}"><span data-col="when" style="display:block">0${i}:00</span>`
+        + `<span data-col="who" style="display:block;padding-left:${i ? offset : 0}px">${who}</span></li>`).join("") + "</ol></div>";
+    expect(rules(await judged(table(0)))).not.toContain("column-start");
+    const off = (await judged(table(1))).failures.filter(f => f.rule === "column-start");
+    expect(off.map(f => [f.text, f.extent])).toEqual([["bob", 1]]);
+    expect(off[0]!.measure).toContain("its column head");
+    // With the head hidden (a phone's stacked rows) a key's cells must still start at one x.
+    expect((await judged(table(4, true))).failures.filter(f => f.rule === "column-start").map(f => [f.text, f.extent])).toEqual([["bob", 4]]);
+    expect(rules(await judged(table(0, true)))).not.toContain("column-start");
+  });
+
+  it("does not hold a cell continuing a line another keyed cell of its row starts, and judges such a table's rows as rows, not tiles", async () => {
+    // A phone's start line: the date, then the type after it on the same line, or alone on the next where it does not fit.
+    const row = (type: string) => `<li style="display:flex;flex-wrap:wrap;column-gap:12px;width:180px;border-top:1px solid #888">`
+      + `<span data-col="when">18 Nov</span><span data-col="type">${type}</span>${type === "Index" ? "<b>×2</b>" : ""}</li>`;
+    const j = await judged(`<div data-col-table><ol style="display:grid;margin:0;padding:0;list-style:none">${row("Index")}${row("Challenge type")}</ol></div>`);
+    expect(rules(j)).not.toContain("column-start");
+    // The rows have parts some rows lack and unequal heights: neither is a tile finding here.
+    expect(rules(j)).not.toContain("part-uneven");
+  });
+
   it("lists a near-full one-line item as tight without failing it", async () => {
     // 12 characters in a box 12.5 characters wide (ch, in its monospace font): 4% to spare whatever that font's width.
     const j = await judged('<div style="width:12.5ch"><span>Riverbank 12</span></div>');

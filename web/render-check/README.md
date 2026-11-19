@@ -9,7 +9,7 @@ npm run render-check                     # writes out/render-check/report.md, re
 
 ## What it renders
 
-Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liberation Sans**: 28 renders.
+Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liberation Sans**, except the two browser-zoom surfaces, rendered in a 1280 px window only: 36 renders.
 
 | Surface | Page |
 |---|---|
@@ -17,6 +17,8 @@ Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liber
 | watch | `/?watch=1`, with no live match |
 | matches | `/?page=matches` |
 | waiting | `/?page=matches` with agents waiting and matches live (`waiting-fixture.json`), so the Waiting and Live now tables have rows; the page's clock is fixed at the snapshot's time, so the times it shows are the same on every run |
+| recordings | `/?page=matches` with a Recordings list of the cases the snapshot lacks (`recordings-fixture.json`): a sample Scripted bot win in the Lake Skinner column, beside Replay, and three snapshot recordings (a parked handle, a builder before its model, a 2v2). The first row's Replay link is focused from the keyboard before the page is judged, so its focus ring is judged and rendered |
+| recordings-zoom-200, recordings-zoom-400 | the recordings surface at 200 % and 400 % browser zoom in a 1280 × 800 window, laid out as Chrome lays out page zoom: a 640 × 400 and a 320 × 200 px viewport drawn at 2 and 4 device pixels a CSS pixel |
 | leaderboard | `/?page=leaderboard` |
 | rules | `/rules`, as the server renders it before a map is drawn |
 | replay-free-for-all | `/?replay=<id>&capture=1` of a public Free-for-all recording: the four-colony match HUD over the 3D board |
@@ -44,6 +46,7 @@ A render fails on:
 - **row-uneven / grid-uneven**: tiles of one kind, two or more in a grid, of unequal height in a row or across the grid. A grid laid out in one column (as at phone width) is judged too, however tall its tiles and whatever they hold. A tile is a child with a drawn edge or background (or wrapping one such box); children with neither, such as a page's plain reading sections, are not tiles.
 - **tile-empty**: an empty band inside such a tile taller than 1.5 lines of its text.
 - **part-uneven**: a tile part (an element with text) shown on some tiles of a grid but not others.
+- **column-start**: in a table whose head and row cells carry their column's key (`data-col`, inside `[data-col-table]`, the head in `[data-col-head]`: the Recordings list), a row cell whose first text (or dash) starts more than 0.5 px from its column head's text. With the head hidden (a phone's stacked rows), a key's cells must start at one x, except a cell that continues a line another keyed cell of its row starts (the type after the date on a phone's start line). Such a table's rows are rows, not tiles: the tile rules above do not judge them. Other tables take keys as they move to this layout.
 - **page-empty**: an empty band between parts of the page taller than 48 px, measured with every box that scrolls unrolled (its content counts where it lies, as the reader scrolls to it). The largest designed gap on main is 45 px; the band the Top matches review rejected measured 60 px.
 
 A one-line item with under 8% of its width to spare is listed as a **tight** fit, not failed.
