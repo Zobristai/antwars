@@ -337,6 +337,9 @@ export function writeMatrix(m: Float32Array, o: number, L: number, a: number, x:
   m[o + 15] = 1;
 }
 
+/** The ant mesh's horizontal half-extent per unit length (buildAntGeometry: mandibles to 0.55, feet to 0.36 aside). */
+const BODY_REACH = 0.55;
+
 export class Ants3D {
   private live: Herd[];
   private soldiers: Herd[];
@@ -516,7 +519,8 @@ export class Ants3D {
       const position = this.bites.bodyPosition(i, size);
       const drawX = position?.x ?? x, drawY = position?.y ?? y;
       const rotation = pose?.rotation ?? frame.drawRotation?.[i] ?? frame.rotation[i]!;
-      const gy = this.ground.heightAt(drawX, drawY);
+      // Standing height: the relief, or a nest mound's surface under any part of the body (ground.ts standAt).
+      const gy = this.ground.standAt(drawX, drawY, size * grow * BODY_REACH);
       // An airborne flyer is drawn AIR_LIFT_3D_TILES above the ground at its position, legs still, its shadow below.
       const ly = aloft ? gy + AIR_LIFT_3D_TILES : gy;
       const by = aloft ? ly : gy + 0.02;
@@ -580,7 +584,7 @@ export class Ants3D {
       const pose = this.bites.corpsePose(k.antId, L);
       const position = this.bites.corpsePosition(k.antId, L);
       const x = position?.x ?? k.x, z = position?.y ?? k.y;
-      const y = this.ground.heightAt(x, z) + (pose ? 0.02 : L * 0.36 + 0.05);
+      const y = this.ground.standAt(x, z, L * BODY_REACH) + (pose ? 0.02 : L * 0.36 + 0.05);
       writeMatrix(herd.matrices, j * 16, L, pose?.rotation ?? k.heading, x, y, this.ground.mapH - z, !pose);
       herd.walk[j] = 0; herd.bite[j] = pose?.jawOpen ?? 0;
       herd.head[j * 2] = (pose?.headOffset ?? 0) / L;
