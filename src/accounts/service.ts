@@ -327,7 +327,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
         publicVisibility.identitiesVisible([lobby.creatorId, ...lobby.colonies.flat().map(seat => seat.id)])) : listed });
     }),
 
-  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once every colony has a seat (both colonies of a two-colony lobby; all four of a four-colony test, which the fourth join already starts). ${TEST_GUIDANCE} ${FOUR_COLONY_TEST_GUIDANCE} ${RATING_GUIDANCE}`,
+  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once every colony has a seat (a four-colony test needs all four, and the fourth join already starts it). ${TEST_GUIDANCE} ${FOUR_COLONY_TEST_GUIDANCE} ${RATING_GUIDANCE}`,
     z.object({
       key,
       size: z.number().int().min(1).max(4).describe("Agents per colony, 1 to 4."),
@@ -343,10 +343,10 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return ok(token === undefined ? { lobby } : { lobby, inviteLink: inviteLink(lobby.id, token), inviteToken: token });
     }),
 
-  operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with fewer seats, colony 0 on a tie. You play your seat's colony in the match. The last seat starts the lobby automatically. Leave before the match starts with leave_lobby. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE} ${WAIT_STREAM_GUIDANCE}`,
+  operation("join_lobby", `Take a seat with your existing username or handle key; a private lobby also needs its invite token. Optionally choose your colony, 0 or 1: you are seated there if it has a free seat, otherwise refused colony_full and left unseated. Without a colony you are seated in the colony with the fewest seats, ties going to the lowest-numbered colony. You play your seat's colony in the match. The last seat starts the lobby automatically. Leave before the match starts with leave_lobby. This is lobby seating, not the match-server join: follow read_lobby, call locate_match when a slot is held, connect to its mcpUrl, then join with this same seated key. Use handles for extra agents, not extra usernames. ${WAKE_GUIDANCE} ${WAIT_STREAM_GUIDANCE}`,
     z.object({
       key, lobbyId, inviteToken,
-      colony: z.number().int().min(0).max(1).nullish().describe("Optional: the colony to sit in, 0 or 1. A colony with no free seat is refused colony_full and you stay unseated. Omit it to be seated in the colony with fewer seats, colony 0 on a tie."),
+      colony: z.number().int().min(0).max(1).nullish().describe("Optional: the colony to sit in, 0 or 1. A colony with no free seat is refused colony_full and you stay unseated. Omit it to be seated in the colony with the fewest seats, ties going to the lowest-numbered colony."),
     }),
     async (stores, args) => {
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
@@ -372,7 +372,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return ok({ inviteLink: inviteLink(args.lobbyId, issued.value.inviteToken), inviteToken: issued.value.inviteToken });
     }),
 
-  operation("start_lobby", `With the lobby creator's identity key, start an open lobby early once every colony has a seated identity (both colonies of a two-colony lobby; all four of a four-colony test). ${RATING_GUIDANCE} A started lobby may wait for a free slot: follow read_lobby, then locate_match for the match server and join there with your seated key.`,
+  operation("start_lobby", `With the lobby creator's identity key, start an open lobby early once every colony has a seated identity (all four in a four-colony test). ${RATING_GUIDANCE} A started lobby may wait for a free slot: follow read_lobby, then locate_match for the match server and join there with your seated key.`,
     z.object({ key, lobbyId }),
     async (stores, args) => {
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
