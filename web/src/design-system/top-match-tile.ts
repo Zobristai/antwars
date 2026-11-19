@@ -1,10 +1,11 @@
 // The design system's Top matches tile (docs/design-system.md): one whole-tile link to a match's replay, text only, so nothing
-// plays until it is opened. Every tile has the same five one-line rows in the same order: the game type; the winner's
-// player line on a band of its colony colour, the only colony colour on the tile; the other side's player line; how it
-// ended; the date with the length. No rating and no retired mark is drawn; the retired mark is in the tile's accessible name
-// and tooltip. A builder is shown by its name exactly as stored, from the one player-line source Matches draws
-// (pages/model.ts recordedPlayer). A side fielding more than one seat says so in the type row and with one edge rule per seat;
-// a side whose seats differ names each of them, as Matches does.
+// plays until it is opened. Every tile has the same rows in the same order: the game type; the winner's side on a band
+// of its colony colour, the only colony colour on the tile; the other side (each other side, in a free-for-all); how it
+// ended; the date with the length. A side
+// is one player line, or, where its seats differ, one line per seat group as Matches groups them. No rating and no retired
+// mark is drawn; the retired mark is in the tile's accessible name and tooltip. A builder is shown by its name exactly as
+// stored, from the one player-line source Matches draws (pages/model.ts recordedPlayer). A side fielding more than one seat
+// says so in the type row and with one edge rule per seat.
 import "./tokens.css";
 import "./top-match-tile.css";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
@@ -24,12 +25,12 @@ export function lengthText(r: Pick<Recording, "startedAt" | "endedAt" | "simulat
   return Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms / 60_000)} min` : null;
 }
 
-/** The type row's words, as its kind and its size: "Index" and "1v1"; a team match says its seats in words, "2 seats each". */
+/** The type row's words, as its kind and its size: "Index" and "1v1"; a team match says its seats in words, "2 per side". */
 export function tileType(type: Recording["matchType"]): { kind: string; size: string | null } | null {
   if (type == null) return null;
   const kind = MATCH_TYPE_WORDS[type.kind];
   if (type.size === null || type.kind === "quadrants") return { kind, size: null };
-  return { kind, size: type.size > 1 ? `${type.size} seats each` : "1v1" };
+  return { kind, size: type.size > 1 ? `${type.size} per side` : "1v1" };
 }
 
 /** One side as the tile shows it: its seats as Matches groups them (alike seats once), and how many seats it fields. */
@@ -73,16 +74,21 @@ function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   return tags ? [name, tags] : [name];
 }
 
-/** A side's player line: its player, or, where its seats differ, each of them in seat order, each kept whole when the line wraps. */
+/** A side: its player line, or, where its seats differ, one block of player lines, one per seat group in first-seat order,
+ * each with one edge rule per seat it stands for. No line is merged or shortened and no name is left out. */
 function playerLine(doc: Document, side: TileSide | null, winner: boolean): HTMLElement {
+  if (side !== null && side.groups.length > 1) {
+    const block = h(doc, "span", `aw-side${winner ? " is-winner" : ""}`);
+    for (const group of side.groups) {
+      const line = h(doc, "span", `aw-row aw-player${group.seats > 1 ? " is-seats-2" : ""}`);
+      line.append(...player(doc, group.parts));
+      block.append(line);
+    }
+    return block;
+  }
   const line = h(doc, "span", `aw-row aw-player${winner ? " is-winner" : ""}${side !== null && side.seats > 1 ? " is-team" : ""}`);
   if (side === null) { line.append(h(doc, "span", "aw-name", NOT_JOINED)); return line; }
-  if (side.groups.length === 1) { line.append(...player(doc, side.groups[0]!.parts)); return line; }
-  for (const group of side.groups) {
-    const entry = h(doc, "span", "aw-entry");
-    entry.append(...player(doc, group.parts));
-    line.append(entry);
-  }
+  line.append(...player(doc, side.groups[0]!.parts));
   return line;
 }
 
@@ -93,10 +99,12 @@ function playerWords({ user, model, badges: kinds }: PlayerParts): string {
   return [user, model].filter(word => word !== null).join(" ") + (hasBadges(kinds) && extra.length ? ` (${extra.join(", ")})` : "");
 }
 
-/** A side in words, for the tile's accessible name: each of its players, then its seats. */
+/** A side in words, for the tile's accessible name: its player and its seats; where its seats differ, each seat group
+ * joined by "and", a group of more than one seat with its count, as Matches reads a group. */
 function sideWords(side: TileSide | null): string {
   if (side === null) return NOT_JOINED;
-  return side.groups.map(group => playerWords(group.parts)).join(" and ") + (side.seats > 1 ? `, ${side.seats} seats` : "");
+  if (side.groups.length === 1) return playerWords(side.groups[0]!.parts) + (side.seats > 1 ? `, ${side.seats} seats` : "");
+  return side.groups.map(group => playerWords(group.parts) + (group.seats > 1 ? `, ${group.seats} seats` : "")).join(" and ");
 }
 
 /** One grid cell: the tile linking to the match's replay. */
@@ -127,8 +135,8 @@ export function topMatchTile(doc: Document, r: Recording, search: string): HTMLL
   }
   meta.append(typeName);
   link.append(meta);
-  // The winner first, then the other side: two player lines on every tile.
-  link.append(playerLine(doc, sides[order[0]!] ?? null, winner !== null), playerLine(doc, sides[order[1]!] ?? null, false));
+  // The winner first, then each other side in colony order: two sides on most tiles, every side of a free-for-all.
+  link.append(...order.map((colony, i) => playerLine(doc, sides[colony] ?? null, i === 0 && winner !== null)));
   const howRow = h(doc, "span", "aw-row aw-how");
   howRow.append(h(doc, "span", "aw-name", ended));
   const dateRow = h(doc, "span", "aw-row aw-date");

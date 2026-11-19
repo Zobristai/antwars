@@ -20,20 +20,26 @@ with no live match (`web/src/pages/top-matches.ts`) shows the hand-picked list (
 of these tiles in the site's own page frame: the title and the reason no live match shows stand in the page band, the grid
 sits on the page under it with no card, and All recordings is a text link under the grid.
 
-Each tile is one link to its match's replay. It plays nothing itself. Every tile has the same five one-line rows, in this
-order:
+Each tile is one link to its match's replay. It plays nothing itself. Every tile has the same rows, in this order:
 
-1. the game type, and for a team match its seats in words ("2 seats each");
-2. the winner's player line, on a band of its colony's colour, the only colony colour on the tile;
-3. the other side's player line;
+1. the game type, and for a team match its seats in words ("2 per side");
+2. the winner's side, on a band of its colony's colour, the only colony colour on the tile;
+3. the other side, or in a free-for-all each other side, one under another;
 4. how the match ended;
 5. the date, with the match's length on the right.
 
 A player line is the builder's name in bold, exactly as stored, then the model, then the effort badge, with Fast drawn as
-a bolt inside it. It comes from the same source the Matches page draws its players from. A side fielding more than one
-seat has one edge rule per seat at the left of its line. A side whose seats differ names each player on its line, as
-Matches does, each name kept whole with its badge; that line wraps between players where they do not fit. No rating is shown. A retired model is marked in the tile's
-accessible name and tooltip, not on the tile.
+a bolt inside it. It comes from the same source the Matches page draws its players from. A side is one player line, and
+a side fielding more than one seat has one edge rule per seat at the left of its line. Where its seats differ (different
+builders, or one builder on different models or levels), the side has one complete player line per seat group, grouped and
+ordered as Matches groups them, each with one edge rule per seat it stands for; every name shows exactly as stored, nothing
+is shortened to a count, and the tile's accessible name names every group. No rating is shown. A retired model is marked in
+the tile's accessible name and tooltip, not on the tile.
+
+Every tile in a grid is as tall as the tallest. A tile taller than its own lines keeps its last two rows at its foot, so how
+the match ended and the date line up across a row of tiles, and the space falls above them. Each extra line (a seat group,
+or a free-for-all's third or fourth side) adds 20 px to every tile, so no pick adds more than one extra line
+([top-matches.md](top-matches.md)).
 
 ## Layout rules
 
@@ -52,8 +58,10 @@ accessible name and tooltip, not on the tile.
   that line too little width in Liberation Sans and its badge wraps, so those two widths keep two columns.
 - **Flush list**: under 12em (a phone at 200 % zoom, or with its text doubled) the page edge goes to 0 and the tiles lie
   flush as a list, with a rule between them, so each line keeps the width it needs.
-- **One line per row**: every row fits on one line from 320 px at the default text size. A 2v2 player line keeps its one
-  line at 320, 360, 375 and 390 px, at 200 % zoom and with doubled text, in Roboto and Liberation Sans. Past that, nothing is cut:
-  the badges move to the next line as one unit and a long name wraps between words.
+- **Every line on one line**: every line fits on one line from 320 px at the default text size, in Roboto and Liberation Sans.
+  The type row, a team's seats included, keeps its one line up to 200 % zoom, with one exception: an unranked team match
+  at 200 % zoom on a 320 px phone in Liberation Sans moves its seats ("2 per side"), whole, to the next line. At 200 % zoom on a 320 px phone a team player
+  line may move its whole badge onto the next line. Past that, nothing is cut: the badges move to the next line as one unit
+  and a long name wraps between words.
 
 The render check (`web/render-check/`) judges the Watch page at 390 and 1280 px in both typefaces against these rules.

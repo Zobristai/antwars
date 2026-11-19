@@ -26,8 +26,9 @@ const text = (node: ElementPort) => node.textContent;
 const tagged = (node: ElementPort, tag: string) => node.all().filter(child => child.tag === tag);
 const link = (tile: ElementPort) => tagged(tile, "a")[0]!;
 const ROWS = ["aw-meta", "aw-player", "aw-player", "aw-how", "aw-date"];
+const KINDS = [...ROWS, "aw-side"];
 /** The tile's rows, in order, by their kind. */
-const rowKinds = (tile: ElementPort) => link(tile).children.map(row => ROWS.find(kind => row.classes().includes(kind)) ?? row.className);
+const rowKinds = (tile: ElementPort) => link(tile).children.map(row => KINDS.find(kind => row.classes().includes(kind)) ?? row.className);
 
 describe("a top-match tile", () => {
   it("is one link to its replay, keeping the board, with no media to play", () => {
@@ -79,25 +80,56 @@ describe("a top-match tile", () => {
   it("says a team match fields two seats a side, in the type row and with a seat rule per seat on both lines", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, teamMatch(), "") as unknown as ElementPort;
-    expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 2 seats each"]);
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 2 per side"]);
     expect(tile.byClass("aw-player").map(p => p.classes().includes("is-team"))).toEqual([true, true]);
     expect(tile.byClass("aw-player").map(text)).toEqual(["K3.1 Pro Highspeedhigh", "GPT-6 Astramax"]);
     expect(link(tile).getAttribute("aria-label")).toContain("K3.1 Pro Highspeed (high), 2 seats beat GPT-6 Astra (max, Fast), 2 seats");
   });
 
-  it("names every builder on a side whose seats differ, each by its name as stored, as Matches does", () => {
+  it("gives a side whose seats differ one line per seat group, each builder by its name as stored, as Matches does", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, recording({
       matchType: { kind: "index", size: 2 },
       seats: [seat(0, 0, "antwars/gpt-6-astra"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
         seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
     }), "") as unknown as ElementPort;
-    const winner = tile.byClass("aw-player")[0]!;
-    expect(winner.byClass("aw-entry")).toHaveLength(2);
-    expect(tagged(winner, "b").map(text)).toEqual(["Kain", "zed_7"]);
+    expect(rowKinds(tile)).toEqual(["aw-meta", "aw-side", "aw-player", "aw-how", "aw-date"]);
+    const side = tile.byClass("aw-side")[0]!;
+    expect(side.classes()).toContain("is-winner");
+    const lines = side.byClass("aw-player");
+    expect(lines.map(line => tagged(line, "b").map(text))).toEqual([["Kain"], ["zed_7"]]);
+    expect(lines.map(line => line.classes().includes("is-seats-2"))).toEqual([false, false]);
     expect(text(tile)).not.toMatch(/\+\d/);
-    expect(tile.byClass("aw-player")[1]!.byClass("aw-entry")).toEqual([]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+ and zed_7 \S+, 2 seats beat GPT-6 Astra \(max, Fast\), 2 seats,/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+ and zed_7 \S+ beat GPT-6 Astra \(max, Fast\), 2 seats, Index · 2 per side,/);
+  });
+
+  it("gives a seat group of two seats on such a side two seat rules and its count in the accessible name", () => {
+    const { doc } = dom();
+    const tile = topMatchTile(doc, recording({
+      matchType: { kind: "index", size: 3 },
+      seats: [seat(0, 0, "antwars/gpt-6-astra"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
+        seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
+        seat(4, 0, "antwars/gpt-6-astra"), seat(5, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
+    }), "") as unknown as ElementPort;
+    const lines = tile.byClass("aw-side")[0]!.byClass("aw-player");
+    expect(lines.map(line => line.classes().includes("is-seats-2"))).toEqual([true, false]);
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 3 per side"]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+, 2 seats and zed_7 \S+ beat GPT-6 Astra \(max, Fast\), 3 seats,/);
+  });
+
+  it("draws every side of a four-colony free-for-all, the winner first, each builder by its name as stored", () => {
+    const { doc } = dom();
+    const tile = topMatchTile(doc, recording({
+      winner: 2, matchType: { kind: "quadrants", size: 1 },
+      colonyNames: ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"],
+      seats: ["ann", "bob", "cat", "dan"].map((handle, colony) => seat(colony, colony as 0 | 1, handle, { colony: colony as 0 | 1 | 2 | 3, modelLabel: `${handle}/local` })),
+    }), "") as unknown as ElementPort;
+    expect(rowKinds(tile)).toEqual(["aw-meta", "aw-player", "aw-player", "aw-player", "aw-player", "aw-how", "aw-date"]);
+    const players = tile.byClass("aw-player");
+    expect(players.map(text)).toEqual(["cat", "ann", "bob", "dan"]);
+    expect(players.map(p => p.classes().includes("is-winner"))).toEqual([true, false, false, false]);
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all"]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann and bob and dan, Free-for-all,/);
   });
 });
 
