@@ -50,17 +50,22 @@ describe("scrolling HUD fit evidence", () => {
     const groups = roster(frame).groups;
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
     try {
+      const page = await browser.newPage();
+      const teams = groups.map(g => `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">${g.colony === 0 ? "Very Large" : "Lake Hodges"} Colony</h2><span class="d1-team-members">${g.members.map(m => `<button class="d1-member" data-seat="${seats[m.index]}"><span class="sb-seat-badge">${m.badge}</span><span class="sb-idle"></span></button>`).join("")}</span></header></div></section>`).join("");
+      await page.setContent(`<style>body{margin:0;font:13px/1.35 sans-serif}*{box-sizing:border-box}${css}</style><main class="d1 score-band"><div class="d1-deck">${teams}</div></main>`);
       for (const width of [390, 1280]) for (const font of ["Roboto", "Liberation Sans"]) {
-        const page = await browser.newPage({ viewport: { width, height: 900 } });
-        const teams = groups.map(g => `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">${g.colony === 0 ? "Very Large" : "Lake Hodges"} Colony</h2><span class="d1-team-members">${g.members.map(m => `<button class="d1-member" data-seat="${seats[m.index]}"><span class="sb-seat-badge">${m.badge}</span><span class="sb-idle"></span></button>`).join("")}</span></header></div></section>`).join("");
-        await page.setContent(`<style>body{margin:0;font:13px/1.35 '${font}',sans-serif}*{box-sizing:border-box}${css}</style><main class="d1 score-band"><div class="d1-deck">${teams}</div></main>`);
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(async font => {
+          document.body.style.fontFamily = `'${font}',sans-serif`;
+          await document.fonts.load(`13px '${font}'`);
+          await document.fonts.ready;
+        }, font);
         const rows = await page.locator(".d1-team-members").evaluateAll(nodes => nodes.map(n => [...n.children].map(e => ({ seat: Number(e.getAttribute("data-seat")), x: e.getBoundingClientRect().x, y: e.getBoundingClientRect().y }))));
         for (const row of rows) {
           expect(row.map(m => m.seat)).toEqual([1, 2, 3, 4]);
           expect(row.map(m => m.x)).toEqual(row.map(m => m.x).sort((a, b) => a - b));
           expect(Math.max(...row.map(m => m.y)) - Math.min(...row.map(m => m.y))).toBeLessThan(1);
         }
-        await page.close();
       }
     } finally { await browser.close(); }
   });

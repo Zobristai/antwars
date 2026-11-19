@@ -126,6 +126,8 @@ export interface ChallengeLobbyRules {
   challengeLobbyWrites(read: TransactionRead, lobby: {
     readonly id: string; readonly requestId: string; readonly handle: string;
     readonly builder: { readonly id: string; readonly displayName: string }; readonly at: number;
+    /** A test challenge (request_challenge test: true): its lobby is a test lobby. */
+    readonly test?: boolean;
   }): Promise<readonly Write[]>;
   /** Ends an open challenge lobby whose house launch failed. */
   closeWrite(lobbyId: string): Write;
@@ -299,7 +301,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
     return [...replaced, ...created, ...(await indexes.writes())];
   }
 
-  async function requestChallenge(key: string, opponent: string, waitToken?: string): Promise<ChallengeOutcome<{ requestId: string; lobbyId: string; seat: number }>> {
+  async function requestChallenge(key: string, opponent: string, waitToken?: string, options: { readonly test?: boolean } = {}): Promise<ChallengeOutcome<{ requestId: string; lobbyId: string; seat: number }>> {
     const builder = await caller(key);
     if (!builder) return refuse("unknown_key");
     const handle = houseHandle(opponent);
@@ -341,7 +343,7 @@ export function createChallengeSteps(store: Store, identities: Identities, rules
           const requests = [...places[i]!.held, requestId].join(" ");
           return places[i]!.doc ? { op: "update", path: allowancePath(day), fields: { requests } } : { op: "create", path: allowancePath(day), fields: { requests } };
         }),
-        ...(await rules.challengeLobbyWrites(read, { id: lobbyId, requestId, handle, builder: { id: builder.id, displayName: builder.displayName }, at })),
+        ...(await rules.challengeLobbyWrites(read, { id: lobbyId, requestId, handle, builder: { id: builder.id, displayName: builder.displayName }, at, test: options.test === true })),
         // The challenger's waiting token is a lobby wait on this challenge's lobby, replacing its previous challenge wait
         // (src/lobby/waits.ts).
         ...(waitToken === undefined ? [] : await challengeWaitWrites(read, waitToken, lobbyId, builder.id, at + rules.lobbyTtlMs)),

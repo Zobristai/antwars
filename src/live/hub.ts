@@ -35,6 +35,7 @@ import type { RecordHandoff } from "../records/handoff.js";
 import type { ReplayStore } from "../replays/store.js";
 import type { StartRating } from "../replays/history.js";
 import type { Activity } from "../slots/activity.js";
+import type { TestRecordings } from "../replays/test-recordings.js";
 import { headerLine } from "../sim/log.js";
 import { isClassicColonyNames, lobbyColonyNames, type ColonyNamePair } from "../sim/colonyNames.js";
 import { admitMatchWatch, captureMatchAccess, isHouseMatch, spectatorDelaySeconds, type MatchAccess, type CurrentInvite } from "./match-access.js";
@@ -60,6 +61,8 @@ export interface LiveHubOptions {
   readonly config?: LiveConfig;
   readonly clock?: LiveClock;
   readonly publicVisibility?: PublicVisibility;
+  /** The recording-level test markers (src/replays/test-recordings.ts): a marked recording is left out of /live/replays. */
+  readonly testRecordings?: TestRecordings;
   /** Payload encoder; tests substitute one to show the budget checks can fail. */
   readonly encode?: (message: StreamMessage) => Uint8Array;
   /** Gap between records played out after a match ends; defaults to one tick of match time. */
@@ -573,6 +576,14 @@ class MatchStream {
 }
 
 /**
+ * Whether a stream may be the match /live/current and /live/status show: a public (or unclassified local) match, never a
+ * test match. A test match's own links (/live/<seq>, /watch/live/<lobbyId>) still serve it.
+ */
+function listedPublicly(stream: { readonly access: Readonly<MatchAccess> | undefined }): boolean {
+  return stream.access === undefined || (stream.access.visibility === "public" && stream.access.test !== true);
+}
+
+/**
  * All live match streams. mount handle() under /live: GET /live/:match serves
  * that match (its sequence number), and GET /live/current serves the match
  * whose delayed playback is still running, or else the newest.
@@ -599,10 +610,12 @@ export class LiveHub {
   private readonly keepMatches: number;
   private readonly relayKey: Uint8Array | undefined;
   private readonly publicVisibility: PublicVisibility | undefined;
+  private readonly testRecordings: TestRecordings | undefined;
   /** Live spectator streams open at once on this server, and per source. */
   readonly spectatorCap: AdmissionCap;
   private readonly streams = new Map<number, MatchStream>();
-  private readonly replays = new Map<number, { seq: number; match: number; replayId: string }>();
+  /** test: present, true, only for a test match's recording, which is never listed. */
+  private readonly replays = new Map<number, { seq: number; match: number; replayId: string; test?: true }>();
   private closed = false;
 
   constructor(options: LiveHubOptions = {}) {
@@ -627,6 +640,7 @@ export class LiveHub {
     this.beforeRecordingPublication = options.beforeRecordingPublication;
     this.relayKey = options.relayKey;
     this.publicVisibility = options.publicVisibility;
+    this.testRecordings = options.testRecordings;
     this.spectatorCap = createAdmissionCap("live spectators", { max: this.config.maxSpectators, perSource: this.config.maxSpectatorsPerSource });
   }
 
@@ -684,9 +698,9 @@ export class LiveHub {
     this.stream(seq).setNextStart(at);
   }
 
-  /** The match /live/current serves: the oldest whose playback is still running, else the newest. */
+  /** The match /live/current serves: the oldest whose playback is still running, else the newest. A test match is never it. */
   currentSeq(): number | null {
-    const all = [...this.streams.values()].filter(m => m.access === undefined || m.access.visibility === "public").sort((a, b) => a.seq - b.seq);
+    const all = [...this.streams.values()].filter(listedPublicly).sort((a, b) => a.seq - b.seq);
     return (all.find((m) => !m.finished) ?? all.at(-1))?.seq ?? null;
   }
 
@@ -703,7 +717,7 @@ export class LiveHub {
   }
 
   private async visibleCurrent(): Promise<MatchStream | undefined> {
-    const candidates = [...this.streams.values()].filter(m => m.access === undefined || m.access.visibility === "public").sort((a, b) => a.seq - b.seq);
+    const candidates = [...this.streams.values()].filter(listedPublicly).sort((a, b) => a.seq - b.seq);
     const visible = this.publicVisibility
       ? await publiclyVisible(candidates, stream => stream.access ? this.publicVisibility!.lobbyVisible(stream.access.lobbyId) : Promise.resolve(true))
       : candidates;
@@ -736,7 +750,10 @@ export class LiveHub {
       }
       // Only successful uploads enter this map; without a store the list stays empty.
       // Retain small metadata after stream eviction; never list the bucket or overwrite an index.
-      const rows = [...this.replays.values()].sort((a, b) => a.seq - b.seq);
+      // A test match's recording is never listed: its stream was a test match's, or its recording carries the test marker.
+      const all = [...this.replays.values()].filter(row => !row.test).sort((a, b) => a.seq - b.seq);
+      const marked = this.testRecordings && await this.testRecordings.marked(all.map(row => row.replayId));
+      const rows = marked ? all.filter(row => !marked.has(row.replayId)) : all;
       const replays = this.publicVisibility ? await publiclyVisible(rows, row => this.publicVisibility!.replayVisible(row.replayId)) : rows;
       const body = Buffer.from(JSON.stringify({ replays }));
       res.writeHead(200, { "content-type": "application/json", "content-length": body.length, "cache-control": "no-store" });
@@ -821,7 +838,7 @@ export class LiveHub {
   /** @internal Publish only successful public uploads; private references stay behind authorization. */
   savedReplay(seq: number, match: number, replayId: string, access?: MatchAccess): void {
     if (this.closed) return;
-    if (access?.visibility !== "private") this.replays.set(seq, { seq, match, replayId });
+    if (access?.visibility !== "private") this.replays.set(seq, { seq, match, replayId, ...(access?.test ? { test: true as const } : {}) });
     if (access) this.onReplaySaved?.(access, replayId);
   }
 

@@ -150,6 +150,11 @@ export interface Lobby {
    * A quadrants lobby's are its four stored names, by colony.
    */
   readonly colonyNames?: readonly string[];
+  /**
+   * Present, true, only on a test lobby: one its creator made with create_lobby or request_challenge test: true. Its match
+   * is of type test (src/replays/recorded-match-type.ts) and is left out of every public list; its direct links still serve.
+   */
+  readonly test?: true;
 }
 
 /** A house challenge lobby's label: always unrated, its held seat for one antwars/<handle>. */
@@ -244,7 +249,8 @@ export interface CreatedLobby {
 export interface Lobbies {
   /** The countdown from taking a slot to the match's start (COUNTDOWN_MS unless configured). */
   readonly countdownMs: number;
-  createLobby(key: string, kind: LobbyKind, size: LobbySize): Promise<LobbyOutcome<CreatedLobby>>;
+  /** test: a test lobby (Lobby.test); a queue never makes one. */
+  createLobby(key: string, kind: LobbyKind, size: LobbySize, options?: { readonly test?: boolean }): Promise<LobbyOutcome<CreatedLobby>>;
   /**
    * inviteToken is required for a private lobby and ignored for a public one. With
    * colony, the joiner takes a seat in that colony or is refused colony_full and stays
@@ -325,7 +331,7 @@ export interface Lobbies {
   adoptMatch(lobbyId: string, slot: string, runId: string, fromRunId: string, colonyNames?: ColonyNamePair): Promise<LobbyOutcome<null>>;
   /** The lobby; a waiting one is settled first, taking a free unwithheld slot if one exists. */
   readLobby(lobbyId: string): Promise<LobbyOutcome<Lobby>>;
-  /** Public lobbies that are open, waiting or holding a slot, oldest first. */
+  /** Public lobbies that are open, waiting or holding a slot, oldest first; a test lobby (Lobby.test) is left out. */
   listPublic(): Promise<readonly Lobby[]>;
   /**
    * A queue pairing's match, inside the caller's transaction on this store: creates
@@ -362,7 +368,8 @@ export interface Lobbies {
   listUnstarted(): Promise<readonly UnstartedLobby[]>;
   /** House challenges (src/lobby/challenges.ts). */
   /** With waitToken, an admitted request also records it as a lobby wait on the challenge's lobby, in the same transaction. */
-  requestChallenge(key: string, opponent: string, waitToken?: string): Promise<ChallengeOutcome<{ readonly requestId: string; readonly lobbyId: string; readonly seat: number }>>;
+  /** test: a test challenge, whose lobby is a test lobby (Lobby.test). */
+  requestChallenge(key: string, opponent: string, waitToken?: string, options?: { readonly test?: boolean }): Promise<ChallengeOutcome<{ readonly requestId: string; readonly lobbyId: string; readonly seat: number }>>;
   /**
    * Removes every expired wait record of every kind (src/lobby/waits.ts, sweepAllExpiredWaits); the server runs it on a
    * timer (startWaitSweep), never on a join. Safe beside other instances sweeping at once. Returns how many it removed.
@@ -540,6 +547,7 @@ function toLobby(id: string, fields: Fields, now: number): Lobby {
     mode: fields.mode ? fields.mode as QueueMode : null,
     ...(fields.challengeId ? { challenge: { kind: "house", heldFor: `${HOUSE_USERNAME}/${fields.heldFor}`, heldColony: HELD_COLONY } } : {}),
     ...matchNames(id, fields),
+    ...(fields.test === "true" ? { test: true as const } : {}),
   };
 }
 
@@ -977,12 +985,12 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     isExpired,
     slotPaths: (["public", "private"] as const).flatMap((kind) => Array.from({ length: slots[kind] }, (_, n) => `slots/${kind}-${n}`)),
     seatPointerPath,
-    async challengeLobbyWrites(read, { id, requestId, handle, builder, at }) {
+    async challengeLobbyWrites(read, { id, requestId, handle, builder, at, test }) {
       const seats: StoredSeat[] = [{ id: builder.id, displayName: builder.displayName, colony: 1 }]; // the colony not held
       const fields: Fields = {
         kind: "public", size: "1", creatorId: builder.id, createdAt: String(at), state: "open",
         rated: "false", slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode: "",
-        challengeId: requestId, heldFor: handle, challenge: "house",
+        challengeId: requestId, heldFor: handle, challenge: "house", ...(test ? { test: "true" } : {}),
       };
       const listing = (await read([LISTING])).get(LISTING) ?? null;
       const lobbies = [...ids(listing?.lobbies), id].join(" ");
@@ -997,7 +1005,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   return {
     countdownMs,
 
-    requestChallenge: (key, opponent, waitToken) => challenges.requestChallenge(key, opponent, waitToken),
+    requestChallenge: (key, opponent, waitToken, options) => challenges.requestChallenge(key, opponent, waitToken, options),
 
     sweepWaits: () => sweepAllExpiredWaits(store, now()),
     listChallengeOpponents: challenges.listOpponents,
@@ -1006,7 +1014,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     reportChallengeLaunch: challenges.reportLaunch,
     challengeStatus: challenges.status,
 
-    async createLobby(key, kind, size) {
+    async createLobby(key, kind, size, options = {}) {
       if (kind !== "public" && kind !== "private") return refuse("invalid_kind");
       if (![1, 2, 3, 4].includes(size)) return refuse("invalid_size");
       const creator = await identityOf(key);
@@ -1017,7 +1025,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const fields: Fields = {
         kind, size: String(size), creatorId: creator.id, createdAt: String(createdAt), state: "open",
         rated: "", slot: "", seats: "[]", inviteVerifier: inviteToken ? verifierOf(inviteToken) : "",
-        startsAt: "", matchRunId: "", outcome: "", mode: "",
+        startsAt: "", matchRunId: "", outcome: "", mode: "", ...(options.test ? { test: "true" } : {}),
       };
       const created = { op: "create", path: lobbyPath(id), fields } as const;
       if (kind === "private") {
@@ -1376,7 +1384,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       });
       const unstarted: UnstartedLobby[] = [];
       for (const { id, fields } of found) {
-        if (!fields || fields.kind !== "public" || isTerminal(fields, at)) continue;
+        // A test lobby is never listed publicly (Lobby.test).
+        if (!fields || fields.kind !== "public" || fields.test === "true" || isTerminal(fields, at)) continue;
         // A holding lobby's match begins when its slot's instance stamps matchRunId (beginMatch); Live now lists it then.
         if (!(fields.state === "open" || fields.state === "waiting" || (fields.state === "holding" && !fields.matchRunId))) continue;
         const lobby = toLobby(id, fields, at);
@@ -1406,7 +1415,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const listed = ids((await store.get(LISTING))?.lobbies);
       const lobbies = await Promise.all(listed.map(async (id) => ({ id, fields: await store.get(lobbyPath(id)) })));
       return lobbies
-        .filter((entry): entry is { id: string; fields: Fields } => !!entry.fields && !isTerminal(entry.fields, at))
+        // A test lobby is never listed publicly (Lobby.test); it is joined by its id.
+        .filter((entry): entry is { id: string; fields: Fields } => !!entry.fields && entry.fields.test !== "true" && !isTerminal(entry.fields, at))
         .map(({ id, fields }) => toLobby(id, fields, at));
     },
   };

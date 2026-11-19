@@ -297,9 +297,10 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
 .d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
 /* The Matches tables' one badge style, so each colony's player stays on one line: level, rating and result badges alike
-   in 10 px caps, tight tracking and padding; Fast is a bolt inside the level's badge (matches.ts badgeGroup), drawn here
-   so it does not depend on a typeface. The Leaderboard keeps its own badges. */
-:is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 3px; font-size: 10px; letter-spacing: 0.02em; }
+   in 10 px caps, tight tracking and 2 px padding, which keeps the widest real line (a retired model's name, level, Fast,
+   RETIRED and rating) on one line in a wide Recordings slot; Fast is a bolt inside the level's badge (matches.ts
+   badgeGroup), drawn here so it does not depend on a typeface. The Leaderboard keeps its own badges. */
+:is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }
 :is(.d1p-model, .d1p-rec-player) .d1p-tag { line-height: 14px; }
 :is(.d1p-model, .d1p-rec-player) .d1p-tag + .d1p-tag { margin-left: var(--d1p-cell-gap); }
 .d1p-tag.is-fast { padding-right: 2px; }
