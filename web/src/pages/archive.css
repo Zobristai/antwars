@@ -130,6 +130,16 @@
 .d1p-glyph[data-glyph="ring"] { box-shadow: inset 0 0 0 1.5px var(--aw-ink-3); }
 .d1p-glyph[data-glyph="half"] { background: linear-gradient(90deg, var(--aw-ink-2) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--aw-ink-2); }
 .d1p-glyph[data-glyph="error"] { width: 7px; height: 7px; border-radius: 1px; background: var(--d1p-red); transform: rotate(45deg); }
+/* A state told as one-line items (the Waiting card's kinds of wait, chrome.ts stateList): stacked, each under the first
+   one's words, past its glyph; in a card wide enough for the Matches table (the list's own 66rem break), one line parted
+   by " · ", as the single state line reads. No item ever wraps. */
+.d1p-states { display: flex; flex-direction: column; min-width: 0; }
+.d1p-states > .d1p-state + .d1p-state { padding-left: 16px; }
+@container d1p-card (width >= 66rem) {
+  .d1p-states { flex-direction: row; }
+  .d1p-states > .d1p-state + .d1p-state { padding-left: 0; gap: 0; }
+  .d1p-states > .d1p-state + .d1p-state::before { content: " · "; white-space: pre; }
+}
 .d1p-notice .d1p-card-head { padding-top: 14px; padding-bottom: 14px; }
 .d1p-notice .d1p-state { font-size: 14px; color: var(--aw-ink-bright); }
 .d1p-card-foot { padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); display: flex; flex-wrap: wrap; gap: 8px; }
