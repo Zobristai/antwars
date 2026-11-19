@@ -1,4 +1,5 @@
 import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
+import type { TestRecordings } from "../replays/test-recordings.js";
 /// <reference types="node" />
 import { FirestoreError, type Fields, type QueryResult, type Store, type TransactionRead, type TransactionStep, type Write } from "../store/firestore.js";
 import { createIdentities, type Identities } from "../identity/identities.js";
@@ -633,6 +634,7 @@ export async function startRecordFill(store: Store): Promise<void> {
  */
 export function createRatings(
   store: Store, identities: Pick<Identities, "findById"> = createIdentities(store), publicVisibility?: BatchPublicVisibility,
+  testRecordings?: TestRecordings,
 ): Ratings & { readonly houseBackfill: Promise<void> } {
   const backfill = (): Promise<boolean> => markHouseRatings(store).then(
     (marked) => { if (marked > 0) console.info("antwar house ratings marked", { marked }); return true; },
@@ -643,6 +645,8 @@ export function createRatings(
    * The replay id stored for each match (watchMatches), read in one batch; a match without one is absent. With
    * withTimes, the same batch also reads each match's lobby for its match time (null when it cannot be read). With the
    * hide list on, the same batch reads every lobby and one more read checks all their seats; a hidden match is absent.
+   * A test match's recording (src/replays/test-recordings.ts) is absent too, so its form entry keeps its result and links
+   * no recording; its rating and record are unchanged.
    */
   async function storedFormFacts(matchIds: readonly string[], withTimes: boolean):
     Promise<{ readonly replayIds: ReadonlyMap<string, string>; readonly times: ReadonlyMap<string, number | null> }> {
@@ -665,6 +669,8 @@ export function createRatings(
         times.set(id, lobby ? matchTime(lobby) : null);
       }
     }
+    const tests = testRecordings && replayIds.size > 0 ? await testRecordings.marked([...replayIds.values()]) : undefined;
+    for (const [id, replayId] of replayIds) if (tests?.has(replayId)) replayIds.delete(id);
     return { replayIds, times };
   }
   return {

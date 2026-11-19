@@ -91,7 +91,7 @@ function decode(lobbyId: string, row: Fields): WatchMatch {
   const startedAt = Number(row.startedAt);
   if (!Number.isSafeInteger(startedAt) || startedAt < 0 || (row.replayId !== undefined && !isReplayId(row.replayId))) throw new Error("Invalid stored spectator match");
   const access = captureMatchAccess({ lobbyId, visibility: row.visibility as MatchAccess["visibility"], rated: row.rated === "true",
-    mode: row.mode === undefined || row.mode === "" ? undefined : row.mode as RankedMode });
+    mode: row.mode === undefined || row.mode === "" ? undefined : row.mode as RankedMode, ...(row.test === "true" ? { test: true as const } : {}) });
   return { ...access, startedAt,
     playbackFinished: row.playbackFinished === "true", origin: origin(row.origin!), slot: row.slot!, runId: row.runId,
     ...(row.replayId === undefined ? {} : { replayId: row.replayId }),
@@ -191,7 +191,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       !/^(public|private)-\d+$/.test(match.slot) || !match.runId) throw new Error("Invalid spectator match");
     const access = captureMatchAccess(match);
     const fields = { visibility: access.visibility, rated: String(access.rated), mode: access.mode ?? "", startedAt: String(match.startedAt).padStart(16, "0"),
-      origin: origin(match.origin), slot: match.slot, runId: match.runId, playbackFinished: "false" };
+      origin: origin(match.origin), slot: match.slot, runId: match.runId, playbackFinished: "false", ...(access.test ? { test: "true" } : {}) };
     return store.transaction<boolean>(async read => {
       const docs = await read([path(match.lobbyId), listing(match.lobbyId), ...(resumed ? [lobby(match.lobbyId)] : [])]);
       // Read inside this write's transaction, which the store serializes with adoptMatch's: no adoption commits between the check and the write.
@@ -199,7 +199,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       const before = docs.get(path(match.lobbyId));
       if (before) {
         // A missing legacy mode and an empty new mode mean the same policy.
-        if ((before.mode ?? "") !== fields.mode) throw new Error("Spectator match identity changed");
+        if ((before.mode ?? "") !== fields.mode || (before.test ?? "") !== (fields.test ?? "")) throw new Error("Spectator match identity changed");
         const server = ["origin", "runId"] as const;
         for (const key of ["visibility", "rated", "startedAt", "slot", ...(resumed ? [] : server)] as const) {
           if (before[key] !== fields[key]) throw new Error("Spectator match identity changed");
@@ -211,7 +211,8 @@ export function createWatchRegistry(store: Store): WatchRegistry {
         return { result: true, writes };
       }
       const writes: Write[] = [{ op: "create", path: path(match.lobbyId), fields }];
-      if (access.visibility === "public") writes.push({ op: "create", path: listing(match.lobbyId), fields });
+      // A test match is never listed publicly: it has no public listing row, so the catalog never shows it.
+      if (access.visibility === "public" && !access.test) writes.push({ op: "create", path: listing(match.lobbyId), fields });
       return { result: true, writes };
     });
   }

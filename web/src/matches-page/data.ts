@@ -17,7 +17,7 @@ const liveSeat = z.union([
 // (src/replays/recorded-match-type.ts); null where the server could not tell, absent from a server that sends none. A value
 // this page does not know reads null rather than failing the page: the badge is display only.
 const matchType = z.object({
-  kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated", "quadrants"]),
+  kind: z.enum(["index", "ranked", "unranked", "challenge", "unrated", "quadrants", "test"]),
   size: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.null()]),
 }).nullable().optional().catch(null);
 const colonyName = z.string().min(1);

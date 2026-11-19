@@ -115,7 +115,8 @@ export async function check(base, size = 1, watchSeconds = 480) {
 
   const lobbies = {};
   for (const kind of ["public", "private"]) {
-    const created = await api(base, "create_lobby", { key: lobbyBots[kind][0].key, size, kind });
+    // A test match: of type test, so it is left out of every public list; the check follows it by its own links.
+    const created = await api(base, "create_lobby", { key: lobbyBots[kind][0].key, size, kind, test: true });
     lobbies[kind] = { id: created.lobby.id, inviteToken: created.inviteToken, bots: lobbyBots[kind] };
     log("created", kind, "lobby", created.lobby.id, kind === "private" ? `with invite link: ${created.inviteLink !== undefined}` : "");
   }
