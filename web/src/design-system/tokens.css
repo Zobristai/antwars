@@ -1,0 +1,58 @@
+/* Antwars design tokens (docs/design-system.md). Set on the page root .d1p, not :root, so they change no value outside it
+   (web/index.html sets its own --aw-tap on :root, 44 px on phones). */
+.d1p {
+  /* Colour: surfaces, darkest to lightest */
+  --aw-bg: #121719;
+  --aw-surface: #1a2225;
+  --aw-raise: #293337;
+  --aw-raise-hover: #364146;
+  /* Colour: ink, on any surface above */
+  --aw-ink-bright: #f8fcfc;
+  --aw-ink: #e9eff0;
+  --aw-ink-2: rgba(233, 239, 240, 0.76);
+  --aw-ink-3: rgba(233, 239, 240, 0.63);
+  /* Colour: rules */
+  --aw-line: rgba(233, 239, 240, 0.12);
+  --aw-hair: rgba(233, 239, 240, 0.08);
+  /* Colour: the one accent (primary action, focusable figures, link hover) and the alert */
+  --aw-accent: #00c2ff;
+  --aw-alert: #ff5a4e;
+  /* Colour: colonies, one each */
+  --aw-colony-very-large: #ffb000;
+  --aw-colony-lake-hodges: #00c2ff;
+  --aw-colony-sweetwater: #ff1e1e;
+  --aw-colony-lake-skinner: #009078;
+  /* Colour: the amber wash under the hero */
+  --aw-wash: rgba(255, 176, 0, 0.12);
+  /* The winner's band: its colony colour over the surface */
+  --aw-winner-fill: 14%; /* new: set by eye against the approved Recordings winner cell, not sampled */
+
+  /* Type: one family, the visitor's system UI face */
+  --aw-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  /* Type: size / line height pairs, in rem so a browser's text-size setting enlarges them with the em breakpoints;
+     each is the site's px value at the default 16 px (the px in the comment) */
+  --aw-text-badge: 0.6875rem;   --aw-lh-badge: 1rem;          /* 11 / 16 */
+  --aw-text-badge-sm: 0.625rem; --aw-lh-badge-sm: 0.875rem;   /* 10 / 14; 14 = deck.css:280's 12 px line + 1 px borders, borderless */
+  --aw-text-label: 0.6875rem;   --aw-lh-label: 1rem;          /* 11 / 16; 11 from the label, 16 line from the badge: a combination */
+  --aw-text-meta: 0.75rem;      --aw-lh-meta: 1rem;           /* 12 / 16 */
+  --aw-text-line: 0.75rem;      --aw-lh-line: 1.25rem;        /* 12 / 20; 20 line new (source 18) */
+  --aw-text-body: 0.8125rem;    --aw-lh-body: 1.25rem;        /* 13 / 20 */
+  --aw-text-lead: 0.875rem;     --aw-lh-lead: 1.25rem;        /* 14 / 20 */
+  --aw-text-title: 0.9375rem;   --aw-lh-title: 1.25rem;       /* 15 / 20 */
+  /* Type: weights and tracking */
+  --aw-regular: 400; --aw-strong: 600; --aw-bold: 700;
+  --aw-track-title: 0.04em; --aw-track-label: 0.09em; --aw-track-badge: 0.08em;
+
+  /* Spacing: a 4 px grid, plus the 6 px inline gap between a name and its badges */
+  --aw-space-1: 4px;  --aw-space-2: 8px;  --aw-space-3: 12px; --aw-space-4: 16px;
+  --aw-space-6: 24px; --aw-space-8: 32px; --aw-space-10: 40px;
+  --aw-gap-inline: 6px;
+  /* Radii */
+  --aw-radius-badge: 3px; --aw-radius-tile: 6px; --aw-radius-card: 8px; --aw-radius-pill: 999px;
+  /* Targets */
+  --aw-tap: 36px; --aw-tap-touch: 44px;
+  /* Layout */
+  --aw-content: 912px; /* the site's general column; Matches widens to 1200 */
+  --aw-bar: 48px;
+  --aw-hero: 176px;
+}

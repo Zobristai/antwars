@@ -9,7 +9,7 @@ import { mountAgentDialog } from "../ui/deck/dialog.ts";
 import { h } from "../ui/dom.ts";
 import { navigation } from "../ui/nav.ts";
 
-export type PageName = "leaderboard" | "matches" | "rules";
+export type PageName = "watch" | "leaderboard" | "matches" | "rules";
 
 export interface TopBar {
   readonly bar: HTMLElement;

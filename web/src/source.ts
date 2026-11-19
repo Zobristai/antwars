@@ -195,11 +195,22 @@ function laterFinishedReplay(lobbyId: string, signal: AbortSignal): Promise<stri
 }
 
 /** What a lobby link shows while its lobby has no live match: its finished match's replay, else the Leaderboard page, loaded only when needed. */
-export interface LobbyScreens { leaderboard(doc: Document): void; replay(doc: Document, replayId: string): void }
+export interface LobbyScreens {
+  leaderboard(doc: Document): void;
+  replay(doc: Document, replayId: string): void;
+  /** Automatic Watch with no live match to show: the top recorded matches, saying why; returns how to say a new reason. */
+  topMatches(doc: Document, reason: Fallback): (reason: Fallback) => void;
+}
 export const LOBBY_SCREENS: LobbyScreens = {
   leaderboard(doc) {
     const view = doc.defaultView;
     if (view) void import("./leaderboard-page/page.ts").then(({ mountLeaderboardPage }) => mountLeaderboardPage(doc, view), error => console.error(error));
+  },
+  topMatches(doc, reason) {
+    const view = doc.defaultView;
+    let latest = reason, page: { setState(next: Fallback): void } | null = null;
+    if (view) void import("./pages/top-matches.ts").then(({ mountTopMatchesPage }) => { page = mountTopMatchesPage(doc, view, { state: latest }); }, error => console.error(error));
+    return next => { latest = next; page?.setState(next); };
   },
   replay(doc, replayId) {
     const view = doc.defaultView;
@@ -235,6 +246,8 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const latestCatalog = () => catalog;
   const closeRecording = () => recording?.close();
   let live = false, ended = false, dropped = 0, reloading = false, handedOver = false, lobbyIdle = false;
+  /** Says a new reason on the top-matches page, once automatic Watch shows it. */
+  let topReason: ((reason: Fallback) => void) | null = null;
   const close = () => {
     abort.abort(); clearTimeout(connectTimer); clearTimeout(recordingTimer);
     closeStatus?.(); recording?.close(); feed?.link.close();
@@ -269,7 +282,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     try { const head = await recording.first; ready = true; return head; }
     finally { clearTimeout(recordingTimer); }
   };
-  // The newest stored recording stands in for a live page with no live match. Without one the page shows why:
+  // On a capture route, the newest stored recording stands in for a live page with no live match. Without one the page shows why:
   // no stored match, unreadable or incomplete history, or that recording's own failure before its first snapshot.
   // Those screens return null without closing, so the live subscriptions still hand over to a live match (reload).
   const standInRecording = async (): Promise<StreamMessage | null> => {
@@ -307,6 +320,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         firstCatalog(matches);
         if (fallback !== null) {
           setFallback(fallback = matches.length ? "starting" : "idle");
+          topReason?.(fallback);
           // Keep the selected delayed connection until it delivers a running snapshot. Merely listing
           // another lobby says nothing about its readiness and must not cause repeated random reloads.
           if (matches.length && (!selected || !matches.some(match => match.lobbyId === selected!.lobbyId))) reload();
@@ -439,6 +453,9 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
           if (firstRunning) void firstRunning.then(() => {
             if (catalog?.some(match => match.lobbyId === selected?.lobbyId)) reload(true);
           });
+          // A visitor's page shows the top recorded matches; the live subscriptions stay open, so a live match still takes
+          // over (reload). A capture route keeps playing the newest stored recording.
+          if (!params.has("capture")) { topReason = screens.topMatches(doc, fallback); return null; }
           const standing = await standInRecording();
           if (standing === null) return null;
           head = standing;

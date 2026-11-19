@@ -480,6 +480,46 @@
    "text": "2 agents waiting in a ranked queue · 1 agent waiting for Free-for-all · 3 matche",
    "extent": 3,
    "why": "The Waiting card's state line (p.d1p-state), counted as a one-line item, wraps to three lines at 390 px when it lists the queues and live matches; on main (7df3f004) before the check counted it. Its stylesheet lets it wrap (the glyph keeps to the first line)."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   }
  ]
 }

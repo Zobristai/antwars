@@ -56,6 +56,8 @@ const recordingRow = z.object({
   colonyNames: recordedNames,
 });
 const historyPage = z.object({ matches: z.array(recordingRow), nextPageToken: z.string().min(1).max(2048).nullable() });
+/** GET /matches/top: the Watch page's top matches, in Recordings' row shape (src/replays/top-matches.ts). */
+export const topMatchesList = z.object({ matches: z.array(recordingRow) });
 // An agent waiting in a queue (GET /watch/queue), a ranked queue or Quadrants: its public name, the queue's mode, whole
 // seconds waited when the server read it, when its wait began (epoch ms; a server that sends none leaves the page to work
 // it out from the seconds waited) and its rating in that mode (null where it shows none, as in unrated Quadrants).

@@ -13,6 +13,7 @@ import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
 import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 import type { TestRecordings } from "./test-recordings.js";
+import { sharedRead, shippedTopMatchList } from "./top-matches.js";
 
 type LobbySeat = { readonly id: string; readonly displayName: string };
 /**
@@ -218,6 +219,8 @@ export interface HistoryRouteOptions {
   readonly unsettledLobbyMs?: number;
   /** The recording-level test markers (test-recordings.ts); a marked recording is never listed. */
   readonly testRecordings?: TestRecordings;
+  /** The top matches list (top-matches.ts topMatchIds); defaults to the list shipped with the build. */
+  readonly topMatches?: { readonly ids: readonly string[]; readonly leftOff: readonly string[] };
 }
 
 /** Rows on one public listing page: a full storage page (history-source.ts list). */
@@ -274,6 +277,9 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/** GET /matches/top: the Watch page's hand-picked top matches (top-matches.ts), in GET /matches row shape. */
+export const TOP_PATH = "/matches/top";
+
 /**
  * One public listing page. Each storage page's rows pass the hide list (when configured), then serve leaves out test
  * matches and gives the rest their served values (type, handles, corrections). Every recording of any other match type,
@@ -319,6 +325,9 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
  * the hide list (when configured) does not leave out, except a test match's, which is never listed; GET /matches/<id> still
  * serves it.
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
+ * GET /matches/top -> {matches}: the Watch page's hand-picked top matches (top-matches.ts) in list order, each served as
+ * GET /matches serves it, and only where its record exists, the public visibility check GET /matches applies passes it and it
+ * is not a test match; the records are read once and shared between requests.
  * These paths are independent of /live/* and /replays/*.
  * A listing page is bounded as a whole (60 s) and reads at most MAX_LISTING_STORAGE_PAGES storage pages. A record download has no total-time bound, so a slow but steady
  * client always gets the complete record; it is dropped only after 30 s in which no chunk was handed to the
@@ -331,11 +340,54 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
   const types = recordingMatchTypes(cached);
   const continuations = listingContinuations();
+  /** Listed rows' served values: type, lobby handles, then a source's corrections. A test match is left out. */
+  async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+    const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id))]);
+    // A test match is never listed: its lobby is a test lobby, or its recording carries the test marker, which also
+    // covers a recording with no lobby record.
+    const typed = { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
+    // A request that has ended starts no further lookups.
+    signal.throwIfAborted();
+    const filled = handles === undefined ? typed : await handles(typed);
+    // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
+    return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+  }
+  /** One public listing page, as GET /matches serves it. */
+  const listPage = (token: string | undefined, signal: AbortSignal) =>
+    publicHistoryPage(source, token, signal, options.publicVisibility, continuations, listed => serve(listed, signal));
+  const picks = options.topMatches ?? shippedTopMatchList();
+  /** The listed records' summaries, read once and shared: a stored record does not change, and a failed read is not kept. */
+  const topSummaries = sharedRead(async () => {
+    const signal = AbortSignal.timeout(LIST_DEADLINE_MS);
+    try {
+      const found = source.summary === undefined ? [] : await Promise.all(picks.ids.map(id => source.summary!(id, signal)));
+      return found.filter(row => row !== null);
+    } catch (error) {
+      console.warn(`antwar top matches unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
+      throw error;
+    }
+  });
+  let loggedLeftOff = "";
+  /** The hand-picked list in its order, each match served as GET /matches serves it, kept only where its record exists,
+   * the public visibility check passes it and it is not a test match, exactly as GET /matches lists it. */
+  async function topMatches(signal: AbortSignal): Promise<TypedHistorySummary[]> {
+    // The shared read outlives this request; the request stops waiting at its deadline or disconnect.
+    const stored = await untilAborted(topSummaries(), signal);
+    // Hide list and served values on every request, so a newly hidden match drops off without a restart.
+    const visible = options.publicVisibility ? await publiclyVisible(stored, row => options.publicVisibility!.replayVisible(row.id), signal) : stored;
+    const served = (await serve({ matches: visible, nextPageToken: null }, signal)).matches;
+    const shown = new Set(served.map(row => row.id));
+    const leftOff = [...picks.leftOff, ...picks.ids.filter(id => !shown.has(id))].join(", ");
+    // Ids only, and only when they change: every one is the list's own entry.
+    if (leftOff !== loggedLeftOff) { loggedLeftOff = leftOff; if (leftOff !== "") console.info(`antwar top matches left off: ${leftOff}`); }
+    return picks.ids.flatMap(id => served.filter(row => row.id === id));
+  }
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const list = url.pathname === "/matches";
-    const id = url.pathname.startsWith("/matches/") ? url.pathname.slice("/matches/".length) : "";
-    if (!list && !isReplayId(id)) { res.writeHead(404).end(); return; }
+    const topList = url.pathname === TOP_PATH;
+    const id = url.pathname.startsWith("/matches/") && !topList ? url.pathname.slice("/matches/".length) : "";
+    if (!list && !topList && !isReplayId(id)) { res.writeHead(404).end(); return; }
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { allow: "GET, HEAD" }).end(); return; }
     const token = url.searchParams.get("pageToken") ?? undefined;
     if ((!list && url.search.length > 0) || [...url.searchParams.keys()].some(key => key !== "pageToken") ||
@@ -346,23 +398,19 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     // A listing is bounded as a whole as well as each upstream read: a progressing
     // page must not accumulate twenty independent network/worker deadlines.
     // A record download is bounded only by no progress: refreshed on each step below.
-    const deadline = setTimeout(() => abort.abort(), list ? LIST_DEADLINE_MS : recordIdleMs);
+    const deadline = setTimeout(() => abort.abort(), list || topList ? LIST_DEADLINE_MS : recordIdleMs);
     deadline.unref();
     const cancel = () => abort.abort();
     res.once("close", cancel);
     try {
-      if (list) {
-        const page = await publicHistoryPage(source, token, abort.signal, options.publicVisibility, continuations, async listed => {
-          const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id))]);
-          // A test match is never listed: its lobby is a test lobby, or its recording carries the test marker, which also
-          // covers a recording with no lobby record.
-          const typed = { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
-          // A request that has ended starts no further lookups.
-          abort.signal.throwIfAborted();
-          const filled = handles === undefined ? typed : await handles(typed);
-          // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
-          return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
-        });
+      if (topList) {
+        const matches = await topMatches(abort.signal);
+        if (res.destroyed) return;
+        const body = Buffer.from(JSON.stringify({ matches }));
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": String(body.length) });
+        res.end(req.method === "HEAD" ? undefined : body);
+      } else if (list) {
+        const page = await listPage(token, abort.signal);
         if (res.destroyed) return;
         // Recordings show an unlisted house seat handle as "Unlisted model"; the server logs it.
         logUnlistedHouse("recordings", page.matches.flatMap(row => row.seats.map(seat => seat.handle)));
