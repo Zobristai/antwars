@@ -1,4 +1,5 @@
 import type { PublicVisibility } from "./identity/publicVisibility.js";
+import type { TestRecordings } from "./replays/test-recordings.js";
 /// <reference types="node" />
 /**
  * The spectator on the game server's one port:
@@ -68,6 +69,8 @@ export interface SpectatedServer extends GameServer {
 
 export interface SpectatedServerOptions extends ServerOptions {
   readonly publicVisibility?: PublicVisibility;
+  /** The recording-level test markers (src/replays/test-recordings.ts): written for a test match, read by public lists. */
+  readonly testRecordings?: TestRecordings;
   readonly replayStore?: ReplayStore;
   readonly replaySource?: ReplaySource;
   readonly historySource?: HistorySource;
@@ -96,10 +99,11 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   const replayStore = !entryPoint && options.match === undefined && options.matchLogStdout !== true ? options.replayStore : undefined;
   if (options.slot && (!options.accounts || !options.watchRegistry)) throw new Error("Slot spectators require account stores and a watch registry");
   const controller = options.slot && options.accounts && options.watchRegistry ? createWatchController({ accounts: options.accounts,
-    registry: options.watchRegistry, slot: options.slot.slot, origin: options.slot.publicUrl, archive: options.privateArchive }) : undefined;
+    registry: options.watchRegistry, slot: options.slot.slot, origin: options.slot.publicUrl, archive: options.privateArchive,
+    testRecordings: options.testRecordings }) : undefined;
   const hub = new LiveHub({ config: live, clock: options.spectatorClock, replayStore, includeComparisonSetup: options.includeComparisonSetup,
     captureMatchLogs: !entryPoint && (replayStore !== undefined || options.privateArchive !== undefined),
-    recordHandoff: entryPoint ? undefined : options.recordHandoff, publicVisibility: options.publicVisibility, relayKey: options.relayKey, ...controller?.hubOptions });
+    recordHandoff: entryPoint ? undefined : options.recordHandoff, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings, relayKey: options.relayKey, ...controller?.hubOptions });
   // A slot server's lobby by the match that streams it, for that match's handover save.
   const lobbies = new Map<number, string>();
   let seated: string | undefined;
@@ -148,7 +152,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
       const read = await lobbies.readLobby(found.lobbyId);
       return read.ok ? read.value : null;
     } : undefined;
-    server.mount("/matches", historyRoutes(options.historySource, lookup, { publicVisibility: options.publicVisibility }));
+    server.mount("/matches", historyRoutes(options.historySource, lookup, { publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
   }
   server.mount("/rules", (req, res, game) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

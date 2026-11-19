@@ -212,9 +212,10 @@ export function recordingModels(seats: Recording["seats"], names: readonly strin
 export const RECORD_LABEL: Record<Recording["status"], string> = { complete: "Record complete", partial: "Record partial", unavailable: "Record unavailable" };
 
 /** Each match type's word on the Matches lists' Game type badge; never a mode slug. A public or invite-only lobby and an
- * unrated match are both "Unranked", against "Ranked"; a four-colony match is its mode's name, "Free-for-all". */
+ * unrated match are both "Unranked", against "Ranked"; a four-colony match is its mode's name, "Free-for-all". A test
+ * match is never listed publicly; it is worded "Test" wherever it is shown. */
 export const MATCH_TYPE_WORDS: Record<NonNullable<Recording["matchType"]>["kind"], string> = {
-  index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked", quadrants: "Free-for-all",
+  index: "Index", ranked: "Ranked", unranked: "Unranked", challenge: "Challenge", unrated: "Unranked", quadrants: "Free-for-all", test: "Test",
 };
 /** "Ranked · 2v2"; the word alone where the size is unknown, and for Quadrants, whose four colonies are no NvN; null for no
  * type, or none sent. A match of three colonies includes all three sides, for example "1v1v1". */
