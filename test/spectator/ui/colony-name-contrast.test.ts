@@ -26,7 +26,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
 const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 /** The Matches page's stylesheets, as its pages bundle them (pages/chrome.ts, pages/top-bar.ts, colony-palette.ts). */
-const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "pages/archive.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "design-system/tokens.css", "pages/archive.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 const COLOURS = SUPERCOLONY_NAMES.map(n => n.colour);
 /** Each colour as colony 0 and as colony 1, and as the winner, in pairs a match can draw. */
 const PAIRS: ColonyNamePair[] = [
@@ -368,15 +368,15 @@ describe("Recordings keep other stored colony names outside canonical columns", 
               expect(label.size).toBe(label.expectedSize);
               expect(label.weight).toBe(label.expectedWeight);
               expect(label.background).toBe("rgba(0, 0, 0, 0)");
-              expect(label.lines).toBe(1);
-              expect(label.whiteSpace).toBe("nowrap");
-              expect(label.overflow).toBe("hidden");
-              expect(label.textOverflow).toBe("ellipsis");
+              // Never cut: a stored name too long for its line breaks rather than ends in an ellipsis or widens the page.
+              expect(label.lines).toBe(label.title === "H".repeat(64) ? label.lines : 1);
+              expect(label.overflow).toBe("visible");
+              expect(label.textOverflow).not.toBe("ellipsis");
+              expect(label.clipped).toBe(false);
               expect(label.accessibleName).toBe(`${label.title}: `);
               expect(label.text).toBe(label.title!.replace(/ Colony$/, ""));
               expect(label.box.left).toBeGreaterThanOrEqual(row.bounds.left);
               expect(label.box.right).toBeLessThanOrEqual(row.bounds.right);
-              if (label.title === "H".repeat(64)) expect(label.clipped).toBe(width === 390);
             }
             for (const player of row.players) {
               expect(player.left).toBeGreaterThanOrEqual(row.bounds.left);
@@ -404,10 +404,10 @@ describe("Recordings contain a self-reported thinking level", () => {
       try {
         await tab.setContent(quadrantsPage(longLevel).page);
         await tab.addStyleTag({ content: "html, body { margin: 0; }" });
-        const rows = await tab.locator(".d1p-rec-badges > .d1p-tags").evaluateAll(nodes => nodes.map(node => {
+        const rows = await tab.locator(".d1p-rec-player > .d1p-tags").evaluateAll(nodes => nodes.map(node => {
           const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
           const style = getComputedStyle(node);
-          const line = node.closest(".d1p-rec-badges")!;
+          const line = node.closest(".d1p-rec-player")!;
           return { text: [...node.children].map(tag => tag.textContent).join(" "), title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
             overflow: style.overflowX,
             count: line.querySelector(".d1p-count")?.textContent, rating: line.querySelector(".d1p-elo-badge")?.textContent,
@@ -419,8 +419,8 @@ describe("Recordings contain a self-reported thinking level", () => {
           // One badge: the level with Fast as its bolt, read in full.
           expect(row.text).toBe(`${longLevel} Fast`);
           expect(row.title).toBe(`${longLevel} Fast`);
-          // Past what any real level needs, the badges stop at 12em, short of the count and the rating, clipped; their whole
-          // text is their title.
+          // Past what any real level needs, the chip stops at 12em, clipped, its whole text its title; the count and the
+          // rating stay whole inside the cell.
           expect(row.clipped).toBe(true);
           expect(row.overflow).toBe("hidden");
           expect(row.count).toContain("×2");
@@ -468,21 +468,21 @@ const CELL_SPACING = () => {
   const cells = [...document.querySelectorAll(".d1p-rec-slot, td.c-model, .d1p-match-rows .d1p-colonies")].filter(node => node.checkVisibility()).flatMap(node => {
     const edge = node.matches(".d1p-colonies") ? node.closest("li")! : node, box = edge.getBoundingClientRect(), style = getComputedStyle(edge);
     const content = boxesOf(node); if (content.length === 0) return [];
-    const ended = !!node.querySelector(".d1p-rec-badges > .d1p-elo-badge");
     return [{ text: node.textContent!.replace(/\s+/g, " ").trim(), padLeft: parseFloat(style.paddingLeft), padRight: parseFloat(style.paddingRight),
-      left: Math.min(...content.map(b => b.left)) - box.left, right: box.right - Math.max(...content.map(b => b.right)), ended }];
+      left: Math.min(...content.map(b => b.left)) - box.left, right: box.right - Math.max(...content.map(b => b.right)) }];
   });
   const lines = [...document.querySelectorAll(".d1p-rec-player, .d1p-model")].filter(shown).map(line => {
     const parts = [...line.querySelectorAll(".d1p-rec-name, .d1p-name, .d1p-tag, .d1p-count, .d1p-elo-badge")].filter(part => shown(part) && !part.parentElement!.closest(".d1p-tag, .d1p-elo-badge"))
       .map(part => { const boxes = part.matches(".d1p-rec-name, .d1p-name, .d1p-count") ? boxesOf(part) : [part.getBoundingClientRect()];
-        return { left: Math.min(...boxes.map(b => b.left)), right: Math.max(...boxes.map(b => b.right)), pushed: part.matches(".d1p-rec-badges > .d1p-elo-badge") }; })
+        return { left: Math.min(...boxes.map(b => b.left)), right: Math.max(...boxes.map(b => b.right)) }; })
       .filter(part => Number.isFinite(part.left)).sort((a, b) => a.left - b.left);
-    // A rating set at a Recordings slot's end follows free space, not a gap.
-    const spaced = parts.filter(part => !part.pushed);
-    return { text: line.textContent!.replace(/\s+/g, " ").trim(), gaps: spaced.slice(1).map((part, i) => part.left - spaced[i]!.right) };
+    // A Recordings line spaces its parts by the design system's inline gap; Live now and Waiting by their cell gap.
+    const between = line.matches(".d1p-rec-player") ? parseFloat(getComputedStyle(line).columnGap) : gap;
+    return { text: line.textContent!.replace(/\s+/g, " ").trim(), between, gaps: parts.slice(1).map((part, i) => part.left - parts[i]!.right) };
   });
-  // On a wide card, the last slot (a winner's tint, or its text) and the Replay link stand at least the gap apart.
-  const replay = [...document.querySelectorAll(".d1p-rec-rows > li")].filter(row => row.checkVisibility() && getComputedStyle(row).gridTemplateColumns.split(" ").length > 1).map(row => {
+  // On a wide card, the last slot (a winner's band, or its text) and the Replay link stand at least 16 px apart.
+  const wide = (row: Element) => getComputedStyle(row.closest(".d1p-rec-table")!.querySelector(".d1p-rec-head")!).display !== "none";
+  const replay = [...document.querySelectorAll(".d1p-rec-rows > li")].filter(row => row.checkVisibility() && wide(row)).map(row => {
     const slot = [...row.querySelectorAll(":scope > .d1p-rec-slot")].at(-1)!, link = row.querySelector(".d1p-rec-replay")!;
     const right = slot.matches(".is-won") ? slot.getBoundingClientRect().right : Math.max(...boxesOf(slot).map(b => b.right));
     const range = document.createRange(); range.selectNodeContents(link);
@@ -493,7 +493,7 @@ const CELL_SPACING = () => {
 
 describe("every Matches colony cell keeps one padding on both sides", () => {
   for (const width of [1280, 390]) {
-    it(`pads each cell alike on its left and right, sets a rating at the cell's end that padding from its edge, and spaces every part of a line by it, at ${width}px`, async () => {
+    it(`pads each cell alike on its left and right, and spaces every part of a line by one gap, at ${width}px`, async () => {
       for (const page of [quadrantsPage("max", "CedarGrove", 1).page, matchesPage(undefined).page]) {
         const tab = await browser.newPage({ viewport: { width, height: 2400 } });
         try {
@@ -507,11 +507,10 @@ describe("every Matches colony cell keeps one padding on both sides", () => {
             expect(cell.padLeft, cell.text).toBe(cell.padRight);
             expect(cell.left, cell.text).toBeGreaterThanOrEqual(cell.padLeft - 0.5);
             expect(cell.right, cell.text).toBeGreaterThanOrEqual(cell.padRight - 0.5);
-            if (cell.ended) expect(cell.right, cell.text).toBeCloseTo(cell.padRight, 0);
           }
           expect(lines.length).toBeGreaterThan(0);
-          for (const line of lines) for (const between of line.gaps) expect(between, line.text).toBeCloseTo(gap, 0);
-          for (const clear of replay) expect(clear).toBeGreaterThanOrEqual(gap - 0.5);
+          for (const line of lines) for (const between of line.gaps) expect(between, line.text).toBeCloseTo(line.between, 0);
+          for (const clear of replay) expect(clear).toBeGreaterThanOrEqual(15.5);
         } finally { await tab.close(); }
       }
     });
@@ -540,7 +539,7 @@ describe("every Matches player is one line", () => {
       } finally { await tab.close(); }
     });
 
-    it(`gives way only in the name, past any real length, keeping its text whole for hover and screen readers, at ${width}px`, async () => {
+    it(`never cuts a name past any real length: it breaks inside its cell, its text whole for hover and screen readers, at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
         await tab.setContent(quadrantsPage("m".repeat(32), "long-builder-" + "x".repeat(64)).page);
@@ -548,9 +547,8 @@ describe("every Matches player is one line", () => {
         const lines = (await tab.evaluate(PLAYER_LINES)).filter(line => line.text.startsWith("long-builder-"));
         expect(lines).toHaveLength(16);
         for (const line of lines) {
-          expect(line.lines, line.text).toBe(1);
-          expect(line.nameCut).toBe(true);
-          expect(line.nameStyle).toEqual(["nowrap", "hidden", "ellipsis"]);
+          expect(line.nameCut, line.text).toBe(false);
+          expect(line.nameStyle[2]).not.toBe("ellipsis");
           expect(line.title).toContain("long-builder-" + "x".repeat(64));
           expect(line.inside).toBe(true);
         }
@@ -625,8 +623,8 @@ describe("Recordings colony headings stay inside their columns", () => {
           expect(row.whiteSpace).toBe("nowrap");
           expect(row.overflow).toBe("visible");
           expect(row.textOverflow).not.toBe("ellipsis");
-          expect(row.size).toBe("11px");
-          expect(parseFloat(row.spacing)).toBeCloseTo(0.99, 2);
+          expect(row.size).toBe("10px");
+          expect(parseFloat(row.spacing)).toBeCloseTo(0.8, 2);
         }
       } finally { await tab.close(); }
     });
@@ -644,8 +642,10 @@ describe("Recordings colony headings stay inside their columns", () => {
         rows: [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => [...row.querySelectorAll(":scope > .d1p-rec-slot")].map(slot => {
           const before = getComputedStyle(slot, "::before"), box = slot.getBoundingClientRect();
           const player = slot.querySelector(".d1p-rec-player")?.getBoundingClientRect();
+          // The label's column ends before the name's starts: the name stands at the slot's second track.
+          const inner = box.left + parseFloat(getComputedStyle(slot).paddingLeft);
           return { label: before.content, colour: before.color, whiteSpace: before.whiteSpace, transform: before.textTransform,
-            labelWidth: parseFloat(before.width), column: parseFloat(getComputedStyle(slot).gridTemplateColumns),
+            labelWidth: parseFloat(before.width), column: player ? player.left - inner : Infinity,
             overflowing: slot.scrollWidth > slot.clientWidth, left: Math.round(box.left), top: Math.round(box.top), bottom: Math.round(box.bottom),
             playerTop: player ? Math.round(player.top) : null };
         })),
@@ -747,13 +747,12 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
       expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
       expectNoBacking(rows);
       const rgb = (c: number) => [(c >> 16) & 255, (c >> 8) & 255, c & 255].join(",");
-      // Live names each colony ("Very Large", then its " Colony"), and Recordings' shared head shows the short name, both in
-      // the same original colony ink.
+      // Live names each colony ("Very Large", then its " Colony") in its original colony ink; Recordings' shared head shows
+      // the short name in the head ink, as colour there marks only the winner.
       for (const { label, colour } of SUPERCOLONY_NAMES) {
         const short = rows.filter(r => r.text === label.replace(/ Colony$/, "") && r.state === "rest");
         expect(short.filter(r => !r.head).map(r => r.rgb)).toEqual([rgb(colour)]);
-        // On a phone the shared head hides; each slot's label there is in the neutral ink.
-        expect(short.filter(r => r.head).map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb(colour)]);
+        expect(short.filter(r => r.head)).toEqual([]);
       }
       expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
     });
@@ -768,11 +767,8 @@ describe("the Matches page's text in a colony's colour has no backing", () => {
         const rows = await measured(page, width, 2400);
         expect(rows.length, "coloured text is shown").toBeGreaterThan(0);
         expectNoBacking(rows);
-        // The shared header names all four colonies once, regardless of the pair these recordings used.
-        SUPERCOLONY_NAMES.forEach(({ label, colour }) => {
-          const rgb = [(colour >> 16) & 255, (colour >> 8) & 255, colour & 255].join(",");
-          expect(rows.filter(r => r.head && r.text === label.replace(/ Colony$/, "") && r.state === "rest").map(r => r.rgb)).toEqual(width === 390 ? [] : [rgb]);
-        });
+        // The shared header names all four colonies in the head ink, never a colony's colour.
+        expect(rows.filter(r => r.head)).toEqual([]);
         expect(rows.filter(r => r.text === "Winner" && r.state === "rest")).toEqual([]);
         expect(body, "no row draws a text backing").not.toContain("data-aw-ground");
       });
