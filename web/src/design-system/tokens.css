@@ -56,3 +56,7 @@
   --aw-bar: 48px;
   --aw-hero: 176px;
 }
+/* Touch screens: a 44 px tap target, as web/index.html sets on :root for phones. */
+@media (pointer: coarse) {
+  .d1p { --aw-tap: 44px; }
+}
