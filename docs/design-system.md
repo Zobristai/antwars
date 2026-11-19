@@ -30,9 +30,11 @@ Each tile is one link to its match's replay. It plays nothing itself. Every tile
 
 A player line is the builder's name in bold, exactly as stored, then the model, then the effort badge, with Fast drawn as
 a bolt inside it. It comes from the same source the Matches page draws its players from. A side is one player line, and
-a side fielding more than one seat has one edge rule per seat at the left of its line. Where its seats differ (different
+a side fielding more than one seat has one mark per seat at the left of its line: two seats, two full-height edge rules;
+three or four seats, small marks two across and two down in the same space (three seats leave the lower right one out),
+so the side keeps its one line and its text does not move. Where its seats differ (different
 builders, or one builder on different models or levels), the side has one complete player line per seat group, grouped and
-ordered as Matches groups them, each with one edge rule per seat it stands for; every name shows exactly as stored, nothing
+ordered as Matches groups them, each with one mark per seat it stands for; every name shows exactly as stored, nothing
 is shortened to a count, and the tile's accessible name names every group. No rating is shown. A retired model is marked in
 the tile's accessible name and tooltip, not on the tile.
 

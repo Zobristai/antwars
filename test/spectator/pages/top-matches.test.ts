@@ -86,6 +86,20 @@ describe("a top-match tile", () => {
     expect(link(tile).getAttribute("aria-label")).toContain("K3.1 Pro Highspeed (high), 2 seats beat GPT-6 Astra (max, Fast), 2 seats");
   });
 
+  it("keeps a side of three or four alike seats on one line, with one seat mark per seat", () => {
+    const { doc } = dom();
+    for (const size of [3, 4] as const) {
+      const seats = Array.from({ length: size * 2 }, (_, index) =>
+        seat(index, index % 2 === 0 ? 0 : 1, index % 2 === 0 ? "antwars/claude-sonnet-5-5" : "antwars/k3-1-pro-highspeed"));
+      const tile = topMatchTile(doc, recording({ matchType: { kind: "index", size }, seats }), "") as unknown as ElementPort;
+      expect(rowKinds(tile)).toEqual(ROWS);
+      expect(tile.byClass("aw-meta").map(text)).toEqual([`Index · ${size} per side`]);
+      expect(tile.byClass("aw-player").map(p => p.classes().filter(c => c === "is-team" || c.startsWith("is-seats-"))))
+        .toEqual([["is-team", `is-seats-${size}`], ["is-team", `is-seats-${size}`]]);
+      expect(link(tile).getAttribute("aria-label")).toContain(`K3.1 Pro Highspeed (high), ${size} seats beat`);
+    }
+  });
+
   it("gives a side whose seats differ one line per seat group, each builder by its name as stored, as Matches does", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, recording({

@@ -5,7 +5,8 @@
 // is one player line, or, where its seats differ, one line per seat group as Matches groups them. No rating and no retired
 // mark is drawn; the retired mark is in the tile's accessible name and tooltip. A builder is shown by its name exactly as
 // stored, from the one player-line source Matches draws (pages/model.ts recordedPlayer). A side fielding more than one seat
-// says so in the type row and with one edge rule per seat.
+// says so in the type row and with one mark per seat: two edge rules for two seats, and for three or four, small marks two
+// across and two down in the same space.
 import "./tokens.css";
 import "./top-match-tile.css";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
@@ -75,19 +76,25 @@ function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   return tags ? [name, tags] : [name];
 }
 
+/** The seat-mark class of a line standing for `seats` seats: two edge rules for two seats; for three or four, one 2 x 7 px
+ * mark per seat, two across and two down in the same 6 px. One seat has no mark of its own. */
+function seatMarks(seats: number): string {
+  return seats <= 1 ? "" : ` is-seats-${Math.min(seats, 4)}`;
+}
+
 /** A side: its player line, or, where its seats differ, one block of player lines, one per seat group in first-seat order,
- * each with one edge rule per seat it stands for. No line is merged or shortened and no name is left out. */
+ * each with one mark per seat it stands for. No line is merged or shortened and no name is left out. */
 function playerLine(doc: Document, side: TileSide | null, winner: boolean): HTMLElement {
   if (side !== null && side.groups.length > 1) {
     const block = h(doc, "span", `aw-side${winner ? " is-winner" : ""}`);
     for (const group of side.groups) {
-      const line = h(doc, "span", `aw-row aw-player${group.seats > 1 ? " is-seats-2" : ""}`);
+      const line = h(doc, "span", `aw-row aw-player${seatMarks(group.seats)}`);
       line.append(...player(doc, group.parts));
       block.append(line);
     }
     return block;
   }
-  const line = h(doc, "span", `aw-row aw-player${winner ? " is-winner" : ""}${side !== null && side.seats > 1 ? " is-team" : ""}`);
+  const line = h(doc, "span", `aw-row aw-player${winner ? " is-winner" : ""}${side !== null && side.seats > 1 ? ` is-team${side.seats > 2 ? seatMarks(side.seats) : ""}` : ""}`);
   if (side === null) { line.append(h(doc, "span", "aw-name", NOT_JOINED)); return line; }
   line.append(...player(doc, side.groups[0]!.parts));
   return line;

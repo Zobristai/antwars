@@ -48,6 +48,12 @@
 .aw-side.is-winner { background-color: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); }
 .aw-side.is-winner > .aw-player { --seat-ink: var(--tile-accent); }
 .aw-side.is-winner .aw-name, .aw-side.is-winner .aw-name > b { color: var(--tile-accent); }
+/* a side, or a seat group, of three or four alike seats: still one mark per seat, in the same 6 px column pair the two-seat
+   side uses, so the line's text keeps its x. The marks stand two across and two down, each 2 x 7 px, 2 px apart, inside the
+   20 px line (2 px above and below), filled across then down: three seats leave the lower right mark out. */
+.aw-player.is-seats-3, .aw-player.is-seats-4 { --m: linear-gradient(var(--seat-ink), var(--seat-ink)); background-repeat: no-repeat; }
+.aw-player.is-seats-3 { background-image: var(--m), var(--m), var(--m); background-position: 0 2px, 4px 2px, 0 11px; background-size: 2px 7px; }
+.aw-player.is-seats-4 { background-image: var(--m), var(--m), var(--m), var(--m); background-position: 0 2px, 4px 2px, 0 11px, 4px 11px; background-size: 2px 7px; }
 /* rows 4 and 5: how it ended, the date and length */
 .aw-how, .aw-date { font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); color: var(--aw-ink-3); }
 /* rows 4 and 5 sit at the tile's foot: where a tile is taller than its own lines (a side whose seats differ in the grid, or
