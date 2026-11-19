@@ -11,12 +11,13 @@ import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.js";
 import { createMcpHandler } from "../../src/mcp/http.js";
 import { Game } from "../../src/mcp/game.js";
 import * as streamFormat from "../../src/live/format.js";
+import { RELAY_MAX_MS as SERVER_RELAY_MAX_MS } from "../../src/live/watch-routes.js";
 import { SpectatorRecorder } from "../../src/live/model.js";
 import { DEFAULT_CONFIG, rulesConfig } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 import { playable } from "../../test/playable.ts";
 // This is the actual standalone Node entry point, not a test-only copy.
-import { assertRedirect, compareStreams, domainProbe, entrypointProbe, holdStream, publicMatches, runProbe, SPECTATOR_STREAM_VERSIONS, spectatorTick, sseParser, streamProbe, TIMING_TOLERANCE_MS } from "./probe.mjs";
+import { assertRedirect, compareStreams, domainProbe, entrypointProbe, holdStream, publicMatches, RELAY_MAX_MS, runProbe, SPECTATOR_HOLD_MAX_SECONDS, SPECTATOR_STREAM_VERSIONS, spectatorTick, sseParser, streamProbe, TIMING_TOLERANCE_MS } from "./probe.mjs";
 
 const closes: (() => void | Promise<void>)[] = [];
 afterEach(async () => { vi.unstubAllGlobals(); for (const close of closes.splice(0)) await close(); });
@@ -33,9 +34,9 @@ async function http(handler: Parameters<typeof createServer>[0]) {
 function sample(elapsedMs: number, kind = "keepalive", signature = String(elapsedMs), tick?: number) {
   return { at: "2026-10-19T22:49:00.000Z", elapsedMs, monotonicMs: elapsedMs + 100, kind, signature, ...(tick === undefined ? {} : { tick }) };
 }
-function healthy(label: string) {
-  return { label, openedAt: 100, heldMs: 720_000, match: "1", complete: true,
-    samples: Array.from({ length: 47 }, (_, i) => sample((i + 1) * 15_000)) };
+function healthy(label: string, heldMs = 720_000) {
+  return { label, openedAt: 100, heldMs, match: "1", complete: true,
+    samples: Array.from({ length: Math.ceil(heldMs / 15_000) - 1 }, (_, i) => sample((i + 1) * 15_000)) };
 }
 
 describe("SSE arrival evidence", () => {
@@ -153,6 +154,18 @@ describe("comparison fails closed", () => {
     expect(compareStreams(healthy("domain"), mcp, healthy("control"), 720).pass).toBe(false);
     const closed = { ...healthy("domain"), complete: false };
     expect(compareStreams(closed, healthy("mcp"), healthy("control"), 720).pass).toBe(false);
+  });
+  // The game service ends every relayed /watch/live stream at its RELAY_MAX_MS; probe.mjs
+  // runs under plain Node, so its copy is bound here and its spectator hold stays inside it.
+  it("holds spectator streams inside the server's relay bound while the MCP stream keeps the full duration", () => {
+    expect(RELAY_MAX_MS).toBe(SERVER_RELAY_MAX_MS);
+    expect(SPECTATOR_HOLD_MAX_SECONDS * 1000).toBeLessThan(SERVER_RELAY_MAX_MS);
+    const spectatorMs = SPECTATOR_HOLD_MAX_SECONDS * 1000;
+    const compare = (domainMs: number, mcpMs: number) =>
+      compareStreams(healthy("domain", domainMs), healthy("mcp", mcpMs), healthy("control", spectatorMs), 720, SPECTATOR_HOLD_MAX_SECONDS);
+    expect(compare(spectatorMs, 720_000).failures).toEqual([]);
+    expect(compare(spectatorMs - 1_000, 720_000).failures).toContain("domain: not held for full duration");
+    expect(compare(spectatorMs, spectatorMs).failures).toContain("mcp: not held for full duration");
   });
   it("refuses comparing different matches or missing evidence", () => {
     expect(compareStreams({ ...healthy("domain"), match: "2" }, healthy("mcp"), healthy("control"), 720).pass).toBe(false);
@@ -304,6 +317,42 @@ describe("real SDK and runner wiring", () => {
     expect(pattern).toBeDefined();
     expect(spawnSync("grep", ["-Eq", pattern!], { input: `${skip[0]}\n` }).status).toBe(0);
     expect(spawnSync("grep", ["-Eq", pattern!], { input: `${lines.filter((line) => !line.includes("SKIPPED")).join("\n")}\n` }).status).toBe(1);
+  });
+  it("streams the newest live match both catalogs share", async () => {
+    const { handler, url } = await mcpServer(false);
+    const realFetch = globalThis.fetch;
+    const watched: string[] = [];
+    const older = { lobbyId: "11111111-1111-4111-8111-111111111111", startedAt: 100 };
+    const newer = { lobbyId: "22222222-2222-4222-8222-222222222222", startedAt: 200 };
+    const domainOnly = { lobbyId: "33333333-3333-4333-8333-333333333333", startedAt: 300 };
+    vi.stubGlobal("fetch", (input: string | URL, init: RequestInit = {}) => {
+      const source = new URL(String(input));
+      if (source.protocol === "http:" || source.hostname.startsWith("www.")) return Promise.resolve(new Response(null, {
+        status: 301, headers: { location: "https://domain.invalid/rules?antwar_probe=redirect" },
+      }));
+      if (source.pathname === "/mcp" && init.method !== undefined && init.method !== "GET") return realFetch(new URL("/mcp", url), init);
+      if (source.pathname === "/watch/catalog") return Promise.resolve(Response.json({
+        matches: source.hostname === "domain.invalid" ? [older, newer, domainOnly] : [older, newer],
+      }));
+      if (source.pathname.startsWith("/watch/live/") || source.pathname === "/mcp") {
+        if (source.pathname !== "/mcp") watched.push(source.pathname);
+        let timer: ReturnType<typeof setInterval>;
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(Buffer.from(": first\n\n: second\n\n"));
+            timer = setInterval(() => controller.enqueue(Buffer.from(": keepalive\n\n")), 5);
+            init.signal?.addEventListener("abort", () => { clearInterval(timer); controller.error(new DOMException("aborted", "AbortError")); }, { once: true });
+          },
+          cancel() { clearInterval(timer); },
+        });
+        return Promise.resolve(new Response(body, { headers: { "content-type": "text/event-stream" } }));
+      }
+      return Promise.resolve(new Response("page"));
+    });
+    const result = await domainProbe("https://domain.invalid", "https://control.invalid", 0.06, quiet);
+    expect(result).toMatchObject({ status: "compared", pass: true, lobbyId: newer.lobbyId, spectatorSeconds: 0.06 });
+    expect(watched).toEqual([`/watch/live/${newer.lobbyId}`, `/watch/live/${newer.lobbyId}`]);
+    expect(handler.sessionCount).toBe(0);
   });
   it("fails rather than skipping a disagreement between nonempty catalogs", async () => {
     const { handler, url } = await mcpServer(false);

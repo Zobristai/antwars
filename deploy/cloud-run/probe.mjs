@@ -126,6 +126,13 @@ export async function streamProbe(base, seconds, pingSeconds, emit = log) {
 // reconnect, match-start or application mutation is ever issued in that mode.
 // All samples have UTC and monotonic arrival times. No session/token is logged.
 export const TIMING_TOLERANCE_MS = 1000; // Measurement tolerance, not a user requirement.
+// The game service ends every relayed /watch/live stream cleanly at RELAY_MAX_MS
+// (src/live/watch-routes.ts) and viewers reconnect. Plain Node cannot import that
+// module, so probe.test.ts binds this copy to it. Spectator streams are held for
+// at most SPECTATOR_HOLD_MAX_SECONDS, inside that bound; the MCP stream keeps the
+// full duration.
+export const RELAY_MAX_MS = 300_000;
+export const SPECTATOR_HOLD_MAX_SECONDS = RELAY_MAX_MS / 1000 - 10;
 const HEARTBEAT_MS = 15_000; // src/live/config.ts and SDK 1.32.1 sseKeepAlive.js.
 const REQUEST_MS = 20_000;
 const FRAME_LIMIT = 100_000;
@@ -234,11 +241,12 @@ export async function holdStream(label, url, { headers = {}, seconds, signal, em
 }
 
 /** No retries or reconnects: an early close or buffered burst is a failed run. */
-export function compareStreams(domain, mcp, control, seconds, toleranceMs = TIMING_TOLERANCE_MS) {
+export function compareStreams(domain, mcp, control, seconds, spectatorSeconds = seconds, toleranceMs = TIMING_TOLERANCE_MS) {
   const failures = [];
   const metrics = [];
   for (const stream of [domain, mcp, control]) {
-    if (!stream.complete || stream.heldMs + 5 < seconds * 1000) failures.push(`${stream.label}: not held for full duration`);
+    const heldFor = stream === mcp ? seconds : spectatorSeconds;
+    if (!stream.complete || stream.heldMs + 5 < heldFor * 1000) failures.push(`${stream.label}: not held for full duration`);
     if (stream.samples.length < 2) failures.push(`${stream.label}: insufficient arrivals`);
     const gaps = [stream.samples[0]?.elapsedMs ?? stream.heldMs];
     for (let i = 1; i < stream.samples.length; i++) gaps.push(stream.samples[i].elapsedMs - stream.samples[i - 1].elapsedMs);
@@ -343,7 +351,10 @@ export async function domainProbe(base, control, seconds = 720, emit = log) {
     emit("RESULT domain comparison SKIPPED", JSON.stringify(skipped));
     return skipped;
   }
-  const shared = domainMatches.find(match => controlMatches.some(other => other.lobbyId === match.lobbyId && other.startedAt === match.startedAt));
+  // The newest shared match is the one most likely to stay live for the hold.
+  const shared = domainMatches
+    .filter(match => controlMatches.some(other => other.lobbyId === match.lobbyId && other.startedAt === match.startedAt))
+    .reduce((newest, match) => (newest === undefined || match.startedAt > newest.startedAt ? match : newest), undefined);
   if (!shared) throw new Error("public catalogs have no shared match; stream comparison cannot establish identity");
   const watchPath = `/watch/live/${shared.lobbyId}`;
   const url = new URL("/mcp", base);
@@ -368,13 +379,15 @@ export async function domainProbe(base, control, seconds = 720, emit = log) {
       pingInFlight = pingInFlight.then(async () => { await post({ jsonrpc: "2.0", id: ++id, method: "ping" }); })
         .catch(() => { emit("MCP ping failed"); stop.abort(); });
     }, 60_000);
-    const common = { seconds, signal: stop.signal, emit };
+    const common = { signal: stop.signal, emit };
+    const spectatorSeconds = Math.min(seconds, SPECTATOR_HOLD_MAX_SECONDS);
+    const spectator = { ...common, seconds: spectatorSeconds, spectator: true, match: shared.lobbyId };
     const results = await Promise.all([
-      holdStream("domain-spectator", new URL(watchPath, base), { ...common, spectator: true, match: shared.lobbyId }),
-      holdStream("domain-mcp", url, { ...common, headers: { "mcp-session-id": sessionId, "mcp-protocol-version": LATEST_PROTOCOL_VERSION } }),
-      holdStream("run.app-spectator", new URL(watchPath, control), { ...common, spectator: true, match: shared.lobbyId }),
+      holdStream("domain-spectator", new URL(watchPath, base), spectator),
+      holdStream("domain-mcp", url, { ...common, seconds, headers: { "mcp-session-id": sessionId, "mcp-protocol-version": LATEST_PROTOCOL_VERSION } }),
+      holdStream("run.app-spectator", new URL(watchPath, control), spectator),
     ]);
-    const comparison = { ...compareStreams(...results, seconds), status: "compared", lobbyId: shared.lobbyId };
+    const comparison = { ...compareStreams(...results, seconds, spectatorSeconds), status: "compared", lobbyId: shared.lobbyId, spectatorSeconds };
     emit("RESULT domain comparison", JSON.stringify(comparison));
     if (!comparison.pass) throw new Error("domain stream comparison failed; stop without workaround");
     return comparison;
