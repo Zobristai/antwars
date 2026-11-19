@@ -71,6 +71,9 @@ describe("the band and its cyan Refresh", () => {
     expect([more.tag, more.className, more.textContent]).toEqual(["button", "d1-agent-button", "Load more"]);
     const offer = root.all().find(node => node.dataset.key === "waiting-challenge")!;
     expect([offer.tag, offer.className, offer.textContent]).toEqual(["a", "d1-agent-button", "challenge a house handle"]);
+    // Its words wrap inside the cyan button where a zoomed phone's card is narrower than them, as the challenge bubble's do.
+    const css = readFileSync(new URL("../../../web/src/pages/archive.css", import.meta.url), "utf8");
+    expect(css).toContain('.d1p .d1-agent-button[data-key="waiting-challenge"],\n.d1p .d1-agent-button[data-key="challenge-new"] { white-space: normal;');
     expect(grey.some(node => node.classes().includes("d1p-refresh"))).toBe(false);
     expect(root.byClass("d1p-row-pill").map(node => node.textContent)).toEqual(["Watch", "Watch"]);
     expect(root.byClass("d1p-row-pill").every(node => node.classes().includes("d1-agent-button") && !node.classes().includes("d2-pill"))).toBe(true);
