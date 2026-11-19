@@ -3,14 +3,15 @@
 // player line on a band of its colony colour, the only colony colour on the tile; the other side's player line; how it
 // ended; the date with the length. No rating and no retired mark is drawn; the retired mark is in the tile's accessible name
 // and tooltip. A builder is shown by its name exactly as stored, from the one player-line source Matches draws
-// (pages/model.ts recordedPlayer). A side fielding more than one seat says so in the type row and with one edge rule per seat.
+// (pages/model.ts recordedPlayer). A side fielding more than one seat says so in the type row and with one edge rule per seat;
+// a side whose seats differ names each of them, as Matches does.
 import "./tokens.css";
 import "./top-match-tile.css";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
 import { badgeWords, hasBadges, type BadgeKinds } from "../leaderboard-page/view.ts";
 import type { Recording } from "../matches-page/data.ts";
-import { colonySeats, seatGroups, whenParts, type PlayerParts } from "../pages/model.ts";
+import { colonySeats, seatGroups, whenParts, type PlayerParts, type SeatGroup } from "../pages/model.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 
@@ -31,8 +32,8 @@ export function tileType(type: Recording["matchType"]): { kind: string; size: st
   return { kind, size: type.size > 1 ? `${type.size} seats each` : "1v1" };
 }
 
-/** One side as the tile shows it: its first seat's player line, how many seats it fields, and whether they are all alike. */
-export interface TileSide { readonly parts: PlayerParts; readonly seats: number; readonly alike: boolean }
+/** One side as the tile shows it: its seats as Matches groups them (alike seats once), and how many seats it fields. */
+export interface TileSide { readonly groups: readonly SeatGroup[]; readonly seats: number }
 
 /** Each colony's side, index = colony; null for a colony with no recorded seat. Ratings play no part: the tile shows none. */
 export function tileSides(r: Pick<Recording, "seats">, colonies: number): (TileSide | null)[] {
@@ -40,8 +41,7 @@ export function tileSides(r: Pick<Recording, "seats">, colonies: number): (TileS
   return Array.from({ length: colonies }, (_, colony) => {
     const entries = seats?.[colony] ?? null;
     if (entries === null) return null;
-    const groups = seatGroups(entries.map(entry => ({ ...entry, rating: null })));
-    return { parts: groups[0]!.parts, seats: entries.length, alike: groups.length === 1 };
+    return { groups: seatGroups(entries.map(entry => ({ ...entry, rating: null }))), seats: entries.length };
   });
 }
 
@@ -63,30 +63,40 @@ function badges(doc: Document, kinds: BadgeKinds): HTMLElement | null {
   return tags;
 }
 
-/** A side's player line: the builder's name (bold) and the model, then the effort badge; unlike seats add "+N". */
+/** One player: the builder's name (bold) and the model, then the effort badge. */
+function player(doc: Document, parts: PlayerParts): HTMLElement[] {
+  const name = h(doc, "span", "aw-name");
+  if (parts.user !== null) name.append(h(doc, "b", undefined, parts.user));
+  if (parts.user !== null && parts.model !== null) name.append(" ");
+  if (parts.model !== null) name.append(parts.model);
+  const tags = badges(doc, parts.badges);
+  return tags ? [name, tags] : [name];
+}
+
+/** A side's player line: its player, or, where its seats differ, each of them in seat order, each kept whole when the line wraps. */
 function playerLine(doc: Document, side: TileSide | null, winner: boolean): HTMLElement {
   const line = h(doc, "span", `aw-row aw-player${winner ? " is-winner" : ""}${side !== null && side.seats > 1 ? " is-team" : ""}`);
-  const name = h(doc, "span", "aw-name");
-  if (side === null) { name.textContent = NOT_JOINED; line.append(name); return line; }
-  const { user, model } = side.parts;
-  if (user !== null) name.append(h(doc, "b", undefined, user));
-  if (user !== null && model !== null) name.append(" ");
-  if (model !== null) name.append(model);
-  line.append(name);
-  const tags = badges(doc, side.parts.badges);
-  if (tags) line.append(tags);
-  if (!side.alike) line.append(h(doc, "span", "aw-count", `+${side.seats - 1}`));
+  if (side === null) { line.append(h(doc, "span", "aw-name", NOT_JOINED)); return line; }
+  if (side.groups.length === 1) { line.append(...player(doc, side.groups[0]!.parts)); return line; }
+  for (const group of side.groups) {
+    const entry = h(doc, "span", "aw-entry");
+    entry.append(...player(doc, group.parts));
+    line.append(entry);
+  }
   return line;
 }
 
-/** A side in words, for the tile's accessible name: name and model, its badges with "retired model", then its seats. */
-function sideWords(side: TileSide | null): string {
-  if (side === null) return NOT_JOINED;
-  const { user, model, badges: kinds } = side.parts;
+/** One player in words: name and model, then its badges with "retired model". */
+function playerWords({ user, model, badges: kinds }: PlayerParts): string {
   const shown = badgeWords({ ...kinds, retired: false });
   const extra = [...shown, ...(kinds.retired ? ["retired model"] : [])];
-  return [user, model].filter(word => word !== null).join(" ") + (hasBadges(kinds) && extra.length ? ` (${extra.join(", ")})` : "")
-    + (side.seats > 1 ? `, ${side.seats} seats` : "");
+  return [user, model].filter(word => word !== null).join(" ") + (hasBadges(kinds) && extra.length ? ` (${extra.join(", ")})` : "");
+}
+
+/** A side in words, for the tile's accessible name: each of its players, then its seats. */
+function sideWords(side: TileSide | null): string {
+  if (side === null) return NOT_JOINED;
+  return side.groups.map(group => playerWords(group.parts)).join(" and ") + (side.seats > 1 ? `, ${side.seats} seats` : "");
 }
 
 /** One grid cell: the tile linking to the match's replay. */

@@ -3,7 +3,7 @@
    band on the site's shared page frame (pages/chrome.ts), which supplies the top bar, the battle hero, the amber wash and
    the footer. */
 
-/* ---- the grid: 4 x 4 from 46.125rem, 2 x 8 under it; every cell the same size */
+/* ---- the grid: 4 x 4 from 46.125rem, 2 x 8 under it down to 22.5em (360 px), one column below; every cell the same size */
 .aw-grid { --cols: 4; --gap: var(--aw-space-3); display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
 .aw-grid > li { display: grid; min-width: 0; margin: 0; padding: 0; }
 
@@ -29,7 +29,9 @@
 .aw-badge { display: inline-flex; align-items: center; gap: 1px; padding: 0 var(--aw-space-1); border-radius: var(--aw-radius-badge); background: var(--aw-raise); font-size: var(--aw-text-badge-sm); line-height: var(--aw-lh-badge-sm); font-weight: var(--aw-strong); letter-spacing: var(--aw-track-badge); text-transform: uppercase; white-space: nowrap; color: var(--aw-ink-2); }
 .aw-bolt { display: inline-block; flex: none; width: 6px; height: 9px; margin-left: 1px; background: currentColor; clip-path: path("M3.6 0 0 5h2.4L1.8 9 6 3.6H3.4z"); }
 @media (forced-colors: active) { .aw-bolt { forced-color-adjust: none; background: CanvasText; } }
-.aw-count { flex: none; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+/* a side whose seats differ: each player whole, a name and its badge, one after another; the line wraps between players */
+.aw-entry { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: var(--aw-gap-inline); min-width: 0; margin-right: var(--aw-space-2); }
+.aw-entry:last-child { margin-right: 0; }
 /* the winner's band: the only colony colour on the tile, drawn as Recordings draws a winner cell */
 .aw-player.is-winner { margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad); background: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); box-shadow: inset 2px 0 0 var(--tile-accent); }
 .aw-player.is-winner .aw-name, .aw-player.is-winner .aw-name > b { color: var(--tile-accent); }
@@ -72,14 +74,24 @@
 }
 /* ---- two columns on a phone, 24.25em to 46.125rem: the page edge 12 px and the gap 4 px, as from 46.125rem to 52rem. The design's 16 and
    8 px were measured with web fonts; the site draws with the visitor's system fonts, whose widest player line (Liberation Sans)
-   needs 157.4 px where 16 and 8 px give 157. 12 and 4 px give it 163 at 390 px. Under 24.25em the rules below are unchanged. */
+   needs 157.4 px where 16 and 8 px give 157. 12 and 4 px give it 163 at 390 px. Under 24.25em the rules below apply. */
 @media (min-width: 24.25em) and (max-width: 46.124rem) {
   .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-3); }
   .aw-grid { --gap: var(--aw-space-1); }
 }
-/* ---- narrowest phones and zoomed pages, under 24.25em (388 px at default text size): one column, so every line keeps its one line down to 320 px.
+/* ---- two columns on the narrowest phones, 22.5em to 24.25em (360 to 388 px at default text size): the page edge 8 px and the gap 4 px,
+   and the tile takes the flush list's insets below: 2 px on the right and 4 px between a name and its badge, the left inset keeping
+   8 px for the seat rules. At 360 px the widest player line (Liberation Sans) then has 2.6 px to spare. */
+@media (min-width: 22.5em) and (max-width: 24.249em) {
+  .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-2); }
+  .aw-grid { --gap: var(--aw-space-1); }
+  .aw-tile { padding-right: 2px; }
+  .aw-player { column-gap: var(--aw-space-1); }
+  .aw-player.is-winner, .aw-player.is-team { margin-right: -2px; padding-right: 2px; }
+}
+/* ---- phones narrower than 360 px and zoomed pages, under 22.5em: one column, so every line keeps its one line down to 320 px.
    em, not px, so it also follows a larger default text size and page zoom. */
-@media (max-width: 24.249em) {
+@media (max-width: 22.499em) {
   .aw-grid { --cols: 1; }
   /* one column: the page edge narrows to 8 px, the tile's own inset, so a 390 phone at 200 % zoom (195 CSS px) gives the line
      161 px and a 320 phone with doubled text 286 px: the 2v2 line keeps its one line in both */

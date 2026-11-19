@@ -84,6 +84,21 @@ describe("a top-match tile", () => {
     expect(tile.byClass("aw-player").map(text)).toEqual(["K3.1 Pro Highspeedhigh", "GPT-6 Astramax"]);
     expect(link(tile).getAttribute("aria-label")).toContain("K3.1 Pro Highspeed (high), 2 seats beat GPT-6 Astra (max, Fast), 2 seats");
   });
+
+  it("names every builder on a side whose seats differ, each by its name as stored, as Matches does", () => {
+    const { doc } = dom();
+    const tile = topMatchTile(doc, recording({
+      matchType: { kind: "index", size: 2 },
+      seats: [seat(0, 0, "antwars/gpt-6-astra"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
+        seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
+    }), "") as unknown as ElementPort;
+    const winner = tile.byClass("aw-player")[0]!;
+    expect(winner.byClass("aw-entry")).toHaveLength(2);
+    expect(tagged(winner, "b").map(text)).toEqual(["Kain", "zed_7"]);
+    expect(text(tile)).not.toMatch(/\+\d/);
+    expect(tile.byClass("aw-player")[1]!.byClass("aw-entry")).toEqual([]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+ and zed_7 \S+, 2 seats beat GPT-6 Astra \(max, Fast\), 2 seats,/);
+  });
 });
 
 describe("the top-matches page", () => {
