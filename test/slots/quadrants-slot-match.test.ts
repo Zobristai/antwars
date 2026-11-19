@@ -12,6 +12,7 @@ import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.ts";
 import { KEY_RECHECK_MS } from "../../src/mcp/tools.ts";
 import { QUADRANT_ROTATION_REQUIRED, type Game } from "../../src/mcp/game.ts";
 import { isIndexMode } from "../../src/rating/harnessPhase.ts";
+import { lobbyMatchType } from "../../src/replays/recorded-match-type.ts";
 import { createRatings, RANKED_MODES, ratingCollection } from "../../src/rating/ratings.ts";
 import { startServer, type GameServer } from "../../src/server.ts";
 import { rulesConfig, SUB, type MapDefinition } from "../../src/sim/config.ts";
@@ -312,6 +313,44 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     expect(JSON.parse(w.docs.get(`lobbies/${lobbyId.lobbyId}`)!.result!)).toEqual({ reason: "idle", ffa: state.result!.ffa,
       eliminations: state.colonies.map(colony => ({ colony: colony.id, tick: colony.eliminated!.tick })) });
     expect(ratingPaths(w)).toEqual([]);
+  });
+
+  it("plays a four-colony test lobby made with create_lobby test: true to its result, typed test and unrated", async () => {
+    const w = world([FIXTURE]);
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: LIVE, quadrantMaps: [FIXTURE], seed: 4242,
+      startPickWindowMs: 300, mcpConfig: MCP, accounts: w.accounts, slot: w.slot });
+    closers.push(() => server.close());
+    const players = [];
+    for (const name of ["Ann", "Bob", "Cat", "Dan"]) players.push(await claim(w, name));
+    const entry = await agent(server);
+    const created = await entry.call("create_lobby", { key: players[0]!.key, kind: "public", size: 1, test: true, mode: "quadrants" });
+    expect(created.isError, created.text).toBe(false);
+    const lobbyId = (created.data as any).lobby.id as string;
+    expect((created.data as any).lobby).toMatchObject({ test: true, mode: "quadrants", colonies: [[], [], [], []], colonyNames: NAMES });
+    // Four join_lobby calls, no queue: each takes the colony with fewest seats, and the fourth starts it.
+    for (const [colony, player] of players.entries()) {
+      const joined = await entry.call("join_lobby", { key: player.key, lobbyId });
+      expect(joined.isError, joined.text).toBe(false);
+      expect((joined.data as any).lobby.colonies[colony].map((seat: Seat) => seat.id)).toEqual([player.identity.id]);
+    }
+    // Every seat joins the slot and then makes no call: all four go idle together and the engine settles the result.
+    await waitFor(() => openStartOf(server) === lobbyId, 20_000);
+    for (const player of players) expect((await (await agent(server)).call("join", { key: player.key })).isError).toBe(false);
+    await waitFor(() => server.game.match?.state.result != null, 20_000);
+    const state = server.game.match!.state;
+    expect(state.colonies.map(colony => colony.id)).toEqual([0, 1, 2, 3]);
+    expect(state.terrain!.mapId).toBe(FIXTURE.id);
+    const winner = state.result!.winner;
+    expect(state.result).toMatchObject({ reason: "idle" });
+    expect(state.result!.ffa!.order[0]).toBe(winner);
+
+    const lobby = await ended(w, lobbyId);
+    expect(lobby).toMatchObject({ outcome: `colony_${winner}_won`, rated: false, mode: "quadrants", test: true });
+    expect(JSON.parse(w.docs.get(`lobbies/${lobbyId}`)!.result!)).toEqual({ reason: "idle", ffa: state.result!.ffa,
+      eliminations: state.colonies.map(colony => ({ colony: colony.id, tick: colony.eliminated!.tick })) });
+    expect(lobbyMatchType(lobby)).toEqual({ kind: "test", size: 1 });
+    expect(ratingPaths(w)).toEqual([]);
+    expect([...w.docs.keys()].filter(path => path.startsWith("ratings-ffa/"))).toEqual([]);
   });
 
   it("with an empty rotation, a spectated server refuses Quadrants, ends a prepared Quadrants lobby not played and streams its 1v1", async () => {

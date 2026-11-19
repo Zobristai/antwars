@@ -99,7 +99,7 @@ function worstBody(op: (typeof ACCOUNT_OPERATIONS)[number]): Record<string, unkn
   const body: Record<string, unknown> = {};
   for (const [field, schema] of Object.entries(op.input.shape as Record<string, unknown>)) {
     const s = unwrap(schema);
-    const def = s._zod.def as { type: string; entries?: Record<string, string> };
+    const def = s._zod.def as { type: string; entries?: Record<string, string>; values?: unknown[] };
     if (def.type === "string") {
       // An unbounded string has no largest body: the cap could refuse a valid call.
       expect(s.maxLength, `${op.name}.${field} has no maximum length`).toBeTypeOf("number");
@@ -107,6 +107,7 @@ function worstBody(op: (typeof ACCOUNT_OPERATIONS)[number]): Record<string, unkn
     } else if (def.type === "number") body[field] = s.maxValue;
     else if (def.type === "boolean") body[field] = false;
     else if (def.type === "enum") body[field] = Object.values(def.entries!).sort((a, b) => b.length - a.length)[0];
+    else if (def.type === "literal") body[field] = [...def.values!].sort((a, b) => JSON.stringify(b).length - JSON.stringify(a).length)[0];
     else throw new Error(`${op.name}.${field}: no largest value for a ${def.type} field; extend this test`);
   }
   return body;
