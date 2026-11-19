@@ -380,8 +380,9 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     // The shared read outlives this request; the request stops waiting at its deadline or disconnect.
     const stored = await untilAborted(topSummaries(), signal);
     // Hide list and served values on every request, so a newly hidden match drops off without a restart.
-    const visible = options.publicVisibility ? await publiclyVisible(stored, row => options.publicVisibility!.replayVisible(row.id), signal) : stored;
-    const served = (await serve({ matches: visible, nextPageToken: null }, signal)).matches;
+    // Like a listing page, the request stops waiting for the hide list and the served values at its deadline or disconnect.
+    const visible = options.publicVisibility ? await untilAborted(publiclyVisible(stored, row => options.publicVisibility!.replayVisible(row.id), signal), signal) : stored;
+    const served = (await untilAborted(serve({ matches: visible, nextPageToken: null }, signal), signal)).matches;
     const shown = new Set(served.map(row => row.id));
     const leftOff = [...picks.leftOff, ...picks.ids.filter(id => !shown.has(id))].join(", ");
     // Ids only, and only when they change: every one is the list's own entry.

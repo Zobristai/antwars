@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicVisibility } from "../../src/identity/publicVisibility.ts";
@@ -146,6 +146,53 @@ describe(`GET ${TOP_PATH}`, () => {
     expect((await read(origin)).status).toBe(503);
     fail = false;
     expect((await read(origin)).body.matches.map(row => row.id)).toEqual([a.id]);
+  });
+
+  describe("stops waiting at its 60 s deadline or a disconnect, as a listing page does", () => {
+    afterEach(() => { vi.useRealTimers(); });
+    /** The route called directly, so fake timers drive its deadline; the response records what was written. */
+    function call(options: HistoryRouteOptions, extra: Partial<HistorySource>, record: HistorySummary) {
+      const source: HistorySource = {
+        async list() { return { matches: [], nextPageToken: null }; },
+        async open() { return null; },
+        async summary(id) { return id === record.id ? record : null; },
+        ...extra,
+      };
+      const handler = historyRoutes(source, undefined, { topMatches: topMatchIds({ matches: [record.id] }), ...options });
+      const res = Object.assign(new EventEmitter(), {
+        destroyed: false, headersSent: false, status: 0,
+        writeHead(status: number) { res.status = status; res.headersSent = true; return res; },
+        end() { return res; },
+        destroy() { res.destroyed = true; },
+      });
+      const req = { url: TOP_PATH, method: "GET" };
+      const handled = Promise.resolve(handler(req as never, res as never, undefined as never));
+      return { res, handled };
+    }
+    const never = new Promise<never>(() => undefined);
+    const held: [string, HistoryRouteOptions, Partial<HistorySource>][] = [
+      ["the hide-list check", { publicVisibility: { identitiesVisible: async () => true, lobbyVisible: async () => true, replayVisible: () => never } }, {}],
+      ["the served-values lookup", {}, { listed: () => never }],
+    ];
+    it.each(held)("answers unavailable at the deadline while %s is still outstanding", async (_, options, extra) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const { res, handled } = call(options, extra, stored());
+      let settled = false;
+      void handled.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect([settled, res.status]).toEqual([false, 0]);
+      await vi.advanceTimersByTimeAsync(1);
+      await handled;
+      expect(res.status).toBe(503);
+    });
+    it.each(held)("ends when the client disconnects while %s is still outstanding", async (_, options, extra) => {
+      const { res, handled } = call(options, extra, stored());
+      await new Promise(resolve => setTimeout(resolve, 10));
+      res.destroyed = true;
+      res.emit("close");
+      await handled;
+      expect(res.status).toBe(0);
+    });
   });
 
   it("refuses a query and any other path under it", async () => {
