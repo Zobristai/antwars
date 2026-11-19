@@ -65,8 +65,10 @@ Tightest fit per screen (head; spare = (available − needed) / available):
 |---|---|---|---|---|---|
 | Replay HUD, Agents list | Gemini 4 Neon (medium · retired) | Liberation Sans | 1280 | 35.0% | 51.2% (no "· retired") |
 | Replay HUD, Agents list | same | Roboto | 1280 | 35.6% | 51.4% |
-| Result dialog, Players | Gemini 4 Neon MEDIUM RETIRED | Liberation Sans and Roboto | 390 | 22.3% | 46.9% (no badge) |
-| Result dialog, Players | Gemini 4 Neon XHIGH RETIRED | both | 390 | 26.2% | 50.8% |
+| Result dialog, Players | Gemini 4 Neon MEDIUM RETIRED | Liberation Sans | 390 | 22.3% | 46.9% (no badge) |
+| Result dialog, Players | same | Roboto (drawn; see Drawn fonts) | 390 | 26.1% | 49.1% |
+| Result dialog, Players | Gemini 4 Neon XHIGH RETIRED | Liberation Sans | 390 | 26.2% | 50.8% |
+| Result dialog, Players | same | Roboto (drawn) | 390 | 30.0% | 53.0% |
 
 No replay line comes under the 8% mark used above. Per-line measurements are in `<typeface>/replay-measurements.json` (one entry per recording, build and width). For the MEDIUM v HIGH recording at 1280 px the full run record was not written because the run was stopped after that unit; its entry is the run's printed per-line summary (text, lines, cut, spare), and its screenshots are complete.
 
@@ -90,7 +92,8 @@ Tightest fit per screen (head):
 | 3D deck row, ended | Gemini 4 Neon XHIGH RETIRED 1567 WINNER | Liberation Sans | 390 | **7.8%** (332 / 360 px) | 25.1% |
 | same | same | Roboto | 390 | 11.3% | 27.5% |
 | same | same | Liberation Sans | 1280 | 16.3% | 32.4% |
-| Result dialog over the 3D board | Gemini 4 Neon MEDIUM RETIRED | both | 390 | 22.3% | 46.9% |
+| Result dialog over the 3D board | Gemini 4 Neon MEDIUM RETIRED | Liberation Sans | 390 | 22.3% | 46.9% |
+| same | same | Roboto (drawn; see Drawn fonts) | 390 | 26.1% | 49.1% |
 
 The ended row with WINNER is the tightest line in this evidence. It still fits on one line, uncut, in both typefaces; crop: `liberation-sans/replay-low-v-xhigh-3d/replay-low-v-xhigh-3d-ended-b0616ba-390-neon-2.png`. Per-line measurements are in `<typeface>/replay-3d-measurements.json`: one entry per recording, build and width, each with every shot.
 
@@ -117,6 +120,24 @@ Tightest Neon Recordings line (identical at base and head):
 The tightest Recordings line of any kind is 4.2% (Liberation Sans) and 6.3% (Roboto) at 1280 on Matches, the same at base and head; it is not a Neon line.
 
 **Top matches tiles: no parked handle shown, not rendered.** The tile draws the model and level badge but never the retired mark: `web/src/design-system/top-match-tile.ts` line 58 (`The retired mark is not drawn.`); the badge is built in lines 59–66, and the words at line 105 drop it (`badgeWords({ ...kinds, retired: false })`). None of the 16 matches in the shipped list (`src/replays/top-matches.json`) seats a Gemini 4 Neon handle: each match record was read from the public API on 2026-11-19, and the only Gemini 4 handles seated are Argon and Carbon. The page also cannot be rendered on real data yet, because antwars.ai does not serve `GET /matches/top` (404 on 2026-11-19).
+
+## Drawn fonts in the replay captures
+
+Every replay capture set was captured again with the browser's own report of the font it drew: for each element with its own text in the 2D Agents list (name and model lines), the 3D deck agent rows, and the result dialog's players (names and badges), the computed `font-family` and the platform fonts Chromium reports drawing that text with (DevTools protocol `CSS.getPlatformFontsForNode`, with glyph counts). A capture set is one recording, board, build (base 5634b8e or head b0616ba), width and typeface; each set has its HUD, result and ended shots. Same builds, browser, API snapshot and page clock as above; captured 2026-11-19T16:00:45Z to 2026-11-19T17:33:00Z. The replay code is unchanged from b0616ba to the current head 2e92b3e (`git diff b0616ba 2e92b3e -- web/src/ui` is empty).
+
+**Finding: the Roboto result dialog was drawn in Liberation Sans.** The result dialog asks for `font-family: Arial, sans-serif` (`web/src/ui/deck/deck.css` line 556); everything else asks for the site stack that starts with `system-ui`. The Roboto setup mapped only `system-ui` and `sans-serif` to Roboto, so Arial fell to Liberation Sans, its metric equivalent. The Roboto rows for the result dialog in `roboto/replay-measurements.json` and `roboto/replay-3d-measurements.json` therefore measure Liberation Sans. The dialog was captured again with Arial also mapped to Roboto, as Android maps Arial to its sans-serif. That fit is listed above as "Roboto (drawn)". The dialog is wider there (26.1% at its tightest, against 22.3% in Liberation Sans), every line is on one line and uncut, and there are no page errors. This is a gap in the render setup, not a defect in the pull request: base and head ask for the same fonts.
+
+| Typeface (font setup) | HUD: 2D Agents text and 3D deck rows | Result dialog: names and badges | Ended: deck rows / Agents text |
+|---|---|---|---|
+| Liberation Sans | drawn Liberation Sans, all 16 sets | drawn Liberation Sans, all 16 sets | drawn Liberation Sans, all 16 sets |
+| Roboto (system-ui and sans-serif mapped) | drawn Roboto, all 16 sets | **drawn Liberation Sans, all 16 sets: no match** | drawn Roboto, all 16 sets |
+| Roboto, Arial also mapped | drawn Roboto, all 16 sets | drawn Roboto, all 16 sets | drawn Roboto, all 16 sets |
+
+The 16 sets in each row are the same in each typeface: two recordings (MEDIUM v HIGH, LOW v XHIGH) x board (2D, 3D) x build (5634b8e, b0616ba) x width (1280, 390). Each part's report names one font family and no fallback font.
+
+- **Files:** `<typeface>/replay-fonts.json` holds one entry per capture set (typeface, font setup, recording, board, build and commit, width), and under each shot its screenshot file and SHA-256, `fontCheck` (intended family, drawn families, matched or not, each mismatched part), `fontParts` (each text part with its computed `font-family`, weight and drawn fonts) and the per-line fit. The Arial-mapped Roboto captures are in `roboto/replay-arial-as-roboto/` with their own `replay-fonts.json`.
+- **Screenshots kept:** every Neon line crop captured again is byte-identical to the crop already on this branch, in both typefaces, at every shot. So each font report applies to the crops already here. 50 of the 72 full-page screenshots captured again are also byte-identical. The other 22 are HUD shots taken mid-playback: in each, the bytes differ while the Neon crops are identical. These 22 were replaced with the new captures, so each full-page file on the branch is the one its font report was taken from.
+- **New shots:** ended shots (result dialog closed) for the 2D board on both recordings and for the 3D board on MEDIUM v HIGH. The earlier gap in the MEDIUM v HIGH 2D 1280 record is closed: `replay-fonts.json` holds its full per-line record.
 
 ## Data and method
 
