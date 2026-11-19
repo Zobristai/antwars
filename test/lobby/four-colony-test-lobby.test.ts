@@ -2,12 +2,14 @@
 // A four-colony test lobby at the lobby layer: create_lobby with test and mode quadrants makes a lobby of four one-seat
 // colonies, typed test and left out of the public lobby lists, seated by join, started by the fourth join, unrated, and its
 // release keeps the Free-for-all result and rates nothing. Without test the mode is refused; queue-made quadrants lobbies
-// and ordinary two-colony lobbies are unchanged.
+// and ordinary two-colony lobbies are unchanged. A four-colony test lobby may name its map from the quadrants rotation,
+// carried to the slot with its holder; no other lobby may, and a lobby without one carries none.
 import { describe, expect, it } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, LOBBY_TTL_MS, type MatchResult } from "../../src/lobby/lobbies.ts";
 import { lobbyMatchType } from "../../src/replays/recorded-match-type.ts";
 import { quadrantColonyNames } from "../../src/sim/colonyNames.ts";
+import { QUADRANT_MAPS } from "../../src/sim/quadrantMaps.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
 const INSTANCE = { mcpUrl: "http://local.test/mcp", spectatorUrl: "http://local.test/" };
@@ -37,6 +39,8 @@ describe("a four-colony test lobby", () => {
     const created = value(await w.lobbies.createLobby(w.players[0]!.key, "public", 1, { test: true, mode: "quadrants" })).lobby;
     expect(created).toMatchObject({ test: true, mode: "quadrants", size: 1, state: "open", rated: null, colonies: [[], [], [], []],
       colonyNames: quadrantColonyNames() });
+    // Without a named map its match draws one, as always: the lobby carries no map.
+    expect(created).not.toHaveProperty("map");
     expect(lobbyMatchType(created)).toEqual({ kind: "test", size: 1 });
     for (const [colony, player] of w.players.slice(0, 3).entries()) {
       const joined = value(await w.lobbies.join(created.id, player.key));
@@ -53,6 +57,7 @@ describe("a four-colony test lobby", () => {
     expect(started.colonies.map(colony => colony.map(seat => seat.id))).toEqual(w.players.map(player => [player.id]));
     expect(await w.lobbies.slotHolder("public-0")).toMatchObject({ lobbyId: created.id, mode: "quadrants",
       colonies: w.players.map(player => [expect.objectContaining({ id: player.id })]) });
+    expect(await w.lobbies.slotHolder("public-0")).not.toHaveProperty("map");
     expect(await w.lobbies.join(created.id, (await w.claim("Eve")).key)).toEqual({ ok: false, reason: "full" });
     expect(await w.lobbies.listUnstarted()).toEqual([]);
 
@@ -85,6 +90,48 @@ describe("a four-colony test lobby", () => {
     const empty = await world({ quadrantMaps: [] });
     expect(await empty.lobbies.createLobby(empty.players[0]!.key, "public", 1, { test: true, mode: "quadrants" })).toEqual({ ok: false, reason: "no_quadrant_map" });
     expect([...w.docs.keys()].filter(path => path.startsWith("lobbies/"))).toEqual([]);
+  });
+});
+
+describe("a four-colony test lobby's named map", () => {
+  it("is kept on the lobby and carried to the slot with its holder", async () => {
+    const w = await world();
+    for (const map of QUADRANT_MAPS.map(m => m.id)) {
+      const created = value(await w.lobbies.createLobby(w.players[0]!.key, "private", 1, { test: true, mode: "quadrants", map })).lobby;
+      expect(created).toMatchObject({ test: true, mode: "quadrants", map });
+      expect(value(await w.lobbies.readLobby(created.id)).map).toBe(map);
+    }
+    const created = value(await w.lobbies.createLobby(w.players[0]!.key, "public", 1, { test: true, mode: "quadrants", map: "crossroads" })).lobby;
+    for (const player of w.players) value(await w.lobbies.join(created.id, player.key));
+    expect(await w.lobbies.slotHolder("public-0")).toMatchObject({ lobbyId: created.id, mode: "quadrants", map: "crossroads" });
+  });
+
+  it("is refused on every lobby that is not a four-colony test, and for a map outside the quadrants rotation", async () => {
+    const w = await world();
+    const key = w.players[0]!.key;
+    // Not a test: a four-colony lobby without test, and ordinary two-colony lobbies with or without test.
+    expect(await w.lobbies.createLobby(key, "public", 1, { mode: "quadrants", map: "four-coves" })).toEqual({ ok: false, reason: "test_only" });
+    expect(await w.lobbies.createLobby(key, "public", 1, { map: "four-coves" })).toEqual({ ok: false, reason: "map_test_only" });
+    expect(await w.lobbies.createLobby(key, "private", 2, { map: "four-coves" })).toEqual({ ok: false, reason: "map_test_only" });
+    expect(await w.lobbies.createLobby(key, "public", 1, { test: true, map: "four-coves" })).toEqual({ ok: false, reason: "map_test_only" });
+    // Not a four-colony pool map: a two-colony map, and an unknown id.
+    expect(await w.lobbies.createLobby(key, "public", 1, { test: true, mode: "quadrants", map: "open-field" })).toEqual({ ok: false, reason: "invalid_map" });
+    expect(await w.lobbies.createLobby(key, "public", 1, { test: true, mode: "quadrants", map: "Four Coves" })).toEqual({ ok: false, reason: "invalid_map" });
+    expect([...w.docs.keys()].filter(path => path.startsWith("lobbies/"))).toEqual([]);
+  });
+
+  it("is never on a queue-made lobby or an ordinary lobby's slot holder", async () => {
+    const w = await world();
+    const ordinary = value(await w.lobbies.createLobby(w.players[0]!.key, "public", 1)).lobby;
+    expect(ordinary).not.toHaveProperty("map");
+    value(await w.lobbies.join(ordinary.id, w.players[0]!.key));
+    value(await w.lobbies.join(ordinary.id, w.players[1]!.key));
+    expect(await w.lobbies.slotHolder("public-0")).not.toHaveProperty("map");
+    const queued = [];
+    for (const name of ["Fay", "Gus", "Hal", "Ivy"]) queued.push(await w.claim(name));
+    for (const player of queued) value(await w.lobbies.joinQueue(player.key, "quadrants"));
+    const status = value(await w.lobbies.queueStatus(queued[0]!.key)) as { state: string; lobbyId?: string };
+    expect(value(await w.lobbies.readLobby(status.lobbyId!))).not.toHaveProperty("map");
   });
 });
 

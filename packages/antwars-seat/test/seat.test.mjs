@@ -384,6 +384,14 @@ describe("unrated lobby: create-lobby, join-lobby", () => {
     for (const tool of [...QUEUE_TOOLS, "join_lobby", "join"]) expect(s.fake.toolCalls(tool)).toHaveLength(0);
   });
 
+  it("create-lobby --test --quadrants --map <id> sends that map with create_lobby; --map without an id is refused before any call", async () => {
+    const s = await seat();
+    expect(await s.cli("create-lobby", "--test", "--quadrants", "--map", "crossroads")).toBe(0);
+    expect(s.fake.toolCalls("create_lobby").map((c) => c.args)).toEqual([{ key: KEY, size: 1, kind: "public", test: true, mode: "quadrants", map: "crossroads" }]);
+    expect(await s.cli("create-lobby", "--test", "--quadrants", "--map")).not.toBe(0);
+    expect(s.fake.toolCalls("create_lobby")).toHaveLength(1);
+  });
+
   it("join-lobby calls join_lobby once, then locate_match and join as go, stops in the nest window without pick_nest, with no queue call; match commands then work", async () => {
     const s = await seat({ lobbyHoldsAfterLocates: 2, matchOverAfterObserves: 3 });
     await s.cli("create-lobby");

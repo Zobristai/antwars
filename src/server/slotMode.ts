@@ -194,9 +194,9 @@ export function slotMode(wiring: SlotWiring, core: MatchCore): ServerMode {
             });
         },
         host: {
-          async seat(lobbyId, seats, startsAt, mode) {
+          async seat(lobbyId, seats, startsAt, mode, map) {
             await options.feed?.lobbySeated?.(lobbyId, seats);
-            game.seatLobby(lobbyId, seats, mode);
+            game.seatLobby(lobbyId, seats, mode, map);
             game.setNextStart({ kind: "scheduled", at: new Date(startsAt) });
             console.log(`antwar slot ${wiring.slot}: lobby ${lobbyId} seated; its match starts at ${new Date(startsAt).toISOString()}`);
           },
