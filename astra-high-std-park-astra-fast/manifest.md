@@ -69,6 +69,65 @@ At head the label reads "GPT-6.2 Astra Standard" with a HIGH badge and no bolt. 
 
 Crops are in `<typeface>/new-label/`. At 390, the phone layout puts the badges on their own line under the name, as for every leaderboard row.
 
+## Typeface the browser reported
+
+The browser's own font report (CSS.getPlatformFontsForNode) for every visible text part, at base and head. "Roboto Medium" is Roboto's Medium face.
+
+| Set | Data | Page | Width | Build | Families reported (glyphs) | Text parts | Parts in another family |
+|---|---|---|---|---|---|---|---|
+| Roboto | real | matches | 1280 | base | Roboto (3536), Roboto Medium (18) | 405 | 0 |
+| Roboto | real | matches | 390 | base | Roboto (3558), Roboto Medium (18) | 401 | 0 |
+| Roboto | real | leaderboard | 1280 | base | Roboto (6428), Roboto Medium (18) | 855 | 0 |
+| Roboto | real | leaderboard | 390 | base | Roboto (9398), Roboto Medium (18) | 1101 | 0 |
+| Roboto | real | landing | 1280 | base | Roboto (2483), Roboto Medium (61), Liberation Sans (1) | 299 | 1 |
+| Roboto | real | landing | 390 | base | Roboto (3019), Roboto Medium (61), Liberation Sans (1) | 339 | 1 |
+| Roboto | real | matches | 1280 | head | Roboto (3606), Roboto Medium (18) | 415 | 0 |
+| Roboto | real | matches | 390 | head | Roboto (3628), Roboto Medium (18) | 411 | 0 |
+| Roboto | real | leaderboard | 1280 | head | Roboto (6463), Roboto Medium (18) | 860 | 0 |
+| Roboto | real | leaderboard | 390 | head | Roboto (9433), Roboto Medium (18) | 1106 | 0 |
+| Roboto | real | landing | 1280 | head | Roboto (2504), Roboto Medium (61), Liberation Sans (1) | 302 | 1 |
+| Roboto | real | landing | 390 | head | Roboto (3040), Roboto Medium (61), Liberation Sans (1) | 342 | 1 |
+| Roboto | synthetic | matches | 1280 | base | Roboto (3686), Roboto Medium (18) | 423 | 0 |
+| Roboto | synthetic | matches | 390 | base | Roboto (3712), Roboto Medium (18) | 419 | 0 |
+| Roboto | synthetic | leaderboard | 1280 | base | Roboto (6492), Roboto Medium (18) | 865 | 0 |
+| Roboto | synthetic | leaderboard | 390 | base | Roboto (9522), Roboto Medium (18) | 1116 | 0 |
+| Roboto | synthetic | landing | 1280 | base | Roboto (2475), Roboto Medium (61), Liberation Sans (1) | 297 | 1 |
+| Roboto | synthetic | landing | 390 | base | Roboto (3011), Roboto Medium (61), Liberation Sans (1) | 337 | 1 |
+| Roboto | synthetic | matches | 1280 | head | Roboto (3775), Roboto Medium (18) | 435 | 0 |
+| Roboto | synthetic | matches | 390 | head | Roboto (3801), Roboto Medium (18) | 431 | 0 |
+| Roboto | synthetic | leaderboard | 1280 | head | Roboto (6539), Roboto Medium (18) | 871 | 0 |
+| Roboto | synthetic | leaderboard | 390 | head | Roboto (9569), Roboto Medium (18) | 1122 | 0 |
+| Roboto | synthetic | landing | 1280 | head | Roboto (2501), Roboto Medium (61), Liberation Sans (1) | 300 | 1 |
+| Roboto | synthetic | landing | 390 | head | Roboto (3037), Roboto Medium (61), Liberation Sans (1) | 340 | 1 |
+| Liberation Sans | real | matches | 1280 | base | Liberation Sans (3555) | 405 | 0 |
+| Liberation Sans | real | matches | 390 | base | Liberation Sans (3577) | 401 | 0 |
+| Liberation Sans | real | leaderboard | 1280 | base | Liberation Sans (6446) | 855 | 0 |
+| Liberation Sans | real | leaderboard | 390 | base | Liberation Sans (9416) | 1101 | 0 |
+| Liberation Sans | real | landing | 1280 | base | Liberation Sans (2521), Roboto Medium (25) | 299 | 1 |
+| Liberation Sans | real | landing | 390 | base | Liberation Sans (3057), Roboto Medium (25) | 339 | 1 |
+| Liberation Sans | real | matches | 1280 | head | Liberation Sans (3625) | 415 | 0 |
+| Liberation Sans | real | matches | 390 | head | Liberation Sans (3647) | 411 | 0 |
+| Liberation Sans | real | leaderboard | 1280 | head | Liberation Sans (6481) | 860 | 0 |
+| Liberation Sans | real | leaderboard | 390 | head | Liberation Sans (9451) | 1106 | 0 |
+| Liberation Sans | real | landing | 1280 | head | Liberation Sans (2542), Roboto Medium (25) | 302 | 1 |
+| Liberation Sans | real | landing | 390 | head | Liberation Sans (3078), Roboto Medium (25) | 342 | 1 |
+| Liberation Sans | synthetic | matches | 1280 | base | Liberation Sans (3705) | 423 | 0 |
+| Liberation Sans | synthetic | matches | 390 | base | Liberation Sans (3731) | 419 | 0 |
+| Liberation Sans | synthetic | leaderboard | 1280 | base | Liberation Sans (6510) | 865 | 0 |
+| Liberation Sans | synthetic | leaderboard | 390 | base | Liberation Sans (9540) | 1116 | 0 |
+| Liberation Sans | synthetic | landing | 1280 | base | Liberation Sans (2513), Roboto Medium (25) | 297 | 1 |
+| Liberation Sans | synthetic | landing | 390 | base | Liberation Sans (3049), Roboto Medium (25) | 337 | 1 |
+| Liberation Sans | synthetic | matches | 1280 | head | Liberation Sans (3794) | 435 | 0 |
+| Liberation Sans | synthetic | matches | 390 | head | Liberation Sans (3820) | 431 | 0 |
+| Liberation Sans | synthetic | leaderboard | 1280 | head | Liberation Sans (6557) | 871 | 0 |
+| Liberation Sans | synthetic | leaderboard | 390 | head | Liberation Sans (9587) | 1122 | 0 |
+| Liberation Sans | synthetic | landing | 1280 | head | Liberation Sans (2539), Roboto Medium (25) | 300 | 1 |
+| Liberation Sans | synthetic | landing | 390 | head | Liberation Sans (3075), Roboto Medium (25) | 340 | 1 |
+
+Every set is in the typeface it is named for, apart from one landing-page part in each set, the same at base and head:
+- **Roboto set:** the "→" arrow glyph falls back to Liberation Sans (1 glyph). The Roboto files used have no such glyph.
+- **Liberation Sans set:** the agent-connection address in the "Bring your agent" panel is drawn in Roboto Medium (25 glyphs). That element names its own family, and fontconfig resolved it to Roboto Medium.
+
 ## Data
 
 - **Real snapshot:** each non-static request (`/matches`, `/api/leaderboard` house 1v1, `/watch/queue`, `/watch/catalog`) was answered once by the public antwars.ai API at 2026-11-19T02:04:31Z to 2026-11-19T02:04:49Z, then replayed offline for every build. The page clock is pinned at 2026-11-19T02:05:00Z. Live now and Waiting are empty in this snapshot.
@@ -82,7 +141,6 @@ Crops are in `<typeface>/new-label/`. At 390, the phone layout puts the badges o
   - 9f300202f482ad59f8b13bc3131a295744d14fd530fa3765a0a11ec87264d203 (Regular)
   - 80ce163ec5ecd91a883aa20e80d31dc74971b55cf658dd7c5e8d21f4e9fcb417 (Medium)
   - 44f13e570a8b3fc42240abfcb3d72fe298f3dd6a25db0c78d0c2495dbd0e9121 (Bold)
-- **Font check:** the browser's font report for every visible text part shows each set in its named face. The exception is one landing-page part in the other face, at base and head alike.
 - **Viewports:** 1280x800 desktop; 390x844 phone (mobile, touch).
 - **Full-page images:** `*-full.png` grows the viewport to the page's height. Every page is under 6,200 px.
 
