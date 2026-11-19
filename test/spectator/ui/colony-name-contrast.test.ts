@@ -828,8 +828,11 @@ describe("a Recordings row's footer on a phone", () => {
   it("makes Replay the row's last line when doubled text leaves the card under 15rem", async () => {
     const tab = await browser.newPage({ viewport: { width: 390, height: 4000 } });
     try {
+      // Doubled text: the browser's default font size set to 32 px, as a reader's text-size setting does.
+      await (await tab.context().newCDPSession(tab)).send("Page.setFontSizes", { fontSizes: { standard: 32, fixed: 26 } });
       await tab.setContent(footerPage());
-      await tab.addStyleTag({ content: 'html { font-size: 32px; } html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+      await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+      expect(await tab.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe("32px");
       await tab.evaluate(() => document.fonts.ready);
       for (const row of await tab.evaluate(FOOTERS)) {
         expect(row.replay.top).toBeGreaterThanOrEqual(row.metaBottom);
