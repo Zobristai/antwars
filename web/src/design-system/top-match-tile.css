@@ -39,21 +39,23 @@
 .aw-player.is-team.is-winner { --seat-ink: var(--tile-accent); background-color: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); }
 /* a side whose seats differ: one player line per seat group, in first-seat order, each the ordinary player line.
    The side is one block: on the winner's side one band over all its lines, every name in the colony colour. Each line
-   carries one edge rule per seat it stands for, 16 px tall in its 20 px line, so the seats read as separate marks. */
+   carries one edge rule per seat it stands for, the line's full height less 0.125rem above and below (16 px in the 20 px line at
+   default text, 32 px in 40 px with doubled text), so the seats read as separate marks beside the names at any text size. */
 .aw-side { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--tile-pad)); }
 .aw-side > .aw-player { padding: 0 var(--tile-pad); --seat-ink: var(--aw-ink-3); background-repeat: no-repeat;
-  background-image: linear-gradient(var(--seat-ink), var(--seat-ink)); background-position: 0 2px; background-size: 2px 16px; }
+  background-image: linear-gradient(var(--seat-ink), var(--seat-ink)); background-position: 0 0.125rem; background-size: 2px calc(100% - 0.25rem); }
 .aw-side > .aw-player.is-seats-2 { background-image: linear-gradient(var(--seat-ink), var(--seat-ink)), linear-gradient(var(--seat-ink), var(--seat-ink));
-  background-position: 0 2px, 4px 2px; background-size: 2px 16px, 2px 16px; }
+  background-position: 0 0.125rem, 4px 0.125rem; background-size: 2px calc(100% - 0.25rem), 2px calc(100% - 0.25rem); }
 .aw-side.is-winner { background-color: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); }
 .aw-side.is-winner > .aw-player { --seat-ink: var(--tile-accent); }
 .aw-side.is-winner .aw-name, .aw-side.is-winner .aw-name > b { color: var(--tile-accent); }
 /* a side, or a seat group, of three or four alike seats: still one mark per seat, in the same 6 px column pair the two-seat
-   side uses, so the line's text keeps its x. The marks stand two across and two down, each 2 x 7 px, 2 px apart, inside the
-   20 px line (2 px above and below), filled across then down: three seats leave the lower right mark out. */
+   side uses, so the line's text keeps its x. The marks stand two across and two down, each 2 px wide and half the line less
+   0.1875rem tall (7 px at default text), 0.125rem apart and 0.125rem from the line's top and bottom, so they scale with the line
+   at any text size, filled across then down: three seats leave the lower right mark out. */
 .aw-player.is-seats-3, .aw-player.is-seats-4 { --m: linear-gradient(var(--seat-ink), var(--seat-ink)); background-repeat: no-repeat; }
-.aw-player.is-seats-3 { background-image: var(--m), var(--m), var(--m); background-position: 0 2px, 4px 2px, 0 11px; background-size: 2px 7px; }
-.aw-player.is-seats-4 { background-image: var(--m), var(--m), var(--m), var(--m); background-position: 0 2px, 4px 2px, 0 11px, 4px 11px; background-size: 2px 7px; }
+.aw-player.is-seats-3 { background-image: var(--m), var(--m), var(--m); background-position: left 0 top 0.125rem, left 4px top 0.125rem, left 0 bottom 0.125rem; background-size: 2px calc(50% - 0.1875rem); }
+.aw-player.is-seats-4 { background-image: var(--m), var(--m), var(--m), var(--m); background-position: left 0 top 0.125rem, left 4px top 0.125rem, left 0 bottom 0.125rem, left 4px bottom 0.125rem; background-size: 2px calc(50% - 0.1875rem); }
 /* rows 4 and 5: how it ended, the date and length */
 .aw-how, .aw-date { font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); color: var(--aw-ink-3); }
 /* rows 4 and 5 sit at the tile's foot: where a tile is taller than its own lines (a side whose seats differ in the grid, or
