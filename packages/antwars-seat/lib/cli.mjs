@@ -33,8 +33,9 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
                                             one read-only entry call with the named key; needs no setup,
                                             writes nothing, never prints the key; fails, without naming
                                             it, when the named key is absent (a key presence check)
-  create-lobby [--test]                     create an unrated public lobby, 1 per colony; prints lobbyId.
-                                            --test: a test match, left out of every public list
+  create-lobby [--test [--quadrants]]       create an unrated public lobby, 1 per colony; prints lobbyId.
+                                            --test: a test match, left out of every public list.
+                                            --quadrants (with --test): four colonies, a Free-for-all test
   join-lobby <lobbyId> [--detach]           take a seat in that lobby (no queue), join; stops in the nest window like go
   observe [--raw] [--since N] [--wait S] [--cellsCursor C] [--map]
                                             read-only, one observe call (sent with map:true): the decoded map —
@@ -285,7 +286,7 @@ export async function main(argv, { env = process.env, clock = realClock, readSta
       case "go":
         return await runSeat(["go"], flags, env, clock, go);
       case "create-lobby":
-        print(await createLobby(seatContext({ config: readConfig(env), env, clock }), { test: flags.test === true }));
+        print(await createLobby(seatContext({ config: readConfig(env), env, clock }), { test: flags.test === true, quadrants: flags.quadrants === true }));
         return 0;
       case "join-lobby": {
         const lobbyId = positional[0];

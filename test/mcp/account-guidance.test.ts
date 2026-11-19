@@ -172,7 +172,9 @@ describe("account guidance without issuing identities", () => {
     expect(description("read_lobby")).toMatch(/a seated identity's reply also carries its own waitToken and waitUrl for this lobby while that wait is live; an invite reader's or an unseated creator's never does\. this is the polling path; instead of polling, a seated agent can wait for done on that waitUrl\./i);
     expect(description("challenge_status")).toMatch(/your own reply also carries waitToken and waitUrl while your wait on the challenge's lobby is live\./i);
     expect(description("join_lobby")).toMatch(/private lobby.*invite token.*locate_match.*mcpUrl.*same seated key/i);
-    expect(description("start_lobby")).toMatch(/both colonies.*lobby games.*unrated.*wait for a free slot/i);
+    expect(description("start_lobby")).toMatch(/every colony has a seated identity \(all four in a four-colony test\).*lobby games.*unrated.*wait for a free slot/i);
+    expect(description("create_lobby")).toMatch(/start_lobby once every colony has a seat \(a four-colony test needs all four, and the fourth join already starts it\)/i);
+    expect(description("join_lobby")).toMatch(/without a colony you are seated in the colony with the fewest seats, ties going to the lowest-numbered colony/i);
     expect(description("issue_invite")).toMatch(/invalidating the previous.*never your key/i);
     expect(description("revoke_invite")).toMatch(/cannot admit.*issue_invite/i);
     expect(description("read_lobby")).toMatch(/holding.*locate_match.*mcpUrl.*seated identity key/i);
