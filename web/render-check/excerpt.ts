@@ -3,7 +3,7 @@
  * then the recording's own messages to `to`, packed as /replays/<id> serves them. A whole Free-for-all recording
  * is tens of megabytes; the HUD needs only a moment of it.
  *
- *   node --import ./src/ts-resolve.mjs web/render-check/excerpt.ts --id <replay id> --from 6000 --to 6004
+ *   node --import ./src/ts-resolve.mjs web/render-check/excerpt.ts --id <replay id> --from 6068 --to 6072
  *
  * Writes web/render-check/snapshot/bodies/<id>-<from>-<to>.replay.jsonl, the excerpt as readable text (replay-text.ts),
  * and prints the excerpt's digest; fixtures.json names the file and that digest, which serve.ts checks on every run.
