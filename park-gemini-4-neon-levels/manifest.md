@@ -94,6 +94,30 @@ Tightest fit per screen (head):
 
 The ended row with WINNER is the tightest line in this evidence. It still fits on one line, uncut, in both typefaces; crop: `liberation-sans/replay-low-v-xhigh-3d/replay-low-v-xhigh-3d-ended-b0616ba-390-neon-2.png`. Per-line measurements are in `<typeface>/replay-3d-measurements.json`: one entry per recording, build and width, each with every shot.
 
+## After merging main into the pull request (new head 2e92b3e)
+
+The pull request branch took main by a plain merge: **2e92b3eb17b9b70202fad92a5e993851fed6bd76** (`2e92b3e`) = b0616ba + main de76036b2ce28083227b3df454730a18897e44ef (`de76036`). Main brought two changes that touch where house handles are shown: the Recordings table on Matches and on the landing page (main #196), and the Watch page's Top matches tiles (main #199). This section compares **base de76036 (main) with head 2e92b3e**, so the only difference rendered is the parking itself.
+
+**Recordings (Matches and the landing page's Recordings card): shown, rendered.** These lines show house-handle labels: model name plus level badge. Since main #196 a Recordings line no longer draws a RETIRED badge. A retired handle says it in the name's tooltip and in screen-reader text only (`web/src/pages/matches.ts` lines 699–711 at 2e92b3e: `const badges = { ...parts.badges, retired: false };`). So at head the parked Neon lines look the same as at base.
+
+- Files: `<typeface>/merge-main/<page>/<page>-<build>-<width>.png` with Neon crops `...-neon-<n>.png`; measurements in `<typeface>/merge-main/measurements.json` (`recProbe` is every Recordings player line).
+- Data: the public antwars.ai API answers recorded 2026-11-19T15:26:16Z to 2026-11-19T15:26:33Z (the same match list as the earlier snapshot), replayed offline; page clock 2026-11-19T15:27:00Z. Rendered 2026-11-19T15:27:00Z to 2026-11-19T15:31:00Z.
+- Every Recordings player line (40 on Matches, 10 on the landing page) is on one line at both widths, in both typefaces, at base and head: no name is cut, no badge group is clipped or broken, and there are no page errors. No visible RETIRED badge is drawn on a Recordings line at head. The parked Neon lines carry ", retired" in screen-reader text and the tooltip.
+- 81 of the 92 Neon crop pairs are byte-identical between base and head. The 11 that differ are all on the landing page at 390 px; the pair inspected (Roboto, crop 5) shows the same text, badges and layout.
+
+Tightest Neon Recordings line (identical at base and head):
+
+| Page | Typeface | Width | Line | Needs / has px | Spare |
+|---|---|---|---|---|---|
+| Matches | Liberation Sans | 1280 | Gemini 4 Neon MEDIUM 1433 | 171 / 211 | 18.9% |
+| Matches | Roboto | 1280 | same | 169.1 / 212 | 20.2% |
+| Matches | Liberation Sans | 390 | same | 171 / 231 | 26.0% |
+| Landing | Liberation Sans | 1280 | same | 171 / 213 | 19.7% |
+
+The tightest Recordings line of any kind is 4.2% (Liberation Sans) and 6.3% (Roboto) at 1280 on Matches, the same at base and head; it is not a Neon line.
+
+**Top matches tiles: no parked handle shown, not rendered.** The tile draws the model and level badge but never the retired mark: `web/src/design-system/top-match-tile.ts` line 58 (`The retired mark is not drawn.`); the badge is built in lines 59–66, and the words at line 105 drop it (`badgeWords({ ...kinds, retired: false })`). None of the 16 matches in the shipped list (`src/replays/top-matches.json`) seats a Gemini 4 Neon handle: each match record was read from the public API on 2026-11-19, and the only Gemini 4 handles seated are Argon and Carbon. The page also cannot be rendered on real data yet, because antwars.ai does not serve `GET /matches/top` (404 on 2026-11-19).
+
 ## Data and method
 
 - **Builds:** `git archive` of each commit, built with `vite build --config web/vite.config.ts`.
