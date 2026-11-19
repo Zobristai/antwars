@@ -350,10 +350,13 @@ path/query-preserving redirects and the run.app page, then MCP
 initialize/listTools without join. No match is started or joined. These routes
 exist both before and after entry-point main-match retirement.
 
-The comparison reads `/watch/catalog` on both origins and selects the same public
-lobby (matching lobby ID and start time). It opens that lobby's
+The comparison reads `/watch/catalog` on both origins and selects the newest
+public lobby they share (matching lobby ID and start time). It opens that lobby's
 `/watch/live/<lobbyId>` stream on the domain and run.app, alongside domain MCP
-GET `/mcp`, concurrently for 720 seconds. Lobby identity replaces the old
+GET `/mcp`, concurrently. The spectator streams are held for at most 290 seconds,
+inside the server's 300-second relay bound (`RELAY_MAX_MS` in
+`src/live/watch-routes.ts`, which ends every relayed live stream); the MCP stream
+is held for the full 720 seconds. Lobby identity replaces the old
 slot-local sequence header, which watch proxies do not forward. If either
 catalog has no public match, it reports `SKIPPED`, `status: "skipped"` and
 `pass: null`: the comparison was not performed, not passed or failed. Page,
@@ -364,7 +367,8 @@ separately, never joined, and deleted afterward. A missing spectator stream
 No reconnect or workaround turns a closure into a pass. The deploy's output contains every completed SSE event/comment
 arrival with UTC timestamp, monotonic time, bytes, fingerprint and spectator
 tick (no session id or payload). SDK/session operations and header reads are
-bounded; stream reads have their own 720-second deadline.
+bounded; stream reads have their own deadline: at most 290 seconds for spectator
+streams, the full 720 seconds for the MCP stream.
 
 The server ticks at 100 ms; both idle spectator and MCP heartbeats are 15 seconds
 (source read: `src/live/config.ts`, `src/live/snapshot.ts` and installed SDK
