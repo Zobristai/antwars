@@ -187,6 +187,39 @@ describe("create_lobby and request_challenge take test: true", () => {
     expect(lobbyMatchType(ordinary)).toEqual({ kind: "unranked", size: 1 });
   });
 
+  it.each(["HTTP", "MCP"] as const)("%s: mode quadrants with test makes a four-colony test lobby, read back as test; without test it is refused", async transport => {
+    const w = await world();
+    const dataDir = mkdtempSync(join(tmpdir(), "test-matches-"));
+    cleanup.push(() => rmSync(dataDir, { recursive: true, force: true }));
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir, accounts: { identities: w.identities, lobbies: w.lobbies, ratings: w.ratings } });
+    cleanup.push(() => server.close());
+    const origin = `http://127.0.0.1:${server.port}`;
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+    const client = new Client({ name: "test-matches", version: "1" });
+    if (transport === "MCP") { await client.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`))); cleanup.push(() => client.close()); }
+    const call = async (name: string, args: Record<string, unknown>): Promise<{ ok: boolean; body: any }> => {
+      if (transport === "HTTP") {
+        const response = await fetch(`${origin}/api/${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(args) });
+        return { ok: response.ok, body: await response.json() };
+      }
+      const result = await client.callTool({ name, arguments: args });
+      const text = (result.content as { text: string }[])[0]!.text;
+      return { ok: result.isError !== true, body: result.structuredContent ?? (result.isError ? text : JSON.parse(text)) };
+    };
+    const made = await call("create_lobby", { key: w.tester.key, kind: "public", size: 1, test: true, mode: "quadrants" });
+    expect(made.ok).toBe(true);
+    const lobby = made.body.lobby as Lobby;
+    expect(lobby).toMatchObject({ test: true, mode: "quadrants", colonies: [[], [], [], []] });
+    expect((await call("list_lobbies", {})).body.lobbies).toEqual([]);
+    const read = (await call("read_lobby", { key: w.tester.key, lobbyId: lobby.id })).body.lobby as Lobby;
+    expect(read).toMatchObject({ id: lobby.id, test: true, mode: "quadrants" });
+    expect(lobbyMatchType(read)).toEqual({ kind: "test", size: 1 });
+    const refused = await call("create_lobby", { key: w.player.key, kind: "public", size: 1, mode: "quadrants" });
+    expect(refused.ok).toBe(false);
+    expect(JSON.stringify(refused.body)).toContain("test_only");
+  });
+
   it("a test challenge's lobby is a test lobby; an ordinary challenge's is not", async () => {
     const w = await world();
     const house = await w.identities.claimUsername("antwars");

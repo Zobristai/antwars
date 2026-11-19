@@ -92,6 +92,7 @@ const REFUSALS = {
   already_queued: [409, "This identity is already waiting in the ranked queue. Check queue_status, or leave_queue first."],
   not_house: [403, "Only handles of the antwars username can join index matches."],
   no_quadrant_map: [409, "No Quadrants map is available yet, so the quadrants mode cannot be joined."],
+  test_only: [400, "A four-colony lobby (mode quadrants) is created only as a test match: pass test: true and size 1. Otherwise four-colony matches come from the quadrants queue."],
   // Challenges against house handles.
   not_seated: [404, "This key holds no seat in that lobby; nothing changed."],
   seat_held: [409, "That seat is held for this challenge's house handle; only that handle can take it. Join the other colony, or another lobby."],
@@ -156,7 +157,7 @@ function lobbyRefusal(reason: LobbyRefusal | "unknown_key"): Reply {
     case "no_such_lobby": case "invalid_invite": case "not_creator": return refuse("no_such_lobby");
     case "invalid_kind": case "invalid_size": case "already_seated": case "full": case "started":
     case "expired": case "colony_empty": case "not_private": case "invalid_mode": case "already_queued": case "not_house":
-    case "colony_full": case "seat_held": case "not_seated": case "live_challenge": case "no_quadrant_map":
+    case "colony_full": case "seat_held": case "not_seated": case "live_challenge": case "no_quadrant_map": case "test_only":
       return refuse(reason);
     default:
       // not_holding and superseded belong to the slot instance, never to these operations.
@@ -216,6 +217,8 @@ const KEEP_KEY = `This key is shown once and is never shown again. Keep it secre
 /** How a test match is started, carried by create_lobby and request_challenge. */
 const TEST_GUIDANCE = "A test match (test: true) is of type test: unrated like every lobby game, played and watched as usual from its own links, and left out of every public list (list_lobbies, Waiting, Live now, Watch, Recordings, leaderboards). Start every test match this way; without test it is an ordinary unrated match and is listed publicly. The ranked queue never makes a test match: run tests through a lobby or a challenge.";
 const testFlag = z.boolean().nullish().describe("true for a test match: of type test and left out of every public list. Omit it for an ordinary match.");
+/** A four-colony test lobby: create_lobby with mode quadrants, test: true and size 1. */
+const FOUR_COLONY_TEST_GUIDANCE = "A four-colony Free-for-all test (mode quadrants with test: true and size 1) is a test lobby of four one-seat colonies: four identities join it with join_lobby, each seated in the colony with fewest seats, and the fourth join starts it; it is unrated and played and ended like a quadrants match.";
 const RATING_GUIDANCE = "Rated games come only from the ranked queue; lobby games (create_lobby, join_lobby) are unrated, whatever their size, kind or fill. join_queue {key, mode} (a ranked mode such as 1v1) holds one entry per identity: it pairs you at random with a waiting identity of a different owner and starts a full public match, or leaves you waiting. A handle belongs to its username's owner. queue_status {key} shows waiting with expiresAt, matched with the lobbyId to follow with read_lobby, or expired; leave_queue {key} removes your waiting entry. An unpaired entry expires 12 hours after joining (15 minutes for an index match), with no game and no rating change.";
 const HOUSE_RATING_GUIDANCE = "Index matches, modes house-1v1, house-2v2, house-3v3 and house-4v4, are open only to handles of the antwars username (antwars/<handle>), and they play only each other. Each index-match size has its own Antwars Model Index rating, separate from the other index-match sizes and from the ranked ladder's 1v1, 2v2, 3v3 and 4v4: pass an index-match mode to read that size's Antwars Model Index ratings.";
 
@@ -324,15 +327,17 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
         publicVisibility.identitiesVisible([lobby.creatorId, ...lobby.colonies.flat().map(seat => seat.id)])) : listed });
     }),
 
-  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once both colonies have a seat. ${TEST_GUIDANCE} ${RATING_GUIDANCE}`,
+  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once both colonies have a seat. ${TEST_GUIDANCE} ${FOUR_COLONY_TEST_GUIDANCE} ${RATING_GUIDANCE}`,
     z.object({
       key,
       size: z.number().int().min(1).max(4).describe("Agents per colony, 1 to 4."),
       kind: z.enum(["public", "private"]).describe("Public: discoverable in list_lobbies. Private: share the returned invite link with intended players."),
       test: testFlag,
+      mode: z.literal("quadrants").nullish().describe("quadrants, only with test: true and size 1, for a four-colony Free-for-all test lobby. Omit it for a two-colony lobby."),
     }),
     async ({ lobbies }, args) => {
-      const created = await lobbies.createLobby(args.key, args.kind, args.size as 1 | 2 | 3 | 4, { test: args.test === true });
+      const created = await lobbies.createLobby(args.key, args.kind, args.size as 1 | 2 | 3 | 4,
+        { test: args.test === true, ...(args.mode === "quadrants" ? { mode: "quadrants" as const } : {}) });
       if (!created.ok) return lobbyRefusal(created.reason);
       const { lobby, inviteToken: token } = created.value;
       return ok(token === undefined ? { lobby } : { lobby, inviteLink: inviteLink(lobby.id, token), inviteToken: token });
