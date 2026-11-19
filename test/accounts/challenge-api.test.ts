@@ -273,7 +273,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isRetiredHouse(handle) ? { available: false, reason: RETIRED_REASON } : isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(49);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(46);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
       for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
         "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {
@@ -287,9 +287,10 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
       }
-      // The four Gemini 4 Neon handles are listed available with no records.
-      for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh"]) {
-        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+      // The Gemini 4 Neon high handle is listed available with no records; low, medium and xhigh are parked as retired.
+      expect(listed.opponents.find((entry: { handle: string }) => entry.handle === "antwars/gemini-4-neon-high")).toMatchObject({ available: true, reason: null });
+      for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-xhigh"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: false, reason: RETIRED_REASON });
       }
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
       await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
