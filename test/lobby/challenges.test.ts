@@ -833,14 +833,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 49 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 53 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(49);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(49);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(53);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(53);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -860,6 +860,10 @@ describe("the house handle list", () => {
     // The five GPT-6.2 Astra and three Qwen4 Max handles are listed available.
     for (const handle of ["gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
       "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh"]) {
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+    }
+    // The four Gemini 4 Neon handles are listed available.
+    for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
     // A retired handle is closed as retired, on the launch table or off it; every other launch-table handle is open.
