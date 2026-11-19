@@ -66,25 +66,56 @@ function serve(initial: ReturnType<typeof match>[] = [], history: string[] = [])
   return server;
 }
 const active: SpectatorSource[] = [];
+/** The top-matches screen automatic Watch shows with no live match: each call's reason, then each later reason it is told. */
+let top = topScreen();
+function topScreen() {
+  const reasons = vi.fn<(reason: string) => void>();
+  return { reasons, show: vi.fn((_doc: Document, _reason: string) => reasons) };
+}
 async function open(doc: Document, es = new Source(), emit = true, query = "") {
   const pending = openSource(new URLSearchParams(query), { now: () => 0 }, doc, vi.fn(), {
     source: () => { if (emit) queueMicrotask(() => es.emit(packets[0]!)); return es; }, intake,
-  });
+  }, { ...LOBBY_SCREENS, topMatches: top.show });
   const source = (await pending)!;
   if (source) active.push(source);
   return source;
 }
-afterEach(() => { active.splice(0).forEach(s => s.close()); setFallback(null); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { active.splice(0).forEach(s => s.close()); setFallback(null); top = topScreen(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-it("an empty catalog plays the newest stored recording with its own date, not the retired main match", async () => {
+it("an empty catalog shows the top matches saying no live match is on, and opens no recording", async () => {
   const server = serve([], [newest, older]);
   const { doc, reload } = page();
-  const source = await open(doc);
+  expect(await open(doc)).toBeNull();
+  expect(top.show).toHaveBeenCalledExactlyOnceWith(doc, "idle");
+  expect(server.paths).toEqual(["/watch/catalog"]);
+  expect(reload).not.toHaveBeenCalled();
+});
+
+it("a capture route with no live match still plays the newest stored recording with its own date", async () => {
+  const server = serve([], [newest, older]);
+  const { doc, reload } = page();
+  const source = await open(doc, new Source(), true, "capture=1");
   expect([source.replay, source.recorded, source.feed, source.storedId]).toEqual([true, true, null, newest]);
   expect(source.head.tick).toBe(firstTick);
   expect(source.take(0).map(a => a.m.tick)).toEqual([firstTick]);
-  expect(server.paths).toEqual(["/watch/catalog", "/matches", `/watch/ratings/${newest}`, `/replays/${newest}`]);
-  expect(modeCopy("replay", 4, false, "/", source.storedId)).toEqual({ label: "RECORDING · no live match · 4 agents", detail: "21 Oct 2026", link: null });
+  expect(server.paths).toEqual(["/matches", `/watch/ratings/${newest}`, `/replays/${newest}`]);
+  expect(modeCopy("replay", 4, false, "/", source.storedId)).toEqual({ label: "RECORDING · live feed unavailable · 4 agents", detail: "21 Oct 2026", link: null });
+  expect(top.show).not.toHaveBeenCalled();
+  expect(reload).not.toHaveBeenCalled();
+});
+
+it("the top matches say each new reason as the live list changes under them", async () => {
+  vi.useFakeTimers();
+  const server = serve([]);
+  server.catalogFailure = true;
+  const { doc, reload } = page();
+  const pending = open(doc);
+  await vi.advanceTimersByTimeAsync(CONNECT_MS);
+  expect(await pending).toBeNull();
+  expect(top.show).toHaveBeenCalledExactlyOnceWith(doc, "failed");
+  server.catalogFailure = false;
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(top.reasons).toHaveBeenLastCalledWith("idle");
   expect(reload).not.toHaveBeenCalled();
 });
 
@@ -120,15 +151,15 @@ it.each([
     { labels: ["glm · Rating 1512", "deepseek · Rating 1531"], result: [row("glm", "Rating 1512 → 1562 (+50)"), row("deepseek", "Rating 1531 → 1488 (-43)")] }],
   ["a failed lookup", "fail" as const, recorded],
   ["no stored record", { ratings: [] }, recorded],
-])("an Elo-recorded stand-in with %s shows the stored figures where there are any, as a replay does", async (_case, ratings, expected) => {
+])("an Elo-recorded capture stand-in with %s shows the stored figures where there are any, as a replay does", async (_case, ratings, expected) => {
   const server = serve([], [newest]);
   server.recording = eloRecording();
   server.ratings = ratings;
   const { doc, error } = page();
-  const source = await open(doc);
+  const source = await open(doc, new Source(), true, "capture=1");
   expect([source.replay, source.recorded, source.feed, source.storedId]).toEqual([true, true, null, newest]);
   expect(await shown(source)).toEqual(expected);
-  expect(server.paths).toEqual(["/watch/catalog", "/matches", `/watch/ratings/${newest}`, `/replays/${newest}`]);
+  expect(server.paths).toEqual(["/matches", `/watch/ratings/${newest}`, `/replays/${newest}`]);
   expect(error.textContent).toBe("");
 });
 
@@ -158,16 +189,17 @@ function failing(cause: (typeof CAUSES)[number][0], initial: ReturnType<typeof m
   return server;
 }
 
-it.each(CAUSES)("automatic Watch with %s shows that cause's existing text, loads no bundled recording, then a live match takes over", async (cause, message, waiting) => {
+it.each(CAUSES)("automatic Watch with %s reads no stored history, shows the top matches, then a live match takes over", async cause => {
   vi.useFakeTimers();
   const server = failing(cause);
   const { doc, error, state, reload } = page();
   const pending = open(doc);
   await vi.advanceTimersByTimeAsync(CONNECT_MS);
   expect(await pending).toBeNull();
-  expect(error.textContent).toBe(message);
-  expect(state.textContent).toBe(waiting);
-  expect(server.paths.some(path => path.includes("agents.bin"))).toBe(false);
+  expect(top.show).toHaveBeenCalledExactlyOnceWith(doc, "idle");
+  expect(error.textContent).toBe("");
+  expect(state.textContent).toBe("Connecting…");
+  expect(storedReads(server.paths)).toEqual([]);
   expect(reload).not.toHaveBeenCalled();
   server.matches = [match("new")];
   await vi.advanceTimersByTimeAsync(1500);
@@ -241,10 +273,10 @@ it.each(["live", "fallback"])("automatic Watch requests /watch/catalog once per 
   }
 });
 
-it("a match appearing during fallback reloads once; closing cancels discovery", async () => {
+it("a match appearing under the top matches reloads once; closing cancels discovery", async () => {
   vi.useFakeTimers();
   const server = serve([], [newest]), { doc, reload, view } = page();
-  const source = await open(doc);
+  expect(await open(doc)).toBeNull();
   server.matches = [match("new")];
   await vi.advanceTimersByTimeAsync(4500);
   expect(reload).toHaveBeenCalledTimes(1);
@@ -252,18 +284,17 @@ it("a match appearing during fallback reloads once; closing cancels discovery", 
   const requests = server.paths.length;
   await vi.advanceTimersByTimeAsync(9000);
   expect(server.paths).toHaveLength(requests);
-  source.nextMatch();
   expect(reload).toHaveBeenCalledTimes(1);
 });
 
-it("a silent selected stream uses stored fallback, ignores finished snapshots, then hands over on a running snapshot", async () => {
+it("a silent selected stream shows the top matches as starting, ignores finished snapshots, then hands over on a running snapshot", async () => {
   vi.useFakeTimers();
   serve([match("selected")], [newest]);
   const { doc, reload, storage } = page(), es = new Source();
   const pending = open(doc, es, false);
   await vi.advanceTimersByTimeAsync(CONNECT_MS);
-  const source = await pending;
-  expect(source.replay).toBe(true);
+  expect(await pending).toBeNull();
+  expect(top.show).toHaveBeenCalledExactlyOnceWith(doc, "starting");
   const m = decodeMessage(packets[0]!);
   es.emit(encodeMessage({ ...m, full: { ...m.full!, result: { winner: null, reason: "time_up", decidedBy: "draw", tick: m.tick, nextStartMs: null } } }));
   await vi.advanceTimersByTimeAsync(50);
@@ -274,16 +305,15 @@ it("a silent selected stream uses stored fallback, ignores finished snapshots, t
   expect(storage.get(HANDOVER_KEY)).toBe("selected");
 });
 
-it("holds the stand-in with two silent delayed matches until the selected stream delivers a running snapshot", async () => {
+it("holds the top matches with two silent delayed matches until the selected stream delivers a running snapshot", async () => {
   vi.useFakeTimers();
   vi.spyOn(Math, "random").mockReturnValue(0);
   serve([match("selected", 300), match("also-delayed", 300)], [newest]);
   const { doc, reload, storage } = page(), es = new Source();
   const pending = open(doc, es, false);
   await vi.advanceTimersByTimeAsync(CONNECT_MS);
-  const source = await pending;
-  expect(source.recorded).toBe(true);
-  expect(source.take(0)[0]!.m.tick).toBe(firstTick);
+  expect(await pending).toBeNull();
+  expect(top.show).toHaveBeenCalledExactlyOnceWith(doc, "starting");
   await vi.advanceTimersByTimeAsync(300_000);
   expect(reload).not.toHaveBeenCalled();
   es.emit(packets[0]!);
@@ -312,11 +342,12 @@ it("handover pins the confirmed lobby rather than picking another random match, 
   vi.spyOn(Math, "random").mockReturnValue(0);
   const { doc, storage } = page({ [HANDOVER_KEY]: "two" });
   const paths: string[] = [];
-  const pending = openSource(new URLSearchParams(), { now: () => 0 }, doc, vi.fn(), { source: path => { paths.push(path); return new Source(); }, intake });
+  const pending = openSource(new URLSearchParams(), { now: () => 0 }, doc, vi.fn(), { source: path => { paths.push(path); return new Source(); }, intake },
+    { ...LOBBY_SCREENS, topMatches: top.show });
   await vi.advanceTimersByTimeAsync(10_000);
-  const source = (await pending)!; active.push(source);
+  expect(await pending).toBeNull();
   expect(paths).toEqual(["/watch/live/two?kills=1"]);
-  expect(source.recorded).toBe(true);
+  expect(top.show).toHaveBeenCalledExactlyOnceWith(doc, "starting");
   expect(storage.has(HANDOVER_KEY)).toBe(false);
 });
 
@@ -360,7 +391,7 @@ function openLobby(doc: Document, stream: "refused" | "silent", lobby = "gone", 
       else es = opened;
       return opened;
     }, intake,
-  }, { leaderboard, replay }).then(source => { settled = true; if (source) active.push(source); return source; });
+  }, { leaderboard, replay, topMatches: top.show }).then(source => { settled = true; if (source) active.push(source); return source; });
   return { pending, streams, leaderboard, replay, settled: () => settled, stream: () => es };
 }
 /** Requests that read stored history or a stored recording: a lobby link never makes one. */
@@ -453,7 +484,7 @@ it("a 2D lobby link whose replay id arrives on a re-read opens that replay on th
   const leaderboard = vi.fn();
   const pending = openSource(new URLSearchParams({ lobby: "ended", board: "2d" }), { now: () => 0 }, doc, vi.fn(), {
     source: () => new Source(), intake,
-  }, { leaderboard, replay: LOBBY_SCREENS.replay });
+  }, { leaderboard, replay: LOBBY_SCREENS.replay, topMatches: top.show });
   await vi.advanceTimersByTimeAsync(CONNECT_MS);
   expect(await pending).toBeNull();
   expect(leaderboard).toHaveBeenCalledTimes(1);
@@ -662,9 +693,9 @@ it("a lobby link whose server sends within CONNECT_MS opens live even when this 
   expect(reload).not.toHaveBeenCalled();
 });
 
-it("the stand-in restarts at EOF instead of remaining on a still board", async () => {
+it("the capture stand-in restarts at EOF instead of remaining on a still board", async () => {
   serve([], [newest]);
-  const { doc, reload } = page(), source = await open(doc);
+  const { doc, reload } = page(), source = await open(doc, new Source(), true, "capture=1");
   for (let now = 0; now <= 5000 && !reload.mock.calls.length; now += 250) {
     source.take(now);
     await new Promise(resolve => setImmediate(resolve));

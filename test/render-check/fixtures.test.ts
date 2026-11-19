@@ -8,6 +8,8 @@ import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
 import { TICK_MS, unpackMessages } from "../../src/live/snapshot.ts";
+import { TEST_BACKFILL_IDS } from "../../src/replays/testBackfillIds.ts";
+import { shippedTopMatchList } from "../../src/replays/top-matches.ts";
 import { RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { FREE_FOR_ALL_REPLAY, HUD_PLAY_MS } from "../../web/render-check/check.ts";
 import { MAX_FILE_BYTES, MAX_LINE_BYTES, joinReplayText, replayFromText, splitReplayText } from "../../web/render-check/replay-text.ts";
@@ -73,4 +75,15 @@ it("splits replay text into files that read back as the same recording, each sta
     expect(sha256(replayFromText(joinReplayText(files)))).toBe(fixture.sha256);
   }
   for (const file of splitReplayText(text)) expect(file.startsWith('["tick",')).toBe(true);
+});
+
+it("serves Watch's top matches as the shipped list's own matches, with no test match among them", async () => {
+  const fixtures = await readFixtures([FIXTURES]);
+  const top = fixtures["/matches/top"]!;
+  const { matches } = JSON.parse(top.bytes!.toString("utf8")) as { matches: { id: string; matchType: { kind: string } | null }[] };
+  expect(matches.map(m => m.id)).toEqual(shippedTopMatchList().ids);
+  for (const m of matches) {
+    expect(m.matchType?.kind).not.toBe("test");
+    expect(TEST_BACKFILL_IDS).not.toContain(m.id);
+  }
 });
