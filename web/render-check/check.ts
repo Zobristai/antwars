@@ -104,6 +104,8 @@ export async function boardReadiness(page: Page, timeoutMs = 30_000): Promise<Bo
 
 /** What playing a replay's recording to HUD_PLAY_MS showed: how far its board got, and whether its HUD is on screen. */
 export interface Playback {
+  /** The first tick the board showed while playing (the recording's own first tick, not tick 0), from the client's own frame. */
+  startTick: number;
   /** The board's tick and playback time after the last step, from the client's own frame. */
   playbackTick: number; playbackMs: number;
   /**
@@ -122,7 +124,7 @@ export const HUD_ROOT = ".d1-hud, .d2-hud";
 
 /**
  * Why a render is invalid because its replay never showed a ready, playing HUD, or null: only a surface that needs a
- * board. It must become ready, play its recording past tick 0 without error, and show its HUD.
+ * board. It must become ready, play its recording past the tick it began at without error, and show its HUD.
  */
 export function boardProblem(surface: Pick<Surface, "board">, readiness: BoardReadiness | null, playback: Playback | null): string | null {
   if (!surface.board) return null;
@@ -131,7 +133,7 @@ export function boardProblem(surface: Pick<Surface, "board">, readiness: BoardRe
     : readiness.state === "timed out" ? `its board was not ready after ${readiness.ms / 1000} s`
     : !playback ? "its recording was never played"
     : playback.error ? `its recording failed while playing (${playback.error})`
-    : playback.playbackTick <= 0 ? `its recording did not play: the board was still at tick 0 after ${HUD_PLAY_MS / 1000} s`
+    : playback.playbackTick <= playback.startTick ? `its recording did not play: the board was still at its first tick (${playback.startTick}) after ${HUD_PLAY_MS / 1000} s`
     : playback.hud === "screen not still" ? "the screen kept changing while its HUD was compared with and without it, so whether the HUD showed could not be judged"
     : playback.hud === "not shown" ? "no match HUD was shown over the board"
     : playback.hud === "clipped" ? "its match HUD was cut: the HUD or an element containing it clips part of it (clip-path, mask, clip or overflow)"
@@ -180,13 +182,18 @@ export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<P
     const clock = window as unknown as { __replayTime: number };
     let error: string | null = null;
     let last = { playbackTick: 0, playbackMs: 0 };
+    let startTick: number | null = null;
     try {
       for (let t = 0; t < playMs && !error; t += 100) {
         const r = window.__antwar.recording();
         error = r?.error ?? null;
         for (let wait = 0; r && !r.complete && r.stats.bufferedMessages < 3 && wait < 200; wait++) await new Promise(res => setTimeout(res, 0));
         clock.__replayTime += 100;
-        window.__antwar.frame(false);
+        // An excerpt starts at its own tick (thousands into its match), not 0: playing means getting past the first
+        // tick the board shows. The board shows a recording a few ticks behind its clock, so the first step still
+        // shows that tick; a frame before any data (tick 0) does not count as it.
+        const tick = window.__antwar.frame(false).playbackTick;
+        if (startTick === null && tick > 0) startTick = tick;
       }
       last = window.__antwar.frame();
       error ??= window.__antwar.recording()?.error ?? null;
@@ -210,7 +217,7 @@ export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<P
       if (c.overflowY !== "visible" && (box.top < top - 1 || box.bottom > top + e.clientHeight + 1)) cutByContainer = true;
     }
     const hud = !(visible && onScreen) ? "not shown" : cutByContainer ? "clipped" : "shown";
-    return { playbackTick: last.playbackTick, playbackMs: last.playbackMs, hud, error } satisfies Playback;
+    return { startTick: startTick ?? last.playbackTick, playbackTick: last.playbackTick, playbackMs: last.playbackMs, hud, error } satisfies Playback;
   }, { playMs, hudRoot: HUD_ROOT });
   // Styles can still hide all or part of it (clip-path, mask, a clipping box, the board drawn over it): see hudOnScreen.
   return played.hud === "shown" ? { ...played, hud: await hudOnScreen(page) } : played;

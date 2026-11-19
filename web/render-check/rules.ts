@@ -153,11 +153,24 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
   const all = [...document.body.querySelectorAll("*")].filter(el => !skipped(el));
 
-  // One-line items: the outermost line-able blocks with text, and every label, button and table heading wherever it
-  // stands (inside a paragraph too) and however long its text: those are one line by what they are, not by where they
+  // One-line items: the outermost line-able blocks with text, and every label, button, table heading and badge wherever
+  // it stands (inside a paragraph too) and however long its text: those are one line by what they are, not by where they
   // are or how much they say. The cards' state line (p.d1p-state: web/src/pages/chrome.ts stateLine) is a paragraph
   // but a one-line item, not running text.
   const ONE_LINE = "label, th, button, [role=button], p.d1p-state";
+  const painted = (c: string) => c !== "" && c !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(c);
+  /**
+   * A badge (a tag, chip or pill): an inline box drawn as a unit of its own, with its own background or border. It is
+   * known by that, not by its class or by what contains it, so a badge in running text is judged like any other.
+   */
+  const badge = (el: Element): boolean => {
+    const cs = style(el);
+    if (!cs.display.startsWith("inline")) return false;
+    const border = ["top", "right", "bottom", "left"].some(side => parseFloat(cs.getPropertyValue(`border-${side}-width`)) > 0
+      && cs.getPropertyValue(`border-${side}-style`) !== "none" && painted(cs.getPropertyValue(`border-${side}-color`)));
+    return painted(cs.backgroundColor) || cs.backgroundImage !== "none" || border;
+  };
+  const oneLineItem = (el: Element) => el.matches(ONE_LINE) || badge(el);
   const items: Element[] = [];
   const isItem = new Set<Element>();
   const withinLine = (el: Element) => {
@@ -169,7 +182,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   };
   for (const el of all) {
     const cs = style(el);
-    const oneLine = el.matches(ONE_LINE);
+    const oneLine = oneLineItem(el);
     if ((cs.display === "inline" && !oneLine) || cs.display === "contents" || !el.textContent?.trim() || !shown(el)) continue;
     if (!lineable(el, true)) continue;
     // Inside an item it is part of that item's line, unless positioned out of it (a panel laid over a line).
@@ -185,7 +198,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     // Rendered lines, an explicit <br> included: a one-line item broken by hand is still broken.
     const lines = lineCount(rects);
     const words = text(el);
-    const prose = !el.matches(ONE_LINE) && (el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80);
+    const prose = !oneLineItem(el) && (el.matches(PROSE + ", li") || el.closest(PROSE) !== null || words.length >= 80);
     if (lines > 1 && !prose) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {

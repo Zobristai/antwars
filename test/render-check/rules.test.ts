@@ -60,6 +60,22 @@ describe("render check rules", () => {
     expect(rules(await judged(`<button style="width:200px">${long}</button>`, 390))).toContain("wrap");
   });
 
+  it("fails a badge that wraps inside a paragraph, by its own drawn box, but not the paragraph's wrapping prose", async () => {
+    const tag = (style: string, words: string) => `<span style="padding:0 5px;border-radius:3px;${style}">${words}</span>`;
+    const block = tag("display:inline-block;width:50px;background:#333", "Free for all");
+    const pill = tag("display:inline-flex;width:50px;border:1px solid #888", "Free for all");
+    const inline = tag("background:#333", "Free for all");
+    for (const badge of [block, pill]) {
+      const wrapped = (await judged(`<p style="width:300px">Strait, four colonies ${badge} ended.</p>`, 390)).failures.filter(f => f.rule === "wrap");
+      expect(wrapped.map(f => f.text)).toEqual(["Free for all"]);
+    }
+    // An inline badge broken across the paragraph's lines.
+    expect(rules(await judged(`<p style="width:150px">Strait, four colonies, ${inline} ended.</p>`, 390))).toContain("wrap");
+    // The paragraph itself wraps, its badge on one line: prose, not a defect.
+    expect(rules(await judged(`<p style="width:150px">A sentence that wraps over lines ${tag("background:#333", "Rated")} and on.</p>`, 390))).not.toContain("wrap");
+    expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines, with <a href="#">a link</a> and <em>emphasis</em>.</p>', 390))).not.toContain("wrap");
+  });
+
   it("does not count a tooltip positioned out of a badge's line, and judges a stacked heading block by block", async () => {
     const tip = (open: boolean) => `<p>Rating <button style="position:relative">1995<span style="position:absolute;left:0;bottom:120%;white-space:nowrap${open ? "" : ";width:1px;height:1px;overflow:hidden;clip-path:inset(50%)"}"> ± 107</span></button></p>`;
     expect(rules(await judged(tip(false), 390))).not.toContain("wrap");
@@ -208,7 +224,7 @@ describe("render check verdict", () => {
 describe("render check replay readiness", () => {
   const replay = SURFACES.find(s => s.id === "replay-free-for-all")!;
   const watch = SURFACES.find(s => s.id === "watch")!;
-  const played: Playback = { playbackTick: 40, playbackMs: 4_000, hud: "shown", error: null };
+  const played: Playback = { startTick: 6_000, playbackTick: 6_040, playbackMs: 604_000, hud: "shown", error: null };
 
   async function readiness(ready: string): Promise<BoardReadiness> {
     const page = await browser.newPage();
@@ -218,15 +234,19 @@ describe("render check replay readiness", () => {
     } finally { await page.close(); }
   }
 
-  /** A stand-in client: its board advances ticksPerStep each frame, and the page holds hud as its HUD markup. */
-  async function play(ticksPerStep: number, hud: string, error: string | null = null): Promise<Playback> {
+  /**
+   * A stand-in client: its board shows firstTick after `blank` frames of tick 0 and advances ticksPerStep each frame
+   * after that, and the page holds hud as its HUD markup.
+   */
+  async function play(ticksPerStep: number, hud: string, error: string | null = null, firstTick = 0, blank = 0): Promise<Playback> {
     const page = await browser.newPage();
     try {
       await page.setContent(`<!doctype html>${hud}<script>
-        window.__replayTime = 0; let tick = 0;
+        window.__replayTime = 0; let tick = ${firstTick}; let blank = ${blank};
         window.__antwar = { ready: Promise.resolve(),
           recording: () => ({ stats: { bufferedMessages: 9 }, complete: true, lastTick: 0, time: 0, error: ${JSON.stringify(error)} }),
-          frame: () => { tick += ${ticksPerStep}; return { playbackTick: tick, playbackMs: tick * 100 }; } };
+          frame: () => { if (blank > 0) { blank--; return { playbackTick: 0, playbackMs: 0 }; }
+            tick += ${ticksPerStep}; return { playbackTick: tick, playbackMs: tick * 100 }; } };
       </script>`);
       return await playRecording(page, 1_000);
     } finally { await page.close(); }
@@ -245,7 +265,7 @@ describe("render check replay readiness", () => {
     const ready: BoardReadiness = { state: "ready" };
     const hud = '<div class="d1 d1-hud" style="width:300px;height:80px">Score Band</div>';
     expect(boardProblem(replay, ready, null)).toMatch(/recording was never played/);
-    expect(boardProblem(replay, ready, await play(0, hud))).toMatch(/did not play: the board was still at tick 0/);
+    expect(boardProblem(replay, ready, await play(0, hud))).toMatch(/did not play: the board was still at its first tick \(0\)/);
     expect(boardProblem(replay, ready, await play(1, hud, "This recording is damaged."))).toMatch(/failed while playing \(This recording is damaged\.\)/);
     expect(boardProblem(replay, ready, await play(1, "<p>Could not show the match.</p>"))).toMatch(/no match HUD was shown/);
     expect(boardProblem(replay, ready, await play(1, '<div class="d2 d2-hud" style="display:none">Score</div>'))).toMatch(/no match HUD was shown/);
@@ -255,8 +275,24 @@ describe("render check replay readiness", () => {
     expect(boardProblem(replay, ready, await play(1, '<div class="d1 d1-hud" style="width:300px;height:80px;transform:translateY(-5000px)">Score Band</div>'))).toMatch(/no match HUD was shown/);
     expect(boardProblem(replay, ready, await play(1, '<div class="d2 d2-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;translate:0 -60px">Score</div>'))).toMatch(/no match HUD was shown/);
     const good = await play(1, hud);
-    expect(good).toEqual({ playbackTick: 11, playbackMs: 1_100, hud: "shown", error: null });
+    expect(good).toEqual({ startTick: 1, playbackTick: 11, playbackMs: 1_100, hud: "shown", error: null });
     expect(boardProblem(replay, ready, good)).toBeNull();
+  }, 30_000);
+
+  it("makes a replay invalid when it stays at its own first tick, which is not tick 0", async () => {
+    const ready: BoardReadiness = { state: "ready" };
+    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px">Score Band</div>';
+    // An excerpt that starts 6000 ticks into its match and never moves.
+    const frozen = await play(0, hud, null, 6_000);
+    expect(frozen).toMatchObject({ startTick: 6_000, playbackTick: 6_000 });
+    expect(boardProblem(replay, ready, frozen)).toMatch(/did not play: the board was still at its first tick \(6000\)/);
+    // Frames before its data arrive (tick 0) are not its first tick: it still has to move past 6000.
+    const frozenAfterBlank = await play(0, hud, null, 6_000, 3);
+    expect(frozenAfterBlank).toMatchObject({ startTick: 6_000, playbackTick: 6_000 });
+    expect(boardProblem(replay, ready, frozenAfterBlank)).toMatch(/still at its first tick \(6000\)/);
+    const playing = await play(1, hud, null, 6_000, 3);
+    expect(playing).toMatchObject({ startTick: 6_001, playbackTick: 6_008 });
+    expect(boardProblem(replay, ready, playing)).toBeNull();
   }, 30_000);
 
   it("makes a ready replay invalid when its HUD is boxed and visible but nothing of it reaches the screen", async () => {
