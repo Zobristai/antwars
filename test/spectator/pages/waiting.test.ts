@@ -43,7 +43,7 @@ describe("the Waiting card", () => {
       ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 Lunamax Fast"], ["no opponent yet"], "Status Waiting", ""],
     ]);
     expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("2 agents waiting in a ranked queue");
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("Ranked queue: 2");
     // A builder's line is its username alone (with its rating); a house model leads with its model and has no username.
     const [builder, house] = p.card().byClass("d1p-wide")[0]!.byClass("d1p-model");
     expect(builder!.byClass("d1p-user").map(node => node.textContent)).toEqual(["coffee-ant"]);
@@ -53,13 +53,37 @@ describe("the Waiting card", () => {
     p.mounted.destroy();
   });
 
-  it("says when no agent is waiting, and when the list could not be read", () => {
+  it("says when no agent is waiting, when the list is loading, and when it could not be read, each part a one-line item", () => {
     const p = page();
+    const items = () => p.card().byClass("d1p-state").map(item => item.textContent);
+    const glyphs = () => p.card().byClass("d1p-glyph").map(glyph => glyph.dataset.glyph);
     p.mounted.update(view({ status: "ready", rows: [] }));
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("No agent in a ranked queue or lobby");
+    expect(items()).toEqual(["No agent waiting"]);
     expect(p.card().byClass("d1p-wide")).toEqual([]);
+    p.mounted.update(view({ status: "loading", rows: [] }));
+    expect(items()).toEqual(["Loading…"]);
+    p.mounted.update(view({ status: "loading", rows: agents }));
+    expect(items()).toEqual(["Refreshing…"]);
+    // A failure is told as items, read as one status, the error mark on the first; this card's own way to recover last.
     p.mounted.update(view({ status: "error", rows: [] }));
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toMatch(/^Queue list unavailable/);
+    expect(items()).toEqual(["Queues unavailable", "Refresh to try again."]);
+    expect(glyphs()).toEqual(["error"]);
+    expect(p.card().byClass("d1p-states")[0]!.getAttribute("role")).toBe("status");
+    p.mounted.update(view({ status: "error", rows: agents }));
+    expect(items()).toEqual(["Queues unavailable", "Showing the last list", "Refresh to try again."]);
+    expect(glyphs()).toEqual(["error"]);
+    p.mounted.destroy();
+  });
+
+  it("tallies each kind of wait by name and count, with no singular or plural, read as one status under the Waiting title", () => {
+    const p = page();
+    const many = Array.from({ length: 12 }, (_, at) => ({ ...agents[0]!, displayName: `ant-${at}` }));
+    p.mounted.update(view({ status: "ready", rows: many }));
+    const [list] = p.card().byClass("d1p-states");
+    expect(list!.getAttribute("role")).toBe("status");
+    expect(list!.textContent).toBe("Ranked queue: 12");
+    p.mounted.update(view({ status: "ready", rows: many.slice(0, 1) }));
+    expect(p.card().byClass("d1p-state").map(item => item.textContent)).toEqual(["Ranked queue: 1"]);
     p.mounted.destroy();
   });
 });
@@ -85,7 +109,7 @@ describe("the Waiting card's lobby rows", () => {
       ["Unranked · 1v1", ["ann"], ["bob"], "Status Starting"],
     ]);
     expect(tableRows(p.card()).map(row => row[0])).toEqual(["11 Nov 202604:58 UTC", "11 Nov 202605:02 UTC", "11 Nov 202603:44 UTC", "11 Nov 202605:01 UTC"]);
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("4 matches waiting to start");
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("Lobbies: 4");
     // The stacked rows carry the same lines.
     const item = p.card().byClass("d1p-narrow")[0]!.querySelectorAll("li")[0]!;
     expect(item.byClass("d1p-model").map(line => line.textContent)).toEqual(["omp-dolphin", "omp-dolphin/spar", "coffee-ant1540 ± 80", "seat open"]);
@@ -174,10 +198,12 @@ describe("Quadrants on the Waiting card", () => {
       ["11 Nov 202605:04 UTC", "Ranked · 2v2", ["kite1490 ± 80×2, 2 seats"], ["bob×2, 2 seats"], "Status Starting", ""],
     ]);
     expect(allRows(p.card())[1]!.byClass("d1p-elo-badge")).toEqual([]);
-    // Each kind of wait is a one-line item of its own, in today's words, together in one status list.
+    // Each kind of wait is a one-line item of its own, a tally, together in one status list; "Free-for-all" is held whole,
+    // so zoom never breaks it at its hyphens.
     const [list] = p.card().byClass("d1p-states");
-    expect(list!.byClass("d1p-state").map(item => item.textContent)).toEqual(["1 agent waiting in a ranked queue", "1 agent waiting for Free-for-all", "1 match waiting to start"]);
+    expect(list!.byClass("d1p-state").map(item => item.textContent)).toEqual(["Ranked queue: 1", "Free-for-all: 1", "Lobbies: 1"]);
     expect(list!.byClass("d1p-glyph")).toHaveLength(1);
+    expect(list!.byClass("d1p-keep").map(word => word.textContent)).toEqual(["Free-for-all:"]);
     p.mounted.destroy();
   });
 
@@ -233,7 +259,7 @@ describe("Quadrants on the Waiting card", () => {
       expect(scope.byClass("d1p-elo-badge")).toEqual([]);
       expect(scope.byClass("d1p-stamp")[0]!.textContent).toBe("Status 4 of 4 seats");
     }
-    expect(p.card().byClass("d1p-state").map(item => item.textContent)).toEqual(["1 agent waiting in a ranked queue", "2 matches waiting to start"]);
+    expect(p.card().byClass("d1p-state").map(item => item.textContent)).toEqual(["Ranked queue: 1", "Lobbies: 2"]);
     p.mounted.destroy();
   });
 
@@ -260,7 +286,7 @@ describe("Quadrants on the Waiting card", () => {
       return read;
     };
     const plain = drawn([solo, pairing]);
-    expect(plain.state).toEqual(["1 agent waiting in a ranked queue", "1 match waiting to start"]);
+    expect(plain.state).toEqual(["Ranked queue: 1", "Lobbies: 1"]);
     const beside = drawn([solo, eve, quad, pairing]);
     expect([beside.rows[0], beside.rows[3]]).toEqual(plain.rows);
   });
@@ -276,7 +302,7 @@ describe("house challenges on the Waiting card", () => {
     const links = () => card().all().filter(node => node.tag === "a").map(node => [node.textContent, node.href]);
     mounted.update(view({ status: "ready", rows: [] }));
     // The state line is unchanged; the offer is a line of its own, keeping the page's kept parameters (ui/format.ts keep).
-    expect(card().byClass("d1p-state")[0]!.textContent).toBe("No agent in a ranked queue or lobby");
+    expect(card().byClass("d1p-state")[0]!.textContent).toBe("No agent waiting");
     expect(links()).toEqual([["challenge a house handle", "/?page=leaderboard&mode=house-1v1&board=3d"]]);
     // The site's cyan button (deck.css .d1-agent-button), not the grey pill; no house slug on the card.
     expect(card().all().find(node => node.tag === "a")!.classes()).toEqual(["d1-agent-button"]);

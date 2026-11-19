@@ -95,6 +95,17 @@ export function stateLine(doc: Document, glyph: string, text: string): HTMLParag
   return line;
 }
 
+/** An item's words, each word with a hyphen ("Free-for-all") held whole (archive.css .d1p-keep), so where zoom does wrap
+ * an item it breaks only between words. */
+function itemWords(doc: Document, text: string): HTMLSpanElement {
+  const words = h(doc, "span");
+  text.split(/(\S+-\S+)/).forEach((piece, at) => {
+    if (at % 2 === 1) words.append(h(doc, "span", "d1p-keep", piece));
+    else if (piece) words.append(piece);
+  });
+  return words;
+}
+
 /** A card's state as separate one-line items, read politely as one: the glyph on the first, each item a d1p-state line
  * that never wraps. A wide card sets them on one line, parted by " · "; a narrower one stacks them (archive.css). */
 export function stateList(doc: Document, glyph: string, parts: readonly string[]): HTMLDivElement {
@@ -108,7 +119,7 @@ export function stateList(doc: Document, glyph: string, parts: readonly string[]
       mark.setAttribute("aria-hidden", "true");
       line.append(mark);
     }
-    line.append(h(doc, "span", undefined, part));
+    line.append(itemWords(doc, part));
     list.append(line);
   });
   return list;

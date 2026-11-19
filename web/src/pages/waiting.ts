@@ -22,7 +22,7 @@ import type { MatchesView, ShownRating, WaitingLobby, WaitingRow } from "../matc
 import { rowName } from "../ui/deck/model.ts";
 import { SEAT } from "../compose.ts";
 import { NO_BADGES } from "../leaderboard-page/view.ts";
-import { MATCH_TYPE_WORDS, keep, listedNames, utcStamp, type SectionState } from "../ui/format.ts";
+import { MATCH_TYPE_WORDS, RETRY, keep, listedNames, utcStamp, type SectionState } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 import { STAMPS, seatsStamp, type ColonyCell, type MatchRow, type RowParts } from "./matches.ts";
 import { CHALLENGE_HREF, houseBadges, seatGroups, sectionLine, sizeOf, type PlayerParts, type SeatEntry, type SeatGroup } from "./model.ts";
@@ -98,25 +98,35 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
   return { ...base, stamp: { text: stamp, look: "waiting" }, colonies: row.colonies.map(colony), ...(names ? { colonyNames: names } : {}) };
 }
 
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
-/** What is waiting, one clause per kind: ranked-queue agents, Free-for-all agents, matches not yet begun. */
+/** What is waiting, one tally per kind, under the card's "Waiting" title: ranked-queue agents, Free-for-all agents, public
+ * lobbies whose match has not begun. A tally has no singular or plural ("Ranked queue: 1", "Ranked queue: 12"). */
 export function waitingParts(rows: readonly WaitingRow[]): string[] {
   const lobbies = rows.filter(isLobby).length;
   const quadrants = rows.filter(row => !isLobby(row) && row.mode === QUADRANTS).length, agents = rows.length - lobbies - quadrants;
   return [
-    ...(agents > 0 ? [`${plural(agents, "agent", "agents")} waiting in a ranked queue`] : []),
-    ...(quadrants > 0 ? [`${plural(quadrants, "agent", "agents")} waiting for ${MATCH_TYPE_WORDS.quadrants}`] : []),
-    ...(lobbies > 0 ? [`${plural(lobbies, "match", "matches")} waiting to start`] : []),
+    ...(agents > 0 ? [`Ranked queue: ${agents}`] : []),
+    ...(quadrants > 0 ? [`${MATCH_TYPE_WORDS.quadrants}: ${quadrants}`] : []),
+    ...(lobbies > 0 ? [`Lobbies: ${lobbies}`] : []),
   ];
 }
 
+export const QUEUES_UNAVAILABLE = "Queues unavailable";
+export const LAST_LIST_SHOWN = "Showing the last list";
+
 export function waitingState(view: Pick<MatchesView, "waiting">): SectionState {
   const { status, rows } = view.waiting;
-  if (status === "loading") return { tone: "loading", text: rows.length ? "Refreshing the ranked queues…" : "Loading the ranked queues…" };
-  if (status === "error") return { tone: "error", text: rows.length ? "Queue list unavailable · showing the last list loaded" : "Queue list unavailable" };
-  if (rows.length === 0) return { tone: "empty", text: "No agent in a ranked queue or lobby" };
+  if (status === "loading") return { tone: "loading", text: rows.length ? "Refreshing…" : "Loading…" };
+  if (status === "error") return { tone: "error", text: rows.length ? `${QUEUES_UNAVAILABLE} · ${LAST_LIST_SHOWN}` : QUEUES_UNAVAILABLE };
+  if (rows.length === 0) return { tone: "empty", text: "No agent waiting" };
   return { tone: "complete", text: waitingParts(rows).join(" · ") };
+}
+
+/** The state's one-line items where it has several: each kind of wait; or the failure, the last list where one is still
+ * shown, and how to recover (RETRY), so each stays on one line at any text size. */
+function waitingItems(view: Pick<MatchesView, "waiting">, state: SectionState): readonly string[] | null {
+  if (state.tone === "complete") return waitingParts(view.waiting.rows);
+  if (state.tone === "error") return [QUEUES_UNAVAILABLE, ...(view.waiting.rows.length ? [LAST_LIST_SHOWN] : []), RETRY];
+  return null;
 }
 
 export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, parts: RowParts): HTMLElement {
@@ -128,11 +138,11 @@ export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, p
     link.dataset.key = "waiting-challenge";
     foot.push(link);
   }
-  const state = waitingState(view), rows = view.waiting.rows;
+  const state = waitingState(view), rows = view.waiting.rows, items = waitingItems(view, state);
   return parts.matchCard({
     list: "wait", titleId: "d1p-waiting-title", title: WAITING_TITLE, cardClass: "d1p-waiting",
-    // Ready with rows waiting, each kind of wait is a one-line item of its own (chrome.ts stateList), never one wrapped line.
-    state: { ...sectionLine(state, rows.length), ...(state.tone === "complete" ? { parts: waitingParts(rows) } : {}) },
+    // Each kind of wait, and each part of a failure, is a one-line item of its own (chrome.ts stateList), never one wrapped line.
+    state: { ...sectionLine(state, rows.length), ...(items ? { parts: items } : {}) },
     rows: view.waiting.rows.map(waitingMatchRow), loading: false, actionHead: "", foot,
   });
 }
