@@ -8,7 +8,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { SUB_TILE, type StreamQueen, type StreamSetup } from "../../../src/live/format.ts";
 import { buildAntGeometry } from "./ants3d.ts";
-import type { Ground } from "./ground.ts";
+import type { Ground, Mound } from "./ground.ts";
 
 const MOUND_R = 1.7, MOUND_H = 0.55, QUEEN_LENGTHS = 2.4;
 
@@ -20,10 +20,19 @@ export function tileToWorld(tx: number, ty: number, mapH: number, groundY: numbe
   return [tx, groundY, mapH - ty];
 }
 
+/** One queen's nest as drawn, and the mound the ants stand on (ground.ts standAt). */
+interface NestMeshes { meshes: Mesh[]; rim: StandardMaterial; x: number; y: number; mound: Mound }
+
+/** The mound a nest at tile tx, ty draws, in the same terms as its mesh in Nests.build. */
+function moundAt(ground: Ground, tx: number, ty: number): Mound {
+  const scale = ground.physicalScale;
+  return { x: tx, y: ty, base: ground.heightAt(tx, ty) - 0.05 * scale, radius: MOUND_R * scale, height: MOUND_H * scale };
+}
+
 export class Nests {
   readonly casters: Mesh[] = [];
   /** Each queen's meshes: the mound, its rim, the entrance and the queen herself, with the rim's material while she lives. */
-  private meshes = new Map<string, { meshes: Mesh[]; rim: StandardMaterial; x: number; y: number }>();
+  private meshes = new Map<string, NestMeshes>();
   private soil: StandardMaterial;
   private hole: StandardMaterial;
   /** A lost nest's rim, per colony: the colony's colour dimmed and unlit, so the nest reads as a landmark of a queen that was. */
@@ -80,7 +89,10 @@ export class Nests {
           mesh.freezeWorldMatrix();
         }
         n.x = q.x; n.y = q.y;
+        n.mound = moundAt(this.ground, tx, ty);
       }
+      // Ants stand on every drawn mound, a lost queen's included.
+      this.ground.setMound(key, n.mound);
       const enemy = queens.find(other => other.colony !== q.colony && other.lostTick === null);
       if (enemy) {
         const facing = Math.atan2(enemy.y - q.y, enemy.x - q.x);
@@ -93,7 +105,11 @@ export class Nests {
       queen.setEnabled(!lost);
       rim.material = lost ? this.lostRim(q.colony) : n.rim;
     }
-    for (const [key, n] of this.meshes) if (!listed.has(key)) for (const mesh of n.meshes) mesh.setEnabled(false);
+    for (const [key, n] of this.meshes) {
+      if (listed.has(key)) continue;
+      for (const mesh of n.meshes) mesh.setEnabled(false);
+      this.ground.removeMound(key);
+    }
   }
 
   private lostRim(colony: number): StandardMaterial {
@@ -108,7 +124,7 @@ export class Nests {
     return m;
   }
 
-  private build(q: StreamQueen, queens: readonly StreamQueen[]): { meshes: Mesh[]; rim: StandardMaterial; x: number; y: number } {
+  private build(q: StreamQueen, queens: readonly StreamQueen[]): NestMeshes {
     const { scene, ground } = this;
     const scale = ground.physicalScale;
     const tx = q.x / SUB_TILE, ty = q.y / SUB_TILE, colony = q.colony;
@@ -135,6 +151,6 @@ export class Nests {
     const meshes = [mound, rim, entrance, queen];
     for (const mesh of meshes) { mesh.isPickable = false; mesh.freezeWorldMatrix(); }
     this.casters.push(queen);
-    return { meshes, rim: rimMat, x: q.x, y: q.y };
+    return { meshes, rim: rimMat, x: q.x, y: q.y, mound: moundAt(ground, tx, ty) };
   }
 }

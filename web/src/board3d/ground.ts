@@ -278,6 +278,9 @@ uniform float uFrontOn; uniform float uFogOn; uniform vec3 uC0; uniform vec3 uC1
   }
 }
 
+/** A nest mound as drawn: a half-ellipsoid centred at x, y (tiles) on base (world y), radius and height in world units. */
+export interface Mound { x: number; y: number; base: number; radius: number; height: number }
+
 export class Ground {
   readonly mesh: Mesh;
   readonly plugin: GroundPlugin;
@@ -306,6 +309,8 @@ export class Ground {
   readonly mapH: number;
   /** Bakes the soil again into its texture, with the board look current then. */
   private rebake: () => void;
+  /** Each drawn nest mound (nests.ts), keyed per queen: centre in tiles, base height (world y), radius and height. */
+  private mounds = new Map<string, Mound>();
 
   constructor(scene: Scene, mapW: number, mapH: number, readonly physicalScale = 1) {
     this.mapW = mapW;
@@ -481,6 +486,25 @@ export class Ground {
     const c = h[(j + 1) * w + i]!;
     const d = h[(j + 1) * w + i + 1]!;
     return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+  }
+
+  /** Record (or move) a nest mound the ants stand on; nests.ts keeps it in step with the mound it draws. */
+  setMound(key: string, mound: Mound): void { this.mounds.set(key, mound); }
+  /** Forget a mound that is no longer drawn. */
+  removeMound(key: string): void { this.mounds.delete(key); }
+
+  /**
+   * The height (world y) a body standing at tx, ty is drawn at: the relief, or a nest mound's surface where it is higher.
+   * reach is the body's half-extent in tiles: the mound is read at the body's edge nearest its top, so a body on a slope
+   * clears the mound everywhere, not just at its centre. Elsewhere this is exactly heightAt.
+   */
+  standAt(tx: number, ty: number, reach = 0): number {
+    let y = this.heightAt(tx, ty);
+    for (const m of this.mounds.values()) {
+      const d = Math.max(0, Math.hypot(tx - m.x, ty - m.y) - reach) / m.radius;
+      if (d < 1) y = Math.max(y, m.base + m.height * Math.sqrt(1 - d * d));
+    }
+    return y;
   }
 
   /**
