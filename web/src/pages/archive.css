@@ -578,8 +578,9 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-name > .d1p-user { font-weight: var(--aw-bold); color: inherit; }
 .d1p-rec-name > .d1p-mname { color: inherit; }
 /* A self-reported level may run to 32 characters: the chip stops at 12em, clipped, and where the name has given all it
-   can, narrower still; its whole text its title. Every real level shows whole. */
-.d1p-rec-player .d1p-tags { flex: 0 1 auto; display: inline-flex; min-width: 0; max-width: 12em; overflow: hidden; }
+   can, narrower still; its whole text its title. Every real level shows whole. Positioned, so the clip also holds the
+   chip's screen-reader text, which would otherwise widen the page past a clipped chip. */
+.d1p-rec-player .d1p-tags { position: relative; flex: 0 1 auto; display: inline-flex; min-width: 0; max-width: 12em; overflow: hidden; }
 /* LEVEL CHIP: 10/14 600 caps on an opaque raised fill, so it looks the same on a winner's band and off it. */
 .d1p-rec-player .d1p-tag {
   margin: 0; padding: 0 3px; border-radius: var(--aw-radius-badge); background: var(--aw-raise); vertical-align: baseline;
