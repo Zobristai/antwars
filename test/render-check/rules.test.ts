@@ -5,6 +5,7 @@ import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
 import { heldFrom, judge, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
+import { RESULTS_KEY } from "../../web/src/pages/top-matches.ts";
 import { SURFACES, boardProblem, boardReadiness, playRecording, type BoardReadiness, type Playback } from "../../web/render-check/check.ts";
 
 let browser: Browser;
@@ -383,4 +384,9 @@ describe("render check replay readiness", () => {
     expect(verdict.passed).toBe(false);
     expect(verdict.invalid).toEqual([{ surface: "replay-free-for-all", width: 390, typeface: "Roboto", problem }]);
   });
+});
+
+it("judges Watch's top matches both as a visitor first sees them, results hidden, and in a browser that chose to show them", () => {
+  const watch = SURFACES.filter(s => s.url === "/?watch=1");
+  expect(watch.map(s => [s.id, s.storage ?? null])).toEqual([["watch", null], ["watch-results-shown", { [RESULTS_KEY]: "true" }]]);
 });

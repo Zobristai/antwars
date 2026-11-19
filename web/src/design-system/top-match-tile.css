@@ -62,6 +62,18 @@
    enlarged text), the space falls between row 3 and row 4, so how it ended and the date line up across a row of tiles */
 .aw-how { margin-top: auto; padding-top: var(--aw-space-1); }
 
+/* ---- results hidden (the default on Watch): the tile has no how-it-ended row, so the date row takes its place at the foot */
+.aw-tile > :not(.aw-how) + .aw-date { margin-top: auto; padding-top: var(--aw-space-1); }
+
+/* ---- the band's end: the reason no live match shows, then the one button that shows or hides every tile's result.
+   A text button in a pill outline, quieter than "Bring your agent"; with enlarged text it moves whole to its own line. */
+.aw-band-end { display: flex; flex-wrap: wrap; align-items: center; gap: var(--aw-space-2) var(--aw-space-4); }
+.aw-reveal { flex: none; display: inline-flex; align-items: center; min-height: var(--aw-tap); padding: 0 var(--aw-space-3);
+  border: 1px solid var(--aw-line); border-radius: var(--aw-radius-pill); background: transparent; color: var(--aw-ink);
+  font: inherit; font-size: var(--aw-text-body); line-height: var(--aw-lh-body); font-weight: var(--aw-strong); white-space: nowrap; cursor: pointer; }
+.aw-reveal:hover, .aw-reveal:focus-visible { border-color: var(--aw-accent); }
+.aw-reveal:focus-visible { outline: 2px solid var(--aw-accent); outline-offset: 2px; }
+
 /* ---- under the grid: All recordings, a text link; and the list's state while it loads, is empty or failed */
 .aw-after { margin: var(--aw-space-1) 0 0; }
 .aw-link { font-size: var(--aw-text-body); color: var(--aw-ink-2); text-underline-offset: 3px; }
@@ -89,6 +101,7 @@
   .aw-grid { --cols: 2; }
   .d1p[data-page="watch"] .d1p-band { flex-direction: column; align-items: flex-start; }
   .aw-link { display: inline-flex; align-items: center; min-height: var(--aw-tap-touch); }
+  .aw-reveal { min-height: var(--aw-tap-touch); }
 }
 /* ---- two columns on a phone, 24.25em to 46.125rem: the page edge 12 px and the gap 4 px, as from 46.125rem to 52rem. The design's 16 and
    8 px were measured with web fonts; the site draws with the visitor's system fonts, whose widest player line (Liberation Sans)

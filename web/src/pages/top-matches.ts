@@ -2,9 +2,10 @@
 // system's Top matches tiles (design-system/top-match-tile.ts), in the site's page frame. The title and the reason no live
 // match shows stand in the page band; the grid sits on the page under it, with no card around it; All recordings is a text
 // link under the grid. Four columns from tablet width up, two on a phone, one on the narrowest phones. Each tile is one link
-// to its match's replay and plays nothing itself.
-import { topMatchTile } from "../design-system/top-match-tile.ts";
-import { topMatchesList } from "../matches-page/data.ts";
+// to its match's replay and plays nothing itself. The tiles hide their results unless the visitor chose to show them: one
+// button beside the state line shows or hides every tile's result, and the choice is remembered in this browser.
+import { topMatchTile, type TileResults } from "../design-system/top-match-tile.ts";
+import { topMatchesList, type Recording } from "../matches-page/data.ts";
 import type { Fallback } from "../replay.ts";
 import { keep, neverJoined } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
@@ -18,7 +19,26 @@ export const TOP_WORDS = {
   failed: "Top matches unavailable. Trying again shortly.",
   empty: "No top matches yet.",
   all: "All recordings",
+  show: "Show results",
+  hide: "Hide results",
 } as const;
+/** Where this browser remembers that the visitor chose to show results: "true" shows them; anything else, no entry, or
+ * storage the browser blocks, hides them. */
+export const RESULTS_KEY = "aw.topMatches.showResults";
+
+/** The visitor's remembered choice; hidden unless they chose to show results. */
+function storedResults(win: Window): TileResults {
+  try { return win.localStorage.getItem(RESULTS_KEY) === "true" ? "shown" : "hidden"; } catch { return "hidden"; }
+}
+
+/** Hiding removes the stored choice rather than writing "false": a write that fails (storage full) can then never leave an
+ * earlier "true" behind to show results on the next visit. */
+function storeResults(win: Window, results: TileResults): void {
+  try {
+    if (results === "shown") win.localStorage.setItem(RESULTS_KEY, "true");
+    else win.localStorage.removeItem(RESULTS_KEY);
+  } catch { /* blocked: the choice lasts this page */ }
+}
 /** Why the page is not showing a live match, as the band's state line says it. */
 export const TOP_STATE: Record<Fallback, string> = {
   idle: "No live match right now",
@@ -57,9 +77,32 @@ export function mountTopMatchesPage(doc: Document, win: Window, options: TopMatc
   const title = h(doc, "h1", "d1p-title", TOP_WORDS.title);
   title.id = "aw-top-title";
   let state = stateLine(doc, "ring", TOP_STATE[options.state]), shown = options.state;
-  frame.band.append(title, state);
+  // The state line, then the results button, which stands only while the grid has tiles drawn.
+  const end = h(doc, "div", "aw-band-end");
+  end.append(state);
+  frame.band.append(title, end);
   const grid = h(doc, "ol", "aw-grid");
+  grid.id = "aw-top-grid";
   grid.setAttribute("aria-labelledby", "aw-top-title");
+  // The grid holds whether its tiles show their results, read before it is first drawn.
+  let results = storedResults(win);
+  grid.dataset.results = results;
+  const reveal = h(doc, "button", "aw-reveal");
+  reveal.type = "button";
+  reveal.setAttribute("aria-controls", grid.id);
+  let matches: Recording[] = [];
+  const draw = () => {
+    grid.dataset.results = results;
+    reveal.textContent = results === "shown" ? TOP_WORDS.hide : TOP_WORDS.show;
+    grid.replaceChildren(...matches.map(r => topMatchTile(doc, r, search, results)));
+    if (matches.length === 0) reveal.remove();
+    else if (!end.contains(reveal)) end.append(reveal);
+  };
+  reveal.addEventListener("click", () => {
+    results = results === "shown" ? "hidden" : "shown";
+    storeResults(win, results);
+    draw();
+  });
   grid.setAttribute("aria-busy", "true");
   const status = h(doc, "p", "aw-status", TOP_WORDS.loading);
   const after = h(doc, "p", "aw-after");
@@ -75,9 +118,10 @@ export function mountTopMatchesPage(doc: Document, win: Window, options: TopMatc
         signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60_000)]) });
       if (!response.ok) throw new Error("Top matches unavailable");
       // A match a colony never joined is left off, as the recordings list leaves it off (ui/format.ts recordingRows).
-      const matches = topMatchesList.parse(await response.json()).matches.filter(r => !neverJoined(r));
+      const listed = topMatchesList.parse(await response.json()).matches.filter(r => !neverJoined(r));
       if (abort.signal.aborted) return;
-      grid.replaceChildren(...matches.map(r => topMatchTile(doc, r, search)));
+      matches = listed;
+      draw();
       status.textContent = matches.length === 0 ? TOP_WORDS.empty : "";
       status.hidden = matches.length > 0;
       status.removeAttribute("role");
@@ -102,8 +146,9 @@ export function mountTopMatchesPage(doc: Document, win: Window, options: TopMatc
     setState(next) {
       if (next === shown) return;
       shown = next;
+      state.remove();
       state = stateLine(doc, "ring", TOP_STATE[next]);
-      frame.band.replaceChildren(title, state);
+      end.prepend(state);
     },
     destroy,
   };

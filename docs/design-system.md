@@ -20,7 +20,7 @@ with no live match (`web/src/pages/top-matches.ts`) shows the hand-picked list (
 of these tiles in the site's own page frame: the title and the reason no live match shows stand in the page band, the grid
 sits on the page under it with no card, and All recordings is a text link under the grid.
 
-Each tile is one link to its match's replay. It plays nothing itself. Every tile has the same rows, in this order:
+Each tile is one link to its match's replay. It plays nothing itself. With results shown, every tile has the same rows, in this order:
 
 1. the game type, and for a team match its seats in words ("2 per side");
 2. the winner's side, on a band of its colony's colour, the only colony colour on the tile;
@@ -28,6 +28,21 @@ Each tile is one link to its match's replay. It plays nothing itself. Every tile
 4. how the match ended, in the site's own words without the tie-break step it was decided on (" · decided on …"),
    and on a free-for-all also without the leading "Last colony standing"; the tile's accessible name keeps the full words;
 5. the date, with the match's length on the right.
+
+### Results hidden
+
+By default the tiles hide every result. A hidden tile shows only its game type, its sides in colony order (the order
+Matches lists colonies in) and its date, at its foot: no winner band, no colony colour, seat marks grey on every side, no
+"how it ended" row and no length (a length equal to the time limit would say the match went to time). The result is not
+drawn and then hidden: the tile's markup and its accessible name carry none of it. The accessible name names the sides
+joined by "versus" (a free-for-all lists its colonies), then the type and the date. Hidden tiles are 106 px tall at the
+default text size; shown, 122 px.
+
+One **Show results** button, beside the reason no live match shows, shows every tile's result at once, as the rows above
+draw it, and becomes **Hide results**. It stands only while the grid has tiles. Its visible text is its accessible name and it
+controls the grid, which holds the state (`data-results="hidden"` or `"shown"`). The choice is remembered in this browser
+(local storage, `aw.topMatches.showResults`) and read before the grid is first drawn; a visitor who never chose, or whose
+browser blocks storage, sees results hidden.
 
 A player line is the builder's name in bold, exactly as stored, then the model, then the effort badge, with Fast drawn as
 a bolt inside it. It comes from the same source the Matches page draws its players from. A side is one player line, and
@@ -39,8 +54,8 @@ ordered as Matches groups them, each with one mark per seat it stands for; every
 is shortened to a count, and the tile's accessible name names every group. No rating is shown. A retired model is marked in
 the tile's accessible name and tooltip, not on the tile.
 
-Every tile in a grid is as tall as the tallest. A tile taller than its own lines keeps its last two rows at its foot, so how
-the match ended and the date line up across a row of tiles, and the space falls above them. Each extra line (a seat group,
+Every tile in a grid is as tall as the tallest. A tile taller than its own lines keeps its last two rows (with results
+hidden, its date row) at its foot, so they line up across a row of tiles, and the space falls above them. Each extra line (a seat group,
 or a free-for-all's third or fourth side) adds 20 px to every tile in the grid ([top-matches.md](top-matches.md)).
 
 ## Layout rules
@@ -66,4 +81,5 @@ or a free-for-all's third or fourth side) adds 20 px to every tile in the grid (
   line may move its whole badge onto the next line. Past that, nothing is cut: the badges move to the next line as one unit
   and a long name wraps between words.
 
-The render check (`web/render-check/`) judges the Watch page at 390 and 1280 px in both typefaces against these rules.
+The render check (`web/render-check/`) judges the Watch page at 390 and 1280 px in both typefaces against these rules,
+with results hidden and shown.

@@ -56,6 +56,8 @@ export interface Surface {
   /** An element (CSS selector) focused from the keyboard once the page has settled, so its focus ring is judged and
    * rendered. A render where it is missing or does not show focus as keyboard focus is invalid. */
   focus?: string;
+  /** What this browser remembers for the site (its local storage), set before the page loads. */
+  storage?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -70,7 +72,8 @@ const RECORDINGS_FOCUS = ".d1p-rec-rows > li:first-child .d1p-rec-replay";
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
   // Not capture=1: on Watch that also changes what the page shows with no live match.
-  { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match)" },
+  { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), its top matches' results hidden as a visitor first sees them" },
+  { id: "watch-results-shown", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), in a browser that chose to show the top matches' results", storage: { "aw.topMatches.showResults": "true" } },
   { id: "matches", url: "/?page=matches", hud: false, what: "the Matches page (all recordings)" },
   { id: "waiting", url: "/?page=matches", hud: false, what: "the Matches page with agents waiting and matches live (fixture: Waiting and Live now rows)", fixtures: "waiting-fixture.json" },
   { id: "recordings", url: "/?page=matches", hud: false, what: "the Matches page with a Recordings list of the cases the snapshot lacks (fixture: a sample Scripted bot win in Lake Skinner; snapshot rows), its first Replay link focused", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS },
@@ -438,6 +441,7 @@ async function renderAll(o: Options): Promise<Render[]> {
         if (surface.fixtures) await context.clock.setFixedTime(new Date(snapshot.recordedAt));
         const served = await serveSite(context, { dist: o.dist, snapshot, fixtures: surfaceFixtures.get(surface.id) ?? fixtures, rulesPage, record: o.record });
         const page = await context.newPage();
+        if (surface.storage) await page.addInitScript(stored => { for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value); }, surface.storage);
         if (surface.hud) {
           await page.addInitScript(() => {
             const clock = window as unknown as { __replayTime: number };

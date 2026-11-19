@@ -1,7 +1,8 @@
 // The design system's Top matches tile (docs/design-system.md): one whole-tile link to a match's replay, text only, so nothing
 // plays until it is opened. Every tile has the same rows in the same order: the game type; the winner's side on a band
 // of its colony colour, the only colony colour on the tile; the other side (each other side, in a free-for-all); how it
-// ended; the date with the length. A side
+// ended; the date with the length. With results hidden (the default on Watch) the tile carries no result at all: the
+// sides in colony order, no band or colony colour, no how-it-ended row and no length, the date at its foot. A side
 // is one player line, or, where its seats differ, one line per seat group as Matches groups them. No rating and no retired
 // mark is drawn; the retired mark is in the tile's accessible name and tooltip. A builder is shown by its name exactly as
 // stored, from the one player-line source Matches draws (pages/model.ts recordedPlayer). A side fielding more than one seat
@@ -132,21 +133,25 @@ export function tileEnding(ended: string, colonies: number): string {
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
-/** One grid cell: the tile linking to the match's replay. */
-export function topMatchTile(doc: Document, r: Recording, search: string): HTMLLIElement {
+/** Whether a tile shows its match's result (winner, how it ended, length) or hides it. */
+export type TileResults = "hidden" | "shown";
+
+/** One grid cell: the tile linking to the match's replay. Hidden, the result is not drawn and then hidden: it is never put
+ * in the tile, its accessible name included. */
+export function topMatchTile(doc: Document, r: Recording, search: string, results: TileResults): HTMLLIElement {
   const listed = recordingRow(r, search);
   const colonies = Math.max(2, r.colonyNames?.length ?? 0, ...r.seats.map(seat => seat.colony + 1));
   const names = r.colonyNames ?? COLONY_NAMES;
   const sides = tileSides(r, colonies);
   // The winner as the rest of the site reads it (none for an abandoned match), kept only where it names one of the tile's sides.
-  const named = winnerOf(r);
+  const named = results === "shown" ? winnerOf(r) : null;
   const winner = named !== null && named < colonies ? named : null;
   const order = winner === null ? sides.map((_, colony) => colony) : [winner, ...sides.map((_, colony) => colony).filter(colony => colony !== winner)];
   const type = tileType(r.matchType);
   const { result, how } = recordingResult(r);
-  const ended = how ?? result;
+  const ended = results === "shown" ? how ?? result : null;
   const date = whenParts(listed.when).date;
-  const length = lengthText(r);
+  const length = results === "shown" ? lengthText(r) : null;
 
   const item = h(doc, "li");
   const link = h(doc, "a", "aw-tile");
@@ -163,16 +168,23 @@ export function topMatchTile(doc: Document, r: Recording, search: string): HTMLL
   meta.append(typeName);
   link.append(meta);
   // The winner first, then each other side in colony order: two sides on most tiles, every side of a free-for-all.
+  // Hidden, every side in colony order.
   link.append(...order.map((colony, i) => playerLine(doc, sides[colony] ?? null, i === 0 && winner !== null)));
-  const howRow = h(doc, "span", "aw-row aw-how");
-  howRow.append(h(doc, "span", "aw-name", tileEnding(ended, colonies)));
+  if (ended !== null) {
+    const howRow = h(doc, "span", "aw-row aw-how");
+    howRow.append(h(doc, "span", "aw-name", tileEnding(ended, colonies)));
+    link.append(howRow);
+  }
   const dateRow = h(doc, "span", "aw-row aw-date");
-  dateRow.append(h(doc, "span", "aw-name", date), h(doc, "span", "aw-len", length ?? ""));
-  link.append(howRow, dateRow);
+  dateRow.append(h(doc, "span", "aw-name", date));
+  if (results === "shown") dateRow.append(h(doc, "span", "aw-len", length ?? ""));
+  link.append(dateRow);
 
   const typeWords = type === null ? null : type.size === null ? type.kind : `${type.kind} · ${type.size}`;
-  const sidesWords = winner === null ? order.map(colony => sideWords(sides[colony] ?? null)).join(" v ")
-    : `${sideWords(sides[winner] ?? null)} beat ${listWords(order.slice(1).map(colony => sideWords(sides[colony] ?? null)))}`;
+  const sideList = order.map(colony => sideWords(sides[colony] ?? null));
+  const sidesWords = results === "hidden" ? (sideList.length > 2 ? listWords(sideList) : sideList.join(" versus "))
+    : winner === null ? sideList.join(" v ")
+    : `${sideList[0]} beat ${listWords(sideList.slice(1))}`;
   const label = [sidesWords, typeWords, ended, length === null ? null : length.replace(" min", " minutes"), date].filter(word => word !== null && word !== "").join(", ");
   link.setAttribute("aria-label", label);
   link.title = label;
