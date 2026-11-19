@@ -2,8 +2,31 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { chromium } from "playwright-core";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
+import { roster } from "../../../web/src/ui/deck/model.ts";
+import { scoreFrame } from "./score-band-frame.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("lays shuffled numbered seats left to right in both colonies at both widths and font stacks", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const frame = scoreFrame(2, 8), seats = [1, 1, 2, 4, 4, 3, 3, 2];
+    frame.board!.agents.forEach((a, index) => { a.identity = { displayName: `player-${a.colony} #${seats[index]}`, elo: 1500 }; });
+    const groups = roster(frame).groups;
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      for (const width of [390, 1280]) for (const font of ["Roboto", "Liberation Sans"]) {
+        const page = await browser.newPage({ viewport: { width, height: 900 } });
+        const teams = groups.map(g => `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">${g.colony === 0 ? "Very Large" : "Lake Hodges"} Colony</h2><span class="d1-team-members">${g.members.map(m => `<button class="d1-member" data-seat="${seats[m.index]}"><span class="sb-seat-badge">${m.badge}</span><span class="sb-idle"></span></button>`).join("")}</span></header></div></section>`).join("");
+        await page.setContent(`<style>body{margin:0;font:13px/1.35 '${font}',sans-serif}*{box-sizing:border-box}${css}</style><main class="d1 score-band"><div class="d1-deck">${teams}</div></main>`);
+        const rows = await page.locator(".d1-team-members").evaluateAll(nodes => nodes.map(n => [...n.children].map(e => ({ seat: Number(e.getAttribute("data-seat")), x: e.getBoundingClientRect().x, y: e.getBoundingClientRect().y }))));
+        for (const row of rows) {
+          expect(row.map(m => m.seat)).toEqual([1, 2, 3, 4]);
+          expect(row.map(m => m.x)).toEqual(row.map(m => m.x).sort((a, b) => a - b));
+          expect(Math.max(...row.map(m => m.y)) - Math.min(...row.map(m => m.y))).toBeLessThan(1);
+        }
+        await page.close();
+      }
+    } finally { await browser.close(); }
+  });
   it("keeps phone headers whole and fills every metric row through the Queens edge", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });

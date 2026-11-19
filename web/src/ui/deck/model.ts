@@ -849,6 +849,13 @@ export function roster(frame: Frame): Roster {
   for (const colony of coloniesOf(frame)) {
     const members = entries.filter(e => e.colony === colony).sort((x, y) => x.index - y.index);
     if (members.length === 0) continue;
+    // Joining order assigns agent indices and glyphs, not the player's numbered seats.
+    // Reorder only this presentation list; older or ambiguous identities retain stream order.
+    const seats = new Map(members.map(e => [e.index, Number(SEAT.exec(b.agents[e.index]!.identity?.displayName ?? "")?.[2])]));
+    const numbers = [...seats.values()];
+    if (numbers.every(n => Number.isSafeInteger(n) && n > 0) && new Set(numbers).size === members.length) {
+      members.sort((x, y) => seats.get(x.index)! - seats.get(y.index)!);
+    }
     const result = colonyResult(b.result, colony);
     // The one player's line as the rows name it: a Benchmark handle's house display name, any other its own.
     const first = b.agents[members[0]!.index]!;

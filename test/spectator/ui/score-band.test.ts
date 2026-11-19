@@ -135,10 +135,11 @@ describe("one Score Band for every match", () => {
       show(null); expect(details[0]!.textContent).toBe("Hatched—");
       show(scoreFrame(4)); expect(host.byClass("d1-team").filter(visible)).toHaveLength(4);
     });
-    it(`opens every grouped seat's own thoughts, marks and orders in ${board} without ungrouping names`, () => {
+    it(`opens every grouped seat's own thoughts, marks and orders in ${board} in numbered seat order`, () => {
       const { host, doc, show, chosen } = mount(board), frame = scoreFrame(2, 8);
+      const seats = [1, 1, 2, 4, 4, 3, 3, 2];
       frame.board!.agents.forEach((a, index) => {
-        a.identity = { displayName: `player-${index % 2} #${Math.floor(index / 2) + 1}`, elo: 1500 };
+        a.identity = { displayName: `player-${index % 2} #${seats[index]}`, elo: 1500 };
         a.order = index % 2 ? "hold" : "forage";
         frame.chat.push({ kind: "intent", agent: index, colony: a.colony, tick: 5900, text: `seat-thought-${index}`,
           words: [], markId: -1, tileX: 0, tileY: 0, laidTick: -1 },
@@ -150,6 +151,8 @@ describe("one Score Band for every match", () => {
       expect(host.byClass("d1-team-player").filter(visible)).toHaveLength(2);
       const controls = host.byClass("d1-member").filter(visible);
       expect(controls).toHaveLength(8);
+      expect(controls.map(c => c.getAttribute("aria-label")!.split(" · ")[0])).toEqual(
+        [0, 1].flatMap(colony => [1, 2, 3, 4].map(seat => `player-${colony} #${seat}`)));
       for (const control of controls) {
         expect(control.tag).toBe("button"); expect(control.type).toBe("button");
         expect(control.getAttribute("aria-label")).toContain("badge");
