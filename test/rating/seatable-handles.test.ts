@@ -27,6 +27,7 @@ const RATED_OUTSIDE_DRAW: readonly string[] = [
   "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
   "gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh",
   "gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
+  "gpt-6-2-astra-high-std",
   "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh",
   "gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh",
 ];
@@ -70,6 +71,7 @@ describe("every seatable handle has a HOUSE_LABELS row", () => {
     ["qwen4-max-low", "Qwen4 Max", "low"],
     ["qwen4-max-high", "Qwen4 Max", "high"],
     ["qwen4-max-xhigh", "Qwen4 Max", "xhigh"],
+    ["gpt-6-2-astra-high-std", "GPT-6.2 Astra Standard", "high"],
     ["gemini-4-neon-low", "Gemini 4 Neon", "low"],
     ["gemini-4-neon-medium", "Gemini 4 Neon", "medium"],
     ["gemini-4-neon-high", "Gemini 4 Neon", "high"],
