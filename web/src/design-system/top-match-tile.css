@@ -3,7 +3,7 @@
    band on the site's shared page frame (pages/chrome.ts), which supplies the top bar, the battle hero, the amber wash and
    the footer. */
 
-/* ---- the grid: 4 x 4 from 46rem, 2 x 8 under it; every cell the same size */
+/* ---- the grid: 4 x 4 from 46.125rem, 2 x 8 under it; every cell the same size */
 .aw-grid { --cols: 4; --gap: var(--aw-space-3); display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
 .aw-grid > li { display: grid; min-width: 0; margin: 0; padding: 0; }
 
@@ -58,21 +58,22 @@
   .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-4); }
   .aw-grid { --gap: var(--aw-space-2); }
 }
-/* ---- the narrowest four columns, 46rem to 52rem: the page edge and the gap give the tiles the width the longest player line needs */
-@media (min-width: 46rem) and (max-width: 51.999rem) {
+/* ---- the narrowest four columns, 46.125rem to 52rem: the page edge and the gap give the tiles the width the longest player line needs.
+   46.125rem (738 px), not the design's 46rem: in the system font Liberation Sans that line's badge wraps in four columns at 736 and 737 px. */
+@media (min-width: 46.125rem) and (max-width: 51.999rem) {
   .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-3); }
   .aw-grid { --gap: var(--aw-space-1); }
 }
 /* ---- phones: 2 x 8, the site's phone frame */
-@media (max-width: 45.999rem) {
+@media (max-width: 46.124rem) {
   .aw-grid { --cols: 2; }
   .d1p[data-page="watch"] .d1p-band { flex-direction: column; align-items: flex-start; }
   .aw-link { display: inline-flex; align-items: center; min-height: var(--aw-tap-touch); }
 }
-/* ---- two columns on a phone, 24.25em to 46rem: the page edge 12 px and the gap 4 px, as from 46rem to 52rem. The design's 16 and
+/* ---- two columns on a phone, 24.25em to 46.125rem: the page edge 12 px and the gap 4 px, as from 46.125rem to 52rem. The design's 16 and
    8 px were measured with web fonts; the site draws with the visitor's system fonts, whose widest player line (Liberation Sans)
    needs 157.4 px where 16 and 8 px give 157. 12 and 4 px give it 163 at 390 px. Under 24.25em the rules below are unchanged. */
-@media (min-width: 24.25em) and (max-width: 45.999rem) {
+@media (min-width: 24.25em) and (max-width: 46.124rem) {
   .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-3); }
   .aw-grid { --gap: var(--aw-space-1); }
 }
