@@ -103,6 +103,8 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   const win = doc.defaultView!;
   const search = win.location.search;
   const frame = mountFrame(doc, host, "matches");
+  // The design system's narrow page edge (design-system/page-edge.css): on the Matches page only, for now.
+  frame.root.dataset.edge = "system";
 
   // ---------------------------------------------------------------- the band: title, then Refresh with its freshness
   const summary = h(doc, "div", "d1p-summary");
@@ -510,18 +512,21 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   return card("d1p-rec-title", PAGE_WORDS.recordings, [stateLine(doc, state.glyph, state.text)], body, foot, "d1p-rec4");
 }
 
-// ---------------------------------------------------------------- Recordings: one row per recording, four colony slots
-// Every recording is one row, whatever its colony count, with four colony slots side by side under one shared row of
-// colony names in their original ink. A slot with no colony shows a dash. A used slot holds one player each, in the
-// parts and badges Waiting and Live now use: the name, then its level and Fast badges, seat count and rating badge.
-// Only the winner's slot is in colour, its colony's, over the whole slot; every other slot is neutral. Time and Game
-// type lead the row, a draw, an abandonment or an incomplete record said once under the type; Replay is a text link at
-// the row's end. One head row over the list, never repeated. Live now and Waiting keep their tables.
+// ---------------------------------------------------------------- Recordings: one row per recording, four colony columns
+// Every recording is one row, whatever its colony count: its start and type, a column per canonical colony, Replay. The
+// head row and every row share one grid (archive.css, subgrid), so each cell starts at its column head's x; head and row
+// cells carry the column's key (data-col), which the render check's column-start rule compares. A column with no colony
+// in the match shows a dash. A colony cell holds its players one line each: the name, then the level chip (Fast as a
+// bolt in it), the seat count and the rating, each the one inline gap after the part before it. Only the winner's cell is
+// in colour, its colony's, as the band its cell already is. One head row over the list, never repeated. Live now and
+// Waiting keep their tables.
 
 /** Every Recordings row's colony slots: four, side by side, at every colony count. */
 export const SLOTS = 4;
 /** A colony's shared heading, without the "Colony" every name ends in; the whole name remains in its title. */
 export const slotName = (name: string): string => name.replace(/ Colony$/, "");
+/** The key a Recordings column's head and cells share (data-col): its start, its type and its colony columns. */
+export const recordingColumn = (column: number): string => `c${column}`;
 
 /** The words a row says once about its whole match: a draw or an abandonment, and a record that is not complete. */
 export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] {
@@ -554,29 +559,38 @@ export function badgeGroup(doc: Document, badges: BadgeKinds): HTMLElement {
   return tags;
 }
 
-/** The Recordings list: its one head row, then one row per recording (still bars in place of rows while it first loads). */
+/** The Recordings list: one grid holding its one head row, then one row per recording (still bars in place of rows while
+ * it first loads). */
 function recordingSlots(doc: Document, rows: readonly MatchRow[], loading: boolean): HTMLElement[] {
+  const table = h(doc, "div", "d1p-rec-table");
+  table.dataset.colTable = "";
   const head = h(doc, "div", "d1p-rec-head");
   head.setAttribute("aria-hidden", "true");
-  head.append(h(doc, "span", "is-when", MATCH_HEADS[0]), h(doc, "span", "is-type", MATCH_HEADS[1]));
-  SUPERCOLONY_NAMES.forEach(({ label, note, colour }, colony) => {
-    const heading = h(doc, "span", `d1p-rec-colony d1p-c${colony}`, slotName(label));
-    heading.style.setProperty(`--aw-k${colony}`, colourCss(colour));
+  head.dataset.colHead = "";
+  const when = h(doc, "span", "is-when", MATCH_HEADS[0]), type = h(doc, "span", "is-type", MATCH_HEADS[1]);
+  when.dataset.col = "when"; type.dataset.col = "type";
+  head.append(when, type);
+  SUPERCOLONY_NAMES.forEach(({ label, note }, column) => {
+    // Every head in the head ink: colour marks only the winner's cell.
+    const heading = h(doc, "span", "d1p-rec-colony", slotName(label));
+    heading.dataset.col = recordingColumn(column);
     heading.title = `${label} — ${note}`;
     head.append(heading);
   });
+  head.append(h(doc, "span", "is-go"));
   const list = h(doc, "ol", "d1p-rec-rows");
   list.setAttribute("aria-labelledby", "d1p-rec-title");
   if (loading) {
     list.setAttribute("aria-hidden", "true");
     for (let line = 0; line < 2; line++) {
-      const item = h(doc, "li");
+      const item = h(doc, "li", "is-skeleton");
       for (const width of ["72px", "84px", "128px", "128px"]) { const bar = h(doc, "span", "d1p-skel"); bar.style.width = width; item.append(bar); }
       list.append(item);
     }
   }
   for (const row of rows) list.append(recordingLine(doc, row));
-  return [head, list];
+  table.append(head, list);
+  return [table];
 }
 
 /** One recording's row: its start and type, its four slots, Replay. */
@@ -585,19 +599,29 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   item.dataset.recRow = row.id;
   const meta = h(doc, "div", "d1p-rec-meta");
   const parts = whenParts(row.when);
+  // The date over its time, and the type's kind over its size, in the wide form; on a phone the three stand on one line,
+  // a gap apart with no separator. The type paragraph holds the mode (kind and size, one unit) and, where the row has
+  // them, its outcome words as a second unit: under the mode in the wide form, on a line of their own on a phone.
   const when = h(doc, "p", "d1p-rec-when");
+  when.dataset.col = "when";
   when.append(h(doc, "span", "d1p-rec-date", parts.date));
-  if (parts.time) when.append(h(doc, "span", "d1p-rec-sep", " · "), h(doc, "span", "d1p-rec-time", parts.time));
+  if (parts.time) when.append(" ", h(doc, "span", "d1p-rec-time", parts.time));
   const type = h(doc, "p", "d1p-rec-type");
-  // A type is its kind over its size ("Challenge" over "1v1"), as the date stands over its time; one line, dotted, in
-  // the narrow form.
+  type.dataset.col = "type";
   const typeWords = row.type ?? row.typeNote;
   if (typeWords) {
+    const mode = h(doc, "span", "d1p-rec-mode");
     const at = typeWords.lastIndexOf(" · ");
-    if (at < 0) type.append(h(doc, "span", undefined, typeWords));
-    else type.append(h(doc, "span", undefined, typeWords.slice(0, at)), h(doc, "span", "d1p-rec-sep", " · "), h(doc, "span", undefined, typeWords.slice(at + 3)));
+    if (at < 0) mode.append(h(doc, "span", undefined, typeWords));
+    else mode.append(h(doc, "span", undefined, typeWords.slice(0, at)), " ", h(doc, "span", undefined, typeWords.slice(at + 3)));
+    type.append(mode);
   }
-  for (const word of rowOutcome(row)) type.append(" ", h(doc, "span", "d1p-rec-note", word));
+  const outcome = rowOutcome(row);
+  if (outcome.length > 0) {
+    const notes = h(doc, "span", "d1p-rec-notes");
+    outcome.forEach((word, index) => notes.append(...(index > 0 ? [" "] : []), h(doc, "span", "d1p-rec-note", word)));
+    type.append(" ", notes);
+  }
   meta.append(when, type);
   const slots = recordingSlotIndexes(row);
   item.append(meta, ...slots.map((colony, column) => recordingSlot(doc, row, colony, column)));
@@ -628,14 +652,18 @@ export function recordingSlotIndexes(row: Pick<MatchRow, "colonies" | "colonyNam
   });
 }
 
-/** One colony slot: player lines (or a quiet note) under the shared header, or a dash where the match has no such
- * colony (wide form only: the narrow form lists only the colonies that played, archive.css). `column` is the fixed column it stands in (null for a noncanonical colony below the columns, which carries
- * its own name): the narrow form, where the shared head row hides, shows that column's name beside the slot's line in
- * the neutral head ink (archive.css, from data-colony). Only the winner's slot carries its colony's colour, over the whole
- * slot (--rec-win); every other slot is neutral. Its own name stays for screen readers, including historical names. */
+/** One colony slot: player lines (or a quiet note) under its column's head, or a dash where the match has no such
+ * colony (wide form only: the narrow form lists only the colonies that played, archive.css). `column` is the fixed column it
+ * stands in (null for a noncanonical colony below the columns, which carries its own name): the narrow form, where the
+ * shared head row hides, shows that column's name beside the slot's line in the head look (archive.css, from
+ * data-colony). Only the winner's slot carries its colony's colour (--rec-win); every other slot is neutral. Its own
+ * name stays for screen readers, including historical names. */
 function recordingSlot(doc: Document, row: MatchRow, colony: number | null, column: number | null): HTMLElement {
   const slot = h(doc, "div", "d1p-rec-slot");
-  if (column !== null) slot.dataset.colony = slotName(SUPERCOLONY_NAMES[column]!.label);
+  if (column !== null) {
+    slot.dataset.colony = slotName(SUPERCOLONY_NAMES[column]!.label);
+    slot.dataset.col = recordingColumn(column);
+  }
   if (colony === null) {
     slot.classList.add("is-none");
     slot.setAttribute("aria-hidden", "true");
@@ -664,30 +692,32 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
   return slot;
 }
 
-/** One player on one line, in the parts and badges every Matches table uses (rowParts playerLine): the username
- * (builders only) and model, then the level badge (Fast as its bolt), the seat count and the cyan rating badge (figure
- * only, its "± RD" on hover, tap or focus) at the slot's end. Only the name gives way, ending in an ellipsis past what
- * any real name needs, its whole text the name's title and read in full. */
+/** One player on one line: the username (builders only) and model, then the level chip (Fast as its bolt), the seat count
+ * and the cyan rating badge (figure only, its "± RD" on hover, tap or focus), each the one inline gap after the part
+ * before it, so the rating stands right after its line in every cell. A part with nothing to show takes no space. The
+ * line never wraps: one too wide for its cell ends its name in an ellipsis, the name's whole text its title and read in
+ * full. A retired handle draws no badge here: a recording is history, so its name's title and screen-reader text say it
+ * instead. */
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
   if (parts.user !== null) name.append(h(doc, "span", "d1p-user", parts.user));
   if (parts.user !== null && parts.model !== null) name.append(" ");
   if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
-  name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
+  const words = [parts.user, parts.model].filter(word => word !== null).join(" ");
+  name.title = parts.badges.retired ? `${words} (${C.retiredBadge})` : words;
+  if (parts.badges.retired) name.append(h(doc, "span", "d1p-sr", `, ${C.retiredBadge}`));
   line.append(name);
-  if (!hasBadges(parts.badges) && seats <= 1 && !rating) return line;
-  const badges = h(doc, "span", "d1p-rec-badges");
-  if (hasBadges(parts.badges)) badges.append(badgeGroup(doc, parts.badges));
+  const badges = { ...parts.badges, retired: false };
+  if (hasBadges(badges)) line.append(badgeGroup(doc, badges));
   if (seats > 1) {
     const count = h(doc, "span", "d1p-count");
     const shown = h(doc, "span", undefined, `×${seats}`);
     shown.setAttribute("aria-hidden", "true");
     count.append(shown, h(doc, "span", "d1p-sr", `, ${seats} seats`));
-    badges.append(count);
+    line.append(count);
   }
-  if (rating) badges.append(rowRatingNode(doc, rating, `${key}|rating`));
-  line.append(badges);
+  if (rating) line.append(rowRatingNode(doc, rating, `${key}|rating`));
   return line;
 }
 

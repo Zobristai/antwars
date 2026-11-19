@@ -249,7 +249,7 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
       recordings: { status: "ready", rows: [abandoned, unknown] } });
     expect(liveList.card.textContent).not.toMatch(/Winner|In progress|Started/);
     expect(waiting.card.textContent).not.toMatch(/Waited|when loaded|Match\b|min\b/);
-    for (const row of recordings.list.children) expect(row.byClass("d1p-rec-when")[0]!.children.map(node => node.className)).toEqual(["d1p-rec-date", "d1p-rec-sep", "d1p-rec-time"]);
+    for (const row of recordings.list.children) expect(row.byClass("d1p-rec-when")[0]!.children.map(node => node.className).filter(Boolean)).toEqual(["d1p-rec-date", "d1p-rec-time"]);
     expect(recordings.card.textContent).not.toMatch(/Result unknown/);
     expect(recordings.card.byClass("d1p-result")).toEqual([]);
     p.mounted.destroy();
@@ -263,7 +263,7 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
     expect(l!.children.map(node => node.tag)).toEqual(["p", "p", "dl", "a"]);
     expect(r!.children.map(node => node.className)).toEqual(["d1p-rec-meta", "d1p-rec-slot is-won", "d1p-rec-slot", "d1p-rec-slot is-none", "d1p-rec-slot is-none", "d2-link d1p-rec-replay"]);
     expect([w, l].map(item => item!.children[0]!.textContent)).toEqual(["11 Nov 2026 · 05:01 UTC", "27 Oct 2026 · 10:00 UTC"]);
-    expect(r!.byClass("d1p-rec-when")[0]!.textContent).toBe("27 Oct 2026 · 09:00 UTC");
+    expect(r!.byClass("d1p-rec-when")[0]!.textContent).toBe("27 Oct 2026 09:00 UTC");
     expect([w, l].map(item => item!.children[1]!.children.map(node => node.textContent)))
       .toEqual([["Ranked · 1v1", "Status Waiting"], ["Index · 1v1", "Status Live"]]);
     // A phone lists only the colonies with someone in them: the queued agent's, not its opponent's empty one.
@@ -447,7 +447,7 @@ describe("Recordings rows", () => {
     const { p, recordings } = show({ recordings: { status: "ready", rows: [won, draw, abandoned, partial, unavailable] } });
     const rows = recordings.list.children;
     expect(rows.map(row => row.byClass("d1p-rec-type")[0]!.textContent)).toEqual([
-      "Index · 1v1", "Unranked · 1v1 Draw", "Unranked · 1v1 Abandoned", " Record partial", "not recorded Record unavailable",
+      "Index 1v1", "Unranked 1v1 Draw", "Unranked 1v1 Abandoned", " Record partial", "not recorded Record unavailable",
     ]);
     expect(rows.map(row => row.byClass("is-won").length)).toEqual([1, 0, 0, 1, 0]);
     // The winner's slot is the row's one coloured slot.
@@ -540,7 +540,7 @@ describe("a four-colony (Quadrants) match, live and recorded", () => {
     // The colony that did not join keeps its column on a wide card; a phone hides it (archive.css), so it gets no line.
     const absent = recordings.list.children[2]!.byClass("d1p-rec-slot");
     expect(absent.map(slot => slot.classes().includes("is-absent"))).toEqual([false, false, false, true]);
-    expect(css()).toMatch(/@container d1p-card \(width < 72rem\) \{[^@]*\.d1p-rec-slot:is\(\.is-none, \.is-absent\) \{ display: none; \}/);
+    expect(css()).toMatch(/@container d1p-card \(width < 74rem\) \{[^@]*\.d1p-rec-slot:is\(\.is-none, \.is-absent\) \{ display: none; \}/);
     p.mounted.destroy();
   });
 
@@ -693,11 +693,59 @@ describe("a model label with nothing after its provider prefix", () => {
     }
   });
 
-  it("keeps a Recordings player on one line, its badges in the Matches badge style's 2 px padding", () => {
+  it("sets a Recordings player's parts one inline gap apart on one line, a too-wide name ending in an ellipsis", () => {
     const sheet = css();
-    expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: baseline;[^}]*white-space: nowrap; \}/);
-    expect(sheet).not.toMatch(/\.d1p-rec-(player|badges) \{[^}]*flex-wrap/);
-    expect(sheet).toContain(":is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
+    expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: center; gap: 0 var\(--aw-gap-inline\);[^}]*white-space: nowrap; \}/);
+    expect(sheet).not.toMatch(/\.d1p-rec-player \{[^}]*flex-wrap/);
+    expect(sheet).toMatch(/\.d1p-rec-name \{[^}]*min-width: 0; overflow: hidden; text-overflow: ellipsis;/);
+    // Live now and Waiting keep their own badges.
+    expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
+  });
+
+  it("orders a Recordings line name, level, seat count, rating, and shows a parked handle's retirement in its name only", () => {
+    const parked: Recording = { ...recording, seats: [
+      seat(0, 0, "openai/gpt-6.2-astra", "antwars/gpt-6-2-astra-medium", { thinkingLevel: "medium", serviceTier: "fast", startRating: { rating: 1500, rd: 80, ratedMatches: 3 } }),
+      seat(1, 1, "openai/gpt-6.2-astra", "antwars/gpt-6-2-astra-xhigh", { thinkingLevel: "xhigh", serviceTier: "fast" }),
+      seat(2, 1, "openai/gpt-6.2-astra", "antwars/gpt-6-2-astra-xhigh", { thinkingLevel: "xhigh", serviceTier: "fast" })] };
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [parked] } });
+    const [retired, team] = recordings.list.byClass("d1p-rec-player");
+    expect(retired!.children.map(node => node.className)).toEqual(["d1p-rec-name", "d1p-tags", "d1-tag d1-elo d1p-elo-badge"]);
+    expect(retired!.byClass("d1p-tag").map(node => node.textContent)).toEqual(["medium Fast"]);
+    expect(retired!.byClass("d1p-rec-name")[0]!.title).toBe("GPT-6.2 Astra (retired)");
+    expect(retired!.byClass("d1p-rec-name")[0]!.textContent).toBe("GPT-6.2 Astra, retired");
+    expect(team!.children.map(node => node.className)).toEqual(["d1p-rec-name", "d1p-tags", "d1p-count"]);
+    p.mounted.destroy();
+  });
+
+  it("lists a team with unlike seats one complete line per seat group, in first-seat order, inside the colony's one band", () => {
+    const team: Recording = { ...recording, matchType: { kind: "ranked", size: 2 }, seats: [
+      seat(0, 0, "openai/gpt-6.1-terra", "kain", { thinkingLevel: "high", serviceTier: "fast" }), seat(1, 1, "coffee-ant/local", "coffee-ant"),
+      seat(2, 0, null, "kain"), seat(3, 1, "coffee-ant/local", "coffee-ant")] };
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [team] } });
+    const [winner, other] = recordings.list.children[0]!.byClass("d1p-rec-slot");
+    expect(winner!.classes()).toContain("is-won");
+    expect(winner!.children.filter(node => node.classes().includes("d1p-rec-player")).map(line => line.textContent))
+      .toEqual(["kain GPT-6.1 Terrahigh Fast", "Scripted bot"]);
+    // Alike seats stay one line with their count; the username is drawn as every username is.
+    const [alike] = other!.byClass("d1p-rec-player");
+    expect(alike!.byClass("d1p-user").map(node => node.textContent)).toEqual(["coffee-ant"]);
+    expect(alike!.byClass("d1p-count")[0]!.textContent).toBe("×2, 2 seats");
+    expect(css()).toContain(".d1p-rec-player + .d1p-rec-player { margin-top: 0.25rem; }");
+    p.mounted.destroy();
+  });
+
+  it("keys every Recordings column's head and cells alike, so the render check can hold each cell to its head's x", () => {
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [recording] } });
+    const table = recordings.card.byClass("d1p-rec-table")[0]!;
+    expect(table.dataset.colTable).toBe("");
+    const head = table.byClass("d1p-rec-head")[0]!;
+    expect(head.dataset.colHead).toBe("");
+    const keys = (node: ElementPort) => node.all().filter(child => child !== node && child.dataset.col !== undefined).map(child => child.dataset.col);
+    expect(keys(head)).toEqual(["when", "type", "c0", "c1", "c2", "c3"]);
+    expect(keys(recordings.list.children[0]!)).toEqual(["when", "type", "c0", "c1", "c2", "c3"]);
+    // Every head in the head ink: no colony colour on the heads.
+    expect(head.byClass("d1p-rec-colony").map(node => [node.className, node.style.properties.size])).toEqual(Array.from({ length: 4 }, () => ["d1p-rec-colony", 0]));
+    p.mounted.destroy();
   });
 
   it("retains the entire long builder/model name in text and hover title", () => {

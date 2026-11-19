@@ -370,10 +370,9 @@ function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0, default
     if (path === "/watch/catalog") return Response.json({ matches: ended ? [] : [{ lobbyId: "selected", startedAt: 1, rated: false, delaySeconds: 0 }], lobbies: [] });
     if (path.startsWith("/watch/status/")) return Response.json({ lobbyId: "selected", delaySeconds: 0, playbackFinished: ended });
     if (path === "/watch/recording/selected") return Response.json({ replayId: ended ? FINISHED_REPLAY : null });
-    if (path === "/matches") return Response.json({ matches: [], nextPageToken: null });
     throw new Error(`Unexpected request ${path}`);
   });
-  const leaderboard = vi.fn(), replay = vi.fn(), reject = vi.fn();
+  const leaderboard = vi.fn(), replay = vi.fn(), topMatches = vi.fn(() => vi.fn()), reject = vi.fn();
   const open = (extra: Record<string, string> = {}) => openSource(new URLSearchParams({ ...(automatic ? {} : { lobby: "selected" }), ...extra }), { now: () => 0 }, doc, reject, {
     source: path => {
       paths.push(path);
@@ -385,8 +384,8 @@ function handoverClient(automatic: boolean, finishedSnapshotDelayMs = 0, default
       else queueMicrotask(() => es.emit(encodeMessage(m)));
       return es;
     },
-  }, defaultScreens ? undefined : { leaderboard, replay });
-  return { open, saved, paths, leaderboard, replay, location, reject, finish: () => { ended = true; }, cleanup: () => listeners.get("pagehide")?.() };
+  }, defaultScreens ? undefined : { leaderboard, replay, topMatches });
+  return { open, saved, paths, leaderboard, replay, topMatches, location, reject, finish: () => { ended = true; }, cleanup: () => listeners.get("pagehide")?.() };
 }
 
 it.each([false, true])("preserves a finishing selected lobby through fallback, consumes it once, then retains normal idle behavior (automatic=%s)", async automatic => {
@@ -412,8 +411,10 @@ it.each([false, true])("preserves a finishing selected lobby through fallback, c
     expect(frame.board!.result?.winner).toBe(1);
     resumed.close();
     expect(await h.open({ board: "2d" })).toBeNull();
-    // A later plain visit to the finished lobby's link opens that match's replay, not the Leaderboard.
+    // A later plain visit to the finished lobby's link opens that match's replay, not the Leaderboard; a later automatic
+    // visit, with no live match, shows the top matches.
     if (!automatic) expect(h.replay).toHaveBeenCalledExactlyOnceWith(expect.anything(), FINISHED_REPLAY);
+    else expect(h.topMatches).toHaveBeenCalledExactlyOnceWith(expect.anything(), "idle");
     expect(h.leaderboard).not.toHaveBeenCalled();
     expect(h.reject).not.toHaveBeenCalled();
   } finally { h.cleanup(); }

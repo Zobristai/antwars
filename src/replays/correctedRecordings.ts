@@ -227,6 +227,8 @@ export function correctedHistorySource(source: HistorySource, store: Pick<Store,
   return {
     list: (pageToken, signal) => source.list(pageToken, signal),
     continuationAfter: source.continuationAfter === undefined ? undefined : id => source.continuationAfter!(id),
+    // Uncorrected, as list(): listed corrects every served row, the top matches' included.
+    summary: source.summary === undefined ? undefined : (id, signal) => source.summary!(id, signal),
     async listed(rows) {
       return Promise.all(rows.map(async row => {
         const correction = CORRECTIONS.get(row.id);
