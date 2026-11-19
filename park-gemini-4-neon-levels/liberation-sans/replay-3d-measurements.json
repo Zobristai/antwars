@@ -1,0 +1,1560 @@
+[
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-low-v-xhigh-3d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "3d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 1280,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 224,
+   "dialog": {
+    "box": [
+     350,
+     103,
+     580,
+     594
+    ],
+    "scroll": [
+     594,
+     594
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH 1620 (+53) Very Large Gemini 4 Neon LOW 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   },
+   "closedDialog": true
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-3d-hud-5634b8e-1280.png",
+    "pngSha256": "01599f9038054e18f7ec23ac62ab60e1a3d5d8a3c7645e58b226f374fb6fd88e",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW 1280",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 190.2,
+      "have": 387,
+      "spare": 50.8,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-5634b8e-1280-neon-1.png",
+      "cropSha256": "c5bd692ba123550bb38ebe0013f6ded7dba2ec895a855dd5d9cb486d16c2dfad"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH 1567",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 200.2,
+      "have": 387,
+      "spare": 48.3,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-5634b8e-1280-neon-2.png",
+      "cropSha256": "23acbba6492458615ad1e538d90bd4b7e20e8a341cb69a354914c5d14cc372de"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-3d-result-5634b8e-1280.png",
+    "pngSha256": "17111303c5db5c4d54c59db053b4a86538be271e56705b64fcb9e81ad9e29e78",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW 1280",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 190.2,
+      "have": 387,
+      "spare": 50.8,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-1280-neon-1.png",
+      "cropSha256": "707742f3cbcd32122dd3628cd2dc329a35f8c3496a9f45751aed53b5abb74f33"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH 1567 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 261.5,
+      "have": 387,
+      "spare": 32.4,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-1280-neon-2.png",
+      "cropSha256": "dcc639012c5e87d0b24e4c128c3694a0a6276475eb08dd25cb97dcb10221e170"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 160.4,
+      "have": 376,
+      "spare": 57.3,
+      "box": [
+       378,
+       422,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-1280-neon-3.png",
+      "cropSha256": "6cc7ebe082096d09752f453703b06a306fa38e9aded40fa58a9fe7c9fbe38fea"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 147.5,
+      "have": 376,
+      "spare": 60.8,
+      "box": [
+       378,
+       491,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-1280-neon-4.png",
+      "cropSha256": "c09c9b014b9795528be0d732fb5377278218c79f96c2674bd41cbb1f06ccae12"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "ended",
+    "file": "replay-low-v-xhigh-3d-ended-5634b8e-1280.png",
+    "pngSha256": "e73e2e2f8070b27a34dcb4ad77bd6ffbdf120714afff5614d45d3f1eb472e45b",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW 1280",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 190.2,
+      "have": 387,
+      "spare": 50.8,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-5634b8e-1280-neon-1.png",
+      "cropSha256": "c5bd692ba123550bb38ebe0013f6ded7dba2ec895a855dd5d9cb486d16c2dfad"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH 1567 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 261.5,
+      "have": 387,
+      "spare": 32.4,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-5634b8e-1280-neon-2.png",
+      "cropSha256": "9618868e092735b9e5e95968c6a51785774ca3f640a44d1c93afc7e5761d8525"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 348
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-low-v-xhigh-3d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "3d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 188,
+   "dialog": {
+    "box": [
+     12,
+     108,
+     366,
+     628
+    ],
+    "scroll": [
+     628,
+     628
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH 1620 (+53) Very Large Gemini 4 Neon LOW 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   },
+   "closedDialog": true
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-3d-hud-5634b8e-390.png",
+    "pngSha256": "5a971ff456f7130f32a553093324c65df89f0b2efb01cbbb403e5e07812b622f",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW 1280",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 198.2,
+      "have": 360,
+      "spare": 44.9,
+      "box": [
+       8,
+       799,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-5634b8e-390-neon-1.png",
+      "cropSha256": "c6cea55b0d5ba13186561ebc47c0796381eff3643a40640f6071ea75a71e6ab5"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH 1567",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 208.2,
+      "have": 360,
+      "spare": 42.2,
+      "box": [
+       8,
+       1028,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-5634b8e-390-neon-2.png",
+      "cropSha256": "ff39a06d9019c389422940c3997aae5c751db9b212d267b3bbac9f2af1a5fbbc"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-3d-result-5634b8e-390.png",
+    "pngSha256": "1238c487a00c23740b6d0bdd3a8a10933dcaa3b1ad95b12286d692aeeb7c4aaa",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW 1280",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 198.2,
+      "have": 360,
+      "spare": 44.9,
+      "box": [
+       8,
+       392,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-390-neon-1.png",
+      "cropSha256": "35aafe792e2bbd16a83756b3a42b5e78d106025d5e16e5106241a02b9c5658db"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH 1567 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 269.5,
+      "have": 360,
+      "spare": 25.1,
+      "box": [
+       8,
+       845,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-390-neon-2.png",
+      "cropSha256": "eb52d6fe7611818267e5f30508118240eb588010a82f83a74258cc6c6ec29e9c"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 160.4,
+      "have": 326,
+      "spare": 50.8,
+      "box": [
+       32,
+       403,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-390-neon-3.png",
+      "cropSha256": "3744c724330aa2c9cc4507ac7954008eefb8fbee33f324e07c653aad24e5b47e"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 147.5,
+      "have": 326,
+      "spare": 54.8,
+      "box": [
+       32,
+       492,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-5634b8e-390-neon-4.png",
+      "cropSha256": "620535330afff83ccf046948dea281c55bbc4909295ec65c46293d20779a20a5"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "ended",
+    "file": "replay-low-v-xhigh-3d-ended-5634b8e-390.png",
+    "pngSha256": "9fdc5142588bb79bf1297e0b04dd76448cdd6f5a9b69cabe319a542537999ca8",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW 1280",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 198.2,
+      "have": 360,
+      "spare": 44.9,
+      "box": [
+       8,
+       168,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-5634b8e-390-neon-1.png",
+      "cropSha256": "be947c37439e68670a7498b95df86e77b5c763be9768f1b4039f23a0c82f9a0a"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH 1567 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 269.5,
+      "have": 360,
+      "spare": 25.1,
+      "box": [
+       8,
+       621,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-5634b8e-390-neon-2.png",
+      "cropSha256": "bd0167e82d4d188bbe3b8d35f53c779d34522a1537689678602fd97444cf9b71"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 218
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-low-v-xhigh-3d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "3d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 1280,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 223,
+   "dialog": {
+    "box": [
+     350,
+     103,
+     580,
+     594
+    ],
+    "scroll": [
+     594,
+     594
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH RETIRED 1620 (+53) Very Large Gemini 4 Neon LOW RETIRED 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   },
+   "closedDialog": true
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-3d-hud-b0616ba-1280.png",
+    "pngSha256": "13754bab0ecaec5cf6891d243172a80f0081d4c7b0d492dcac54237e76804a00",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW RETIRED 1280",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 252.7,
+      "have": 387,
+      "spare": 34.7,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-b0616ba-1280-neon-1.png",
+      "cropSha256": "471d79ef882521e3c5bdaa6f81fe747c44b2db8ed8ee636775f1c39a17adf614"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH RETIRED 1567",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 262.7,
+      "have": 387,
+      "spare": 32.1,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-b0616ba-1280-neon-2.png",
+      "cropSha256": "0d95e25138ce87eb8ef7cd7e88fa9c23a7b15679eef0cbcd39e9d32a8d53f415"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-3d-result-b0616ba-1280.png",
+    "pngSha256": "7556098f253b3f71fe4300dc2e174dc98ab6a0d2e87b252d4c1430a56c1d6b4a",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW RETIRED 1280",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 252.7,
+      "have": 387,
+      "spare": 34.7,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-1280-neon-1.png",
+      "cropSha256": "820db2c6e5a8a4ba8685e4d38d4bac380357a9e7fcd2fa620324ca1c8a2b17e5"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH RETIRED 1567 WINNER",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 324,
+      "have": 387,
+      "spare": 16.3,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-1280-neon-2.png",
+      "cropSha256": "02a40baaeafd282302444ded33a90ff676bb671f86a4818306e2b917bf778157"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 240.8,
+      "have": 376,
+      "spare": 36,
+      "box": [
+       378,
+       422,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-1280-neon-3.png",
+      "cropSha256": "e0e5b03c215a120d6d0c94c17c4bc9c18a36125c0a49d7938642808b5608d2a0"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 227.8,
+      "have": 376,
+      "spare": 39.4,
+      "box": [
+       378,
+       491,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-1280-neon-4.png",
+      "cropSha256": "433cfeabf78bb2f90abfb69ecc7253a7f50c73e046aaf92cec30377925855953"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   },
+   {
+    "state": "ended",
+    "file": "replay-low-v-xhigh-3d-ended-b0616ba-1280.png",
+    "pngSha256": "158c4bc01b0e8f0794a3db239669e73bc740ef31da3d3bcd419c4962fef7d781",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW RETIRED 1280",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 252.7,
+      "have": 387,
+      "spare": 34.7,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-b0616ba-1280-neon-1.png",
+      "cropSha256": "471d79ef882521e3c5bdaa6f81fe747c44b2db8ed8ee636775f1c39a17adf614"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH RETIRED 1567 WINNER",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 324,
+      "have": 387,
+      "spare": 16.3,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-b0616ba-1280-neon-2.png",
+      "cropSha256": "0c4d59a00f4cce2342e7d6b6dffcdc0c1b942f732607957d915cb65c81dc1f86"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 348
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-low-v-xhigh-3d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "3d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 190,
+   "dialog": {
+    "box": [
+     12,
+     108,
+     366,
+     628
+    ],
+    "scroll": [
+     628,
+     628
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH RETIRED 1620 (+53) Very Large Gemini 4 Neon LOW RETIRED 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   },
+   "closedDialog": true
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-3d-hud-b0616ba-390.png",
+    "pngSha256": "9443769dd6fe3d68f92f550d63409c13d06a942006769634c45ef3f9fdf6b0b5",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW RETIRED 1280",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 260.7,
+      "have": 360,
+      "spare": 27.6,
+      "box": [
+       8,
+       799,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-b0616ba-390-neon-1.png",
+      "cropSha256": "fc8b79a64cdd3d96c58c3862a256e6fd778a1bdc7e3610ef4018fb44ad28c6eb"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH RETIRED 1567",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 270.7,
+      "have": 360,
+      "spare": 24.8,
+      "box": [
+       8,
+       1028,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-hud-b0616ba-390-neon-2.png",
+      "cropSha256": "4fb16aa4da25206a15be2ea944fad187551587d2da3f49d296582d45a006bcbf"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-3d-result-b0616ba-390.png",
+    "pngSha256": "5d86ac2a397576191138e0d371579002ad403d67e55c9c04a6a79c0352c94e1c",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW RETIRED 1280",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 260.7,
+      "have": 360,
+      "spare": 27.6,
+      "box": [
+       8,
+       392,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-390-neon-1.png",
+      "cropSha256": "35aafe792e2bbd16a83756b3a42b5e78d106025d5e16e5106241a02b9c5658db"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH RETIRED 1567 WINNER",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 332,
+      "have": 360,
+      "spare": 7.8,
+      "box": [
+       8,
+       845,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-390-neon-2.png",
+      "cropSha256": "eb52d6fe7611818267e5f30508118240eb588010a82f83a74258cc6c6ec29e9c"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 240.8,
+      "have": 326,
+      "spare": 26.2,
+      "box": [
+       32,
+       403,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-390-neon-3.png",
+      "cropSha256": "4e44618de41db0b839737567fb55fc54fd21f49c040081c55cf00e522c5eab77"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 227.8,
+      "have": 326,
+      "spare": 30.1,
+      "box": [
+       32,
+       492,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-3d-result-b0616ba-390-neon-4.png",
+      "cropSha256": "e12cb9280aed3de73bfa678aa7da999dd4e70d62ba9f7ce0268baf4ae2d7807b"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   },
+   {
+    "state": "ended",
+    "file": "replay-low-v-xhigh-3d-ended-b0616ba-390.png",
+    "pngSha256": "e03da1f42942280cd99f098af6d7272a8b703889afc8c853e15c81278e28833c",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon LOW RETIRED 1280",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 260.7,
+      "have": 360,
+      "spare": 27.6,
+      "box": [
+       8,
+       168,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-b0616ba-390-neon-1.png",
+      "cropSha256": "cfa153e10655328d16a278b8c3a88c685396ee5b65425ec462dc3234aa754dcb"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon XHIGH RETIRED 1567 WINNER",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 332,
+      "have": 360,
+      "spare": 7.8,
+      "box": [
+       8,
+       621,
+       374,
+       44
+      ],
+      "crop": "replay-low-v-xhigh-3d-ended-b0616ba-390-neon-2.png",
+      "cropSha256": "a678b6b6955a3b049102591e9a38311a581726f389d2b35949a4c28aec5d3778"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 223
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-medium-v-high-3d",
+  "match": "medium-v-high",
+  "replay": "2026-11-19T12-14-45-958Z-234587808625478",
+  "board": "3d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 1280,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T12-14-45-958Z-234587808625478",
+   "/replays/2026-11-19T12-14-45-958Z-234587808625478",
+   "/watch/ratings/2026-11-19T12-14-45-958Z-234587808625478"
+  ],
+  "note": {
+   "seekMax": 1455400,
+   "seekSeconds": 623,
+   "dialog": {
+    "box": [
+     350,
+     90,
+     580,
+     620
+    ],
+    "scroll": [
+     620,
+     620
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Sustained territory lead PLAYERS RATING Lake Hodges Gemini 4 Neon HIGH 1774 (+54) Very Large Gemini 4 Neon MEDIUM 1380 (−53) DECISIVE MOMENT 16:42 Queen 3 lost Very Large 20:35 Queen 1 lost Very Large 22:19 Queen 2 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-medium-v-high-3d-hud-5634b8e-1280.png",
+    "pngSha256": "85407ce0fb2ed4bd4bb732da65903f473a2c04aca72075883b9af7c1534e8e5e",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM 1433",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 209.8,
+      "have": 387,
+      "spare": 45.8,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-hud-5634b8e-1280-neon-1.png",
+      "cropSha256": "202673aded0953f66923a1e09ef00fc59780f7956c8d7e3a5544115ee60dc1b0"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 192.7,
+      "have": 387,
+      "spare": 50.2,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-hud-5634b8e-1280-neon-2.png",
+      "cropSha256": "e84c56a133663eebbd3af966911b03a0b84fe4f16123004002f276ea2b11cf1f"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-medium-v-high-3d-result-5634b8e-1280.png",
+    "pngSha256": "cb52fc2e8b6d6480d262d8b1171e28ae487aec1c74423f5793888af1488fe610",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM 1433",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 209.8,
+      "have": 387,
+      "spare": 45.8,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-1280-neon-1.png",
+      "cropSha256": "7bfaf137eec26564c14228653dc052a9606e4a3c7110c281772cc485bdbc8a93"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 254,
+      "have": 387,
+      "spare": 34.4,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-1280-neon-2.png",
+      "cropSha256": "2c687b5d814d31a20efe618dff7aa2901f76787179b13fb4620efb2187dff0a6"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon HIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 150.7,
+      "have": 376,
+      "spare": 59.9,
+      "box": [
+       378,
+       409,
+       376,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-1280-neon-3.png",
+      "cropSha256": "65b1e2f05632bf41e1023967234807dc6f414f0b31411899188f5ca1fe909211"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon MEDIUM",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 173,
+      "have": 376,
+      "spare": 54,
+      "box": [
+       378,
+       478,
+       376,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-1280-neon-4.png",
+      "cropSha256": "a010def9e365272886b6bd5415e601eb92e291daaab0d1bc138987903856da85"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 741
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-medium-v-high-3d",
+  "match": "medium-v-high",
+  "replay": "2026-11-19T12-14-45-958Z-234587808625478",
+  "board": "3d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T12-14-45-958Z-234587808625478",
+   "/replays/2026-11-19T12-14-45-958Z-234587808625478",
+   "/watch/ratings/2026-11-19T12-14-45-958Z-234587808625478"
+  ],
+  "note": {
+   "seekMax": 1455400,
+   "seekSeconds": 567,
+   "dialog": {
+    "box": [
+     12,
+     95,
+     366,
+     654
+    ],
+    "scroll": [
+     654,
+     654
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Sustained territory lead PLAYERS RATING Lake Hodges Gemini 4 Neon HIGH 1774 (+54) Very Large Gemini 4 Neon MEDIUM 1380 (−53) DECISIVE MOMENT 16:42 Queen 3 lost Very Large 20:35 Queen 1 lost Very Large 22:19 Queen 2 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-medium-v-high-3d-hud-5634b8e-390.png",
+    "pngSha256": "f17e68ac108e8640620a43da79f42942ac9d2dae5e194cfe98df04a78f4b2f1a",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM 1433",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 217.8,
+      "have": 360,
+      "spare": 39.5,
+      "box": [
+       8,
+       851,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-hud-5634b8e-390-neon-1.png",
+      "cropSha256": "57b90abfa560cc5c36e7b3df718bd427ae5f8a0fc8f35fa44755fd14db30d1bd"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 200.7,
+      "have": 360,
+      "spare": 44.3,
+      "box": [
+       8,
+       1108,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-hud-5634b8e-390-neon-2.png",
+      "cropSha256": "f3187a0e51e56defc94b402f947b1e7e2af5ec6a776dda8a501ac3a4c9942399"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-medium-v-high-3d-result-5634b8e-390.png",
+    "pngSha256": "d6d0e4c809f3556485e03de3d95a9e5bafa3cbcdd5fd2fad4372b567c41f132c",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM 1433",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 217.8,
+      "have": 360,
+      "spare": 39.5,
+      "box": [
+       8,
+       338,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-390-neon-1.png",
+      "cropSha256": "34e6c5730addb9e61fb344aa0b0b629491f4d56f6deab306e3b666438c82c2ff"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 262,
+      "have": 360,
+      "spare": 27.2,
+      "box": [
+       8,
+       791,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-390-neon-2.png",
+      "cropSha256": "d47b87c2f35c1cacfcc6402570f7222cfe04544d654fa9c22215d586fa418cc3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon HIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 150.7,
+      "have": 326,
+      "spare": 53.8,
+      "box": [
+       32,
+       390,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-390-neon-3.png",
+      "cropSha256": "1d8a9ded691bbc97e225a2fbb36cb2cf18c5b72a1c71b66eca59e640184ad1f3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon MEDIUM",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 173,
+      "have": 326,
+      "spare": 46.9,
+      "box": [
+       32,
+       479,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-5634b8e-390-neon-4.png",
+      "cropSha256": "92368c3a01ac4969c601c253f3ac3d35daa8f7dd3e952cb91f93933c1d8cef85"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 610
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-medium-v-high-3d",
+  "match": "medium-v-high",
+  "replay": "2026-11-19T12-14-45-958Z-234587808625478",
+  "board": "3d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 1280,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T12-14-45-958Z-234587808625478",
+   "/replays/2026-11-19T12-14-45-958Z-234587808625478",
+   "/watch/ratings/2026-11-19T12-14-45-958Z-234587808625478"
+  ],
+  "note": {
+   "seekMax": 1455400,
+   "seekSeconds": 614,
+   "dialog": {
+    "box": [
+     350,
+     90,
+     580,
+     620
+    ],
+    "scroll": [
+     620,
+     620
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Sustained territory lead PLAYERS RATING Lake Hodges Gemini 4 Neon HIGH 1774 (+54) Very Large Gemini 4 Neon MEDIUM RETIRED 1380 (−53) DECISIVE MOMENT 16:42 Queen 3 lost Very Large 20:35 Queen 1 lost Very Large 22:19 Queen 2 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-medium-v-high-3d-hud-b0616ba-1280.png",
+    "pngSha256": "05cfb238e56e24322a921e69ec4498ec4f9bd416dce72a1dbabe0af21fbe998d",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM RETIRED 1433",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 272.3,
+      "have": 387,
+      "spare": 29.6,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-hud-b0616ba-1280-neon-1.png",
+      "cropSha256": "395cff65d4607a3c8fc5c6a6b256a1e4811d9996577a6a7ddffa1ee9d49ac943"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 192.7,
+      "have": 387,
+      "spare": 50.2,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-hud-b0616ba-1280-neon-2.png",
+      "cropSha256": "e84c56a133663eebbd3af966911b03a0b84fe4f16123004002f276ea2b11cf1f"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-medium-v-high-3d-result-b0616ba-1280.png",
+    "pngSha256": "b94dfa8c89f53d06ea4e624ab86530efd63dd55290d8d0079f5c8952f4c206ff",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM RETIRED 1433",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 272.3,
+      "have": 387,
+      "spare": 29.6,
+      "box": [
+       24,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-1280-neon-1.png",
+      "cropSha256": "482522c84d856fafb0528ac7e042cd8671116c47c02527616bb3e469da978988"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 254,
+      "have": 387,
+      "spare": 34.4,
+      "box": [
+       854,
+       85,
+       402,
+       22
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-1280-neon-2.png",
+      "cropSha256": "2c687b5d814d31a20efe618dff7aa2901f76787179b13fb4620efb2187dff0a6"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon HIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 150.7,
+      "have": 376,
+      "spare": 59.9,
+      "box": [
+       378,
+       409,
+       376,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-1280-neon-3.png",
+      "cropSha256": "65b1e2f05632bf41e1023967234807dc6f414f0b31411899188f5ca1fe909211"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon MEDIUM RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 253.3,
+      "have": 376,
+      "spare": 32.6,
+      "box": [
+       378,
+       478,
+       376,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-1280-neon-4.png",
+      "cropSha256": "1ab63ef7b55ddb377bbb61dbdd83dfefcaae673fa039044b93b4757df36fc746"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 734
+ },
+ {
+  "typeface": "liberation-sans",
+  "scene": "replay-medium-v-high-3d",
+  "match": "medium-v-high",
+  "replay": "2026-11-19T12-14-45-958Z-234587808625478",
+  "board": "3d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T12-14-45-958Z-234587808625478",
+   "/replays/2026-11-19T12-14-45-958Z-234587808625478",
+   "/watch/ratings/2026-11-19T12-14-45-958Z-234587808625478"
+  ],
+  "note": {
+   "seekMax": 1455400,
+   "seekSeconds": 569,
+   "dialog": {
+    "box": [
+     12,
+     95,
+     366,
+     654
+    ],
+    "scroll": [
+     654,
+     654
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Sustained territory lead PLAYERS RATING Lake Hodges Gemini 4 Neon HIGH 1774 (+54) Very Large Gemini 4 Neon MEDIUM RETIRED 1380 (−53) DECISIVE MOMENT 16:42 Queen 3 lost Very Large 20:35 Queen 1 lost Very Large 22:19 Queen 2 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-medium-v-high-3d-hud-b0616ba-390.png",
+    "pngSha256": "ca5b710e39d271472d79e7ed110d5cad37cef752bad91406a1d39524b1f95a06",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM RETIRED 1433",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 280.3,
+      "have": 360,
+      "spare": 22.1,
+      "box": [
+       8,
+       851,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-hud-b0616ba-390-neon-1.png",
+      "cropSha256": "4f0036e775c841182a552d2d94110cbb253b52d5f96bdbd17b4acb83664adf2c"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 200.7,
+      "have": 360,
+      "spare": 44.3,
+      "box": [
+       8,
+       1108,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-hud-b0616ba-390-neon-2.png",
+      "cropSha256": "f3187a0e51e56defc94b402f947b1e7e2af5ec6a776dda8a501ac3a4c9942399"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-medium-v-high-3d-result-b0616ba-390.png",
+    "pngSha256": "c34ad496902078fdcda3ea8c66460ec7cd1fa9c46242723b942c1a3a85559a55",
+    "neon": [
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon MEDIUM RETIRED 1433",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 280.3,
+      "have": 360,
+      "spare": 22.1,
+      "box": [
+       8,
+       338,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-390-neon-1.png",
+      "cropSha256": "34e6c5730addb9e61fb344aa0b0b629491f4d56f6deab306e3b666438c82c2ff"
+     },
+     {
+      "kind": "deck-agent",
+      "text": "Gemini 4 Neon HIGH 1720 WINNER",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 262,
+      "have": 360,
+      "spare": 27.2,
+      "box": [
+       8,
+       791,
+       374,
+       44
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-390-neon-2.png",
+      "cropSha256": "d47b87c2f35c1cacfcc6402570f7222cfe04544d654fa9c22215d586fa418cc3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon HIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 150.7,
+      "have": 326,
+      "spare": 53.8,
+      "box": [
+       32,
+       390,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-390-neon-3.png",
+      "cropSha256": "1d8a9ded691bbc97e225a2fbb36cb2cf18c5b72a1c71b66eca59e640184ad1f3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon MEDIUM RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 253.3,
+      "have": 326,
+      "spare": 22.3,
+      "box": [
+       32,
+       479,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-3d-result-b0616ba-390-neon-4.png",
+      "cropSha256": "e2d9ff071a4065d0664f560be0689edf38b860c26d74d64e6a6f47eee336039b"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 612
+ }
+]

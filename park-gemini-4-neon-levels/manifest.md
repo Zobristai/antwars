@@ -2,7 +2,7 @@
 
 - **Base:** 5634b8e8d037b56287219cdee9b3ff8407642a59 (main, `5634b8e` in file names). No Neon handle is retired there.
 - **Head:** b0616bad986592cf11b9be216c8a071d707dcf95 (`b0616ba`), the pull request's head. gemini-4-neon-low, -medium and -xhigh are retired; gemini-4-neon-high is not.
-- **Pages:** Matches, Leaderboard and the landing page, plus the replay HUD and the replay result screen (added below), at 1280 px and 390 px, in Roboto and Liberation Sans.
+- **Pages:** Matches, Leaderboard and the landing page, plus the replay HUD and the replay result screen on the 2D board and on the 3D board's deck (added below), at 1280 px and 390 px, in Roboto and Liberation Sans.
 - **Data:** real only, no fixtures or synthetic rows. The public antwars.ai API's answers were recorded 2026-11-19T12:51:59Z to 2026-11-19T12:52:16Z and replayed offline for both builds. The page clock was pinned at 2026-11-19T12:53:00Z.
 - Rendered 2026-11-19T12:53:00Z to 2026-11-19T13:00:00Z. Evidence only: it states what was rendered and measured.
 
@@ -40,6 +40,7 @@ Spare = (available − needed) / available, for each Recordings player line laid
 | Liberation Sans | 1280 | Gemini 4 Neon MEDIUM RETIRED (3 rows) | 225.1 / 233 | 3.4% | no RETIRED badge |
 | Liberation Sans | 1280 | Gemini 4 Neon XHIGH RETIRED (3 rows) | 216 / 233 | 7.3% | no RETIRED badge |
 | Roboto | 1280 | Gemini 4 Neon MEDIUM RETIRED (3 rows) | 219.3 / 233 | 5.9% | no RETIRED badge |
+| Liberation Sans | 390 | 3D deck agent row at the end of a replay: Gemini 4 Neon XHIGH RETIRED 1567 WINNER (see the 3D section) | 332 / 360 | 7.8% | 25.1%, no RETIRED badge |
 
 The parked GPT-6.2 Astra Fast lines measure the same at base and head (tightest: MEDIUM, 2.1% in Liberation Sans at 1280).
 
@@ -69,9 +70,33 @@ Tightest fit per screen (head; spare = (available − needed) / available):
 
 No replay line comes under the 8% mark used above. Per-line measurements are in `<typeface>/replay-measurements.json` (one entry per recording, build and width). For the MEDIUM v HIGH recording at 1280 px the full run record was not written because the run was stopped after that unit; its entry is the run's printed per-line summary (text, lines, cut, spare), and its screenshots are complete.
 
+## Replay on the 3D board: deck agent rows and result
+
+The same two recordings with `board=3d`, base and head, 1280 px and 390 px, Roboto and Liberation Sans. On the 3D board each colony's deck shows its agent row: level badge, rating, and a WINNER badge once the match has ended. Folders are `<typeface>/replay-medium-v-high-3d/` and `<typeface>/replay-low-v-xhigh-3d/`, with files named `replay-<match>-3d-<state>-<build>-<width>.png` and a crop of every Neon line beside each.
+
+Shots per recording: **hud** (playing near its start), **result** (seeked to the end, result dialog open; the deck rows are measured behind it). The low v xhigh recording also has **ended**: the same moment with the dialog closed by Escape, so that the deck rows are visible. That recording is the only one where a parked handle (xhigh) wins and so carries the WINNER badge beside RETIRED. In the medium v high recording the parked handle loses, and its row reads the same as during play. Rendered 2026-11-19T14:32:00Z to 2026-11-19T15:20:46Z, from the same recorded API answers.
+
+What changes at head: the deck agent row adds a RETIRED badge after the level of LOW, MEDIUM and XHIGH. HIGH is unchanged. Ratings are unchanged. The result dialog is the same as on the 2D board.
+
+On both recordings, every state, both widths, both typefaces, base and head: every Neon line is on one line and nothing is cut, there were no page errors, the dialog opened, and in the ended shots the dialog closed. At 390 px in the ended shots the board area above the controls is an empty tan field at base and at head alike. This is how this headless browser painted the 3D board after the dialog closed; the deck rows below the board are what these shots show.
+
+Tightest fit per screen (head):
+
+| Screen | Line | Typeface | Width | Spare | Base, same line |
+|---|---|---|---|---|---|
+| 3D deck row, during play | Gemini 4 Neon MEDIUM RETIRED 1433 | Liberation Sans | 390 | 22.1% | 39.5% |
+| same | same | Roboto | 390 | 24.8% | 41.1% |
+| 3D deck row, during play | Gemini 4 Neon XHIGH RETIRED 1567 | Liberation Sans | 390 | 24.8% | 42.2% |
+| 3D deck row, ended | Gemini 4 Neon XHIGH RETIRED 1567 WINNER | Liberation Sans | 390 | **7.8%** (332 / 360 px) | 25.1% |
+| same | same | Roboto | 390 | 11.3% | 27.5% |
+| same | same | Liberation Sans | 1280 | 16.3% | 32.4% |
+| Result dialog over the 3D board | Gemini 4 Neon MEDIUM RETIRED | both | 390 | 22.3% | 46.9% |
+
+The ended row with WINNER is the tightest line in this evidence. It still fits on one line, uncut, in both typefaces; crop: `liberation-sans/replay-low-v-xhigh-3d/replay-low-v-xhigh-3d-ended-b0616ba-390-neon-2.png`. Per-line measurements are in `<typeface>/replay-3d-measurements.json`: one entry per recording, build and width, each with every shot.
+
 ## Data and method
 
 - **Builds:** `git archive` of each commit, built with `vite build --config web/vite.config.ts`.
 - **Browser:** Playwright with chrome-headless-shell build 1254, every request routed offline. Viewports were 1280x800 and 390x844 (mobile, touch).
-- **Replay method:** the same builds and browser; each replay loaded with `?replay=<id>&board=2d`, played about 20 s for the HUD, then seeked to the end through the replay slider until the result dialog opened. The 3D board was not rendered.
+- **Replay method:** the same builds and browser; each replay loaded with `?replay=<id>&board=2d`, played about 20 s for the HUD, then seeked to the end through the replay slider until the result dialog opened. The 3D board is in its own section below.
 - **Files:** each page is at `<typeface>/<page>/<page>-<build>-<width>.png`, with its Neon row crops beside it. Measurements are in `<typeface>/measurements.json`: per page, the Recordings and player-cell probes, the Neon rows, the padding and item checks, and the typeface the browser reported for each text part.
