@@ -705,10 +705,11 @@ describe("the Matches page takes the design system's narrow page edge", () => {
 });
 
 describe("a Recordings row's date, time and type share one line on the narrowest phone", () => {
-  // Every two-colony type the page can word, after the widest date, in the face that sets them widest.
-  const TYPES = ["Index 4v4", "Ranked 4v4", "Unranked 4v4", "Challenge 1v1", "Challenge 4v4", "Free-for-all"];
+  // Every type the page can word, two and three colonies, after the widest date, in the face that sets them widest.
+  const TYPES = ["Index 4v4", "Ranked 4v4", "Unranked 4v4", "Challenge 1v1", "Challenge 4v4", "Free-for-all",
+    "Index 1v1v1", "Ranked 1v1v1", "Unranked 1v1v1", "Challenge 1v1v1", "Challenge 4v4v4"];
   for (const width of [320, 390]) {
-    it(`keeps the widest date, its time and each two-colony type on one line at ${width}px`, async () => {
+    it(`keeps the widest date, its time and each type on one line at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
         await tab.setContent(matchesPage(undefined).page);
@@ -718,10 +719,11 @@ describe("a Recordings row's date, time and type share one line on the narrowest
           const row = document.querySelector(".d1p-rec-rows > li")!;
           row.querySelector(".d1p-rec-date")!.textContent = "28 May 2026";
           row.querySelector(".d1p-rec-time")!.textContent = "00:00 UTC";
-          const type = row.querySelector(".d1p-rec-type")!;
+          const mode = row.querySelector(".d1p-rec-mode")
+            ?? row.querySelector(".d1p-rec-type")!.appendChild(Object.assign(document.createElement("span"), { className: "d1p-rec-mode" }));
           return types.map(words => {
-            type.replaceChildren(...words.split(" ").flatMap(word => [" ", Object.assign(document.createElement("span"), { textContent: word })]));
-            const parts = [...row.querySelectorAll(".d1p-rec-when > span, .d1p-rec-type > span")];
+            mode.replaceChildren(...words.split(" ").flatMap(word => [" ", Object.assign(document.createElement("span"), { textContent: word })]));
+            const parts = [...row.querySelectorAll(".d1p-rec-when > span, .d1p-rec-mode > span")];
             return { words, lines: new Set(parts.map(part => Math.round(part.getBoundingClientRect().top))).size };
           });
         }, TYPES);
@@ -729,6 +731,111 @@ describe("a Recordings row's date, time and type share one line on the narrowest
       } finally { await tab.close(); }
     });
   }
+});
+
+/** The Matches page's Recordings with the widest footers the site can draw: the widest date, a three-colony Challenge
+ * won by its second colony, an abandoned three-colony Unranked whose record is unavailable (both outcome words), and a
+ * Challenge 1v1 draw. */
+function footerPage() {
+  const port = dom({ search: "" });
+  const host = port.doc.createElement("div") as unknown as ElementPort;
+  port.body.append(host);
+  const three = SUPERCOLONY_NAMES.slice(0, 3).map(n => n.label) as [string, string, string];
+  const seat = (index: number, handle: string) => ({ seat: index, colony: index as 0 | 1 | 2, modelLabel: "muse/muse-wonder-1.0", thinkingLevel: "max",
+    serviceTier: null, handle, startRating: { rating: 1662, rd: 90, ratedMatches: 12 } });
+  const base = { startedAt: "2026-05-28T23:59:00.000Z", endedAt: null, simulationEndedAt: null, unavailable: [] };
+  const rows: MatchRecording[] = [
+    { ...base, id: "2026-05-28T23-59-00-000Z-1", winner: 1, reason: "queens_killed", decidedBy: "queens_killed", status: "complete",
+      seats: [seat(0, "kain"), seat(1, "ann"), seat(2, "bob")], colonyNames: three, matchType: { kind: "challenge", size: 1 } },
+    { ...base, id: "2026-05-28T23-59-00-000Z-2", winner: null, reason: "abandoned", decidedBy: null, status: "unavailable",
+      seats: [seat(0, "kain"), seat(1, "ann"), seat(2, "bob")], colonyNames: three, matchType: { kind: "unranked", size: 1 } },
+    { ...base, id: "2026-05-28T23-59-00-000Z-3", winner: null, reason: "time_up", decidedBy: "draw", status: "complete",
+      seats: [seat(0, "kain"), seat(1, "ann")], matchType: { kind: "challenge", size: 1 } },
+  ];
+  const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
+  mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] }, recordings: { status: "ready", rows }, next: null });
+  const body = markup(host);
+  mounted.destroy();
+  return `<!doctype html><html><head><style>${PAGE_STYLES}</style></head><body>${body}</body></html>`;
+}
+
+/** Each Recordings row's footer and Replay, measured in the page. */
+const FOOTERS = () => [...document.querySelectorAll(".d1p-rec-rows > li")].map(row => {
+  const box = (el: Element) => el.getBoundingClientRect();
+  const meta = row.querySelector(".d1p-rec-meta")!;
+  const start = [...row.querySelectorAll(".d1p-rec-date, .d1p-rec-time, .d1p-rec-mode")].map(box);
+  const notes = row.querySelector(".d1p-rec-notes");
+  const noteBoxes = notes ? [...notes.querySelectorAll(".d1p-rec-note")].map(box) : [];
+  const slots = [...row.querySelectorAll(":scope > .d1p-rec-slot")].filter(slot => slot.checkVisibility());
+  const first = slots[0]!;
+  const replay = box(row.querySelector(".d1p-rec-replay")!);
+  const texts = slots.flatMap(slot => [...slot.querySelectorAll(".d1p-rec-player")].map(box));
+  const won = row.querySelector(".d1p-rec-slot.is-won");
+  const band = won ? (() => { const after = getComputedStyle(won, "::after"); const b = box(won);
+    return after.content === "none" ? b : { top: b.top + parseFloat(after.top), bottom: b.bottom }; })() : null;
+  const label = won ? { top: box(won).top + parseFloat(getComputedStyle(won).paddingTop), height: parseFloat(getComputedStyle(won, "::before").lineHeight) } : null;
+  const link = row.querySelector(".d1p-rec-replay")!;
+  const inner = box(first).right - parseFloat(getComputedStyle(first).paddingRight);
+  return {
+    startLines: new Set(start.map(b => Math.round(b.top))).size, startTop: start[0]!.top, startLeft: start[0]!.left,
+    metaRight: box(meta).right - parseFloat(getComputedStyle(meta).paddingRight), startRight: Math.max(...start.map(b => b.right)),
+    notes: noteBoxes.length ? { lines: new Set(noteBoxes.map(b => Math.round(b.top))).size, top: noteBoxes[0]!.top, left: noteBoxes[0]!.left } : null,
+    replay: { top: replay.top, bottom: replay.bottom, right: replay.right, pinned: getComputedStyle(link).position === "absolute" }, inner,
+    labelLineTop: box(first).top + parseFloat(getComputedStyle(first).paddingTop), metaBottom: box(meta).bottom,
+    overlapsLine: texts.some(t => t.right > replay.left && t.left < replay.right && t.bottom > replay.top && t.top < replay.bottom),
+    band, label,
+  };
+});
+
+describe("a Recordings row's footer on a phone", () => {
+  for (const width of [320, 360, 390]) {
+    it(`keeps date, time and type on one line, puts the outcome words on their own line under it, and places Replay at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(footerPage());
+        await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+        await tab.evaluate(() => document.fonts.ready);
+        const rows = await tab.evaluate(FOOTERS);
+        expect(rows).toHaveLength(3);
+        expect(rows.filter(row => row.notes !== null)).toHaveLength(2);
+        for (const row of rows) {
+          expect(row.startLines).toBe(1);
+          expect(row.startRight).toBeLessThanOrEqual(row.metaRight);
+          if (row.notes) {
+            // A line of its own, 20 px under the start line (its 16 px line and 4 px), at the start line's x.
+            expect(row.notes.lines).toBe(1);
+            expect(Math.round(row.notes.top - row.startTop)).toBe(20);
+            expect(Math.round(row.notes.left - row.startLeft)).toBe(0);
+          }
+          expect(row.overlapsLine).toBe(false);
+          expect(Math.abs(row.replay.right - row.inner)).toBeLessThan(1);
+          // Under 22rem (the 320 and 360 px phones' cards): Replay on the first colony's label line, and the winner's band
+          // below its label.
+          expect(row.replay.pinned).toBe(width < 390);
+          if (row.replay.pinned) {
+            expect(Math.abs(row.replay.top - row.labelLineTop)).toBeLessThan(1);
+            if (row.band && row.label) expect(row.band.top).toBeGreaterThanOrEqual(row.label.top + row.label.height - 0.5);
+          } else {
+            // From 22rem: Replay at the end of the start line, whatever follows it.
+            expect(Math.abs(row.replay.top - row.startTop)).toBeLessThan(2);
+          }
+        }
+      } finally { await tab.close(); }
+    });
+  }
+
+  it("makes Replay the row's last line when doubled text leaves the card under 15rem", async () => {
+    const tab = await browser.newPage({ viewport: { width: 390, height: 4000 } });
+    try {
+      await tab.setContent(footerPage());
+      await tab.addStyleTag({ content: 'html { font-size: 32px; } html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+      await tab.evaluate(() => document.fonts.ready);
+      for (const row of await tab.evaluate(FOOTERS)) {
+        expect(row.replay.top).toBeGreaterThanOrEqual(row.metaBottom);
+        expect(row.overlapsLine).toBe(false);
+      }
+    } finally { await tab.close(); }
+  });
 });
 
 describe("Recordings on a phone list only the colonies that played", () => {

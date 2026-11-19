@@ -532,6 +532,9 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-rows > li:first-child { border-top-color: var(--aw-line); }
 .d1p-rec-meta { display: contents; }
 .d1p-rec-when, .d1p-rec-type { display: flex; flex-direction: column; min-width: 0; white-space: nowrap; }
+/* The type: its mode (kind over size), then, where the row has them, its outcome words, under the mode in the same cell. */
+.d1p-rec-mode, .d1p-rec-notes { display: flex; flex-direction: column; }
+.d1p-rec-note { white-space: nowrap; }
 /* META: date, time, game type, mode, outcome words, ×N, the empty-seat dash and a seat's quiet note. 12/16 regular in
    the quiet ink, tabular figures. */
 .d1p-rec-when, .d1p-rec-type, .d1p-rec-table .d1p-count, .d1p-rec-dash, .d1p-rec-player.d1p-unknown {
@@ -602,25 +605,48 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-extra .d1p-rec-slot { grid-template-columns: minmax(0, 1fr); }
   .d1p-rec-extra .d1p-rec-slot > * { grid-column: 1 / -1; }
   .d1p-rec-when, .d1p-rec-type { padding-right: 0; }
-  /* Date, time and type: three parts 12 px apart on one line; where they do not fit, a part moves whole to the next. */
-  .d1p-rec-meta { order: 1; grid-column: 1 / 3; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--aw-space-3); margin-top: 2px; padding-left: var(--rec-pad); }
-  .d1p-rec-when { display: contents; }
-  .d1p-rec-type { display: inline-flex; flex-direction: row; flex-wrap: wrap; column-gap: var(--aw-space-1); }
-  .d1p-rec-when > *, .d1p-rec-type > * { white-space: nowrap; }
-  .d1p-rec4 .d1p-rec-replay { order: 1; grid-column: 3; align-self: end; position: relative; margin-right: var(--rec-pad); padding-left: 0; }
+  /* The start line: date, time and type (its kind and size one unit, 4 px apart), three parts 12 px apart, and nothing
+     else; where they do not fit, a part moves whole to the next line. The outcome words never follow the type on that
+     line: they take a line of their own under it, at the label x, 4 px below (the 20 px pitch of player lines), 12 px
+     apart. A row with them is 20 px taller; every other row is unchanged. */
+  .d1p-rec-meta { order: 1; grid-column: 1 / 3; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--aw-space-1) var(--aw-space-3); margin-top: 2px; padding-left: var(--rec-pad); }
+  .d1p-rec-when, .d1p-rec-type { display: contents; }
+  .d1p-rec-mode { display: inline-flex; flex-direction: row; column-gap: var(--aw-space-1); }
+  .d1p-rec-when > *, .d1p-rec-mode > * { white-space: nowrap; }
+  .d1p-rec-notes { flex-basis: 100%; flex-direction: row; flex-wrap: wrap; gap: var(--aw-space-1) var(--aw-space-3); }
+  /* Replay at the end of the start line, aligned to that line, whatever follows it. */
+  .d1p-rec4 .d1p-rec-replay { order: 1; grid-column: 3; align-self: start; position: relative; margin: 2px var(--rec-pad) 0 0; padding-left: 0; }
   /* A 44 px tap around the word, as every phone target is. */
   .d1p-rec4 .d1p-rec-replay::before { content: ""; position: absolute; inset: -14px -8px; }
 }
-/* The narrowest cards (320 and 360 px phones, doubled text): each colony's name over its line, so the line keeps the
+/* The narrowest cards (320 and 360 px phones, doubled text): each colony's name above its band, so the line keeps the
    card's whole width. */
 @container d1p-card (width < 22rem) {
-  .d1p-rec-table { grid-template-columns: minmax(0, 1fr) max-content; }
+  .d1p-rec-table { grid-template-columns: minmax(0, 1fr); }
   .d1p-rec-slot { grid-template-columns: minmax(0, 1fr); }
   .d1p-rec-slot[data-colony]::before, .d1p-rec-slot > * { grid-column: 1 / -1; }
   .d1p-rec-slot[data-colony]::before { grid-row: auto; }
-  /* The date, time and type keep one line beside Replay: the column gap between them narrows to the 8 px step. */
-  .d1p-rec-meta { grid-column: 1; column-gap: var(--aw-space-2); }
-  .d1p-rec4 .d1p-rec-replay { grid-column: 2; }
+  /* The start line takes the card's whole width, its parts and the outcome words 8 px apart. */
+  .d1p-rec-meta { grid-column: 1 / -1; column-gap: var(--aw-space-2); padding-right: var(--rec-pad); }
+  .d1p-rec-notes { column-gap: var(--aw-space-2); }
+  /* Replay leaves the start line for the row's top right, on the first colony's label line, its right edge at the band's
+     inner right edge; its 44 px tap reaches the row's top edge and no further. */
+  .d1p-rec-rows > li { position: relative; }
+  .d1p-rec4 .d1p-rec-replay { position: absolute; top: calc(var(--aw-space-2) + 4px); right: calc(var(--rec-inset) + var(--rec-pad)); margin: 0; }
+  .d1p-rec4 .d1p-rec-replay::before { inset: -12px -8px -16px; }
+  /* The colony label stands above its band, not in it, so Replay on the first label line never sits on a winner's
+     colour: the band covers only the winner's player lines, from below the label line to 4 px under the last line. */
+  .d1p-rec-slot.is-won { position: relative; isolation: isolate; background: none; box-shadow: none; }
+  .d1p-rec-slot.is-won::after {
+    content: ""; position: absolute; inset: calc(4px + var(--aw-lh-meta)) 0 0; z-index: -1; border-radius: var(--aw-radius-badge);
+    background: color-mix(in srgb, var(--rec-win) var(--aw-winner-fill), var(--aw-surface)); box-shadow: inset 2px 0 0 var(--rec-win);
+  }
+}
+/* Enlarged text or zoom only (at the default text size the narrowest card is 18.9rem): Replay goes back into the flow
+   as the row's last line, right-aligned at the same edge, so a colony label can never run into it. */
+@container d1p-card (width < 15rem) {
+  .d1p-rec4 .d1p-rec-replay { position: relative; top: auto; right: auto; grid-column: 1 / -1; justify-self: end; margin: 4px var(--rec-pad) 0 0; }
+  .d1p-rec4 .d1p-rec-replay::before { inset: -14px -8px; }
 }
 
 @media (forced-colors: active) {

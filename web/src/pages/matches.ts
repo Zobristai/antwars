@@ -599,7 +599,8 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   const meta = h(doc, "div", "d1p-rec-meta");
   const parts = whenParts(row.when);
   // The date over its time, and the type's kind over its size, in the wide form; on a phone the three stand on one line,
-  // a gap apart with no separator, so a part that moves to the next line leaves nothing behind.
+  // a gap apart with no separator. The type paragraph holds the mode (kind and size, one unit) and, where the row has
+  // them, its outcome words as a second unit: under the mode in the wide form, on a line of their own on a phone.
   const when = h(doc, "p", "d1p-rec-when");
   when.dataset.col = "when";
   when.append(h(doc, "span", "d1p-rec-date", parts.date));
@@ -608,11 +609,18 @@ function recordingLine(doc: Document, row: MatchRow): HTMLLIElement {
   type.dataset.col = "type";
   const typeWords = row.type ?? row.typeNote;
   if (typeWords) {
+    const mode = h(doc, "span", "d1p-rec-mode");
     const at = typeWords.lastIndexOf(" · ");
-    if (at < 0) type.append(h(doc, "span", undefined, typeWords));
-    else type.append(h(doc, "span", undefined, typeWords.slice(0, at)), " ", h(doc, "span", undefined, typeWords.slice(at + 3)));
+    if (at < 0) mode.append(h(doc, "span", undefined, typeWords));
+    else mode.append(h(doc, "span", undefined, typeWords.slice(0, at)), " ", h(doc, "span", undefined, typeWords.slice(at + 3)));
+    type.append(mode);
   }
-  for (const word of rowOutcome(row)) type.append(" ", h(doc, "span", "d1p-rec-note", word));
+  const outcome = rowOutcome(row);
+  if (outcome.length > 0) {
+    const notes = h(doc, "span", "d1p-rec-notes");
+    outcome.forEach((word, index) => notes.append(...(index > 0 ? [" "] : []), h(doc, "span", "d1p-rec-note", word)));
+    type.append(" ", notes);
+  }
   meta.append(when, type);
   const slots = recordingSlotIndexes(row);
   item.append(meta, ...slots.map((colony, column) => recordingSlot(doc, row, colony, column)));
