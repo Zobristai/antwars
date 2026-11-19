@@ -9,7 +9,7 @@ import { setMatchColonies } from "../../../web/src/colony-palette.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
-const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css", "pages/archive.css"]
+const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css", "design-system/tokens.css", "pages/archive.css"]
   .map(path => read(`../../../web/src/${path}`))].join("\n");
 /** A four-colony match's names by colony id: the four, in the shared table's order. */
 const FOUR = SUPERCOLONY_NAMES.map(n => n.label);

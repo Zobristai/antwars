@@ -48,6 +48,14 @@ export interface Surface {
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
   board?: boolean;
+  /** The window widths it is rendered at (default WIDTHS). */
+  widths?: readonly number[];
+  /** Browser zoom, as Chrome lays out page zoom: the window keeps its size in device pixels, the page lays out in a
+   * viewport that many times smaller, drawn at that many device pixels a CSS pixel. */
+  zoom?: number;
+  /** An element (CSS selector) focused from the keyboard once the page has settled, so its focus ring is judged and
+   * rendered. A render where it is missing or does not show focus as keyboard focus is invalid. */
+  focus?: string;
 }
 
 /**
@@ -56,20 +64,27 @@ export interface Surface {
  */
 export const FREE_FOR_ALL_REPLAY = "2026-11-17T08-55-08-583Z-151632020035470";
 
+/** The recordings surfaces' focused element: the first recording's Replay link. */
+const RECORDINGS_FOCUS = ".d1p-rec-rows > li:first-child .d1p-rec-replay";
+
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
   // Not capture=1: on Watch that also changes what the page shows with no live match.
   { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match)" },
   { id: "matches", url: "/?page=matches", hud: false, what: "the Matches page (all recordings)" },
   { id: "waiting", url: "/?page=matches", hud: false, what: "the Matches page with agents waiting and matches live (fixture: Waiting and Live now rows)", fixtures: "waiting-fixture.json" },
+  { id: "recordings", url: "/?page=matches", hud: false, what: "the Matches page with a Recordings list of the cases the snapshot lacks (fixture: a sample Scripted bot win in Lake Skinner; snapshot rows), its first Replay link focused", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS },
+  { id: "recordings-zoom-200", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 200 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], zoom: 2 },
+  { id: "recordings-zoom-400", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 400 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], zoom: 4 },
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
 ];
 
-const viewport = (width: number) => width < 600
-  ? { viewport: { width, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 }
-  : { viewport: { width, height: 800 }, deviceScaleFactor: 1 };
+/** The browser context of a window `width` px wide, at a browser zoom of `zoom` (Surface.zoom). */
+export const viewport = (width: number, zoom = 1) => width < 600
+  ? { viewport: { width: Math.round(width / zoom), height: Math.round(844 / zoom) }, isMobile: true, hasTouch: true, deviceScaleFactor: zoom }
+  : { viewport: { width: Math.round(width / zoom), height: Math.round(800 / zoom) }, deviceScaleFactor: zoom };
 
 /** The page and every box that scrolls back at its start: the state the page is judged in. A box that clips without
  * scrolling (overflow hidden or clip) is left exactly as the page set it. */
@@ -418,7 +433,8 @@ async function renderAll(o: Options): Promise<Render[]> {
     try {
       browser = await chromium.launch({ executablePath: o.chrome, args: CHROMIUM_FLAGS, env: { ...process.env, FONTCONFIG_FILE: conf } });
       for (const width of WIDTHS) for (const surface of o.surfaces) {
-        const context = await browser.newContext({ ...viewport(width), timezoneId: "UTC", locale: "en-GB", reducedMotion: "reduce" });
+        if (!(surface.widths ?? WIDTHS).includes(width)) continue;
+        const context = await browser.newContext({ ...viewport(width, surface.zoom), timezoneId: "UTC", locale: "en-GB", reducedMotion: "reduce" });
         if (surface.fixtures) await context.clock.setFixedTime(new Date(snapshot.recordedAt));
         const served = await serveSite(context, { dist: o.dist, snapshot, fixtures: surfaceFixtures.get(surface.id) ?? fixtures, rulesPage, record: o.record });
         const page = await context.newPage();
@@ -443,6 +459,15 @@ async function renderAll(o: Options): Promise<Render[]> {
           const settled = await settle(page, surface);
           const noBoard = boardProblem(surface, settled.readiness, settled.playback);
           if (noBoard) invalid.push(noBoard);
+          if (surface.focus) {
+            // Focused as the keyboard does, which scrolls it into view: the page is judged and rendered from there.
+            const focused = await page.evaluate(selector => {
+              const el = document.querySelector<HTMLElement>(selector);
+              el?.focus();
+              return !!el && el.matches(":focus-visible");
+            }, surface.focus);
+            if (!focused) invalid.push(`${surface.focus} was not shown with keyboard focus`);
+          }
           judged = await page.evaluate(judgePage, RULE_LIMITS);
           fonts = await drawnFonts(page);
           const wrongFont = fontProblem(typeface, fonts);

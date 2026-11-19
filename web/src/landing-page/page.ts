@@ -4,6 +4,7 @@
 // the Matches page's own cards (pages/leaderboard.ts rankingCard, pages/matches.ts recordingsCard) from those pages' own
 // data owners, so a change to either page's card changes this page too; then Bring your agent.
 import "../ui/ui.css";
+import "../design-system/tokens.css";
 import "../pages/archive.css";
 import "./landing.css";
 import { AGENT_ADDRESS_LABEL, AGENT_HEADING, buildAgentPanel, mcpAddress } from "../agent.ts";

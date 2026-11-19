@@ -1,0 +1,659 @@
+{
+ "note": "The recordings surface: the Matches page with a Recordings list of the cases the public data lacks or the snapshot does not show together. Row 1 is sample data, not a recorded match: a Scripted bot winning in the Lake Skinner column, the column next to Replay, against a house model (its name, level and rating as the snapshot has them). Rows 2 to 4 are public recordings copied from the snapshot: a parked GPT-6.2 Astra line, a builder before its model, and a 2v2 with two alike seats in each colony. Rows 5 to 7 are sample teams with unlike seats, not recorded matches, built from the seats the Matches tests use: a builder's colony with one seat that recorded no model against a username alone; one builder's seats whose start ratings differ; and a colony with three scripted seats and a builder's seat against four seats of differing models and levels, winning in the Lake Skinner column. Each such colony lists one line per seat group. Rows 8 to 10 are sample footers, not recorded matches, built from the stored players of rows 2 and 3, with the widest date the site can draw (28 May 2026) and every time the same width: a three-colony Challenge 1v1v1, the widest game type; an abandoned three-colony Unranked 1v1v1 whose record is unavailable, so its outcome line reads Abandoned and Record unavailable; and a Challenge 1v1 draw. The check focuses the first row's Replay link before judging (Surface.focus), so its focus ring is judged and rendered. The page's clock is fixed at the snapshot's time.",
+ "fixtures": {
+  "/matches": {
+   "label": "recordings surface: Recordings with sample Scripted bot, unlike-seat and footer rows and three snapshot recordings",
+   "body": {
+    "matches": [
+     {
+      "id": "2026-11-18T08-10-00-000Z-100000000000001",
+      "startedAt": "2026-11-18T08:10:00.000Z",
+      "endedAt": "2026-11-18T08:24:12.000Z",
+      "simulationEndedAt": "2026-11-18T08:24:12.050Z",
+      "winner": 0,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-terra",
+        "thinkingLevel": "max",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-1-terra-max-fast",
+        "startRating": {
+         "rating": 1984,
+         "rd": 72,
+         "ratedMatches": 30
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Lake Skinner Colony",
+       "Very Large Colony"
+      ],
+      "matchType": {
+       "kind": "challenge",
+       "size": 1
+      }
+     },
+     {
+      "id": "2026-11-18T06-59-49-405Z-274770546590936",
+      "startedAt": "2026-11-18T06:59:49.405Z",
+      "endedAt": "2026-11-18T07:08:58.334Z",
+      "simulationEndedAt": "2026-11-18T07:08:58.405Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "xhigh",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-xhigh",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 0,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "medium",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-medium",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": true,
+      "matchType": {
+       "kind": "index",
+       "size": 1
+      },
+      "harnessPhase": {
+       "phase": "from round 31 onward",
+       "possibleEffortMismatch": false
+      }
+     },
+     {
+      "id": "2026-11-18T06-59-42-328Z-29842489341679",
+      "startedAt": "2026-11-18T06:59:42.328Z",
+      "endedAt": "2026-11-18T07:19:50.171Z",
+      "simulationEndedAt": "2026-11-18T07:19:50.228Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "deepseek/deepseek-flash",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/deepseek-flash",
+        "startRating": {
+         "rating": 1435.2302931035026,
+         "rd": 95.08622267252382,
+         "ratedMatches": 24
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "kain",
+        "startRating": {
+         "rating": 1662.2120026057648,
+         "rd": 290.2305060910912,
+         "ratedMatches": 1
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Very Large Colony"
+      ],
+      "matchType": {
+       "kind": "challenge",
+       "size": 1
+      }
+     },
+     {
+      "id": "2026-11-16T09-21-43-735Z-11240848029112",
+      "startedAt": "2026-11-16T09:21:43.735Z",
+      "endedAt": "2026-11-16T09:30:26.927Z",
+      "simulationEndedAt": "2026-11-16T09:30:26.935Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/muse-wonder-1-0",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "zai/glm-5.3",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/glm-5-3",
+        "startRating": {
+         "rating": 1823.3674931390162,
+         "rd": 232.61421402654622,
+         "ratedMatches": 3
+        }
+       },
+       {
+        "seat": 2,
+        "colony": 1,
+        "modelLabel": "zai/glm-5.3",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/glm-5-3",
+        "startRating": {
+         "rating": 1823.3674931390162,
+         "rd": 232.61421402654622,
+         "ratedMatches": 3
+        }
+       },
+       {
+        "seat": 3,
+        "colony": 0,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/muse-wonder-1-0",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": true,
+      "matchType": {
+       "kind": "index",
+       "size": 2
+      },
+      "harnessPhase": {
+       "phase": "from round 31 onward",
+       "possibleEffortMismatch": false
+      }
+     },
+     {
+      "id": "2026-11-12T10-00-00-000Z-100000000000002",
+      "startedAt": "2026-11-12T10:00:00.000Z",
+      "endedAt": null,
+      "simulationEndedAt": null,
+      "winner": 0,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "openai/gpt-6.1-terra",
+        "thinkingLevel": "high",
+        "serviceTier": "fast",
+        "handle": "kain",
+        "startRating": null
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "coffee-ant/local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "coffee-ant",
+        "startRating": null
+       },
+       {
+        "seat": 2,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kain",
+        "startRating": null
+       },
+       {
+        "seat": 3,
+        "colony": 1,
+        "modelLabel": "coffee-ant/local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "coffee-ant",
+        "startRating": null
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": false,
+      "matchType": {
+       "kind": "ranked",
+       "size": 2
+      }
+     },
+     {
+      "id": "2026-11-12T09-00-00-000Z-100000000000003",
+      "startedAt": "2026-11-12T09:00:00.000Z",
+      "endedAt": null,
+      "simulationEndedAt": null,
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": {
+         "rating": 1540,
+         "rd": 80,
+         "ratedMatches": 12
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 2,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": {
+         "rating": 1540,
+         "rd": 80,
+         "ratedMatches": 12
+        }
+       },
+       {
+        "seat": 3,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 4,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": {
+         "rating": 1541,
+         "rd": 80,
+         "ratedMatches": 12
+        }
+       },
+       {
+        "seat": 5,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 6,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": null
+       },
+       {
+        "seat": 7,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": false,
+      "matchType": {
+       "kind": "ranked",
+       "size": 4
+      }
+     },
+     {
+      "id": "2026-11-12T08-00-00-000Z-100000000000004",
+      "startedAt": "2026-11-12T08:00:00.000Z",
+      "endedAt": null,
+      "simulationEndedAt": null,
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-sol",
+        "thinkingLevel": "max",
+        "serviceTier": "fast",
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 2,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 3,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-sol",
+        "thinkingLevel": "high",
+        "serviceTier": "fast",
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 4,
+        "colony": 0,
+        "modelLabel": null,
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "scripted-sample",
+        "startRating": null
+       },
+       {
+        "seat": 5,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.1-sol",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       },
+       {
+        "seat": 6,
+        "colony": 0,
+        "modelLabel": "local",
+        "thinkingLevel": null,
+        "serviceTier": null,
+        "handle": "kite",
+        "startRating": null
+       },
+       {
+        "seat": 7,
+        "colony": 1,
+        "modelLabel": "anthropic/claude-opus-5-5",
+        "thinkingLevel": "high",
+        "serviceTier": null,
+        "handle": null,
+        "startRating": null
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": true,
+      "modelIndex": false,
+      "matchType": {
+       "kind": "ranked",
+       "size": 4
+      },
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Lake Skinner Colony"
+      ]
+     },
+     {
+      "id": "2026-05-28T23-59-00-000Z-100000000000005",
+      "startedAt": "2026-05-28T23:59:00.000Z",
+      "endedAt": "2026-05-29T00:12:00.000Z",
+      "simulationEndedAt": "2026-05-29T00:12:00.050Z",
+      "winner": 1,
+      "reason": "queens_killed",
+      "decidedBy": "queens_killed",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "medium",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-medium",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "xhigh",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-xhigh",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 2,
+        "colony": 2,
+        "modelLabel": "deepseek/deepseek-flash",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/deepseek-flash",
+        "startRating": {
+         "rating": 1435.2302931035026,
+         "rd": 95.08622267252382,
+         "ratedMatches": 24
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Very Large Colony",
+       "Lake Hodges Colony",
+       "Sweetwater Colony"
+      ],
+      "matchType": {
+       "kind": "challenge",
+       "size": 1
+      }
+     },
+     {
+      "id": "2026-05-28T23-59-00-000Z-100000000000006",
+      "startedAt": "2026-05-28T23:59:00.000Z",
+      "endedAt": "2026-05-29T00:12:00.000Z",
+      "simulationEndedAt": "2026-05-29T00:12:00.050Z",
+      "winner": null,
+      "reason": "abandoned",
+      "decidedBy": null,
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "medium",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-medium",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "openai/gpt-6.2-astra",
+        "thinkingLevel": "xhigh",
+        "serviceTier": "fast",
+        "handle": "antwars/gpt-6-2-astra-xhigh",
+        "startRating": {
+         "rating": 1500,
+         "rd": 350,
+         "ratedMatches": 0
+        }
+       },
+       {
+        "seat": 2,
+        "colony": 2,
+        "modelLabel": "deepseek/deepseek-flash",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/deepseek-flash",
+        "startRating": {
+         "rating": 1435.2302931035026,
+         "rd": 95.08622267252382,
+         "ratedMatches": 24
+        }
+       }
+      ],
+      "status": "unavailable",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Very Large Colony",
+       "Lake Hodges Colony",
+       "Sweetwater Colony"
+      ],
+      "matchType": {
+       "kind": "unranked",
+       "size": 1
+      }
+     },
+     {
+      "id": "2026-05-28T23-59-00-000Z-100000000000007",
+      "startedAt": "2026-05-28T23:59:00.000Z",
+      "endedAt": "2026-05-29T00:12:00.000Z",
+      "simulationEndedAt": "2026-05-29T00:12:00.050Z",
+      "winner": null,
+      "reason": "time_up",
+      "decidedBy": "draw",
+      "seats": [
+       {
+        "seat": 0,
+        "colony": 0,
+        "modelLabel": "deepseek/deepseek-flash",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "antwars/deepseek-flash",
+        "startRating": {
+         "rating": 1435.2302931035026,
+         "rd": 95.08622267252382,
+         "ratedMatches": 24
+        }
+       },
+       {
+        "seat": 1,
+        "colony": 1,
+        "modelLabel": "muse/muse-wonder-1.0",
+        "thinkingLevel": "max",
+        "serviceTier": null,
+        "handle": "kain",
+        "startRating": {
+         "rating": 1662.2120026057648,
+         "rd": 290.2305060910912,
+         "ratedMatches": 1
+        }
+       }
+      ],
+      "status": "complete",
+      "unavailable": [],
+      "rated": false,
+      "modelIndex": false,
+      "colonyNames": [
+       "Sweetwater Colony",
+       "Very Large Colony"
+      ],
+      "matchType": {
+       "kind": "challenge",
+       "size": 1
+      }
+     }
+    ],
+    "nextPageToken": null
+   }
+  }
+ }
+}

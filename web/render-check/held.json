@@ -462,6 +462,86 @@
    "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
   },
   {
+   "surface": "recordings",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings-zoom-200",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 280,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings-zoom-400",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 440,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings-zoom-200",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 280,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings-zoom-400",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 440,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "recordings",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
    "surface": "watch",
    "width": 1280,
    "typeface": "Liberation Sans",

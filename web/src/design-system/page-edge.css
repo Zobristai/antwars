@@ -1,0 +1,6 @@
+/* The design system's narrow page edge: from 12em to 24.25em of viewport width a page's edge is 8 px, so a phone's card
+   keeps the width its content is measured at. A page takes it by marking its .d1p root data-edge="system"; the Matches page
+   does, and other pages take it when they move onto the system. --d1p-pad is the page's side padding (pages/archive.css). */
+@media (12em <= width < 24.25em) {
+  .d1p[data-edge="system"] { --d1p-pad: 8px; }
+}

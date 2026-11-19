@@ -96,7 +96,7 @@ describe("three-colony recordings", () => {
     expect(slots[3]!.byClass("d1p-sr").at(-1)!.textContent).toBe(", winner");
     // Only the winner's slot carries its colony's colour; the others are neutral.
     expect(slots.filter(slot => slot.style.properties.has("--rec-win"))).toEqual([slots[3]]);
-    expect(rows[0]!.byClass("d1p-rec-type")[0]!.textContent).toBe("Unranked · 1v1v1");
+    expect(rows[0]!.byClass("d1p-rec-type")[0]!.textContent).toBe("Unranked 1v1v1");
     expect(rows[0]!.byClass("d1p-rec-replay")[0]!.href).toBe(`/?replay=${QUADRANTS}&board=2d`);
   });
 
