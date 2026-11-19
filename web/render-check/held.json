@@ -1,0 +1,485 @@
+{
+ "note": "Failures already on main (de24782) when the render check was introduced, reviewed. Each entry holds one finding: one rule on one element and text of one surface, width and typeface, at the extent it was found (lines for wrap, tiles missing the part for part-uneven, otherwise px). A finding not held here, or found further than its held extent, fails the check; held findings show as warnings. Changes to this file are reviewed like code; shrink it as fixes land.",
+ "held": [
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # RANK NAME RATING RATED MATCHES RECORD LAST ",
+   "extent": 96,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "text": "above: Bring your agent",
+   "extent": 96,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 96,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
+   "text": "RATED MATCHES",
+   "extent": 2,
+   "why": "The landing page's leaderboard heading “Rated matches” wraps to two lines at 1280 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # RANK NAME RATING RATED MATCHES RECORD LAST ",
+   "extent": 96,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "text": "above: Bring your agent",
+   "extent": 94,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 96,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "wrap",
+   "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
+   "text": "RATED MATCHES",
+   "extent": 2,
+   "why": "The landing page's leaderboard heading “Rated matches” wraps to two lines at 1280 px; on main before this check."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # NAME RATING Rank 1 GPT-6.1 TerraMAXFAST Rat",
+   "extent": 56,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "text": "above: Bring your agent",
+   "extent": 56,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 56,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # NAME RATING Rank 1 GPT-6.1 TerraMAXFAST Rat",
+   "extent": 56,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "text": "above: Bring your agent",
+   "extent": 55,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "landing",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 56,
+   "why": "The landing page's designed section spacing, wider than the 48 px band limit; approved as held when the render check was introduced."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "leaderboard",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "matches",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "grid-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
+   "text": "",
+   "extent": 5236,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
+   "text": "",
+   "extent": 1,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "REFERENCE MAPS The map the seed selects sets the playable board: 128x96 or 128x1",
+   "extent": 52,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "extent": 52,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "grid-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
+   "text": "",
+   "extent": 5404,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
+   "text": "",
+   "extent": 1,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "REFERENCE MAPS The map the seed selects sets the playable board: 128x96 or 128x1",
+   "extent": 51,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "extent": 51,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "grid-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
+   "text": "",
+   "extent": 8972,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
+   "text": "",
+   "extent": 1,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "REFERENCE MAPS The map the seed selects sets the playable board: 128x96 or 128x1",
+   "extent": 41,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "extent": 41,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "grid-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
+   "text": "",
+   "extent": 9164,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
+   "text": "",
+   "extent": 1,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "REFERENCE MAPS The map the seed selects sets the playable board: 128x96 or 128x1",
+   "extent": 40,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "rules",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "extent": 40,
+   "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
+  },
+  {
+   "surface": "waiting",
+   "width": 1280,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "waiting",
+   "width": 1280,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 205,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "waiting",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "waiting",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 405,
+   "why": "The page banner's image, cropped by design to its 176 px band by offset rather than object-fit; on main before this check."
+  },
+  {
+   "surface": "waiting",
+   "width": 390,
+   "typeface": "Roboto",
+   "rule": "wrap",
+   "element": "div.d1p-content > section.d1p-card.d1p-waiting > div.d1p-card-head > p.d1p-state",
+   "text": "2 agents waiting in a ranked queue · 1 agent waiting for Free-for-all · 3 matche",
+   "extent": 3,
+   "why": "The Waiting card's state line (p.d1p-state), counted as a one-line item, wraps to three lines at 390 px when it lists the queues and live matches; on main (7df3f004) before the check counted it. Its stylesheet lets it wrap (the glyph keeps to the first line)."
+  },
+  {
+   "surface": "waiting",
+   "width": 390,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "div.d1p-content > section.d1p-card.d1p-waiting > div.d1p-card-head > p.d1p-state",
+   "text": "2 agents waiting in a ranked queue · 1 agent waiting for Free-for-all · 3 matche",
+   "extent": 3,
+   "why": "The Waiting card's state line (p.d1p-state), counted as a one-line item, wraps to three lines at 390 px when it lists the queues and live matches; on main (7df3f004) before the check counted it. Its stylesheet lets it wrap (the glyph keeps to the first line)."
+  }
+ ]
+}
