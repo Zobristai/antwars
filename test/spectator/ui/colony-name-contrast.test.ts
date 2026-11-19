@@ -704,6 +704,33 @@ describe("the Matches page takes the design system's narrow page edge", () => {
   }
 });
 
+describe("a Recordings row's date, time and type share one line on the narrowest phone", () => {
+  // Every two-colony type the page can word, after the widest date, in the face that sets them widest.
+  const TYPES = ["Index 4v4", "Ranked 4v4", "Unranked 4v4", "Challenge 1v1", "Challenge 4v4", "Free-for-all"];
+  for (const width of [320, 390]) {
+    it(`keeps the widest date, its time and each two-colony type on one line at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(matchesPage(undefined).page);
+        await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
+        await tab.evaluate(() => document.fonts.ready);
+        const lines = await tab.evaluate(types => {
+          const row = document.querySelector(".d1p-rec-rows > li")!;
+          row.querySelector(".d1p-rec-date")!.textContent = "28 May 2026";
+          row.querySelector(".d1p-rec-time")!.textContent = "00:00 UTC";
+          const type = row.querySelector(".d1p-rec-type")!;
+          return types.map(words => {
+            type.replaceChildren(...words.split(" ").flatMap(word => [" ", Object.assign(document.createElement("span"), { textContent: word })]));
+            const parts = [...row.querySelectorAll(".d1p-rec-when > span, .d1p-rec-type > span")];
+            return { words, lines: new Set(parts.map(part => Math.round(part.getBoundingClientRect().top))).size };
+          });
+        }, TYPES);
+        for (const line of lines) expect(line.lines, line.words).toBe(1);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
 describe("Recordings on a phone list only the colonies that played", () => {
   for (const width of [1280, 390]) {
     it(`keeps four fixed columns, a dash for a colony not in the match, on a wide card, and only the played colonies' lines on a phone, at ${width}px`, async () => {

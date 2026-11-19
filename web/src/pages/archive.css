@@ -618,7 +618,8 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-rec-slot { grid-template-columns: minmax(0, 1fr); }
   .d1p-rec-slot[data-colony]::before, .d1p-rec-slot > * { grid-column: 1 / -1; }
   .d1p-rec-slot[data-colony]::before { grid-row: auto; }
-  .d1p-rec-meta { grid-column: 1; }
+  /* The date, time and type keep one line beside Replay: the column gap between them narrows to the 8 px step. */
+  .d1p-rec-meta { grid-column: 1; column-gap: var(--aw-space-2); }
   .d1p-rec4 .d1p-rec-replay { grid-column: 2; }
 }
 
