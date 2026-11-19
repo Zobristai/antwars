@@ -44,7 +44,7 @@ describe("the top matches list file", () => {
 });
 
 describe("the shared read", () => {
-  it("reads once for concurrent and later callers, and keeps no failed read", async () => {
+  it("shares one running read between callers, keeps no settled read, and keeps no failed read", async () => {
     let reads = 0, fail = true;
     const read = sharedRead(async () => { reads++; if (fail) throw new Error("storage"); return ["listed"]; });
     await expect(Promise.all([read(), read()])).rejects.toThrow("storage");
@@ -53,8 +53,9 @@ describe("the shared read", () => {
     const [one, two] = await Promise.all([read(), read()]);
     expect(one).toEqual(["listed"]);
     expect(two).toBe(one);
-    expect(await read()).toBe(one);
     expect(reads).toBe(2);
+    expect(await read()).toEqual(["listed"]);
+    expect(reads).toBe(3);
   });
 });
 
@@ -119,6 +120,21 @@ describe(`GET ${TOP_PATH}`, () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     expect((await read(origin)).body.matches.map(row => row.id)).toEqual([b.id]);
     expect(reads).toBe(2);
+  });
+
+  it("serves a listed record created after the first request, and a record replaced by a complete one, reading only those again", async () => {
+    const a = stored(), b = { ...stored(), status: "unavailable" as const, seats: [] }, c = stored();
+    const records = new Map<string, HistorySummary>([[a.id, a], [b.id, b]]);
+    const reads: string[] = [];
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const origin = await listen([], { matches: [a.id, b.id, c.id] }, {},
+      { async summary(id) { reads.push(id); return records.get(id) ?? null; } });
+    expect((await read(origin)).body.matches.map(row => [row.id, row.status])).toEqual([[a.id, "complete"], [b.id, "unavailable"]]);
+    records.set(b.id, { ...stored(), id: b.id });
+    records.set(c.id, { ...stored(), id: c.id });
+    expect((await read(origin)).body.matches.map(row => [row.id, row.status])).toEqual([[a.id, "complete"], [b.id, "complete"], [c.id, "complete"]]);
+    await read(origin);
+    expect(reads).toEqual([a.id, b.id, c.id, b.id, c.id]);
   });
 
   it("answers unavailable when the records cannot be read, and reads them again on the next request", async () => {

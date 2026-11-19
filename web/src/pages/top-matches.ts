@@ -6,7 +6,7 @@
 import { topMatchTile } from "../design-system/top-match-tile.ts";
 import { topMatchesList } from "../matches-page/data.ts";
 import type { Fallback } from "../replay.ts";
-import { keep } from "../ui/format.ts";
+import { keep, neverJoined } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 import { mountFrame, stateLine } from "./chrome.ts";
 
@@ -74,7 +74,8 @@ export function mountTopMatchesPage(doc: Document, win: Window, options: TopMatc
       const response = await request("/matches/top", { cache: "no-store", credentials: "same-origin", redirect: "error",
         signal: AbortSignal.any([abort.signal, AbortSignal.timeout(60_000)]) });
       if (!response.ok) throw new Error("Top matches unavailable");
-      const { matches } = topMatchesList.parse(await response.json());
+      // A match a colony never joined is left off, as the recordings list leaves it off (ui/format.ts recordingRows).
+      const matches = topMatchesList.parse(await response.json()).matches.filter(r => !neverJoined(r));
       if (abort.signal.aborted) return;
       grid.replaceChildren(...matches.map(r => topMatchTile(doc, r, search)));
       status.textContent = matches.length === 0 ? TOP_WORDS.empty : "";

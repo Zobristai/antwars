@@ -108,6 +108,15 @@ describe("the top-matches page", () => {
     page.destroy();
   });
 
+  it("leaves off a match a colony never joined, as the recordings list does", async () => {
+    const port = dom({ search: "?watch=1" });
+    const joined = recording({ id: "2026-11-11T10-34-00-000Z-1" }), absent = recording({ id: "2026-11-11T10-34-00-000Z-2", seats: [seat(0, 0, "antwars/gpt-6-astra")] });
+    const page = mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: [absent, joined] })) });
+    const host = port.body.children.at(-1)!;
+    await vi.waitFor(() => expect(host.byClass("aw-tile").map(tile => tile.href)).toEqual([`/?replay=${joined.id}`]));
+    page.destroy();
+  });
+
   it("says when the top matches cannot be read, and keeps reading until the list arrives", async () => {
     // A server whose list cannot be read answers 503 until it can, then serves the list.
     vi.useFakeTimers();

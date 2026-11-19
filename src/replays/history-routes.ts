@@ -327,7 +327,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
  * Follow continuations even after an empty page. GET /matches/<id> -> full JSON.
  * GET /matches/top -> {matches}: the Watch page's hand-picked top matches (top-matches.ts) in list order, each served as
  * GET /matches serves it, and only where its record exists, the public visibility check GET /matches applies passes it and it
- * is not a test match; the records are read once and shared between requests.
+ * is not a test match; a complete record is read once and kept, any other is read again on each request.
  * These paths are independent of /live/* and /replays/*.
  * A listing page is bounded as a whole (60 s) and reads at most MAX_LISTING_STORAGE_PAGES storage pages. A record download has no total-time bound, so a slow but steady
  * client always gets the complete record; it is dropped only after 30 s in which no chunk was handed to the
@@ -356,12 +356,18 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, listed => serve(listed, signal));
   const picks = options.topMatches ?? shippedTopMatchList();
-  /** The listed records' summaries, read once and shared: a stored record does not change, and a failed read is not kept. */
+  /** The listed records' complete summaries: a complete record is never replaced (records/record-store.ts save), so it is kept. */
+  const complete = new Map<string, HistorySummary>();
+  /** The listed records' summaries, shared by the requests waiting on one read. A record that is missing or not complete is
+   * read again on each later request, so one created or replaced since is served; a failed read is not kept. */
   const topSummaries = sharedRead(async () => {
     const signal = AbortSignal.timeout(LIST_DEADLINE_MS);
     try {
-      const found = source.summary === undefined ? [] : await Promise.all(picks.ids.map(id => source.summary!(id, signal)));
-      return found.filter(row => row !== null);
+      const unread = picks.ids.filter(id => !complete.has(id));
+      const found = source.summary === undefined ? [] : await Promise.all(unread.map(id => source.summary!(id, signal)));
+      const fresh = new Map(found.filter(row => row !== null).map(row => [row.id, row]));
+      for (const row of fresh.values()) if (row.status === "complete") complete.set(row.id, row);
+      return picks.ids.flatMap(id => complete.get(id) ?? fresh.get(id) ?? []);
     } catch (error) {
       console.warn(`antwar top matches unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
       throw error;

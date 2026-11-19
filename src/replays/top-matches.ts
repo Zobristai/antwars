@@ -25,11 +25,11 @@ export function shippedTopMatchList(): { ids: string[]; leftOff: string[] } {
   return topMatchIds(JSON.parse(readFileSync(new URL("./top-matches.json", import.meta.url), "utf8")));
 }
 
-/** One read shared by every caller: a caller waits for the running read; a failed read is not kept, so the next caller reads again. */
+/** One read shared by every caller while it runs: a caller waits for the running read; once it settles, the next caller reads again. */
 export function sharedRead<T>(read: () => Promise<T>): () => Promise<T> {
-  let done: Promise<T> | null = null;
+  let running: Promise<T> | null = null;
   return () => {
-    done ??= read().catch(error => { done = null; throw error; });
-    return done;
+    running ??= read().finally(() => { running = null; });
+    return running;
   };
 }
