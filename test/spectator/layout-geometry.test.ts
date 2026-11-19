@@ -8,7 +8,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { build } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CHROMIUM_FLAGS, servePage } from "../../web/capture/browser.ts";
-import { DOCK, LANDING, dockLayoutProblems, landingLayoutProblems, measureLayout, type Box, type LayoutSnapshot } from "./layout-geometry.ts";
+import { SCORE_BAND, SCORE_BAND_SCROLL, LANDING, dockLayoutProblems, scoreBandLayoutProblems, landingLayoutProblems, measureLayout, type Box, type LayoutSnapshot } from "./layout-geometry.ts";
 
 const box = (x: number, y: number, width: number, height: number): Box => ({ x, y, width, height });
 const snapshot = (width: number, height: number, boxes: Record<string, Box>): LayoutSnapshot => ({ viewport: { width, height }, boxes, scrollWidth: width });
@@ -59,6 +59,63 @@ describe("dock geometry on substituted measurements", () => {
   it("allows sub-pixel edges", () => {
     const s = dock.landscape(); s.boxes.pane!.x = 571.6; s.boxes.foot!.y = 347.6;
     expect(dockLayoutProblems(s)).toEqual([]);
+  });
+});
+
+// Labelled geometry fixtures for the approved responsive structure, not capture evidence.
+const scoreBand = (width: number, height: number) => {
+  const narrow = width < 1200;
+  return snapshot(width, height, narrow ? {
+    top: box(0, 0, width, 48), stage: box(0, 56, width, height * .55),
+    board: box(0, 80, width, height * .3),
+    scroll: box(0, 56 + height * .55, width, height * .45 - 56),
+    deck: box(0, 56 + height * .55, width, 900), foot: box(0, 956 + height * .55, width, 100),
+  } : {
+    top: box(12, 0, width - 24, 48), deck: box(12, 56, width - 24, 200),
+    stage: box(12, 272, width - 24, height - 320), board: box(12, 296, width - 24, height - 400),
+    foot: box(12, height - 36, width - 24, 36),
+  });
+};
+describe("Score Band geometry on substituted measurements", () => {
+  for (const [width, height] of [[393, 659], [844, 390], [1280, 800]] as const) {
+    it(`accepts the responsive structure at ${width}px and rejects missing, invalid, overflowing and collapsed parts`, () => {
+      const good = scoreBand(width!, height!);
+      expect(scoreBandLayoutProblems(good)).toEqual([]);
+      for (const name of Object.keys(good.boxes)) {
+        const missing = structuredClone(good); missing.boxes[name] = null;
+        expect(scoreBandLayoutProblems(missing)).toContain(`${name}: missing`);
+        const empty = structuredClone(good); empty.boxes[name]!.height = 0;
+        expect(scoreBandLayoutProblems(empty)).toContain(`${name}: empty or invalid box`);
+        const overflow = structuredClone(good); overflow.boxes[name]!.width = width! + 1;
+        expect(scoreBandLayoutProblems(overflow)).toContain(`${name}: outside viewport width`);
+      }
+      const sideways = structuredClone(good); sideways.scrollWidth++;
+      expect(scoreBandLayoutProblems(sideways)).toContain("page: horizontal overflow");
+      const collapsed = structuredClone(good); collapsed.boxes.board!.height = 1;
+      expect(scoreBandLayoutProblems(collapsed)).toContain("board: under a fifth of the viewport");
+      collapsed.boxes.board!.width = width! * .4;
+      expect(scoreBandLayoutProblems(collapsed)).toContain("board: narrower than half the viewport");
+      const offscreen = structuredClone(good); offscreen.boxes.stage!.y = height!;
+      expect(scoreBandLayoutProblems(offscreen)).toContain("stage: outside viewport height");
+    });
+  }
+  it("rejects overlapping or reordered deck, board and footer in either layout", () => {
+    const desktop = scoreBand(1280, 800); desktop.boxes.stage!.y = 100;
+    expect(scoreBandLayoutProblems(desktop)).toContain("deck overlaps or follows stage");
+    const narrow = scoreBand(393, 659); narrow.boxes.deck!.y = 100;
+    expect(scoreBandLayoutProblems(narrow)).toContain("stage overlaps or follows deck");
+    for (const s of [scoreBand(393, 659), scoreBand(1280, 800)]) {
+      s.boxes.foot!.y = 100;
+      expect(scoreBandLayoutProblems(s)).toContain(s.viewport.width < 1200 ? "deck overlaps or follows foot" : "stage overlaps or follows foot");
+    }
+  });
+  it("rejects a scrolling pane over the board, offscreen, or hiding the initial deck", () => {
+    const overlap = scoreBand(393, 659); overlap.boxes.scroll!.y = 100;
+    expect(scoreBandLayoutProblems(overlap)).toContain("scroll: overlaps the board");
+    const absent = scoreBand(393, 659); absent.boxes.scroll!.y = 659;
+    expect(scoreBandLayoutProblems(absent)).toContain("scroll: starts below the screen");
+    const hidden = scoreBand(393, 659); hidden.boxes.deck!.y = 700;
+    expect(scoreBandLayoutProblems(hidden)).toContain("deck: not initially visible in scroll region");
   });
 });
 
@@ -124,22 +181,64 @@ describe("headless-browser smoke of the landing and dock pages", () => {
     it(`lays out the dock at ${name} ${width}x${height}`, async () => {
       const { page, errors } = await open("dock", width, height);
       try {
-        expect(dockLayoutProblems(await measureLayout(page, DOCK))).toEqual([]);
+        const selectors = width < 1200 ? { ...SCORE_BAND, scroll: SCORE_BAND_SCROLL } : SCORE_BAND;
+        const initial = await measureLayout(page, selectors);
+        expect(scoreBandLayoutProblems(initial)).toEqual([]);
+        // Below the desktop breakpoint the footer is inside the deliberately scrolling deck.
+        // It must be reachable whole, not merely present outside a clipped scroll container.
+        if (width < 1200) {
+          const scrolling = page.locator(SCORE_BAND_SCROLL);
+          expect(await scrolling.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(0.5);
+          await scrolling.evaluate(node => { node.scrollTop = node.scrollHeight; });
+        }
+        expect(await shownText(page, ".score-band", [".d1-foot"])).not.toEqual(expect.arrayContaining([expect.stringMatching(/missing|not drawn|off screen|cut by/)]));
+        const after = await measureLayout(page, selectors);
+        expect(after.boxes.board).toEqual(initial.boxes.board);
         expect(errors).toEqual([]);
       } finally { await page.context().close(); }
     }, 60_000);
   }
 });
 
-// The line under the board: a recording's state (RECORDING) and Back to live keep their own room beside Bring your agent,
-// each drawn in full inside every box that clips it and on the screen, never squeezed to nothing by Copy.
-describe("the dock's state line under the board", () => {
+// Score Band carries recording state and Back to live in the board frame rather than the retired dock footer.
+// Each remains drawn in full, inside every clipping ancestor and on screen.
+describe("the Score Band recording state and return link", () => {
   for (const { width, height } of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     it(`shows the recording's state and Back to live at ${width}px`, async () => {
       const { page } = await open("dock", width, height);
       try {
-        const shown = await page.evaluate(() => [".d2-mode-label", ".d2-back"].map(selector => {
-          const node = document.querySelector<HTMLElement>(`.d2-foot ${selector}`);
+        const shown = await shownText(page, ".d1-frame", [".d1-mode", ".d1-back"]);
+        expect(shown[0]).toMatch(/^\.d1-mode: RECORDING/);
+        expect(shown[1]).toBe(".d1-back: Back to live");
+      } finally { await page.context().close(); }
+    }, 60_000);
+  }
+});
+
+it("rejects a missing, hidden, offscreen or ancestor-clipped return link on Score Band", async () => {
+  const { page } = await open("dock", 390, 844);
+  try {
+    const back = page.locator(".d1-back");
+    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: Back to live"]);
+    await back.evaluate(node => { node.style.visibility = "hidden"; });
+    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: not drawn"]);
+    await back.evaluate(node => { node.style.visibility = ""; node.style.transform = "translateX(1000px)"; });
+    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: off screen"]);
+    await back.evaluate(node => {
+      node.style.transform = "";
+      const clip = document.createElement("span");
+      clip.style.cssText = "display:block;width:1px;height:20px;overflow:hidden;flex:none";
+      node.before(clip); clip.append(node);
+    });
+    expect((await shownText(page, ".d1-frame", [".d1-back"]))[0]).toMatch(/^\.d1-back: cut by/);
+    await back.evaluate(node => node.remove());
+    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: missing"]);
+  } finally { await page.context().close(); }
+}, 60_000);
+
+function shownText(page: Page, root: string, selectors: string[]) {
+  return page.evaluate(({ root, selectors }) => selectors.map(selector => {
+          const node = document.querySelector<HTMLElement>(`${root} ${selector}`);
           if (!node) return `${selector}: missing`;
           const box = node.getBoundingClientRect();
           if (box.width < 1 || box.height < 1 || getComputedStyle(node).visibility !== "visible") return `${selector}: not drawn`;
@@ -151,10 +250,5 @@ describe("the dock's state line under the board", () => {
             if (box.left < clip.left - 0.5 || box.top < clip.top - 0.5 || box.right > clip.right + 0.5 || box.bottom > clip.bottom + 0.5) return `${selector}: cut by .${[...up.classList].join(".")}`;
           }
           return `${selector}: ${node.textContent?.trim()}`;
-        }));
-        expect(shown[0]).toMatch(/^\.d2-mode-label: RECORDING/);
-        expect(shown[1]).toBe(".d2-back: Back to live");
-      } finally { await page.context().close(); }
-    }, 60_000);
-  }
-});
+        }), { root, selectors });
+}

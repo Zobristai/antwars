@@ -1,8 +1,8 @@
 /**
  * Layout geometry of the visible spectator dock and the landing page, as relations between measured boxes,
  * not CSS source text: a harmless CSS rewrite keeps these relations, a real regression breaks one.
- * The visible dock is the d2 HUD (web/src/ui/hud.ts, ui.css); the .aw-overlays grid that dock.test.ts pins is the
- * overlay root the HUD is built on, not drawn itself once the HUD mounts (web/src/overlays.ts mountHud).
+ * Score Band is the visible HUD on both boards. The legacy dock checker remains for its substituted
+ * geometry regressions; browser checks measure Score Band, including its narrow scroll region.
  */
 import type { Page } from "playwright-core";
 
@@ -16,6 +16,8 @@ export type LayoutSnapshot = {
 };
 
 export const DOCK = { score: ".d2-score", stage: ".d2-stage", foot: ".d2-foot", pane: ".d2-pane" } as const;
+export const SCORE_BAND = { top: ".d1-top", deck: ".d1-deck", stage: ".d1-frame", board: ".d1-window", foot: ".d1-foot" } as const;
+export const SCORE_BAND_SCROLL = ".d1-below";
 export const LANDING = { mast: ".fg-mast", hero: ".fg-hero", records: ".fg-records", agent: ".fg-agent" } as const;
 /** Below this width the dock stacks its pane under the board; at or above it the pane stands beside the board. */
 export const STACKED_BELOW_PX = 700;
@@ -67,6 +69,32 @@ export function dockLayoutProblems(s: LayoutSnapshot): string[] {
     if (pane.y < -EPS || bottom(pane) > s.viewport.height + EPS) problems.push("pane: outside viewport height");
   }
   if (pane.y >= s.viewport.height) problems.push("pane: starts below the screen");
+  return problems;
+}
+
+/** Initial (unscrolled) Score Band geometry: narrow content scrolls below the fixed board, not beside it. */
+export function scoreBandLayoutProblems(s: LayoutSnapshot): string[] {
+  const narrow = s.viewport.width < 1200;
+  const problems = containmentProblems(s, [...Object.keys(SCORE_BAND), ...(narrow ? ["scroll"] : [])]);
+  if (problems.some(p => p.endsWith("missing") || p.includes("invalid"))) return problems;
+  const { deck, stage, board, foot, scroll } = s.boxes as Record<string, Box>;
+  problems.push(...orderProblems(s, narrow ? ["top", "stage", "deck", "foot"] : ["top", "deck", "stage", "foot"]));
+  // The board remains visible without scrolling; the narrow footer is checked again after scrolling to it.
+  for (const name of narrow ? ["top", "stage", "board", "scroll"] : Object.keys(SCORE_BAND)) {
+    const b = s.boxes[name]!;
+    if (b.y < -EPS || bottom(b) > s.viewport.height + EPS) problems.push(`${name}: outside viewport height`);
+  }
+  if (board!.width < s.viewport.width * 0.5) problems.push("board: narrower than half the viewport");
+  if (board!.width * board!.height < s.viewport.width * s.viewport.height * 0.2) problems.push("board: under a fifth of the viewport");
+  if (board!.x < stage!.x - EPS || right(board!) > right(stage!) + EPS || board!.y < stage!.y - EPS || bottom(board!) > bottom(stage!) + EPS) problems.push("board: outside frame");
+  if (narrow) {
+    if (scroll!.y < bottom(stage!) - EPS) problems.push("scroll: overlaps the board");
+    if (scroll!.y >= s.viewport.height) problems.push("scroll: starts below the screen");
+    if (deck!.y < scroll!.y - EPS || deck!.y >= bottom(scroll!)) problems.push("deck: not initially visible in scroll region");
+    for (const [name, b] of [["deck", deck!], ["foot", foot!]] as const) {
+      if (b.x < scroll!.x - EPS || right(b) > right(scroll!) + EPS) problems.push(`${name}: outside scroll width`);
+    }
+  }
   return problems;
 }
 

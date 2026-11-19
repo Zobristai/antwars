@@ -62,7 +62,7 @@ function match(untilTick: number, config: SimConfig = SERVED, inputs = new Map<n
 
 const actions = { hover() {}, trails() {}, tilt() {}, focusMark() {}, select() {}, selectAgent() {}, openSheet() {}, pointOrder() {} } as unknown as HudActions;
 
-function page(deck: boolean, frame: Frame) {
+function page(deck: boolean, frame: Frame, board: "2d" | "3d" = "3d") {
   const port = dom({ search: "" });
   Object.assign(port.win.location, { href: "https://antwars.example/?watch=1", pathname: "/" });
   // Full motion: the HUD draws the exact fill, where reduced motion would round it to quarters.
@@ -73,14 +73,16 @@ function page(deck: boolean, frame: Frame) {
     const node = create(tag);
     Object.defineProperty(node, "innerHTML", { set(markup: string) {
       (node as unknown as ElementPort).html = markup;
-      if (markup.includes('class="d2-pie"')) { const pie = create("circle"); pie.className = "d2-pie"; node.append(pie); }
+      for (const cls of ["d2-pie", "d1-ring-fill"]) if (markup.includes(`class="${cls}"`)) {
+        const pie = create("circle"); pie.className = cls; node.append(pie);
+      }
     } });
     return node;
   };
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const hud = (deck ? mountDeckHud : mountHud)({ doc: port.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
-  hud.update({ frame, connection: "live", board: deck ? "3d" : "2d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView);
+  hud.update({ frame, connection: "live", board: deck ? board : "2d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView);
   return host;
 }
 
@@ -99,13 +101,17 @@ function hudDrawers(frame: Frame) {
 
 /** The deck's economies: each shown cell's label and figure, and the next spawn's spoken words. */
 function deckEconomies(frame: Frame) {
-  const host = page(true, frame);
-  return ([0, 1] as const).map((c) => {
-    const econ = host.byClass("d1-econ").find((e) => e.classes().includes(`c${c}`))!;
-    const cells = Object.fromEntries(econ.byClass("d1-cell").filter((cell) => !cell.hidden && !cell.byClass("d1-next")[0])
-      .map((cell) => [cell.byClass("d1-ml")[0]!.textContent, cell.byClass("d1-mv")[0]!.children[1]!.textContent]));
-    const said = econ.byClass("d1-next")[0]!.byClass("d1-sr").at(-1)!.textContent;
-    return { cells, said };
+  return (["2d", "3d"] as const).flatMap(board => {
+    const host = page(true, frame, board);
+    expect(host.byClass("score-band")).toHaveLength(1);
+    return ([0, 1] as const).map((c) => {
+      const econ = host.byClass("d1-econ").find((e) => e.classes().includes(`c${c}`))!;
+      const cells = Object.fromEntries(econ.byClass("d1-cell").filter((cell) => !cell.hidden && !cell.byClass("d1-next")[0])
+        .map((cell) => [cell.byClass("d1-ml")[0]!.textContent, cell.byClass("d1-mv")[0]!.textContent]));
+      const said = econ.byClass("d1-next")[0]!.byClass("d1-sr").at(-1)!.textContent;
+      const fill = econ.byClass("d1-ring-fill")[0]!.getAttribute("stroke-dasharray");
+      return { cells, said, fill, colony: c };
+    });
   });
 }
 
@@ -118,7 +124,8 @@ function expectCounts(frame: Frame, truths: ReadonlyMap<number, [Truth, Truth]>)
   hudDrawers(frame).forEach((drawer, c) => {
     expect(drawer.pairs).toMatchObject({ Workers: String(t[c]!.workers), Soldiers: String(t[c]!.soldiers), Flyers: String(t[c]!.flyers), Cap: cap.toLocaleString("en") });
   });
-  deckEconomies(frame).forEach((econ, c) => {
+  deckEconomies(frame).forEach((econ) => {
+    const c = econ.colony;
     expect(econ.cells).toMatchObject({ Workers: String(t[c]!.workers), Soldiers: String(t[c]!.soldiers), Flyers: String(t[c]!.flyers), Ants: `${t[c]!.living}/${cap}` });
   });
 }
@@ -139,7 +146,10 @@ function expectFlyerRing(frame: Frame) {
   const hud = hudDrawers(frame)[0]!;
   expect(hud.offset).toBe((100 - 100 * ring).toFixed(1));
   expect(hud.label).toContain("Next flyer hatch");
-  expect(deckEconomies(frame)[0]!.said).toContain("Next flyer hatch");
+  for (const econ of deckEconomies(frame).filter(e => e.colony === 0)) {
+    expect(econ.said).toContain("Next flyer hatch");
+    expect(econ.fill).toBe(`${(100 * stepped(ring)).toFixed(1)} 100`);
+  }
 }
 const livingOf = (frame: Frame, colony: 0 | 1) => { const s = colonyStats(frame)[colony]; return s.workers + s.soldiers + s.flyers; };
 
@@ -224,6 +234,6 @@ describe("flyers on the spectator page's colony displays", () => {
     const t = oldTruths.get(frame.tick)!;
     expect(dials(frame).map((d) => [d.workers, d.soldiers, d.flyers])).toEqual(t.map((c) => [String(c.workers), String(c.soldiers), null]));
     hudDrawers(frame).forEach((drawer) => expect(Object.keys(drawer.pairs)).not.toContain("Flyers"));
-    deckEconomies(frame).forEach((econ) => expect(Object.keys(econ.cells)).toEqual(["Workers", "Soldiers", "Food", "Ants"]));
+    deckEconomies(frame).forEach((econ) => expect(Object.keys(econ.cells)).toEqual(["Workers", "Soldiers", "Food", "Ants", "Queens", "Queen kills"]));
   }, 60_000);
 });
