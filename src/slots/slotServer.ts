@@ -94,8 +94,8 @@ export interface SaveReader<S extends SaveIdentity> {
  * succeeding, it ends an earlier run's match not played.
  */
 export interface SlotHost<S extends SaveIdentity = SaveIdentity> {
-  /** Seat the lobby whose countdown is running; only its identities may join. */
-  seat(lobbyId: string, seats: readonly LobbySeat[], startsAt: number, mode: SlotHolder["mode"]): void | Promise<void>;
+  /** Seat the lobby whose countdown is running; only its identities may join. map: the map its match starts on (SlotHolder.map). */
+  seat(lobbyId: string, seats: readonly LobbySeat[], startsAt: number, mode: SlotHolder["mode"], map?: string): void | Promise<void>;
   /** Start the seated lobby's match; false when it did not start. */
   start(): boolean;
   /** Supersession of a begun match current here: stop, save, then retire. True when the save committed. Called once; the runner then never acts again. */
@@ -335,7 +335,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
       return;
     }
     if (current !== holder.lobbyId) {
-      await host.seat(holder.lobbyId, seatsOf(holder), beginsAt(holder), holder.mode);
+      await host.seat(holder.lobbyId, seatsOf(holder), beginsAt(holder), holder.mode, holder.map);
       if (closed || superseded) return;
       current = holder.lobbyId;
     }

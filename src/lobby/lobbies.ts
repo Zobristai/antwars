@@ -158,6 +158,11 @@ export interface Lobby {
    * is of type test (src/replays/recorded-match-type.ts) and is left out of every public list; its direct links still serve.
    */
   readonly test?: true;
+  /**
+   * Present only on a four-colony test lobby created with a named map (create_lobby map): the id of the quadrants
+   * rotation map its match starts on, instead of the map its seed draws. Every other lobby's map is drawn.
+   */
+  readonly map?: string;
 }
 
 /** A house challenge lobby's label: always unrated, its held seat for one antwars/<handle>. */
@@ -222,6 +227,8 @@ export interface SlotHolder {
   /** The run that began its match; null during the countdown. */
   readonly matchRunId: string | null;
   readonly colonies: readonly (readonly Seat[])[];
+  /** The map its match starts on (Lobby.map); absent where the seed draws it. */
+  readonly map?: string;
 }
 
 export type LobbyRefusal =
@@ -241,7 +248,11 @@ export type LobbyRefusal =
   /** A quadrants queue join, or a four-colony test lobby's creation, while the quadrants map rotation holds no quadrant map. */
   | "no_quadrant_map"
   /** A four-colony lobby created without test: true or of a size other than one agent per colony. */
-  | "test_only";
+  | "test_only"
+  /** A lobby created with a named map that is not a four-colony test lobby: every other lobby's map is drawn. */
+  | "map_test_only"
+  /** A four-colony test lobby created with a map the quadrants map rotation does not hold. */
+  | "invalid_map";
 /** also: a further refusal that applies too, reported with reason (a live-challenge quadrants join while no quadrant map is available). */
 export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal; readonly also?: "no_quadrant_map" };
 
@@ -256,9 +267,10 @@ export interface Lobbies {
   readonly countdownMs: number;
   /**
    * test: a test lobby (Lobby.test); a queue never makes one. mode quadrants, only with test and size 1: a four-colony test
-   * lobby of four one-seat colonies, played as a Free-for-all match, always unrated.
+   * lobby of four one-seat colonies, played as a Free-for-all match, always unrated. map, only on a four-colony test
+   * lobby: the id of a quadrants rotation map its match starts on (Lobby.map); without it the seed draws the map.
    */
-  createLobby(key: string, kind: LobbyKind, size: LobbySize, options?: { readonly test?: boolean; readonly mode?: "quadrants" }): Promise<LobbyOutcome<CreatedLobby>>;
+  createLobby(key: string, kind: LobbyKind, size: LobbySize, options?: { readonly test?: boolean; readonly mode?: "quadrants"; readonly map?: string }): Promise<LobbyOutcome<CreatedLobby>>;
   /**
    * inviteToken is required for a private lobby and ignored for a public one. With
    * colony, the joiner takes a seat in that colony or is refused colony_full and stays
@@ -559,6 +571,7 @@ function toLobby(id: string, fields: Fields, now: number): Lobby {
     ...(fields.challengeId ? { challenge: { kind: "house", heldFor: `${HOUSE_USERNAME}/${fields.heldFor}`, heldColony: HELD_COLONY } } : {}),
     ...matchNames(id, fields),
     ...(fields.test === "true" ? { test: true as const } : {}),
+    ...(fields.mapId ? { map: fields.mapId } : {}),
   };
 }
 
@@ -624,7 +637,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   const now = settings.now ?? Date.now;
   const random = settings.random ?? Math.random;
   // The engine's own four-colony rule: a non-empty rotation of quadrant maps only.
-  const quadrantMapReady = isQuadrantRotation({ ...PUBLIC_CONFIG, terrain: { ...TERRAIN_RULES, maps: settings.quadrantMaps ?? quadrantMatchMaps() } });
+  const quadrantMaps = settings.quadrantMaps ?? quadrantMatchMaps();
+  const quadrantMapReady = isQuadrantRotation({ ...PUBLIC_CONFIG, terrain: { ...TERRAIN_RULES, maps: quadrantMaps } });
   const countdownMs = settings.countdownMs ?? COUNTDOWN_MS;
   const staleHoldGraceMs = settings.staleHoldGraceMs;
 
@@ -1033,6 +1047,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (options.mode !== undefined && !quadrants) return refuse("invalid_mode");
       if (quadrants && (options.test !== true || size !== 1)) return refuse("test_only");
       if (quadrants && !quadrantMapReady) return refuse("no_quadrant_map");
+      // Only a four-colony test lobby names its map; every other lobby's map is drawn as always.
+      if (options.map !== undefined && !quadrants) return refuse("map_test_only");
+      if (options.map !== undefined && !quadrantMaps.some(map => map.id === options.map)) return refuse("invalid_map");
       const creator = await identityOf(key);
       if (!creator) return refuse("unknown_key");
       const id = randomUUID();
@@ -1043,6 +1060,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         rated: "", slot: "", seats: "[]", inviteVerifier: inviteToken ? verifierOf(inviteToken) : "",
         startsAt: "", matchRunId: "", outcome: "", mode: quadrants ? QUADRANTS : "", ...(options.test ? { test: "true" } : {}),
         ...(quadrants ? { colonyNames: JSON.stringify(quadrantColonyNames()) } : {}),
+        ...(options.map !== undefined ? { mapId: options.map } : {}),
       };
       const created = { op: "create", path: lobbyPath(id), fields } as const;
       if (kind === "private") {
@@ -1251,7 +1269,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const fields = lobbyId ? await store.get(lobbyPath(lobbyId)) : null;
       if (!lobbyId || !fields || fields.state !== "holding" || fields.slot !== slot) return null;
       const lobby = toLobby(lobbyId, fields, now());
-      return { lobbyId, mode: lobby.mode, startsAt: lobby.startsAt ?? 0, matchRunId: fields.matchRunId || null, colonies: lobby.colonies };
+      return { lobbyId, mode: lobby.mode, startsAt: lobby.startsAt ?? 0, matchRunId: fields.matchRunId || null, colonies: lobby.colonies,
+        ...(lobby.map === undefined ? {} : { map: lobby.map }) };
     },
 
     async beginMatch(lobbyId, slot, runId, colonyNames) {

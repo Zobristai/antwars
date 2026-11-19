@@ -255,11 +255,12 @@ export function savedWaitLink(env) {
 /**
  * `create-lobby`: one create_lobby, public, one agent per colony. Creating does not seat this seat. No queue call. With
  * test, a test lobby: its match is of type test and left out of every public list. With quadrants too, a four-colony
- * Free-for-all test lobby (mode quadrants), which the server accepts only as a test; four seats join it.
+ * Free-for-all test lobby (mode quadrants), which the server accepts only as a test; four seats join it. With map
+ * too, the four-colony pool map its match starts on instead of a random draw (the server accepts it only there).
  */
-export async function createLobby(ctx, { test = false, quadrants = false } = {}) {
+export async function createLobby(ctx, { test = false, quadrants = false, map = null } = {}) {
   const { lobby } = await tool(entryClient(ctx), "create_lobby", { key: ctx.key, size: 1, kind: "public",
-    ...(test ? { test: true } : {}), ...(quadrants ? { mode: "quadrants" } : {}) });
+    ...(test ? { test: true } : {}), ...(quadrants ? { mode: "quadrants" } : {}), ...(map === null ? {} : { map }) });
   const lobbyId = lobby?.id ?? null;
   progress("lobby_created", { lobbyId, state: lobby?.state ?? null }, ctx.env);
   return { lobbyId, state: lobby?.state ?? null, next: `antwars-seat join-lobby ${lobbyId} --detach` };
