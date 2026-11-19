@@ -740,7 +740,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Keep in sync with DECK_FIRST: the Flyers grid needs 1179 px including gutters. */
 @media (max-width: 1199px) {
-  .score-band.d1-hud { grid-template-rows: 48px 8px auto 8px minmax(0, 1fr); overflow: hidden; }
+  /* The host must retain scrolling access to controls outside the narrow frame; the deck scrolls independently below. */
+  .score-band.d1-hud { grid-template-rows: 48px 8px auto 8px minmax(0, 1fr); overflow: visible; }
   .score-band .d1-frame { grid-row: 3; grid-template-rows: auto var(--d1-window-h) var(--d1-lane); --d1-window-h: min(73vw, 42vh); }
   .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; background: var(--aw-surface); min-height: 0; pointer-events: auto; }
   .score-band .d1-deck, .score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) { display: flex; flex-direction: column; gap: 0; padding: 0 8px; border-radius: 0; box-shadow: none; }

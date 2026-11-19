@@ -51,6 +51,8 @@ export interface HistorySource {
    * each row and filled its missing seat handles from the lobby, so it sees every value the page will serve.
    */
   listed?<Row extends HistorySummary>(rows: readonly Row[]): Promise<Row[]>;
+  /** One record's listing summary, as list() reads it; null where the record is missing or cannot be summarised. */
+  summary?(id: string, signal: AbortSignal): Promise<HistorySummary | null>;
 }
 export function validHistoryPageToken(token: string): boolean {
   return token.length > 0 && token.length <= 2048 && /^[\x21-\x7e]+$/.test(token);
@@ -276,6 +278,14 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
     return body;
   }
   return {
+    async summary(id, signal) {
+      if (!isReplayId(id)) throw new Error("invalid match id");
+      try { return await readSummary(id, await metadataAccessToken(request, signal), signal); }
+      catch (error) {
+        if (!(error instanceof RecordSummaryError) || signal.aborted) throw error;
+        return null;
+      }
+    },
     continuationAfter(id) {
       if (!isReplayId(id)) throw new Error("invalid match continuation");
       return `newest-v1:${id}`;

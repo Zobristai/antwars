@@ -809,3 +809,15 @@ it("constructs an exclusive continuation from a returned public record, not a ra
   expect(page.nextPageToken).toBeNull();
   expect(() => f.source.continuationAfter!("invalid")).toThrow("invalid match continuation");
 });
+
+it("summarises one record by id as a listing page does, and answers null for a missing one", async () => {
+  const f = await fixture((req, res) => {
+    if (req.url?.includes(encodeURIComponent(`${id}.json`))) { res.writeHead(200); res.end(JSON.stringify(record())); }
+    else { res.writeHead(404); res.end(); }
+  });
+  const signal = new AbortController().signal;
+  const summary = await f.source.summary!(id, signal);
+  expect(summary).toMatchObject({ id, startedAt: "2026-10-20T02:00:00.000Z", reason: "time_up" });
+  expect(await f.source.summary!(emptyId, signal)).toBeNull();
+  await expect(f.source.summary!("../x", signal)).rejects.toThrow("invalid match id");
+});

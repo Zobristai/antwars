@@ -6,6 +6,68 @@ import { roster } from "../../../web/src/ui/deck/model.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("lets the outer host scroll to every narrow board control without losing panel scrolling", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const hostCss = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8");
+    const roboto = readFileSync(new URL("../../../node_modules/@expo-google-fonts/roboto/600SemiBold/Roboto_600SemiBold.ttf", import.meta.url)).toString("base64");
+    for (const defaultFontSize of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
+      try {
+        // Half-width viewports exercise the layout produced by 200% desktop zoom.
+        for (const width of [160, 195, 320, 390, 640]) for (const font of ["Roboto", "Liberation Sans"]) {
+          const page = await browser.newPage({ viewport: { width, height: 844 } });
+          try {
+            await page.setContent("<span>Browser default</span>");
+            expect(await page.locator("span").evaluate(e => getComputedStyle(e).fontSize)).toBe(`${defaultFontSize}px`);
+            await page.setContent(`<style>@font-face{font-family:Roboto;font-weight:600;src:url(data:font/ttf;base64,${roboto})}html,body{margin:0;overflow:hidden}:root{--aw-sans:'${font}',sans-serif}${hostCss}${css}</style><div class="aw-hud"><main class="d1 d1-hud score-band"><section class="d1-frame"><div class="sb-metadata"><span class="sb-meta-item">rated match</span></div><div class="d1-window"></div><div class="d1-lane"><div class="d1-caption" data-kind="none"></div><div class="d1-transport" hidden></div><div class="d1-controls" role="group" aria-label="Board controls"><select class="aw-team-view" aria-label="View"><option>Full view</option><option>Very Large Colony</option><option>Lake Hodges Colony</option></select><button class="d1-btn" aria-label="Whole board">□</button><button class="d1-btn" aria-label="Zoom out">−</button><button class="d1-btn" aria-label="Zoom in">+</button><a class="d1-btn d1-btn-board" href="#board">2D</a></div></div></section><div class="d1-below"><section class="d1-deck"><p>Colony details</p><div style="height:1500px;flex:none"></div><button id="panel-end">Last detail</button></section></div></main></div>`);
+            await page.evaluate(() => document.fonts.ready);
+            const host = page.locator(".aw-hud"), button = page.locator(".d1-btn-board");
+            const initial = await button.boundingBox();
+            expect(initial).not.toBeNull();
+            if (initial!.x + initial!.width > width) {
+              const lane = await page.locator(".d1-lane").boundingBox();
+              await page.mouse.move(Math.min(width - 5, 60), lane!.y + lane!.height / 2);
+              await page.mouse.wheel(1000, 0);
+              await expect.poll(() => host.evaluate(e => e.scrollLeft), { timeout: 2000 }).toBeGreaterThan(0);
+              const scrolled = await button.boundingBox();
+              expect(scrolled!.x).toBeGreaterThanOrEqual(0);
+              expect(scrolled!.x + scrolled!.width).toBeLessThanOrEqual(width + 1);
+            }
+            // Keyboard activation and horizontal wheel access must both survive the outer layout boundary.
+            await page.evaluate(() => {
+              document.querySelector<HTMLElement>(".aw-hud")!.scrollLeft = 0;
+              document.querySelectorAll<HTMLElement>(".d1-controls button,.d1-controls a").forEach(e => e.addEventListener("click", event => { event.preventDefault(); e.dataset.activated = "yes"; }));
+            });
+            await page.locator(".aw-team-view").focus();
+            for (const control of await page.locator(".d1-controls button,.d1-controls a").all()) {
+              await page.keyboard.press("Tab");
+              expect(await control.evaluate(e => document.activeElement === e)).toBe(true);
+              const focused = await control.boundingBox();
+              // Chromium may leave a partially visible focused control in place, as it does in the legacy HUD.
+              if (focused!.x < 0 || focused!.x + focused!.width > width + 1) {
+                await page.mouse.move(Math.max(5, Math.min(width - 5, focused!.x + 2)), focused!.y + focused!.height / 2);
+                await page.mouse.wheel(focused!.x < 0 ? -1000 : 1000, 0);
+                await expect.poll(async () => { const r = await control.boundingBox(); return r!.x >= -1 && r!.x + r!.width <= width + 1; }, { timeout: 2000 }).toBe(true);
+              }
+              const box = await control.boundingBox();
+              expect(box!.x).toBeGreaterThanOrEqual(-1);
+              expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+              expect(await control.evaluate(e => { const r = e.getBoundingClientRect(); return e.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })).toBe(true);
+              await page.keyboard.press("Enter");
+              expect(await control.getAttribute("data-activated")).toBe("yes");
+            }
+            await page.evaluate(() => { document.querySelector<HTMLElement>(".aw-hud")!.scrollLeft = 0; });
+            const panel = page.locator(".d1-below");
+            await panel.evaluate(e => { e.scrollTop = e.scrollHeight; });
+            expect(await panel.evaluate(e => e.scrollTop)).toBeGreaterThan(0);
+            const end = await page.locator("#panel-end").boundingBox(), panelBox = await panel.boundingBox();
+            expect(end!.y).toBeGreaterThanOrEqual(panelBox!.y - 1);
+            expect(end!.y + end!.height).toBeLessThanOrEqual(panelBox!.y + panelBox!.height + 1);
+          } finally { await page.close(); }
+        }
+      } finally { await browser.close(); }
+    }
+  }, 60_000);
   it("keeps zoom-narrow score groups readable with the browser default font setting", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     for (const defaultFontSize of [16, 32]) {

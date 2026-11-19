@@ -1,0 +1,728 @@
+{
+ "matches": [
+  {
+   "id": "2026-10-29T09-46-13-711Z-72267345031709",
+   "startedAt": "2026-10-29T09:46:13.711Z",
+   "endedAt": "2026-10-29T10:31:13.903Z",
+   "simulationEndedAt": "2026-10-29T10:31:13.711Z",
+   "winner": 1,
+   "reason": "time_up",
+   "decidedBy": "kills",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "antigravity/gemini-4-argon",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/gemini-4-argon",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "meta-ai/muse-wonder-1.0",
+     "thinkingLevel": "max",
+     "serviceTier": null,
+     "handle": "antwars/muse-wonder-1-0",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 11-25",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-12T22-07-44-941Z-84402175061029",
+   "startedAt": "2026-11-12T22:07:44.941Z",
+   "endedAt": "2026-11-12T23:07:44.962Z",
+   "simulationEndedAt": "2026-11-12T23:07:44.941Z",
+   "winner": 1,
+   "reason": "time_up",
+   "decidedBy": "kills",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-terra",
+     "thinkingLevel": "high",
+     "serviceTier": "fast",
+     "handle": "kain",
+     "startRating": {
+      "rating": 1500,
+      "rd": 350,
+      "ratedMatches": 0
+     }
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "openai/gpt-6.1-terra",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-1-terra-max-fast",
+     "startRating": {
+      "rating": 1984.3115997017012,
+      "rd": 107.29530701006401,
+      "ratedMatches": 25
+     }
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": false,
+   "modelIndex": false,
+   "matchType": {
+    "kind": "challenge",
+    "size": 1
+   }
+  },
+  {
+   "id": "2026-10-29T20-45-46-472Z-219406114122607",
+   "startedAt": "2026-10-29T20:45:46.472Z",
+   "endedAt": "2026-10-29T21:10:47.591Z",
+   "simulationEndedAt": "2026-10-29T21:10:47.672Z",
+   "winner": 0,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-sol",
+     "thinkingLevel": "xhigh",
+     "serviceTier": null,
+     "handle": "antwars/gpt-6-1-sol-xhigh",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "anthropic/claude-opus-5-5",
+     "thinkingLevel": "medium",
+     "serviceTier": null,
+     "handle": "antwars/claude-opus-5-5-medium",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 11-25",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-05T02-31-55-439Z-278382556212171",
+   "startedAt": "2026-11-05T02:31:55.439Z",
+   "endedAt": "2026-11-05T03:15:19.728Z",
+   "simulationEndedAt": "2026-11-05T03:15:19.739Z",
+   "winner": 0,
+   "reason": "sustained_territory",
+   "decidedBy": "territory",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 0,
+     "modelLabel": "openai/gpt-6.1-terterra",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-1-terra-max-fast",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-terra",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "kain",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": false,
+   "modelIndex": false,
+   "matchType": {
+    "kind": "challenge",
+    "size": 1
+   }
+  },
+  {
+   "id": "2026-11-07T08-06-22-562Z-50395239643074",
+   "startedAt": "2026-11-07T08:06:22.562Z",
+   "endedAt": "2026-11-07T08:36:22.476Z",
+   "simulationEndedAt": "2026-11-07T08:36:22.562Z",
+   "winner": 0,
+   "reason": "time_up",
+   "decidedBy": "kills",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "mistral/mistral-large-4",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/mistral-large-4",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "openai/gpt-6-luna",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-luna",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 26-30",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-12T13-16-16-560Z-92053131227227",
+   "startedAt": "2026-11-12T13:16:16.560Z",
+   "endedAt": "2026-11-12T13:41:45.323Z",
+   "simulationEndedAt": "2026-11-12T13:41:45.360Z",
+   "winner": 1,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 0,
+     "modelLabel": "openai/gpt-6-astra",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-astra",
+     "startRating": {
+      "rating": 1500,
+      "rd": 350,
+      "ratedMatches": 0
+     }
+    },
+    {
+     "seat": 1,
+     "colony": 1,
+     "modelLabel": "kimi-coding/k3.1-pro-highspeed",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/k3-1-pro-highspeed",
+     "startRating": {
+      "rating": 1500,
+      "rd": 350,
+      "ratedMatches": 0
+     }
+    },
+    {
+     "seat": 2,
+     "colony": 0,
+     "modelLabel": "openai/gpt-6-astra",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-astra",
+     "startRating": {
+      "rating": 1500,
+      "rd": 350,
+      "ratedMatches": 0
+     }
+    },
+    {
+     "seat": 3,
+     "colony": 1,
+     "modelLabel": "kimi-coding/k3.1-pro-highspeed",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/k3-1-pro-highspeed",
+     "startRating": {
+      "rating": 1500,
+      "rd": 350,
+      "ratedMatches": 0
+     }
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 2
+   },
+   "harnessPhase": {
+    "phase": "from round 31 onward",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-11T18-07-20-354Z-104214293473184",
+   "startedAt": "2026-11-11T18:07:20.354Z",
+   "endedAt": "2026-11-11T18:33:30.687Z",
+   "simulationEndedAt": "2026-11-11T18:33:30.754Z",
+   "winner": 0,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "anthropic/claude-opus-5-5",
+     "thinkingLevel": "xhigh",
+     "serviceTier": null,
+     "handle": "antwars/claude-opus-5-5-xhigh",
+     "startRating": {
+      "rating": 1847.266505182429,
+      "rd": 107.98181012736839,
+      "ratedMatches": 25
+     }
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "anthropic/claude-fable-5-2",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/claude-fable-5-2-high",
+     "startRating": {
+      "rating": 1524.2712929188228,
+      "rd": 138.47600415960594,
+      "ratedMatches": 11
+     }
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "from round 31 onward",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-07T07-52-55-478Z-255927726434032",
+   "startedAt": "2026-11-07T07:52:55.478Z",
+   "endedAt": "2026-11-07T08:21:22.705Z",
+   "simulationEndedAt": "2026-11-07T08:21:22.778Z",
+   "winner": 1,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-sol",
+     "thinkingLevel": "high",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-1-sol-high-fast",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "abliteration/abliterated-model-large-v2",
+     "thinkingLevel": "max",
+     "serviceTier": null,
+     "handle": "antwars/abliterated-large-v2",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 26-30",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-10T14-01-58-330Z-182628900523341",
+   "startedAt": "2026-11-10T14:01:58.330Z",
+   "endedAt": "2026-11-10T14:41:04.929Z",
+   "simulationEndedAt": "2026-11-10T14:41:04.830Z",
+   "winner": 0,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-sol",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-1-sol",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "anthropic/claude-fable-5-2",
+     "thinkingLevel": "max",
+     "serviceTier": null,
+     "handle": "antwars/claude-fable-5-2",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "from round 31 onward",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-10-29T10-14-31-625Z-211574550236048",
+   "startedAt": "2026-10-29T10:14:31.625Z",
+   "endedAt": "2026-10-29T10:50:36.653Z",
+   "simulationEndedAt": "2026-10-29T10:50:36.725Z",
+   "winner": 0,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "xiaomi-token-plan-sgp/mimo-v2.6-flash",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/mimo-v2-6-flash",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "openai/gpt-6.1-sol",
+     "thinkingLevel": "xhigh",
+     "serviceTier": null,
+     "handle": "antwars/gpt-6-1-sol-xhigh-fast",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 11-25",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-10-29T09-19-27-089Z-276387392887237",
+   "startedAt": "2026-10-29T09:19:27.089Z",
+   "endedAt": "2026-10-29T09:53:41.934Z",
+   "simulationEndedAt": "2026-10-29T09:53:41.989Z",
+   "winner": 0,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-sol",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/gpt-6-1-sol-high",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "anthropic/claude-opus-5-5",
+     "thinkingLevel": "xhigh",
+     "serviceTier": null,
+     "handle": "antwars/claude-opus-5-5-xhigh",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 11-25",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-07T17-13-05-118Z-75348354216183",
+   "startedAt": "2026-11-07T17:13:05.118Z",
+   "endedAt": "2026-11-07T17:23:44.942Z",
+   "simulationEndedAt": "2026-11-07T17:23:45.018Z",
+   "winner": 1,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "openai/gpt-6.1-sol",
+     "thinkingLevel": "xhigh",
+     "serviceTier": null,
+     "handle": "antwars/gpt-6-1-sol-xhigh",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "anthropic/claude-sonnet-5-5",
+     "thinkingLevel": "max",
+     "serviceTier": null,
+     "handle": "antwars/claude-sonnet-5-5",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 26-30",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-12T05-49-59-134Z-8133615735645",
+   "startedAt": "2026-11-12T05:49:59.134Z",
+   "endedAt": "2026-11-12T06:08:50.124Z",
+   "simulationEndedAt": "2026-11-12T06:08:50.134Z",
+   "winner": 0,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "kimi-coding/k3.1-pro-highspeed",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/k3-1-pro-highspeed",
+     "startRating": {
+      "rating": 1713.7434985072455,
+      "rd": 95.22803190951446,
+      "ratedMatches": 26
+     }
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "antigravity/gemini-4-carbon",
+     "thinkingLevel": "low",
+     "serviceTier": null,
+     "handle": "antwars/gemini-4-carbon-low",
+     "startRating": {
+      "rating": 1447.496199080278,
+      "rd": 152.43003523150364,
+      "ratedMatches": 10
+     }
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "from round 31 onward",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-11T07-06-37-410Z-255898279819908",
+   "startedAt": "2026-11-11T07:06:37.410Z",
+   "endedAt": "2026-11-11T07:36:37.391Z",
+   "simulationEndedAt": "2026-11-11T07:36:37.410Z",
+   "winner": 0,
+   "reason": "time_up",
+   "decidedBy": "kills",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "antigravity/gemini-4-carbon",
+     "thinkingLevel": "medium",
+     "serviceTier": null,
+     "handle": "antwars/gemini-4-carbon-medium",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "antigravity/gemini-4-carbon",
+     "thinkingLevel": "low",
+     "serviceTier": null,
+     "handle": "antwars/gemini-4-carbon-low",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "from round 31 onward",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-11-10T12-34-39-940Z-54490564047666",
+   "startedAt": "2026-11-10T12:34:39.940Z",
+   "endedAt": "2026-11-10T13:02:34.436Z",
+   "simulationEndedAt": "2026-11-10T13:02:34.440Z",
+   "winner": 1,
+   "reason": "queens_killed",
+   "decidedBy": "queens_killed",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "kimi-coding/k3.1-pro-highspeed",
+     "thinkingLevel": "high",
+     "serviceTier": null,
+     "handle": "antwars/k3-1-pro-highspeed",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "anthropic/claude-fable-5-2",
+     "thinkingLevel": "max",
+     "serviceTier": null,
+     "handle": "antwars/claude-fable-5-2",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [],
+   "rated": true,
+   "modelIndex": true,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "from round 31 onward",
+    "possibleEffortMismatch": false
+   }
+  },
+  {
+   "id": "2026-10-26T13-21-00-704Z-168781905184122",
+   "startedAt": "2026-10-26T13:21:00.704Z",
+   "endedAt": "2026-10-26T13:51:00.645Z",
+   "simulationEndedAt": "2026-10-26T13:51:00.704Z",
+   "winner": 0,
+   "reason": "time_up",
+   "decidedBy": "kills",
+   "seats": [
+    {
+     "seat": 0,
+     "colony": 1,
+     "modelLabel": "meta-ai/muse-wonder-full-1.0",
+     "thinkingLevel": "max",
+     "serviceTier": null,
+     "handle": "antwars/muse-wonder-full-1-0",
+     "startRating": null
+    },
+    {
+     "seat": 1,
+     "colony": 0,
+     "modelLabel": "qwen-token-plan/qwen3.8-max",
+     "thinkingLevel": "xhigh",
+     "serviceTier": null,
+     "handle": "antwars/qwen3-8-max",
+     "startRating": null
+    }
+   ],
+   "status": "complete",
+   "unavailable": [
+    "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
+   ],
+   "rated": true,
+   "modelIndex": false,
+   "matchType": {
+    "kind": "index",
+    "size": 1
+   },
+   "harnessPhase": {
+    "phase": "rounds 1-7",
+    "possibleEffortMismatch": false
+   }
+  }
+ ]
+}

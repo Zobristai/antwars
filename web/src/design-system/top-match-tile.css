@@ -1,0 +1,130 @@
+/* The design system's Top matches tile and its grid (docs/design-system.md), built from its tokens (tokens.css).
+   The grid and tile rules are the design's, as written. The page rules at the end set the design's page edge, spacing and
+   band on the site's shared page frame (pages/chrome.ts), which supplies the top bar, the battle hero, the amber wash and
+   the footer. */
+
+/* ---- the grid: 4 x 4 from 46.125rem, 2 x 8 under it down to 22.5em (360 px), one column below; every cell the same size */
+.aw-grid { --cols: 4; --gap: var(--aw-space-3); display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-auto-rows: 1fr; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
+.aw-grid > li { display: grid; min-width: 0; margin: 0; padding: 0; }
+
+/* ---- the tile: five fixed rows, the same on every tile; every tile in the grid as tall as the tallest */
+.aw-tile { --tile-pad: var(--aw-space-2); display: flex; flex-direction: column; min-width: 0; padding: var(--aw-space-3) var(--tile-pad); border: 1px solid var(--aw-line); border-radius: var(--aw-radius-tile); background: var(--aw-surface); font-family: var(--aw-sans); text-decoration: none; color: var(--aw-ink); }
+.aw-tile:hover, .aw-tile:focus-visible { border-color: var(--aw-accent); }
+/* focus keeps a transparent outline, which forced-colours mode draws in the system colour */
+.aw-tile:focus-visible { outline: 2px solid transparent; outline-offset: -1px; }
+/* Every row fits on one line from 320 px at default text size. If text is enlarged or the page zoomed past that,
+   nothing is cut: badges move to the next line as one unit and a long name wraps between words. */
+.aw-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; }
+/* row 1: the game type, the label face */
+.aw-meta { justify-content: space-between; gap: 0 var(--aw-space-2); margin-bottom: var(--aw-space-1); font-size: var(--aw-text-label); line-height: var(--aw-lh-label); font-weight: var(--aw-bold); letter-spacing: var(--aw-track-label); text-transform: uppercase; color: var(--aw-ink-3); }
+.aw-date { justify-content: space-between; gap: 0 var(--aw-space-2); }
+.aw-len { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.aw-keep { white-space: nowrap; }
+/* rows 2 and 3: the player line, as Matches rows draw it */
+.aw-player { column-gap: var(--aw-gap-inline); font-size: var(--aw-text-line); line-height: var(--aw-lh-line); color: var(--aw-ink); }
+.aw-name { min-width: 0; overflow-wrap: anywhere; }
+/* the builder's name, exactly as stored, before the model */
+.aw-name > b { font-weight: var(--aw-bold); color: var(--aw-ink-bright); }
+.aw-tags { flex: none; display: inline-flex; flex-wrap: wrap; gap: var(--aw-space-1); }
+.aw-badge { display: inline-flex; align-items: center; gap: 1px; padding: 0 var(--aw-space-1); border-radius: var(--aw-radius-badge); background: var(--aw-raise); font-size: var(--aw-text-badge-sm); line-height: var(--aw-lh-badge-sm); font-weight: var(--aw-strong); letter-spacing: var(--aw-track-badge); text-transform: uppercase; white-space: nowrap; color: var(--aw-ink-2); }
+.aw-bolt { display: inline-block; flex: none; width: 6px; height: 9px; margin-left: 1px; background: currentColor; clip-path: path("M3.6 0 0 5h2.4L1.8 9 6 3.6H3.4z"); }
+@media (forced-colors: active) { .aw-bolt { forced-color-adjust: none; background: CanvasText; } }
+/* the winner's band: the only colony colour on the tile, drawn as Recordings draws a winner cell */
+.aw-player.is-winner { margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad); background: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); box-shadow: inset 2px 0 0 var(--tile-accent); }
+.aw-player.is-winner .aw-name, .aw-player.is-winner .aw-name > b { color: var(--tile-accent); }
+/* a side fielding two seats: one edge rule per seat at the line's left edge, in the tile's padding, so the line's width is unchanged.
+   The winner's in its colony colour (its single rule doubled); the other side's in ink-3. */
+.aw-player.is-team { --seat-ink: var(--aw-ink-3); margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad); box-shadow: none;
+  background-image: linear-gradient(90deg, var(--seat-ink) 0 2px, transparent 2px 4px, var(--seat-ink) 4px 6px, transparent 6px); background-repeat: no-repeat; }
+.aw-player.is-team.is-winner { --seat-ink: var(--tile-accent); background-color: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); }
+/* a side whose seats differ: one player line per seat group, in first-seat order, each the ordinary player line.
+   The side is one block: on the winner's side one band over all its lines, every name in the colony colour. Each line
+   carries one edge rule per seat it stands for, the line's full height less 0.125rem above and below (16 px in the 20 px line at
+   default text, 32 px in 40 px with doubled text), so the seats read as separate marks beside the names at any text size. */
+.aw-side { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--tile-pad)); }
+.aw-side > .aw-player { padding: 0 var(--tile-pad); --seat-ink: var(--aw-ink-3); background-repeat: no-repeat;
+  background-image: linear-gradient(var(--seat-ink), var(--seat-ink)); background-position: 0 0.125rem; background-size: 2px calc(100% - 0.25rem); }
+.aw-side > .aw-player.is-seats-2 { background-image: linear-gradient(var(--seat-ink), var(--seat-ink)), linear-gradient(var(--seat-ink), var(--seat-ink));
+  background-position: 0 0.125rem, 4px 0.125rem; background-size: 2px calc(100% - 0.25rem), 2px calc(100% - 0.25rem); }
+.aw-side.is-winner { background-color: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); }
+.aw-side.is-winner > .aw-player { --seat-ink: var(--tile-accent); }
+.aw-side.is-winner .aw-name, .aw-side.is-winner .aw-name > b { color: var(--tile-accent); }
+/* a side, or a seat group, of three or four alike seats: still one mark per seat, in the same 6 px column pair the two-seat
+   side uses, so the line's text keeps its x. The marks stand two across and two down, each 2 px wide and half the line less
+   0.1875rem tall (7 px at default text), 0.125rem apart and 0.125rem from the line's top and bottom, so they scale with the line
+   at any text size, filled across then down: three seats leave the lower right mark out. */
+.aw-player.is-seats-3, .aw-player.is-seats-4 { --m: linear-gradient(var(--seat-ink), var(--seat-ink)); background-repeat: no-repeat; }
+.aw-player.is-seats-3 { background-image: var(--m), var(--m), var(--m); background-position: left 0 top 0.125rem, left 4px top 0.125rem, left 0 bottom 0.125rem; background-size: 2px calc(50% - 0.1875rem); }
+.aw-player.is-seats-4 { background-image: var(--m), var(--m), var(--m), var(--m); background-position: left 0 top 0.125rem, left 4px top 0.125rem, left 0 bottom 0.125rem, left 4px bottom 0.125rem; background-size: 2px calc(50% - 0.1875rem); }
+/* rows 4 and 5: how it ended, the date and length */
+.aw-how, .aw-date { font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); color: var(--aw-ink-3); }
+/* rows 4 and 5 sit at the tile's foot: where a tile is taller than its own lines (a side whose seats differ in the grid, or
+   enlarged text), the space falls between row 3 and row 4, so how it ended and the date line up across a row of tiles */
+.aw-how { margin-top: auto; padding-top: var(--aw-space-1); }
+
+/* ---- under the grid: All recordings, a text link; and the list's state while it loads, is empty or failed */
+.aw-after { margin: var(--aw-space-1) 0 0; }
+.aw-link { font-size: var(--aw-text-body); color: var(--aw-ink-2); text-underline-offset: 3px; }
+.aw-status { margin: 0; font-size: var(--aw-text-body); line-height: var(--aw-lh-body); color: var(--aw-ink-2); }
+
+/* ---- the Watch page with no live match: the site's frame, with the design's page edge and spacing.
+   The title and state stand in the page band; the grid sits on the page under it, 16 px down; there is no card. */
+.d1p[data-page="watch"] { --d1p-pad: var(--aw-space-6); }
+.d1p[data-page="watch"] .d1p-main { row-gap: var(--aw-space-4); }
+.d1p[data-page="watch"] .d1p-band { align-items: baseline; gap: var(--aw-space-1) var(--aw-space-6); }
+
+/* ---- compact: under 64rem the page edge and the grid gap tighten; the tile and the type do not change */
+@media (max-width: 63.999rem) {
+  .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-4); }
+  .aw-grid { --gap: var(--aw-space-2); }
+}
+/* ---- the narrowest four columns, 46.125rem to 52rem: the page edge and the gap give the tiles the width the longest player line needs.
+   46.125rem (738 px), not the design's 46rem: in the system font Liberation Sans that line's badge wraps in four columns at 736 and 737 px. */
+@media (min-width: 46.125rem) and (max-width: 51.999rem) {
+  .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-3); }
+  .aw-grid { --gap: var(--aw-space-1); }
+}
+/* ---- phones: 2 x 8, the site's phone frame */
+@media (max-width: 46.124rem) {
+  .aw-grid { --cols: 2; }
+  .d1p[data-page="watch"] .d1p-band { flex-direction: column; align-items: flex-start; }
+  .aw-link { display: inline-flex; align-items: center; min-height: var(--aw-tap-touch); }
+}
+/* ---- two columns on a phone, 24.25em to 46.125rem: the page edge 12 px and the gap 4 px, as from 46.125rem to 52rem. The design's 16 and
+   8 px were measured with web fonts; the site draws with the visitor's system fonts, whose widest player line (Liberation Sans)
+   needs 157.4 px where 16 and 8 px give 157. 12 and 4 px give it 163 at 390 px. Under 24.25em the rules below apply. */
+@media (min-width: 24.25em) and (max-width: 46.124rem) {
+  .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-3); }
+  .aw-grid { --gap: var(--aw-space-1); }
+}
+/* ---- two columns on the narrowest phones, 22.5em to 24.25em (360 to 388 px at default text size): the page edge 8 px and the gap 4 px,
+   and the tile takes the flush list's insets below: 2 px on the right and 4 px between a name and its badge, the left inset keeping
+   8 px for the seat rules. At 360 px the widest player line (Liberation Sans) then has 2.6 px to spare. */
+@media (min-width: 22.5em) and (max-width: 24.249em) {
+  .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-2); }
+  .aw-grid { --gap: var(--aw-space-1); }
+  .aw-tile { padding-right: 2px; }
+  .aw-player { column-gap: var(--aw-space-1); }
+  .aw-player.is-winner, .aw-player.is-team, .aw-side { margin-right: -2px; }
+  .aw-player.is-winner, .aw-player.is-team, .aw-side > .aw-player { padding-right: 2px; }
+}
+/* ---- phones narrower than 360 px and zoomed pages, under 22.5em: one column, so every line keeps its one line down to 320 px.
+   em, not px, so it also follows a larger default text size and page zoom. */
+@media (max-width: 22.499em) {
+  .aw-grid { --cols: 1; }
+  /* one column: the page edge narrows to 8 px, the tile's own inset, so a 390 phone at 200 % zoom (195 CSS px) gives the line
+     161 px and a 320 phone with doubled text 286 px: the 2v2 line keeps its one line in both */
+  .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-2); }
+}
+/* ---- under 12em (192 px at default text size; 384 px with text doubled): the frame gives the line its width. The page edge
+   goes to 0 and the tiles lie flush as a list: no side border or corner, a full-width rule between them. The left inset keeps
+   8 px, which holds the seat rules; the right inset is 2 px; the player line's name-to-badge gap is 4 px. A 160 CSS px page
+   then gives each line 150 px, and the longest 2v2 line keeps its one line. */
+@media (max-width: 11.999em) {
+  .d1p[data-page="watch"] { --d1p-pad: 0px; }
+  .d1p[data-page="watch"] :is(.d1p-band, .aw-after, .aw-status, .d1p-end, .d1p-foot) { padding-left: var(--aw-space-2); padding-right: var(--aw-space-2); }
+  .aw-tile { padding-right: 2px; border-width: 1px 0; border-radius: 0; }
+  .aw-player { column-gap: var(--aw-space-1); }
+  .aw-player.is-winner, .aw-player.is-team, .aw-side { margin-right: -2px; }
+  .aw-player.is-winner, .aw-player.is-team, .aw-side > .aw-player { padding-right: 2px; }
+}
