@@ -11,6 +11,7 @@ import type { SeatDetails, WatchRegistry } from "./watch-registry.js";
 import type { StartRating } from "../replays/history.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import { seatRating } from "./seat-rating.js";
+import type { TestRecordings } from "../replays/test-recordings.js";
 
 /**
  * rd and ratedMatches come from the same pre-start read as elo and are present exactly when it is. The stream's identity
@@ -56,6 +57,8 @@ export interface WatchController {
  */
 export function createWatchController(options: {
   accounts: AccountStores; registry: WatchRegistry; slot: string; origin: string; archive?: PrivateArchive;
+  /** Where a test match's recording is marked test before it is published (src/replays/test-recordings.ts). */
+  testRecordings?: TestRecordings;
 }): WatchController {
   const { accounts, registry } = options;
   const prepared = new Map<string, Prepared>();
@@ -128,6 +131,8 @@ export function createWatchController(options: {
           const cancel = () => reject(new Error("Recording publication stopped"));
           ownership.publish(async () => {
             await registry.recordOwners(access.lobbyId, replayId);
+            // A test match's recording is marked before any public list can see it, with or without its lobby.
+            if (access.test) await options.testRecordings?.mark(replayId);
             if (closed) cancel(); else resolve();
           }, cancel);
         });
@@ -189,7 +194,8 @@ export function createWatchController(options: {
         return { ...seat, ...(read === null ? {} : { elo: read.rating, rd: read.rd, ratedMatches: read.ratedMatches }) };
       }));
       if (closed) throw new Error("Spectator server closed");
-      current = { access: { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated, mode: lobby.value.mode }, runId: instance.runId,
+      current = { access: { lobbyId, visibility: lobby.value.kind, rated: lobby.value.rated, mode: lobby.value.mode,
+        ...(lobby.value.test ? { test: true as const } : {}) }, runId: instance.runId,
         bySeat: seatIdentities(members) };
       prepared.set(lobbyId, current);
     },
