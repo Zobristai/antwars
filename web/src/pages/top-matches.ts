@@ -22,8 +22,8 @@ export const TOP_WORDS = {
   show: "Show results",
   hide: "Hide results",
 } as const;
-/** Where this browser remembers whether the visitor chose to show results: "true" shows them; anything else, or storage
- * the browser blocks, hides them. */
+/** Where this browser remembers that the visitor chose to show results: "true" shows them; anything else, no entry, or
+ * storage the browser blocks, hides them. */
 export const RESULTS_KEY = "aw.topMatches.showResults";
 
 /** The visitor's remembered choice; hidden unless they chose to show results. */
@@ -31,8 +31,13 @@ function storedResults(win: Window): TileResults {
   try { return win.localStorage.getItem(RESULTS_KEY) === "true" ? "shown" : "hidden"; } catch { return "hidden"; }
 }
 
+/** Hiding removes the stored choice rather than writing "false": a write that fails (storage full) can then never leave an
+ * earlier "true" behind to show results on the next visit. */
 function storeResults(win: Window, results: TileResults): void {
-  try { win.localStorage.setItem(RESULTS_KEY, String(results === "shown")); } catch { /* blocked: the choice lasts this page */ }
+  try {
+    if (results === "shown") win.localStorage.setItem(RESULTS_KEY, "true");
+    else win.localStorage.removeItem(RESULTS_KEY);
+  } catch { /* blocked: the choice lasts this page */ }
 }
 /** Why the page is not showing a live match, as the band's state line says it. */
 export const TOP_STATE: Record<Fallback, string> = {

@@ -286,13 +286,15 @@ describe("the top-matches page", () => {
     expect(request).toHaveBeenCalledTimes(3);
   });
 
-  /** A browser's storage for this page: what the visitor chose before, or one that refuses every read and write. */
-  const storage = (port: ReturnType<typeof dom>, stored: Record<string, string> | "blocked" = {}) => {
+  /** A browser's storage for this page: what the visitor chose before; one that refuses every read and write; or one that is
+   * full, so it reads and removes but refuses every write. */
+  const storage = (port: ReturnType<typeof dom>, stored: Record<string, string> | "blocked" = {}, full = false) => {
     const items = new Map(stored === "blocked" ? [] : Object.entries(stored));
     const refuse = () => { throw new Error("SecurityError"); };
     (port.win as unknown as { localStorage: unknown }).localStorage = stored === "blocked"
-      ? { getItem: refuse, setItem: refuse }
-      : { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) };
+      ? { getItem: refuse, setItem: refuse, removeItem: refuse }
+      : { getItem: (key: string) => items.get(key) ?? null, removeItem: (key: string) => void items.delete(key),
+        setItem: full ? () => { throw new Error("QuotaExceededError"); } : (key: string, value: string) => void items.set(key, value) };
     return items;
   };
   const reveal = (host: ElementPort) => host.byClass("aw-reveal");
@@ -328,7 +330,19 @@ describe("the top-matches page", () => {
     expect(grid.dataset.results).toBe("hidden");
     expect(winners(host) + host.byClass("aw-how").length).toBe(0);
     expect(text(button[0]!)).toBe(TOP_WORDS.show);
-    expect(items.get(RESULTS_KEY)).toBe("false");
+    expect(items.has(RESULTS_KEY)).toBe(false);
+  });
+
+  it("forgets a choice to show results when the visitor hides them, even where the browser's storage is full", async () => {
+    const port = dom();
+    const items = storage(port, { [RESULTS_KEY]: "true" }, true);
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    const host = port.body.children.at(-1)!;
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    expect(winners(host)).toBe(16);
+    reveal(host)[0]!.click();
+    expect(winners(host)).toBe(0);
+    expect(items.has(RESULTS_KEY)).toBe(false);
   });
 
   it("draws the results from the first draw where this browser chose to show them", async () => {
