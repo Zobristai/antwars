@@ -72,10 +72,11 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   "qwen4-max-low": ["low", null, "Qwen4 Max", ["low"]],
   "qwen4-max-high": ["high", null, "Qwen4 Max", ["high"]],
   "qwen4-max-xhigh": ["xhigh", null, "Qwen4 Max", ["xhigh"]],
-  "gemini-4-neon-low": ["low", null, "Gemini 4 Neon", ["low"]],
-  "gemini-4-neon-medium": ["medium", null, "Gemini 4 Neon", ["medium"]],
+  // Parked: no longer launched, so the retired badge follows the level; high is the one Neon level still played.
+  "gemini-4-neon-low": ["low", null, "Gemini 4 Neon", ["low", "retired"]],
+  "gemini-4-neon-medium": ["medium", null, "Gemini 4 Neon", ["medium", "retired"]],
   "gemini-4-neon-high": ["high", null, "Gemini 4 Neon", ["high"]],
-  "gemini-4-neon-xhigh": ["xhigh", null, "Gemini 4 Neon", ["xhigh"]],
+  "gemini-4-neon-xhigh": ["xhigh", null, "Gemini 4 Neon", ["xhigh", "retired"]],
   // Abliterated and Mistral models at the standard tier, so no Fast badge.
   "abliterated-model-large": ["max", "standard", "Abliterated GLM-5.2", ["max"]],
   "abliterated-model": ["high", "standard", "Abliterated Model", ["high"]],
