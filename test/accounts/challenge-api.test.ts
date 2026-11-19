@@ -273,7 +273,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isRetiredHouse(handle) ? { available: false, reason: RETIRED_REASON } : isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(49);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(45);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
       for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
         "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {

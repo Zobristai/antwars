@@ -56,6 +56,7 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "gpt-6-2-astra-high": ["GPT-6.2 Astra", "high", "fast"],
   "gpt-6-2-astra-xhigh": ["GPT-6.2 Astra", "xhigh", "fast"],
   "gpt-6-2-astra-max": ["GPT-6.2 Astra", "max", "fast"],
+  "gpt-6-2-astra-high-std": ["GPT-6.2 Astra Standard", "high", null],
   "qwen4-max-low": ["Qwen4 Max", "low", null],
   "qwen4-max-high": ["Qwen4 Max", "high", null],
   "qwen4-max-xhigh": ["Qwen4 Max", "xhigh", null],
@@ -92,8 +93,8 @@ describe("House table pinned at main 3cad75d2", () => {
     expect(HOUSE_USERNAME).toBe("antwars");
   });
 
-  it("lists exactly 60 handles, each with its display name, level and tier", () => {
-    expect(Object.keys(HOUSE_LABELS)).toHaveLength(60);
+  it("lists exactly 61 handles, each with its display name, level and tier", () => {
+    expect(Object.keys(HOUSE_LABELS)).toHaveLength(61);
     expect(Object.keys(HOUSE_LABELS)).toEqual(Object.keys(PINNED));
     const shown = Object.fromEntries(Object.entries(HOUSE_LABELS)
       .map(([handle, label]) => [handle, [label.displayName, label.thinkingLevel, label.serviceTier]]));
