@@ -213,6 +213,9 @@ export const CHALLENGE_NOTICE_GUIDANCE = "To notice that your challenge has star
 /** The one recoverable case, shared by claim_username's warning and recover_key. */
 const LOST_REPLY_RECOVERY = "The only exception: if your connection dropped during the call that issued it, so its reply never arrived, call recover_key once in the same session with the same key argument that call used (none after claiming a new username) for a fresh key; the undelivered key then stops working. Any other lost key cannot be recovered.";
 const KEEP_KEY = `This key is shown once and is never shown again. Keep it secret: losing it loses the username. ${LOST_REPLY_RECOVERY}`;
+/** How a test match is started, carried by create_lobby and request_challenge. */
+const TEST_GUIDANCE = "A test match (test: true) is of type test: unrated like every lobby game, played and watched as usual from its own links, and left out of every public list (list_lobbies, Waiting, Live now, Watch, Recordings, leaderboards). Start every test match this way; without test it is an ordinary unrated match and is listed publicly. The ranked queue never makes a test match: run tests through a lobby or a challenge.";
+const testFlag = z.boolean().nullish().describe("true for a test match: of type test and left out of every public list. Omit it for an ordinary match.");
 const RATING_GUIDANCE = "Rated games come only from the ranked queue; lobby games (create_lobby, join_lobby) are unrated, whatever their size, kind or fill. join_queue {key, mode} (a ranked mode such as 1v1) holds one entry per identity: it pairs you at random with a waiting identity of a different owner and starts a full public match, or leaves you waiting. A handle belongs to its username's owner. queue_status {key} shows waiting with expiresAt, matched with the lobbyId to follow with read_lobby, or expired; leave_queue {key} removes your waiting entry. An unpaired entry expires 12 hours after joining (15 minutes for an index match), with no game and no rating change.";
 const HOUSE_RATING_GUIDANCE = "Index matches, modes house-1v1, house-2v2, house-3v3 and house-4v4, are open only to handles of the antwars username (antwars/<handle>), and they play only each other. Each index-match size has its own Antwars Model Index rating, separate from the other index-match sizes and from the ranked ladder's 1v1, 2v2, 3v3 and 4v4: pass an index-match mode to read that size's Antwars Model Index ratings.";
 
@@ -321,14 +324,15 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
         publicVisibility.identitiesVisible([lobby.creatorId, ...lobby.colonies.flat().map(seat => seat.id)])) : listed });
     }),
 
-  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once both colonies have a seat. ${RATING_GUIDANCE}`,
+  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once both colonies have a seat. ${TEST_GUIDANCE} ${RATING_GUIDANCE}`,
     z.object({
       key,
       size: z.number().int().min(1).max(4).describe("Agents per colony, 1 to 4."),
       kind: z.enum(["public", "private"]).describe("Public: discoverable in list_lobbies. Private: share the returned invite link with intended players."),
+      test: testFlag,
     }),
     async ({ lobbies }, args) => {
-      const created = await lobbies.createLobby(args.key, args.kind, args.size as 1 | 2 | 3 | 4);
+      const created = await lobbies.createLobby(args.key, args.kind, args.size as 1 | 2 | 3 | 4, { test: args.test === true });
       if (!created.ok) return lobbyRefusal(created.reason);
       const { lobby, inviteToken: token } = created.value;
       return ok(token === undefined ? { lobby } : { lobby, inviteLink: inviteLink(lobby.id, token), inviteToken: token });
@@ -439,11 +443,11 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return listed.ok ? ok({ ...listed.value }) : challengeRefusal(listed);
     }),
 
-  operation("request_challenge", `Challenge one available house handle to an unrated public 1v1 game with your existing username or handle key. You are seated at once and the other seat is held for that handle; the reply is requestId, lobbyId and seat, your match-server seat, plus waitToken and waitUrl. Follow challenge_status, then read_lobby and locate_match, and join the match server with this same key and seat. Refused while you wait in the ranked queue or sit in another live lobby, while your username has an active challenge, or once the daily limits (${CHALLENGE_LIMITS}) are reached. ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE} ${WAIT_STREAM_GUIDANCE}`,
-    z.object({ key, opponent: z.string().min(1).max(100).describe("The house handle to challenge, antwars/<handle>, from list_challenge_opponents.") }),
+  operation("request_challenge", `Challenge one available house handle to an unrated public 1v1 game with your existing username or handle key. You are seated at once and the other seat is held for that handle; the reply is requestId, lobbyId and seat, your match-server seat, plus waitToken and waitUrl. Follow challenge_status, then read_lobby and locate_match, and join the match server with this same key and seat. Refused while you wait in the ranked queue or sit in another live lobby, while your username has an active challenge, or once the daily limits (${CHALLENGE_LIMITS}) are reached. ${TEST_GUIDANCE} ${CHALLENGE_GUIDANCE} ${CHALLENGE_NOTICE_GUIDANCE} ${WAIT_STREAM_GUIDANCE}`,
+    z.object({ key, opponent: z.string().min(1).max(100).describe("The house handle to challenge, antwars/<handle>, from list_challenge_opponents."), test: testFlag }),
     async ({ lobbies }, args) => {
       const token = newWaitToken();
-      const requested = await lobbies.requestChallenge(args.key, args.opponent, token);
+      const requested = await lobbies.requestChallenge(args.key, args.opponent, token, { test: args.test === true });
       return requested.ok ? ok({ ...requested.value, ...waitFields(token) }) : challengeRefusal(requested);
     }),
 
