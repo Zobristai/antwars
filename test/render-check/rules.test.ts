@@ -201,6 +201,20 @@ describe("render check rules", () => {
     expect(rules(await judged(table(0, true)))).not.toContain("column-start");
   });
 
+  it("judges a phone start line's display: contents cells by their text, failing a date that starts off its column's x", async () => {
+    // As a phone's Recordings rows draw them: the head hidden, and the time and type cells display: contents inside the
+    // start line, so they have no box of their own; their text is judged.
+    const row = (offset: number) => `<li style="display:block;border-top:1px solid #888"><div style="display:flex;flex-wrap:wrap;column-gap:12px">`
+      + `<p data-col="when" style="display:contents"><span style="margin-left:${offset}px">18 Nov</span> <span>09:12</span></p>`
+      + `<p data-col="type" style="display:contents"><span>Index 1v1</span></p></div></li>`;
+    const table = (offset: number) => `<div data-col-table style="width:300px"><div data-col-head style="display:none"><span data-col="when">Time</span>`
+      + `<span data-col="type">Game type</span></div><ol style="display:grid;margin:0;padding:0;list-style:none">${row(0)}${row(0)}${row(offset)}</ol></div>`;
+    expect(rules(await judged(table(0)))).not.toContain("column-start");
+    const off = (await judged(table(6))).failures.filter(f => f.rule === "column-start");
+    expect(off.map(f => [f.text, f.extent])).toEqual([["18 Nov 09:12", 6]]);
+    expect(off[0]!.measure).toContain("the other cells of its column (column when)");
+  });
+
   it("does not hold a cell continuing a line another keyed cell of its row starts, and judges such a table's rows as rows, not tiles", async () => {
     // A phone's start line: the date, then the type after it on the same line, or alone on the next where it does not fit.
     const row = (type: string) => `<li style="display:flex;flex-wrap:wrap;column-gap:12px;width:180px;border-top:1px solid #888">`

@@ -693,8 +693,9 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
 
 /** One player on one line: the username (builders only) and model, then the level chip (Fast as its bolt), the seat count
  * and the cyan rating badge (figure only, its "± RD" on hover, tap or focus), each the one inline gap after the part
- * before it, so the rating stands right after its line in every cell. A part with nothing to show takes no space. No part
- * is cut. A retired handle draws no badge here: a recording is history, so its name's title and screen-reader text say it
+ * before it, so the rating stands right after its line in every cell. A part with nothing to show takes no space. The
+ * line never wraps: one too wide for its cell ends its name in an ellipsis, the name's whole text its title and read in
+ * full. A retired handle draws no badge here: a recording is history, so its name's title and screen-reader text say it
  * instead. */
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");

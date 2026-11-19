@@ -405,7 +405,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     }
     const byKey = new Map<string, { cell: Element; r: DOMRect }[]>();
     for (const cell of table.querySelectorAll("[data-col]")) {
-      if (head?.contains(cell) || !shown(cell)) continue;
+      // A cell drawn as display: contents (a phone's start line) has no box of its own: its shown text is what is judged.
+      if (head?.contains(cell) || (style(cell).display !== "contents" && !shown(cell))) continue;
       const r = first(cell);
       if (!r) continue;
       const key = (cell as HTMLElement).dataset.col!;

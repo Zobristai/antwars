@@ -545,7 +545,7 @@ describe("every Matches player is one line", () => {
       } finally { await tab.close(); }
     });
 
-    it(`never cuts a name past any real length: it breaks inside its cell, its text whole for hover and screen readers, at ${width}px`, async () => {
+    it(`gives way only in the name, past any real length, on one line, keeping its text whole for hover and screen readers, at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
         await tab.setContent(quadrantsPage("m".repeat(32), "long-builder-" + "x".repeat(64)).page);
@@ -553,8 +553,9 @@ describe("every Matches player is one line", () => {
         const lines = (await tab.evaluate(PLAYER_LINES)).filter(line => line.text.startsWith("long-builder-"));
         expect(lines).toHaveLength(16);
         for (const line of lines) {
-          expect(line.nameCut, line.text).toBe(false);
-          expect(line.nameStyle[2]).not.toBe("ellipsis");
+          expect(line.lines, line.text).toBe(1);
+          expect(line.nameCut).toBe(true);
+          expect(line.nameStyle).toEqual(["nowrap", "hidden", "ellipsis"]);
           expect(line.title).toContain("long-builder-" + "x".repeat(64));
           expect(line.inside).toBe(true);
         }

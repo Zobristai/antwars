@@ -557,16 +557,18 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-extra .d1p-rec-slot { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; column-gap: var(--aw-gap-inline); }
 .d1p-rec-slot > .d1p-rec-colony { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 /* A player line: name, then the level chip (Fast as a bolt in it), then ×N, then the rating, each the one 6 px gap after
-   the part before it, all centred on the band. One line at the default text size; under enlarged text a chip or the
-   rating moves whole to the next line and a long name breaks between words: nothing is cut. */
-.d1p-rec-player { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--aw-gap-inline); min-width: 0; max-width: 100%; }
-/* SEAT NAME: 12/16 regular in the ink; a builder's username in bold, the same ink. */
-.d1p-rec-name { min-width: 0; overflow-wrap: break-word; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
+   the part before it, all centred on the band. Always one line: no stored name needs more at the default text size. A
+   line too wide for its cell gives way in the name first, then in the level chip; the count and the rating stay whole. */
+.d1p-rec-player { display: flex; align-items: center; gap: 0 var(--aw-gap-inline); min-width: 0; max-width: 100%; white-space: nowrap; }
+/* SEAT NAME: 12/16 regular in the ink; a builder's username in bold, the same ink. The name (username, then model) is the
+   one part that gives way: where the line is too wide for its cell it ends in an ellipsis, its whole text its title and
+   read in full. */
+.d1p-rec-name { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
 .d1p-rec-name > .d1p-user { font-weight: var(--aw-bold); color: inherit; }
 .d1p-rec-name > .d1p-mname { color: inherit; }
-/* A self-reported level may run to 32 characters: the chip stops at 12em, clipped, its whole text its title. Every real
-   level shows whole. */
-.d1p-rec-player .d1p-tags { flex: none; display: inline-flex; max-width: 12em; overflow: hidden; }
+/* A self-reported level may run to 32 characters: the chip stops at 12em, clipped, and where the name has given all it
+   can, narrower still; its whole text its title. Every real level shows whole. */
+.d1p-rec-player .d1p-tags { flex: 0 1 auto; display: inline-flex; min-width: 0; max-width: 12em; overflow: hidden; }
 /* LEVEL CHIP: 10/14 600 caps on an opaque raised fill, so it looks the same on a winner's band and off it. */
 .d1p-rec-player .d1p-tag {
   margin: 0; padding: 0 3px; border-radius: var(--aw-radius-badge); background: var(--aw-raise); vertical-align: baseline;
