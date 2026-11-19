@@ -56,7 +56,8 @@
   --aw-bar: 48px;
   --aw-hero: 176px;
 }
-/* Touch screens: a 44 px tap target, as web/index.html sets on :root for phones. */
-@media (pointer: coarse) {
+/* A 44 px tap target on touch screens, and wherever web/index.html sets it on :root: phones in portrait (700 px wide or
+   less) and in landscape (500 px tall or less, wider than 500 px). */
+@media (pointer: coarse), (max-width: 700px), (max-height: 500px) and (min-width: 501px) {
   .d1p { --aw-tap: 44px; }
 }

@@ -9,7 +9,8 @@ the Watch page.
 changes no value outside the page: surfaces, ink, rules, the one
 accent and the alert, one colour per colony, the amber wash, the winner's band fill, the type family and its size and line
 height pairs, weights and tracking, a 4 px spacing grid, radii, tap targets and the layout widths. Use a token rather than
-a literal, inside `.d1p`. The tap target `--aw-tap` is 36 px, and 44 px on a touch screen (`pointer: coarse`). Type sizes are in `rem`, so a browser's text-size setting enlarges them, and breakpoints are in `em`, so they
+a literal, inside `.d1p`. The tap target `--aw-tap` is 36 px, and 44 px on a touch screen (`pointer: coarse`) and wherever `web/index.html` sets
+44 px: a window 700 px wide or less, or a phone held sideways (500 px tall or less and wider than 500 px). Type sizes are in `rem`, so a browser's text-size setting enlarges them, and breakpoints are in `em`, so they
 move with it.
 
 ## The Top matches tile
