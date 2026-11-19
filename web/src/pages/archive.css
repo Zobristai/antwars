@@ -297,9 +297,10 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
 .d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
 /* The Matches tables' one badge style, so each colony's player stays on one line: level, rating and result badges alike
-   in 10 px caps, tight tracking and padding; Fast is a bolt inside the level's badge (matches.ts badgeGroup), drawn here
-   so it does not depend on a typeface. The Leaderboard keeps its own badges. */
-:is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 3px; font-size: 10px; letter-spacing: 0.02em; }
+   in 10 px caps, tight tracking and 2 px padding, which keeps the widest real line (a retired model's name, level, Fast,
+   RETIRED and rating) on one line in a wide Recordings slot; Fast is a bolt inside the level's badge (matches.ts
+   badgeGroup), drawn here so it does not depend on a typeface. The Leaderboard keeps its own badges. */
+:is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }
 :is(.d1p-model, .d1p-rec-player) .d1p-tag { line-height: 14px; }
 :is(.d1p-model, .d1p-rec-player) .d1p-tag + .d1p-tag { margin-left: var(--d1p-cell-gap); }
 .d1p-tag.is-fast { padding-right: 2px; }
@@ -550,9 +551,8 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rec-extra { grid-column: 3 / 7; min-width: 0; }
 .d1p-rec-colony { font-size: 11px; font-weight: 700; line-height: 16px; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .d1p-rec-extra .d1p-rec-colony { overflow: hidden; text-overflow: ellipsis; color: var(--aw-ink-3); }
-/* A player, one line: the name, then the badges with the rating at the slot's end. A slot too narrow for both keeps the
-   name whole and drops the badge group, whole, onto a line below it; a badge never breaks inside itself. */
-.d1p-rec-player { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--d1p-cell-gap); min-width: 0; white-space: nowrap; }
+/* A player, one line: the name, then the badges with the rating at the slot's end. */
+.d1p-rec-player { display: flex; align-items: baseline; column-gap: var(--d1p-cell-gap); min-width: 0; white-space: nowrap; }
 .d1p-rec-player + .d1p-rec-player { margin-top: 2px; }
 /* The name (username, then model) is the one part that gives way: past what any real name needs it ends in an ellipsis,
    its whole text its title and read in full. */
