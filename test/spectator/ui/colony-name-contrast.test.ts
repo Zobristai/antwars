@@ -26,7 +26,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
 const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "replay-marks.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 /** The Matches page's stylesheets, as its pages bundle them (pages/chrome.ts, pages/top-bar.ts, colony-palette.ts). */
-const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "design-system/tokens.css", "pages/archive.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "design-system/tokens.css", "design-system/page-edge.css", "pages/archive.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 const COLOURS = SUPERCOLONY_NAMES.map(n => n.colour);
 /** Each colour as colony 0 and as colony 1, and as the winner, in pairs a match can draw. */
 const PAIRS: ColonyNamePair[] = [
@@ -301,13 +301,19 @@ function matchesPage(names: ColonyNamePair | undefined) {
 }
 
 /** The Matches page with a live four-colony (Quadrants) row and one recording won by each of its four colonies. */
-function quadrantsPage(thinkingLevel: string | null = null, longName?: string, perColony?: number) {
+/** The widest player line in the stored public recordings, as the snapshot stores its seat (a builder on its model at max,
+ * one seat, its start rating): the Matches page's tightest line. */
+const WIDEST_STORED_SEAT = { modelLabel: "muse/muse-wonder-1.0", thinkingLevel: "max", serviceTier: null, handle: "kain",
+  startRating: { rating: 1662.2120026057648, rd: 290.2305060910912, ratedMatches: 1 } } as const;
+
+function quadrantsPage(thinkingLevel: string | null = null, longName?: string, perColony?: number, stored?: typeof WIDEST_STORED_SEAT) {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const names = SUPERCOLONY_NAMES.map(n => n.label) as [string, string, string, string];
   const handles = longName ? Array<string>(4).fill(longName) : ["alice", "bob", "cat", "dan"];
-  const seats = handles.flatMap((handle, colony) => Array.from({ length: perColony ?? (thinkingLevel === null ? 1 : 2) }, (_, index) => ({
+  const seats = stored ? ([0, 1, 2, 3] as const).map(colony => ({ seat: colony, colony, ...stored }))
+    : handles.flatMap((handle, colony) => Array.from({ length: perColony ?? (thinkingLevel === null ? 1 : 2) }, (_, index) => ({
     seat: colony * 2 + index, colony: colony as 0 | 1 | 2 | 3, modelLabel: thinkingLevel === null ? null : "openai/gpt-6.1-terra",
     thinkingLevel, serviceTier: thinkingLevel === null ? null : "fast", handle,
     ...(thinkingLevel === null ? {} : { startRating: { rating: 1500, rd: 80, ratedMatches: 12 } }),
@@ -494,7 +500,7 @@ const CELL_SPACING = () => {
 describe("every Matches colony cell keeps one padding on both sides", () => {
   for (const width of [1280, 390]) {
     it(`pads each cell alike on its left and right, and spaces every part of a line by one gap, at ${width}px`, async () => {
-      for (const page of [quadrantsPage("max", "CedarGrove", 1).page, matchesPage(undefined).page]) {
+      for (const page of [quadrantsPage(null, undefined, 1, WIDEST_STORED_SEAT).page, matchesPage(undefined).page]) {
         const tab = await browser.newPage({ viewport: { width, height: 2400 } });
         try {
           await tab.setContent(page);
@@ -519,17 +525,17 @@ describe("every Matches colony cell keeps one padding on both sides", () => {
 
 describe("every Matches player is one line", () => {
   for (const width of [1280, 390]) {
-    it(`keeps username, model, level with Fast, seats and rating on one line, uncut, at ${width}px`, async () => {
+    it(`keeps the widest stored player's username, model, level and rating on one line, uncut, at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
-        // The widest real player on the public list (one seat per colony, so no seat count): a builder, its model, max and
-        // Fast, and its rating; in the face that sets it widest.
-        await tab.setContent(quadrantsPage("max", "CedarGrove", 1).page);
+        // The widest real player on the public list, as stored, in every colony of a four-colony match (the narrowest
+        // columns, Lake Skinner listed); in the face that sets it widest.
+        await tab.setContent(quadrantsPage(null, undefined, 1, WIDEST_STORED_SEAT).page);
         await tab.addStyleTag({ content: 'html, body { margin: 0; } * { font-family: "Liberation Sans", sans-serif !important; }' });
         await tab.evaluate(() => document.fonts.ready);
         const lines = await tab.evaluate(PLAYER_LINES);
-        // Four recordings, a CedarGrove seat in each colony.
-        expect(lines.filter(line => line.text.startsWith("CedarGrove"))).toHaveLength(16);
+        // Four recordings, the stored seat in each colony.
+        expect(lines.filter(line => line.text.startsWith("kain Muse Wonder 1.0"))).toHaveLength(16);
         for (const line of lines) {
           expect(line.lines, line.text).toBe(1);
           expect(line.nameCut, line.text).toBe(false);
@@ -668,6 +674,34 @@ describe("Recordings colony headings stay inside their columns", () => {
       expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     } finally { await tab.close(); }
   });
+});
+
+describe("the Matches page takes the design system's narrow page edge", () => {
+  // From 12em to 24.25em of viewport width the page edge is 8 px, so a 376 px phone's card is 360 px, at least 22rem: each
+  // colony's label stands beside its first line, as at 390, where the edge stays 16 px.
+  for (const [width, edge] of [[376, 8], [390, 16]] as const) {
+    it(`sets the page edge to ${edge} px and keeps each colony label beside its first line at ${width}px`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 2400 } });
+      try {
+        await tab.setContent(quadrantsPage().page);
+        await tab.addStyleTag({ content: "html, body { margin: 0; }" });
+        const view = await tab.evaluate(() => ({
+          edge: document.querySelector(".d1p-main")!.getBoundingClientRect().left + parseFloat(getComputedStyle(document.querySelector(".d1p-main")!).paddingLeft),
+          card: document.querySelector(".d1p-rec4")!.getBoundingClientRect(),
+          slots: [...document.querySelectorAll(".d1p-rec-rows > li > .d1p-rec-slot")].map(slot => {
+            const box = slot.getBoundingClientRect(), player = slot.querySelector(".d1p-rec-player")!.getBoundingClientRect();
+            return { beside: player.left - box.left > parseFloat(getComputedStyle(slot, "::before").width) };
+          }),
+        }));
+        expect(view.edge).toBe(edge);
+        expect(view.card.left).toBe(edge);
+        expect(view.card.width).toBe(width - 2 * edge);
+        expect(view.slots.length).toBeGreaterThan(0);
+        for (const slot of view.slots) expect(slot.beside).toBe(true);
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      } finally { await tab.close(); }
+    });
+  }
 });
 
 describe("Recordings on a phone list only the colonies that played", () => {

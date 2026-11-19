@@ -103,6 +103,8 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   const win = doc.defaultView!;
   const search = win.location.search;
   const frame = mountFrame(doc, host, "matches");
+  // The design system's narrow page edge (design-system/page-edge.css): on the Matches page only, for now.
+  frame.root.dataset.edge = "system";
 
   // ---------------------------------------------------------------- the band: title, then Refresh with its freshness
   const summary = h(doc, "div", "d1p-summary");

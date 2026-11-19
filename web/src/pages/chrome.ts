@@ -5,6 +5,7 @@
 // (one shared container); then the HUD's footer, Rules and "Inspired by" only. Every change is a cut.
 import "../ui/ui.css";
 import "../design-system/tokens.css";
+import "../design-system/page-edge.css";
 import "./archive.css";
 import { INSPIRED_BY_URL } from "../story.ts";
 import { h } from "../ui/dom.ts";
