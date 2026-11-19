@@ -4,6 +4,7 @@
 // width and edges on all three pages, its title and controls in a band at the top and the record cards under it
 // (one shared container); then the HUD's footer, Rules and "Inspired by" only. Every change is a cut.
 import "../ui/ui.css";
+import "../design-system/tokens.css";
 import "./archive.css";
 import { INSPIRED_BY_URL } from "../story.ts";
 import { h } from "../ui/dom.ts";
