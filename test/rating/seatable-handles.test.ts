@@ -27,6 +27,7 @@ const RATED_OUTSIDE_DRAW: readonly string[] = [
   "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high",
   "gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh",
   "gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
+  "gpt-6-2-astra-high-std",
   "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh",
 ];
 
@@ -69,6 +70,7 @@ describe("every seatable handle has a HOUSE_LABELS row", () => {
     ["qwen4-max-low", "Qwen4 Max", "low"],
     ["qwen4-max-high", "Qwen4 Max", "high"],
     ["qwen4-max-xhigh", "Qwen4 Max", "xhigh"],
+    ["gpt-6-2-astra-high-std", "GPT-6.2 Astra Standard", "high"],
   ])("names %s %s at %s with no tier", (handle, name, level) => {
     expect(SEATABLE).toContain(handle);
     expect(houseDisplayName(`antwars/${handle}`)).toBe(name);

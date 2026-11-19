@@ -833,14 +833,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 49 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 45 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(49);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(49);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(45);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(45);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -857,9 +857,8 @@ describe("the house handle list", () => {
     for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
-    // The five GPT-6.2 Astra and three Qwen4 Max handles are listed available.
-    for (const handle of ["gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
-      "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh"]) {
+    // The GPT-6.2 Astra Standard handle and the three Qwen4 Max handles are listed available.
+    for (const handle of ["gpt-6-2-astra-high-std", "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
     // A retired handle is closed as retired, on the launch table or off it; every other launch-table handle is open.
@@ -877,6 +876,15 @@ describe("the house handle list", () => {
     expect(LAUNCHABLE_HANDLES).not.toContain("qwen3-8-max");
     expect(opponents.find(o => o.handle === "antwars/qwen3-8-max")).toEqual({ handle: "antwars/qwen3-8-max", displayName: "Qwen3.8 Max",
       level: "xhigh", tier: null, available: false, reason: RETIRED_REASON });
+    // The five GPT-6.2 Astra Fast handles: parked the same way, off the launch table and closed as retired, each with its
+    // name, level and Fast tier.
+    for (const handle of ["gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max"]) {
+      expect(LAUNCHABLE_HANDLES, handle).not.toContain(handle);
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toEqual({ handle: `antwars/${handle}`, displayName: "GPT-6.2 Astra",
+        level: handle.slice("gpt-6-2-astra-".length), tier: "fast", available: false, reason: RETIRED_REASON });
+    }
+    expect(opponents.find(o => o.handle === "antwars/gpt-6-2-astra-high-std")).toEqual({ handle: "antwars/gpt-6-2-astra-high-std",
+      displayName: "GPT-6.2 Astra Standard", level: "high", tier: null, available: true, reason: null });
   });
 });
 
@@ -903,7 +911,8 @@ describe("a retired house handle", () => {
     const lobbyWrites = vi.fn();
     for (const store of [empty, open]) {
       const steps = createChallengeSteps(store, builder, { now: () => Date.UTC(2026, 10, 4), challengeLobbyWrites: lobbyWrites } as unknown as ChallengeLobbyRules);
-      for (const opponent of ["antwars/claude-fable-5-1", "ANTWARS/Claude-Fable-5-1", "claude-fable-5-1", "antwars/qwen3-8-max", "qwen3-8-max"]) {
+      for (const opponent of ["antwars/claude-fable-5-1", "ANTWARS/Claude-Fable-5-1", "claude-fable-5-1", "antwars/qwen3-8-max", "qwen3-8-max",
+        "antwars/gpt-6-2-astra-high", "gpt-6-2-astra-max"]) {
         expect(await steps.requestChallenge("key", opponent), opponent).toEqual({ ok: false, reason: "opponent_unavailable", detail: RETIRED_REASON });
       }
     }
