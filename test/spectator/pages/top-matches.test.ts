@@ -147,11 +147,21 @@ describe("a top-match tile", () => {
     expect(tile.byClass("aw-how").map(text)).toEqual(["Queens killed"]);
   });
 
-  it("words a free-for-all's ending without its leading last colony standing, keeping the rest of the site's words", () => {
+  it("shows a two-colony ending without its tie-break step, keeping the full words in its accessible name", () => {
+    const { doc } = dom();
+    const tile = topMatchTile(doc, recording({ reason: "time_up", decidedBy: "food_delivered" }), "") as unknown as ElementPort;
+    expect(tile.byClass("aw-how").map(text)).toEqual(["Time-up"]);
+    expect(link(tile).getAttribute("aria-label")).toContain("Time-up · decided on food delivered");
+  });
+
+  it("words an ending without its tie-break step, and a free-for-all's without its leading last colony standing", () => {
     expect(tileEnding("Last colony standing · queens killed", 4)).toBe("Queens killed");
     expect(tileEnding("Last colony standing · seats inactive", 4)).toBe("Seats inactive");
-    expect(tileEnding("Time-up · decided on kills", 4)).toBe("Time-up · decided on kills");
+    expect(tileEnding("Time-up · decided on kills", 4)).toBe("Time-up");
+    expect(tileEnding("Queens killed · decided on food delivered", 4)).toBe("Queens killed");
     expect(tileEnding("Queens killed", 2)).toBe("Queens killed");
+    expect(tileEnding("Queens killed on both sides · decided on ants alive", 2)).toBe("Queens killed on both sides");
+    expect(tileEnding("Time-up · decided on territory", 2)).toBe("Time-up");
   });
 });
 

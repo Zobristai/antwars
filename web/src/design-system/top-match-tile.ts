@@ -14,7 +14,7 @@ import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
 import { badgeWords, hasBadges, type BadgeKinds } from "../leaderboard-page/view.ts";
 import type { Recording } from "../matches-page/data.ts";
 import { colonySeats, seatGroups, whenParts, type PlayerParts, type SeatGroup } from "../pages/model.ts";
-import { LAST_COLONY_STANDING } from "../story.ts";
+import { DECIDED_ON, LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
 
@@ -120,12 +120,15 @@ function listWords(words: readonly string[]): string {
   return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
 }
 
-/** How it ended, as row 4 shows it: the site's own words, but on a free-for-all without the leading "Last colony standing"
- * (the winner's line already says who was left), so the row keeps one line; the accessible name keeps the full words. */
+/** How it ended, as row 4 shows it: the site's own words without the tie-break step it was decided on
+ * (" · decided on kills"), and on a free-for-all also without the leading "Last colony standing" (the winner's line
+ * already says who was left), so the row keeps one line; the accessible name keeps the full words. */
 export function tileEnding(ended: string, colonies: number): string {
+  const step = ended.indexOf(` · ${DECIDED_ON} `);
+  const shown = step === -1 ? ended : ended.slice(0, step);
   const lead = `${LAST_COLONY_STANDING} · `;
-  if (colonies <= 2 || !ended.startsWith(lead)) return ended;
-  const rest = ended.slice(lead.length);
+  if (colonies <= 2 || !shown.startsWith(lead)) return shown;
+  const rest = shown.slice(lead.length);
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 

@@ -161,34 +161,36 @@ export function significant(story: readonly StoryEntry[], now: number, tps = 10)
  */
 /** The first part of a four-colony end where one colony was left standing (or every colony left on one tick). */
 export const LAST_COLONY_STANDING = "Last colony standing";
+/** The words before the tie-break step an end was decided on: "Time-up · decided on kills". */
+export const DECIDED_ON = "decided on";
 
 export function resultHow(r: { reason: StreamResult["reason"] | string; decidedBy: StreamResult["decidedBy"] | string }, multipleQueens: boolean, colonies = 2): string {
   const reason: string = r.reason;
   const on = r.decidedBy.replace(/_/g, " ");
   if (colonies > 2) {
     // One colony left standing, or every colony still in the match left on the same tick and they were ranked.
-    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? `${LAST_COLONY_STANDING} · queens killed` : `Queens killed · decided on ${on}`;
-    if (reason === "idle") return r.decidedBy === "idle" ? `${LAST_COLONY_STANDING} · seats inactive` : `Seats inactive · decided on ${on}`;
+    if (reason === "queens_killed") return r.decidedBy === "queens_killed" ? `${LAST_COLONY_STANDING} · queens killed` : `Queens killed · ${DECIDED_ON} ${on}`;
+    if (reason === "idle") return r.decidedBy === "idle" ? `${LAST_COLONY_STANDING} · seats inactive` : `Seats inactive · ${DECIDED_ON} ${on}`;
   }
   switch (reason) {
     case "queens_killed":
-      return r.decidedBy === "queens_killed" ? "Queens killed" : `Queens killed on both sides · decided on ${on}`;
+      return r.decidedBy === "queens_killed" ? "Queens killed" : `Queens killed on both sides · ${DECIDED_ON} ${on}`;
     case "overrun":
       return multipleQueens ? "Last queen overrun" : "Queen overrun";
     case "double_overrun":
-      return `${multipleQueens ? "Both last queens fell" : "Both queens fell"}${r.decidedBy === "draw" ? "" : ` · decided on ${on}`}`;
+      return `${multipleQueens ? "Both last queens fell" : "Both queens fell"}${r.decidedBy === "draw" ? "" : ` · ${DECIDED_ON} ${on}`}`;
     case "abandoned":
       return "Seat inactive · unrated";
     case "idle":
       return r.decidedBy === "draw" ? "Seats inactive on both sides" : "Seat inactive";
     case "time_up":
-      return `Time-up · decided on ${on}`;
+      return `Time-up · ${DECIDED_ON} ${on}`;
     case "sustained_territory":
       return "Sustained territory lead";
     default: {
       const name = reason.replace(/_/g, " ");
       const label = `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
-      return reason === r.decidedBy ? label : `${label} · decided on ${on}`;
+      return reason === r.decidedBy ? label : `${label} · ${DECIDED_ON} ${on}`;
     }
   }
 }

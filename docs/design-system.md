@@ -25,7 +25,8 @@ Each tile is one link to its match's replay. It plays nothing itself. Every tile
 1. the game type, and for a team match its seats in words ("2 per side");
 2. the winner's side, on a band of its colony's colour, the only colony colour on the tile;
 3. the other side, or in a free-for-all each other side, one under another;
-4. how the match ended;
+4. how the match ended, in the site's own words without the tie-break step it was decided on (" · decided on …"),
+   and on a free-for-all also without the leading "Last colony standing"; the tile's accessible name keeps the full words;
 5. the date, with the match's length on the right.
 
 A player line is the builder's name in bold, exactly as stored, then the model, then the effort badge, with Fast drawn as
