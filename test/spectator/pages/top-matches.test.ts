@@ -1,11 +1,12 @@
 // The Watch page's top matches with no live match, drawn as the design system's Top matches tiles: each tile is one link to
-// its replay and nothing on it plays; every tile has the same five rows in the same order (type, winner, other side, how it
-// ended, date with length); no rating is drawn; a builder is shown by its name as stored; a side fielding two seats says so;
-// and the page says why no live match shows. Test DOM only: never visual evidence.
+// its replay and nothing on it plays; with results shown every tile has the same five rows in the same order (type, winner,
+// other side, how it ended, date with length); with results hidden, the default, no tile carries any result; no rating is
+// drawn; a builder is shown by its name as stored; a side fielding two seats says so; one button shows or hides every
+// result and the browser remembers the choice; and the page says why no live match shows. Test DOM only: never visual evidence.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { tileEnding, topMatchTile } from "../../../web/src/design-system/top-match-tile.ts";
 import type { Recording } from "../../../web/src/matches-page/data.ts";
-import { ALL_RECORDINGS_HREF, TOP_RETRY_MS, TOP_STATE, TOP_WORDS, mountTopMatchesPage } from "../../../web/src/pages/top-matches.ts";
+import { ALL_RECORDINGS_HREF, RESULTS_KEY, TOP_RETRY_MS, TOP_STATE, TOP_WORDS, mountTopMatchesPage } from "../../../web/src/pages/top-matches.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
 type Seat = Recording["seats"][number];
@@ -33,7 +34,7 @@ const rowKinds = (tile: ElementPort) => link(tile).children.map(row => KINDS.fin
 describe("a top-match tile", () => {
   it("is one link to its replay, keeping the board, with no media to play", () => {
     const { doc } = dom();
-    const tile = topMatchTile(doc, recording(), "?board=2d") as unknown as ElementPort;
+    const tile = topMatchTile(doc, recording(), "?board=2d", "shown") as unknown as ElementPort;
     expect(tagged(tile, "a")).toHaveLength(1);
     expect(link(tile).href).toBe("/?replay=2026-11-11T10-34-00-000Z-1&board=2d");
     expect([...tagged(tile, "video"), ...tagged(tile, "img"), ...tagged(tile, "canvas"), ...tagged(tile, "button")]).toEqual([]);
@@ -42,12 +43,12 @@ describe("a top-match tile", () => {
   it("has the five rows in order, the winner first on its colony's band, and no rating anywhere", () => {
     const { doc } = dom();
     for (const r of [recording(), teamMatch(), recording({ winner: null, reason: "time", decidedBy: "time" })]) {
-      const tile = topMatchTile(doc, r, "") as unknown as ElementPort;
+      const tile = topMatchTile(doc, r, "", "shown") as unknown as ElementPort;
       expect(rowKinds(tile)).toEqual(ROWS);
       expect(text(tile)).not.toMatch(/1834|1500/);
       expect(link(tile).getAttribute("aria-label")).not.toMatch(/1834|1500/);
     }
-    const tile = topMatchTile(doc, recording(), "") as unknown as ElementPort;
+    const tile = topMatchTile(doc, recording(), "", "shown") as unknown as ElementPort;
     const players = tile.byClass("aw-player");
     expect(players.map(p => p.classes().includes("is-winner"))).toEqual([true, false]);
     expect(players.map(text)).toEqual(["GPT-6.2 Astralow", "GPT-6.1 Terramax"]);
@@ -59,7 +60,7 @@ describe("a top-match tile", () => {
 
   it("shows a retired model's mark only in the tile's accessible name and tooltip, and Fast as a bolt in the effort badge", () => {
     const { doc } = dom();
-    const tile = topMatchTile(doc, recording(), "") as unknown as ElementPort;
+    const tile = topMatchTile(doc, recording(), "", "shown") as unknown as ElementPort;
     expect(text(tile).toLowerCase()).not.toContain("retired");
     expect(tile.byClass("aw-badge")[0]!.byClass("aw-bolt")).toHaveLength(1);
     const label = link(tile).getAttribute("aria-label")!;
@@ -71,7 +72,7 @@ describe("a top-match tile", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, recording({
       seats: [seat(0, 0, "antwars/gpt-6-1-terra-max-fast"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" })],
-    }), "") as unknown as ElementPort;
+    }), "", "shown") as unknown as ElementPort;
     const winner = tile.byClass("aw-player")[0]!;
     expect(tagged(winner, "b").map(text)).toEqual(["Kain"]);
     expect(winner.byClass("aw-name")[0]!.textContent.startsWith("Kain ")).toBe(true);
@@ -79,7 +80,7 @@ describe("a top-match tile", () => {
 
   it("says a team match fields two seats a side, in the type row and with a seat rule per seat on both lines", () => {
     const { doc } = dom();
-    const tile = topMatchTile(doc, teamMatch(), "") as unknown as ElementPort;
+    const tile = topMatchTile(doc, teamMatch(), "", "shown") as unknown as ElementPort;
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 2 per side"]);
     expect(tile.byClass("aw-player").map(p => p.classes().includes("is-team"))).toEqual([true, true]);
     expect(tile.byClass("aw-player").map(text)).toEqual(["K3.1 Pro Highspeedhigh", "GPT-6 Astramax"]);
@@ -91,7 +92,7 @@ describe("a top-match tile", () => {
     for (const size of [3, 4] as const) {
       const seats = Array.from({ length: size * 2 }, (_, index) =>
         seat(index, index % 2 === 0 ? 0 : 1, index % 2 === 0 ? "antwars/claude-sonnet-5-5" : "antwars/k3-1-pro-highspeed"));
-      const tile = topMatchTile(doc, recording({ matchType: { kind: "index", size }, seats }), "") as unknown as ElementPort;
+      const tile = topMatchTile(doc, recording({ matchType: { kind: "index", size }, seats }), "", "shown") as unknown as ElementPort;
       expect(rowKinds(tile)).toEqual(ROWS);
       expect(tile.byClass("aw-meta").map(text)).toEqual([`Index · ${size} per side`]);
       expect(tile.byClass("aw-player").map(p => p.classes().filter(c => c === "is-team" || c.startsWith("is-seats-"))))
@@ -106,7 +107,7 @@ describe("a top-match tile", () => {
       matchType: { kind: "index", size: 2 },
       seats: [seat(0, 0, "antwars/gpt-6-astra"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
         seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
-    }), "") as unknown as ElementPort;
+    }), "", "shown") as unknown as ElementPort;
     expect(rowKinds(tile)).toEqual(["aw-meta", "aw-side", "aw-player", "aw-how", "aw-date"]);
     const side = tile.byClass("aw-side")[0]!;
     expect(side.classes()).toContain("is-winner");
@@ -124,7 +125,7 @@ describe("a top-match tile", () => {
       seats: [seat(0, 0, "antwars/gpt-6-astra"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
         seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
         seat(4, 0, "antwars/gpt-6-astra"), seat(5, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
-    }), "") as unknown as ElementPort;
+    }), "", "shown") as unknown as ElementPort;
     const lines = tile.byClass("aw-side")[0]!.byClass("aw-player");
     expect(lines.map(line => line.classes().includes("is-seats-2"))).toEqual([true, false]);
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 3 per side"]);
@@ -137,7 +138,7 @@ describe("a top-match tile", () => {
       winner: 2, matchType: { kind: "quadrants", size: 1 },
       colonyNames: ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"],
       seats: ["ann", "bob", "cat", "dan"].map((handle, colony) => seat(colony, colony as 0 | 1, handle, { colony: colony as 0 | 1 | 2 | 3, modelLabel: `${handle}/local` })),
-    }), "") as unknown as ElementPort;
+    }), "", "shown") as unknown as ElementPort;
     expect(rowKinds(tile)).toEqual(["aw-meta", "aw-player", "aw-player", "aw-player", "aw-player", "aw-how", "aw-date"]);
     const players = tile.byClass("aw-player");
     expect(players.map(text)).toEqual(["cat", "ann", "bob", "dan"]);
@@ -149,19 +150,19 @@ describe("a top-match tile", () => {
 
   it("reads the winner as the rest of the site does: none on an abandoned match, the named one on a result with no reason", () => {
     const { doc } = dom();
-    const abandoned = topMatchTile(doc, recording({ reason: "abandoned" }), "") as unknown as ElementPort;
+    const abandoned = topMatchTile(doc, recording({ reason: "abandoned" }), "", "shown") as unknown as ElementPort;
     expect(abandoned.byClass("aw-player").map(p => p.classes().includes("is-winner"))).toEqual([false, false]);
     expect(abandoned.byClass("aw-player").map(text)).toEqual(["GPT-6.1 Terramax", "GPT-6.2 Astralow"]);
     expect(link(abandoned).style.getPropertyValue("--tile-accent")).toBe("");
     expect(link(abandoned).getAttribute("aria-label")).not.toContain(" beat ");
-    const unexplained = topMatchTile(doc, recording({ reason: null }), "") as unknown as ElementPort;
+    const unexplained = topMatchTile(doc, recording({ reason: null }), "", "shown") as unknown as ElementPort;
     expect(unexplained.byClass("aw-player").map(p => p.classes().includes("is-winner"))).toEqual([true, false]);
     expect(link(unexplained).getAttribute("aria-label")).toMatch(/^GPT-6\.2 Astra .* beat GPT-6\.1 Terra/);
   });
 
   it("shows a two-colony ending without its tie-break step, keeping the full words in its accessible name", () => {
     const { doc } = dom();
-    const tile = topMatchTile(doc, recording({ reason: "time_up", decidedBy: "food_delivered" }), "") as unknown as ElementPort;
+    const tile = topMatchTile(doc, recording({ reason: "time_up", decidedBy: "food_delivered" }), "", "shown") as unknown as ElementPort;
     expect(tile.byClass("aw-how").map(text)).toEqual(["Time-up"]);
     expect(link(tile).getAttribute("aria-label")).toContain("Time-up · decided on food delivered");
   });
@@ -174,6 +175,58 @@ describe("a top-match tile", () => {
     expect(tileEnding("Queens killed", 2)).toBe("Queens killed");
     expect(tileEnding("Queens killed on both sides · decided on ants alive", 2)).toBe("Queens killed on both sides");
     expect(tileEnding("Time-up · decided on territory", 2)).toBe("Time-up");
+  });
+});
+
+describe("a top-match tile with results hidden", () => {
+  const hidden = (r: Recording) => topMatchTile(dom().doc, r, "", "hidden") as unknown as ElementPort;
+  /** Nothing in the tile's markup that says who won or how: no winner mark, no colony colour, no ending, no length. */
+  const resultFree = (tile: ElementPort) => {
+    expect(tile.all().filter(node => node.classes().some(c => c === "is-winner" || c === "aw-how" || c === "aw-len"))).toEqual([]);
+    expect(link(tile).style.getPropertyValue("--tile-accent")).toBe("");
+    const label = link(tile).getAttribute("aria-label")!;
+    expect(link(tile).title).toBe(label);
+    expect(`${text(tile)} ${label}`).not.toMatch(/ beat |queens|time-up|killed|standing|decided|\d+ min/i);
+  };
+
+  it("shows the type, every side in colony order and the date, and nothing of the result", () => {
+    const tile = hidden(recording());
+    resultFree(tile);
+    expect(rowKinds(tile)).toEqual(["aw-meta", "aw-player", "aw-player", "aw-date"]);
+    expect(tile.byClass("aw-player").map(text)).toEqual(["GPT-6.1 Terramax", "GPT-6.2 Astralow"]);
+    expect(tile.byClass("aw-date").map(text)).toEqual(["11 Nov 2026"]);
+    expect(link(tile).getAttribute("aria-label"))
+      .toBe("GPT-6.1 Terra (max, Fast) versus GPT-6.2 Astra (low, Fast, retired model), Index · 1v1, 11 Nov 2026");
+  });
+
+  it("draws a team match's seat marks on both sides alike, in colony order", () => {
+    const tile = hidden(teamMatch());
+    resultFree(tile);
+    expect(tile.byClass("aw-player").map(text)).toEqual(["GPT-6 Astramax", "K3.1 Pro Highspeedhigh"]);
+    expect(tile.byClass("aw-player").map(p => p.classes().includes("is-team"))).toEqual([true, true]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^GPT-6 Astra \(max, Fast\), 2 seats versus K3\.1 Pro Highspeed \(high\), 2 seats, Index · 2 per side, 11 Nov 2026$/);
+  });
+
+  it("puts a side whose seats differ in its colony's place, with no band", () => {
+    const tile = hidden(recording({
+      matchType: { kind: "index", size: 2 },
+      seats: [seat(0, 0, "antwars/gpt-6-astra"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra" }),
+        seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
+    }));
+    resultFree(tile);
+    expect(rowKinds(tile)).toEqual(["aw-meta", "aw-player", "aw-side", "aw-date"]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^GPT-6 Astra \(max, Fast\), 2 seats versus Kain \S+ and zed_7 \S+, Index · 2 per side, 11 Nov 2026$/);
+  });
+
+  it("lists a free-for-all's colonies in colony order, none marked", () => {
+    const tile = hidden(recording({
+      winner: 2, matchType: { kind: "quadrants", size: 1 },
+      colonyNames: ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"],
+      seats: ["ann", "bob", "cat", "dan"].map((handle, colony) => seat(colony, colony as 0 | 1, handle, { colony: colony as 0 | 1 | 2 | 3, modelLabel: `${handle}/local` })),
+    }));
+    resultFree(tile);
+    expect(tile.byClass("aw-player").map(text)).toEqual(["ann", "bob", "cat", "dan"]);
+    expect(link(tile).getAttribute("aria-label")).toBe("ann, bob, cat and dan, Free-for-all, 11 Nov 2026");
   });
 });
 
@@ -223,6 +276,7 @@ describe("the top-matches page", () => {
     await vi.advanceTimersByTimeAsync(TOP_RETRY_MS[0]);
     expect(request).toHaveBeenCalledTimes(2);
     expect(host.byClass("aw-tile")).toHaveLength(0);
+    expect(host.byClass("aw-reveal")).toEqual([]);
     ready = true;
     await vi.advanceTimersByTimeAsync(TOP_RETRY_MS[1]);
     expect(request).toHaveBeenCalledTimes(3);
@@ -230,6 +284,84 @@ describe("the top-matches page", () => {
     expect(host.byClass("aw-status")[0]!.hidden).toBe(true);
     await vi.advanceTimersByTimeAsync(TOP_RETRY_MS.at(-1)! * 2);
     expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  /** A browser's storage for this page: what the visitor chose before, or one that refuses every read and write. */
+  const storage = (port: ReturnType<typeof dom>, stored: Record<string, string> | "blocked" = {}) => {
+    const items = new Map(stored === "blocked" ? [] : Object.entries(stored));
+    const refuse = () => { throw new Error("SecurityError"); };
+    (port.win as unknown as { localStorage: unknown }).localStorage = stored === "blocked"
+      ? { getItem: refuse, setItem: refuse }
+      : { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) };
+    return items;
+  };
+  const reveal = (host: ElementPort) => host.byClass("aw-reveal");
+  const winners = (host: ElementPort) => host.byClass("is-winner").length;
+
+  it("hides every result by default, with one button that shows them all, remembered in this browser", async () => {
+    const port = dom();
+    const items = storage(port);
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    const host = port.body.children.at(-1)!;
+    expect(reveal(host)).toEqual([]);
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    const grid = host.byClass("aw-grid")[0]!;
+    expect(grid.dataset.results).toBe("hidden");
+    expect(winners(host) + host.byClass("aw-how").length).toBe(0);
+    const button = reveal(host);
+    expect(button).toHaveLength(1);
+    expect(button[0]!.tag).toBe("button");
+    expect(text(button[0]!)).toBe(TOP_WORDS.show);
+    expect(button[0]!.getAttribute("aria-controls")).toBe(grid.id);
+    expect(host.byClass("aw-band-end")[0]!.children.map(child => child.className)).toEqual(["d1p-state", "aw-reveal"]);
+
+    button[0]!.focus();
+    button[0]!.click();
+    expect(grid.dataset.results).toBe("shown");
+    expect(winners(host)).toBe(16);
+    expect(host.byClass("aw-how")).toHaveLength(16);
+    expect(text(button[0]!)).toBe(TOP_WORDS.hide);
+    expect(button[0]!.focused).toBe(true);
+    expect(items.get(RESULTS_KEY)).toBe("true");
+
+    button[0]!.click();
+    expect(grid.dataset.results).toBe("hidden");
+    expect(winners(host) + host.byClass("aw-how").length).toBe(0);
+    expect(text(button[0]!)).toBe(TOP_WORDS.show);
+    expect(items.get(RESULTS_KEY)).toBe("false");
+  });
+
+  it("draws the results from the first draw where this browser chose to show them", async () => {
+    const port = dom();
+    storage(port, { [RESULTS_KEY]: "true" });
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    const host = port.body.children.at(-1)!;
+    expect(host.byClass("aw-grid")[0]!.dataset.results).toBe("shown");
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    expect(winners(host)).toBe(16);
+    expect(text(reveal(host)[0]!)).toBe(TOP_WORDS.hide);
+  });
+
+  it("hides the results where the browser blocks storage, and still shows them for this page on request", async () => {
+    const port = dom();
+    storage(port, "blocked");
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    const host = port.body.children.at(-1)!;
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    expect(winners(host)).toBe(0);
+    reveal(host)[0]!.click();
+    expect(winners(host)).toBe(16);
+  });
+
+  it("keeps the button beside a new state line", async () => {
+    const port = dom();
+    storage(port);
+    const page = mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    const host = port.body.children.at(-1)!;
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    page.setState("starting");
+    expect(host.byClass("aw-band-end")[0]!.children.map(text)).toEqual([TOP_STATE.starting, TOP_WORDS.show]);
+    page.destroy();
   });
 
   it("says there are no top matches yet when the list is empty, and still links to all recordings", async () => {
@@ -240,6 +372,7 @@ describe("the top-matches page", () => {
     await vi.waitFor(() => expect(host.byClass("aw-status").map(text)).toEqual([TOP_WORDS.empty]));
     expect(host.byClass("aw-status")[0]!.hidden).toBe(false);
     expect(host.byClass("aw-tile")).toHaveLength(0);
+    expect(host.byClass("aw-reveal")).toEqual([]);
     expect(tagged(host.byClass("aw-after")[0]!, "a").map(a => a.href)).toEqual([ALL_RECORDINGS_HREF]);
   });
 
