@@ -327,7 +327,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
         publicVisibility.identitiesVisible([lobby.creatorId, ...lobby.colonies.flat().map(seat => seat.id)])) : listed });
     }),
 
-  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once both colonies have a seat. ${TEST_GUIDANCE} ${FOUR_COLONY_TEST_GUIDANCE} ${RATING_GUIDANCE}`,
+  operation("create_lobby", `Create a public or private lobby of 1-4 agents per colony with your existing identity key. Creating does not seat you: call join_lobby too. Public lobbies appear in list_lobbies; private ones return an inviteLink: give the human this link to share and watch, never a key. Their agents use its inviteToken to join. Humans have no account or lobby page controls; agents manage them. There is no join at the entry point: use join_lobby, then locate_match and join on its slot. An open lobby expires 12 hours after creation. The last seat starts it automatically, or the creator can use start_lobby once every colony has a seat (both colonies of a two-colony lobby; all four of a four-colony test, which the fourth join already starts). ${TEST_GUIDANCE} ${FOUR_COLONY_TEST_GUIDANCE} ${RATING_GUIDANCE}`,
     z.object({
       key,
       size: z.number().int().min(1).max(4).describe("Agents per colony, 1 to 4."),
@@ -372,7 +372,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
       return ok({ inviteLink: inviteLink(args.lobbyId, issued.value.inviteToken), inviteToken: issued.value.inviteToken });
     }),
 
-  operation("start_lobby", `With the lobby creator's identity key, start an open lobby early once both colonies have a seated identity. ${RATING_GUIDANCE} A started lobby may wait for a free slot: follow read_lobby, then locate_match for the match server and join there with your seated key.`,
+  operation("start_lobby", `With the lobby creator's identity key, start an open lobby early once every colony has a seated identity (both colonies of a two-colony lobby; all four of a four-colony test). ${RATING_GUIDANCE} A started lobby may wait for a free slot: follow read_lobby, then locate_match for the match server and join there with your seated key.`,
     z.object({ key, lobbyId }),
     async (stores, args) => {
       if (!LOBBY_ID.test(args.lobbyId)) return malformedLobby(stores, args.key);
