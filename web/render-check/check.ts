@@ -31,7 +31,7 @@ const CHROMIUM_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"
 export const WIDTHS = [1280, 390] as const;
 
 /** How far into its recording a HUD is judged, on the page's stepped clock. */
-export const HUD_PLAY_MS = 10_000;
+export const HUD_PLAY_MS = 600;
 
 /**
  * A surface: a page of the site, or a page that may show a match HUD over a board (hud). On a HUD surface the client's
@@ -157,7 +157,7 @@ async function settle(page: Page, surface: Surface): Promise<{ readiness: BoardR
     readiness = await boardReadiness(page);
     const board = readiness.state === "ready";
     // Play the recording to HUD_PLAY_MS in 100 ms steps of the page's clock, yielding only while its download catches
-    // up, then draw that one frame. Nothing moves after it. (A page with no board, such as Watch showing a list,
+    // up, then draw that one frame (again once what it loads has arrived). Nothing moves after it. (A page with no board, such as Watch showing a list,
     // has nothing to play.)
     if (board) playback = await playRecording(page);
   }
@@ -176,12 +176,35 @@ async function settle(page: Page, surface: Surface): Promise<{ readiness: BoardR
   return { readiness, playback };
 }
 
-/** Play a ready replay to HUD_PLAY_MS (see settle) and report how far it got and whether its HUD is shown. */
+/**
+ * Resolves once the page has had no request in flight for quietMs, or after timeoutMs. Requests are counted from the
+ * call of watchRequests, so start it before what may request.
+ */
+function watchRequests(page: Page): { settled(quietMs?: number, timeoutMs?: number): Promise<void> } {
+  let inFlight = 0;
+  let changed = Date.now();
+  const start = () => { inFlight++; changed = Date.now(); };
+  const end = () => { inFlight = Math.max(0, inFlight - 1); changed = Date.now(); };
+  page.on("request", start); page.on("requestfinished", end); page.on("requestfailed", end);
+  return {
+    async settled(quietMs = 500, timeoutMs = 10_000) {
+      try {
+        for (const until = Date.now() + timeoutMs; Date.now() < until && (inFlight > 0 || Date.now() - changed < quietMs);) await page.waitForTimeout(50);
+      } finally { page.off("request", start); page.off("requestfinished", end); page.off("requestfailed", end); }
+    },
+  };
+}
+
+/**
+ * Play a ready replay to HUD_PLAY_MS (see settle) and report how far it got and whether its HUD is shown. What the
+ * played frame loads (the HUD's icons, the board's shaders) is let finish before that frame is drawn again, at the same
+ * moment, and judged.
+ */
 export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<Playback> {
-  const played = await page.evaluate(async ({ playMs, hudRoot }) => {
+  const requests = watchRequests(page);
+  const stepped = await page.evaluate(async ({ playMs }) => {
     const clock = window as unknown as { __replayTime: number };
     let error: string | null = null;
-    let last = { playbackTick: 0, playbackMs: 0 };
     let startTick: number | null = null;
     try {
       for (let t = 0; t < playMs && !error; t += 100) {
@@ -195,6 +218,15 @@ export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<P
         const tick = window.__antwar.frame(false).playbackTick;
         if (startTick === null && tick > 0) startTick = tick;
       }
+      window.__antwar.frame();
+    } catch (e) { error = String((e as Error)?.message ?? e); }
+    return { error, startTick };
+  }, { playMs });
+  await requests.settled();
+  const played = await page.evaluate(async ({ stepped, hudRoot }) => {
+    let { error } = stepped;
+    let last = { playbackTick: 0, playbackMs: 0 };
+    try {
       last = window.__antwar.frame();
       error ??= window.__antwar.recording()?.error ?? null;
     } catch (e) { error = String((e as Error)?.message ?? e); }
@@ -217,8 +249,8 @@ export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<P
       if (c.overflowY !== "visible" && (box.top < top - 1 || box.bottom > top + e.clientHeight + 1)) cutByContainer = true;
     }
     const hud = !(visible && onScreen) ? "not shown" : cutByContainer ? "clipped" : "shown";
-    return { startTick: startTick ?? last.playbackTick, playbackTick: last.playbackTick, playbackMs: last.playbackMs, hud, error } satisfies Playback;
-  }, { playMs, hudRoot: HUD_ROOT });
+    return { startTick: stepped.startTick ?? last.playbackTick, playbackTick: last.playbackTick, playbackMs: last.playbackMs, hud, error } satisfies Playback;
+  }, { stepped, hudRoot: HUD_ROOT });
   // Styles can still hide all or part of it (clip-path, mask, a clipping box, the board drawn over it): see hudOnScreen.
   return played.hud === "shown" ? { ...played, hud: await hudOnScreen(page) } : played;
 }

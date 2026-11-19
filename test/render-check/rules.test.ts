@@ -236,7 +236,8 @@ describe("render check replay readiness", () => {
 
   /**
    * A stand-in client: its board shows firstTick after `blank` frames of tick 0 and advances ticksPerStep each frame
-   * after that, and the page holds hud as its HUD markup.
+   * after that, and the page holds hud as its HUD markup. playRecording asks for a frame at each of its 10 steps, and
+   * draws the last moment twice: before and after what that frame loads.
    */
   async function play(ticksPerStep: number, hud: string, error: string | null = null, firstTick = 0, blank = 0): Promise<Playback> {
     const page = await browser.newPage();
@@ -275,7 +276,7 @@ describe("render check replay readiness", () => {
     expect(boardProblem(replay, ready, await play(1, '<div class="d1 d1-hud" style="width:300px;height:80px;transform:translateY(-5000px)">Score Band</div>'))).toMatch(/no match HUD was shown/);
     expect(boardProblem(replay, ready, await play(1, '<div class="d2 d2-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;translate:0 -60px">Score</div>'))).toMatch(/no match HUD was shown/);
     const good = await play(1, hud);
-    expect(good).toEqual({ startTick: 1, playbackTick: 11, playbackMs: 1_100, hud: "shown", error: null });
+    expect(good).toEqual({ startTick: 1, playbackTick: 12, playbackMs: 1_200, hud: "shown", error: null });
     expect(boardProblem(replay, ready, good)).toBeNull();
   }, 30_000);
 
@@ -291,7 +292,7 @@ describe("render check replay readiness", () => {
     expect(frozenAfterBlank).toMatchObject({ startTick: 6_000, playbackTick: 6_000 });
     expect(boardProblem(replay, ready, frozenAfterBlank)).toMatch(/still at its first tick \(6000\)/);
     const playing = await play(1, hud, null, 6_000, 3);
-    expect(playing).toMatchObject({ startTick: 6_001, playbackTick: 6_008 });
+    expect(playing).toMatchObject({ startTick: 6_001, playbackTick: 6_009 });
     expect(boardProblem(replay, ready, playing)).toBeNull();
   }, 30_000);
 
