@@ -1,0 +1,6028 @@
+[
+ {
+  "data": "real",
+  "page": "matches",
+  "width": 1280,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 233,
+    "spare": 29
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1809",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 233,
+    "spare": 32.9
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1533",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 233,
+    "spare": 32.9
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1792",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 233,
+    "spare": 30.1
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 233,
+    "spare": 30.1
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 233,
+    "spare": 20.1
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 233,
+    "spare": 17.1
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 233,
+    "spare": 26.1
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 233,
+    "spare": 30.1
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 233,
+    "spare": 17.1
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 233,
+    "spare": 20.1
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   },
+   {
+    "text": "GPT-6.2 Astramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 154.3,
+    "have": 233,
+    "spare": 33.8
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163.3,
+    "have": 233,
+    "spare": 29.9
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 214.3,
+    "have": 233,
+    "spare": 8
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.3,
+    "have": 233,
+    "spare": 11.9
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 219.3,
+    "have": 233,
+    "spare": 5.9
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.4,
+    "have": 233,
+    "spare": 13.6
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 233,
+    "spare": 31.5
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 233,
+    "spare": 22.5
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 233,
+    "spare": 30.2
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 233,
+    "spare": 24.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 233,
+    "spare": 16.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 233,
+    "spare": 31.5
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 233,
+    "spare": 30.2
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 233,
+    "spare": 24.7
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 233,
+    "spare": 22.5
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 233,
+    "spare": 16.7
+   }
+  ],
+  "playerCells": {
+   "cells": 44,
+   "oneLine": 44,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 80,
+   "failingCells": 0,
+   "lines": 44,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 120,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3536,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "matches",
+  "width": 390,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 247,
+    "spare": 33
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1809",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 247,
+    "spare": 36.7
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1533",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 247,
+    "spare": 36.7
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1792",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 247,
+    "spare": 34
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 247,
+    "spare": 34
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 247,
+    "spare": 24.6
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 247,
+    "spare": 21.8
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 247,
+    "spare": 30.3
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 247,
+    "spare": 34
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 247,
+    "spare": 21.8
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 247,
+    "spare": 24.6
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   },
+   {
+    "text": "GPT-6.2 Astramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 154.3,
+    "have": 247,
+    "spare": 37.5
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163.3,
+    "have": 247,
+    "spare": 33.9
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 214.3,
+    "have": 247,
+    "spare": 13.3
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.3,
+    "have": 247,
+    "spare": 16.9
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 219.3,
+    "have": 247,
+    "spare": 11.2
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.4,
+    "have": 247,
+    "spare": 18.5
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 247,
+    "spare": 35.4
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 247,
+    "spare": 26.9
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 247,
+    "spare": 34.1
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 247,
+    "spare": 28.9
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 247,
+    "spare": 21.4
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 247,
+    "spare": 35.4
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 247,
+    "spare": 34.1
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 247,
+    "spare": 28.9
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 247,
+    "spare": 26.9
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 247,
+    "spare": 21.4
+   }
+  ],
+  "playerCells": {
+   "cells": 44,
+   "oneLine": 44,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 44,
+   "failingCells": 0,
+   "lines": 44,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3558,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "leaderboard",
+  "width": 1280,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 6428,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "leaderboard",
+  "width": 390,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 9398,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "landing",
+  "width": 1280,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 233,
+    "spare": 29
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1809",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 233,
+    "spare": 32.9
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1533",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 20,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 30,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     783.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "itemsUnder8PercentSpare": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     783.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "typefaceGlyphs": {
+   "Roboto": 2483,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "real",
+  "page": "landing",
+  "width": 390,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 247,
+    "spare": 33
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1809",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 247,
+    "spare": 36.7
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1533",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 10,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3019,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "real",
+  "page": "matches",
+  "width": 1280,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 233,
+    "spare": 30.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1809",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 233,
+    "spare": 11.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1533",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 233,
+    "spare": 11.8
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1792",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 233,
+    "spare": 8.9
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 233,
+    "spare": 8.9
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 233,
+    "spare": 21.8
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 233,
+    "spare": 18.8
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 233,
+    "spare": 5
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 233,
+    "spare": 8.9
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 233,
+    "spare": 18.8
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 233,
+    "spare": 21.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   },
+   {
+    "text": "GPT-6.2 Astramax Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 203.5,
+    "have": 233,
+    "spare": 12.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.3,
+    "have": 233,
+    "spare": 31.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 210.3,
+    "have": 233,
+    "spare": 9.8
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.3,
+    "have": 233,
+    "spare": 13.6
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 216.3,
+    "have": 233,
+    "spare": 7.2
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 198.4,
+    "have": 233,
+    "spare": 14.8
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 233,
+    "spare": 32
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 233,
+    "spare": 23
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 233,
+    "spare": 30.6
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 233,
+    "spare": 25.1
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 233,
+    "spare": 18.4
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 233,
+    "spare": 32
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 233,
+    "spare": 30.6
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 233,
+    "spare": 25.1
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 233,
+    "spare": 23
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 233,
+    "spare": 18.4
+   }
+  ],
+  "playerCells": {
+   "cells": 44,
+   "oneLine": 44,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 80,
+   "failingCells": 0,
+   "lines": 44,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 120,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3606,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "matches",
+  "width": 390,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 247,
+    "spare": 34.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1809",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 247,
+    "spare": 16.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1533",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 247,
+    "spare": 16.8
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1792",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 247,
+    "spare": 14.1
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 247,
+    "spare": 14.1
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 247,
+    "spare": 26.2
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 247,
+    "spare": 23.4
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 247,
+    "spare": 10.4
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 247,
+    "spare": 14.1
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 247,
+    "spare": 23.4
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 247,
+    "spare": 26.2
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   },
+   {
+    "text": "GPT-6.2 Astramax Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 203.5,
+    "have": 247,
+    "spare": 17.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.3,
+    "have": 247,
+    "spare": 35.5
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 210.3,
+    "have": 247,
+    "spare": 14.9
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.3,
+    "have": 247,
+    "spare": 18.5
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 216.3,
+    "have": 247,
+    "spare": 12.4
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 198.4,
+    "have": 247,
+    "spare": 19.7
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 247,
+    "spare": 35.8
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 247,
+    "spare": 27.3
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 247,
+    "spare": 34.5
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 247,
+    "spare": 29.3
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 247,
+    "spare": 23
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 247,
+    "spare": 35.8
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 247,
+    "spare": 34.5
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 247,
+    "spare": 29.3
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 247,
+    "spare": 27.3
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 247,
+    "spare": 23
+   }
+  ],
+  "playerCells": {
+   "cells": 44,
+   "oneLine": 44,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 44,
+   "failingCells": 0,
+   "lines": 44,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3628,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "leaderboard",
+  "width": 1280,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 6463,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "leaderboard",
+  "width": 390,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 9433,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "real",
+  "page": "landing",
+  "width": 1280,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 233,
+    "spare": 30.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1809",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 233,
+    "spare": 11.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1533",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 20,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 30,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     783.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "itemsUnder8PercentSpare": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     783.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "typefaceGlyphs": {
+   "Roboto": 2504,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "real",
+  "page": "landing",
+  "width": 390,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 247,
+    "spare": 34.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1809",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 247,
+    "spare": 16.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1533",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 10,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3040,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "matches",
+  "width": 1280,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Unlisted model1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 118.8,
+    "have": 233,
+    "spare": 49
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 233,
+    "spare": 26.1
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 233,
+    "spare": 29
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1809",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 233,
+    "spare": 32.9
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1533",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 233,
+    "spare": 32.9
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1792",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 233,
+    "spare": 30.1
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 233,
+    "spare": 30.1
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 233,
+    "spare": 20.1
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 233,
+    "spare": 17.1
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 233,
+    "spare": 26.1
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 233,
+    "spare": 30.1
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 233,
+    "spare": 17.1
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 233,
+    "spare": 20.1
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 233,
+    "spare": 34.3
+   },
+   {
+    "text": "GPT-6.2 Astramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 154.3,
+    "have": 233,
+    "spare": 33.8
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163.3,
+    "have": 233,
+    "spare": 29.9
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 214.3,
+    "have": 233,
+    "spare": 8
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.3,
+    "have": 233,
+    "spare": 11.9
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 219.3,
+    "have": 233,
+    "spare": 5.9
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.4,
+    "have": 233,
+    "spare": 13.6
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 233,
+    "spare": 31.5
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 233,
+    "spare": 22.5
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 233,
+    "spare": 30.2
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 233,
+    "spare": 24.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 233,
+    "spare": 16.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 233,
+    "spare": 31.5
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 233,
+    "spare": 30.2
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 233,
+    "spare": 24.7
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 233,
+    "spare": 22.5
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 233,
+    "spare": 24.9
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 233,
+    "spare": 16.7
+   }
+  ],
+  "playerCells": {
+   "cells": 46,
+   "oneLine": 46,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 84,
+   "failingCells": 0,
+   "lines": 46,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 126,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3686,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "matches",
+  "width": 390,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Unlisted model1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 118.8,
+    "have": 247,
+    "spare": 51.9
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 247,
+    "spare": 30.3
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 247,
+    "spare": 33
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1809",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 247,
+    "spare": 36.7
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1533",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 156.4,
+    "have": 247,
+    "spare": 36.7
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1792",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 247,
+    "spare": 34
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 247,
+    "spare": 34
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 247,
+    "spare": 24.6
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 247,
+    "spare": 21.8
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 247,
+    "spare": 30.3
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163,
+    "have": 247,
+    "spare": 34
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 193.3,
+    "have": 247,
+    "spare": 21.8
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 186.3,
+    "have": 247,
+    "spare": 24.6
+   },
+   {
+    "text": "GPT-6.2 Astralow Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 153.1,
+    "have": 247,
+    "spare": 38
+   },
+   {
+    "text": "GPT-6.2 Astramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 154.3,
+    "have": 247,
+    "spare": 37.5
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 163.3,
+    "have": 247,
+    "spare": 33.9
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 214.3,
+    "have": 247,
+    "spare": 13.3
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.3,
+    "have": 247,
+    "spare": 16.9
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 219.3,
+    "have": 247,
+    "spare": 11.2
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.4,
+    "have": 247,
+    "spare": 18.5
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 247,
+    "spare": 35.4
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 247,
+    "spare": 26.9
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 247,
+    "spare": 34.1
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 247,
+    "spare": 28.9
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 247,
+    "spare": 21.4
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.5,
+    "have": 247,
+    "spare": 35.4
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 162.7,
+    "have": 247,
+    "spare": 34.1
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.5,
+    "have": 247,
+    "spare": 28.9
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 180.5,
+    "have": 247,
+    "spare": 26.9
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 175.1,
+    "have": 247,
+    "spare": 29.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 194.1,
+    "have": 247,
+    "spare": 21.4
+   }
+  ],
+  "playerCells": {
+   "cells": 46,
+   "oneLine": 46,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 46,
+   "failingCells": 0,
+   "lines": 46,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3712,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "leaderboard",
+  "width": 1280,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 6492,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "leaderboard",
+  "width": 390,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 9522,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "landing",
+  "width": 1280,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Unlisted model1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 118.8,
+    "have": 233,
+    "spare": 49
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 233,
+    "spare": 26.1
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 233,
+    "spare": 29
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 233,
+    "spare": 37.4
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 233,
+    "spare": 41.6
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 233,
+    "spare": 40.2
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 20,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 30,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     -246.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "itemsUnder8PercentSpare": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     -246.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "typefaceGlyphs": {
+   "Roboto": 2475,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "landing",
+  "width": 390,
+  "build": "base",
+  "commit": "10bba6177f3fd9de4e00f4df1de9948db74ab961",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Unlisted model1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 118.8,
+    "have": 247,
+    "spare": 51.9
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 172.1,
+    "have": 247,
+    "spare": 30.3
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 165.4,
+    "have": 247,
+    "spare": 33
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 146,
+    "have": 247,
+    "spare": 40.9
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 136.1,
+    "have": 247,
+    "spare": 44.9
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 139.4,
+    "have": 247,
+    "spare": 43.6
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [],
+  "paddingCheck": {
+   "cells": 10,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3011,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "matches",
+  "width": 1280,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "GPT-6.2 Astra Standardhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 196.4,
+    "have": 233,
+    "spare": 15.7
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 233,
+    "spare": 5
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 233,
+    "spare": 30.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1809",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 233,
+    "spare": 11.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1533",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 233,
+    "spare": 11.8
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1792",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 233,
+    "spare": 8.9
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 233,
+    "spare": 8.9
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 233,
+    "spare": 21.8
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 233,
+    "spare": 18.8
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 233,
+    "spare": 5
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 233,
+    "spare": 8.9
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 233,
+    "spare": 18.8
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 233,
+    "spare": 21.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 233,
+    "spare": 13.2
+   },
+   {
+    "text": "GPT-6.2 Astramax Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 203.5,
+    "have": 233,
+    "spare": 12.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.3,
+    "have": 233,
+    "spare": 31.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 210.3,
+    "have": 233,
+    "spare": 9.8
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.3,
+    "have": 233,
+    "spare": 13.6
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 216.3,
+    "have": 233,
+    "spare": 7.2
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 198.4,
+    "have": 233,
+    "spare": 14.8
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 233,
+    "spare": 32
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 233,
+    "spare": 23
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 233,
+    "spare": 30.6
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 233,
+    "spare": 25.1
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 233,
+    "spare": 18.4
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 233,
+    "spare": 32
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 233,
+    "spare": 30.6
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 233,
+    "spare": 25.1
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 233,
+    "spare": 23
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 233,
+    "spare": 26.6
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 233,
+    "spare": 18.4
+   }
+  ],
+  "playerCells": {
+   "cells": 46,
+   "oneLine": 46,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [
+   {
+    "file": "matches-e3bf6b7-1280-astra-standard-1.png",
+    "sha256": "c3a7abc334fc509bbd940c318ab83672eba70da5f0078b74537058a1d9b86153",
+    "lines": 1,
+    "clipped": false
+   }
+  ],
+  "paddingCheck": {
+   "cells": 84,
+   "failingCells": 0,
+   "lines": 46,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 126,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3775,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "matches",
+  "width": 390,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "GPT-6.2 Astra Standardhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 196.4,
+    "have": 247,
+    "spare": 20.5
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 247,
+    "spare": 10.4
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 247,
+    "spare": 34.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1809",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 247,
+    "spare": 16.8
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1533",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   },
+   {
+    "text": "GPT-6.2 Astrahigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 205.6,
+    "have": 247,
+    "spare": 16.8
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1792",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 247,
+    "spare": 14.1
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1662",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 247,
+    "spare": 14.1
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 247,
+    "spare": 26.2
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 247,
+    "spare": 23.4
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 247,
+    "spare": 10.4
+   },
+   {
+    "text": "GPT-6.2 Astraxhigh Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 212.2,
+    "have": 247,
+    "spare": 14.1
+   },
+   {
+    "text": "kain Muse Wonder 1.0max1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 189.3,
+    "have": 247,
+    "spare": 23.4
+   },
+   {
+    "text": "DeepSeek V4.1 Flashmax1435",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 182.3,
+    "have": 247,
+    "spare": 26.2
+   },
+   {
+    "text": "GPT-6.2 Astralow Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 202.3,
+    "have": 247,
+    "spare": 18.1
+   },
+   {
+    "text": "GPT-6.2 Astramax Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 203.5,
+    "have": 247,
+    "spare": 17.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "Claude Fable 5.2max1484",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 159.3,
+    "have": 247,
+    "spare": 35.5
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "CedarGrove Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 210.3,
+    "have": 247,
+    "spare": 14.9
+   },
+   {
+    "text": "Riverbank Muse Wondermax1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 201.3,
+    "have": 247,
+    "spare": 18.5
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 216.3,
+    "have": 247,
+    "spare": 12.4
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 198.4,
+    "have": 247,
+    "spare": 19.7
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 247,
+    "spare": 35.8
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 247,
+    "spare": 27.3
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 247,
+    "spare": 34.5
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 247,
+    "spare": 29.3
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1167",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 247,
+    "spare": 23
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "FernGully GPT-6 Astramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 158.5,
+    "have": 247,
+    "spare": 35.8
+   },
+   {
+    "text": "Riverbank GPT-6.1 Solhigh Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.7,
+    "have": 247,
+    "spare": 34.5
+   },
+   {
+    "text": "MossGarden GPT-6.1 Solmax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 174.5,
+    "have": 247,
+    "spare": 29.3
+   },
+   {
+    "text": "CedarGrove GPT-6.1 Terramax Fast",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 179.5,
+    "have": 247,
+    "spare": 27.3
+   },
+   {
+    "text": "Gemini 4 Hydrogenlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 171.1,
+    "have": 247,
+    "spare": 30.7
+   },
+   {
+    "text": "Gemini 4 Hydrogenmedium1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 190.1,
+    "have": 247,
+    "spare": 23
+   }
+  ],
+  "playerCells": {
+   "cells": 46,
+   "oneLine": 46,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [
+   {
+    "file": "matches-e3bf6b7-390-astra-standard-1.png",
+    "sha256": "01e5524837c0dcce301a50a0130666dd5e45ba383257a2f5bbc373c5b7f40d7b",
+    "lines": 1,
+    "clipped": false
+   }
+  ],
+  "paddingCheck": {
+   "cells": 46,
+   "failingCells": 0,
+   "lines": 46,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3801,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "leaderboard",
+  "width": 1280,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [
+   {
+    "file": "leaderboard-e3bf6b7-1280-astra-standard-1.png",
+    "sha256": "5adb7eda65fac104f29d59aca70e50890a5f2c437b761f29e236e9b614e41967",
+    "lines": 1,
+    "clipped": false
+   }
+  ],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 6539,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "leaderboard",
+  "width": 390,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [],
+  "playerCells": {
+   "cells": 0,
+   "oneLine": 0,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [
+   {
+    "file": "leaderboard-e3bf6b7-390-astra-standard-2.png",
+    "sha256": "b3fcf319c668f8a7b6e04ebb0e79065cdccb2c5870395f743b19a5d43cb25d84",
+    "lines": 1,
+    "clipped": false
+   }
+  ],
+  "paddingCheck": {
+   "cells": 0,
+   "failingCells": 0,
+   "lines": 0,
+   "unevenLines": 0,
+   "partGaps": [],
+   "cellPadding": [],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 9569,
+   "Roboto Medium": 18
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "landing",
+  "width": 1280,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "GPT-6.2 Astra Standardhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 196.4,
+    "have": 233,
+    "spare": 15.7
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 233,
+    "spare": 5
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 233,
+    "spare": 30.7
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 233,
+    "spare": 72.1
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 233,
+    "spare": 39.1
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 233,
+    "spare": 43.3
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 233,
+    "spare": 41.9
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [
+   {
+    "file": "landing-e3bf6b7-1280-astra-standard-1.png",
+    "sha256": "d669644a4b276424a60b840a6e8335ea0aa210be8626019b3d7be9f7d73ff0dd",
+    "lines": 1,
+    "clipped": false
+   }
+  ],
+  "paddingCheck": {
+   "cells": 20,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 30,
+    "narrowest": 7,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     -246.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "itemsUnder8PercentSpare": [
+   {
+    "kind": "column heading",
+    "cls": "c-matches",
+    "text": "RATED MATCHES",
+    "lines": 2,
+    "clipped": null,
+    "wrapped": true,
+    "fontSize": "11px",
+    "box": [
+     895,
+     -246.5,
+     88,
+     45
+    ],
+    "need": 100.6,
+    "avail": 72,
+    "spare": -39.7
+   }
+  ],
+  "typefaceGlyphs": {
+   "Roboto": 2501,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ },
+ {
+  "data": "synthetic",
+  "page": "landing",
+  "width": 390,
+  "build": "head",
+  "commit": "e3bf6b77dc650787d6c0a152d19f1eec635ec7f3",
+  "pageErrors": 0,
+  "recordingsPlayerLines": [
+   {
+    "text": "Qwen4 Maxlow1662",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxxhigh1268",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "GPT-6.2 Astra Standardhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 196.4,
+    "have": 247,
+    "spare": 20.5
+   },
+   {
+    "text": "GPT-6.2 Astramedium Fastretired1500",
+    "retired": true,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 221.3,
+    "have": 247,
+    "spare": 10.4
+   },
+   {
+    "text": "Claude Fable 5.2high1555",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 161.4,
+    "have": 247,
+    "spare": 34.6
+   },
+   {
+    "text": "Scripted bot",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 65,
+    "have": 247,
+    "spare": 73.7
+   },
+   {
+    "text": "Qwen4 Maxhigh1338",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   },
+   {
+    "text": "Qwen4 Maxxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 142,
+    "have": 247,
+    "spare": 42.5
+   },
+   {
+    "text": "Qwen4 Maxlow1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 132.1,
+    "have": 247,
+    "spare": 46.5
+   },
+   {
+    "text": "Qwen4 Maxhigh1500",
+    "retired": false,
+    "lines": 1,
+    "nameCut": false,
+    "tagsClipped": false,
+    "badgeBroken": false,
+    "need": 135.4,
+    "have": 247,
+    "spare": 45.2
+   }
+  ],
+  "playerCells": {
+   "cells": 10,
+   "oneLine": 10,
+   "notOneLine": [],
+   "nameCut": []
+  },
+  "newLabel": [
+   {
+    "file": "landing-e3bf6b7-390-astra-standard-1.png",
+    "sha256": "89868a1cb5daed1cbdc5e58ed38579ebfb9d825b0b4b6eb9c7d27d8bf9af018c",
+    "lines": 1,
+    "clipped": false
+   }
+  ],
+  "paddingCheck": {
+   "cells": 10,
+   "failingCells": 0,
+   "lines": 10,
+   "unevenLines": 0,
+   "partGaps": [
+    7
+   ],
+   "cellPadding": [
+    "recordings winner 7/7",
+    "recordings 7/7"
+   ],
+   "headsOutsideCell": 0,
+   "columns": {
+    "gap": 7,
+    "pairs": 0,
+    "narrowest": null,
+    "under": 0
+   }
+  },
+  "itemsWrappedOrCut": [],
+  "itemsUnder8PercentSpare": [],
+  "typefaceGlyphs": {
+   "Roboto": 3037,
+   "Roboto Medium": 61,
+   "Liberation Sans": 1
+  }
+ }
+]
