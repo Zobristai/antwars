@@ -20,6 +20,8 @@ import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
 
 /** The longest line replayToText writes, in bytes. */
 export const MAX_LINE_BYTES = 4000;
+/** The largest file splitReplayText writes, in bytes. */
+export const MAX_FILE_BYTES = 64 * 1024;
 
 const ARRAYS = { Uint8Array, Uint16Array, Uint32Array, Int16Array, Buffer } as const;
 type ArrayName = keyof typeof ARRAYS;
@@ -169,6 +171,34 @@ export function replayToText(recording: Uint8Array): string {
   }
   return lines.join("\n") + "\n";
 }
+
+/**
+ * Replay text split into files of at most MAX_FILE_BYTES, read one after another as one text (joinReplayText). A
+ * file starts at a message's ["tick", n] line, unless one message is too long for a file; it then goes on at a line.
+ */
+export function splitReplayText(text: string, maxBytes = MAX_FILE_BYTES): string[] {
+  const files: string[] = [];
+  let file: string[] = [];
+  let size = 0;
+  const close = () => { if (file.length > 0) files.push(file.join("")); file = []; size = 0; };
+  for (const message of text.split(/^(?=\["tick",)/m)) {
+    const length = bytes(message);
+    if (size + length <= maxBytes) { file.push(message); size += length; continue; }
+    close();
+    if (length <= maxBytes) { file.push(message); size = length; continue; }
+    for (const line of message.split(/(?<=\n)/)) {
+      if (bytes(line) > maxBytes) throw new Error("replay text: a line is longer than a file");
+      if (size + bytes(line) > maxBytes) close();
+      file.push(line);
+      size += bytes(line);
+    }
+  }
+  close();
+  return files;
+}
+
+/** The files of splitReplayText, in order, as one text. */
+export const joinReplayText = (files: readonly string[]): string => files.join("");
 
 /** An array written over one or more lines, before its values are counted. */
 interface Pending { name: ArrayName | "Array"; items: unknown[]; count: Count }

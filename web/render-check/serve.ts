@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { BrowserContext } from "playwright-core";
-import { replayFromText } from "./replay-text.ts";
+import { joinReplayText, replayFromText } from "./replay-text.ts";
 
 export const ORIGIN = "http://localhost:4718";
 export const PUBLIC_SITE = "https://antwars.ai";
@@ -26,11 +26,12 @@ export interface Recorded { status: number; type: string | null; file: string }
 export interface SnapshotIndex { recordedFrom: string; recordedAt: string; responses: Record<string, Recorded> }
 /**
  * A response no public route can give yet (or a state the public site is not in), named for what it stands for.
- * A body may come from a file: a .replay.jsonl file is a recording as readable text (replay-text.ts), packed into the
- * bytes the site serves; sha256 is the digest those bytes must have, checked when the fixtures are read.
+ * A body may come from a file, or from files read one after another as one: .replay.jsonl files are a recording as
+ * readable text (replay-text.ts), packed into the bytes the site serves; sha256 is the digest those bytes must have,
+ * checked when the fixtures are read.
  */
-export interface Fixture { label: string; status?: number; type?: string; body?: unknown; file?: string; sha256?: string }
-/** A fixture as served: a file's body is read once and checked. */
+export interface Fixture { label: string; status?: number; type?: string; body?: unknown; file?: string; files?: string[]; sha256?: string }
+/** A fixture as served: its files are read once and checked, and named by their full paths. */
 export interface LoadedFixture extends Fixture { bytes?: Buffer }
 export type LoadedFixtures = Record<string, LoadedFixture>;
 export type Fixtures = Record<string, Fixture>;
@@ -61,22 +62,26 @@ export async function readFixtures(files: readonly string[]): Promise<LoadedFixt
     const parsed = JSON.parse(await readFile(file, "utf8")) as { fixtures: Fixtures };
     for (const [key, fixture] of Object.entries(parsed.fixtures)) {
       if (!fixture.label) throw new Error(`${file}: fixture ${key} has no label`);
-      if (fixture.file === undefined) { all[key] = fixture; continue; }
-      const path = resolve(file, "..", fixture.file);
-      const bytes = await fixtureBytes(path);
+      if (fixture.file === undefined && fixture.files === undefined) { all[key] = fixture; continue; }
+      if (fixture.file !== undefined && fixture.files !== undefined) throw new Error(`${file}: fixture ${key} names both file and files`);
+      const paths = (fixture.files ?? [fixture.file!]).map(f => resolve(file, "..", f));
+      const bytes = await fixtureBytes(paths);
       if (fixture.sha256 !== undefined) {
         const actual = createHash("sha256").update(bytes).digest("hex");
         if (actual !== fixture.sha256) throw new Error(`${file}: fixture ${key} serves bytes with sha256 ${actual}, not the recorded ${fixture.sha256}`);
       }
-      all[key] = { ...fixture, file: path, bytes };
+      all[key] = fixture.files ? { ...fixture, files: paths, bytes } : { ...fixture, file: paths[0], bytes };
     }
   }
   return all;
 }
 
-async function fixtureBytes(path: string): Promise<Buffer> {
-  if (path.endsWith(".replay.jsonl")) return Buffer.from(replayFromText(await readFile(path, "utf8")));
-  return unzip(path, await readFile(path));
+async function fixtureBytes(paths: readonly string[]): Promise<Buffer> {
+  if (paths.length > 0 && paths.every(p => p.endsWith(".replay.jsonl"))) {
+    return Buffer.from(replayFromText(joinReplayText(await Promise.all(paths.map(p => readFile(p, "utf8"))))));
+  }
+  if (paths.length !== 1) throw new Error(`only .replay.jsonl files are read one after another as one body: ${paths.join(", ")}`);
+  return unzip(paths[0], await readFile(paths[0]!));
 }
 
 export interface Served {

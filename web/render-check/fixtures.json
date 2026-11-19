@@ -1,5 +1,5 @@
 {
- "note": "Responses the public site cannot give on demand, each named for the state it stands for. The report lists every fixture a render used. Replay excerpts are cut from the public recordings by excerpt.ts and committed as readable text (replay-text.ts); the server packs them into the bytes the site serves and checks those bytes against sha256.",
+ "note": "Responses the public site cannot give on demand, each named for the state it stands for. The report lists every fixture a render used. Replay excerpts are cut from the public recordings by excerpt.ts and committed as readable text (replay-text.ts) in files of at most 64 KB, read in order; the server packs them into the bytes the site serves and checks those bytes against sha256.",
  "fixtures": {
   "/watch/catalog": {
    "label": "no live match: the public match catalog is empty",
@@ -9,20 +9,40 @@
    }
   },
   "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
-   "label": "Free-for-all replay: public recording 2026-11-17T08-55-08-583Z-151632020035470, ticks 6068-6072 (excerpt.ts; source sha256 eba9ca7c…, excerpt sha256 46cf3d1f…)",
+   "label": "Free-for-all replay: public recording 2026-11-17T08-55-08-583Z-151632020035470, ticks 6000-6110 (excerpt.ts; source sha256 eba9ca7c…, excerpt sha256 f9ac31cb…)",
    "type": "application/octet-stream",
-   "file": "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6068-6072.replay.jsonl",
-   "sha256": "46cf3d1ffcadba0e18fd686d384df0f49bc3414d392703ce69ea09a056915010"
+   "files": [
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/01.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/02.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/03.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/04.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/05.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/06.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/07.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/08.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/09.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/10.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/11.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/12.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/13.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/14.replay.jsonl",
+    "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/15.replay.jsonl"
+   ],
+   "sha256": "f9ac31cb0f2bbfe250294519c7f92dcea02e8657039830f136c279d00f3b65d5"
   },
   "/matches/2026-11-17T08-55-08-583Z-151632020035470": {
    "label": "Free-for-all replay's full record, left out: it is 8.4 MB and the page stops reading a record after 256 KiB, as it does on a 404",
    "status": 404
   },
   "/replays/2026-11-18T09-37-33-466Z-22423161369746": {
-   "label": "Watch's newest recording when the snapshot was recorded: public recording 2026-11-18T09-37-33-466Z-22423161369746, ticks 3025-3035 (excerpt.ts; source sha256 77287072…, excerpt sha256 29655c01…)",
+   "label": "Watch's newest recording when the snapshot was recorded: public recording 2026-11-18T09-37-33-466Z-22423161369746, ticks 3000-3110 (excerpt.ts; source sha256 77287072…, excerpt sha256 191b2226…)",
    "type": "application/octet-stream",
-   "file": "snapshot/bodies/2026-11-18T09-37-33-466Z-22423161369746-3025-3035.replay.jsonl",
-   "sha256": "29655c011dd1ef4e77f73869a53b0eff13c6e871d652a917adaa502a1842a000"
+   "files": [
+    "snapshot/bodies/2026-11-18T09-37-33-466Z-22423161369746-3000-3110/01.replay.jsonl",
+    "snapshot/bodies/2026-11-18T09-37-33-466Z-22423161369746-3000-3110/02.replay.jsonl",
+    "snapshot/bodies/2026-11-18T09-37-33-466Z-22423161369746-3000-3110/03.replay.jsonl"
+   ],
+   "sha256": "191b22262a5229108c5db88572ea0a99eb67e3a35c6d8c817a23b67af543e688"
   }
  }
 }

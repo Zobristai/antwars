@@ -31,7 +31,7 @@ const CHROMIUM_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"
 export const WIDTHS = [1280, 390] as const;
 
 /** How far into its recording a HUD is judged, on the page's stepped clock. */
-export const HUD_PLAY_MS = 600;
+export const HUD_PLAY_MS = 10_000;
 
 /**
  * A surface: a page of the site, or a page that may show a match HUD over a board (hud). On a HUD surface the client's
