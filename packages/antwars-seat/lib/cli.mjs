@@ -33,9 +33,12 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
                                             one read-only entry call with the named key; needs no setup,
                                             writes nothing, never prints the key; fails, without naming
                                             it, when the named key is absent (a key presence check)
-  create-lobby [--test [--quadrants]]       create an unrated public lobby, 1 per colony; prints lobbyId.
+  create-lobby [--test [--quadrants [--map <id>]]]
+                                            create an unrated public lobby, 1 per colony; prints lobbyId.
                                             --test: a test match, left out of every public list.
                                             --quadrants (with --test): four colonies, a Free-for-all test
+                                            --map <id> (with --quadrants): start on that four-colony map
+                                            (four-coves, crossroads, strait) instead of a random one
   join-lobby <lobbyId> [--detach]           take a seat in that lobby (no queue), join; stops in the nest window like go
   observe [--raw] [--since N] [--wait S] [--cellsCursor C] [--map]
                                             read-only, one observe call (sent with map:true): the decoded map —
@@ -285,9 +288,12 @@ export async function main(argv, { env = process.env, clock = realClock, readSta
         return 0;
       case "go":
         return await runSeat(["go"], flags, env, clock, go);
-      case "create-lobby":
-        print(await createLobby(seatContext({ config: readConfig(env), env, clock }), { test: flags.test === true, quadrants: flags.quadrants === true }));
+      case "create-lobby": {
+        if (flags.map === true) throw new Error("usage: antwars-seat create-lobby --test --quadrants --map <id>");
+        print(await createLobby(seatContext({ config: readConfig(env), env, clock }),
+          { test: flags.test === true, quadrants: flags.quadrants === true, map: typeof flags.map === "string" ? flags.map : null }));
         return 0;
+      }
       case "join-lobby": {
         const lobbyId = positional[0];
         if (typeof lobbyId !== "string" || lobbyId === "") throw new Error("usage: antwars-seat join-lobby <lobbyId> [--detach]");

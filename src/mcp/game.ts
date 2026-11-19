@@ -375,7 +375,9 @@ export class Game {
    */
   private lobby: { readonly id: string; readonly mode: QueueMode | null; readonly seats: ReadonlyMap<string, LobbySeat>; notPlayed: boolean; matchSeq: number | null; start: FinishedStart | null;
     /** Its match's colony names, decided once when it is seated and carried by its handover saves. */
-    readonly names: ColonyNames } | null = null;
+    readonly names: ColonyNames;
+    /** A four-colony test lobby's named map (Lobby.map), which its match starts on; absent where the seed draws it. */
+    readonly map?: string } | null = null;
   /** Slot servers: the identities of the last lobby whose match was not played here. */
   private notPlayed: { readonly lobbyId: string; readonly identities: ReadonlySet<string> } | null = null;
   readonly slot: SlotAccess | undefined;
@@ -436,11 +438,14 @@ export class Game {
     for (const map of this.quadrantMaps) validateMapValues(map, OWN_VALUE_GRID_SCALE);
   }
 
-  /** Slot servers: seat the lobby whose match is next; only its identities may join, each seat by its seat key. */
-  seatLobby(lobbyId: string, seats: readonly LobbySeat[], mode: QueueMode | null = null): void {
+  /**
+   * Slot servers: seat the lobby whose match is next; only its identities may join, each seat by its seat key.
+   * map: a four-colony test lobby's named map (Lobby.map), which its match starts on instead of the seed's draw.
+   */
+  seatLobby(lobbyId: string, seats: readonly LobbySeat[], mode: QueueMode | null = null, map?: string): void {
     this.starting = null;
     this.lobby = { id: lobbyId, mode, seats: new Map(seats.map((seat) => [seatKeyOf(seat), seat])), notPlayed: false, matchSeq: null, start: null,
-      names: seatedColonyNames(lobbyId, mode) };
+      names: seatedColonyNames(lobbyId, mode), ...(map === undefined ? {} : { map }) };
     // An earlier lobby's seat queued for a match that never started was not played; it never joins this lobby's match.
     const started = this.current?.seq ?? 0;
     for (const rec of this.records.values()) {
@@ -448,10 +453,17 @@ export class Game {
     }
   }
 
-  /** The seated lobby's pre-draw config, before its seed draws a map: house modes leave out the paused maps. */
+  /**
+   * The seated lobby's pre-draw config, before its seed draws a map: house modes leave out the paused maps. A quadrants
+   * lobby with a named map (only a four-colony test lobby has one) pins it, so the draw returns that map.
+   */
   get undrawnConfig(): SimConfig {
     const mode = this.lobby?.mode;
-    if (mode === "quadrants") return { ...this.simConfig, ffaTerritoryWinnerFirst: this.simConfig.ffaTerritoryWinnerFirst ?? true, terrain: { ...(this.simConfig.terrain ?? TERRAIN_RULES), maps: this.quadrantMaps } };
+    if (mode === "quadrants") {
+      const map = this.lobby?.map;
+      return { ...this.simConfig, ffaTerritoryWinnerFirst: this.simConfig.ffaTerritoryWinnerFirst ?? true,
+        terrain: { ...(this.simConfig.terrain ?? TERRAIN_RULES), maps: this.quadrantMaps, ...(map === undefined ? {} : { mapId: map }) } };
+    }
     return mode?.startsWith("house-") === true ? withoutHousePausedMaps(this.simConfig) : this.simConfig;
   }
 

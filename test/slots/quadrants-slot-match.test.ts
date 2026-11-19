@@ -3,6 +3,9 @@
 // colonies, each seat picks a free tile of its own box (or keeps a default nest there), every successful slot join names its colony, idle colonies leave one
 // by one and the last one standing wins, and the lobby records the result unrated. With the shipped (empty) rotation a
 // spectated server refuses the mode, ends a prepared quadrants lobby not played, and keeps streaming its 1v1 matches.
+// A four-colony test lobby that names its map starts on that map, and its match log replays on it.
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountStores } from "../../src/accounts/service.ts";
 import { createIdentities } from "../../src/identity/identities.ts";
@@ -17,6 +20,8 @@ import { createRatings, RANKED_MODES, ratingCollection } from "../../src/rating/
 import { startServer, type GameServer } from "../../src/server.ts";
 import { rulesConfig, SUB, type MapDefinition } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
+import { replay, stateHash } from "../../src/sim/log.ts";
+import { selectMap } from "../../src/sim/terrain.ts";
 import { startSpectatedServer, type SpectatedServer } from "../../src/spectator.ts";
 import { ManualClock } from "../live/helpers.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
@@ -31,6 +36,8 @@ const FIXTURE: MapDefinition = {
     startArea: { x: 2, y: 4, width: 12, height: 15 }, foodPatches: [], centreFood: [{ radius: 2, perTile: 4 }],
   },
 };
+/** A second test-only quadrant map of the same geometry without water, so a rotation of two can name either. */
+const FIXTURE_B: MapDefinition = { ...FIXTURE, id: "fixture-quadrants-b", name: "Fixture Quadrants B", water: [] };
 /** The production rules: only the quadrants rotation differs between servers here. */
 const LIVE = newMatchConfig(rulesConfig("redesign"));
 const NAMES = ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"];
@@ -351,6 +358,60 @@ describe("a Quadrants match on a slot server", { timeout: 60_000 }, () => {
     expect(lobbyMatchType(lobby)).toEqual({ kind: "test", size: 1 });
     expect(ratingPaths(w)).toEqual([]);
     expect([...w.docs.keys()].filter(path => path.startsWith("ratings-ffa/"))).toEqual([]);
+  });
+
+  it("starts a four-colony test lobby that names its map on that map, not the seed's draw, and its log replays on it", async () => {
+    const rotation = [FIXTURE, FIXTURE_B];
+    const seed = 4242;
+    // The map this seed draws from the rotation unpinned; the lobby names the other one.
+    const drawn = selectMap(seed, { ...LIVE.terrain!, maps: rotation });
+    const named = rotation.find(map => map.id !== drawn.id)!;
+    const w = world(rotation);
+    const dataDir = tempDir();
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir, simConfig: LIVE, quadrantMaps: rotation, seed,
+      startPickWindowMs: 300, mcpConfig: MCP, accounts: w.accounts, slot: w.slot });
+    closers.push(() => server.close());
+    const players = [];
+    for (const name of ["Ann", "Bob", "Cat", "Dan"]) players.push(await claim(w, name));
+    const entry = await agent(server);
+    const created = await entry.call("create_lobby", { key: players[0]!.key, kind: "public", size: 1, test: true, mode: "quadrants", map: named.id });
+    expect(created.isError, created.text).toBe(false);
+    const lobbyId = (created.data as any).lobby.id as string;
+    expect((created.data as any).lobby).toMatchObject({ test: true, mode: "quadrants", map: named.id });
+    for (const player of players) expect((await entry.call("join_lobby", { key: player.key, lobbyId })).isError).toBe(false);
+    await waitFor(() => openStartOf(server) === lobbyId, 20_000);
+    for (const player of players) expect((await (await agent(server)).call("join", { key: player.key })).isError).toBe(false);
+    await waitFor(() => server.game.match?.state.result != null, 20_000);
+    const state = server.game.match!.state;
+    expect(state.terrain!.mapId).toBe(named.id);
+    expect(state.terrain!.mapName).toBe(named.name);
+    await ended(w, lobbyId);
+
+    // Its recorded log replays on the named map to the same end.
+    const logName = readdirSync(dataDir).filter(name => /^match-.*\.jsonl$/.test(name)).sort().at(-1)!;
+    const lines = readFileSync(join(dataDir, logName), "utf8").split("\n").filter(line => line !== "");
+    const replayed = replay(lines, Infinity);
+    expect(replayed.terrain!.mapId).toBe(named.id);
+    expect(replayed.result).toEqual(state.result);
+    expect(stateHash(replayed)).toBe(stateHash(state));
+  });
+
+  it("refuses a named map on create_lobby for a lobby that is not a four-colony test, and draws as before without one", async () => {
+    const w = world([FIXTURE, FIXTURE_B]);
+    const server = await startServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(), simConfig: LIVE, quadrantMaps: [FIXTURE, FIXTURE_B],
+      mcpConfig: MCP, accounts: w.accounts, slot: w.slot });
+    closers.push(() => server.close());
+    const player = await claim(w, "Ann");
+    const entry = await agent(server);
+    for (const args of [{ size: 1 }, { size: 1, test: true }, { size: 1, mode: "quadrants" }]) {
+      const refused = await entry.call("create_lobby", { key: player.key, kind: "public", ...args, map: FIXTURE.id });
+      expect(refused.isError).toBe(true);
+    }
+    const unknown = await entry.call("create_lobby", { key: player.key, kind: "public", size: 1, test: true, mode: "quadrants", map: "nowhere" });
+    expect(unknown.isError).toBe(true);
+    const drawn = await entry.call("create_lobby", { key: player.key, kind: "public", size: 1, test: true, mode: "quadrants" });
+    expect(drawn.isError, drawn.text).toBe(false);
+    expect((drawn.data as any).lobby).not.toHaveProperty("map");
   });
 
   it("with an empty rotation, a spectated server refuses Quadrants, ends a prepared Quadrants lobby not played and streams its 1v1", async () => {
