@@ -13,7 +13,7 @@ import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
 import { badgeWords, hasBadges, type BadgeKinds } from "../leaderboard-page/view.ts";
 import type { Recording } from "../matches-page/data.ts";
-import { colonySeats, seatGroups, whenParts, type PlayerParts, type SeatGroup } from "../pages/model.ts";
+import { colonySeats, seatGroups, whenParts, winnerOf, type PlayerParts, type SeatGroup } from "../pages/model.ts";
 import { DECIDED_ON, LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
 import { h } from "../ui/dom.ts";
@@ -138,7 +138,9 @@ export function topMatchTile(doc: Document, r: Recording, search: string): HTMLL
   const colonies = Math.max(2, r.colonyNames?.length ?? 0, ...r.seats.map(seat => seat.colony + 1));
   const names = r.colonyNames ?? COLONY_NAMES;
   const sides = tileSides(r, colonies);
-  const winner = r.winner !== null && r.winner < colonies ? r.winner : null;
+  // The winner as the rest of the site reads it (none for an abandoned match), kept only where it names one of the tile's sides.
+  const named = winnerOf(r);
+  const winner = named !== null && named < colonies ? named : null;
   const order = winner === null ? sides.map((_, colony) => colony) : [winner, ...sides.map((_, colony) => colony).filter(colony => colony !== winner)];
   const type = tileType(r.matchType);
   const { result, how } = recordingResult(r);

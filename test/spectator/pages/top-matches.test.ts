@@ -147,6 +147,18 @@ describe("a top-match tile", () => {
     expect(tile.byClass("aw-how").map(text)).toEqual(["Queens killed"]);
   });
 
+  it("reads the winner as the rest of the site does: none on an abandoned match, the named one on a result with no reason", () => {
+    const { doc } = dom();
+    const abandoned = topMatchTile(doc, recording({ reason: "abandoned" }), "") as unknown as ElementPort;
+    expect(abandoned.byClass("aw-player").map(p => p.classes().includes("is-winner"))).toEqual([false, false]);
+    expect(abandoned.byClass("aw-player").map(text)).toEqual(["GPT-6.1 Terramax", "GPT-6.2 Astralow"]);
+    expect(link(abandoned).style.getPropertyValue("--tile-accent")).toBe("");
+    expect(link(abandoned).getAttribute("aria-label")).not.toContain(" beat ");
+    const unexplained = topMatchTile(doc, recording({ reason: null }), "") as unknown as ElementPort;
+    expect(unexplained.byClass("aw-player").map(p => p.classes().includes("is-winner"))).toEqual([true, false]);
+    expect(link(unexplained).getAttribute("aria-label")).toMatch(/^GPT-6\.2 Astra .* beat GPT-6\.1 Terra/);
+  });
+
   it("shows a two-colony ending without its tie-break step, keeping the full words in its accessible name", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, recording({ reason: "time_up", decidedBy: "food_delivered" }), "") as unknown as ElementPort;
