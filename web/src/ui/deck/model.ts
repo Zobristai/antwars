@@ -1,4 +1,4 @@
-// The Instrument deck: what the deck, the frame and the pane show, read from the delayed playback
+// Score Band: what the comparison, frame and colony rows show, read from the delayed playback
 // frame only. Pure: every value comes from the stream through the HUD's existing helpers, and no DOM is touched.
 // Each value is named by the stream field behind it.
 //
@@ -9,7 +9,7 @@ import { streamQueens, type CallKind, type OrderKind, type StreamAgent, type Str
 import { fallWindow, fallenColonies, fallenQueen, resultShownAt, type Board, type CommandEntry, type Frame, type StoryEntry } from "../../buffer.ts";
 import { isCountMark, markReading } from "../../words.ts";
 import {
-  MODEL_LABEL, cardSubject, colonyStats, hatchIntervalTicks, headline, livingAnts, matchTime, nextAntCells, nextAntState, nextHatchCaste,
+  MODEL_LABEL, cardSubject, colonyCardLines, colonyLedger, colonyStats, hatchIntervalTicks, headline, livingAnts, matchTime, nextAntCells, nextAntState, nextHatchCaste,
   orderTarget, orderText, queensUnderAttack, scoreHatchStatus, storyText, storyWhen, territoryWinText, type AntInfo,
 } from "../../overlays.ts";
 import { OPEN_COPY, PAGE_COPY, SCORE_COPY, clockTime, decisive, resultHow, significant } from "../../story.ts";
@@ -24,8 +24,9 @@ import { holdProgress, leadLine, resultHeadline, shares, spawnFill, stepped, ter
 import { badge } from "../icons.ts";
 
 export type Colony = number;
-/** The two sides of a two-colony match's deck: its score's mirrored rows, its economies and its team containers. */
-export const COLONIES = [0, 1] as const;
+/** The match's actual colony ids; before a first snapshot the existing two-sided placeholder remains. */
+export const coloniesOf = (frame: Frame | null): number[] =>
+  Array.from({ length: frame?.board?.setup.queens.length ?? 2 }, (_, colony) => colony);
 
 /** A match's colony count: one start per colony in its setup, 2, or 4 in a four-colony match. */
 export const colonyCount = (setup: { readonly queens: readonly unknown[] }): number => setup.queens.length;
@@ -178,16 +179,16 @@ export function mapName(frame: Frame | null): string | null {
 // ---------------------------------------------------------------- balance: kills, territory and ants
 
 export interface Gauge {
-  readonly figures: readonly [string, string];
-  /** Each colony's share of the whole, in percent, filled from its own end of its half-track; 50 is even. */
-  readonly fill: readonly [number, number];
+  readonly figures: readonly string[];
+  /** Each colony's share of the whole, in percent, in colony order. */
+  readonly fill: readonly number[];
 }
 export interface Balance {
   readonly kills: Gauge;
   readonly territory: Gauge;
   /** Each colony's living ants, filled to its share as Kills is. */
   readonly ants: Gauge;
-  /** Where a 6:1 lead sits on each half-track, in percent from the colony's end, while the rules have an early win (inferred). */
+  /** Pair-only ratio threshold as a percent of owned territory; absent for four-colony majority rules. */
   readonly lead: number | null;
   /** The lead line in plain words while it shows (D1_COPY.leadLine), else "". */
   readonly leadText: string;
@@ -198,22 +199,28 @@ const NO_GAUGE: Gauge = { figures: [EM, EM], fill: [0, 0] };
 export function balance(frame: Frame | null): Balance {
   const b = frame?.board;
   if (!frame || !b) return { kills: NO_GAUGE, territory: NO_GAUGE, ants: NO_GAUGE, lead: null, leadText: "" };
-  // Every death is the other colony's kill (src/sim/territory.ts decideTimeUp).
-  const killed = [b.deaths[1], b.deaths[0]] as const;
-  const k = shares(killed[0], killed[1]);
-  const t = shares(b.held[0], b.held[1]);
+  // Preserve the pair's existing score. With four colonies only explicit last-hit totals establish kills.
+  const colonies = coloniesOf(frame);
+  const pair = colonies.length === 2;
+  const killed = pair ? [b.deaths[1], b.deaths[0]] : b.kills;
+  const share = (values: readonly number[]) => pair ? shares(values[0], values[1]) : territoryShares(values);
+  const k = killed ? share(killed) : null;
+  const t = share(b.held);
   // The same living count the economy's Ants cell reads (dials).
   const stats = colonyStats(frame);
-  const living = [livingAnts(stats[0]), livingAnts(stats[1])] as const;
-  const a = shares(living[0], living[1]);
+  const living = colonies.map(c => livingAnts(stats[c]));
+  const a = share(living);
   const early = boardRules(b)?.earlyWin;
   const shown = early !== undefined && b.result === null && t !== null;
   return {
-    kills: { figures: [fmt(killed[0]), fmt(killed[1])], fill: k ? [k[0], k[1]] : [0, 0] },
-    territory: { figures: t ? [`${Math.round(t[0])}%`, `${Math.round(t[1])}%`] : [EM, EM], fill: t ? [t[0], t[1]] : [0, 0] },
-    ants: { figures: [fmt(living[0]), fmt(living[1])], fill: a ? [a[0], a[1]] : [0, 0] },
-    lead: shown ? leadLine(early.territoryRatioPermille) : null,
-    leadText: shown ? D1_COPY.leadLine(String(early.territoryRatioPermille / 1000)) : "",
+    kills: { figures: colonies.map(c => killed ? fmt(killed[c]) : EM), fill: k ?? colonies.map(() => 0) },
+    territory: { figures: colonies.map(c => t ? `${Math.round(t[c])}%` : EM), fill: t ?? colonies.map(() => 0) },
+    ants: { figures: living.map(fmt), fill: a ?? colonies.map(() => 0) },
+    // Four colonies use a strict majority of all owned tiles, not a pair's ratio.
+    // A single split bar has no stable coordinate for each of four colonies' majority threshold.
+    lead: shown && pair ? leadLine(early.territoryRatioPermille) : null,
+    leadText: shown ? pair ? D1_COPY.leadLine(String(early.territoryRatioPermille / 1000))
+      : "More than half of all owned territory, after the opening tick and minimum tile count, held for the required time" : "",
   };
 }
 
@@ -278,9 +285,9 @@ export interface HoldSide {
 }
 export interface WinConditions {
   /** Each colony's queens in founding order from its own end; a lost queen keeps her lamp, marked lost. */
-  readonly lamps: readonly [readonly Lamp[], readonly Lamp[]];
-  readonly standing: readonly [string, string];
-  readonly hold: readonly [HoldSide | null, HoldSide | null];
+  readonly lamps: readonly (readonly Lamp[])[];
+  readonly standing: readonly string[];
+  readonly hold: readonly (HoldSide | null)[];
   /** The hold read in full ("Very Large Colony · win in 1:20"), or "". */
   readonly holdText: string;
 }
@@ -296,17 +303,18 @@ export function winConditions(frame: Frame | null): WinConditions {
   const full = boardQueenHp(b)?.hp;
   const attacked = queensUnderAttack(frame.story, frame.tick);
   const all = streamQueens(b);
-  const lamps = COLONIES.map(colony => all.filter(q => q.colony === colony)
+  const colonies = coloniesOf(frame);
+  const lamps = colonies.map(colony => all.filter(q => q.colony === colony)
     .sort((x, y) => x.foundedTick - y.foundedTick || x.id - y.id)
-    .map(q => lamp(q, frame, b, full, attacked))) as [Lamp[], Lamp[]];
+    .map(q => lamp(q, frame, b, full, attacked)));
   const h = headline(b, frame.tick);
   // A hold due after time-up shows no countdown.
   const holder = h.label === SCORE_COPY.winIn ? h.leader : null;
   const held = holder === null ? null : holdProgress(b.territoryWin, frame.tick);
   return {
     lamps,
-    standing: [String(lamps[0].filter(l => !l.lost).length), String(lamps[1].filter(l => !l.lost).length)],
-    hold: COLONIES.map(c => c === holder && held !== null ? { fill: stepped(held), text: `${SCORE_COPY.winIn} ${h.figure}` } : null) as [HoldSide | null, HoldSide | null],
+    standing: lamps.map(list => String(list.filter(l => !l.lost).length)),
+    hold: colonies.map(c => c === holder && held !== null ? { fill: stepped(held), text: `${SCORE_COPY.winIn} ${h.figure}` } : null),
     holdText: holder !== null && held !== null ? territoryWinText(b, frame.tick) ?? "" : "",
   };
 }
@@ -350,22 +358,22 @@ export interface Dial {
 }
 const EMPTY_DIAL: Dial = { workers: EM, soldiers: EM, flyers: null, food: EM, next: { kind: "none" }, nextText: "", ants: EM };
 
-export function dials(frame: Frame | null): readonly [Dial, Dial] {
+export function dials(frame: Frame | null): readonly Dial[] {
   const b = frame?.board;
   if (!frame || !b) return [EMPTY_DIAL, EMPTY_DIAL];
   const stats = colonyStats(frame);
   const rate = tps(b);
-  return COLONIES.map((colony): Dial => {
+  return coloniesOf(frame).map((colony): Dial => {
     const s = stats[colony];
     const living = livingAnts(s);
     const food = nextAntCells(b.stores[colony], b.hatch, living, frame.tick, rate);
     const cap = b.hatch !== null && b.hatch.cap > 0 ? b.hatch.cap : null;
     return {
-      workers: fmt(s.workers), soldiers: fmt(s.soldiers), flyers: rules28Flyer(b) === undefined ? null : fmt(s.flyers), food: food?.[0] ?? EM,
+      workers: fmt(s.workers), soldiers: fmt(s.soldiers), flyers: coloniesOf(frame).length === 2 && rules28Flyer(b) === undefined ? null : fmt(s.flyers), food: food?.[0] ?? EM,
       next: nextAnt(b, colony, living, frame.tick), nextText: scoreHatchStatus(b, colony, living, frame.tick).description,
       ants: cap === null ? fmt(living) : `${fmt(living)}/${fmt(cap)}`,
     };
-  }) as [Dial, Dial];
+  });
 }
 
 /** The next ant, as Current's spawn chip decides it: no food is the empty ring alone. */
@@ -756,6 +764,7 @@ export interface Row {
  */
 export interface Member {
   readonly index: number;
+  readonly idle: boolean;
   /** The agent's badge, at the head's 16 px. */
   readonly badge: string;
   /** The shown name (AgentEntry.name, as the Leaderboard names it), the model (modelLabel) and "Rating n" (the stream's Elo, worded as the deck words it since the Glicko switch), each only where the stream carries it; the badge's shape word where it carries none. */
@@ -775,11 +784,12 @@ export interface Group {
 }
 
 /** A member's icon: what its tip shows, nothing the stream does not carry. */
-export function member(e: Pick<AgentEntry, "index" | "shade" | "name" | "model" | "elo">): Member {
+export function member(e: Pick<AgentEntry, "index" | "shade" | "name" | "model" | "elo" | "idle">): Member {
   const shape = `badge ${agentHandle(e.index)}`;
   const carried = [e.name ?? "", e.model, e.elo !== null ? `Rating ${e.elo}` : ""].filter(Boolean);
-  const lines = carried.length > 0 ? carried : [shape];
-  return { index: e.index, badge: badge(e.index, e.shade, 16), lines, label: carried.length > 0 ? `${carried.join(" · ")} · ${shape}` : shape };
+  const lines = [...(carried.length > 0 ? carried : [shape]), ...(e.idle ? ["idle"] : [])];
+  const label = carried.length > 0 ? `${carried.join(" · ")} · ${shape}` : shape;
+  return { index: e.index, idle: e.idle, badge: badge(e.index, e.shade, 16), lines, label: label + (e.idle ? " · idle" : "") };
 }
 export interface Roster {
   readonly groups: readonly Group[];
@@ -836,9 +846,16 @@ export function roster(frame: Frame): Roster {
   const reported = selfReported(b);
   const entries = agentEntries(frame);
   const groups: Group[] = [];
-  for (const colony of COLONIES) {
+  for (const colony of coloniesOf(frame)) {
     const members = entries.filter(e => e.colony === colony).sort((x, y) => x.index - y.index);
     if (members.length === 0) continue;
+    // Joining order assigns agent indices and glyphs, not the player's numbered seats.
+    // Reorder only this presentation list; older or ambiguous identities retain stream order.
+    const seats = new Map(members.map(e => [e.index, Number(SEAT.exec(b.agents[e.index]!.identity?.displayName ?? "")?.[2])]));
+    const numbers = [...seats.values()];
+    if (numbers.every(n => Number.isSafeInteger(n) && n > 0) && new Set(numbers).size === members.length) {
+      members.sort((x, y) => seats.get(x.index)! - seats.get(y.index)!);
+    }
     const result = colonyResult(b.result, colony);
     // The one player's line as the rows name it: a Benchmark handle's house display name, any other its own.
     const first = b.agents[members[0]!.index]!;
@@ -857,12 +874,19 @@ export function roster(frame: Frame): Roster {
       // The accessible name leads with the shown name in full, then its badges.
       const shown = named ? [named.name, ...badges].join(" ") : title ? [title, ...badges].join(" ") : handle;
       const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
-        result ?? "", e.name || e.model ? `badge ${handle}` : ""].filter(Boolean).join(" · ");
+        result ?? "", e.name || e.model ? `badge ${handle}` : "", e.idle ? "idle" : ""].filter(Boolean).join(" · ");
       return { index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
     });
     groups.push({ colony, heading: `${colonyNamesOf(b.setup)[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
   }
   return { groups, count: groups.reduce((n, g) => n + g.rows.length, 0) };
+}
+
+/** The former colony drawer's cumulative total, including the starting cohort, at the displayed frame. */
+export function hatchedTotals(frame: Frame | null): readonly string[] {
+  if (!frame?.board) return [];
+  return colonyStats(frame).map(stats =>
+    colonyCardLines(colonyLedger(stats, livingAnts(stats), frame.board!.hatch), stats, "").hatched);
 }
 
 // ---------------------------------------------------------------- the Selected card

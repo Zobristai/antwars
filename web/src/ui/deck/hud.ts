@@ -1,14 +1,7 @@
-// The 3D board's spectator HUD: the Instrument deck, a hybrid of two earlier designs
-// (ported).
-//
-// One deck holds every figure: the shared score in the middle and each colony's team container at its side.
-// The board keeps one fixed window inside a frame whose top rule carries the stream's state ,
-// with a lane under the window for the one event and the board controls, so nothing covers the board. From 760 px wide
-// the deck stands over the board; narrower, the board comes first and the deck scrolls beneath it.
-// A top bar holds the wordmark, the pages and one Bring your agent button; a footer closes the page with Rules and the
-// inspiration. Every change is a cut.
-// It is given the page's mode line and playback stall through the shared view, and the board's tooltips,
-// point-of-view choice and, on an explicit replay, its playback controls (the lane beside the board controls).
+// Score Band is the shared spectator HUD for both board renderers and every match mode.
+// Desktop: comparison above colony rows. Phone: board first, then clock/map, colony cards and comparison.
+// Existing controls, selection, history and the result modal stay attached to the displayed playback frame.
+// Match metadata is separate from the single-line connection state; neither loses information to fit.
 //
 // Overlay exports are read only inside functions: overlays.ts imports this module.
 import "./deck.css";
@@ -24,6 +17,10 @@ import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
 import { D1_ICON } from "./icons.ts";
+import { ICON } from "../icons.ts";
+import { LOG_EXPLAINER, VISUAL_KEY, keyText } from "../../overlays.ts";
+import { logExplainer } from "../../../rules.ts";
+import { boardRules } from "../hud-model.ts";
 import { mountDeck } from "./deck.ts";
 import { deckBrand } from "./brand.ts";
 import { mountTeams } from "./pane.ts";
@@ -32,8 +29,9 @@ import { caption, colonyCount, legend, type Caption, type Legend } from "./model
 
 /** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end. */
 const BUTTON_IN_BAR = "(min-width: 520px)";
-/** From this width the deck stands over the board; narrower, the stacked deck is too tall to come before it. */
-const DECK_FIRST = "(min-width: 760px)";
+/** From this width aligned colony rows fit; narrower, the stacked deck follows the board. */
+// Keep in sync with deck.css: fit the Flyers grid before moving the deck above the board.
+const DECK_FIRST = "(min-width: 1200px)";
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
@@ -44,7 +42,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     target.addEventListener(type, fn);
     listeners.push(() => target.removeEventListener(type, fn));
   };
-  const root = h(doc, "div", "d1 d1-hud");
+  const root = h(doc, "div", "d1 d1-hud score-band");
 
   // ---------------------------------------------------------------- the top bar
   const top = h(doc, "header", "d1-top");
@@ -61,7 +59,9 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   dot.setAttribute("aria-hidden", "true");
   const back = h(doc, "a", "d1-back");
   back.hidden = true;
-  legendEl.append(dot, mode, rest, back);
+  legendEl.append(dot, mode, rest);
+  // Match metadata is separate from the single-line connection state, so neither is truncated on a phone.
+  const metadata = h(doc, "div", "sb-metadata");
   const hole = h(doc, "div", "d1-window");
   hole.setAttribute("aria-hidden", "true");
   const lane = h(doc, "div", "d1-lane");
@@ -99,23 +99,40 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const transport = h(doc, "div", "d1-transport");
   controls.append(whole, zoomOut, zoomIn, boardToggle);
   lane.append(cap, transport, controls);
-  frameEl.append(legendEl, hole, lane);
+  frameEl.append(legendEl, metadata, hole, lane);
 
   // ---------------------------------------------------------------- the deck, its end and the footer
-  // The shared score first, then each colony's team container: the score in the middle, the teams at its sides.
+  // One band followed by aligned colony rows; on phones comparison moves after the cards.
   const below = h(doc, "div", "d1-below");
   const deckEl = h(doc, "section", "d1-deck");
   deckEl.setAttribute("aria-label", "Match");
   const deck = mountDeck(doc);
   const teams = mountTeams(doc, actions, { search, economy: deck.economy });
-  deckEl.append(deck.score, ...teams.teams);
+  const band = h(doc, "div", "sb-band");
+  band.append(deck.header, deck.score);
+  deckEl.append(band, deck.columns, ...teams.teams);
   const deckEnd = h(doc, "div", "d1-deck-end");
   const foot = h(doc, "footer", "d1-foot");
   const rules = h(doc, "a", "d2-link", "Rules");
   rules.href = "/rules"; rules.target = "_blank"; rules.rel = "noopener";
   const inspired = h(doc, "a", "d2-link", "Inspired by @LambethEthan");
   inspired.href = INSPIRED_BY_URL; inspired.target = "_blank"; inspired.rel = "noopener noreferrer";
-  foot.append(rules, inspired, teams.offer, h(doc, "span", "d2-credit d1-foot-credit", PAGE_COPY.credit));
+  const rulesKey = h(doc, "span", "sb-rules-key"), keyToggle = h(doc, "button", "d2-link sb-key-toggle");
+  keyToggle.type = "button"; keyToggle.title = "Key";
+  keyToggle.setAttribute("aria-label", "Key");
+  keyToggle.setAttribute("aria-expanded", "false");
+  keyToggle.setAttribute("aria-controls", "score-band-key");
+  const keyIcon = h(doc, "span"); keyIcon.setAttribute("aria-hidden", "true"); keyIcon.innerHTML = ICON.info;
+  keyToggle.append(keyIcon, "Key");
+  const key = h(doc, "div", "sb-key"); key.id = "score-band-key"; key.hidden = true;
+  const keyLine = h(doc, "p", undefined, keyText(VISUAL_KEY)), explainer = h(doc, "p", undefined, LOG_EXPLAINER);
+  key.append(keyLine, explainer);
+  listen(keyToggle, "click", () => {
+    key.hidden = !key.hidden;
+    setAttr(keyToggle, "aria-expanded", String(!key.hidden));
+  });
+  rulesKey.append(rules, keyToggle);
+  foot.append(rulesKey, inspired, teams.offer, h(doc, "span", "d2-credit d1-foot-credit", PAGE_COPY.credit), key);
   below.append(deckEl, deckEnd, foot);
 
   // The result is a modal over the whole screen, not part of the score.
@@ -133,7 +150,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   placeButton();
   if (wide) listen(wide, "change", placeButton);
 
-  // From 760 px wide the deck stands over the board and the footer closes the page; narrower, the board comes first and
+  // From 1200 px wide the deck stands over the board and the footer closes the page; narrower, the board comes first and
   // the deck, its end and the footer scroll beneath it. The nodes move, not only their boxes, so reading and focus order
   // follow what is seen.
   const deckFirst = typeof win.matchMedia === "function" ? win.matchMedia(DECK_FIRST) : null;
@@ -141,8 +158,10 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const placeDeck = () => {
     const focused = doc.activeElement as HTMLElement | null;
     if (deckFirst === null || deckFirst.matches) {
+      band.append(deck.score);
       top.after(below, frameEl, foot);
     } else {
+      deckEl.append(deck.score);
       below.append(foot);
       top.after(frameEl, below);
     }
@@ -167,9 +186,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
-  /** Whether the rest is written as clauses (a four-colony match), so a later plain write replaces them. */
-  let restClauses = false;
-  /** four: a four-colony match, whose phone legend breaks only between clauses (deck.css). */
+  /** Keep connection state intact; other mode facts retain individual, unbroken metadata cells. */
   const paintLegend = (l: Legend, four: boolean) => {
     const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
     if (keyNow === legendKey) return;
@@ -179,21 +196,11 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     setHidden(dot, l.dot === null);
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");
-    // A no-break space opens the rest: its own leading space would be trimmed beside the mode word.
-    const restText = l.words.length > 1 ? `\u00a0· ${l.words.slice(1).join(" · ")}` : "";
-    if (four) {
-      // The same text, each "· clause" its own unbreakable span; the line may break at the spaces between them, and
-      // before the link (wbr).
-      rest.textContent = "";
-      l.words.slice(1).forEach((word, i) => rest.append(i === 0 ? "\u00a0" : " ", h(doc, "span", "d1-clause", `· ${word}`)));
-      if (l.words.length > 1 && l.back) rest.append(h(doc, "wbr"));
-      restClauses = true;
-    } else if (restClauses) {
-      rest.textContent = restText;
-      restClauses = false;
-    } else {
-      setText(rest, restText);
-    }
+    const isState = (word: string) => /waiting for new data|connect/i.test(word);
+    const state = l.words.slice(1).filter(isState);
+    setText(rest, state.length ? `\u00a0· ${state.join(" · ")}` : "");
+    metadata.replaceChildren(...l.words.slice(1).filter(word => !isState(word)).map(word => h(doc, "span", "sb-meta-item", word)), back);
+    setHidden(metadata, metadata.childElementCount === 1 && l.back === null);
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
   };
@@ -233,6 +240,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   function update(view: HudView) {
     const frame = view.frame;
     const b = frame?.board ?? null;
+    const config = b ? boardRules(b) : null;
+    setText(explainer, config ? logExplainer(config) : LOG_EXPLAINER);
     paintBoardToggle(view.board);
     paintLegend(legend(b !== null, b ? b.agents.length : null, view.connection, view.mode, view.stalled), b !== null && colonyCount(b.setup) > 2);
     paintCaption(caption(frame), frame?.board?.setup.colonyNames);
@@ -252,13 +261,20 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   }
   // A legend that wraps to another line (a long recording's on a phone) moves the window's top: fit the board again.
   let legendH = -1;
+  let deckH = -1;
+  let metadataH = -1;
+  let footerH = -1;
   let refit = 0;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     const next = legendEl.offsetHeight;
-    if (legendH >= 0 && next !== legendH && !refit) refit = win.requestAnimationFrame(() => { refit = 0; win.dispatchEvent(new Event("resize")); });
-    legendH = next;
+    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight;
+    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH) && !refit) refit = win.requestAnimationFrame(() => { refit = 0; win.dispatchEvent(new Event("resize")); });
+    legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter;
   });
   watch?.observe(legendEl);
+  watch?.observe(deckEl);
+  watch?.observe(metadata);
+  watch?.observe(foot);
   listeners.push(() => { watch?.disconnect(); if (refit) win.cancelAnimationFrame(refit); });
 
   return {

@@ -309,6 +309,35 @@ describe("a team's game history", () => {
 });
 
 describe("the team section's agents", () => {
+  it("orders numbered seats independently of join order without changing agent or badge identity", () => {
+    const frame = frameOf(b => {
+      const original = [...b.agents];
+      b.agents = [0, 1, 3, 2, 4, 7, 6, 5].map(i => original[i]!);
+    });
+    const agents = [...frame.board!.agents];
+    const entries = agentEntries(frame);
+    const groups = roster(frame).groups;
+    expect(groups.map(g => g.members.map(m => m.index))).toEqual([[0, 1, 3, 2], [4, 7, 6, 5]]);
+    for (const group of groups) for (const m of group.members) {
+      expect(m.lines[0]).toBe(agents[m.index]!.identity!.displayName);
+      expect(m.badge).toBe(entries.find(e => e.index === m.index)!.badge);
+    }
+    expect(frame.board!.agents).toEqual(agents);
+  });
+  it("orders numeric suffixes rather than their spelling, including individual agent rows", () => {
+    const frame = frameOf(b => { b.agents = [10, 2, 1].map(n => agent(0, `player-${n} #${n}`, 1500, "")); });
+    const group = roster(frame).groups[0]!;
+    expect(group.player).toBeNull();
+    expect(group.members.map(m => m.index)).toEqual([2, 1, 0]);
+    expect(group.rows.map(r => r.index)).toEqual([2, 1, 0]);
+  });
+  for (const names of [["player #2", "player"], ["player #2", null], ["player #2", "other #2"],
+    ["player #2", "player #0"], ["player #2", "player #9007199254740992"]]) {
+    it(`keeps stream order when seat numbers are ambiguous: ${names.join(", ")}`, () => {
+      const frame = frameOf(b => { b.agents = names.map(n => agent(0, n, 1500, "")); });
+      expect(roster(frame).groups[0]!.members.map(m => m.index)).toEqual([0, 1]);
+    });
+  }
   it("gives a one-player team no agent rows: its heading carries the player's line once, its member icons the player icons", () => {
     const r = roster(frameOf());
     expect(r.groups.map(g => [g.heading, g.player, g.rows.length])).toEqual([
@@ -350,7 +379,7 @@ describe("the team section's agents", () => {
     const modelIndex = split(b => { b.setup.houseIdleTicks = 1800; b.setup.modelIndex = true; });
     expect(modelIndex.groups[0]!.rows[0]!.asterisk).toBe(false);
     expect(modelIndex.groups[0]!.rows[0]!.badges).toEqual([]);
-    expect(modelIndex.groups[0]!.rows[0]!.label).toBe("ana · Rating 1600 · Very Large Colony · Claude Sonnet 5.5 · badge Diamond");
+    expect(modelIndex.groups[0]!.rows[0]!.label).toBe("ana · Rating 1600 · Very Large Colony · Claude Sonnet 5.5 · badge Diamond · idle");
   });
   it("names a Benchmark handle as the Leaderboard does: its house display name with its fixed level and Fast badges, no model or asterisk beside it", () => {
     const r = roster(frameOf(b => {
