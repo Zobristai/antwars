@@ -16,7 +16,11 @@ import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 
 /** A list's state, said once inside its own card: a glyph (decorative) and the words that carry it. */
 export type Glyph = "dot" | "half" | "ring" | "error";
-export interface CardState { readonly glyph: Glyph; readonly text: string }
+export interface CardState {
+  readonly glyph: Glyph; readonly text: string;
+  /** A state told as separate one-line items (the Waiting card's kinds of wait): each its own line, never wrapped. */
+  readonly parts?: readonly string[];
+}
 
 /** The freshness line, from this browser's clock when the top of the lists was last read (proposed copy ‡). */
 export function loadedText(at: number): string {

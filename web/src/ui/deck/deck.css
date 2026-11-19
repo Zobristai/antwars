@@ -782,7 +782,31 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band.d1-hud { grid-template-rows: 48px 8px auto minmax(0, 1fr); }
   .score-band .d1-below { grid-row: 4; }
   .score-band .d1-name { font-size: 14px; letter-spacing: .02em; }
-  .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; font-size: 11px; }
+  .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; font-size: 12px; }
+  .score-band :is(.d1-title, .d1-model) { font-size: 13px; }
   .score-band .d1-dot { margin-right: 5px; }
   .sb-metadata { padding: 8px 8px 4px; }
+}
+
+/* Below the ordinary phone width, page zoom leaves less room than a one-line label.
+   Keep whole words and controls, let existing groups take the space they need. */
+@media (max-width: 319px) {
+  .score-band .d1-frame { grid-template-rows: auto auto var(--d1-window-h) var(--d1-lane); }
+  .score-band .d1-legend { position: static; grid-row: 1; display: block; max-width: none; padding: 4px 8px; white-space: normal; }
+  .score-band .d1-legend-rest, .score-band .sb-meta-item { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .sb-metadata { grid-row: 2; }
+  .score-band .d1-window { grid-row: 3; }
+  .score-band .d1-lane { grid-row: 4; }
+  .sb-clock-map { flex-direction: column; align-items: start; gap: 6px; }
+  .score-band .d1-map { flex-wrap: wrap; }
+  .score-band .d1-map-name { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-name { display: block; flex: 1 1 100%; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-name::before { margin-right: 5px; }
+  .score-band .d1-team-members { flex-wrap: wrap; max-width: 100%; }
+  .score-band :is(.d1-title, .d1-model) { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-econ, .score-band .d1-econ.has-flyers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 6em), 1fr)); }
+  .score-band .d1-econ > .d1-cell, .score-band .d1-econ.has-flyers > .d1-cell { grid-column: auto; grid-row: auto; grid-template-rows: auto auto; }
+  .score-band .d1-cell > .d1-ml { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-econ > .sb-queens, .score-band .d1-econ.has-flyers > .sb-queens { grid-column: 1 / -1; flex-wrap: wrap; }
+  .score-band .sb-queen-value { flex: 1 1 100%; min-width: 0; }
 }

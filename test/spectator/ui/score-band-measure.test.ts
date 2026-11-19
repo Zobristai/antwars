@@ -6,6 +6,43 @@ import { roster } from "../../../web/src/ui/deck/model.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 describe("scrolling HUD fit evidence", () => {
+  it("keeps zoom-narrow score groups readable with the browser default font setting", async () => {
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    for (const defaultFontSize of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
+      try {
+        const page = await browser.newPage();
+        await page.setContent("<span>Browser default</span>");
+        expect(await page.locator("span").evaluate(e => getComputedStyle(e).fontSize)).toBe(`${defaultFontSize}px`);
+        const metrics = [["workers", "Workers", "224"], ["soldiers", "Soldiers", "58"], ["flyers", "Flyers", "0"], ["food", "Food", "4,457"], ["next", "Next spawn", "—"], ["ants", "Ants", "282/512"], ["queen-kills", "Queen kills", "—"]];
+        const card = `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">Lake Hodges Colony</h2><span class="d1-team-members">◇ ◇ ◇ ◇</span></header><div class="d1-who"><span class="d1-title">Claude Sonnet 5.5</span><span class="d1-model">GPT-6.1 Terra</span></div></div><div class="d1-econ has-flyers">${metrics.map(([key, label, value]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">${value}</span></div>`).join("")}</div><button class="sb-history">≡</button></section>`;
+        for (const width of [160, 195, 320, 390]) for (const font of ["Roboto", "Liberation Sans"]) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${css}.d1{position:relative;inset:auto}.d1-frame{--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-window"></div><div class="d1-lane"></div></section><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></main>`);
+          await page.evaluate(() => document.fonts.ready);
+          const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-ml,.d1-mv,.d1-clock,.d1-map-name,.d1-glabel,.d1-mode,.d1-legend-rest,.sb-meta-item,.sb-history");
+          const visible = items.filter(i => i.target);
+          expect(visible.filter(i => i.clipped || i.outside), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
+          expect(visible.filter(i => i.overlaps.some(index => visible.some(other => other.index === index))), `${width}px ${font} default${defaultFontSize}: overlap`).toEqual([]);
+          if (width >= 320) expect(visible.filter(i => i.lines > 1), "ordinary labels stay whole").toEqual([]);
+          const brokenWords = await page.locator(".d1-name,.d1-title,.d1-model,.d1-ml,.d1-legend-rest,.sb-meta-item").evaluateAll(nodes => nodes.flatMap(e => {
+            const broken: string[] = [], walker = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) for (const match of (node.textContent ?? "").matchAll(/\S+/g)) {
+              const range = document.createRange(); range.setStart(node, match.index); range.setEnd(node, match.index + match[0].length);
+              if (new Set([...range.getClientRects()].map(r => Math.round(r.top))).size > 1) broken.push(match[0]);
+            }
+            return broken;
+          }));
+          expect(brokenWords, "zoom may wrap words, never split them").toEqual([]);
+          const history = await page.locator(".sb-history").boundingBox();
+          expect(history!.width).toBeGreaterThanOrEqual(44);
+          expect(history!.height).toBeGreaterThanOrEqual(44);
+          expect(await page.locator(".d1-title").evaluate(e => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(13);
+          expect(await page.locator(".d1-mode").evaluate(e => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(12);
+        }
+      } finally { await browser.close(); }
+    }
+  }, 60_000);
   it("keeps metric cells inside the deck across the narrow-to-desktop boundary", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
@@ -212,7 +249,7 @@ describe("scrolling HUD fit evidence", () => {
           expect(label.right).toBeLessThanOrEqual(Math.min(width, label.ownerRight) + 1);
           expect(label.whiteSpace).toBe("nowrap");
           if (label.text === model || label.text === username) {
-            expect(label.overflow).toBe("hidden"); expect(label.ellipsis).toBe("ellipsis"); expect(label.fontSize).toBe("12px");
+            expect(label.overflow).toBe("hidden"); expect(label.ellipsis).toBe("ellipsis"); expect(label.fontSize).toBe(width < 560 ? "13px" : "12px");
           } else {
             expect(label.fontSize).toBe("10px"); expect(label.clipped).toBe(false); expect(label.width).toBeGreaterThan(25);
           }
