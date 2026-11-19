@@ -134,7 +134,10 @@ export interface Lobby {
   readonly createdAt: number;
   /** When an open or waiting player-created lobby expires; irrelevant once it holds a slot, and for a queue-made lobby. */
   readonly expiresAt: number;
-  /** The queue mode of a queue-made lobby, which never expires; null for a player-created lobby. */
+  /**
+   * The queue mode of a queue-made lobby, which never expires; null for a player-created lobby, except a four-colony test
+   * lobby (create_lobby test: true, mode quadrants), which carries quadrants and expires like any player-created lobby.
+   */
   readonly mode: QueueMode | null;
   /** Seated identities by colony, in seating order: two colonies, or four in a quadrants lobby. */
   readonly colonies: readonly (readonly Seat[])[];
@@ -235,8 +238,10 @@ export type LobbyRefusal =
   | "not_seated"
   /** A queue or lobby join by an identity whose latest challenge's lobby is live (another lobby, for a lobby join). */
   | "live_challenge"
-  /** A quadrants queue join while the quadrants map rotation holds no quadrant map. */
-  | "no_quadrant_map";
+  /** A quadrants queue join, or a four-colony test lobby's creation, while the quadrants map rotation holds no quadrant map. */
+  | "no_quadrant_map"
+  /** A four-colony lobby created without test: true or of a size other than one agent per colony. */
+  | "test_only";
 /** also: a further refusal that applies too, reported with reason (a live-challenge quadrants join while no quadrant map is available). */
 export type LobbyOutcome<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: LobbyRefusal; readonly also?: "no_quadrant_map" };
 
@@ -249,8 +254,11 @@ export interface CreatedLobby {
 export interface Lobbies {
   /** The countdown from taking a slot to the match's start (COUNTDOWN_MS unless configured). */
   readonly countdownMs: number;
-  /** test: a test lobby (Lobby.test); a queue never makes one. */
-  createLobby(key: string, kind: LobbyKind, size: LobbySize, options?: { readonly test?: boolean }): Promise<LobbyOutcome<CreatedLobby>>;
+  /**
+   * test: a test lobby (Lobby.test); a queue never makes one. mode quadrants, only with test and size 1: a four-colony test
+   * lobby of four one-seat colonies, played as a Free-for-all match, always unrated.
+   */
+  createLobby(key: string, kind: LobbyKind, size: LobbySize, options?: { readonly test?: boolean; readonly mode?: "quadrants" }): Promise<LobbyOutcome<CreatedLobby>>;
   /**
    * inviteToken is required for a private lobby and ignored for a public one. With
    * colony, the joiner takes a seat in that colony or is refused colony_full and stays
@@ -505,16 +513,19 @@ const QUADRANTS = "quadrants" satisfies QueueMode;
 const colonyCount = (fields: Fields): 2 | 4 => fields.mode === QUADRANTS ? 4 : 2;
 
 const seatsOf = (id: string, fields: Fields): StoredSeat[] => lobbyDocument(id, fields).seats;
-const capacity = (id: string, fields: Fields) => 2 * lobbyDocument(id, fields).size;
+const capacity = (id: string, fields: Fields) => colonyCount(fields) * lobbyDocument(id, fields).size;
 
 /** A lobby's lifetime from creation: CHALLENGE_LOBBY_TTL_MS for a house challenge lobby, LOBBY_TTL_MS otherwise. */
 const lobbyTtl = (fields: Fields) => fields.challengeId ? CHALLENGE_LOBBY_TTL_MS : LOBBY_TTL_MS;
 /** A lobby's own limit, the expiresAt toLobby reports: a lobby wait's record expires a grace after it. */
 const lobbyLimit = (fields: Fields) => Number(fields.createdAt) + lobbyTtl(fields);
 
-/** The one expiry rule: a player-created lobby, open or waiting, at or after its lifetime from creation; a queue-made lobby never expires. */
+/**
+ * The one expiry rule: a player-created lobby, open or waiting, at or after its lifetime from creation; a queue-made lobby
+ * never expires. A test lobby is player-created, even a four-colony one carrying the quadrants mode.
+ */
 export function isExpired(fields: Fields, now: number): boolean {
-  return !fields.mode && (fields.state === "open" || fields.state === "waiting") && now >= Number(fields.createdAt) + lobbyTtl(fields);
+  return (!fields.mode || fields.test === "true") && (fields.state === "open" || fields.state === "waiting") && now >= Number(fields.createdAt) + lobbyTtl(fields);
 }
 
 /** Ended and expired are both irreversible. */
@@ -1017,6 +1028,11 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     async createLobby(key, kind, size, options = {}) {
       if (kind !== "public" && kind !== "private") return refuse("invalid_kind");
       if (![1, 2, 3, 4].includes(size)) return refuse("invalid_size");
+      // A four-colony lobby is only ever a test of one agent per colony; the queue alone makes other four-colony matches.
+      const quadrants = options.mode === QUADRANTS;
+      if (options.mode !== undefined && !quadrants) return refuse("invalid_mode");
+      if (quadrants && (options.test !== true || size !== 1)) return refuse("test_only");
+      if (quadrants && !quadrantMapReady) return refuse("no_quadrant_map");
       const creator = await identityOf(key);
       if (!creator) return refuse("unknown_key");
       const id = randomUUID();
@@ -1025,7 +1041,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       const fields: Fields = {
         kind, size: String(size), creatorId: creator.id, createdAt: String(createdAt), state: "open",
         rated: "", slot: "", seats: "[]", inviteVerifier: inviteToken ? verifierOf(inviteToken) : "",
-        startsAt: "", matchRunId: "", outcome: "", mode: "", ...(options.test ? { test: "true" } : {}),
+        startsAt: "", matchRunId: "", outcome: "", mode: quadrants ? QUADRANTS : "", ...(options.test ? { test: "true" } : {}),
+        ...(quadrants ? { colonyNames: JSON.stringify(quadrantColonyNames()) } : {}),
       };
       const created = { op: "create", path: lobbyPath(id), fields } as const;
       if (kind === "private") {
@@ -1066,7 +1083,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         const challengeLobby = await challenges.liveChallenge(read, joiner.id, at);
         if (challengeLobby !== undefined && challengeLobby !== lobbyId) return { result: refuse("live_challenge"), writes: [] };
         const seats = seatsOf(lobbyId, fields);
-        const seated = (colony: Colony) => seats.filter((seat) => seat.colony === colony).length;
+        const seated = (colony: SeatColony) => seats.filter((seat) => seat.colony === colony).length;
         // A house challenge's held seat is its handle's alone; that handle may hold it beside its own
         // builder seat in a mirror game.
         const holder = fields.heldFor ? await holdsHeldSeat(read, joiner.id, fields.heldFor) : false;
@@ -1075,9 +1092,10 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         if (seats.length >= capacity(lobbyId, fields)) return { result: refuse("full"), writes: [] };
         if (fields.state !== "open") return { result: refuse("started"), writes: [] };
         if (chosen !== undefined && seated(chosen) >= Number(fields.size)) return { result: refuse("colony_full"), writes: [] };
-        // Unchosen: the colony with fewer seats, colony 0 on a tie; it has a free
-        // seat whenever the lobby is not full.
-        const colony: Colony = chosen ?? (seated(0) <= seated(1) ? 0 : 1);
+        // Unchosen: the colony with fewest seats, the lowest on a tie (of two, or a four-colony test lobby's four); it has a
+        // free seat whenever the lobby is not full.
+        const colonies = Array.from({ length: colonyCount(fields) }, (_, index) => index as SeatColony);
+        const colony: SeatColony = chosen ?? colonies.reduce((fewest, next) => seated(next) < seated(fewest) ? next : fewest);
         if (fields.heldFor && colony === HELD_COLONY && !holder) return { result: refuse("seat_held"), writes: [] };
         const next = [...seats, { id: joiner.id, displayName: joiner.displayName, colony }];
         const wait: Write[] = waitToken === undefined ? [] : await joinedLobbyWaitWrites(read, waitToken, lobbyId, joiner.id, lobbyLimit(fields), at);
@@ -1133,7 +1151,8 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
         if (isExpired(fields, at)) return { result: refuse("expired"), writes: [] };
         if (fields.state !== "open") return { result: refuse("started"), writes: [] };
         const seats = seatsOf(lobbyId, fields);
-        if (!seats.some((seat) => seat.colony === 0) || !seats.some((seat) => seat.colony === 1)) {
+        // Every colony: two, or a four-colony test lobby's four.
+        if (Array.from({ length: colonyCount(fields) }, (_, colony) => colony).some((colony) => !seats.some((seat) => seat.colony === colony))) {
           return { result: refuse("colony_empty"), writes: [] };
         }
         const started = await start(read, lobbyId, fields, seats, at);

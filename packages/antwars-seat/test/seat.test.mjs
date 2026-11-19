@@ -376,6 +376,14 @@ describe("unrated lobby: create-lobby, join-lobby", () => {
     for (const tool of [...QUEUE_TOOLS, "join_lobby", "join"]) expect(s.fake.toolCalls(tool)).toHaveLength(0);
   });
 
+  it("create-lobby --test --quadrants creates a four-colony test lobby: create_lobby with test true and mode quadrants, and no queue call", async () => {
+    const s = await seat();
+    expect(await s.cli("create-lobby", "--test", "--quadrants")).toBe(0);
+    expect(s.fake.toolCalls("create_lobby").map((c) => c.args)).toEqual([{ key: KEY, size: 1, kind: "public", test: true, mode: "quadrants" }]);
+    expect(s.printed.join("")).toContain("\"lobbyId\":\"lobby-1\"");
+    for (const tool of [...QUEUE_TOOLS, "join_lobby", "join"]) expect(s.fake.toolCalls(tool)).toHaveLength(0);
+  });
+
   it("join-lobby calls join_lobby once, then locate_match and join as go, stops in the nest window without pick_nest, with no queue call; match commands then work", async () => {
     const s = await seat({ lobbyHoldsAfterLocates: 2, matchOverAfterObserves: 3 });
     await s.cli("create-lobby");

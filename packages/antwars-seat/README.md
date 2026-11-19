@@ -285,10 +285,13 @@ Pass `--test` to make it a test match: its type is test and it is left out of
 every public list (lobbies, Waiting, Live now, Watch, Recordings, leaderboards),
 while its own links still work. Without `--test` it is an ordinary unrated
 match and is listed publicly. The ranked queue (`go`) never makes a test match.
+Add `--quadrants` to `--test` for a four-colony Free-for-all test: four seats
+each run `join-lobby` on its lobbyId, and the fourth join starts it.
 
 ```sh
 S=./.antwars-seat/bin/antwars-seat
 $S create-lobby --test                 # create_lobby size 1, public, test; prints {"lobbyId":...}
+$S create-lobby --test --quadrants     # the same, four colonies (mode quadrants): a Free-for-all test
 $S join-lobby <lobbyId> --detach       # join_lobby, then locate_match, join; stops in the nest window
 $S status                              # follow join-lobby until it has finished in the nest window
 $S pick_nest --json '{"tileX":X,"tileY":Y}'   # your own pick, inside box, before closesAt
