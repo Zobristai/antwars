@@ -1,6 +1,5 @@
-/* Antwars design tokens: one copy for the site's pages. Set on .d1p, the root of the Leaderboard, Matches, Rules and front
-   pages, so they reach those pages only and never the match HUD, which keeps web/index.html's :root values (its touch
-   --aw-tap among them). */
+/* Antwars design tokens (docs/design-system.md). Set on the page root .d1p, not :root, so they change no value outside it
+   (web/index.html sets its own --aw-tap on :root, 44 px on phones). */
 .d1p {
   /* Colour: surfaces, darkest to lightest */
   --aw-bg: #121719;
@@ -56,4 +55,9 @@
   --aw-content: 912px; /* the site's general column; Matches widens to 1200 */
   --aw-bar: 48px;
   --aw-hero: 176px;
+}
+/* A 44 px tap target on touch screens, and wherever web/index.html sets it on :root: phones in portrait (700 px wide or
+   less) and in landscape (500 px tall or less, wider than 500 px). */
+@media (pointer: coarse), (max-width: 700px), (max-height: 500px) and (min-width: 501px) {
+  .d1p { --aw-tap: 44px; }
 }
