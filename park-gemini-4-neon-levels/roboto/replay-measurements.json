@@ -1,0 +1,1626 @@
+[
+ {
+  "typeface": "roboto",
+  "scene": "replay-low-v-xhigh-2d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "2d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 1280,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 209,
+   "dialog": {
+    "box": [
+     350,
+     103,
+     580,
+     594
+    ],
+    "scroll": [
+     594,
+     594
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH 1620 (+53) Very Large Gemini 4 Neon LOW 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-2d-hud-5634b8e-1280.png",
+    "pngSha256": "06366cbc768c0e86d4e619784c1f19986daf802988004e0d0664f8909b6221e5",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       126,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-1280-neon-1.png",
+      "cropSha256": "5d22903b09ff0b0bfc4ae3fb8244c7d228ea110737f02a9b5207bfcfe3c4b547"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 99.6,
+      "have": 252,
+      "spare": 60.5,
+      "box": [
+       1006,
+       143,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-1280-neon-2.png",
+      "cropSha256": "e68bd9541ac1e688d85f011a4fc54a46621337c7ace0113c5f762866cbf214ac"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       192,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-1280-neon-3.png",
+      "cropSha256": "27d0f381816cdd3cd7cfebb7e547a11db4f1fccc283d20e8e54d05bda0edb672"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 108.8,
+      "have": 252,
+      "spare": 56.8,
+      "box": [
+       1006,
+       209,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-1280-neon-4.png",
+      "cropSha256": "9b0121a42eac16d85fc21c5da9de4a8756e4b58f36fc66050102d0c946a58c88"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-2d-result-5634b8e-1280.png",
+    "pngSha256": "cc61ef520c450c9f7ffe3bd74e51086b960c15c0df10d3062d2a344269637229",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       126,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-1280-neon-1.png",
+      "cropSha256": "bb3e0606b80f782edec5da87423d0b24bdb9ed387c830fe44743c467e2bea9d8"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 99.6,
+      "have": 252,
+      "spare": 60.5,
+      "box": [
+       1006,
+       143,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-1280-neon-2.png",
+      "cropSha256": "31abe857627177dc45547d469372e1b6efd5d0842ed3401a80374f6bd4004416"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       192,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-1280-neon-3.png",
+      "cropSha256": "0ae517a83e59655f5f8a712654444041272a9b2c9b5f4813c4a5d6f02e9f9588"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 108.8,
+      "have": 252,
+      "spare": 56.8,
+      "box": [
+       1006,
+       209,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-1280-neon-4.png",
+      "cropSha256": "cce76670ff820187026d8d62ef1dd79b86df8d58bba3bf76955a415d137677b4"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 160.4,
+      "have": 376,
+      "spare": 57.3,
+      "box": [
+       378,
+       422,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-1280-neon-5.png",
+      "cropSha256": "6cc7ebe082096d09752f453703b06a306fa38e9aded40fa58a9fe7c9fbe38fea"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 147.5,
+      "have": 376,
+      "spare": 60.8,
+      "box": [
+       378,
+       491,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-1280-neon-6.png",
+      "cropSha256": "c09c9b014b9795528be0d732fb5377278218c79f96c2674bd41cbb1f06ccae12"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 216
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-low-v-xhigh-2d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "2d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 193,
+   "dialog": {
+    "box": [
+     12,
+     108,
+     366,
+     628
+    ],
+    "scroll": [
+     628,
+     628
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH 1620 (+53) Very Large Gemini 4 Neon LOW 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-2d-hud-5634b8e-390.png",
+    "pngSha256": "47488f7808f151fb69cd5c259ba681730d9b4f1772c6769b4ce070c8d29cebcd",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       860,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-390-neon-1.png",
+      "cropSha256": "40e8fc5762a36ce033e8c0293e15f6264289c25fc8addd157b8b9785206750f5"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 99.6,
+      "have": 346,
+      "spare": 71.2,
+      "box": [
+       34,
+       877,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-390-neon-2.png",
+      "cropSha256": "157187ed6093e17d7fc23a6b0cf9b6ad6369c2fa41175b9644ee49d6b3f55819"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       926,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-390-neon-3.png",
+      "cropSha256": "89d33acfa934384267cc457a5d26f3307fb9598d89767ab1971b7d5ea6cf372b"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 108.8,
+      "have": 346,
+      "spare": 68.5,
+      "box": [
+       34,
+       943,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-5634b8e-390-neon-4.png",
+      "cropSha256": "665aa0cba57808010284459dfc40b7a0dc2bae4ea78c595576b01fe1e340cd78"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-2d-result-5634b8e-390.png",
+    "pngSha256": "8fa7fe9a750567579067587a1e7dabc90151d01e86e3ae3e7e75f42acfb3dc6f",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       860,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-390-neon-1.png",
+      "cropSha256": "e0b1ba7bd4ed00c96ab2078be939caf538ab452978130facc2f92df7636bfe12"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 99.6,
+      "have": 346,
+      "spare": 71.2,
+      "box": [
+       34,
+       877,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-390-neon-2.png",
+      "cropSha256": "ac5251e9d18e929563dd31fc6ee9d9b0dad6457a6eb9083b06d0171d8a7af819"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       926,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-390-neon-3.png",
+      "cropSha256": "27c7ed2e36c59252d9f5e3185c2677473e54895541ccc41ee42c89ffef379943"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 108.8,
+      "have": 346,
+      "spare": 68.5,
+      "box": [
+       34,
+       943,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-390-neon-4.png",
+      "cropSha256": "a6fcdc878f1ff522ae10f27a314e4af2d92fba324a45cd0b10c22c1312133613"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 160.4,
+      "have": 326,
+      "spare": 50.8,
+      "box": [
+       32,
+       403,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-390-neon-5.png",
+      "cropSha256": "3744c724330aa2c9cc4507ac7954008eefb8fbee33f324e07c653aad24e5b47e"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 147.5,
+      "have": 326,
+      "spare": 54.8,
+      "box": [
+       32,
+       492,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-5634b8e-390-neon-6.png",
+      "cropSha256": "620535330afff83ccf046948dea281c55bbc4909295ec65c46293d20779a20a5"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 196
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-low-v-xhigh-2d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "2d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 1280,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 207,
+   "dialog": {
+    "box": [
+     350,
+     103,
+     580,
+     594
+    ],
+    "scroll": [
+     594,
+     594
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH RETIRED 1620 (+53) Very Large Gemini 4 Neon LOW RETIRED 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-2d-hud-b0616ba-1280.png",
+    "pngSha256": "0dfc98aec39e3f6b6f8fd2aaeece0e5312a62fcbd65c94f81b46610cc9c13f9a",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       126,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-1280-neon-1.png",
+      "cropSha256": "27bf0996cc6e3f5a057fc64026704ffae0890e2d740c5ccacf5dbbdd7877fc01"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 139.3,
+      "have": 252,
+      "spare": 44.7,
+      "box": [
+       1006,
+       143,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-1280-neon-2.png",
+      "cropSha256": "426ef9d13de9156b7f46756ba565ceadeb0f783d9d88d7b147d977251f05b5f6"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       192,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-1280-neon-3.png",
+      "cropSha256": "9d0728a5690db37658083d88d5a3014087b6070f04d05a38ff88132ec3a2c76e"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 148.5,
+      "have": 252,
+      "spare": 41.1,
+      "box": [
+       1006,
+       209,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-1280-neon-4.png",
+      "cropSha256": "56f8968dbda4c5479e32e9b12d6ea2ccb8be00b1d86cb0ae7166412157b69d68"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (low · retired)"
+     },
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (xhigh · retired)"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-2d-result-b0616ba-1280.png",
+    "pngSha256": "2fa1bdd911b682507d31b6fa99ff98b3774127e6ad42c572c7f3ac9190defd41",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       126,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-1280-neon-1.png",
+      "cropSha256": "91a87d4374ac611640a56d98b7be13a9646f9ac325cdaf379d8c6cf953856eed"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 139.3,
+      "have": 252,
+      "spare": 44.7,
+      "box": [
+       1006,
+       143,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-1280-neon-2.png",
+      "cropSha256": "fda72130621bc34970b4f19f7e9f1da9c9fd7c4ba8c974d65e8c0fa33e075dd8"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 252,
+      "spare": 68.5,
+      "box": [
+       1006,
+       192,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-1280-neon-3.png",
+      "cropSha256": "5b674594d6b07b6d573c94946e726a4811d8c8b47b91a83336b16ebbce84d804"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 148.5,
+      "have": 252,
+      "spare": 41.1,
+      "box": [
+       1006,
+       209,
+       252,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-1280-neon-4.png",
+      "cropSha256": "5bc1788baa3382ff1156e8de302813d3ea4828b8ce4e616a5c98201690edf1c3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 240.8,
+      "have": 376,
+      "spare": 36,
+      "box": [
+       378,
+       422,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-1280-neon-5.png",
+      "cropSha256": "e0e5b03c215a120d6d0c94c17c4bc9c18a36125c0a49d7938642808b5608d2a0"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 227.8,
+      "have": 376,
+      "spare": 39.4,
+      "box": [
+       378,
+       491,
+       376,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-1280-neon-6.png",
+      "cropSha256": "433cfeabf78bb2f90abfb69ecc7253a7f50c73e046aaf92cec30377925855953"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (low · retired)"
+     },
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (xhigh · retired)"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 215
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-low-v-xhigh-2d",
+  "match": "low-v-xhigh",
+  "replay": "2026-11-19T11-55-01-554Z-154865995347872",
+  "board": "2d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T11-55-01-554Z-154865995347872",
+   "/replays/2026-11-19T11-55-01-554Z-154865995347872",
+   "/watch/ratings/2026-11-19T11-55-01-554Z-154865995347872"
+  ],
+  "note": {
+   "seekMax": 611300,
+   "seekSeconds": 190,
+   "dialog": {
+    "box": [
+     12,
+     108,
+     366,
+     628
+    ],
+    "scroll": [
+     628,
+     628
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Queens killed PLAYERS RATING Lake Hodges Gemini 4 Neon XHIGH RETIRED 1620 (+53) Very Large Gemini 4 Neon LOW RETIRED 1226 (−54) DECISIVE MOMENT 8:41 Queen 2 lost Very Large 10:11 Queen 1 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-low-v-xhigh-2d-hud-b0616ba-390.png",
+    "pngSha256": "0fb7df5440a896aa61668e17e1f8a9ad421fb317d912130b8d4e1877e85cbec7",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       860,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-390-neon-1.png",
+      "cropSha256": "346046e3a318041b6e3d3798401228e1b6bcd02b114b295ee9c2b148afdc531b"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 139.3,
+      "have": 346,
+      "spare": 59.7,
+      "box": [
+       34,
+       877,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-390-neon-2.png",
+      "cropSha256": "e1534dcae2a24d272344037c8fbe48b1919dae280c67b6d1029a5b04e760094e"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       926,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-390-neon-3.png",
+      "cropSha256": "44c58de662506f2dc4d078f3a7f2515d7a8a4b9691786e0dcd1733e3800fed4b"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 148.5,
+      "have": 346,
+      "spare": 57.1,
+      "box": [
+       34,
+       943,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-hud-b0616ba-390-neon-4.png",
+      "cropSha256": "c8f4bbd337f65af003f10babf808dc3e68c043487f38fa24e3e1fe88259a82df"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (low · retired)"
+     },
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (xhigh · retired)"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-low-v-xhigh-2d-result-b0616ba-390.png",
+    "pngSha256": "5c19d639b9772149f20b21ea7d777a303c6ea33f6e3483113c4b4fe2d376a207",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       860,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-390-neon-1.png",
+      "cropSha256": "be0d6f4114d2bcee400b72b92cf5bdde84b44ee5e00db6bce34129f3be6054b6"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (low · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 139.3,
+      "have": 346,
+      "spare": 59.7,
+      "box": [
+       34,
+       877,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-390-neon-2.png",
+      "cropSha256": "5c59064e996c3991da55871626677b8896ea2372b32b8a780fc80abcb78ebdd4"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       926,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-390-neon-3.png",
+      "cropSha256": "1f6c60d4cdd59a743a92a54c74fc8f95160c202b3f99c10d15d8c1ba445e77b1"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (xhigh · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 148.5,
+      "have": 346,
+      "spare": 57.1,
+      "box": [
+       34,
+       943,
+       346,
+       16
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-390-neon-4.png",
+      "cropSha256": "48300512ddd2ea9f70289547e3fe685429c03ec118f5433609f96c9ebaedc5a2"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon XHIGH RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 240.8,
+      "have": 326,
+      "spare": 26.2,
+      "box": [
+       32,
+       403,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-390-neon-5.png",
+      "cropSha256": "4e44618de41db0b839737567fb55fc54fd21f49c040081c55cf00e522c5eab77"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon LOW RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 227.8,
+      "have": 326,
+      "spare": 30.1,
+      "box": [
+       32,
+       492,
+       326,
+       20
+      ],
+      "crop": "replay-low-v-xhigh-2d-result-b0616ba-390-neon-6.png",
+      "cropSha256": "e12cb9280aed3de73bfa678aa7da999dd4e70d62ba9f7ce0268baf4ae2d7807b"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (low · retired)"
+     },
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (xhigh · retired)"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 193
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-medium-v-high-2d",
+  "match": "medium-v-high",
+  "replay": "2026-11-19T12-14-45-958Z-234587808625478",
+  "board": "2d",
+  "build": "5634b8e",
+  "commit": "5634b8e8d037b56287219cdee9b3ff8407642a59",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T12-14-45-958Z-234587808625478",
+   "/replays/2026-11-19T12-14-45-958Z-234587808625478",
+   "/watch/ratings/2026-11-19T12-14-45-958Z-234587808625478"
+  ],
+  "note": {
+   "seekMax": 1455400,
+   "seekSeconds": 557,
+   "dialog": {
+    "box": [
+     12,
+     95,
+     366,
+     654
+    ],
+    "scroll": [
+     654,
+     654
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Sustained territory lead PLAYERS RATING Lake Hodges Gemini 4 Neon HIGH 1774 (+54) Very Large Gemini 4 Neon MEDIUM 1380 (−53) DECISIVE MOMENT 16:42 Queen 3 lost Very Large 20:35 Queen 1 lost Very Large 22:19 Queen 2 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-medium-v-high-2d-hud-5634b8e-390.png",
+    "pngSha256": "68f04cc9dbd2d53b5744b7de5093fe4327a7b132b1ee4fbec71ef5cb43bcad08",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       762,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-5634b8e-390-neon-1.png",
+      "cropSha256": "76050084ad5b4a995b1bb65c9a1797e9a96bf37cb31fa206bbf4bb4579811c51"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (medium)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 122.5,
+      "have": 346,
+      "spare": 64.6,
+      "box": [
+       34,
+       779,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-5634b8e-390-neon-2.png",
+      "cropSha256": "5c75dbceb86d8064b6913459ec5f83419279726e9531b183bd1e392d5775e3b3"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       828,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-5634b8e-390-neon-3.png",
+      "cropSha256": "09a474f511198110a75afb3f30005bc49b342cdf45ea731f93f5bb7410c4595d"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (high)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 103.4,
+      "have": 346,
+      "spare": 70.1,
+      "box": [
+       34,
+       845,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-5634b8e-390-neon-4.png",
+      "cropSha256": "7e5a4d26207f6f900efd9172d3edba8253396c1d3d688ed6e7904ac0a0e93d11"
+     }
+    ],
+    "retired": []
+   },
+   {
+    "state": "result",
+    "file": "replay-medium-v-high-2d-result-5634b8e-390.png",
+    "pngSha256": "09f5df67210c3ac3e830fa34eec5a6375cf7a626054be40e4eefc107ea009acc",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       762,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-5634b8e-390-neon-1.png",
+      "cropSha256": "0cb415bbe88aec938fdfa5e8820546083d192270ec15b7f18dd838d7d121f3e7"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (medium)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 122.5,
+      "have": 346,
+      "spare": 64.6,
+      "box": [
+       34,
+       779,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-5634b8e-390-neon-2.png",
+      "cropSha256": "5995a17c90fb56297daed81bba9ec8acb97ccbc72e5c3b360b6095545b2fa2cf"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       828,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-5634b8e-390-neon-3.png",
+      "cropSha256": "b8f71eb653abc04dd935974015ea33ed1c1eee4acc8c702fd5be1b60423b42e9"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (high)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 103.4,
+      "have": 346,
+      "spare": 70.1,
+      "box": [
+       34,
+       845,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-5634b8e-390-neon-4.png",
+      "cropSha256": "b6af4c4e74709c3ccfedce3c77d879ef51dcf96c7c5ca5ef295a18d9a642166f"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon HIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 150.7,
+      "have": 326,
+      "spare": 53.8,
+      "box": [
+       32,
+       390,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-2d-result-5634b8e-390-neon-5.png",
+      "cropSha256": "1d8a9ded691bbc97e225a2fbb36cb2cf18c5b72a1c71b66eca59e640184ad1f3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon MEDIUM",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 173,
+      "have": 326,
+      "spare": 46.9,
+      "box": [
+       32,
+       479,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-2d-result-5634b8e-390-neon-6.png",
+      "cropSha256": "92368c3a01ac4969c601c253f3ac3d35daa8f7dd3e952cb91f93933c1d8cef85"
+     }
+    ],
+    "retired": []
+   }
+  ],
+  "seconds": 560
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-medium-v-high-2d",
+  "match": "medium-v-high",
+  "replay": "2026-11-19T12-14-45-958Z-234587808625478",
+  "board": "2d",
+  "build": "b0616ba",
+  "commit": "b0616bad986592cf11b9be216c8a071d707dcf95",
+  "width": 390,
+  "errors": [],
+  "api": [
+   "/matches/2026-11-19T12-14-45-958Z-234587808625478",
+   "/replays/2026-11-19T12-14-45-958Z-234587808625478",
+   "/watch/ratings/2026-11-19T12-14-45-958Z-234587808625478"
+  ],
+  "note": {
+   "seekMax": 1455400,
+   "seekSeconds": 561,
+   "dialog": {
+    "box": [
+     12,
+     95,
+     366,
+     654
+    ],
+    "scroll": [
+     654,
+     654
+    ],
+    "text": "HEAD-TO-HEAD · FINAL RESULT Lake Hodges WINS Sustained territory lead PLAYERS RATING Lake Hodges Gemini 4 Neon HIGH 1774 (+54) Very Large Gemini 4 Neon MEDIUM RETIRED 1380 (−53) DECISIVE MOMENT 16:42 Queen 3 lost Very Large 20:35 Queen 1 lost Very Large 22:19 Queen 2 lost Very Large Next match · not announced Share on X"
+   }
+  },
+  "shots": [
+   {
+    "state": "hud",
+    "file": "replay-medium-v-high-2d-hud-b0616ba-390.png",
+    "pngSha256": "798d97e777577cedf5158f55476aca981aa99b77315d4289bd9805a79324a8b8",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       762,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-b0616ba-390-neon-1.png",
+      "cropSha256": "fd552a14222838df788f9fb412b7e6c01e76dce246db0aef6dfed7b6631a7007"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (medium · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 162.2,
+      "have": 346,
+      "spare": 53.1,
+      "box": [
+       34,
+       779,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-b0616ba-390-neon-2.png",
+      "cropSha256": "e0c04acc7fbd57dc6a8613cf5b2d4697a5006bb1c180d1400213e67bc409ecb7"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       828,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-b0616ba-390-neon-3.png",
+      "cropSha256": "09a474f511198110a75afb3f30005bc49b342cdf45ea731f93f5bb7410c4595d"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (high)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 103.4,
+      "have": 346,
+      "spare": 70.1,
+      "box": [
+       34,
+       845,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-hud-b0616ba-390-neon-4.png",
+      "cropSha256": "7e5a4d26207f6f900efd9172d3edba8253396c1d3d688ed6e7904ac0a0e93d11"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (medium · retired)"
+     }
+    ]
+   },
+   {
+    "state": "result",
+    "file": "replay-medium-v-high-2d-result-b0616ba-390.png",
+    "pngSha256": "24031ae3836c45c8673910c6f03e1ed234ea36bc57881c0a30a7888a4187283d",
+    "neon": [
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       762,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-b0616ba-390-neon-1.png",
+      "cropSha256": "9b1987ff6882dc2a757ee229335f701b4b0368a4f5d0b8ea218651c6fe9cd82b"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (medium · retired)",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 162.2,
+      "have": 346,
+      "spare": 53.1,
+      "box": [
+       34,
+       779,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-b0616ba-390-neon-2.png",
+      "cropSha256": "531cb4d09a27cbaefbfadd7b9188bd8e5f92144c348a894cef65e36517501e2a"
+     },
+     {
+      "kind": "2d-agent-name",
+      "text": "Gemini 4 Neon",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 79.4,
+      "have": 346,
+      "spare": 77,
+      "box": [
+       34,
+       828,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-b0616ba-390-neon-3.png",
+      "cropSha256": "b8f71eb653abc04dd935974015ea33ed1c1eee4acc8c702fd5be1b60423b42e9"
+     },
+     {
+      "kind": "2d-agent-model",
+      "text": "Gemini 4 Neon (high)",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 103.4,
+      "have": 346,
+      "spare": 70.1,
+      "box": [
+       34,
+       845,
+       346,
+       16
+      ],
+      "crop": "replay-medium-v-high-2d-result-b0616ba-390-neon-4.png",
+      "cropSha256": "b6af4c4e74709c3ccfedce3c77d879ef51dcf96c7c5ca5ef295a18d9a642166f"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon HIGH",
+      "retired": false,
+      "lines": 1,
+      "cut": false,
+      "need": 150.7,
+      "have": 326,
+      "spare": 53.8,
+      "box": [
+       32,
+       390,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-2d-result-b0616ba-390-neon-5.png",
+      "cropSha256": "1d8a9ded691bbc97e225a2fbb36cb2cf18c5b72a1c71b66eca59e640184ad1f3"
+     },
+     {
+      "kind": "result-player",
+      "text": "Gemini 4 Neon MEDIUM RETIRED",
+      "retired": true,
+      "lines": 1,
+      "cut": false,
+      "need": 253.3,
+      "have": 326,
+      "spare": 22.3,
+      "box": [
+       32,
+       479,
+       326,
+       20
+      ],
+      "crop": "replay-medium-v-high-2d-result-b0616ba-390-neon-6.png",
+      "cropSha256": "e2d9ff071a4065d0664f560be0689edf38b860c26d74d64e6a6f47eee336039b"
+     }
+    ],
+    "retired": [
+     {
+      "cls": "d2-agent-sub",
+      "text": "Gemini 4 Neon (medium · retired)"
+     },
+     {
+      "cls": "d1-tag",
+      "text": "retired"
+     }
+    ]
+   }
+  ],
+  "seconds": 565
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-medium-v-high-2d",
+  "match": "medium-v-high",
+  "board": "2d",
+  "build": "5634b8e",
+  "width": 1280,
+  "errors": [],
+  "seconds": 564,
+  "fromRunLog": "The full record of this run was not written (the run was stopped after this unit printed its summary); this entry is its printed summary: each Neon line as [text, lines, cut, spare %].",
+  "shots": [
+   {
+    "state": "hud",
+    "neon": [
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (medium)",
+      1,
+      false,
+      51.4
+     ],
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (high)",
+      1,
+      false,
+      59
+     ]
+    ]
+   },
+   {
+    "state": "result",
+    "neon": [
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (medium)",
+      1,
+      false,
+      51.4
+     ],
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (high)",
+      1,
+      false,
+      59
+     ],
+     [
+      "Gemini 4 Neon HIGH",
+      1,
+      false,
+      59.9
+     ],
+     [
+      "Gemini 4 Neon MEDIUM",
+      1,
+      false,
+      54
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "typeface": "roboto",
+  "scene": "replay-medium-v-high-2d",
+  "match": "medium-v-high",
+  "board": "2d",
+  "build": "b0616ba",
+  "width": 1280,
+  "errors": [],
+  "seconds": 571,
+  "fromRunLog": "The full record of this run was not written (the run was stopped after this unit printed its summary); this entry is its printed summary: each Neon line as [text, lines, cut, spare %].",
+  "shots": [
+   {
+    "state": "hud",
+    "neon": [
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (medium · retired)",
+      1,
+      false,
+      35.6
+     ],
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (high)",
+      1,
+      false,
+      59
+     ]
+    ]
+   },
+   {
+    "state": "result",
+    "neon": [
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (medium · retired)",
+      1,
+      false,
+      35.6
+     ],
+     [
+      "Gemini 4 Neon",
+      1,
+      false,
+      68.5
+     ],
+     [
+      "Gemini 4 Neon (high)",
+      1,
+      false,
+      59
+     ],
+     [
+      "Gemini 4 Neon HIGH",
+      1,
+      false,
+      59.9
+     ],
+     [
+      "Gemini 4 Neon MEDIUM RETIRED",
+      1,
+      false,
+      32.6
+     ]
+    ]
+   }
+  ]
+ }
+]

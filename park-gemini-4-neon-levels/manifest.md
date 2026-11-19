@@ -2,7 +2,7 @@
 
 - **Base:** 5634b8e8d037b56287219cdee9b3ff8407642a59 (main, `5634b8e` in file names). No Neon handle is retired there.
 - **Head:** b0616bad986592cf11b9be216c8a071d707dcf95 (`b0616ba`), the pull request's head. gemini-4-neon-low, -medium and -xhigh are retired; gemini-4-neon-high is not.
-- **Pages:** Matches, Leaderboard and the landing page, at 1280 px and 390 px, in Roboto and Liberation Sans.
+- **Pages:** Matches, Leaderboard and the landing page, plus the replay HUD and the replay result screen (added below), at 1280 px and 390 px, in Roboto and Liberation Sans.
 - **Data:** real only, no fixtures or synthetic rows. The public antwars.ai API's answers were recorded 2026-11-19T12:51:59Z to 2026-11-19T12:52:16Z and replayed offline for both builds. The page clock was pinned at 2026-11-19T12:53:00Z.
 - Rendered 2026-11-19T12:53:00Z to 2026-11-19T13:00:00Z. Evidence only: it states what was rendered and measured.
 
@@ -43,8 +43,35 @@ Spare = (available − needed) / available, for each Recordings player line laid
 
 The parked GPT-6.2 Astra Fast lines measure the same at base and head (tightest: MEDIUM, 2.1% in Liberation Sans at 1280).
 
+## Replay HUD and result screen
+
+Two real finished Index 1v1 recordings of the Neon round robin, which together seat all four levels, rendered base and head on the 2D board:
+
+| Recording | Players | Folder |
+|---|---|---|
+| 2026-11-19T12-14-45-958Z-234587808625478 | Gemini 4 Neon MEDIUM v HIGH | `<typeface>/replay-medium-v-high/` |
+| 2026-11-19T11-55-01-554Z-154865995347872 | Gemini 4 Neon LOW v XHIGH | `<typeface>/replay-low-v-xhigh/` |
+
+Two states per recording: **hud** (the replay playing near its start: score panel and the Agents list, where each line reads `Gemini 4 Neon (<level>)`) and **result** (seeked to the end, the head-to-head result dialog open: Players with level badge and rating). Files are `replay-<match>-2d-<state>-<build>-<width>.png`, with a crop of every Neon line beside it (`...-neon-<n>.png`). The recording, match and ratings answers were recorded from the public antwars.ai API 2026-11-19T13:15:39Z to 2026-11-19T13:19:09Z and replayed offline; page clock pinned at 2026-11-19T12:53:00Z. Rendered 2026-11-19T13:44:55Z to 2026-11-19T14:30:57Z.
+
+What changes at head: the Agents line reads `(medium · retired)`, `(low · retired)`, `(xhigh · retired)`; the result dialog adds a RETIRED badge after the level. HIGH is unchanged in both. Ratings and rating changes are the same at base and head (MEDIUM 1380 (−53), HIGH 1774 (+54); XHIGH 1620 (+53), LOW 1226 (−54)).
+
+On both recordings, both states, both widths, both typefaces, base and head: every Neon line is on one line and nothing is cut; no page errors; the result dialog opened every time. At 390 px the result dialog stacks PLAYERS over RATING and each rating under its player; base does the same.
+
+Tightest fit per screen (head; spare = (available − needed) / available):
+
+| Screen | Line | Typeface | Width | Spare | Base, same line |
+|---|---|---|---|---|---|
+| Replay HUD, Agents list | Gemini 4 Neon (medium · retired) | Liberation Sans | 1280 | 35.0% | 51.2% (no "· retired") |
+| Replay HUD, Agents list | same | Roboto | 1280 | 35.6% | 51.4% |
+| Result dialog, Players | Gemini 4 Neon MEDIUM RETIRED | Liberation Sans and Roboto | 390 | 22.3% | 46.9% (no badge) |
+| Result dialog, Players | Gemini 4 Neon XHIGH RETIRED | both | 390 | 26.2% | 50.8% |
+
+No replay line comes under the 8% mark used above. Per-line measurements are in `<typeface>/replay-measurements.json` (one entry per recording, build and width). For the MEDIUM v HIGH recording at 1280 px the full run record was not written because the run was stopped after that unit; its entry is the run's printed per-line summary (text, lines, cut, spare), and its screenshots are complete.
+
 ## Data and method
 
 - **Builds:** `git archive` of each commit, built with `vite build --config web/vite.config.ts`.
 - **Browser:** Playwright with chrome-headless-shell build 1254, every request routed offline. Viewports were 1280x800 and 390x844 (mobile, touch).
+- **Replay method:** the same builds and browser; each replay loaded with `?replay=<id>&board=2d`, played about 20 s for the HUD, then seeked to the end through the replay slider until the result dialog opened. The 3D board was not rendered.
 - **Files:** each page is at `<typeface>/<page>/<page>-<build>-<width>.png`, with its Neon row crops beside it. Measurements are in `<typeface>/measurements.json`: per page, the Recordings and player-cell probes, the Neon rows, the padding and item checks, and the typeface the browser reported for each text part.
