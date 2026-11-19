@@ -17,7 +17,7 @@ No text is shortened. The Leaderboard keeps its own badge style.
 ## One line, everywhere
 
 On every page, width, typeface and data set, base and head:
-- every Recordings player line and every Waiting or Live now player cell is on one line (Waiting and Live now are empty in this snapshot);
+- every Recordings player line and every Waiting or Live now player cell is on one line (Waiting and Live now are empty in the real snapshot; populated by fixtures in the set below);
 - no name is cut, no badge group is clipped, no badge breaks inside itself;
 - every colony cell keeps 7 px inner padding on both sides, every gap between a line's parts is 7 px, no column head leaves its cell, and adjacent columns stand at least 7 px apart;
 - no page error.
@@ -60,6 +60,42 @@ Crops are under `<typeface>/*-synthetic/`. At 1280 on Matches the label's row is
 ## Typeface the browser reported
 
 The browser's font report for every visible text part matches the set's typeface, apart from one landing-page part in each set, the same at base and head: in the Roboto set the "→" arrow falls back to Liberation Sans (1 glyph); in the Liberation Sans set the agent-connection address is drawn in Roboto Medium (25 glyphs), because that element names its own family. Counts are in `<typeface>/measurements.json`.
+
+## Waiting and Live now, populated by fixtures
+
+Added 2026-11-19. Rendered 2026-11-19T03:40:00Z to 2026-11-19T03:44:00Z. Same base (`10bba61`) and head (`e3bf6b7`), same browser and method. Matches page only, at 1280 px and 390 px, in Roboto and Liberation Sans.
+
+**Data.** The synthetic set's snapshot, except that the two empty lists are replaced by fixtures. These are invented rows, not recorded answers:
+- `fixtures/watch-queue.fixture.json`: Waiting holds GPT-6.2 Astra Standard (high, no tier) queued alone in the Index 1v1 queue, and one Index 1v1 lobby seating GPT-6.2 Astra Standard against the parked GPT-6.2 Astra medium (Fast).
+- `fixtures/watch-catalog.fixture.json`: Live now holds two live Index 1v1 matches. One is GPT-6.2 Astra Standard against the parked GPT-6.2 Astra medium (Fast). The other is the parked GPT-6.2 Astra xhigh (Fast) against GPT-6.2 Astra Standard.
+
+Ratings are copied from the synthetic leaderboard entries. A parked handle cannot be queued or launched at head, so the parked rows show how the page would draw one. At base the new handle is not listed yet, so it shows as "Unlisted model", and no Fast row carries RETIRED.
+
+**Result, base and head, every width and typeface:**
+- **Two-line rows:** none. Every player cell is on one line: 7 Waiting and Live now cells and 46 Recordings lines.
+- **Cut text:** none. No name is cut. No badge group is clipped, no badge breaks inside itself, and no cell overflows.
+- **Item check:** no heading, button, chip or badge wraps, is cut or overlaps.
+- **Padding check:** no cell fails.
+- **Page errors:** none.
+- **Page heights:** the same at base and head, 2032 px at 1280 and 3003 px at 390.
+- **Typefaces:** the browser reports every visible text part drawn in the set's typeface (Roboto or Roboto Medium in the Roboto set, Liberation Sans in the other).
+
+**Fits under 8% to spare (head), Waiting and Live now.** Spare = (available − needed) / available, for each player cell laid out on one line. At 1280 every cell has at least 34.6% to spare (349 px wide). At base every cell has at least 26.1%, because no Fast row carries RETIRED.
+
+| Typeface | Width | Cell | Needs / has px | Spare | Where |
+|---|---|---|---|---|---|
+| Liberation Sans | 390 | GPT-6.2 Astra MEDIUM (bolt) RETIRED 1338 | 228.1 / 237 | 3.8% | Waiting lobby, Live now row 1 |
+| Liberation Sans | 390 | GPT-6.2 Astra XHIGH (bolt) RETIRED 1639 | 219 / 237 | 7.6% | Live now row 2 |
+| Roboto | 390 | GPT-6.2 Astra MEDIUM (bolt) RETIRED 1338 | 221.8 / 237 | 6.4% | Waiting lobby, Live now row 1 |
+
+GPT-6.2 Astra Standard HIGH 1662 needs 196.8 px in Roboto at 390, which leaves 17% to spare. Recordings in this set measure the same as the synthetic set above. The page-wide item check lists the name "GPT-6.2 Astra" at 6.2%, in Liberation Sans at 1280 only, inside the Recordings MEDIUM rows as before.
+
+**Files:** under `<typeface>/matches-waiting-live/`:
+- `matches-<build>-<width>-waiting-card.png` and `-live-card.png`: the two cards whole;
+- `-waiting-row<n>.png` and `-live-row<n>.png`: each row holding a GPT-6.2 Astra player;
+- `matches-<build>-<width>-full.png`: the whole page.
+
+Measurements are in `<typeface>/measurements-waiting-live.json`.
 
 ## Data and method
 
