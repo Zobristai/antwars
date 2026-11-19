@@ -1,5 +1,5 @@
 // The team head's member icons: the source and stylesheet contracts behind one icon per member in place of
-// the "N agent(s)" count, its tip on pointer and tap, and no new keyboard stop. The model's lines
+// the "N agent(s)" count, with selectable badges where a grouped identity suppresses individual rows. The model's lines
 // are covered in deck-model.test.ts; visual evidence comes from browser captures, never these tests.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -21,18 +21,21 @@ describe("the team head's member icons", () => {
     expect(PANE).toContain('head.append(name, members, player)');
   });
 
-  it("writes one labelled image per member, which the keyboard never stops on", () => {
+  it("keeps labelled images for ordinary rows and native selectable buttons for grouped seats", () => {
     const write = body("writeMembers");
-    expect(write).toContain('h(doc, "span", "d1-member")');
+    expect(write).toContain('h(doc, grouped ? "button" : "span", "d1-member")');
     expect(write).toContain('setAttribute("role", "img")');
     expect(write).toContain('setAttribute("aria-label", m.label)');
-    expect(write).not.toMatch(/tabIndex|tabindex|"button"|focus/);
-    expect(PANE).toContain("writeMembers(team, g?.members ?? [])");
+    expect(write).toContain('button.type = "button"');
+    expect(write).toContain('actions.selectAgent(m.index)');
+    expect(write).toContain('button.addEventListener("focus", point)');
+    expect(write).toContain('setAttr(button, "aria-expanded", String(index === selectedAgent))');
+    expect(PANE).toContain("writeMembers(team, g?.members ?? [], g?.player !== null && g?.player !== undefined)");
   });
 
   it("shows the member's tip on a pointer over it and on a tap, and hides it as a pointer leaves", () => {
     const write = body("writeMembers");
-    expect(write).toContain('for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, m.lines))');
+    expect(write).toContain('for (const type of ["pointerenter", "click"]) icon.addEventListener(type, () => showTip(icon, team.memberModels.get(m.index)!.lines))');
     expect(write).toContain('icon.addEventListener("pointerleave", leaveTip)');
     // A tap keeps the tip until the next tap elsewhere; the asterisk's tip is the default and unchanged.
     expect(PANE).toContain('if (p.pointerType === "touch") return;');

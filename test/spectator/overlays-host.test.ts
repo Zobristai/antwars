@@ -272,13 +272,13 @@ describe("the HUD's host", () => {
     expect(fake.mounted).toHaveLength(1);
   });
 
-  // The 3D board mounts the Instrument deck in place of today's HUD, and hands it the page's mode line and
-  // playback stall from the board's own state; the 2D board keeps today's HUD.
-  it("mounts the deck when the 3D board asks, today's HUD otherwise, and publishes the mode line and stall on change", () => {
-    const { overlays, mount } = host("3d");
-    const m = mount(true);
+  // Both renderers mount the shared Score Band and hand it the page's mode line and
+  // playback stall from the board's own state.
+  it.each(["2d", "3d"] as const)("mounts Score Band for %s and publishes the mode line and stall on change", (board) => {
+    const { overlays, mount } = host(board);
+    const m = mount(board === "3d");
     expect(m.deck).toBe(true);
-    expect(lastView(m)).toMatchObject({ mode: null, stalled: false, board: "3d" });
+    expect(lastView(m)).toMatchObject({ mode: null, stalled: false, board });
     const copy = { label: "LIVE · rated match", detail: "300 s behind the match", link: null };
     overlays.setMode(copy);
     expect(lastView(m)).toMatchObject({ mode: copy, stalled: false });
@@ -287,9 +287,7 @@ describe("the HUD's host", () => {
     overlays.setStalled(false);
     expect(m.update.mock.calls).toHaveLength(calls);
     overlays.setStalled(true);
-    expect(lastView(m)).toMatchObject({ mode: copy, stalled: true });
-
-    expect(host("2d").mount(false).deck).toBe(false);
+    expect(lastView(m)).toMatchObject({ mode: copy, stalled: true, board });
   });
 
   // The board sets the stream line every frame; the HUD hears it only on a change,

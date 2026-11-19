@@ -143,7 +143,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* One icon per member, centred on the name; its tip shows the member's handle, model and Elo. */
 .d1-team-members { flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; align-self: center; gap: 4px; min-width: 0; }
 .d1-member { display: inline-grid; place-items: center; padding: 2px; margin: -2px; border-radius: 5px; line-height: 0; cursor: help; }
+button.d1-member { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; line-height: 0; cursor: pointer; }
 .d1-member:hover { background: var(--aw-raise); }
+button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 /* The one player's line, in the Matches order: its name and model give way, ending in an ellipsis; its badges, rating,
    seat count and result never do. */
 .d1-team-player { flex: 0 1 auto; display: inline-flex; align-items: baseline; gap: 0 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -319,7 +321,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-log.is-arrival .d1-tl-what { white-space: normal; overflow-wrap: anywhere; }
 .d1-log-lead { margin-right: 6px; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
 .d1-log-mark { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: top; }
-.d1-log-mark-word { color: var(--aw-ink-3); }
+/* Fixed labels and symbols keep their full width beside the wrapping mark description. */
+.d1-log-mark-word { flex: none; white-space: nowrap; color: var(--aw-ink-3); }
+.d1-log-mark > .d1-log-icon { flex: none; }
 
 /* Selected: the card for whatever the board or an agent row picked, in its colony's container in place of its history. */
 .d1-team.is-picked > .d1-timeline { display: none; }
@@ -634,3 +638,176 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 }
 
 .d1-result-dialog .d1-close:focus-visible { outline-color: #102126; }
+
+/* Score Band: shared comparison, aligned colony rows, then the unchanged board window.
+   At narrow widths the clock/map lead colony cards and comparison follows them. */
+.score-band.d1-hud { grid-template-rows: 48px 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
+.score-band .d1-below { display: contents; }
+.score-band .d1-deck {
+  --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) 54px;
+  display: grid; grid-template-columns: var(--sb-columns); grid-template-areas: none; gap: 0 8px;
+  padding: 12px; overflow: visible; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line);
+}
+.score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) {
+  --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(60px, .6fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) 54px;
+}
+.sb-band { grid-column: 1 / -1; display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; padding: 0 0 12px; }
+.sb-clock-map { display: flex; flex-direction: column; gap: 10px; padding: 2px 10px 0 2px; border-right: 1px solid var(--aw-line); }
+.score-band .d1-clock { align-self: start; }
+.score-band .d1-map { padding: 0; justify-content: start; min-height: 0; }
+.score-band .d1-map-name { overflow: visible; text-overflow: clip; }
+.score-band .d1-score { grid-area: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(150px, .7fr); gap: 20px; width: 100%; padding: 0; border: 0; overflow: visible; }
+.sb-gauge { display: grid; grid-template-rows: auto 12px auto; align-content: start; gap: 10px; min-width: 0; }
+.sb-bar { position: relative; display: flex; height: 12px; background: var(--d1-ground); }
+.sb-bar.is-unknown { background: transparent; border: 1px dashed var(--aw-ink-3); }
+.sb-segment { flex: none; height: 100%; background: var(--sb-ink); }
+.sb-segment + .sb-segment { box-shadow: inset 1px 0 0 var(--aw-surface); }
+.sb-lead { position: absolute; top: -3px; bottom: -3px; border-left: 2px dotted var(--aw-ink-bright); }
+.sb-values { display: grid; grid-template-columns: repeat(var(--sb-count, 2), minmax(0, 1fr)); gap: 6px; }
+.sb-figure { display: flex; align-items: center; gap: 4px; color: var(--aw-ink-bright); font-size: 13px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sb-figure::before, .score-band .d1-name::before { content: ''; flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--sb-ink, currentColor); }
+.sb-unavailable, .sb-rule { color: var(--aw-ink-3); font-size: 12px; white-space: nowrap; }
+.sb-hold { display: flex; flex-direction: column; align-items: start; gap: 5px; padding-left: 12px; border-left: 1px solid var(--aw-line); min-width: 0; }
+.sb-holder { color: var(--sb-ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.sb-hold-value { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--sb-ink); white-space: nowrap; }
+.sb-columns { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; padding: 6px 0; border-block: 1px solid var(--d1-hair); }
+.score-band .d1-team { display: grid; grid-column: 1 / -1; grid-row: auto; grid-template-columns: subgrid; grid-template-areas: none; gap: 0 8px; align-items: center; padding: 6px 0; border-top: 0; border-bottom: 1px solid var(--d1-hair); overflow: visible; container-type: normal; }
+.score-band .d1-team:last-of-type { border-bottom: 0; }
+.score-band .d1-team.c0 { --sb-ink: var(--aw-k0, var(--aw-c0)); grid-area: auto; grid-column: 1 / -1; }
+.score-band .d1-team.c1 { --sb-ink: var(--aw-k1, var(--aw-c1)); grid-area: auto; grid-column: 1 / -1; }
+.score-band .d1-team.c2 { --sb-ink: var(--aw-k2); }
+.score-band .d1-team.c3 { --sb-ink: var(--aw-k3); }
+.sb-identity { grid-column: 1; grid-row: 1; min-width: 0; }
+.score-band .d1-team-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; }
+.score-band .d1-name { flex: none !important; display: inline-flex; align-items: center; gap: 5px; font-size: 15px; color: var(--sb-ink); overflow: visible; text-overflow: clip; }
+.score-band .d1-team-members { flex: none; flex-wrap: nowrap; gap: 4px; }
+/* Every seat reserves the old idle glyph's space, so activity never moves its badge or focus target. */
+.score-band .d1-member { display: inline-flex; align-items: center; gap: 2px; }
+/* The seat, not its reserved idle slot, carries hover and persistent selection. */
+.score-band .d1-member:hover { background: transparent; }
+.score-band .d1-member:hover > .sb-seat-badge { background: var(--aw-raise); }
+.score-band .d1-member[aria-expanded="true"] > .sb-seat-badge { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.sb-seat-badge { display: inline-grid; place-items: center; flex: none; }
+.sb-idle { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; visibility: hidden; color: var(--aw-ink-3); }
+.sb-idle.is-idle { visibility: visible; }
+.score-band .d1-team-player { flex: 1 0 100%; padding-left: 13px; font-size: 12px; flex-wrap: wrap; row-gap: 3px; }
+/* Name and model may occupy separate lines; each label remains one line in its own box. */
+.score-band .d1-team-player-name { display: inline-flex; flex-wrap: wrap; gap: 3px 4px; max-width: 100%; overflow: visible; }
+.score-band .d1-agents { max-height: none; overflow: visible; }
+.score-band .d1-agent { padding: 2px 0 2px 13px; grid-template-columns: minmax(0, 1fr); min-height: 24px; box-shadow: none; font-size: 12px; }
+.score-band .d1-agent > .d1-badge { display: none; }
+.score-band .d1-who { display: flex; flex-wrap: wrap; gap: 3px 5px; overflow: visible; }
+/* Match the tables: extreme identity text ends inside its box, never across a score cell.
+   The complete label stays in the DOM and its hover title; badges never shrink. */
+.score-band :is(.d1-title-box, .d1-model-box) { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 100%; align-items: baseline; gap: 4px; }
+.score-band :is(.d1-title, .d1-model) { min-width: 0; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.score-band .d1-model, .score-band .d1-title { font-size: 12px; }
+.score-band .d1-econ, .score-band .d1-econ.has-flyers { display: contents; }
+.score-band .d1-cell { grid-row: 1; display: flex; align-items: center; min-width: 0; }
+.score-band .d1-cell > .d1-ml { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.score-band .d1-mv { color: var(--aw-ink-bright); font-size: 15px; }
+.score-band .d1-next { color: var(--sb-ink); }
+.sb-queen-value { display: flex; gap: 8px; align-items: center; width: 100%; }
+.score-band .d1-lamps { flex: 1; flex-direction: row; gap: 3px; min-width: 0; }
+.score-band .d1-lamp { min-width: 22px; }
+.score-band .d1-lamp-fill { background: var(--sb-ink); }
+/* Match the legacy colony-specific specificity so both layers fill from the same edge. */
+.score-band .d1-lamps :is(.d1-lamp-fill, .d1-lamp-hp.is-on) { clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
+.sb-history { grid-row: 1; display: grid; place-items: center; justify-self: end; width: 44px; height: 44px; background: var(--aw-raise); color: var(--aw-ink); border: 0; border-radius: 50%; font-size: 20px !important; cursor: pointer; }
+.sb-history:hover { background: var(--aw-raise-hover); }
+.score-band .d1-timeline, .score-band .d1-selected { grid-column: 1 / -1; grid-row: 2; padding: 12px 0 0; max-height: none; overflow: visible; }
+.score-band .d1-tl { max-height: 252px; }
+.sb-detail-stat { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; }
+.sb-detail-stat > dd { margin: 0; }
+.score-band .d1-ml { overflow: visible; text-overflow: clip; }
+.score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) var(--d1-lane); }
+.sb-metadata { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px 4px; background: var(--aw-bg); z-index: 1; color: var(--aw-ink-2); font-size: 12px; pointer-events: auto; }
+.sb-meta-item { white-space: nowrap; }
+.score-band .d1-window { grid-row: 2; }
+.score-band .d1-lane { grid-row: 3; }
+.score-band .d1-back { margin-left: auto; }
+.score-band .d1-legend { display: flex; white-space: nowrap; letter-spacing: .02em; }
+.score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
+.score-band .d1-foot { flex-wrap: wrap; min-height: 36px; align-content: center; }
+.sb-rules-key { display: inline-flex; align-items: center; gap: 12px; flex: none; white-space: nowrap; }
+.sb-key-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
+.sb-key-toggle:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+.sb-key { flex: 0 0 100%; min-width: 0; white-space: normal; line-height: 1.5; }
+.sb-key p { margin: 8px 0; }
+@media (max-width: 1199px) {
+  .sb-key-toggle { min-width: 44px; min-height: 44px; }
+}
+
+/* Keep in sync with DECK_FIRST: the Flyers grid needs 1179 px including gutters. */
+@media (max-width: 1199px) {
+  /* The host must retain scrolling access to controls outside the narrow frame; the deck scrolls independently below. */
+  .score-band.d1-hud { grid-template-rows: 48px 8px auto 8px minmax(0, 1fr); overflow: visible; }
+  .score-band .d1-frame { grid-row: 3; grid-template-rows: auto var(--d1-window-h) var(--d1-lane); --d1-window-h: min(73vw, 42vh); }
+  .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; background: var(--aw-surface); min-height: 0; pointer-events: auto; }
+  .score-band .d1-deck, .score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) { display: flex; flex-direction: column; gap: 0; padding: 0 8px; border-radius: 0; box-shadow: none; }
+  .sb-band { display: contents; }
+  .sb-clock-map { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; padding: 12px 0; border: 0; gap: 8px; }
+  .sb-columns { display: none; }
+  .score-band .d1-team { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 12px 6px; padding: 12px 0; border-top: 1px solid var(--d1-hair); border-bottom: 0; }
+  .sb-identity { grid-column: 1 / -1; padding-right: 0; }
+  /* Only the heading shares a row with History; identity rows and their divider use the whole card. */
+  .score-band .d1-team-head { gap: 4px; padding-right: 50px; }
+  /* Existing seat padding keeps the glyphs apart; a second inter-seat gap needlessly wraps the longer colony name. */
+  .score-band .d1-team-members { gap: 0; }
+  .score-band .d1-team-player { padding-left: 0; }
+  .score-band .d1-agent { padding: 3px 0; min-height: 44px; }
+  /* Twelve tracks let each occupied row fill the card: three plus three, or four plus three with Flyers. */
+  .score-band .d1-econ, .score-band .d1-econ.has-flyers { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px 12px; padding: 0; border: 0; }
+  .score-band .sb-workers { grid-column: 1 / 5; }
+  .score-band .sb-soldiers { grid-column: 5 / 9; }
+  .score-band .sb-food { grid-column: 9 / 13; }
+  .score-band .d1-econ.has-flyers > .sb-workers { grid-column: 1 / 4; }
+  .score-band .d1-econ.has-flyers > .sb-soldiers { grid-column: 4 / 7; }
+  .score-band .d1-econ.has-flyers > .sb-flyers { grid-column: 7 / 10; }
+  .score-band .d1-econ.has-flyers > .sb-food { grid-column: 10 / 13; }
+  .score-band .d1-econ > .sb-next { grid-column: 1 / 5; grid-row: 2; }
+  .score-band .d1-econ > .sb-ants { grid-column: 5 / 9; grid-row: 2; }
+  .score-band .d1-econ > .sb-queen-kills { grid-column: 9 / 13; grid-row: 2; }
+  .score-band .d1-cell { grid-row: auto; display: grid; grid-template-rows: 14px 20px; align-items: start; gap: 2px; }
+  .score-band .d1-cell > .d1-ml { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .score-band .sb-queens { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 10px; }
+  .sb-queen-value { flex: 1; }
+  .sb-history { grid-column: 2; grid-row: 1; align-self: start; }
+  .score-band .d1-timeline, .score-band .d1-selected { grid-row: 3; padding-top: 0; }
+  .score-band .d1-score { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 16px 0; border-top: 1px solid var(--d1-hair); }
+  .sb-hold { border: 0; padding: 0; }
+  .score-band .d1-foot { position: relative; flex-wrap: wrap; gap: 0 12px; padding: 8px; }
+  .score-band .d1-deck-end { padding: 16px 8px; }
+}
+@media (max-width: 559px) {
+  .score-band.d1-hud { grid-template-rows: 48px 8px auto minmax(0, 1fr); }
+  .score-band .d1-below { grid-row: 4; }
+  .score-band .d1-name { font-size: 14px; letter-spacing: .02em; }
+  .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; font-size: 12px; }
+  .score-band :is(.d1-title, .d1-model) { font-size: 13px; }
+  .score-band .d1-dot { margin-right: 5px; }
+  .sb-metadata { padding: 8px 8px 4px; }
+}
+
+/* Below the ordinary phone width, page zoom leaves less room than a one-line label.
+   Keep whole words and controls, let existing groups take the space they need. */
+@media (max-width: 319px) {
+  .score-band .d1-frame { grid-template-rows: auto auto var(--d1-window-h) var(--d1-lane); }
+  .score-band .d1-legend { position: static; grid-row: 1; display: block; max-width: none; padding: 4px 8px; white-space: normal; }
+  .score-band .d1-legend-rest, .score-band .sb-meta-item { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .sb-metadata { grid-row: 2; }
+  .score-band .d1-window { grid-row: 3; }
+  .score-band .d1-lane { grid-row: 4; }
+  .sb-clock-map { flex-direction: column; align-items: start; gap: 6px; }
+  .score-band .d1-map { flex-wrap: wrap; }
+  .score-band .d1-map-name { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-name { display: block; flex: 1 1 100%; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-name::before { margin-right: 5px; }
+  .score-band .d1-team-members { flex-wrap: wrap; max-width: 100%; }
+  .score-band :is(.d1-title, .d1-model) { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-econ, .score-band .d1-econ.has-flyers { grid-template-columns: repeat(auto-fit, minmax(min(100%, 6em), 1fr)); }
+  .score-band .d1-econ > .d1-cell, .score-band .d1-econ.has-flyers > .d1-cell { grid-column: auto; grid-row: auto; grid-template-rows: auto auto; }
+  .score-band .d1-cell > .d1-ml { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-econ > .sb-queens, .score-band .d1-econ.has-flyers > .sb-queens { grid-column: 1 / -1; flex-wrap: wrap; }
+  .score-band .sb-queen-value { flex: 1 1 100%; min-width: 0; }
+}
