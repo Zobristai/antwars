@@ -67,9 +67,14 @@ export const HOUSE_LABELS: Readonly<Record<string, HouseLabel>> = Object.freeze(
   "gpt-6-2-astra-high": label("GPT-6.2 Astra", "high", "fast"),
   "gpt-6-2-astra-xhigh": label("GPT-6.2 Astra", "xhigh", "fast"),
   "gpt-6-2-astra-max": label("GPT-6.2 Astra", "max", "fast"),
+  "gpt-6-2-astra-high-std": label("GPT-6.2 Astra Standard", "high"),
   "qwen4-max-low": label("Qwen4 Max", "low"),
   "qwen4-max-high": label("Qwen4 Max", "high"),
   "qwen4-max-xhigh": label("Qwen4 Max", "xhigh"),
+  "gemini-4-neon-low": label("Gemini 4 Neon", "low"),
+  "gemini-4-neon-medium": label("Gemini 4 Neon", "medium"),
+  "gemini-4-neon-high": label("Gemini 4 Neon", "high"),
+  "gemini-4-neon-xhigh": label("Gemini 4 Neon", "xhigh"),
   "mistral-large-latest": label("Mistral Large", null, null),
   "abliterated-model-large": label("Abliterated GLM-5.2", "max", "standard"),
   "abliterated-model": label("Abliterated Model", "high", "standard"),
@@ -92,6 +97,11 @@ export const HOUSE_LABELS: Readonly<Record<string, HouseLabel>> = Object.freeze(
 export const RETIRED_HOUSE_HANDLES: ReadonlySet<string> = new Set([
   "claude-fable-5-1",
   "qwen3-8-max",
+  "gpt-6-2-astra-low",
+  "gpt-6-2-astra-medium",
+  "gpt-6-2-astra-high",
+  "gpt-6-2-astra-xhigh",
+  "gpt-6-2-astra-max",
 ]);
 
 /** Whether a bare handle or an antwars/<handle> name is retired, compared case-insensitively like canonical names. */

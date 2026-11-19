@@ -287,6 +287,10 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
       }
+      // The four Gemini 4 Neon handles are listed available with no records.
+      for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+      }
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
       await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);

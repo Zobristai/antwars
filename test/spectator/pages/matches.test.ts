@@ -690,6 +690,13 @@ describe("a model label with nothing after its provider prefix", () => {
     }
   });
 
+  it("keeps a Recordings player on one line, its badges in the Matches badge style's 2 px padding", () => {
+    const sheet = css();
+    expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: baseline;[^}]*white-space: nowrap; \}/);
+    expect(sheet).not.toMatch(/\.d1p-rec-(player|badges) \{[^}]*flex-wrap/);
+    expect(sheet).toContain(":is(.d1p-model, .d1p-rec-player) :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
+  });
+
   it("retains the entire long builder/model name in text and hover title", () => {
     const handle = "long-builder-" + "x".repeat(64), model = "synthetic/" + "long-model-".repeat(12);
     const rec: Recording = { ...recording, seats: [{ ...recording.seats[0]!, handle, modelLabel: model }, recording.seats[1]!] };

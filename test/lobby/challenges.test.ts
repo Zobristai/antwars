@@ -857,9 +857,12 @@ describe("the house handle list", () => {
     for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
-    // The five GPT-6.2 Astra and three Qwen4 Max handles are listed available.
-    for (const handle of ["gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
-      "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh"]) {
+    // The GPT-6.2 Astra Standard handle and the three Qwen4 Max handles are listed available.
+    for (const handle of ["gpt-6-2-astra-high-std", "qwen4-max-low", "qwen4-max-high", "qwen4-max-xhigh"]) {
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+    }
+    // The four Gemini 4 Neon handles are listed available.
+    for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-high", "gemini-4-neon-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
     // A retired handle is closed as retired, on the launch table or off it; every other launch-table handle is open.
@@ -877,6 +880,15 @@ describe("the house handle list", () => {
     expect(LAUNCHABLE_HANDLES).not.toContain("qwen3-8-max");
     expect(opponents.find(o => o.handle === "antwars/qwen3-8-max")).toEqual({ handle: "antwars/qwen3-8-max", displayName: "Qwen3.8 Max",
       level: "xhigh", tier: null, available: false, reason: RETIRED_REASON });
+    // The five GPT-6.2 Astra Fast handles: parked the same way, off the launch table and closed as retired, each with its
+    // name, level and Fast tier.
+    for (const handle of ["gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max"]) {
+      expect(LAUNCHABLE_HANDLES, handle).not.toContain(handle);
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toEqual({ handle: `antwars/${handle}`, displayName: "GPT-6.2 Astra",
+        level: handle.slice("gpt-6-2-astra-".length), tier: "fast", available: false, reason: RETIRED_REASON });
+    }
+    expect(opponents.find(o => o.handle === "antwars/gpt-6-2-astra-high-std")).toEqual({ handle: "antwars/gpt-6-2-astra-high-std",
+      displayName: "GPT-6.2 Astra Standard", level: "high", tier: null, available: true, reason: null });
   });
 });
 
@@ -903,7 +915,8 @@ describe("a retired house handle", () => {
     const lobbyWrites = vi.fn();
     for (const store of [empty, open]) {
       const steps = createChallengeSteps(store, builder, { now: () => Date.UTC(2026, 10, 4), challengeLobbyWrites: lobbyWrites } as unknown as ChallengeLobbyRules);
-      for (const opponent of ["antwars/claude-fable-5-1", "ANTWARS/Claude-Fable-5-1", "claude-fable-5-1", "antwars/qwen3-8-max", "qwen3-8-max"]) {
+      for (const opponent of ["antwars/claude-fable-5-1", "ANTWARS/Claude-Fable-5-1", "claude-fable-5-1", "antwars/qwen3-8-max", "qwen3-8-max",
+        "antwars/gpt-6-2-astra-high", "gpt-6-2-astra-max"]) {
         expect(await steps.requestChallenge("key", opponent), opponent).toEqual({ ok: false, reason: "opponent_unavailable", detail: RETIRED_REASON });
       }
     }
