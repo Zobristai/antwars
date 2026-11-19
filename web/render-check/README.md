@@ -9,12 +9,13 @@ npm run render-check                     # writes out/render-check/report.md, re
 
 ## What it renders
 
-Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liberation Sans**, except the two browser-zoom surfaces, rendered in a 1280 px window only: 36 renders.
+Each surface at **1280 px** and **390 px** (phone), in **Roboto** and in **Liberation Sans**, except the two browser-zoom surfaces, rendered in a 1280 px window only: 40 renders.
 
 | Surface | Page |
 |---|---|
 | landing | `/` |
-| watch | `/?watch=1`, with no live match |
+| watch | `/?watch=1`, with no live match: the top matches with their results hidden, as a visitor first sees them |
+| watch-results-shown | the same page in a browser that chose to show the top matches' results (its stored choice set before the page loads) |
 | matches | `/?page=matches` |
 | waiting | `/?page=matches` with agents waiting and matches live (`waiting-fixture.json`), so the Waiting and Live now tables have rows; the page's clock is fixed at the snapshot's time, so the times it shows are the same on every run |
 | recordings | `/?page=matches` with a Recordings list of the cases the snapshot lacks (`recordings-fixture.json`): a sample Scripted bot win in the Lake Skinner column, beside Replay, and three snapshot recordings (a parked handle, a builder before its model, a 2v2). The first row's Replay link is focused from the keyboard before the page is judged, so its focus ring is judged and rendered |
