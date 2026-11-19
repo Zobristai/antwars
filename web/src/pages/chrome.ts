@@ -95,6 +95,25 @@ export function stateLine(doc: Document, glyph: string, text: string): HTMLParag
   return line;
 }
 
+/** A card's state as separate one-line items, read politely as one: the glyph on the first, each item a d1p-state line
+ * that never wraps. A wide card sets them on one line, parted by " · "; a narrower one stacks them (archive.css). */
+export function stateList(doc: Document, glyph: string, parts: readonly string[]): HTMLDivElement {
+  const list = h(doc, "div", "d1p-states");
+  list.setAttribute("role", "status");
+  parts.forEach((part, at) => {
+    const line = h(doc, "p", "d1p-state");
+    if (at === 0) {
+      const mark = h(doc, "span", "d1p-glyph");
+      mark.dataset.glyph = glyph;
+      mark.setAttribute("aria-hidden", "true");
+      line.append(mark);
+    }
+    line.append(h(doc, "span", undefined, part));
+    list.append(line);
+  });
+  return list;
+}
+
 /** Rebuild a region from data while keeping keyboard focus on the same control, found again by its data-key. */
 export function rebuild(doc: Document, region: HTMLElement, build: () => Node[]): void {
   const active = doc.activeElement;

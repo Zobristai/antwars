@@ -56,7 +56,7 @@ describe("the Waiting card", () => {
   it("says when no agent is waiting, and when the list could not be read", () => {
     const p = page();
     p.mounted.update(view({ status: "ready", rows: [] }));
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("No agent waiting in a ranked queue or lobby");
+    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("No agent in a ranked queue or lobby");
     expect(p.card().byClass("d1p-wide")).toEqual([]);
     p.mounted.update(view({ status: "error", rows: [] }));
     expect(p.card().byClass("d1p-state")[0]!.textContent).toMatch(/^Queue list unavailable/);
@@ -174,10 +174,10 @@ describe("Quadrants on the Waiting card", () => {
       ["11 Nov 202605:04 UTC", "Ranked · 2v2", ["kite1490 ± 80×2, 2 seats"], ["bob×2, 2 seats"], "Status Starting", ""],
     ]);
     expect(allRows(p.card())[1]!.byClass("d1p-elo-badge")).toEqual([]);
-    // Each clause is kept whole: the line's only ordinary spaces follow its separators, so it breaks only between clauses.
-    const state = p.card().byClass("d1p-state")[0]!.textContent!;
-    expect(state.replaceAll("\u00a0", " ")).toBe("1 agent waiting in a ranked queue · 1 agent waiting for Free-for-all · 1 match waiting to start");
-    expect(state.split(" ")).toEqual(["1\u00a0agent\u00a0waiting\u00a0in\u00a0a\u00a0ranked\u00a0queue\u00a0·", "1\u00a0agent\u00a0waiting\u00a0for\u00a0Free-for-all\u00a0·", "1\u00a0match\u00a0waiting\u00a0to\u00a0start"]);
+    // Each kind of wait is a one-line item of its own, in today's words, together in one status list.
+    const [list] = p.card().byClass("d1p-states");
+    expect(list!.byClass("d1p-state").map(item => item.textContent)).toEqual(["1 agent waiting in a ranked queue", "1 agent waiting for Free-for-all", "1 match waiting to start"]);
+    expect(list!.byClass("d1p-glyph")).toHaveLength(1);
     p.mounted.destroy();
   });
 
@@ -233,7 +233,7 @@ describe("Quadrants on the Waiting card", () => {
       expect(scope.byClass("d1p-elo-badge")).toEqual([]);
       expect(scope.byClass("d1p-stamp")[0]!.textContent).toBe("Status 4 of 4 seats");
     }
-    expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("1 agent waiting in a ranked queue · 2 matches waiting to start");
+    expect(p.card().byClass("d1p-state").map(item => item.textContent)).toEqual(["1 agent waiting in a ranked queue", "2 matches waiting to start"]);
     p.mounted.destroy();
   });
 
@@ -255,12 +255,12 @@ describe("Quadrants on the Waiting card", () => {
     const drawn = (rows: MatchesView["waiting"]["rows"]) => {
       const p = page();
       p.mounted.update(view({ status: "ready", rows }));
-      const read = { state: p.card().byClass("d1p-state")[0]!.textContent, rows: allRows(p.card()).map(row => row.textContent) };
+      const read = { state: p.card().byClass("d1p-state").map(item => item.textContent), rows: allRows(p.card()).map(row => row.textContent) };
       p.mounted.destroy();
       return read;
     };
     const plain = drawn([solo, pairing]);
-    expect(plain.state).toBe("1 agent waiting in a ranked queue · 1 match waiting to start");
+    expect(plain.state).toEqual(["1 agent waiting in a ranked queue", "1 match waiting to start"]);
     const beside = drawn([solo, eve, quad, pairing]);
     expect([beside.rows[0], beside.rows[3]]).toEqual(plain.rows);
   });
@@ -276,7 +276,7 @@ describe("house challenges on the Waiting card", () => {
     const links = () => card().all().filter(node => node.tag === "a").map(node => [node.textContent, node.href]);
     mounted.update(view({ status: "ready", rows: [] }));
     // The state line is unchanged; the offer is a line of its own, keeping the page's kept parameters (ui/format.ts keep).
-    expect(card().byClass("d1p-state")[0]!.textContent).toBe("No agent waiting in a ranked queue or lobby");
+    expect(card().byClass("d1p-state")[0]!.textContent).toBe("No agent in a ranked queue or lobby");
     expect(links()).toEqual([["challenge a house handle", "/?page=leaderboard&mode=house-1v1&board=3d"]]);
     // The site's cyan button (deck.css .d1-agent-button), not the grey pill; no house slug on the card.
     expect(card().all().find(node => node.tag === "a")!.classes()).toEqual(["d1-agent-button"]);

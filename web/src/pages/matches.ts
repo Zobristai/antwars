@@ -22,7 +22,7 @@ import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, u
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
-import { mountFrame, rebuild, stateLine } from "./chrome.ts";
+import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
 import { rowRatingNode } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
@@ -433,7 +433,8 @@ function rowParts(doc: Document) {
       });
       body.push(list);
     }
-    return card(spec.titleId, spec.title, [stateLine(doc, spec.state.glyph, spec.state.text)], body, spec.foot ?? [], spec.cardClass);
+    const state = spec.state.parts ? stateList(doc, spec.state.glyph, spec.state.parts) : stateLine(doc, spec.state.glyph, spec.state.text);
+    return card(spec.titleId, spec.title, [state], body, spec.foot ?? [], spec.cardClass);
   };
   return { card, matchCard, rowPill };
 }
