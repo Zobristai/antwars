@@ -1,0 +1,331 @@
+{
+ "recordedFrom": "https://antwars.ai",
+ "recordedAt": "2026-11-18T09:51:28.818Z",
+ "responses": {
+  "/assets/chevron-BA7sRlhC.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "87ad418207fe3cf02c86.body"
+  },
+  "/assets/chevron-CJAqOxn_.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "3d30bca1ba65a0836dff.body"
+  },
+  "/assets/close-BL1ZDuRH.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "1bc16d93d3ff861a12a9.body"
+  },
+  "/assets/close-BpCkXTws.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "63a3be29b4c67e88e964.body"
+  },
+  "/assets/crown-Dnjogbzq.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "92da3d8c31699d9f1cc3.body"
+  },
+  "/assets/crown-VGt3aimH.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "886c9647056deea4b3b2.body"
+  },
+  "/assets/flag-CshJvgP2.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "78c58386f8cc9be11634.body"
+  },
+  "/assets/flag-DwULYWNE.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "38c37701ddb8f399e04c.body"
+  },
+  "/assets/glyph-chevron--Z7wIV8d.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "5cc35d37223d912196e0.body"
+  },
+  "/assets/glyph-chevron-Db_lUH3S.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "0dda5cf01cefd504f40a.body"
+  },
+  "/assets/glyph-circle-DdBqt835.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "66adad4af63490a570a2.body"
+  },
+  "/assets/glyph-circle-nZoGgN2R.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "f77ad8e191e8e826afee.body"
+  },
+  "/assets/glyph-cross-D8R9t9bq.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "5d429726043a3dc1396e.body"
+  },
+  "/assets/glyph-cross-DDdbwFZm.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "60b68466d04207138152.body"
+  },
+  "/assets/glyph-diamond-BmY6lJ0v.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "c462225461baa897eb15.body"
+  },
+  "/assets/glyph-diamond-Cma18ziC.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "8afb08e3c9166ad09c5e.body"
+  },
+  "/assets/glyph-hexagon-G2c9V9EV.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "81ec892ae7ee529ecfbd.body"
+  },
+  "/assets/glyph-hexagon-lP77vDJm.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "d7a8b2251351c653b59f.body"
+  },
+  "/assets/glyph-square-DcB0zKp8.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "adc019302c62507daebe.body"
+  },
+  "/assets/glyph-square-DJ1N-kO_.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "ff036f06a0b3a672b368.body"
+  },
+  "/assets/glyph-star-ClJhOeX-.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "aa7f6114aedab71814a5.body"
+  },
+  "/assets/glyph-star-x9aF9M3D.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "e9afe18feafac53a377f.body"
+  },
+  "/assets/glyph-triangle-BnnQh931.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "29a31a7e18b061281564.body"
+  },
+  "/assets/glyph-triangle-z4QPlEsQ.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "6b16d11eaf66a9a045ef.body"
+  },
+  "/assets/idle-2EvHaWcS.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "d6954dafd5cd397be1ff.body"
+  },
+  "/assets/idle-jxtY5mvX.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "d60e21edbbe0e55cd731.body"
+  },
+  "/assets/info-CSKTB8WW.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "e9d2cff768d6ff0f2704.body"
+  },
+  "/assets/info-DRcMuZOH.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "d97a729aff01f2e3e14c.body"
+  },
+  "/assets/mark-ATTACK-BLrx6HVl.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "f23a5ffb7c0ca66c093e.body"
+  },
+  "/assets/mark-ATTACK-n0I4gR13.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "a15b51df6cacb884546a.body"
+  },
+  "/assets/mark-DEFEND-Cpj0dUv9.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "b2014ef502b3d2ea12b1.body"
+  },
+  "/assets/mark-DEFEND-DRNDC4kw.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "12114c35c5c14c83b430.body"
+  },
+  "/assets/mark-FORAGE-CQWYOFxf.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "24d9285c0217a5038a9d.body"
+  },
+  "/assets/mark-FORAGE-LRnSVWiF.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "b706c6d44e93578dda8f.body"
+  },
+  "/assets/mark-GATHER-CRsf-F4B.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "9d0dd51533e24a3abb5a.body"
+  },
+  "/assets/mark-GATHER-UVLQXQ2H.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "86edbebcc1349790a1ac.body"
+  },
+  "/assets/mark-LINE-Cthymioi.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "a4e0d58f415bc5d24e68.body"
+  },
+  "/assets/mark-LINE-DqYar5gb.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "c3c9f4c391b6137c0b51.body"
+  },
+  "/assets/order-attack-BjTXYq4U.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "ffa48d4c0ecd16e52732.body"
+  },
+  "/assets/order-attack-D6hHrnBk.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "578fda5ce7073528893c.body"
+  },
+  "/assets/order-follow_trail-B6UPnJoT.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "84906cc3736da2fce5f5.body"
+  },
+  "/assets/order-follow_trail-C1yft08j.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "195fe3c1cc2f6e0e4f0e.body"
+  },
+  "/assets/order-forage-Dvz0JMtm.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "67a45a37c2e1293aba4f.body"
+  },
+  "/assets/order-forage-Dz1rzaMP.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "2b314cb295802247c034.body"
+  },
+  "/assets/order-go_to-CRmn7Hm7.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "f668b3b466113d183f58.body"
+  },
+  "/assets/order-go_to-CwgRdgsu.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "dbe92f9b128fc614b148.body"
+  },
+  "/assets/order-guard-1xJQj6vv.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "3eff086cff1bfdb02e35.body"
+  },
+  "/assets/order-guard-BTUCjFvV.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "f763345f773ecd61ec5f.body"
+  },
+  "/assets/order-hold-2E3Ssi6P.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "71d8f4dbb30d360885bb.body"
+  },
+  "/assets/order-hold-AFuPeXCA.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "fc496f4c82064931f709.body"
+  },
+  "/assets/soldier-B0K87dYY.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "79536dbbe0b7bb569f90.body"
+  },
+  "/assets/soldier-BYM8d1l5.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "4a02a609f0948e25c927.body"
+  },
+  "/assets/whole-4M7jitrL.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "3a8359221e6fe319470a.body"
+  },
+  "/assets/whole-CLDmqx_-.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "0840e46e8dad9c62033d.body"
+  },
+  "/assets/worker-CeWfeBP2.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "ec8da9fbf413a541540d.body"
+  },
+  "/assets/worker-Czi6PSyQ.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "1bc4c3c7abac7492bea8.body"
+  },
+  "/assets/zoom-in-DNAgQgTU.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "dcdffd027b3175772e50.body"
+  },
+  "/assets/zoom-in-DZD-bFzH.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "48d946d2fb653832422e.body"
+  },
+  "/assets/zoom-out-Cw8vdCvj.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "8869d87509bf1c097f67.body"
+  },
+  "/assets/zoom-out-sce8Vncb.png": {
+   "status": 200,
+   "type": "image/png",
+   "file": "b0d91827af31c8baf455.body"
+  },
+  "/matches": {
+   "status": 200,
+   "type": "application/json",
+   "file": "c9ddc59d6e3f167fe07c.body"
+  },
+  "/watch/queue": {
+   "status": 200,
+   "type": "application/json",
+   "file": "07b55efe326482c65175.body"
+  },
+  "/watch/ratings/2026-11-17T08-55-08-583Z-151632020035470": {
+   "status": 200,
+   "type": "application/json",
+   "file": "8bad1ae21a7cd3056fe5.body"
+  },
+  "/watch/ratings/2026-11-18T09-37-33-466Z-22423161369746": {
+   "status": 200,
+   "type": "application/json",
+   "file": "e4bdba042839db12c0ef.body"
+  },
+  "POST /api/leaderboard {\"limit\":50,\"mode\":\"house-1v1\"}": {
+   "status": 200,
+   "type": "application/json",
+   "file": "0446ce19102cea5576a9.body"
+  }
+ }
+}
