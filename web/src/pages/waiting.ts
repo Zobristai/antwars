@@ -38,7 +38,6 @@ export const SEAT_OPEN = "seat open";
 
 const isLobby = (row: WaitingRow): row is WaitingLobby => "colonies" in row;
 const QUADRANTS = "quadrants";
-const NBSP = "\u00a0";
 
 /** A lobby's kind, by the rule the server types a recording's lobby by (src/replays/recorded-match-type.ts): quadrants is
  * Quadrants, a house-* mode the Antwars Model Index, any other mode the ranked queue, a modeless lobby a house challenge or
@@ -101,23 +100,23 @@ export function waitingMatchRow(row: WaitingRow, index: number): MatchRow {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-export function waitingState(view: Pick<MatchesView, "waiting">): SectionState {
-  const { status, rows } = view.waiting;
-  if (status === "loading") return { tone: "loading", text: rows.length ? "Refreshing the ranked queues…" : "Loading the ranked queues…" };
-  if (status === "error") return { tone: "error", text: rows.length ? "Queue list unavailable · showing the last list loaded" : "Queue list unavailable" };
+/** What is waiting, one clause per kind: ranked-queue agents, Free-for-all agents, matches not yet begun. */
+export function waitingParts(rows: readonly WaitingRow[]): string[] {
   const lobbies = rows.filter(isLobby).length;
   const quadrants = rows.filter(row => !isLobby(row) && row.mode === QUADRANTS).length, agents = rows.length - lobbies - quadrants;
-  if (rows.length === 0) return { tone: "empty", text: "No agent waiting in a ranked queue or lobby" };
-  const parts = [
+  return [
     ...(agents > 0 ? [`${plural(agents, "agent", "agents")} waiting in a ranked queue`] : []),
     ...(quadrants > 0 ? [`${plural(quadrants, "agent", "agents")} waiting for ${MATCH_TYPE_WORDS.quadrants}`] : []),
     ...(lobbies > 0 ? [`${plural(lobbies, "match", "matches")} waiting to start`] : []),
   ];
-  // With Quadrants waiting the line can hold three clauses, so each clause is kept whole: its spaces are no-break spaces
-  // and the separator's first space is too, so the line breaks only after a " · ". Without Quadrants the line is exactly
-  // as before.
-  if (quadrants === 0) return { tone: "complete", text: parts.join(" · ") };
-  return { tone: "complete", text: parts.map(part => part.replaceAll(" ", NBSP)).join(`${NBSP}· `) };
+}
+
+export function waitingState(view: Pick<MatchesView, "waiting">): SectionState {
+  const { status, rows } = view.waiting;
+  if (status === "loading") return { tone: "loading", text: rows.length ? "Refreshing the ranked queues…" : "Loading the ranked queues…" };
+  if (status === "error") return { tone: "error", text: rows.length ? "Queue list unavailable · showing the last list loaded" : "Queue list unavailable" };
+  if (rows.length === 0) return { tone: "empty", text: "No agent in a ranked queue or lobby" };
+  return { tone: "complete", text: waitingParts(rows).join(" · ") };
 }
 
 export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, parts: RowParts): HTMLElement {
@@ -129,9 +128,11 @@ export function waitingCard(doc: Document, view: Pick<MatchesView, "waiting">, p
     link.dataset.key = "waiting-challenge";
     foot.push(link);
   }
+  const state = waitingState(view), rows = view.waiting.rows;
   return parts.matchCard({
     list: "wait", titleId: "d1p-waiting-title", title: WAITING_TITLE, cardClass: "d1p-waiting",
-    state: sectionLine(waitingState(view), view.waiting.rows.length),
+    // Ready with rows waiting, each kind of wait is a one-line item of its own (chrome.ts stateList), never one wrapped line.
+    state: { ...sectionLine(state, rows.length), ...(state.tone === "complete" ? { parts: waitingParts(rows) } : {}) },
     rows: view.waiting.rows.map(waitingMatchRow), loading: false, actionHead: "", foot,
   });
 }
