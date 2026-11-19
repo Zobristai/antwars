@@ -151,8 +151,9 @@
 .d1p .d2-pill:focus-visible { outline-offset: 2px; }
 /* Scoped twice, so the order of the two stylesheets never decides it. */
 .d1p .d1p-row-pill { min-height: var(--d1p-row-tap); }
-/* The challenge bubble (the front page's and the Leaderboard's) in the cyan button: its words wrap inside it where a phone
-   is narrower than them, rather than run past the screen's edge. */
+/* The challenge bubble (the front page's and the Leaderboard's) and the empty Waiting card's challenge, in the cyan button:
+   its words wrap inside it where a phone is narrower than them, rather than run past the screen's or the card's edge. */
+.d1p .d1-agent-button[data-key="waiting-challenge"],
 .d1p .d1-agent-button[data-key="challenge-new"] { white-space: normal; text-align: center; line-height: 1.3; padding-block: 8px; }
 
 /* ---------------------------------------------------------------- tables: real columns, hairlines, one first baseline */
