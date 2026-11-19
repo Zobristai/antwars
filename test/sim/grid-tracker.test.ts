@@ -8,6 +8,7 @@ import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { parseLog, terminalAt } from "../../src/sim/log.js";
 import { buildGrid, createMatch, forEachNear, GridTracker, newAnt, verifyGridSyncs, type TrackedGrid } from "../../src/sim/map.js";
 import { advance, liveGridTracker, prepareInitialPointRests, step } from "../../src/sim/step.js";
+import { quadrantMapConfig } from "../../src/sim/quadrantMaps.js";
 import type { SimState } from "../../src/sim/types.js";
 import { playable } from "../playable.js";
 import { emptyMatch } from "./fixtures.js";
@@ -112,5 +113,20 @@ describe("the live tick syncs one grid", () => {
     expect(pure.tick).toBeGreaterThan(100);
     expect(liveGridTracker(live)?.fullBuilds).toBe(1);
     expect(deaths + hatched).toBeGreaterThan(0);
+  }, 120_000);
+});
+
+describe("the live tick syncs one grid with four colonies", () => {
+  it("every phase's grid and per-colony tile counts equal a fresh build, with one full build per match", () => {
+    verifyGridSyncs(true); // each sync also checks every colony's tile counts and the total against buildGrid
+    const state = createMatch(643, quadrantMapConfig("crossroads"));
+    expect(state.colonies.length).toBe(4);
+    let hatched = 0;
+    while (state.result === null && state.tick < 600) {
+      for (const event of advance(state).events) if (event.type === "hatch") hatched++;
+    }
+    expect(state.tick).toBe(600);
+    expect(hatched).toBeGreaterThan(0);
+    expect(liveGridTracker(state)?.fullBuilds).toBe(1);
   }, 120_000);
 });

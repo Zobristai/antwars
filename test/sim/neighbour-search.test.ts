@@ -4,7 +4,8 @@ import { distance, withinTiles } from "../../src/sim/geometry.js";
 import { newMatchConfig, gridScaleOf } from "../../src/sim/gridScale.js";
 import { houseDirection, nearestIntruder, rebalanceRoles, sightScan } from "../../src/sim/houseBot.js";
 import { stateHash } from "../../src/sim/log.js";
-import { buildGrid, cloneState, forEachNear, newAnt, type Grid } from "../../src/sim/map.js";
+import { buildGrid, cloneState, createMatch, forEachNear, hasAdjacentEnemy, newAnt, noEnemyNear, type Grid } from "../../src/sim/map.js";
+import { quadrantMapConfig } from "../../src/sim/quadrantMaps.js";
 import type { Ant, SimState } from "../../src/sim/types.js";
 import { emptyMatch } from "./fixtures.js";
 // House-bot planning for a colony with no active seat now plays only when re-simulating a match recorded before the
@@ -143,5 +144,85 @@ describe("neighbour search equivalence", () => {
     const freshDirs = fresh.ants.map(ant => houseDirection(fresh, buildGrid(fresh), [], ant));
     expect(sharedDirs).toEqual(freshDirs);
     expect(stateHash(shared)).toBe(stateHash(fresh));
+  });
+});
+
+// The same checks with four colonies. The per-tile colony counts used to cover two colonies only, so a
+// four-colony match took the per-ant scans; now every colony count reads them, and enemies are every other
+// colony's ants. The oracles above (and the per-ant adjacency scan below) are what those scans chose.
+
+function oracleAdjacentEnemy(state: SimState, grid: Grid, ant: Ant): boolean {
+  const airborne = ant.air !== undefined;
+  let found = false;
+  oracleForEachNear(state, grid, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), gridScaleOf(state.config), (other) => {
+    if (other.colony !== ant.colony && (other.air !== undefined) === airborne) found = true;
+  });
+  return found;
+}
+
+function oracleNoEnemyNear(state: SimState, grid: Grid, ant: Ant, r: number): boolean {
+  let none = true;
+  oracleForEachNear(state, grid, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), r, (other) => { if (other.colony !== ant.colony) none = false; });
+  return none;
+}
+
+/** Four colonies crowded around the centre of a four-colony board, with exact-position twins for distance ties. */
+function crowdedFourColonyState(): SimState {
+  const state = createMatch(100, quadrantMapConfig("strait"));
+  expect(state.colonies.length).toBe(4);
+  state.ants = [];
+  const { config } = state;
+  const random = lcg(4486);
+  const spread = (config.sightTiles + 6) * SUB;
+  const cx = (config.mapWidth * SUB) / 2, cy = (config.mapHeight * SUB) / 2;
+  const maxX = config.mapWidth * SUB - 1, maxY = config.mapHeight * SUB - 1;
+  for (let i = 0; i < 800; i++) {
+    // Uneven shares, so no colony's count stands in for another's.
+    const colony = i % 7 === 0 ? 0 : i % 7 < 3 ? 1 : i % 7 < 5 ? 2 : 3;
+    const x = Math.max(0, Math.min(maxX, Math.floor(cx + (random() * 2 - 1) * spread)));
+    const y = Math.max(0, Math.min(maxY, Math.floor(cy + (random() * 2 - 1) * spread)));
+    state.ants.push(newAnt(config, state.nextAntId++, colony, x, y, i % 2 === 0 ? "worker" : "soldier"));
+    if (i % 5 === 0) state.ants.push(newAnt(config, state.nextAntId++, colony, x, y, "soldier"));
+  }
+  // Lone ants of each colony far from the crowd: their neighbourhoods hold only their own colony or nothing.
+  for (let colony = 0; colony < 4; colony++) state.ants.push(newAnt(config, state.nextAntId++, colony, colony % 2 === 0 ? 0 : maxX, colony < 2 ? 0 : maxY));
+  return state;
+}
+
+describe("neighbour search equivalence with four colonies", () => {
+  it("sightScan counts and picks the nearest enemy exactly as the per-ant scans did", () => {
+    const state = crowdedFourColonyState();
+    const grid = buildGrid(state);
+    const r = state.config.sightTiles;
+    let ties = 0, mixed = 0;
+    for (const ant of state.ants) {
+      const [tx, ty] = tileOf(ant);
+      const scan = sightScan(state, grid, ant, tx, ty, r);
+      expect([scan.own, scan.enemy]).toEqual(oracleCounts(state, grid, ant, tx, ty, r));
+      const expected = oracleNearestEnemy(state, grid, ant, tx, ty, r);
+      expect(scan.nearestEnemy?.id ?? null).toBe(expected?.id ?? null);
+      if (expected !== null && state.ants.some(o => o !== expected && o.colony === expected.colony && o.x === expected.x && o.y === expected.y)) ties += 1;
+      if (scan.enemy > 0 && scan.own > 0) mixed += 1;
+    }
+    expect(ties).toBeGreaterThan(0);
+    expect(mixed).toBeGreaterThan(100);
+  });
+
+  it("hasAdjacentEnemy and noEnemyNear answer as the per-ant scans did", () => {
+    const state = crowdedFourColonyState();
+    const grid = buildGrid(state);
+    let adjacent = 0, clear = 0;
+    for (const ant of state.ants) {
+      const expected = oracleAdjacentEnemy(state, grid, ant);
+      expect(hasAdjacentEnemy(state, grid, ant)).toBe(expected);
+      if (expected) adjacent += 1;
+      for (const r of [0, 1, gridScaleOf(state.config), state.config.sightTiles]) {
+        const none = oracleNoEnemyNear(state, grid, ant, r);
+        expect(noEnemyNear(state, grid, ant.colony, Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), r)).toBe(none);
+        if (none) clear += 1;
+      }
+    }
+    expect(adjacent).toBeGreaterThan(50);
+    expect(clear).toBeGreaterThan(50);
   });
 });

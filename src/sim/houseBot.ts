@@ -144,29 +144,31 @@ export interface SightScan { readonly own: number; readonly enemy: number; reado
  */
 export function sightScan(state: SimState, grid: Grid, ant: Ant, tx: number, ty: number, r: number): SightScan {
   const dense = gridBuckets(grid);
-  // Area counts exist for two-colony matches only; any other count takes the per-ant scan.
+  // Area counts exist for grids with dense buckets; any other grid takes the per-ant scan.
   const counts = dense === undefined || !Number.isInteger(r) || r < 0 ? undefined : colonyAreaCounts(state, grid);
   if (dense === undefined || counts === undefined) return scanNear(state, grid, ant, tx, ty, r);
   // The same circle of tiles, row by row: counts from each colony's per-row prefix sums, and the nearest
   // enemy (nearer, then lowest id, which no visiting order changes) from the buckets of rows holding enemies.
   const { mapWidth: width, mapHeight: height } = state.config;
   const half = circleHalfWidths(r);
-  const mine = counts[ant.colony], theirs = counts[ant.colony === 0 ? 1 : 0];
+  // Enemies are every other colony's ants: the total minus the ant's own colony, for any number of colonies.
+  const mine = counts.byColony[ant.colony]!, all = counts.total;
   const y0 = Math.max(0, ty - r), y1 = Math.min(height - 1, ty + r);
   let own = 0;
   let enemy = 0;
   for (let y = y0; y <= y1; y += 1) {
     const w = half[Math.abs(y - ty)]!, x0 = Math.max(0, tx - w), x1 = Math.min(width - 1, tx + w);
     if (x0 > x1) continue;
-    own += areaCount(mine, width, x0, y, x1, y);
-    enemy += areaCount(theirs, width, x0, y, x1, y);
+    const rowOwn = areaCount(mine, width, x0, y, x1, y);
+    own += rowOwn;
+    enemy += areaCount(all, width, x0, y, x1, y) - rowOwn;
   }
   if (enemy === 0) return { own, enemy, nearestEnemy: null };
   let best: Ant | null = null;
   let bestD = Number.POSITIVE_INFINITY;
   for (let y = y0; y <= y1; y += 1) {
     const w = half[Math.abs(y - ty)]!, x0 = Math.max(0, tx - w), x1 = Math.min(width - 1, tx + w);
-    if (x0 > x1 || areaCount(theirs, width, x0, y, x1, y) === 0) continue;
+    if (x0 > x1 || areaCount(all, width, x0, y, x1, y) === areaCount(mine, width, x0, y, x1, y)) continue;
     for (let x = x0; x <= x1; x += 1) {
       const bucket = dense[y * width + x];
       if (bucket === undefined) continue;
@@ -186,7 +188,7 @@ export function sightScan(state: SimState, grid: Grid, ant: Ant, tx: number, ty:
 
 /**
  * Whether an enemy may be in sightScan's circle: false only when the circle's bounding square holds no ant of
- * the other colony, read from the same per-colony area counts in four reads; true when they are unavailable.
+ * another colony, read from the same area counts (total minus own); true when they are unavailable.
  */
 function enemyMayBeInSight(state: SimState, grid: Grid, ant: Ant, tx: number, ty: number, r: number): boolean {
   if (gridBuckets(grid) === undefined || !Number.isInteger(r) || r < 0) return true;
@@ -194,7 +196,8 @@ function enemyMayBeInSight(state: SimState, grid: Grid, ant: Ant, tx: number, ty
   const x0 = Math.max(0, tx - r), x1 = Math.min(width - 1, tx + r), y0 = Math.max(0, ty - r), y1 = Math.min(height - 1, ty + r);
   if (x0 > x1 || y0 > y1) return true;
   const counts = colonyAreaCounts(state, grid);
-  return counts === undefined || areaCount(counts[ant.colony === 0 ? 1 : 0], width, x0, y0, x1, y1) !== 0;
+  return counts === undefined ||
+    areaCount(counts.total, width, x0, y0, x1, y1) !== areaCount(counts.byColony[ant.colony]!, width, x0, y0, x1, y1);
 }
 
 /** sightScan over forEachNear, for a Map grid without dense buckets. */
