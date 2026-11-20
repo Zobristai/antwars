@@ -8,6 +8,7 @@ import type { RankingView } from "../leaderboard-page/view.ts";
 import { keep } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
+import { isRetiredHouse } from "../../../src/rating/houseLabels.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine } from "./chrome.ts";
 import { builderNameNodes, nameNodes, ratingNodes } from "./identity.ts";
@@ -102,8 +103,13 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
   // under the same ids, so it clears them first: a Refresh pressed while a Load more is loading moves the time once its
   // first page lands.
   let continuing: ReadonlySet<string> = new Set();
-  return {
+  // The rankings whose retired house models are shown: none when the page opens (hidden by default). Held only in this
+  // page while it stays open, by table id, so a board choice keeps each card's setting; never stored or put in the link.
+  const retiredShown = new Set<string>();
+  let last: LeaderboardView | null = null;
+  const mounted: Mounted<LeaderboardView> = {
     update(view: LeaderboardView) {
+      last = view;
       mode = view.mode;
       const settled = loadsSettled(seen, leaderboardLists(view.tables), continuing);
       seen = settled.seen; continuing = settled.continuing;
@@ -114,17 +120,22 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
       fresh.hidden = !view.enabled;
       strip.hidden = !view.enabled;
       for (const tab of tabs) tab.button.setAttribute("aria-pressed", String(tab.mode === view.mode));
-      const next = JSON.stringify([view.enabled, view.mode, view.tables]);
+      const next = JSON.stringify([view.enabled, view.mode, view.tables, [...retiredShown]]);
       if (next === drawn) return;
       drawn = next;
       const shown = view.mode;
       rebuild(doc, frame.content, () => !view.enabled ? [notEnabled()]
         : view.tables.map(table => rankingCard(doc, table, shown, {
           search, more: () => { continuing = new Set([...continuing, table.id]); actions.more(table.id); },
+          retired: {
+            shown: retiredShown.has(table.id),
+            set(on) { if (on) retiredShown.add(table.id); else retiredShown.delete(table.id); if (last) mounted.update(last); },
+          },
         })));
     },
     destroy() { frame.destroy(); },
   };
+  return mounted;
 }
 
 // ---------------------------------------------------------------- record cards
@@ -136,10 +147,19 @@ export interface RankingCardOptions {
   readonly more?: () => void;
   readonly limit?: number;
   readonly foot?: HTMLElement;
+  /** Whether the card's retired house models are shown; without it they always show. With set, the card draws its
+   * "Show retired" switch; without set (the front page's card) they stay hidden and there is no switch. */
+  readonly retired?: { readonly shown: boolean; set?(shown: boolean): void };
 }
+/** A retired house model's row (src/rating/houseLabels.ts RETIRED_HOUSE_HANDLES): a Benchmark row only, by its handle. */
+const isRetiredRow = (row: LeaderboardRow): boolean => row.benchmark === true && isRetiredHouse(row.displayName);
 
 /** One ranking as the Leaderboard draws it: a record card saying its own state once, its table and its stacked rows. */
 export function rankingCard(doc: Document, table: RankingView, shown: LeaderboardMode, options: RankingCardOptions): HTMLElement {
+  // Retired hidden: the rows are left out before anything is limited, counted or ranked, so the count and the ranks are the
+  // shown rows' own (1, 2, 3 without gaps).
+  const loaded = table.rows.length;
+  if (options.retired && !options.retired.shown) table = { ...table, rows: table.rows.filter(row => !isRetiredRow(row)) };
   // A limited card shows the first rows and says how many it shows, never Load more.
   if (options.limit !== undefined) table = { ...table, rows: table.rows.slice(0, options.limit), next: undefined };
   const section = h(doc, "section", "d1p-card");
@@ -153,8 +173,9 @@ export function rankingCard(doc: Document, table: RankingView, shown: Leaderboar
   const count = tableCount(table);
   if (count !== null) heading.append(" ", h(doc, "span", "d1p-count", count));
   head.append(heading);
-  const state = tableState(table);
+  const state = table.status === "ready" && table.rows.length === 0 && loaded > 0 ? { glyph: "ring" as const, text: C.onlyRetired } : tableState(table);
   if (state !== null) head.append(stateLine(doc, state.glyph, state.text));
+  if (options.retired?.set) head.append(retiredSwitch(doc, table.id, titleId, options.retired.shown, options.retired.set));
   section.append(head);
   if (table.rows.length > 0 || table.status === "loading") section.append(...rankingTable(doc, table, titleId, options.search));
   // A failed table says so in its state line; its retry is the band's Refresh, which mounts the tables again
@@ -170,6 +191,21 @@ export function rankingCard(doc: Document, table: RankingView, shown: Leaderboar
     section.append(foot(doc, button));
   }
   return section;
+}
+/** The card's show-retired switch: a checkbox with the switch role, so Tab reaches it and Space turns it, and its label is
+ * its tap target; its data-key keeps focus on it through the redraw it causes. Described by its card's title, so two on
+ * one board are told apart. */
+function retiredSwitch(doc: Document, tableId: string, titleId: string, shown: boolean, set: (shown: boolean) => void): HTMLElement {
+  const label = h(doc, "label", "d1p-switch");
+  const input = h(doc, "input");
+  input.type = "checkbox";
+  input.setAttribute("role", "switch");
+  input.checked = shown;
+  input.dataset.key = `show-retired|${tableId}`;
+  input.setAttribute("aria-describedby", titleId);
+  input.addEventListener("change", () => set(input.checked));
+  label.append(input, h(doc, "span", "d1p-switch-text", C.showRetired));
+  return label;
 }
 function foot(doc: Document, ...nodes: HTMLElement[]): HTMLElement {
   const block = h(doc, "div", "d1p-card-foot");
