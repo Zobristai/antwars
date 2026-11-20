@@ -50,6 +50,13 @@
 #       the merge ref's first parent, which is main as GitHub merged it.
 #       FETCH_TOKEN, when set, authenticates the fetch; it is passed to git through the
 #       environment, never on a command line or in the repository configuration.
+#       The pull request's title, description and head branch name are matched too, with the
+#       same rule as a commit message: a squash merge writes the title and description into the
+#       commit on main, and the branch name is public with the pull request. They come from the
+#       ANTWARS_PR_TITLE, ANTWARS_PR_BODY and ANTWARS_PR_HEAD_REF environment variables (in CI,
+#       from the event), are only compared, never evaluated, and a hit names the field only.
+#       The title and head branch name must be set and non-empty; the description must be set
+#       and may be empty (GitHub gives an empty one for a pull request with no description).
 set -euo pipefail
 export LC_ALL=C.UTF-8 GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0
 err() { echo "::error title=history-isolation::$1"; }
@@ -61,7 +68,7 @@ if [ -z "$ANTWARS_EXPECTED_ROOT" ]; then die "the ANTWARS_EXPECTED_ROOT variable
 [[ "$ANTWARS_EXPECTED_ROOT" =~ ^[0-9a-f]{40}$ ]] ||
   die "the ANTWARS_EXPECTED_ROOT variable is not a full 40-character lower-case commit SHA"
 root=$ANTWARS_EXPECTED_ROOT
-status=0 merge_absent=''
+status=0 merge_absent='' pr_text=''
 fail() { err "$1"; status=1; }
 
 # Identifiers: required, read once into a private file, then dropped from the environment.
@@ -138,6 +145,20 @@ if [ "${1:-}" = --pull-request ]; then
     git rev-parse --verify --quiet "$base^{commit}" >/dev/null || die "pull request base $base is not in this clone"
     exclude+=("$base")
   fi
+  # The pull request's own text: required as described above, then matched like a message.
+  if [ -z "${ANTWARS_PR_TITLE:-}" ]; then die "the ANTWARS_PR_TITLE variable is not set or empty"; fi
+  if [ -z "${ANTWARS_PR_BODY+set}" ]; then die "the ANTWARS_PR_BODY variable is not set"; fi
+  if [ -z "${ANTWARS_PR_HEAD_REF:-}" ]; then die "the ANTWARS_PR_HEAD_REF variable is not set or empty"; fi
+  pr_field() { # <field> <value>
+    local v=${2,,} id
+    for id in "${ids[@]}"; do
+      if [[ "$v" == *"$id"* ]]; then fail "pull request $number: its $1 matches a private identifier"; return; fi
+    done
+  }
+  pr_field title "$ANTWARS_PR_TITLE"
+  pr_field description "$ANTWARS_PR_BODY"
+  pr_field "head branch name" "$ANTWARS_PR_HEAD_REF"
+  pr_text="; nor does the pull request's title, description or head branch name"
   pr=refs/pull/$number
   # Each ref is listed with ls-remote --exit-code: exit 0 means listed, exit 2 means no matching
   # ref on origin, and any other exit is a lookup error. Only the merge ref may be absent.
@@ -330,6 +351,6 @@ n=$checked
 [ -z "$merge_absent" ] || echo "history-isolation: $merge_absent"
 
 if [ "$status" = 0 ]; then
-  echo "history-isolation: only root $root; $n commits not already on main checked; no author, committer or message matches a private identifier"
+  echo "history-isolation: only root $root; $n commits not already on main checked; no author, committer or message matches a private identifier$pr_text"
 fi
 exit "$status"

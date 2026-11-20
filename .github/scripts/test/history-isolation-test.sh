@@ -22,6 +22,8 @@ git -C "$REPO" push -q $W/origin.git "$BASE:refs/heads/main"
 git clone -q $W/origin.git $W/work 2>/dev/null; cd $W/work
 T=$(git rev-parse "$BASE^{tree}")
 export ANTWARS_IDENTIFIERS=$'synthid-alpha\nsynthcorp.example\n9876543210'
+# A clean pull request title, description and head branch name, for every pull-request case.
+export ANTWARS_PR_TITLE='Clean title' ANTWARS_PR_BODY='' ANTWARS_PR_HEAD_REF='clean-branch'
 Z='Zobrist <noreply@zobrist.ai> 1793970000 +0000'
 # A clean three-commit synthetic chain on the initial commit: C1 <- C2 <- C.
 chain(){ printf 'tree %s\nparent %s\nauthor %s\ncommitter %s\n\n%s\n' "$T" "$1" "$Z" "$Z" "$2" | git hash-object -t commit -w --literally --stdin; }
@@ -260,6 +262,27 @@ H_NR=$(id "Octo <$NR> 1 +0000" "$Z")
 git push -q $W/origin.git $H_NR:refs/pull/10/head 2>&1 | grep -v '^$'
 pr "35k PR head by an event account (pull request author)" pass "$EA" bash $S --pull-request 10 $H_NR
 pr "35l PR head with a made-up no-reply address" fail bash $S --pull-request 10 $H_NR
+# Pull-request mode also matches the title, description and head branch name; a hit names the
+# field only. Each hit case must fail with its own field's message.
+PRC="cd $W/runner && bash $S --pull-request 1 $H_OK"
+why "37 PR title with listed text" "pull request 1: its title matches a private identifier" ANTWARS_PR_TITLE='Fix the synthid-alpha thing' bash -c "$PRC"
+why "37b PR description, listed text deep and mixed case" "pull request 1: its description matches a private identifier" ANTWARS_PR_BODY=$'Summary\n\nMore text\r\nreach SynthCorp.EXAMPLE here\n' bash -c "$PRC"
+why "37c PR head branch name with listed text" "pull request 1: its head branch name matches a private identifier" ANTWARS_PR_HEAD_REF='fix/9876543210-thing' bash -c "$PRC"
+pr "37d the same PR with its title edited clean" pass ANTWARS_PR_TITLE='Fix the thing' bash $S --pull-request 1 $H_OK
+pr "37e the same PR with its description edited clean" pass ANTWARS_PR_BODY=$'Summary\n\nMore text\r\nreach here\n' bash $S --pull-request 1 $H_OK
+pr "37f clean title, description and head branch name" pass ANTWARS_PR_TITLE='Fix the thing' ANTWARS_PR_BODY='A body' ANTWARS_PR_HEAD_REF='fix/the-thing' bash $S --pull-request 1 $H_OK
+pr "37g description set but empty passes" pass ANTWARS_PR_BODY= bash $S --pull-request 1 $H_OK
+why "37h title unset" "ANTWARS_PR_TITLE variable is not set or empty" -u ANTWARS_PR_TITLE bash -c "$PRC"
+why "37i title empty" "ANTWARS_PR_TITLE variable is not set or empty" ANTWARS_PR_TITLE= bash -c "$PRC"
+why "37j description unset" "ANTWARS_PR_BODY variable is not set" -u ANTWARS_PR_BODY bash -c "$PRC"
+why "37k head branch name unset" "ANTWARS_PR_HEAD_REF variable is not set or empty" -u ANTWARS_PR_HEAD_REF bash -c "$PRC"
+why "37l head branch name empty" "ANTWARS_PR_HEAD_REF variable is not set or empty" ANTWARS_PR_HEAD_REF= bash -c "$PRC"
+# Shell text in the pull request's title, description and branch is compared, never evaluated.
+META='$(touch '"$W"'/pwned) `touch '"$W"'/pwned2` ${IFS} "; touch '"$W"'/pwned3; "'
+out=$(cd $W/runner && env ANTWARS_PR_BODY="$META" ANTWARS_PR_TITLE="$META" ANTWARS_PR_HEAD_REF="$META" bash $S --pull-request 1 $H_OK 2>&1); rc=$?
+ls $W/pwned* >/dev/null 2>&1 && { rc=1; out="$out"$'\n''a command in the pull request text was run'; }
+show "37m shell text in title, description and branch not evaluated" pass $rc "$out"
+runenv "37n push mode does not read the pull request fields" pass ANTWARS_PR_TITLE='synthid-alpha' ANTWARS_PR_BODY='synthid-alpha' ANTWARS_PR_HEAD_REF='synthid-alpha' bash $S --push $C1 $C
 # Push mode: the previous tip is left out when it is a commit in the clone; otherwise (none,
 # all zeros, not a SHA, not in the clone) the whole history is checked.
 run "36 --push with the previous tip: the old commit not checked again" pass --push $B1 $B2
