@@ -6,6 +6,10 @@ export const C = {
   fastBadge: "Fast",
   /** A house model whose model is no longer offered (src/rating/houseLabels.ts RETIRED_HOUSE_HANDLES). */
   retiredBadge: "retired",
+  /** The switch on each Leaderboard ranking card that shows its retired house models (hidden by default). */
+  showRetired: "Show retired",
+  /** A ranking whose loaded rows are all retired, with retired hidden. */
+  onlyRetired: "Every model loaded here is retired.",
   serviceUnavailable: "The public leaderboard is not enabled on this server.",
   modes: "Choose a ranking",
   houseTitle: "Ranked", houseModels: "house models", everyoneTitle: "Ranked", houseModeTitle: "Antwars Model Index",

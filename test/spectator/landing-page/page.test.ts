@@ -184,6 +184,25 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
+  it("shows the first ten active models only, retired house models left out and the rest numbered without gaps, with no switch", async () => {
+    // Twelve rows, the second and fifth of them retired house models, and a builder whose name matches a retired handle.
+    const rows = Array.from({ length: 12 }, (_, i) => entry(i)) as Record<string, unknown>[];
+    rows[1] = { ...rows[1], displayName: "antwars/qwen4-max-high", benchmark: true, thinkingLevel: "high" };
+    rows[4] = { ...rows[4], displayName: "antwars/gpt-6-2-astra-max", benchmark: true, thinkingLevel: "max", serviceTier: "fast" };
+    rows[6] = { ...rows[6], displayName: "kite/qwen4-max-xhigh" };
+    const p = landing({ leaderboard: () => new Response(JSON.stringify({ entries: rows, next: "more" })) });
+    await vi.waitFor(() => expect(p.state(C.houseModeTitle)).not.toContain("Loading"));
+    const shown = p.rows(C.houseModeTitle);
+    expect(shown.map(line => line.children[1]!.children[0]!.textContent)).toEqual(
+      ["player-0", "player-2", "player-3", "player-5", "kite/qwen4-max-xhigh", "player-7", "player-8", "player-9", "player-10", "player-11"]);
+    expect(shown.map(line => line.children[0]!.textContent)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+    expect(p.count(C.houseModeTitle)).toBe("10 shown");
+    expect(p.card(C.houseModeTitle)!.textContent).not.toContain("retired");
+    expect(p.card(C.houseModeTitle)!.byClass("d1p-switch")).toEqual([]);
+    expect(p.card(C.houseModeTitle)!.all().some(node => node.tag === "input")).toBe(false);
+    p.dispose();
+  });
+
   it("fills the Recordings card from the next page when the first page comes back short with a continuation", async () => {
     // A first page cut short by hidden recordings: one row and a continuation; the next page carries the older rows.
     let served = 0;
@@ -275,8 +294,8 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     const boardRoot = board.body.all().find(node => node.id === "aw-leaderboard-page")!;
     await vi.waitFor(() => expect(boardRoot.byClass("d1p-card")[0]!.getAttribute("aria-busy")).toBe("false"));
     // The whole card, state line, table and stacked rows, matches the page's own wherever nothing is cut; only the landing's
-    // link to the full page in the foot is its own.
-    const foot = (card: ElementPort) => card.byClass("d1p-card-foot");
+    // link to the full page in the foot is its own, and only the page's card has the Show retired switch.
+    const foot = (card: ElementPort) => [...card.byClass("d1p-card-foot"), ...card.byClass("d1p-switch")];
     const markup = (card: ElementPort) => card.all().filter(node => !foot(card).some(block => block.contains(node)))
       .map(node => [node.tag, node.className, node.dataset.key ?? "", node.href, node.children.length === 0 ? node.textContent : ""]);
     expect(markup(p.card(C.houseModeTitle)!)).toEqual(markup(boardRoot.byClass("d1p-card")[0]!));
