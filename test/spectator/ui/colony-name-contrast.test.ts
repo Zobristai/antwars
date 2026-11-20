@@ -560,8 +560,9 @@ describe("every Matches player is one line", () => {
         for (const line of lines) {
           expect(line.lines, line.text).toBe(1);
           expect(line.nameCut).toBe(true);
-          expect(line.nameStyle.slice(0, 2)).toEqual(["nowrap", "hidden"]);
-          expect(line.partStyles).toEqual([["d1p-user", "hidden", "ellipsis"], ["d1p-mname", "hidden", "ellipsis"]]);
+          // One run, builder's name then model, ending in the name's single ellipsis; neither part draws its own.
+          expect(line.nameStyle).toEqual(["pre", "hidden", "ellipsis"]);
+          expect(line.partStyles).toEqual([["d1p-user", "visible", "clip"], ["d1p-mname", "visible", "clip"]]);
           expect(line.title).toContain("long-builder-" + "x".repeat(64));
           expect(line.inside).toBe(true);
         }

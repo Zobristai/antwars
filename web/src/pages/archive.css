@@ -582,21 +582,21 @@ td.c-model > .d1p-colony { display: block; }
    the part before it, all centred on the band. Always one line: no stored name needs more at the default text size. A
    line too wide for its cell gives way in the name first, then in the level chip; the count and the rating stay whole. */
 .d1p-rec-player { display: flex; align-items: center; gap: 0 var(--aw-gap-inline); min-width: 0; max-width: 100%; white-space: nowrap; }
-/* SEAT NAME: 12/16 regular in the ink; a builder's username in bold, the same ink. The name (username, then model) is the
-   one part that gives way: where the line is too wide for its cell it ends in an ellipsis, its whole text its title and
-   read in full. */
-.d1p-rec-name { display: flex; flex: 0 100000 auto; min-width: 1.5em; overflow: hidden; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
-.d1p-rec-name:has(> .d1p-user + .d1p-mname) { min-width: 3em; }
-.d1p-rec-name > .d1p-user { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--aw-bold); color: inherit; }
-.d1p-rec-name > .d1p-user:has(+ .d1p-mname) { max-width: calc(100% - 1.5em); }
-.d1p-rec-name > .d1p-mname { flex: 0 1 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: inherit; }
+/* SEAT NAME: 12/16 regular in the ink; a builder's username in bold, the same ink. The name (username, then model) is one
+   run and the one part that gives way: where the line is too wide for its cell the run ends in a single ellipsis, the
+   model giving way first and then the username, its whole text its title and read in full. It keeps 1.5em, so a name
+   never vanishes without its ellipsis. */
+.d1p-rec-name { flex: 0 100000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
+.d1p-rec-name > .d1p-user { font-weight: var(--aw-bold); color: inherit; }
+.d1p-rec-name > .d1p-mname { color: inherit; }
 /* A self-reported level of more than 8 characters shows its first 8 and an ellipsis (the view); its whole text is the
    group's title and is read in full. The chip never gives way while the name can: only where the name is at its least
    (a doubled text size on a phone and a very wide level) does its level text end in an ellipsis earlier; Fast's bolt
-   stays. Positioned, so the chip also holds its screen-reader text. */
+   never shrinks below its 6 px. Positioned, so the chip also holds its screen-reader text. */
 .d1p-rec-player .d1p-tags { position: relative; flex: 0 1 auto; display: inline-flex; min-width: 0; }
 .d1p-rec-player .d1p-tags > .d1p-tag { display: inline-flex; align-items: baseline; min-width: 0; }
 .d1p-rec-player .d1p-lvl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d1p-rec-player .d1p-tag > .d1p-bolt { flex: none; }
 /* LEVEL CHIP: 10/14 600 caps on an opaque raised fill, so it looks the same on a winner's band and off it. */
 .d1p-rec-player .d1p-tag {
   margin: 0; padding: 0 3px; border-radius: var(--aw-radius-badge); background: var(--aw-raise); vertical-align: baseline;

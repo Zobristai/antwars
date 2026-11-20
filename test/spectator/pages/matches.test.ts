@@ -702,10 +702,10 @@ describe("a model label with nothing after its provider prefix", () => {
     const sheet = css();
     expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: center; gap: 0 var\(--aw-gap-inline\);[^}]*white-space: nowrap; \}/);
     expect(sheet).not.toMatch(/\.d1p-rec-player \{[^}]*flex-wrap/);
-    // The model gives way first, keeping room for its ellipsis; the builder is held by a max-width, then gives way too.
-    expect(sheet).toMatch(/\.d1p-rec-name \{ display: flex; flex: 0 100000 auto; min-width: 1\.5em; overflow: hidden;/);
-    expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-user \{ flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/);
-    expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-mname \{ flex: 0 1 auto; min-width: 1\.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre;/);
+    // The builder's name and model are one run ending in a single ellipsis, the model giving way first; it keeps 1.5em.
+    expect(sheet).toMatch(/\.d1p-rec-name \{ flex: 0 100000 auto; min-width: 1\.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre;/);
+    expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-user \{ font-weight: var\(--aw-bold\); color: inherit; \}/);
+    expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-mname \{ color: inherit; \}/);
     // Live now and Waiting keep their own badges.
     expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
   });
