@@ -449,7 +449,9 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rules-kicker { padding: 19px var(--d1p-inset) 11px; border-bottom: 1px solid var(--aw-line); }
 .d1p-rule { margin: 0 var(--d1p-inset); padding: 24px 0 22px; border-top: 1px solid var(--aw-line); scroll-margin-top: 64px; }
 .d1p-rules-kicker + .d1p-rule { border-top: 0; }
-.d1p-rule-title { margin-bottom: 12px; font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+.d1p-rule-title { margin-bottom: 12px; font-size: var(--aw-text-title); font-weight: var(--aw-bold); line-height: var(--aw-lh-title); letter-spacing: var(--aw-track-title); text-transform: uppercase; color: var(--aw-ink-bright); }
+/* These four titles cannot hold one line on a phone at doubled text, so they keep their px size until they have their own design. */
+.d1p-rule:is(#d1-food-and-hatching, #d1-thoughts-and-marks, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 15px; line-height: 20px; }
 .d1p-rule p { max-width: 600px; font-size: 15px; line-height: 24px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
 .d1p-rule p + p { margin-top: 12px; }
 .d1p-win li { position: relative; max-width: 600px; padding-left: 18px; font-size: 17px; line-height: 26px; color: var(--aw-ink-bright); }
@@ -484,7 +486,8 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-page { background-size: 100% 136px; }
   .d1p-main { padding-top: 24px; }
   .d1p-title, .d1p-card-title { font-size: var(--aw-text-lead); }
-  .d1p-rule-title { font-size: 14px; }
+  .d1p-rule-title { font-size: var(--aw-text-lead); }
+  .d1p-rule:is(#d1-food-and-hatching, #d1-thoughts-and-marks, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 14px; }
   .d1p-card:has(.d1p-lb, .d1p-lb-rows) .d1p-card-title, .d1p[data-page="leaderboard"] .d1p-title { font-size: 14px; }
   .d1p-lead { margin-top: 10px; }
   /* The board choice takes the band's whole width, its groups one over the other, each size a quarter of it. */
