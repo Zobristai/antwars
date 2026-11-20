@@ -22,6 +22,20 @@ git -C "$REPO" push -q $W/origin.git "$BASE:refs/heads/main"
 git clone -q $W/origin.git $W/work 2>/dev/null; cd $W/work
 T=$(git rev-parse "$BASE^{tree}")
 export ANTWARS_IDENTIFIERS=$'synthid-alpha\nsynthcorp.example\n9876543210'
+# Synthetic pull_request event files, as the runner's GITHUB_EVENT_PATH names one.
+# ev <name> <title> <head branch> [<description>] writes one (the description null when omitted)
+# and prints its path; the values pass through files, never command-line arguments.
+mkdir -p $W/ev
+ev(){ local f=$W/ev/$1; printf '%s' "$2" > $f.t; printf '%s' "$3" > $f.r; rm -f $f.b; [ $# -lt 4 ] || printf '%s' "$4" > $f.b
+  python3 -I -c 'import json, os, sys
+f = sys.argv[1]
+rd = lambda s: open(f + s, encoding="utf-8").read()
+body = rd(".b") if os.path.exists(f + ".b") else None
+json.dump({"pull_request": {"number": 1, "title": rd(".t"), "body": body, "head": {"ref": rd(".r")}}}, open(f + ".json", "w"))' $f
+  echo $f.json; }
+evraw(){ printf '%s' "$2" > $W/ev/$1.json; echo $W/ev/$1.json; }   # <name> <JSON text>
+# A clean title, no description and a clean head branch name, for every pull-request case.
+export GITHUB_EVENT_PATH; GITHUB_EVENT_PATH=$(ev clean 'Clean title' clean-branch)
 Z='Zobrist <noreply@zobrist.ai> 1793970000 +0000'
 # A clean three-commit synthetic chain on the initial commit: C1 <- C2 <- C.
 chain(){ printf 'tree %s\nparent %s\nauthor %s\ncommitter %s\n\n%s\n' "$T" "$1" "$Z" "$Z" "$2" | git hash-object -t commit -w --literally --stdin; }
@@ -260,6 +274,42 @@ H_NR=$(id "Octo <$NR> 1 +0000" "$Z")
 git push -q $W/origin.git $H_NR:refs/pull/10/head 2>&1 | grep -v '^$'
 pr "35k PR head by an event account (pull request author)" pass "$EA" bash $S --pull-request 10 $H_NR
 pr "35l PR head with a made-up no-reply address" fail bash $S --pull-request 10 $H_NR
+# Pull-request mode also matches the title, description and head branch name; a hit names the
+# field only. Each hit case must fail with its own field's message.
+PRC="cd $W/runner && bash $S --pull-request 1 $H_OK"
+G=GITHUB_EVENT_PATH
+why "37 PR title with listed text" "pull request 1: its title matches a private identifier" $G=$(ev t1 'Fix the synthid-alpha thing' clean-branch) bash -c "$PRC"
+why "37b PR description, listed text deep and mixed case" "pull request 1: its description matches a private identifier" $G=$(ev b1 'Clean title' clean-branch $'Summary\n\nMore text\r\nreach SynthCorp.EXAMPLE here\n') bash -c "$PRC"
+why "37c PR head branch name with listed text" "pull request 1: its head branch name matches a private identifier" $G=$(ev r1 'Clean title' fix/9876543210-thing) bash -c "$PRC"
+pr "37d the same PR with its title edited clean" pass $G=$(ev t2 'Fix the thing' clean-branch) bash $S --pull-request 1 $H_OK
+pr "37e the same PR with its description edited clean" pass $G=$(ev b2 'Clean title' clean-branch $'Summary\n\nMore text\r\nreach here\n') bash $S --pull-request 1 $H_OK
+pr "37f clean title, description and head branch name" pass $G=$(ev all 'Fix the thing' fix/the-thing 'A body') bash $S --pull-request 1 $H_OK
+pr "37g description present but empty passes" pass $G=$(ev b3 'Clean title' clean-branch '') bash $S --pull-request 1 $H_OK
+pr "37g2 no description (null) passes" pass $G=$(ev b4 'Clean title' clean-branch) bash $S --pull-request 1 $H_OK
+# A description of GitHub's maximum length in four-byte characters (65536, 256 KiB): more than
+# one environment string may hold, read from the file all the same.
+BIG=$(yes $'\U0001F600' | head -n 65536 | tr -d '\n')
+pr "37h longest description, four-byte characters, clean" pass $G=$(ev big1 'Clean title' clean-branch "$BIG") bash $S --pull-request 1 $H_OK
+why "37h2 longest description with listed text at its end" "its description matches a private identifier" $G=$(ev big2 'Clean title' clean-branch "${BIG}synthid-alpha") bash -c "$PRC"
+why "37i listed text after a NUL in the description" "its description matches a private identifier" $G=$(evraw nul '{"pull_request":{"title":"t","body":"body\u0000synthid-alpha","head":{"ref":"b"}}}') bash -c "$PRC"
+NOEV='GITHUB_EVENT_PATH variable is not set or empty' BADEV='could not read the pull request from the event file' FORM="the event's pull request has no non-empty title"
+why "37j event file variable unset" "$NOEV" -u $G bash -c "$PRC"
+why "37j2 event file variable empty" "$NOEV" $G= bash -c "$PRC"
+why "37j3 event file missing" "$BADEV" $G=$W/ev/none.json bash -c "$PRC"
+why "37j4 event file not JSON" "$BADEV" $G=$(evraw notjson 'title: x') bash -c "$PRC"
+why "37j5 event without a pull request" "$BADEV" $G=$(evraw nopr '{"push":{}}') bash -c "$PRC"
+why "37k title missing" "$BADEV" $G=$(evraw notitle '{"pull_request":{"body":null,"head":{"ref":"b"}}}') bash -c "$PRC"
+why "37k2 title empty" "$FORM" $G=$(ev t3 '' clean-branch) bash -c "$PRC"
+why "37k3 head branch name missing" "$BADEV" $G=$(evraw nohead '{"pull_request":{"title":"t","body":null}}') bash -c "$PRC"
+why "37k4 head branch name empty" "$FORM" $G=$(ev r2 'Clean title' '') bash -c "$PRC"
+why "37k5 description missing" "$BADEV" $G=$(evraw nobody '{"pull_request":{"title":"t","head":{"ref":"b"}}}') bash -c "$PRC"
+why "37k6 description not text" "$FORM" $G=$(evraw numbody '{"pull_request":{"title":"t","body":7,"head":{"ref":"b"}}}') bash -c "$PRC"
+# Shell text in the pull request's title, description and branch is compared, never evaluated.
+META='$(touch '"$W"'/pwned) `touch '"$W"'/pwned2` ${IFS} "; touch '"$W"'/pwned3; "'
+out=$(cd $W/runner && env $G="$(ev meta "$META" "$META" "$META")" bash $S --pull-request 1 $H_OK 2>&1); rc=$?
+ls $W/pwned* >/dev/null 2>&1 && { rc=1; out="$out"$'\n''a command in the pull request text was run'; }
+show "37l shell text in title, description and branch not evaluated" pass $rc "$out"
+runenv "37m push mode does not read the event file" pass $G=$(ev pushev synthid-alpha synthid-alpha synthid-alpha) bash $S --push $C1 $C
 # Push mode: the previous tip is left out when it is a commit in the clone; otherwise (none,
 # all zeros, not a SHA, not in the clone) the whole history is checked.
 run "36 --push with the previous tip: the old commit not checked again" pass --push $B1 $B2
