@@ -51,6 +51,8 @@ it("plays an unlisted stored id through the real shared source and playback with
     if (path === "/live/replays") return Response.json({ replays: [] });
     // The stored match's rating record; this one has none, so the recording's figures stay.
     if (path === `/watch/ratings/${id}`) return Response.json({ ratings: [] });
+    // The stored match's record, read once beside playback for the recording's end (recording.ts).
+    if (path === `/matches/${id}`) return Response.json({ format: "antwar.match", version: 1, id, result: { tick: decodeMessage(packets.at(-1)!).tick - 1 } });
     expect(path).toBe(`/replays/${id}`);
     return new Response(new Uint8Array(bytes));
   });
@@ -64,8 +66,9 @@ it("plays an unlisted stored id through the real shared source and playback with
     playback.sample(source.now(now), frame);
     await new Promise((resolve) => setImmediate(resolve));
   }
-  // The second read of the recording is the scrubber marks' (recording.ts).
-  expect(paths).toEqual([`/watch/ratings/${id}`, `/replays/${id}`, `/replays/${id}`]);
+  // The recorded end is looked up once beside playback; the second read of the recording is the scrubber marks'
+  // (recording.ts). Discovery (/live/replays) is never asked.
+  expect(paths).toEqual([`/watch/ratings/${id}`, `/replays/${id}`, `/matches/${id}`, `/replays/${id}`]);
   expect(reject).not.toHaveBeenCalled();
   expect(frame.tick).toBe(decodeMessage(packets.at(-1)!).tick);
   expect(source.lastTick).toBe(frame.tick);
