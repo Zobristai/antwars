@@ -586,7 +586,14 @@ td.c-model > .d1p-colony { display: block; }
    run and the one part that gives way: where the line is too wide for its cell the run ends in a single ellipsis, the
    model giving way first and then the username, its whole text its title and read in full. It keeps 1.5em, so a name
    never vanishes without its ellipsis. */
-.d1p-rec-name { flex: 0 100000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
+.d1p-rec-name { min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--aw-ink); }
+/* The name's place on the line: it gives way, but never narrower than the name's first letter and its whole ellipsis, drawn
+   unseen in the same place in the name's own type (data-least, ui/dom.ts leastShown), so a run cut to one letter never
+   clips its ellipsis, whatever the letter or font. */
+.d1p-rec-who { flex: 0 100000 auto; display: grid; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); }
+.d1p-rec-who > .d1p-rec-name, .d1p-rec-who::after { grid-area: 1 / 1; }
+.d1p-rec-who::after { content: attr(data-least); visibility: hidden; white-space: pre; }
+.d1p-rec-who.is-builder::after { font-weight: var(--aw-bold); }
 /* Where the run is cut (aw-cut, ui/cut.ts), each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give
    way as one, so the ellipsis always stands against a letter, never after a space. Only a cut run holds them so: a whole
    run draws as plain text, exactly as it would without them. */

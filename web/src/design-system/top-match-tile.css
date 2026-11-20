@@ -26,6 +26,8 @@
 /* rows 2 and 3: the player line, as Matches rows draw it */
 .aw-player { column-gap: var(--aw-gap-inline); font-size: var(--aw-text-line); line-height: var(--aw-lh-line); color: var(--aw-ink); }
 .aw-name { min-width: 0; overflow-wrap: anywhere; }
+/* a player's name sits in its place on the line (aw-who), no box of its own except where a line never wraps (below) */
+.aw-who { display: contents; }
 /* the builder's name, exactly as stored, before the model */
 .aw-name > b { font-weight: var(--aw-bold); color: var(--aw-ink-bright); }
 .aw-tags { flex: none; display: inline-flex; flex-wrap: wrap; gap: var(--aw-space-1); }
@@ -189,6 +191,13 @@
   .aw-lines .aw-name { box-sizing: content-box; min-width: 1.5em; padding-inline-end: 0.1em; margin-inline-end: -0.1em; overflow: hidden;
     text-overflow: ellipsis; white-space: pre; }
   .aw-lines .aw-model { white-space: inherit; }
+  /* the name's place gives way, but never narrower than the name's first letter and its whole ellipsis, drawn unseen in
+     the same place in the name's own type (data-least, ui/dom.ts leastShown), so a name cut to one letter never clips its
+     ellipsis, whatever the letter or font */
+  .aw-lines .aw-who { display: grid; }
+  .aw-lines .aw-who > .aw-name, .aw-lines .aw-who::after { grid-area: 1 / 1; }
+  .aw-lines .aw-who::after { content: attr(data-least); visibility: hidden; white-space: pre; }
+  .aw-lines .aw-who.is-builder::after { font-weight: var(--aw-bold); }
   /* where a name is cut (aw-cut, ui/cut.ts), each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give
      way as one, so its ellipsis always stands against a letter, never after a space; a whole name draws as plain text */
   .aw-lines .aw-name.aw-cut .aw-held { display: inline-block; }

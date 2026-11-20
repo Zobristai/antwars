@@ -21,7 +21,7 @@ import type { Recording } from "../matches-page/data.ts";
 import { colonySeats, seatGroups, whenParts, winnerOf, type PlayerParts, type SeatGroup } from "../pages/model.ts";
 import { DECIDED_ON, LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
-import { h, heldSpaces } from "../ui/dom.ts";
+import { h, heldSpaces, leastShown } from "../ui/dom.ts";
 import { watchCut } from "../ui/cut.ts";
 
 /** A colony no seat was recorded for, as Matches words it. */
@@ -95,8 +95,13 @@ function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   if (parts.model !== null) name.append(held(doc, h(doc, "span", "aw-model"), parts.user !== null ? ` ${parts.model}` : parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   watchCut(doc, name);
+  // The name's place on the line: where a line never wraps, never narrower than its first letter and its whole ellipsis
+  // (top-match-tile.css); elsewhere it is no box of its own.
+  const place = h(doc, "span", `aw-who${parts.user !== null ? " is-builder" : ""}`);
+  place.setAttribute("data-least", leastShown(name.title));
+  place.append(name);
   const tags = badges(doc, parts.badges);
-  return tags ? [name, tags] : [name];
+  return tags ? [place, tags] : [place];
 }
 
 /** The seat-mark class of a line standing for `seats` seats: two edge rules for two seats; for three or four, one 2 x 7 px

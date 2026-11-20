@@ -105,3 +105,18 @@ export function heldSpaces(doc: Document, text: string): (HTMLElement | string)[
   if (plain) out.push(plain);
   return out;
 }
+
+/**
+ * The least a name run shortened with an ellipsis may show: its first letter (with any spaces held before it) and the
+ * ellipsis, drawn as the run draws them. The run's box never shrinks below it (archive.css and top-match-tile.css draw it,
+ * unseen, in the box's own place), so a run cut to its first letter always shows its whole ellipsis, in any font.
+ */
+export function leastShown(text: string): string {
+  const parts = letters(text);
+  let lead = "";
+  for (const part of parts) {
+    lead += part;
+    if (!/^\s+$/.test(part)) break;
+  }
+  return `${lead}\u2026`;
+}

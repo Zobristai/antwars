@@ -455,7 +455,7 @@ const PLAYER_LINES = () => [...document.querySelectorAll(".d1p-rec-player, .d1p-
   const centres = boxes.map(box => (box.top + box.bottom) / 2).sort((a, b) => a - b);
   let lines = 0, last = -Infinity;
   for (const centre of centres) { if (centre - last > 6) lines++; last = centre; }
-  const name = node.querySelector(":scope > .d1p-rec-name, :scope > :first-child")!;
+  const name = node.querySelector(":scope > .d1p-rec-who > .d1p-rec-name") ?? node.querySelector(":scope > :first-child")!;
   const holder = (node.closest(".d1p-rec-slot") ?? node.parentElement!).getBoundingClientRect(), own = node.getBoundingClientRect();
   // A Recordings name gives way in its parts, the builder's name and the model, each with its own ellipsis.
   const parts = [...name.querySelectorAll(":scope > .d1p-user, :scope > .d1p-mname")];

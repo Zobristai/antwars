@@ -2,7 +2,8 @@
 // size doubled (32 px). On Recordings a line too wide for its column never wraps: the builder's name and model shorten as
 // one run ending in a single ellipsis, the model giving way first, then the builder's name; a level of more than 8
 // characters shows its first 8 and an ellipsis; Fast's bolt keeps its 6 px and the rating stays whole; the full words stay
-// in the title and are read in full. On a Top matches tile a short builder's name beside a long model stays whole while the
+// in the title and are read in full. However far a run is cut, it keeps its first letter and its whole ellipsis, so a
+// builder's name too long by itself never clips its ellipsis. On a Top matches tile a short builder's name beside a long model stays whole while the
 // model gives way. Wherever a name is cut, its ellipsis stands against the last letter shown, never after a space, even
 // where a model label ends in spaces.
 import { readFileSync } from "node:fs";
@@ -78,6 +79,13 @@ const TEAMS: Recording = { ...recording("2026-11-11T10-34-00-000Z-7", [
   seat(0, 0, "w".repeat(24), LONG_SEAT), seat(1, 1, "kite", { modelLabel: "zai/glm-5.3" }),
   seat(2, 0, "w".repeat(24), LONG_SEAT), seat(3, 1, "kite", { modelLabel: "zai/glm-5.3" })]), matchType: { kind: "index", size: 2 } };
 
+/** The widest sample seat, a builder's name too long by itself, across a 1v1 tile and in a free-for-all's column. */
+const WIDEST_SEAT = { modelLabel: "W".repeat(64), thinkingLevel: "W".repeat(32), serviceTier: "fast" } as const;
+const WIDEST_ONE_ON_ONE = recording("2026-11-11T10-34-00-000Z-10", [seat(0, 0, "W".repeat(24), WIDEST_SEAT), seat(1, 1, "kite", { modelLabel: "zai/glm-5.3" })]);
+const WIDEST_COLUMN: Recording = { ...recording("2026-11-11T10-34-00-000Z-11", [
+  seat(0, 0, "W".repeat(24), WIDEST_SEAT), seat(1, 1, "kite", { modelLabel: "zai/glm-5.3" }),
+  seat(2, 2, "fennec", { modelLabel: "zai/glm-5.3" }), seat(3, 3, "tidewater", { modelLabel: "zai/glm-5.3" })]), matchType: { kind: "quadrants", size: 1 } };
+
 function tilePage(width: string, match: Recording = FREE_FOR_ALL, make = topMatchTile): string {
   const port = dom({ search: "" });
   const tile = make(port.doc as unknown as Document, match, "", "shown") as unknown as ElementPort;
@@ -137,6 +145,16 @@ async function recordingLines(tab: Page) {
     // The run's text shows up to its one ellipsis; a part reaching past that point is shortened, and one starting past it is gone.
     const edge = visibleEdge(name);
     const past = (node: Element | null) => node !== null && node.getBoundingClientRect().right > edge + 0.5;
+    // The least the run may show: 1.5em, or its first letter, in the weight it is drawn in, and its whole ellipsis.
+    const least = (() => {
+      const letter = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(name.getAttribute("title")!)][0]!.segment;
+      // Drawn inside the name, out of its flow, so in the name's own type.
+      const probe = document.createElement("span"); probe.style.position = "absolute"; probe.style.whiteSpace = "pre";
+      const first = document.createElement("span"); first.textContent = letter; first.style.fontWeight = getComputedStyle(user ?? model ?? name).fontWeight;
+      probe.append(first, "…"); name.append(probe);
+      const width = probe.getBoundingClientRect().width; probe.remove();
+      return Math.max(1.5 * em, width);
+    })();
     const ellipses = [name, ...name.querySelectorAll("*")]
       .filter(node => getComputedStyle(node).textOverflow === "ellipsis" && getComputedStyle(node).overflowX !== "visible");
     return {
@@ -145,7 +163,7 @@ async function recordingLines(tab: Page) {
       nameCut: shortened(name), userCut: past(user), modelCut: past(model), levelCut: shortened(level),
       // Where the model begins in the run: right after the builder's name (a cut run may report its hidden first unit elsewhere).
       modelGone: model !== null && Math.max(model.getBoundingClientRect().left, user?.getBoundingClientRect().right ?? -Infinity) >= edge - 0.5,
-      nameEms: name.getBoundingClientRect().width / em,
+      nameEms: name.getBoundingClientRect().width / em, nameWidth: name.getBoundingClientRect().width, least,
       // The one ellipsis is the run's own: neither the builder's name nor the model draws one.
       ellipses: ellipses.map(node => node === name ? "name" : node.className),
       level: level?.textContent ?? null, levelHidden: level?.getAttribute("aria-hidden") ?? null,
@@ -178,10 +196,12 @@ describe("a Recordings player line too wide for its column", () => {
         // is gone, so the line ends in the one ellipsis with no mark of the model's own.
         for (const line of [shortBuilder, longBuilder, longLevel, widest]) {
           expect(line.nameEms).toBeGreaterThanOrEqual(1.49);
+          // However far it is cut, the run keeps room for its first letter and its whole ellipsis, so neither is clipped.
+          expect(line.nameWidth).toBeGreaterThanOrEqual(line.least - 0.01);
           if (line.modelCut) expect(line.nameCut).toBe(true);
           if (line.userCut) expect(line.modelGone).toBe(true);
           // The level gives way only once the name is at its least.
-          if (line.levelCut) expect(line.nameEms).toBeLessThan(1.51);
+          if (line.levelCut) expect(line.nameWidth).toBeLessThan(line.least + 0.5);
         }
         expect([widest.nameCut, widest.modelCut]).toEqual([true, true]);
         // A level of more than 8 characters shows its first 8 and an ellipsis, hidden from screen readers, which read the whole level.
@@ -199,6 +219,17 @@ describe("a Recordings player line too wide for its column", () => {
       expect([shortBuilder.modelCut, shortBuilder.userCut]).toEqual([true, false]);
     } finally { await tab.close(); }
   });
+
+  for (const width of [320, 360]) {
+    it(`cuts a builder's name too long by itself to its first letter and one whole ellipsis, on a ${width} px phone with doubled text`, async () => {
+      const tab = await open(width, 32, recordingsPage());
+      try {
+        const { widest } = await recordingLines(tab);
+        expect([widest.userCut, widest.modelGone, widest.ellipses, widest.oneLine]).toEqual([true, true, ["name"], true]);
+        expect(widest.nameWidth).toBeGreaterThanOrEqual(widest.least - 0.01);
+      } finally { await tab.close(); }
+    });
+  }
 
   it("ends a level too wide for a 320 px phone with doubled text in an ellipsis earlier, Fast and the rating whole", async () => {
     const tab = await open(320, 32, recordingsPage());
@@ -225,6 +256,16 @@ async function tileLine(tab: Page) {
     const name = player.querySelector(".aw-name")!, builder = name.querySelector("b")!, model = name.querySelector(".aw-model")!;
     const bolt = player.querySelector(".aw-bolt");
     const edge = visibleEdge(name);
+    // The least the name may show: 1.5em, or its first letter, in the weight it is drawn in, and its whole ellipsis.
+    const least = (() => {
+      const letter = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(name.getAttribute("title")!)][0]!.segment;
+      // Drawn inside the name, out of its flow, so in the name's own type.
+      const probe = document.createElement("span"); probe.style.position = "absolute"; probe.style.whiteSpace = "pre";
+      const first = document.createElement("span"); first.textContent = letter; first.style.fontWeight = getComputedStyle(builder).fontWeight;
+      probe.append(first, "…"); name.append(probe);
+      const width = probe.getBoundingClientRect().width; probe.remove();
+      return Math.max(1.5 * parseFloat(getComputedStyle(name).fontSize), width);
+    })();
     const ellipses = [name, ...name.querySelectorAll("*")]
       .filter(node => getComputedStyle(node).textOverflow === "ellipsis" && getComputedStyle(node).overflowX !== "visible");
     return { builder: builder.textContent, builderCut: builder.getBoundingClientRect().right > edge + 0.5,
@@ -233,7 +274,7 @@ async function tileLine(tab: Page) {
       bolt: bolt === null ? null : bolt.getBoundingClientRect().width,
       oneLine: player.getBoundingClientRect().height <= parseFloat(getComputedStyle(player).lineHeight) + 0.5
         && player.getBoundingClientRect().right <= player.closest(".aw-tile")!.getBoundingClientRect().right + 0.5,
-      title: name.getAttribute("title"), read: name.textContent };
+      title: name.getAttribute("title"), read: name.textContent, nameWidth: name.getBoundingClientRect().width, least };
   });
 }
 
@@ -248,18 +289,33 @@ describe("a Top matches tile line", () => {
       } finally { await tab.close(); }
     });
 
-    for (const [kind, match] of [["1v1", ONE_ON_ONE], ["team side", TEAMS]] as const) {
+    for (const [kind, match] of [["1v1", ONE_ON_ONE], ["team side", TEAMS], ["widest 1v1", WIDEST_ONE_ON_ONE], ["widest column", WIDEST_COLUMN]] as const) {
       it(`keeps an over-long ${kind} line on one line ending in a single ellipsis, Fast's bolt whole, at ${width} px with ${text} px text`, async () => {
         const tab = await open(width, text, tilePage(tile, match));
         try {
           const line = await tileLine(tab);
           expect([line.oneLine, line.ellipses, line.modelCut, line.bolt! >= 5.99]).toEqual([true, ["name"], true, true]);
+          expect(line.nameWidth).toBeGreaterThanOrEqual(line.least - 0.01);
           // The model gives way first: the builder's name shortens only once the model is gone.
           if (line.builderCut) expect(line.modelGone).toBe(true);
           expect(line.read).toBe(line.title);
         } finally { await tab.close(); }
       });
     }
+  }
+});
+
+describe("a Top matches tile column too narrow for a builder's name by itself", () => {
+  // Narrower than any stored layout gives a column, so the name is at its least.
+  for (const [text, tile] of [[16, "220px"], [32, "400px"]] as const) {
+    it(`cuts the name to its first letter and one whole ellipsis, Fast's bolt whole, with ${text} px text`, async () => {
+      const tab = await open(1280, text, tilePage(tile, WIDEST_COLUMN));
+      try {
+        const line = await tileLine(tab);
+        expect([line.oneLine, line.ellipses, line.builderCut, line.modelGone, line.bolt! >= 5.99]).toEqual([true, ["name"], true, true, true]);
+        expect(line.nameWidth).toBeGreaterThanOrEqual(line.least - 0.01);
+      } finally { await tab.close(); }
+    });
   }
 });
 

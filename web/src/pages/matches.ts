@@ -20,7 +20,7 @@ import { NO_BADGES, badgeWords, benchmarkBadges, hasBadges, type BadgeKinds } fr
 import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
-import { h, heldSpaces } from "../ui/dom.ts";
+import { h, heldSpaces, leastShown } from "../ui/dom.ts";
 import { watchCut } from "../ui/cut.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
@@ -722,7 +722,11 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   name.title = parts.badges.retired ? `${words} (${C.retiredBadge})` : words;
   if (parts.badges.retired) name.append(h(doc, "span", "d1p-sr", `, ${C.retiredBadge}`));
   watchCut(doc, name);
-  line.append(name);
+  // The name's place on the line, never narrower than its first letter and its whole ellipsis (archive.css).
+  const place = h(doc, "span", `d1p-rec-who${parts.user !== null ? " is-builder" : ""}`);
+  place.setAttribute("data-least", leastShown(words));
+  place.append(name);
+  line.append(place);
   const badges = { ...parts.badges, retired: false };
   if (hasBadges(badges)) line.append(badgeGroup(doc, badges, 8));
   if (seats > 1) {

@@ -101,6 +101,8 @@ const lineParts = (line: ElementPort): (string | string[])[][] => line.children.
   if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return [["name", node.children.map(part => `${part.className ?? ""}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")]];
   // A Recordings player's badges line holds the same badges a table's player line does, in the same order.
   if (node.classes().includes("d1p-rec-badges")) return lineParts(node);
+  // A Recordings name stands in its place on the line, which holds nothing else.
+  if (node.classes().includes("d1p-rec-who")) return lineParts(node);
   return [linePart(node)];
 });
 const linePart = (node: ElementPort): (string | string[])[] => {
@@ -373,7 +375,8 @@ describe("the one player line", () => {
     const long = at("rec-long", { seats: [seat(0, 0, `provider/${name}`, "omp-dolphin", { thinkingLevel: "xhigh" }), seat(0, 1, "zai/glm-5.3", "kite")] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [long] } });
     const line = recordings.list.byClass("d1p-rec-player")[0]!;
-    expect([line.children[0]!.textContent, line.children[0]!.title]).toEqual([`omp-dolphin ${name}`, `omp-dolphin ${name}`]);
+    const shownName = line.children[0]!.byClass("d1p-rec-name")[0]!;
+    expect([shownName.textContent, shownName.title]).toEqual([`omp-dolphin ${name}`, `omp-dolphin ${name}`]);
     expect(line.children.slice(1).map(node => node.textContent)).toEqual(["xhigh"]);
     p.mounted.destroy();
   });
@@ -706,8 +709,11 @@ describe("a model label with nothing after its provider prefix", () => {
     const sheet = css();
     expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: center; gap: 0 var\(--aw-gap-inline\);[^}]*white-space: nowrap; \}/);
     expect(sheet).not.toMatch(/\.d1p-rec-player \{[^}]*flex-wrap/);
-    // The builder's name and model are one run ending in a single ellipsis, the model giving way first; it keeps 1.5em.
-    expect(sheet).toMatch(/\.d1p-rec-name \{ flex: 0 100000 auto; min-width: 1\.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre;/);
+    // The builder's name and model are one run ending in a single ellipsis, the model giving way first; it keeps 1.5em,
+    // and its place on the line never narrows past its first letter and its whole ellipsis.
+    expect(sheet).toMatch(/\.d1p-rec-name \{ min-width: 1\.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre;/);
+    expect(sheet).toMatch(/\.d1p-rec-who \{ flex: 0 100000 auto; display: grid;/);
+    expect(sheet).toMatch(/\.d1p-rec-who::after \{ content: attr\(data-least\); visibility: hidden; white-space: pre; \}/);
     expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-user \{ font-weight: var\(--aw-bold\); color: inherit; \}/);
     expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-mname \{ color: inherit; \}/);
     // Live now and Waiting keep their own badges.
@@ -721,11 +727,11 @@ describe("a model label with nothing after its provider prefix", () => {
       seat(2, 1, "openai/gpt-6.2-astra", "antwars/gpt-6-2-astra-xhigh", { thinkingLevel: "xhigh", serviceTier: "fast" })] };
     const { p, recordings } = show({ recordings: { status: "ready", rows: [parked] } });
     const [retired, team] = recordings.list.byClass("d1p-rec-player");
-    expect(retired!.children.map(node => node.className)).toEqual(["d1p-rec-name", "d1p-tags", "d1-tag d1-elo d1p-elo-badge"]);
+    expect(retired!.children.map(node => node.className)).toEqual(["d1p-rec-who", "d1p-tags", "d1-tag d1-elo d1p-elo-badge"]);
     expect(retired!.byClass("d1p-tag").map(node => node.textContent)).toEqual(["medium Fast"]);
     expect(retired!.byClass("d1p-rec-name")[0]!.title).toBe("GPT-6.2 Astra (retired)");
     expect(retired!.byClass("d1p-rec-name")[0]!.textContent).toBe("GPT-6.2 Astra, retired");
-    expect(team!.children.map(node => node.className)).toEqual(["d1p-rec-name", "d1p-tags", "d1p-count"]);
+    expect(team!.children.map(node => node.className)).toEqual(["d1p-rec-who", "d1p-tags", "d1p-count"]);
     p.mounted.destroy();
   });
 
