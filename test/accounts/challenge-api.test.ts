@@ -273,7 +273,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isRetiredHouse(handle) ? { available: false, reason: RETIRED_REASON } : isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(46);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(44);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
       for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
         "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {
@@ -290,6 +290,11 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       // The Gemini 4 Neon high handle is listed available with no records; low, medium and xhigh are parked as retired.
       expect(listed.opponents.find((entry: { handle: string }) => entry.handle === "antwars/gemini-4-neon-high")).toMatchObject({ available: true, reason: null });
       for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-xhigh"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: false, reason: RETIRED_REASON });
+      }
+      // The Qwen4 Max low handle is listed available with no records; high and xhigh are parked as retired.
+      expect(listed.opponents.find((entry: { handle: string }) => entry.handle === "antwars/qwen4-max-low")).toMatchObject({ available: true, reason: null });
+      for (const handle of ["qwen4-max-high", "qwen4-max-xhigh"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: false, reason: RETIRED_REASON });
       }
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
