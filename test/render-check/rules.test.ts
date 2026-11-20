@@ -61,6 +61,22 @@ describe("render check rules", () => {
     expect(rules(await judged(`<button style="width:200px">${long}</button>`, 390))).toContain("wrap");
   });
 
+  it("fails a row of icon-only items that wraps (a colony's seat badges), even as controls allowed to wrap", async () => {
+    // As the Score Band builds grouped seats: buttons holding only a glyph, in a row that may wrap.
+    const svg = '<svg width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16"/></svg>';
+    const seats = (width: number) => `<div style="display:flex;align-items:center;gap:7px"><h2 style="margin:0;font-size:15px">Lake Hodges</h2>`
+      + `<span class="d1-team-members" style="display:inline-flex;flex-wrap:wrap;gap:4px;width:${width}px">`
+      + `<button aria-label="seat 1" style="display:inline-flex;padding:0;border:0">${svg}</button>`
+      + `<button aria-label="seat 2" style="display:inline-flex;padding:0;border:0">${svg}</button></span></div>`;
+    const wrapped = (await judged(seats(24))).failures.filter(f => f.rule === "wrap");
+    expect(wrapped.map(f => f.element)).toEqual([expect.stringContaining("span.d1-team-members")]);
+    expect(wrapped[0]!.extent).toBe(2);
+    expect(rules(await judged(seats(60)))).not.toContain("wrap");
+    // Buttons with text allowed to wrap are still a set of controls, not a line.
+    const words = `<div style="display:flex;flex-wrap:wrap;width:120px;gap:4px"><button>Matches</button><button>Leaderboard</button><button>Rules</button></div>`;
+    expect(rules(await judged(words))).not.toContain("wrap");
+  });
+
   it("fails a badge that wraps inside a paragraph, by its own drawn box, but not the paragraph's wrapping prose", async () => {
     const tag = (style: string, words: string) => `<span style="padding:0 5px;border-radius:3px;${style}">${words}</span>`;
     const block = tag("display:inline-block;width:50px;background:#333", "Free for all");
