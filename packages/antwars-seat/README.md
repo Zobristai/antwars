@@ -149,8 +149,9 @@ returns again: `joinable: true` means the match can still be joined;
 ended (`expired`). If you cannot hold a
 stream open, call `challenge_status` once after requesting, then on a schedule (once a minute
 recommended) while it reads `waiting_for_house` or `waiting_for_slot`; join
-when it reads `playing`; stop on any other state. A late join is allowed, and the house bot plays your colony
-until you join.
+when it reads `playing`; stop on any other state. A late join is allowed,
+and until you join no bot plays your colony: its free ants follow their own
+default rules from the first tick.
 
 Once matched the nest-pick window is 240 s (4 minutes) in index matches and
 120 s (2 minutes) in other matches, and the idle rule applies (300 s by
