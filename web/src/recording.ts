@@ -290,13 +290,17 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   let seekTo: number | null = null;
   const notify = () => { changed?.(); changed = null; };
   const duration = () => firstTick === null || endTick === null ? null : (endTick - firstTick) * TICK_MS;
+  let recordedEnd: Promise<number | null> | null = null;
+  /** The end tick recorded beside the recording, asked for once; null where there is none or it cannot be read. */
+  const readRecordedEnd = () => recordedEnd ??= Promise.resolve().then(() => options.endTick?.(lifetime.signal) ?? null).then(
+    known => known !== null && Number.isSafeInteger(known) && known >= firstTick! ? known : null, () => null);
   // Duration discovery retains no messages or boards. Missing/private/legacy history
   // falls back to a cancellable streaming scan, independent of playback backpressure.
   const discoverEnd = async () => {
     try {
-      const known = await options.endTick?.(lifetime.signal).catch(() => null);
+      const known = await readRecordedEnd();
       if (closed || endTick !== null) return;
-      if (known !== undefined && known !== null && Number.isSafeInteger(known) && known >= firstTick!) {
+      if (known !== null) {
         knownEnd ??= known;
         endTick ??= known;
         return;
@@ -381,7 +385,14 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         const next = await messages.next();
         if (closed || version !== generation) return;
         if (next.done) {
-          if (previous === null) throw new CorruptRecording("Recording is empty.");
+          // A reopen that reads nothing of a recording already read was cut short too.
+          if (previous === null) throw firstTick === null ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
+          // Some hops end a cut response cleanly, so a recorded end is settled before a clean end is taken as the end.
+          if (knownEnd === null && options.endTick) {
+            const known = await readRecordedEnd();
+            if (closed || version !== generation) return;
+            if (known !== null) knownEnd = known;
+          }
           if (knownEnd !== null && previous < knownEnd) throw new RecordingCutShort(CUT_SHORT);
           done = true;
           knownEnd = endTick = newestTick;

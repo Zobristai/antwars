@@ -216,6 +216,52 @@ describe("a download that drops partway", () => {
     r.close();
   });
 
+  it("settles the recorded end before taking a clean end between messages early in the download as the end", async () => {
+    let requests = 0;
+    const errors: Error[] = [];
+    // Playback's first download ends after five whole messages, before read-ahead fills; the reopen is whole.
+    const r = openRecording("/replays/early", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(ends[4]!) : body(bytes)),
+      { controls: true, endTick: async () => ticks.at(-1)!, marksWorker: null });
+    const played: number[] = [];
+    const clock = { real: 0 };
+    await playUntil(r, played, clock, () => played.length === 5);
+    await settle();
+    expect(r.complete).toBe(false);
+    expect(r.error).toBeNull();
+    expect(requests).toBe(1);
+    await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
+    expect(requests).toBe(1);
+    // The reopen, then the marks' read once the reopen fills read-ahead.
+    await vi.advanceTimersByTimeAsync(1); await settle();
+    expect(requests).toBe(3);
+    await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks);
+    expect(r.lastTick).toBe(ticks.at(-1));
+    expect(errors).toEqual([]);
+    r.close();
+  });
+
+  it("keeps trying a reopen that reads nothing, and gives up only after the last wait", async () => {
+    let requests = 0;
+    const errors: Error[] = [];
+    // The first download ends partway through message 8; every reopen's body ends before its first byte.
+    const r = openRecording("/replays/empty-reopen", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(mid(8)) : body(new Uint8Array())));
+    await r.first;
+    await settle();
+    for (const [i, wait] of RESUME_RETRY_MS.entries()) {
+      expect(r.error).toBeNull();
+      await vi.advanceTimersByTimeAsync(wait - 1); await settle();
+      expect(requests).toBe(1 + i);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(2 + i);
+    }
+    expect(r.error?.message).toBe("Recording download ended partway through a message.");
+    expect(errors).toEqual([r.error]);
+    await vi.advanceTimersByTimeAsync(120_000); await settle();
+    expect(requests).toBe(1 + RESUME_RETRY_MS.length);
+    r.close();
+  });
+
   it("still takes a clean end between messages as the recording's end when no end is known", async () => {
     let requests = 0;
     const r = openRecording("/replays/short", undefined, async () => { requests++; return new Response(ending(ends[9]!)); });

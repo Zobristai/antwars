@@ -72,6 +72,8 @@ it.each(["replay", "replay="])("%s waits for the first listed page, then plays a
     if (path === "/matches?pageToken=last") return last;
     // The stored match's rating record; this one has none, so the recording's figures stay.
     if (path === `/watch/ratings/${newest}`) return Response.json({ ratings: [] });
+    // The stored match's record, whose result names the recording's last tick.
+    if (path === `/matches/${newest}`) return Response.json({ format: "antwar.match", version: 1, id: newest, result: { tick: decodeMessage(packets.at(-1)!).tick - 1 } });
     expect(path).toBe(`/replays/${newest}`);
     return new Response(bytes);
   });
@@ -94,8 +96,9 @@ it.each(["replay", "replay="])("%s waits for the first listed page, then plays a
   expect(source.lastTick).toBe(frame.tick);
   expect(modeCopy("replay", 4, true, "/", source.storedId).detail).toBe("· recording ended");
   expect(reject).not.toHaveBeenCalled();
-  // The second read of the recording is the scrubber marks' (recording.ts); the end was settled at EOF.
-  expect(paths).toEqual(["/matches", "/matches?pageToken=last", `/watch/ratings/${newest}`, `/replays/${newest}`, `/replays/${newest}`]);
+  // The recording ends before its read-ahead fills, so its recorded end is asked for once before that end is taken as the
+  // recording's; the second read of the recording is the scrubber marks' (recording.ts).
+  expect(paths).toEqual(["/matches", "/matches?pageToken=last", `/watch/ratings/${newest}`, `/replays/${newest}`, `/matches/${newest}`, `/replays/${newest}`]);
 });
 
 it("complete empty history shows a status and back link, not an error or bundled recording", async () => {
