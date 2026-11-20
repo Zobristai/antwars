@@ -14,6 +14,7 @@ import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.t
 import { restateRatings, storedReplayRatings } from "./replay-ratings.ts";
 import { liveStarting } from "./waiting.ts";
 import { keep } from "./ui/format.ts";
+import { boardMode, type BoardMode } from "./webgl2.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
 export const CONNECT_MS = 2000;
@@ -42,6 +43,33 @@ function consumeRendererHandover(view: Window | null, params: URLSearchParams): 
       (params.has("lobby") && params.get("lobby") !== value.lobbyId)) return null;
     const delaySeconds = "delaySeconds" in value && typeof value.delaySeconds === "number" && Number.isFinite(value.delaySeconds) && value.delaySeconds >= 0 ? value.delaySeconds : undefined;
     return { lobbyId: value.lobbyId, route: value.route, at: value.at, delaySeconds };
+  } catch { return null; }
+}
+
+/** One board change, not a fresh visit: a replay reopened on the other board resumes where it had reached. */
+export const REPLAY_POSITION_KEY = "antwar-replay-position";
+interface ReplayPosition { route: string; board: BoardMode; positionMs: number; at: number }
+function rememberReplayPosition(view: Window | null, params: URLSearchParams, positionMs: number): void {
+  if (!view || !(positionMs > 0)) return;
+  try {
+    view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({
+      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), positionMs, at: Date.now(),
+    } satisfies ReplayPosition));
+  } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
+}
+function consumeReplayPosition(view: Window | null, params: URLSearchParams): number | null {
+  try {
+    const raw = view?.sessionStorage.getItem(REPLAY_POSITION_KEY);
+    view?.sessionStorage.removeItem(REPLAY_POSITION_KEY);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null ||
+      !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
+      !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
+      !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
+      Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
+      !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
+    return value.positionMs;
   } catch { return null; }
 }
 
@@ -230,6 +258,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const automatic = !replay && !name && !params.has("lobby") && !local;
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
+  let resumeAt = replay ? consumeReplayPosition(view, params) : null;
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
   let closeStatus: (() => void) | undefined;
@@ -302,7 +331,12 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       return null;
     }
   };
-  view?.addEventListener("pagehide", close, { once: true });
+  // Leaving an explicit replay (its board control, or the 3D board's fallback to 2D) keeps its position for the other board;
+  // a position not yet resumed is passed on as it was.
+  view?.addEventListener("pagehide", () => {
+    if (replay && recording) rememberReplayPosition(view, params, resumeAt ?? recording.position);
+    close();
+  }, { once: true });
   setFallback(null);
   try {
     const invite = new URLSearchParams(view?.location?.hash.slice(1)).get("invite");
@@ -479,6 +513,8 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       linkState: () => state,
       take(realMs) {
         if (recording) {
+          // Resume a board change's position once the scrubber can seek (the recording's length is known).
+          if (resumeAt !== null && recording.duration !== null) { recording.seek(resumeAt); resumeAt = null; }
           const arrivals = recording.take(realMs).map(arrival => ({ ...arrival, kind: "recorded" as const }));
           shown = arrivals.at(-1)?.m.tick ?? shown;
           if (fallback && shown >= recording.lastTick) reload();
