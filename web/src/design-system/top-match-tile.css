@@ -134,6 +134,12 @@
 @media (max-width: 22.499em) {
   .d1p[data-page="watch"] { --d1p-pad: var(--aw-space-2); }
 }
+/* ---- one tile across on a page wider than 738 px (46.125rem at the default 16 px), which only enlarged text gives: 1280 px
+   with text doubled is 40em. Its tiles grow with the text, so the 4 px phone gap above would leave them nearly touching;
+   the compact gap, 8 px, stands, as at 320 and 390 px with text doubled. */
+@media (max-width: 46.124rem) and (min-width: 738px) {
+  .aw-grid { --gap: var(--aw-space-2); }
+}
 /* ---- under 12em (192 px at default text size; 384 px with text doubled): the frame gives the line its width. The page edge
    goes to 0 and the tiles lie flush as a list: no side border or corner, a full-width rule between them. The left inset keeps
    8 px, which holds the seat rules; the right inset is 2 px; the player line's name-to-badge gap is 4 px. A 160 CSS px page
