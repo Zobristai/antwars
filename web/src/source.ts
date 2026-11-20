@@ -14,6 +14,8 @@ import { inviteRecordingRequest, lobbyRecordingPath } from "./invite-recording.t
 import { restateRatings, storedReplayRatings } from "./replay-ratings.ts";
 import { liveStarting } from "./waiting.ts";
 import { keep } from "./ui/format.ts";
+import { boardMode, type BoardMode } from "./webgl2.ts";
+import { MANUAL_3D_PARAM, RETRY_3D_PARAM } from "./3d-recovery.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
 export const CONNECT_MS = 2000;
@@ -43,6 +45,51 @@ function consumeRendererHandover(view: Window | null, params: URLSearchParams): 
     const delaySeconds = "delaySeconds" in value && typeof value.delaySeconds === "number" && Number.isFinite(value.delaySeconds) && value.delaySeconds >= 0 ? value.delaySeconds : undefined;
     return { lobbyId: value.lobbyId, route: value.route, at: value.at, delaySeconds };
   } catch { return null; }
+}
+
+/** One board change, not a fresh visit: a replay reopened on the other board resumes where it had reached. */
+export const REPLAY_POSITION_KEY = "antwar-replay-position";
+interface ReplayPosition { route: string; board: BoardMode; positionMs: number; at: number }
+function rememberReplayPosition(view: Window | null, params: URLSearchParams, positionMs: number): void {
+  if (!view || !(positionMs > 0)) return;
+  try {
+    view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({
+      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), positionMs, at: Date.now(),
+    } satisfies ReplayPosition));
+  } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
+}
+/** The stored position this page would resume: this replay, saved on the other board, recently, past the start. */
+function pendingReplayPosition(raw: string | null | undefined, view: Window | null, params: URLSearchParams): ReplayPosition | null {
+  if (!raw) return null;
+  const value: unknown = JSON.parse(raw);
+  if (typeof value !== "object" || value === null ||
+    !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
+    !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
+    !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
+    Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
+    !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
+  return { route: value.route, board: value.board, positionMs: value.positionMs, at: value.at };
+}
+function consumeReplayPosition(view: Window | null, params: URLSearchParams): number | null {
+  try {
+    const raw = view?.sessionStorage.getItem(REPLAY_POSITION_KEY);
+    view?.sessionStorage.removeItem(REPLAY_POSITION_KEY);
+    return pendingReplayPosition(raw, view, params)?.positionMs ?? null;
+  } catch { return null; }
+}
+/**
+ * The 3D board is giving up before its source opened (a failed start, failed module loading, no WebGL2), so it never
+ * took the position a board change passed it. Pass that position on to the 2D board as the 3D board's own.
+ * Call on the 3D page, just before it becomes the 2D board; anything else is left as it is.
+ */
+export function carryReplayPositionToFallback(view: Window | null, params: URLSearchParams): void {
+  if (!view || boardMode(params) !== "3d") return;
+  const own = new URLSearchParams(params);
+  own.delete(RETRY_3D_PARAM); own.delete(MANUAL_3D_PARAM);
+  try {
+    const pending = pendingReplayPosition(view.sessionStorage.getItem(REPLAY_POSITION_KEY), view, own);
+    if (pending) view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({ ...pending, board: "3d" } satisfies ReplayPosition));
+  } catch { /* Storage is optional: without it the 2D board starts the replay from its beginning. */ }
 }
 
 /** A dropped feed changes source only after repeated confirmed catalog absence. */
@@ -230,6 +277,8 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const automatic = !replay && !name && !params.has("lobby") && !local;
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
+  let resumeAt = replay ? consumeReplayPosition(view, params) : null;
+  let resumeGeneration: number | null = null;
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
   let closeStatus: (() => void) | undefined;
@@ -302,7 +351,12 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       return null;
     }
   };
-  view?.addEventListener("pagehide", close, { once: true });
+  // Leaving an explicit replay (its board control, or the 3D board's fallback to 2D) keeps its position for the other board;
+  // a position not yet resumed is passed on as it was.
+  view?.addEventListener("pagehide", () => {
+    if (replay && recording) rememberReplayPosition(view, params, resumeAt ?? recording.position);
+    close();
+  }, { once: true });
   setFallback(null);
   try {
     const invite = new URLSearchParams(view?.location?.hash.slice(1)).get("invite");
@@ -479,7 +533,15 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       linkState: () => state,
       take(realMs) {
         if (recording) {
+          // Resume a board change's position once the scrubber can seek (the recording's length is known). The target is
+          // kept until that seek has landed, so leaving mid-seek (another board change) passes it on, not the start.
+          if (resumeAt !== null && resumeGeneration === null && recording.duration !== null) {
+            recording.seek(resumeAt);
+            resumeGeneration = recording.generation;
+          }
           const arrivals = recording.take(realMs).map(arrival => ({ ...arrival, kind: "recorded" as const }));
+          // Landed, or replaced by the visitor's own seek: the recording's position stands from here.
+          if (resumeGeneration !== null && (!recording.seeking || recording.generation !== resumeGeneration)) resumeAt = resumeGeneration = null;
           shown = arrivals.at(-1)?.m.tick ?? shown;
           if (fallback && shown >= recording.lastTick) reload();
           return arrivals;
