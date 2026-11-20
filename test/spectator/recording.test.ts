@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage, encodePublicMessage } from "../../src/live/format.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { Frame, Playback } from "../../web/src/buffer.ts";
-import { MAX_RECORDING_MESSAGE_BYTES, RECORDING_AHEAD, RESUME_RETRY_MS, openRecording, recordingMessages, type Recording } from "../../web/src/recording.ts";
+import { MAX_RECORDING_MESSAGE_BYTES, RECORDING_AHEAD, RESUME_RETRY_MS, SCAN_RETRY_MS, openRecording, recordingMessages, serveMarks, type MarksPort, type MarksWorker, type Recording } from "../../web/src/recording.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
 const packets = scale2Packets(45);
@@ -120,6 +120,12 @@ describe("a download that drops partway", () => {
       at = end;
     } });
   }
+  /** The recording's first `cut` bytes, then the body ends cleanly, as some hops end a cut response. */
+  const ending = (cut: number) => body(bytes.slice(0, cut));
+  const cuts: [string, (cut: number) => ReadableStream<Uint8Array>, string][] = [
+    ["drops with a network error", dropping, "network error"],
+    ["ends cleanly partway through a message", ending, "Recording download ended partway through a message."],
+  ];
   /** Lets streams, promises and zero-delay timers run without moving the clock. */
   const settle = async () => { for (let i = 0; i < 20; i++) { await vi.advanceTimersByTimeAsync(0); await new Promise((resolve) => setImmediate(resolve)); } };
   /** Plays on in 100ms frames until `until` holds, collecting each played tick. */
@@ -134,43 +140,131 @@ describe("a download that drops partway", () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }); });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-  it("reopens after the first wait and resumes from the furthest tick reached, playing every tick once, in order, to the end", async () => {
-    const responses = [dropping(mid(10)), dropping(mid(30)), body(bytes)];
+  for (const [how, cut, message] of cuts) describe(`when the download ${how}`, () => {
+    it("reopens after the first wait and resumes from the furthest tick reached, playing every tick once, in order, to the end", async () => {
+      const responses = [cut(mid(10)), cut(mid(30)), body(bytes)];
+      let requests = 0;
+      const errors: Error[] = [];
+      const r = openRecording("/replays/drop", (e) => errors.push(e), async () => new Response(responses[requests++]!));
+      const played: number[] = [];
+      const clock = { real: 0 };
+      await playUntil(r, played, clock, () => played.length === 10);
+      await settle();
+      expect(requests).toBe(1);
+      expect(r.error).toBeNull();
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
+      expect(requests).toBe(1);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(2);
+      // The reopen reached new ticks before it dropped too, so the next reopen waits the first wait again.
+      await playUntil(r, played, clock, () => played.length === 30);
+      await settle();
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
+      expect(requests).toBe(2);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(3);
+      await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+      expect(played).toEqual(ticks);
+      expect(r.error).toBeNull();
+      expect(errors).toEqual([]);
+      expect(r.lastTick).toBe(ticks.at(-1));
+      r.close();
+    });
+
+    it("does not start the waits over for ticks a reopen only reads again, and gives up after the last wait", async () => {
+      let requests = 0;
+      const errors: Error[] = [];
+      // The first download reaches message 8; every reopen drops before it gets that far again.
+      const r = openRecording("/replays/drop", (e) => errors.push(e), async () => new Response(requests++ === 0 ? cut(mid(8)) : cut(mid(5))));
+      await r.first;
+      await settle();
+      for (const [i, wait] of RESUME_RETRY_MS.entries()) {
+        expect(r.error).toBeNull();
+        await vi.advanceTimersByTimeAsync(wait - 1); await settle();
+        expect(requests).toBe(1 + i);
+        await vi.advanceTimersByTimeAsync(1); await settle();
+        expect(requests).toBe(2 + i);
+      }
+      expect(r.error?.message).toBe(message);
+      expect(errors).toEqual([r.error]);
+      expect(r.take(1e6)).toEqual([]);
+      await vi.advanceTimersByTimeAsync(120_000); await settle();
+      expect(requests).toBe(1 + RESUME_RETRY_MS.length);
+      r.close();
+    });
+  });
+
+  it("reopens a download that ends cleanly between messages before the recording's known end, and plays to that end", async () => {
     let requests = 0;
     const errors: Error[] = [];
-    const r = openRecording("/replays/drop", (e) => errors.push(e), async () => new Response(responses[requests++]!));
+    // Playback's first download ends after whole messages; every later request (the marks' read, the reopen) is whole.
+    const r = openRecording("/replays/cut", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(ends[RECORDING_AHEAD + 5]!) : body(bytes)),
+      { controls: true, endTick: async () => ticks.at(-1)!, marksWorker: null });
     const played: number[] = [];
     const clock = { real: 0 };
-    await playUntil(r, played, clock, () => played.length === 10);
+    await playUntil(r, played, clock, () => played.length === RECORDING_AHEAD + 6);
     await settle();
-    expect(requests).toBe(1);
+    expect(r.complete).toBe(false);
     expect(r.error).toBeNull();
+    const before = requests;
+    await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]!); await settle();
+    expect(requests).toBe(before + 1);
+    await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks);
+    expect(r.lastTick).toBe(ticks.at(-1));
+    expect(errors).toEqual([]);
+    r.close();
+  });
+
+  it("checks a clean end between messages early in the download against the recorded end before taking it as the end", async () => {
+    let requests = 0;
+    const errors: Error[] = [];
+    // Playback's first download ends after five whole messages, before read-ahead fills; the reopen is whole.
+    const r = openRecording("/replays/early", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(ends[4]!) : body(bytes)),
+      { controls: true, endTick: async () => ticks.at(-1)!, marksWorker: null });
+    const played: number[] = [];
+    const clock = { real: 0 };
+    await playUntil(r, played, clock, () => played.length === 5);
+    await settle();
+    expect(r.complete).toBe(false);
+    expect(r.error).toBeNull();
+    expect(requests).toBe(1);
     await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
     expect(requests).toBe(1);
-    await vi.advanceTimersByTimeAsync(1); await settle();
-    expect(requests).toBe(2);
-    // The reopen reached new ticks before it dropped too, so the next reopen waits the first wait again.
-    await playUntil(r, played, clock, () => played.length === 30);
-    await settle();
-    await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
-    expect(requests).toBe(2);
+    // The reopen, then the marks' read once the reopen fills read-ahead.
     await vi.advanceTimersByTimeAsync(1); await settle();
     expect(requests).toBe(3);
     await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
     expect(played).toEqual(ticks);
-    expect(r.error).toBeNull();
-    expect(errors).toEqual([]);
     expect(r.lastTick).toBe(ticks.at(-1));
+    expect(errors).toEqual([]);
     r.close();
   });
 
-  it("does not start the waits over for ticks a reopen only reads again, and gives up after the last wait", async () => {
+  it("ends a short recording at its clean end between messages without waiting for a recorded end that has not arrived", async () => {
+    let requests = 0;
+    let asked = 0;
+    // The recorded end is asked for once and never arrives; playback still takes the recording's clean end as its end.
+    const r = openRecording("/replays/short", undefined, async () => { requests++; return new Response(ending(ends[9]!)); },
+      { controls: true, endTick: () => { asked++; return new Promise<number | null>(() => {}); }, marksWorker: null });
+    const played: number[] = [];
+    await playUntil(r, played, { real: 0 }, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks.slice(0, 10));
+    expect(r.lastTick).toBe(ticks[9]);
+    expect(asked).toBe(1);
+    await vi.advanceTimersByTimeAsync(120_000); await settle();
+    expect(r.error).toBeNull();
+    expect(requests).toBe(2);
+    r.close();
+  });
+
+  for (const [where, k] of [["message 8", 8], ["the first message", 0]] as const) it(`keeps trying a reopen that reads nothing after a download that ends partway through ${where}, and gives up only after the last wait`, async () => {
     let requests = 0;
     const errors: Error[] = [];
-    // The first download reaches message 8; every reopen drops before it gets that far again.
-    const r = openRecording("/replays/drop", (e) => errors.push(e), async () => new Response(requests++ === 0 ? dropping(mid(8)) : dropping(mid(5))));
-    await r.first;
+    // The first download ends partway through message k; every reopen's body ends before its first byte.
+    const r = openRecording("/replays/empty-reopen", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(mid(k)) : body(new Uint8Array())));
     await settle();
+    expect(requests).toBe(1);
     for (const [i, wait] of RESUME_RETRY_MS.entries()) {
       expect(r.error).toBeNull();
       await vi.advanceTimersByTimeAsync(wait - 1); await settle();
@@ -178,11 +272,125 @@ describe("a download that drops partway", () => {
       await vi.advanceTimersByTimeAsync(1); await settle();
       expect(requests).toBe(2 + i);
     }
-    expect(r.error?.message).toBe("network error");
+    expect(r.error?.message).toBe("Recording download ended partway through a message.");
     expect(errors).toEqual([r.error]);
-    expect(r.take(1e6)).toEqual([]);
     await vi.advanceTimersByTimeAsync(120_000); await settle();
     expect(requests).toBe(1 + RESUME_RETRY_MS.length);
+    r.close();
+  });
+
+  // The first download ends partway through message 8 (the ninth); a reopen then ends cleanly after five whole messages,
+  // before the tick already reached, or after all eight, exactly where the first download's last whole message was.
+  for (const [where, k] of [["before the tick already reached", 4], ["at the last whole message before an earlier cut", 7]] as const) {
+    it(`reopens again when a reopen ends cleanly between messages ${where}, and plays to the end`, async () => {
+      let requests = 0;
+      const errors: Error[] = [];
+      // No end is known. The next reopen is whole.
+      const r = openRecording("/replays/short-reopen", (e) => errors.push(e), async () => {
+        const n = requests++;
+        return new Response(n === 0 ? ending(mid(8)) : n === 1 ? ending(ends[k]!) : body(bytes));
+      });
+      const played: number[] = [];
+      const clock = { real: 0 };
+      await playUntil(r, played, clock, () => played.length === 8);
+      await settle();
+      expect(requests).toBe(1);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]!); await settle();
+      expect(requests).toBe(2);
+      expect(r.complete).toBe(false);
+      expect(r.error).toBeNull();
+      expect(r.lastTick).toBe(Number.POSITIVE_INFINITY);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[1]!); await settle();
+      expect(requests).toBe(3);
+      await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+      expect(played).toEqual(ticks);
+      expect(r.lastTick).toBe(ticks.at(-1));
+      expect(errors).toEqual([]);
+      r.close();
+    });
+
+    it(`gives up only after the last wait when every reopen ends cleanly between messages ${where}`, async () => {
+      let requests = 0;
+      const errors: Error[] = [];
+      // No end is known.
+      const r = openRecording("/replays/short-reopens", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(mid(8)) : ending(ends[k]!)));
+      await settle();
+      expect(requests).toBe(1);
+      for (const [i, wait] of RESUME_RETRY_MS.entries()) {
+        expect(r.error).toBeNull();
+        expect(r.complete).toBe(false);
+        await vi.advanceTimersByTimeAsync(wait - 1); await settle();
+        expect(requests).toBe(1 + i);
+        await vi.advanceTimersByTimeAsync(1); await settle();
+        expect(requests).toBe(2 + i);
+      }
+      expect(r.error?.message).toBe("Recording download ended partway through a message.");
+      expect(errors).toEqual([r.error]);
+      await vi.advanceTimersByTimeAsync(120_000); await settle();
+      expect(requests).toBe(1 + RESUME_RETRY_MS.length);
+      r.close();
+    });
+  }
+
+  it("plays to the end through more cuts than there are waits, each reopen that makes progress waiting only the first wait", async () => {
+    // Seven downloads in turn are cut, alternately by a network error and by a clean end partway through a message, each
+    // further into the recording than the last; the eighth is whole.
+    const points = [5, 10, 15, 20, 25, 30, 35];
+    expect(points.length).toBeGreaterThan(RESUME_RETRY_MS.length);
+    const responses = [...points.map((k, i) => (i % 2 === 0 ? dropping : ending)(mid(k))), body(bytes)];
+    let requests = 0;
+    const errors: Error[] = [];
+    const r = openRecording("/replays/many-cuts", (e) => errors.push(e), async () => new Response(responses[requests++]!));
+    const played: number[] = [];
+    const clock = { real: 0 };
+    for (const [i, k] of points.entries()) {
+      await playUntil(r, played, clock, () => played.length === k);
+      await settle();
+      expect(requests).toBe(1 + i);
+      expect(r.error).toBeNull();
+      expect(r.complete).toBe(false);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
+      expect(requests).toBe(1 + i);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(2 + i);
+    }
+    await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks);
+    expect(r.lastTick).toBe(ticks.at(-1));
+    expect(r.error).toBeNull();
+    expect(errors).toEqual([]);
+    expect(requests).toBe(points.length + 1);
+    r.close();
+  });
+
+  it("still takes a clean end between messages as the recording's end when no end is known", async () => {
+    let requests = 0;
+    const r = openRecording("/replays/short", undefined, async () => { requests++; return new Response(ending(ends[9]!)); });
+    const played: number[] = [];
+    await playUntil(r, played, { real: 0 }, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks.slice(0, 10));
+    expect(r.lastTick).toBe(ticks[9]);
+    await vi.advanceTimersByTimeAsync(120_000); await settle();
+    expect(requests).toBe(1);
+    expect(r.error).toBeNull();
+    r.close();
+  });
+
+  it("tries the marks' read again on the page when its download ends cleanly partway through a message", async () => {
+    let requests = 0;
+    // Playback's download is whole; the marks' first read is cut short, its retry is whole.
+    const r = openRecording("/replays/marks", undefined, async () => new Response(++requests === 2 ? ending(mid(30)) : body(bytes)),
+      { controls: true, endTick: async () => ticks.at(-1)!, marksWorker: null });
+    const played: number[] = [];
+    const clock = { real: 0 };
+    await playUntil(r, played, clock, () => requests === 2);
+    await settle();
+    expect(r.events).toBeNull();
+    await vi.advanceTimersByTimeAsync(SCAN_RETRY_MS[0]!); await settle();
+    expect(requests).toBe(3);
+    expect(r.events).not.toBeNull();
+    expect(r.durationError).toBeNull();
+    expect(r.error).toBeNull();
     r.close();
   });
 
@@ -194,7 +402,6 @@ describe("a download that drops partway", () => {
     ["an empty recording", async () => new Response(body(new Uint8Array())), /^Recording is empty\.$/],
     ["a recording without an opening snapshot", async () => new Response(body(packMessages([packets[1]!]))), /^Recording has no opening snapshot\.$/],
     ["a recording with a gap in its ticks", async () => new Response(body(packMessages([packets[0]!, packets[2]!]))), /^Recording ticks are not continuous\.$/],
-    ["a recording whose body ends cleanly partway through a message", async () => new Response(body(bytes.slice(0, mid(3)))), /^Recording download ended partway through a message\.$/],
     ["a recording with an undecodable message", async () => new Response(body(undecodable)), /^not a stream message$/],
   ];
   for (const [name, respond, text] of failures) it(`fails at once, never reopening, on ${name}`, async () => {
@@ -302,3 +509,27 @@ describe("a download that drops partway", () => {
     r.close();
   });
 });
+
+it("tries the marks' read again in a background worker when its download ends cleanly partway through a message", async () => {
+  const ticks = packets.map((p) => decodeMessage(p).tick);
+  // The real worker side (serveMarks) on the far end of a message channel, as replay-events.worker.ts runs it.
+  const worker = (): MarksWorker => {
+    const { port1, port2 } = new MessageChannel();
+    serveMarks(port2 as unknown as MarksPort);
+    const w: MarksWorker = {
+      onmessage: null, onerror: null,
+      postMessage: (message, transfer) => port1.postMessage(message, transfer),
+      terminate() { port1.close(); port2.close(); },
+    };
+    port1.onmessage = (event) => w.onmessage?.(event as MessageEvent);
+    return w;
+  };
+  let requests = 0;
+  // Playback's download is whole; the marks' first read is cut short partway through a message, its retry is whole.
+  const r = openRecording("/replays/marks", undefined, async () => new Response(++requests === 2 ? body(bytes.slice(0, bytes.length - 2)) : body(bytes)),
+    { controls: true, endTick: async () => ticks.at(-1)!, marksWorker: worker });
+  await vi.waitFor(() => expect(r.events).not.toBeNull(), { timeout: SCAN_RETRY_MS[0]! + 3000 });
+  expect(requests).toBe(3);
+  expect(r.error).toBeNull();
+  r.close();
+}, 10_000);

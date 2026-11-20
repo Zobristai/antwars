@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { decodeMessage, encodeMessage, type StreamMessage } from "../../src/live/format.ts";
 import { packMessages } from "../../src/live/snapshot.ts";
 import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
-import { openRecording, RECORDING_AHEAD, type Recording } from "../../web/src/recording.ts";
+import { openRecording, RECORDING_AHEAD, RESUME_RETRY_MS, type Recording } from "../../web/src/recording.ts";
 import { recordedEndTick } from "../../web/src/source.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 
@@ -30,6 +30,22 @@ function open(endTick: (() => Promise<number | null>) | undefined = async () => 
   return r;
 }
 const turn = () => new Promise<void>(resolve => setImmediate(resolve));
+/** Under fake timers: lets streams, promises and zero-delay timers run without moving the clock. */
+const settle = async () => { for (let i = 0; i < 20; i++) { await vi.advanceTimersByTimeAsync(0); await turn(); } };
+/** Seeks under fake timers, then expects the seek's download to be reopened after every resume wait before `message` stands. */
+async function seekFailsAfterRetries(r: Recording, message: string) {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    r.seek(1000);
+    await settle();
+    for (const wait of RESUME_RETRY_MS) {
+      expect(r.error).toBeNull();
+      await vi.advanceTimersByTimeAsync(wait); await settle();
+    }
+    expect(r.error?.message).toBe(message);
+    expect(r.complete).toBe(false);
+  } finally { vi.useRealTimers(); }
+}
 
 /** Reconstruct with the real production Playback, sampling between bounded batches as both render loops do. */
 async function seek(r: Recording, ms: number) {
@@ -134,7 +150,7 @@ it("cancels stale seeks, blocked reads and the whole-recording read on close", a
   expect(canceled).toBe(2);
 });
 
-it("exposes scan failure without breaking playback, and reports corrupt seek downloads", async () => {
+it("exposes scan failure without breaking playback, and reports a seek download that keeps ending partway once its retries run out", async () => {
   let requests = 0;
   const r = open(async () => null, async () => ++requests === 1 ? new Response(stream()) : new Response(null, { status: 503 }));
   await r.first;
@@ -145,8 +161,7 @@ it("exposes scan failure without breaking playback, and reports corrupt seek dow
   const bad = open(async () => first.tick + 64, async () => new Response(stream(++reads === 1 ? bytes : bytes.slice(0, 3))));
   await bad.first;
   await vi.waitFor(() => expect(bad.duration).toBe(6400));
-  bad.seek(1000);
-  await vi.waitFor(() => expect(bad.error?.message).toMatch(/partway/));
+  await seekFailsAfterRetries(bad, "Recording download ended partway through a message.");
 });
 
 const id = "2026-10-18T12-34-56-789Z-1";
@@ -163,12 +178,10 @@ it("reads only a matching recorded result's completed tick, rejecting missing, w
   expect(await recordedEndTick(id, controller.signal, async () => Response.json({ ...record, events: "x".repeat(256 * 1024) }))).toBeNull();
 });
 
-it("rejects an empty reopened stream instead of accepting metadata as a completed seek", async () => {
+it("retries an empty reopened stream instead of accepting metadata as a completed seek, failing once its retries run out", async () => {
   let requests = 0;
   const r = open(async () => first.tick + 64, async () => new Response(stream(++requests === 1 ? bytes : new Uint8Array())));
   await r.first;
   await vi.waitFor(() => expect(r.duration).toBe(6400));
-  r.seek(1000);
-  await vi.waitFor(() => expect(r.error?.message).toBe("Recording is empty."));
-  expect(r.complete).toBe(false);
+  await seekFailsAfterRetries(r, "Recording download ended partway through a message.");
 });
