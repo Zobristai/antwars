@@ -179,16 +179,18 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     return painted(cs.backgroundColor) || cs.backgroundImage !== "none" || border;
   };
   /**
-   * A row of icon-only items (a colony's seat badges): no text of its own, laid out as a row, and two or more shown
-   * in-flow children, each an image or holding one and no text. It is one line by what it is, like a label, however
-   * its items are built inside and whether or not they are controls allowed to wrap: its icons are judged as its line.
+   * A row of icon-only items (a colony's seat badges): no text of its own, laid out as a row (a row of flex items, or
+   * a box whose children are all inline), and two or more shown in-flow children, each an image or holding one and no
+   * text. It is one line by what it is, like a label, however its items are built inside and whether or not they are
+   * controls allowed to wrap: its icons are judged as its line. Icons stacked as blocks on purpose are not a row.
    */
   const iconRow = (el: Element): boolean => {
     if (el.textContent?.trim()) return false;
     const cs = style(el);
     if (!(inline(cs.display) || cs.display === "block" || rowFlex(cs)) || cs.display === "contents") return false;
+    const row = rowFlex(cs);
     const parts = [...el.children].filter(c => !outOfFlow(c) && shown(c));
-    return parts.length >= 2 && parts.every(c => c.matches("img, svg") || c.querySelector("img, svg") !== null);
+    return parts.length >= 2 && parts.every(c => (row || inline(style(c).display)) && (c.matches("img, svg") || c.querySelector("img, svg") !== null));
   };
   const oneLineItem = (el: Element) => el.matches(ONE_LINE) || badge(el) || iconRow(el);
   const items: Element[] = [];

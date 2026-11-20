@@ -75,6 +75,12 @@ describe("render check rules", () => {
     // Buttons with text allowed to wrap are still a set of controls, not a line.
     const words = `<div style="display:flex;flex-wrap:wrap;width:120px;gap:4px"><button>Matches</button><button>Leaderboard</button><button>Rules</button></div>`;
     expect(rules(await judged(words))).not.toContain("wrap");
+    // Icons stacked as blocks on purpose are not a row, so they are not a line wrapped over two.
+    const stacked = `<div><span style="display:block">${svg}</span><span style="display:block">${svg}</span></div>`;
+    expect(rules(await judged(stacked))).not.toContain("wrap");
+    const stackedImages = `<div><svg style="display:block" width="16" height="16"><rect width="16" height="16"/></svg>`
+      + `<svg style="display:block" width="16" height="16"><rect width="16" height="16"/></svg></div>`;
+    expect(rules(await judged(stackedImages))).not.toContain("wrap");
   });
 
   it("fails a badge that wraps inside a paragraph, by its own drawn box, but not the paragraph's wrapping prose", async () => {
