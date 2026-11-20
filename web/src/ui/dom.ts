@@ -68,7 +68,21 @@ export function setColonyText(doc: Document, node: HTMLElement, text: string, dr
   node.replaceChildren(...parts);
 }
 
-const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+/** One letter as the reader sees it, where the browser has no Intl.Segmenter (Firefox before 125, Safari before 14.5): a
+ * pair of regional indicators (a flag), a run of conjoining Hangul jamo, or a character with the marks, emoji modifiers
+ * and tag characters after it, joined by zero-width joiners to the next such character, so no letter is split. */
+const LETTER = /\p{RI}{2}|[\u1100-\u115f]+[\u1160-\u11a7]*[\u11a8-\u11ff]*|[^](?:[\p{M}\p{Emoji_Modifier}\u{e0020}-\u{e007f}])*(?:\u200d[^](?:[\p{M}\p{Emoji_Modifier}\u{e0020}-\u{e007f}])*)*/gu;
+let splitLetters: ((text: string) => string[]) | undefined;
+/** `text` split into letters: by the browser's Intl.Segmenter where it has one, made on first use, otherwise by LETTER. */
+function letters(text: string): string[] {
+  if (!splitLetters) {
+    if (typeof Intl.Segmenter === "function") {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+      splitLetters = value => Array.from(segmenter.segment(value), part => part.segment);
+    } else splitLetters = value => value.match(LETTER) ?? [];
+  }
+  return splitLetters(text);
+}
 /**
  * Text for a box that shortens with an ellipsis: each space (or run of spaces) is held to the letter after it in one span
  * of class aw-held, which the box's stylesheet draws as one unit while the box is cut (ui/cut.ts), so the box is never cut
@@ -77,16 +91,16 @@ const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  */
 export function heldSpaces(doc: Document, text: string): (HTMLElement | string)[] {
   const out: (HTMLElement | string)[] = [];
-  const letters = [...GRAPHEMES.segment(text)].map(part => part.segment);
+  const parts = letters(text);
   let plain = "";
-  for (let i = 0; i < letters.length; i++) {
-    if (!/^\s+$/.test(letters[i]!)) { plain += letters[i]; continue; }
+  for (let i = 0; i < parts.length; i++) {
+    if (!/^\s+$/.test(parts[i]!)) { plain += parts[i]; continue; }
     let gap = "";
-    while (i < letters.length && /^\s+$/.test(letters[i]!)) gap += letters[i++];
-    if (i === letters.length) break;
+    while (i < parts.length && /^\s+$/.test(parts[i]!)) gap += parts[i++];
+    if (i === parts.length) break;
     if (plain) out.push(plain);
     plain = "";
-    out.push(h(doc, "span", "aw-held", gap + letters[i]));
+    out.push(h(doc, "span", "aw-held", gap + parts[i]));
   }
   if (plain) out.push(plain);
   return out;

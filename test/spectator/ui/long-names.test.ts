@@ -10,10 +10,11 @@ import { stripTypeScriptTypes } from "node:module";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
 import { topMatchTile } from "../../../web/src/design-system/top-match-tile.ts";
+import { heldSpaces } from "../../../web/src/ui/dom.ts";
 import type { Recording } from "../../../web/src/matches-page/data.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
@@ -49,11 +50,11 @@ const SAMPLES = {
   widest: recording("2026-11-11T10-34-00-000Z-4", [seat(0, 0, "W".repeat(24), { modelLabel: "W".repeat(64), thinkingLevel: "W".repeat(32), serviceTier: "fast" }), OTHER]),
 };
 
-function recordingsPage(rows: Recording[] = Object.values(SAMPLES)): string {
+function recordingsPage(rows: Recording[] = Object.values(SAMPLES), mount = mountMatches): string {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
-  const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
+  const mounted = mount(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
   mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] },
     recordings: { status: "ready", rows }, next: null });
   const body = markup(host);
@@ -77,9 +78,9 @@ const TEAMS: Recording = { ...recording("2026-11-11T10-34-00-000Z-7", [
   seat(0, 0, "w".repeat(24), LONG_SEAT), seat(1, 1, "kite", { modelLabel: "zai/glm-5.3" }),
   seat(2, 0, "w".repeat(24), LONG_SEAT), seat(3, 1, "kite", { modelLabel: "zai/glm-5.3" })]), matchType: { kind: "index", size: 2 } };
 
-function tilePage(width: string, match: Recording = FREE_FOR_ALL): string {
+function tilePage(width: string, match: Recording = FREE_FOR_ALL, make = topMatchTile): string {
   const port = dom({ search: "" });
-  const tile = topMatchTile(port.doc as unknown as Document, match, "", "shown") as unknown as ElementPort;
+  const tile = make(port.doc as unknown as Document, match, "", "shown") as unknown as ElementPort;
   return `<!doctype html><html><head><style>${TILE_STYLES}</style><style>html, body { margin: 0; }</style></head>`
     + `<body><div class="d1p"><ol class="aw-grid" style="--cols: 1; width: ${width}">${markup(tile)}</ol></div></body></html>`;
 }
@@ -416,6 +417,53 @@ describe("a model label that ends in spaces", () => {
         const { past, ellipsis } = await inkPastLastLetter(tab, ".aw-player .aw-name");
         expect(past).toBeLessThanOrEqual(ellipsis + 1);
       } finally { await tab.close(); }
+    });
+  }
+});
+
+/** The pages' modules loaded afresh while the browser has no Intl.Segmenter (Firefox before 125, Safari before 14.5), given
+ * to `use`; the browser's Intl.Segmenter is put back after. */
+async function withoutSegmenter<T>(use: (pages: { mount: typeof mountMatches; make: typeof topMatchTile; held: typeof heldSpaces }) => T): Promise<T> {
+  const intl = Intl as unknown as { Segmenter?: unknown };
+  const segmenter = intl.Segmenter;
+  delete intl.Segmenter;
+  try {
+    vi.resetModules();
+    const [matches, tile, ui] = await Promise.all([import("../../../web/src/pages/matches.ts"),
+      import("../../../web/src/design-system/top-match-tile.ts"), import("../../../web/src/ui/dom.ts")]);
+    return use({ mount: matches.mountMatches, make: tile.topMatchTile, held: ui.heldSpaces });
+  } finally {
+    intl.Segmenter = segmenter;
+    vi.resetModules();
+  }
+}
+
+describe("a browser without Intl.Segmenter", () => {
+  it("holds each space to the whole letter after it, as the browser's own letter splitting does", async () => {
+    const texts = ["ivy kite wren", "e\u0301 a\u0308b", "a \u{1f44d}\u{1f3fd}b", "x \u{1f468}\u200d\u{1f469}\u200d\u{1f467} y",
+      "go \u{1f1e6}\u{1f1fa} now", "k \u2764\ufe0f v", "z \u1100\u1161\u11a8 q", "kite   wren  "];
+    const drawn = (held: typeof heldSpaces) => texts.map(text => {
+      const port = dom({ search: "" });
+      const box = port.doc.createElement("span") as unknown as ElementPort;
+      box.append(...held(port.doc as unknown as Document, text) as unknown as ElementPort[]);
+      return markup(box);
+    });
+    expect(await withoutSegmenter(({ held }) => drawn(held))).toEqual(drawn(heldSpaces));
+  });
+
+  for (const text of [16, 32] as const) {
+    it(`ends a name cut right after a space in an ellipsis against the last letter shown, on Recordings and a Top matches tile, with ${text} px text`, async () => {
+      const pages = await withoutSegmenter(({ mount, make }) => [
+        [recordingsPage([SPACED], mount), ".d1p-rec-slot .d1p-rec-name"],
+        [tilePage(text === 16 ? "360px" : "720px", SPACED, make), ".aw-player .aw-name"]] as const);
+      for (const [html, selector] of pages) {
+        const tab = await open(1280, text, html);
+        try {
+          const gaps = await gapsAtSpaces(tab, selector);
+          expect(gaps.length).toBe(2);
+          for (const { gap, space } of gaps) expect(gap).toBeLessThanOrEqual(space);
+        } finally { await tab.close(); }
+      }
     });
   }
 });
