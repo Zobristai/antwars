@@ -388,9 +388,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         if (next.done) {
           // A reopen, or a read of a recording already read, that reads nothing was cut short too.
           if (previous === null) throw firstTick === null && !reopen ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
-          // Some hops end a cut response cleanly, so a recorded end that has arrived is checked before a clean end is taken
-          // as the end; it is never waited for here.
-          if (knownEnd !== null && previous < knownEnd) throw new RecordingCutShort(CUT_SHORT);
+          // Some hops end a cut response cleanly, so a clean end is not taken as the end when it falls before a tick already
+          // reached, or before a recorded end that has arrived; the recorded end is never waited for here.
+          if (previous < newestTick || (knownEnd !== null && previous < knownEnd)) throw new RecordingCutShort(CUT_SHORT);
           done = true;
           knownEnd = endTick = newestTick;
           startScan();
