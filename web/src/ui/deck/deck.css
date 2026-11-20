@@ -93,6 +93,10 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-dialog .d1-agent-button { color: var(--aw-bg); }
 .d1-agent-button:hover { background: color-mix(in srgb, var(--aw-c1) 60%, #fff); }
 .d1-agent-button:disabled { opacity: 0.45; cursor: default; }
+/* On the pages the cyan button's type grows with the browser's text size; the two challenge buttons, whose words cannot
+   hold one line on a phone at doubled text, keep their px size until they have their own design. */
+.d1p .d1-agent-button { font-size: var(--aw-text-body); }
+.d1p .d1-agent-button:is([data-key="waiting-challenge"], [data-key="challenge-new"]) { font-size: 13px; }
 
 /* ---------------------------------------------------------------- the frame: its rule says the stream's state */
 .d1-frame { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) var(--d1-lane); min-width: 0; min-height: 0; border-radius: 14px; }
@@ -557,6 +561,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-chip { min-height: 44px; padding: 0 16px; }
   .d1-deck-end { padding: 20px 8px 16px; border-bottom: 1px solid var(--d1-hair); }
   .d1-agent-button { min-height: 44px; font-size: 14px; }
+  .d1p .d1-agent-button { font-size: var(--aw-text-lead); }
+  .d1p .d1-agent-button:is([data-key="waiting-challenge"], [data-key="challenge-new"]) { font-size: 14px; }
   :is(.d1-top-end, .d1p-end) > .d1-agent-button[aria-haspopup] { font-size: var(--aw-text-lead); }
   .d1-foot { padding: 4px 8px 8px; gap: 0 12px; flex-wrap: wrap; }
   .d1-foot .d2-link { min-height: 44px; }
