@@ -29,7 +29,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-hud {
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr) 12px;
-  grid-template-rows: 48px 4px minmax(0, 232px) 12px minmax(calc(200px + var(--d1-lane)), 1fr) 36px;
+  grid-template-rows: auto 4px minmax(0, 232px) 12px minmax(calc(200px + var(--d1-lane)), 1fr) 36px;
 }
 .d1-top { grid-column: 1 / -1; grid-row: 1; }
 /* The window's shadow paints the page around the board; every panel stands above it, the top bar over the deck. */
@@ -54,6 +54,35 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-home > .d2-wordmark { grid-column: 2; grid-row: 1; align-self: end; }
 .d1-brand > .d1-top-credit { grid-column: 2; grid-row: 2; align-self: start; margin-top: 2px; font-size: 11px; line-height: 13px; }
 .d1-top-end { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+/* The bar on every page that has it (the three pages, Rules, the live view; the front page's mast is landing.css's): its
+   items inside the site's wide column, never nearer the window's edge than the front page's mast stands (32 px; 16 px
+   under 46rem, as when text is enlarged), so the emblem and the bar's end stand where they do on every page. The bar is 48 px tall at least and
+   grows with its type. Its type is in the design system's rem tokens (tokens.css, also set on the bar for the live view),
+   so all of it grows with the browser's text size; the emblem grows with the wordmark it stands beside. */
+:is(.d1, .d1p) .d1-top { min-height: var(--aw-bar); column-gap: var(--aw-space-8); padding: calc((var(--aw-bar) - var(--aw-tap-touch)) / 2) max(var(--aw-space-8), (100% - var(--aw-content-wide)) / 2); }
+/* With Bring your agent at the page's end, the bar's end holds nothing and adds no gap. */
+:is(.d1, .d1p) .d1-top-end:empty { display: none; }
+.d1-top .d1-emblem { height: 1.75rem; }
+.d1-top .d2-wordmark { font-size: var(--aw-text-title); }
+.d1-top .d1-brand > .d1-top-credit { font-size: var(--aw-text-badge); line-height: 0.8125rem; }
+.d1-top .d2-nav-link { font-size: var(--aw-text-body); padding-block: 0.375em; }
+/* Bring your agent, in the bar or at the page's end: the body size (the lead size on a phone), its pill as tall as its
+   type needs and never under its tap. */
+:is(.d1-top-end, .d1p-end) > .d1-agent-button[aria-haspopup] { font-size: var(--aw-text-body); padding-block: 0.5em; }
+@media (width < 46rem) {
+  :is(.d1, .d1p) .d1-top { column-gap: var(--aw-space-2); padding-inline: max(var(--aw-space-4), (100% - var(--aw-content-wide)) / 2); }
+}
+/* Where the brand and the three pages do not fit on one line (under 23.5em: 320 px phones, a 390 px phone with enlarged
+   text or zoom), the pages take a line of their own under the brand, as the front page's mast does on a phone; each
+   page's name moves whole to a further line rather than run off the screen. */
+@media (width < 23.5em) {
+  :is(.d1, .d1p) .d1-top { flex-wrap: wrap; row-gap: 0; padding-block: 0; }
+  .d1-top > .d1-brand { min-height: var(--aw-bar); }
+  :is(.d1, .d1p) .d1-top .d2-nav { order: 3; flex: 1 1 100%; flex-wrap: wrap; column-gap: var(--aw-space-2); margin: 0 calc(-1 * var(--aw-gap-inline)); }
+  :is(.d1, .d1p) .d1-top .d2-nav-link { padding-inline: var(--aw-gap-inline); }
+  :is(.d1, .d1p) .d1-top .d2-nav-link[aria-current="page"]::after { left: var(--aw-gap-inline); right: var(--aw-gap-inline); }
+  :is(.d1, .d1p) .d1-top-end { order: 2; }
+}
 /* The primary action of its context: the one cyan pill, the emblem's cyan, its text the page's dark. */
 .d1-agent-button {
   display: inline-flex; align-items: center; justify-content: center; min-height: var(--d1-tap, 36px); padding: 0 18px; border: 0; border-radius: 999px;
@@ -415,7 +444,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* ---------------------------------------------------------------- one column: the deck scrolling over the fixed board */
 @media (max-width: 1279px) {
-  .d1-hud { grid-template-rows: 48px 4px minmax(0, 1fr) 12px auto auto; }
+  .d1-hud { grid-template-rows: auto 4px minmax(0, 1fr) 12px auto auto; }
   .d1-frame { grid-template-rows: var(--d1-window-h) var(--d1-lane); --d1-window-h: min(calc((100vw - 24px) / 1.37), calc(100vh * 0.46)); }
   .d1-below { position: relative; z-index: 1; grid-column: 2; grid-row: 3; display: block; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); pointer-events: auto; }
   /* The score over the two teams, which sit side by side while their tables fit. */
@@ -438,7 +467,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* Stacked: the score full width with each row's figures over its tracks, then one team after the other; too tall to
    stand over the board, so the board comes first and the deck, its end and the footer scroll beneath it. */
 @media (max-width: 759px) {
-  .d1-hud { grid-template-rows: 48px 4px auto 8px minmax(0, 1fr); }
+  .d1-hud { grid-template-rows: auto 4px auto 8px minmax(0, 1fr); }
   .d1-frame { grid-row: 3; }
   .d1-below { grid-row: 5; border-radius: 14px 14px 0 0; }
   .d1-deck { grid-template-columns: minmax(0, 1fr); grid-template-areas: "score" "t0" "t1"; }
@@ -468,7 +497,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* The phone: the frame edge to edge, every target 44 px, two-line rows, the dialog a bottom sheet. */
 @media (max-width: 559px) {
   .d1 { --d1-lane: 52px; --d1-tap: 44px; }
-  .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: 48px 4px auto minmax(0, 1fr); }
+  .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 4px auto minmax(0, 1fr); }
   .d1-top { padding: 0 2px 0 12px; gap: 8px; }
   .d1-top-credit { display: none; }
   .d1-home > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
@@ -528,6 +557,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-chip { min-height: 44px; padding: 0 16px; }
   .d1-deck-end { padding: 20px 8px 16px; border-bottom: 1px solid var(--d1-hair); }
   .d1-agent-button { min-height: 44px; font-size: 14px; }
+  :is(.d1-top-end, .d1p-end) > .d1-agent-button[aria-haspopup] { font-size: var(--aw-text-lead); }
   .d1-foot { padding: 4px 8px 8px; gap: 0 12px; flex-wrap: wrap; }
   .d1-foot .d2-link { min-height: 44px; }
   .d1-foot-credit { display: inline; margin-left: auto; font-size: 12px; }
@@ -641,7 +671,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Score Band: shared comparison, aligned colony rows, then the unchanged board window.
    At narrow widths the clock/map lead colony cards and comparison follows them. */
-.score-band.d1-hud { grid-template-rows: 48px 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
+.score-band.d1-hud { grid-template-rows: auto 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
 .score-band .d1-below { display: contents; }
 .score-band .d1-deck {
   --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) 54px;
@@ -741,7 +771,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* Keep in sync with DECK_FIRST: the Flyers grid needs 1179 px including gutters. */
 @media (max-width: 1199px) {
   /* The host must retain scrolling access to controls outside the narrow frame; the deck scrolls independently below. */
-  .score-band.d1-hud { grid-template-rows: 48px 8px auto 8px minmax(0, 1fr); overflow: visible; }
+  .score-band.d1-hud { grid-template-rows: auto 8px auto 8px minmax(0, 1fr); overflow: visible; }
   .score-band .d1-frame { grid-row: 3; grid-template-rows: auto var(--d1-window-h) var(--d1-lane); --d1-window-h: min(73vw, 42vh); }
   .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; background: var(--aw-surface); min-height: 0; pointer-events: auto; }
   .score-band .d1-deck, .score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) { display: flex; flex-direction: column; gap: 0; padding: 0 8px; border-radius: 0; box-shadow: none; }
@@ -780,7 +810,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-deck-end { padding: 16px 8px; }
 }
 @media (max-width: 559px) {
-  .score-band.d1-hud { grid-template-rows: 48px 8px auto minmax(0, 1fr); }
+  .score-band.d1-hud { grid-template-rows: auto 8px auto minmax(0, 1fr); }
   .score-band .d1-below { grid-row: 4; }
   .score-band .d1-name { font-size: 14px; letter-spacing: .02em; }
   .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; font-size: 12px; }

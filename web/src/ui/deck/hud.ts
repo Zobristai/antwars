@@ -4,6 +4,7 @@
 // Match metadata is separate from the single-line connection state; neither loses information to fit.
 //
 // Overlay exports are read only inside functions: overlays.ts imports this module.
+import "../../design-system/tokens.css";
 import "./deck.css";
 import { textIcon } from "../../icons/dom.ts";
 import type { HudHost, HudView, Mounted } from "../types.ts";
@@ -27,8 +28,9 @@ import { mountTeams } from "./pane.ts";
 import { mountAgentDialog } from "./dialog.ts";
 import { caption, colonyCount, legend, type Caption, type Legend } from "./model.ts";
 
-/** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end. */
-const BUTTON_IN_BAR = "(min-width: 520px)";
+/** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end.
+ * In em, so it grows with the browser's text size: 520 px at default text. */
+const BUTTON_IN_BAR = "(min-width: 32.5em)";
 /** From this width aligned colony rows fit; narrower, the stacked deck follows the board. */
 // Keep in sync with deck.css: fit the Flyers grid before moving the deck above the board.
 const DECK_FIRST = "(min-width: 1200px)";
@@ -140,7 +142,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   host.append(root);
   const agent = mountAgentDialog(doc, root);
 
-  // One Bring your agent button: in the top bar from 520 px wide; narrower, at the deck's end before the footer.
+  // One Bring your agent button: in the top bar from 32.5em (520 px at default text); narrower, at the deck's end before the footer.
   const wide = typeof win.matchMedia === "function" ? win.matchMedia(BUTTON_IN_BAR) : null;
   const placeButton = () => {
     const slot = wide === null || wide.matches ? barSlot : deckEnd;

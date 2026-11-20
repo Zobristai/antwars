@@ -5,11 +5,17 @@
 .d1p { --d1-tap: 36px; }
 
 /* Sticky over the scrolling page; on the board the bar is the HUD grid's first row. */
-.d1p .d1-top { position: sticky; top: 0; z-index: 3; flex: none; height: 48px; background: var(--aw-bg); }
+.d1p .d1-top { position: sticky; top: 0; z-index: 3; flex: none; background: var(--aw-bg); }
 
 @media (max-width: 559px) {
   .d1p { --d1-tap: 44px; }
   /* "Built with Zobrist" stays under the wordmark at every width: the HUD's phone move of the credit to its footer does not apply. */
   .d1p .d1-brand > .d1-top-credit { display: inline; }
   .d1p .d1-home > .d2-wordmark { grid-row: 1; align-self: end; }
+}
+
+/* Where the bar takes two lines (deck.css, under 23.5em) it scrolls with the page, so it never covers a third of a small
+   or zoomed screen. */
+@media (width < 23.5em) {
+  .d1p .d1-top { position: static; }
 }

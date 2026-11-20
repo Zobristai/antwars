@@ -43,7 +43,9 @@ describe("deck polish", () => {
   });
 
   it("stacks the credit under the wordmark beside the emblem, inside the 48 px bar, hidden on a phone", () => {
-    expect(CSS).toMatch(/grid-template-rows: 48px /);
+    // The bar's row takes the bar's height, which is never under the 48 px bar token.
+    expect(CSS).toMatch(/\.d1-hud \{[^}]*grid-template-rows: auto /);
+    expect(rule(":is(.d1, .d1p) .d1-top")).toMatch(/min-height: var\(--aw-bar\)/);
     expect(rule(".d1-emblem")).toMatch(/grid-row: 1 \/ 3/);
     expect(rule(".d1-emblem")).toMatch(/height: 28px/);
     expect(rule(".d1-home > .d2-wordmark")).toMatch(/grid-column: 2; grid-row: 1/);
