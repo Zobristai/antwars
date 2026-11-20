@@ -388,12 +388,8 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         if (next.done) {
           // A reopen, or a read of a recording already read, that reads nothing was cut short too.
           if (previous === null) throw firstTick === null && !reopen ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
-          // Some hops end a cut response cleanly, so a recorded end is settled before a clean end is taken as the end.
-          if (knownEnd === null && options.endTick) {
-            const known = await readRecordedEnd();
-            if (closed || version !== generation) return;
-            if (known !== null) knownEnd = known;
-          }
+          // Some hops end a cut response cleanly, so a recorded end that has arrived is checked before a clean end is taken
+          // as the end; it is never waited for here.
           if (knownEnd !== null && previous < knownEnd) throw new RecordingCutShort(CUT_SHORT);
           done = true;
           knownEnd = endTick = newestTick;
@@ -421,6 +417,8 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         if (stats.messages === 1) {
           resolveFirst(m);
           if (m.full?.result) endTick = m.full.result.tick + 1;
+          // Asked for once, beside playback, so a short download can be checked against it without waiting on it.
+          if (options.endTick) void readRecordedEnd().then(known => { if (known !== null && !closed) knownEnd ??= known; });
         }
         // Short recordings reach EOF without any second request. Discover an end independently only when the
         // normal reader reaches backpressure; the marks' read follows the settled end (or a short recording's EOF).

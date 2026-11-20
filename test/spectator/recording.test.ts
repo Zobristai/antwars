@@ -216,7 +216,7 @@ describe("a download that drops partway", () => {
     r.close();
   });
 
-  it("settles the recorded end before taking a clean end between messages early in the download as the end", async () => {
+  it("checks a clean end between messages early in the download against the recorded end before taking it as the end", async () => {
     let requests = 0;
     const errors: Error[] = [];
     // Playback's first download ends after five whole messages, before read-ahead fills; the reopen is whole.
@@ -238,6 +238,23 @@ describe("a download that drops partway", () => {
     expect(played).toEqual(ticks);
     expect(r.lastTick).toBe(ticks.at(-1));
     expect(errors).toEqual([]);
+    r.close();
+  });
+
+  it("ends a short recording at its clean end between messages without waiting for a recorded end that has not arrived", async () => {
+    let requests = 0;
+    let asked = 0;
+    // The recorded end is asked for once and never arrives; playback still takes the recording's clean end as its end.
+    const r = openRecording("/replays/short", undefined, async () => { requests++; return new Response(ending(ends[9]!)); },
+      { controls: true, endTick: () => { asked++; return new Promise<number | null>(() => {}); }, marksWorker: null });
+    const played: number[] = [];
+    await playUntil(r, played, { real: 0 }, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks.slice(0, 10));
+    expect(r.lastTick).toBe(ticks[9]);
+    expect(asked).toBe(1);
+    await vi.advanceTimersByTimeAsync(120_000); await settle();
+    expect(r.error).toBeNull();
+    expect(requests).toBe(2);
     r.close();
   });
 
