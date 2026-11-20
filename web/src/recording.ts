@@ -330,6 +330,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   // playback keeps the page's time; without a worker it is read on the page, yielding every SCAN_SLICE_MS of work.
   // A failed read is tried again after SCAN_RETRY_MS for as long as the replay is open; a corrupt recording is not, and
   // leaves the marks absent.
+  let scanTried!: () => void;
+  /** Settles when the marks' first read has finished, whether or not it read the whole recording. */
+  const firstScan = new Promise<void>(resolve => { scanTried = resolve; });
   const scanWhole = async (attempt = 0): Promise<void> => {
     try {
       const response = await request(url, { signal: lifetime.signal });
@@ -350,7 +353,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
       endTick ??= read.lastTick;
       durationError = null;
       events = read.events;
+      scanTried();
     } catch (cause) {
+      scanTried();
       if (closed) return;
       if (endTick === null) durationError = cause instanceof Error ? cause.message : String(cause);
       if (cause instanceof CorruptRecording) return;
@@ -368,8 +373,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     void scanWhole();
   };
   // One download of the recording from its first byte, queueing every tick past the newest already queued. `began` marks
-  // a response that has started streaming, so a later failure is a dropped download rather than a refused one.
-  const download = async (version: number, signal: AbortSignal, began: () => void) => {
+  // a response that has started streaming, so a later failure is a dropped download rather than a refused one; `reopen`
+  // marks a download reopened after one that was cut or dropped.
+  const download = async (version: number, signal: AbortSignal, began: () => void, reopen: boolean) => {
     const response = await request(url, { signal });
     if (closed || version !== generation) { await response.body?.cancel(); return; }
     if (!response.ok) throw new RecordingRefused(response.status === 404 ? "This recording was not found (HTTP 404)." : `Recording unavailable (HTTP ${response.status}).`);
@@ -385,13 +391,19 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         const next = await messages.next();
         if (closed || version !== generation) return;
         if (next.done) {
-          // A reopen that reads nothing of a recording already read was cut short too.
-          if (previous === null) throw firstTick === null ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
+          // A reopen, or a read of a recording already read, that reads nothing was cut short too.
+          if (previous === null) throw firstTick === null && !reopen ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
           // Some hops end a cut response cleanly, so a recorded end is settled before a clean end is taken as the end.
           if (knownEnd === null && options.endTick) {
             const known = await readRecordedEnd();
             if (closed || version !== generation) return;
             if (known !== null) knownEnd = known;
+          }
+          // Without a recorded end, the marks' read of the whole recording settles whether this end is the recording's.
+          if (knownEnd === null && options.controls) {
+            startScan();
+            if (!signal.aborted) await Promise.race([firstScan, new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }))]);
+            if (closed || version !== generation) return;
           }
           if (knownEnd !== null && previous < knownEnd) throw new RecordingCutShort(CUT_SHORT);
           done = true;
@@ -439,10 +451,11 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   const pump = async (version: number, signal: AbortSignal) => {
     let began = false;
     let failures = 0;
+    let reopen = false;
     for (;;) {
       const reached = newestTick;
       try {
-        await download(version, signal, () => { began = true; });
+        await download(version, signal, () => { began = true; }, reopen);
         return;
       } catch (cause: unknown) {
         if (closed || version !== generation) return;
@@ -458,6 +471,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         }
         await retryWait(RESUME_RETRY_MS[failures++]!, signal);
         if (closed || version !== generation) return;
+        reopen = true;
       }
     }
   };

@@ -241,13 +241,13 @@ describe("a download that drops partway", () => {
     r.close();
   });
 
-  it("keeps trying a reopen that reads nothing, and gives up only after the last wait", async () => {
+  for (const [where, k] of [["message 8", 8], ["the first message", 0]] as const) it(`keeps trying a reopen that reads nothing after a download that ends partway through ${where}, and gives up only after the last wait`, async () => {
     let requests = 0;
     const errors: Error[] = [];
-    // The first download ends partway through message 8; every reopen's body ends before its first byte.
-    const r = openRecording("/replays/empty-reopen", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(mid(8)) : body(new Uint8Array())));
-    await r.first;
+    // The first download ends partway through message k; every reopen's body ends before its first byte.
+    const r = openRecording("/replays/empty-reopen", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(mid(k)) : body(new Uint8Array())));
     await settle();
+    expect(requests).toBe(1);
     for (const [i, wait] of RESUME_RETRY_MS.entries()) {
       expect(r.error).toBeNull();
       await vi.advanceTimersByTimeAsync(wait - 1); await settle();
@@ -261,6 +261,46 @@ describe("a download that drops partway", () => {
     expect(requests).toBe(1 + RESUME_RETRY_MS.length);
     r.close();
   });
+
+  for (const [how, endTick] of [["the recorded end cannot be read", async () => null], ["there is no recorded end", undefined]] as const) {
+    it(`resumes a clean end between messages early in the download when ${how} and the marks' read finds a later end`, async () => {
+      let requests = 0;
+      const errors: Error[] = [];
+      // Playback's first download ends after five whole messages, before read-ahead fills; the marks' read and the reopen are whole.
+      const r = openRecording("/replays/early", (e) => errors.push(e), async () => new Response(requests++ === 0 ? ending(ends[4]!) : body(bytes)),
+        { controls: true, endTick, marksWorker: null });
+      const played: number[] = [];
+      const clock = { real: 0 };
+      await playUntil(r, played, clock, () => played.length === 5);
+      await settle();
+      expect(r.complete).toBe(false);
+      expect(r.error).toBeNull();
+      expect(requests).toBe(2);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
+      expect(requests).toBe(2);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(3);
+      await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+      expect(played).toEqual(ticks);
+      expect(r.lastTick).toBe(ticks.at(-1));
+      expect(errors).toEqual([]);
+      r.close();
+    });
+
+    it(`ends a short recording at its clean end between messages when ${how} and the marks' read finds the same end`, async () => {
+      let requests = 0;
+      const r = openRecording("/replays/short", undefined, async () => { requests++; return new Response(ending(ends[9]!)); },
+        { controls: true, endTick, marksWorker: null });
+      const played: number[] = [];
+      await playUntil(r, played, { real: 0 }, () => r.complete && r.stats.bufferedMessages === 0);
+      expect(played).toEqual(ticks.slice(0, 10));
+      expect(r.lastTick).toBe(ticks[9]);
+      await vi.advanceTimersByTimeAsync(120_000); await settle();
+      expect(requests).toBe(2);
+      expect(r.error).toBeNull();
+      r.close();
+    });
+  }
 
   it("still takes a clean end between messages as the recording's end when no end is known", async () => {
     let requests = 0;
