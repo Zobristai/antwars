@@ -88,7 +88,8 @@ Every tile in a grid is as tall as the tallest, and at any one text size every t
 - **Grid**: two tiles across from 46.125rem (738 px), one under it. Every cell is the same size. Three across does not fit
   at 1280 px: each player column would be about 145 px, and the widest line needs 152.2 px.
 - **Page edge**: 24 px, 16 px under 64rem, 12 px between 46.125rem and 52rem and between 24.25em and 46.125rem, 8 px under
-  24.25em. The grid gap is 12 px, 8 px under 64rem, 4 px between 46.125rem and 52rem and between 22.5em and 46.125rem.
+  24.25em. The grid gap is 12 px, 8 px under 64rem, 4 px between 46.125rem and 52rem and between 22.5em and 46.125rem,
+  except that one tile across on a page wider than 738 px (only with enlarged text) keeps 8 px.
 - **Tile width**: 450 px at 1280 px, 366 px at 390 px, 304 px at 320 px.
 - **Flush list**: under 12em (a phone at 200 % zoom, or with its text doubled) the page edge goes to 0 and the tiles lie
   flush as a list, with a rule between them, so each line keeps the width it needs.
