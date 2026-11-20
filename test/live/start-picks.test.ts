@@ -6,7 +6,7 @@ import { foundQueen } from "../../src/sim/agents.js";
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { isBlockedTile } from "../../src/sim/terrain.js";
 import type { SimEvent } from "../../src/sim/types.js";
-import { GRID_SCALE_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage } from "../../src/live/format.js";
+import { QUEEN_KILLS_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage } from "../../src/live/format.js";
 import { setupOf, SpectatorRecorder, SpectatorState } from "../../src/live/model.js";
 import { unpackMessages } from "../../src/live/snapshot.js";
 import { LiveHub } from "../../src/live/hub.js";
@@ -34,7 +34,8 @@ describe("finalized starting layout stream extension", () => {
     const state = finalized(map.id), recorder = new SpectatorRecorder(state);
     const message = { ...recorder.initial(), full: recorder.initialFull() };
     const bytes = encodeMessage(message);
-    expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
+    // A public match's opening carries its queen kills, zero included, so it is written at the queen-kills version.
+    expect(bytes[2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     const decoded = decodeMessage(bytes), full = decoded.full!;
     // The reference boxes (2,12,12x24) and (50,12,12x24), doubled at grid scale 2.
     expect(full.setup.startBoxes).toEqual([{ x: 4, y: 24, width: 24, height: 48 }, { x: 100, y: 24, width: 24, height: 48 }]);

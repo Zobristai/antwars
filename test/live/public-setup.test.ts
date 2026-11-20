@@ -35,7 +35,8 @@ it.each([false, true])("uses only explicit comparison opt-in (%s), keeping label
   cleanup.push(() => server.close(), () => hub.close());
   const initial = createMatch(6006, { ...options.simConfig!, matchTicks: 2 });
   hub.startMatch(1, initial);
-  const early = await SseClient.connect(server.url("/live/1"));
+  // Both viewers connect as the current page does, so the stored recording is compared with the stream it stores.
+  const early = await SseClient.connect(server.url("/live/1?kills=1&queenKills=1"));
   cleanup.push(() => early.close());
   const earlyResponse = await served(server, 1);
   // Scripted simulation inputs only: no MCP connections or live agent joins.
@@ -43,7 +44,7 @@ it.each([false, true])("uses only explicit comparison opt-in (%s), keeping label
   const before = cloneState(out.state);
   const beforeBriefing = briefing(out.state.config);
   hub.pushTick(1, out);
-  const late = await SseClient.connect(server.url("/live/1"));
+  const late = await SseClient.connect(server.url("/live/1?kills=1&queenKills=1"));
   cleanup.push(() => late.close());
   const lateResponse = await served(server, 2);
   await delivered(early, earlyResponse);
