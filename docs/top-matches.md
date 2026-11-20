@@ -1,11 +1,11 @@
 # Top matches on Watch
 
-With no live match, the Watch page shows a hand-picked grid of up to 16 recorded matches. The list is kept in the
+With no live match, the Watch page shows a hand-picked grid of up to 12 recorded matches. The list is kept in the
 repository and ships with the server, so a new list shows once it is deployed.
 
 ## The file
 
-`src/replays/top-matches.json`, listing match ids in tile order (at most 16):
+`src/replays/top-matches.json`, listing match ids in tile order (at most 12):
 
 ```json
 {"matches": ["2026-10-29T09-46-13-711Z-72267345031709", "2026-11-12T22-07-44-941Z-84402175061029"]}
@@ -25,7 +25,6 @@ show, the page says "No top matches yet." and links to all recordings.
 Edit `src/replays/top-matches.json` and open a pull request. The tests check that the shipped file is a valid list. The new
 list shows on Watch after the next deploy.
 
-A pick may be any game type. A tile has one line per side. A side whose seats differ (different builders on one team, or
-one builder on different models or levels) shows one line per seat group, and a free-for-all shows every colony's side, so
-some tiles need extra lines. Every tile in the grid grows to the tallest tile's height, so for now a tile with extra lines
-leaves space in the others. Matches that need extra lines will get their own container in the grid.
+A pick may be any game type. Every tile is one size, which holds a free-for-all of up to eight colonies and a team match
+whose sides each have up to four seat groups (different builders on one team, or one builder on different models or
+levels), so no pick makes the other tiles taller.

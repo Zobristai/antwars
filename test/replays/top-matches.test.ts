@@ -29,14 +29,14 @@ describe("the top matches list file", () => {
     expect(topMatchIds({ matches: [a, "../x", b, a] })).toEqual({ ids: [a, b], leftOff: ["../x", a] });
   });
 
-  it("refuses a file of another shape or with more than 16 ids", () => {
+  it("refuses a file of another shape or with more than 12 ids", () => {
     expect(() => topMatchIds({ matches: ids(TOP_MATCHES + 1) })).toThrow();
     expect(() => topMatchIds(["x"])).toThrow();
     expect(() => topMatchIds({ matches: [1] })).toThrow();
     expect(topMatchIds({ matches: ids(TOP_MATCHES) }).ids).toHaveLength(TOP_MATCHES);
   });
 
-  it("ships a valid list of 16 distinct match ids", () => {
+  it("ships a valid list of 12 distinct match ids", () => {
     const { ids: shipped, leftOff } = shippedTopMatchList();
     expect(leftOff).toEqual([]);
     expect(shipped).toHaveLength(TOP_MATCHES);

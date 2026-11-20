@@ -1,6 +1,6 @@
 // The Watch page's top matches with no live match, drawn as the design system's Top matches tiles: each tile is one link to
-// its replay and nothing on it plays; with results shown every tile has the same five rows in the same order (type, winner,
-// other side, how it ended, date with length); with results hidden, the default, no tile carries any result; no rating is
+// its replay and nothing on it plays; with results shown every tile has the same rows in the same order (type, the players
+// block, how it ended, date with length), the players laid out by game type in one tile size; with results hidden, the default, no tile carries any result; no rating is
 // drawn; a builder is shown by its name as stored; a side fielding two seats says so; one button shows or hides every
 // result and the browser remembers the choice; and the page says why no live match shows. Test DOM only: never visual evidence.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,8 +28,11 @@ const tagged = (node: ElementPort, tag: string) => node.all().filter(child => ch
 const link = (tile: ElementPort) => tagged(tile, "a")[0]!;
 const ROWS = ["aw-meta", "aw-player", "aw-player", "aw-how", "aw-date"];
 const KINDS = [...ROWS, "aw-side"];
-/** The tile's rows, in order, by their kind. */
-const rowKinds = (tile: ElementPort) => link(tile).children.map(row => KINDS.find(kind => row.classes().includes(kind)) ?? row.className);
+/** The players block: every tile has one, holding its player lines. */
+const block = (tile: ElementPort) => tile.byClass("aw-lines")[0]!;
+/** The tile's rows, in order, by their kind; the players block's lines in its place. */
+const rowKinds = (tile: ElementPort) => link(tile).children.flatMap(row => row.classes().includes("aw-lines") ? row.children : [row])
+  .map(row => KINDS.find(kind => row.classes().includes(kind)) ?? row.className);
 
 describe("a top-match tile", () => {
   it("is one link to its replay, keeping the board, with no media to play", () => {
@@ -75,7 +78,25 @@ describe("a top-match tile", () => {
     }), "", "shown") as unknown as ElementPort;
     const winner = tile.byClass("aw-player")[0]!;
     expect(tagged(winner, "b").map(text)).toEqual(["Kain"]);
-    expect(winner.byClass("aw-name")[0]!.textContent.startsWith("Kain ")).toBe(true);
+    const name = winner.byClass("aw-name")[0]!;
+    expect(name.textContent.startsWith("Kain ")).toBe(true);
+    // The model is its own part, with the space after the builder's name, so a too-long line can shorten it first; the
+    // name's title keeps both whole.
+    expect(name.byClass("aw-model").map(text)).toEqual([" gpt-6.2-astra"]);
+    expect(name.title).toBe("Kain gpt-6.2-astra");
+    expect(tile.byClass("aw-player")[1]!.byClass("aw-name")[0]!.title).toBe("GPT-6.1 Terra");
+  });
+
+  it("shows a badge of more than eight characters as its first eight and an ellipsis, its full text in its title and the tile's name", () => {
+    const { doc } = dom();
+    const tile = topMatchTile(doc, recording({
+      seats: [seat(0, 0, "antwars/gpt-6-1-terra-max-fast"), seat(1, 1, "Kain", { modelLabel: "openai/gpt-6.2-astra", thinkingLevel: "overthinking" })],
+    }), "", "shown") as unknown as ElementPort;
+    const badge = tile.byClass("aw-player")[0]!.byClass("aw-badge")[0]!;
+    expect(text(badge)).toBe("overthin\u2026");
+    expect(badge.title).toBe("overthinking");
+    expect(link(tile).getAttribute("aria-label")).toContain("(overthinking)");
+    expect(tile.byClass("aw-player")[1]!.byClass("aw-badge")[0]!.title).toBe("");
   });
 
   it("says a team match fields two seats a side, in the type row and with a seat rule per seat on both lines", () => {
@@ -109,6 +130,8 @@ describe("a top-match tile", () => {
         seat(2, 0, "antwars/gpt-6-astra"), seat(3, 1, "zed_7", { modelLabel: "openai/gpt-6.2-astra" })],
     }), "", "shown") as unknown as ElementPort;
     expect(rowKinds(tile)).toEqual(["aw-meta", "aw-side", "aw-player", "aw-how", "aw-date"]);
+    // The sides stand one under the other in one block; the side whose seats differ fills the block's two columns.
+    expect(block(tile).classes()).toEqual(["aw-lines", "is-sides"]);
     const side = tile.byClass("aw-side")[0]!;
     expect(side.classes()).toContain("is-winner");
     const lines = side.byClass("aw-player");
@@ -132,7 +155,50 @@ describe("a top-match tile", () => {
     expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+, 2 seats and zed_7 \S+ beat GPT-6 Astra \(max, Fast\), 3 seats,/);
   });
 
-  it("draws every side of a four-colony free-for-all, the winner first, each builder by its name as stored", () => {
+  it("puts a 1v1's two lines and an alike team's two sides in the players block, the winner first", () => {
+    const { doc } = dom();
+    const pair = topMatchTile(doc, recording(), "", "shown") as unknown as ElementPort;
+    expect(block(pair).classes()).toEqual(["aw-lines", "is-pair"]);
+    expect(block(pair).children.map(text)).toEqual(["GPT-6.2 Astralow", "GPT-6.1 Terramax"]);
+    const team = topMatchTile(doc, teamMatch(), "", "shown") as unknown as ElementPort;
+    expect(block(team).classes()).toEqual(["aw-lines", "is-sides"]);
+    expect(block(team).children.map(line => line.classes().includes("is-team"))).toEqual([true, true]);
+  });
+
+  it("holds a four-a-side team match with four different builders on one side: that side's four lines, then the other side", () => {
+    const { doc } = dom();
+    const builders = ["Kain", "zed_7", "acorn", "kain"];
+    const tile = topMatchTile(doc, recording({
+      matchType: { kind: "unrated", size: 4 },
+      seats: [...builders.map((handle, index) => seat(index, 1, handle, { modelLabel: "openai/gpt-6.2-astra" })),
+        ...[4, 5, 6, 7].map(index => seat(index, 0, "antwars/gpt-6-astra"))],
+    }), "", "shown") as unknown as ElementPort;
+    expect(block(tile).classes()).toEqual(["aw-lines", "is-sides"]);
+    expect(rowKinds(tile)).toEqual(["aw-meta", "aw-side", "aw-player", "aw-how", "aw-date"]);
+    const side = tile.byClass("aw-side")[0]!;
+    expect(side.classes()).toContain("is-winner");
+    expect(side.byClass("aw-player").map(line => tagged(line, "b").map(text))).toEqual(builders.map(b => [b]));
+    expect(block(tile).children[1]!.classes()).toEqual(expect.arrayContaining(["is-team", "is-seats-4"]));
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Unranked · 4 per side"]);
+  });
+
+  it("draws an eight-colony free-for-all's colonies in colony order, across then down, only the winner marked", () => {
+    const { doc } = dom();
+    const handles = ["ann", "bob", "cat", "dan", "eve", "fay", "gus", "hal"];
+    const tile = topMatchTile(doc, recording({
+      winner: 2, matchType: { kind: "quadrants", size: 1 },
+      colonyNames: ["Very Large Colony", "Lake Hodges Colony", "Sweetwater Colony", "Lake Skinner Colony"],
+      // The site types a seat's colony 0 to 3; the tile holds up to eight colonies.
+      seats: handles.map((handle, colony) => seat(colony, 0, handle, { colony: colony as 0, modelLabel: `${handle}/local` })),
+    }), "", "shown") as unknown as ElementPort;
+    expect(block(tile).classes()).toEqual(["aw-lines", "is-grid", "is-ffa"]);
+    expect(block(tile).children.map(text)).toEqual(handles);
+    expect(block(tile).children.map(p => p.classes().includes("is-winner"))).toEqual(handles.map((_, colony) => colony === 2));
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all · 8 sides"]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann, bob, dan, eve, fay, gus and hal, Free-for-all · 8 sides, /);
+  });
+
+  it("draws every side of a four-colony free-for-all where its colony starts on the map, only the winner marked", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, recording({
       winner: 2, matchType: { kind: "quadrants", size: 1 },
@@ -140,11 +206,13 @@ describe("a top-match tile", () => {
       seats: ["ann", "bob", "cat", "dan"].map((handle, colony) => seat(colony, colony as 0 | 1, handle, { colony: colony as 0 | 1 | 2 | 3, modelLabel: `${handle}/local` })),
     }), "", "shown") as unknown as ElementPort;
     expect(rowKinds(tile)).toEqual(["aw-meta", "aw-player", "aw-player", "aw-player", "aw-player", "aw-how", "aw-date"]);
+    expect(block(tile).classes()).toEqual(["aw-lines", "is-grid", "is-ffa"]);
+    // Filled across then down: colony 0 top left, 1 top right, 2 bottom left, 3 bottom right, as the map's starts.
     const players = tile.byClass("aw-player");
-    expect(players.map(text)).toEqual(["cat", "ann", "bob", "dan"]);
-    expect(players.map(p => p.classes().includes("is-winner"))).toEqual([true, false, false, false]);
-    expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all"]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann, bob and dan, Free-for-all, Last colony standing · queens killed,/);
+    expect(players.map(text)).toEqual(["ann", "bob", "cat", "dan"]);
+    expect(players.map(p => p.classes().includes("is-winner"))).toEqual([false, false, true, false]);
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all · 4 sides"]);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^cat beat ann, bob and dan, Free-for-all · 4 sides, Last colony standing · queens killed,/);
     expect(tile.byClass("aw-how").map(text)).toEqual(["Queens killed"]);
   });
 
@@ -226,23 +294,24 @@ describe("a top-match tile with results hidden", () => {
     }));
     resultFree(tile);
     expect(tile.byClass("aw-player").map(text)).toEqual(["ann", "bob", "cat", "dan"]);
-    expect(link(tile).getAttribute("aria-label")).toBe("ann, bob, cat and dan, Free-for-all, 11 Nov 2026");
+    expect(tile.byClass("aw-meta").map(text)).toEqual(["Free-for-all · 4 sides"]);
+    expect(link(tile).getAttribute("aria-label")).toBe("ann, bob, cat and dan, Free-for-all · 4 sides, 11 Nov 2026");
   });
 });
 
 describe("the top-matches page", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
-  const sixteen = () => Array.from({ length: 16 }, (_, index) => recording({ id: `2026-11-11T10-34-00-000Z-${index + 1}` }));
+  const twelve = () => Array.from({ length: 12 }, (_, index) => recording({ id: `2026-11-11T10-34-00-000Z-${index + 1}` }));
 
-  it("says why no live match shows, draws the 16 tiles it reads in order, and links to all recordings", async () => {
+  it("says why no live match shows, draws the 12 tiles it reads in order, and links to all recordings", async () => {
     const port = dom({ search: "?watch=1" });
-    const rows = sixteen();
+    const rows = twelve();
     const request = vi.fn(async () => Response.json({ matches: rows }));
     const page = mountTopMatchesPage(port.doc, port.win, { state: "idle", request });
     const host = port.body.children.at(-1)!;
     expect(host.byClass("d1p-title").map(text)).toEqual([TOP_WORDS.title]);
     expect(host.byClass("d1p-state").map(text)).toEqual([TOP_STATE.idle]);
-    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
     expect(host.byClass("aw-tile").map(tile => tile.href)).toEqual(rows.map(r => `/?replay=${r.id}`));
     expect(request).toHaveBeenCalledWith("/matches/top", expect.anything());
     expect(host.byClass("d1p-card")).toEqual([]);
@@ -265,7 +334,7 @@ describe("the top-matches page", () => {
     // A server whose list cannot be read answers 503 until it can, then serves the list.
     vi.useFakeTimers();
     const port = dom();
-    const rows = sixteen();
+    const rows = twelve();
     let ready = false;
     const request = vi.fn(async () => ready ? Response.json({ matches: rows }) : new Response(null, { status: 503 }));
     mountTopMatchesPage(port.doc, port.win, { state: "failed", request });
@@ -280,7 +349,7 @@ describe("the top-matches page", () => {
     ready = true;
     await vi.advanceTimersByTimeAsync(TOP_RETRY_MS[1]);
     expect(request).toHaveBeenCalledTimes(3);
-    expect(host.byClass("aw-tile")).toHaveLength(16);
+    expect(host.byClass("aw-tile")).toHaveLength(12);
     expect(host.byClass("aw-status")[0]!.hidden).toBe(true);
     await vi.advanceTimersByTimeAsync(TOP_RETRY_MS.at(-1)! * 2);
     expect(request).toHaveBeenCalledTimes(3);
@@ -303,10 +372,10 @@ describe("the top-matches page", () => {
   it("hides every result by default, with one button that shows them all, remembered in this browser", async () => {
     const port = dom();
     const items = storage(port);
-    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: twelve() })) });
     const host = port.body.children.at(-1)!;
     expect(reveal(host)).toEqual([]);
-    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
     const grid = host.byClass("aw-grid")[0]!;
     expect(grid.dataset.results).toBe("hidden");
     expect(winners(host) + host.byClass("aw-how").length).toBe(0);
@@ -320,8 +389,8 @@ describe("the top-matches page", () => {
     button[0]!.focus();
     button[0]!.click();
     expect(grid.dataset.results).toBe("shown");
-    expect(winners(host)).toBe(16);
-    expect(host.byClass("aw-how")).toHaveLength(16);
+    expect(winners(host)).toBe(12);
+    expect(host.byClass("aw-how")).toHaveLength(12);
     expect(text(button[0]!)).toBe(TOP_WORDS.hide);
     expect(button[0]!.focused).toBe(true);
     expect(items.get(RESULTS_KEY)).toBe("true");
@@ -336,10 +405,10 @@ describe("the top-matches page", () => {
   it("forgets a choice to show results when the visitor hides them, even where the browser's storage is full", async () => {
     const port = dom();
     const items = storage(port, { [RESULTS_KEY]: "true" }, true);
-    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: twelve() })) });
     const host = port.body.children.at(-1)!;
-    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
-    expect(winners(host)).toBe(16);
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
+    expect(winners(host)).toBe(12);
     reveal(host)[0]!.click();
     expect(winners(host)).toBe(0);
     expect(items.has(RESULTS_KEY)).toBe(false);
@@ -348,31 +417,31 @@ describe("the top-matches page", () => {
   it("draws the results from the first draw where this browser chose to show them", async () => {
     const port = dom();
     storage(port, { [RESULTS_KEY]: "true" });
-    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: twelve() })) });
     const host = port.body.children.at(-1)!;
     expect(host.byClass("aw-grid")[0]!.dataset.results).toBe("shown");
-    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
-    expect(winners(host)).toBe(16);
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
+    expect(winners(host)).toBe(12);
     expect(text(reveal(host)[0]!)).toBe(TOP_WORDS.hide);
   });
 
   it("hides the results where the browser blocks storage, and still shows them for this page on request", async () => {
     const port = dom();
     storage(port, "blocked");
-    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: twelve() })) });
     const host = port.body.children.at(-1)!;
-    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
     expect(winners(host)).toBe(0);
     reveal(host)[0]!.click();
-    expect(winners(host)).toBe(16);
+    expect(winners(host)).toBe(12);
   });
 
   it("keeps the button beside a new state line", async () => {
     const port = dom();
     storage(port);
-    const page = mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: sixteen() })) });
+    const page = mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: twelve() })) });
     const host = port.body.children.at(-1)!;
-    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(16));
+    await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
     page.setState("starting");
     expect(host.byClass("aw-band-end")[0]!.children.map(text)).toEqual([TOP_STATE.starting, TOP_WORDS.show]);
     page.destroy();

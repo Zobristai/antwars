@@ -1,13 +1,17 @@
-// The design system's Top matches tile (docs/design-system.md): one whole-tile link to a match's replay, text only, so nothing
-// plays until it is opened. Every tile has the same rows in the same order: the game type; the winner's side on a band
-// of its colony colour, the only colony colour on the tile; the other side (each other side, in a free-for-all); how it
-// ended; the date with the length. With results hidden (the default on Watch) the tile carries no result at all: the
-// sides in colony order, no band or colony colour, no how-it-ended row and no length, the date at its foot. A side
-// is one player line, or, where its seats differ, one line per seat group as Matches groups them. No rating and no retired
-// mark is drawn; the retired mark is in the tile's accessible name and tooltip. A builder is shown by its name exactly as
-// stored, from the one player-line source Matches draws (pages/model.ts recordedPlayer). A side fielding more than one seat
-// says so in the type row and with one mark per seat: two edge rules for two seats, and for three or four, small marks two
-// across and two down in the same space.
+// The design system's Top matches tile (docs/design-system.md): one whole-tile link to a match's replay, text only, so
+// nothing plays until it is opened. Every tile has the same rows in the same order: the game type; the players; how it
+// ended; the date with the length. Every tile is one size, whatever its game type: the players stand in one block four
+// player lines tall with two columns, so a free-for-all of up to eight colonies fits. A free-for-all has one line per
+// colony, filled across then down in colony order, so four colonies stand at the map's four corners; only the winner's
+// line is marked. A team match has its two sides one under the other, the winner's first on a band of its colony colour,
+// the only colony colour on the tile; a side whose seats differ fills its seat-group lines across the two columns, then
+// down. With results hidden (the default on Watch) the tile carries no result at all: the sides in colony order, no band
+// or colony colour, no how-it-ended row and no length, the date at its foot. A side is one player line, or, where its
+// seats differ, one line per seat group as Matches groups them. No rating and no retired mark is drawn; the retired mark
+// is in the tile's accessible name and tooltip. A builder is shown by its name exactly as stored, from the one player-line
+// source Matches draws (pages/model.ts recordedPlayer). A side fielding more than one seat says so in the type row and
+// with one mark per seat: two edge rules for two seats, and for three or four, small marks two across and two down in the
+// same space.
 import "./tokens.css";
 import "./top-match-tile.css";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
@@ -28,11 +32,13 @@ export function lengthText(r: Pick<Recording, "startedAt" | "endedAt" | "simulat
   return Number.isFinite(ms) && ms >= 0 ? `${Math.round(ms / 60_000)} min` : null;
 }
 
-/** The type row's words, as its kind and its size: "Index" and "1v1"; a team match says its seats in words, "2 per side". */
-export function tileType(type: Recording["matchType"]): { kind: string; size: string | null } | null {
+/** The type row's words, as its kind and its size: "Index" and "1v1"; a team match says its seats in words, "2 per side";
+ * a free-for-all counts its colonies as sides, "Free-for-all" and "4 sides". */
+export function tileType(type: Recording["matchType"], colonies = 2): { kind: string; size: string | null } | null {
   if (type == null) return null;
   const kind = MATCH_TYPE_WORDS[type.kind];
-  if (type.size === null || type.kind === "quadrants") return { kind, size: null };
+  if (type.kind === "quadrants" || colonies > 2) return { kind, size: `${colonies} sides` };
+  if (type.size === null) return { kind, size: null };
   return { kind, size: type.size > 1 ? `${type.size} per side` : "1v1" };
 }
 
@@ -56,23 +62,31 @@ function bolt(doc: Document): HTMLElement {
   return mark;
 }
 
+/** The most characters a badge shows; a longer badge shows its first eight and an ellipsis, its full text in its title. */
+export const BADGE_CHARS = 8;
+
 /** The effort badge, Fast drawn as a bolt inside it; Fast with no level is a badge of its bolt alone. The retired mark is not drawn. */
 function badges(doc: Document, kinds: BadgeKinds): HTMLElement | null {
   if (kinds.level === null && !kinds.fast) return null;
   const tags = h(doc, "span", "aw-tags");
   const badge = h(doc, "span", "aw-badge");
-  if (kinds.level !== null) badge.append(kinds.level);
+  if (kinds.level !== null && [...kinds.level].length > BADGE_CHARS) {
+    badge.append(`${[...kinds.level].slice(0, BADGE_CHARS).join("")}\u2026`);
+    badge.title = kinds.level;
+  } else if (kinds.level !== null) badge.append(kinds.level);
   if (kinds.fast) badge.append(bolt(doc));
   tags.append(badge);
   return tags;
 }
 
-/** One player: the builder's name (bold) and the model, then the effort badge. */
+/** One player: the builder's name (bold) and the model, then the effort badge. The model is its own part, the space after
+ * the builder's name included, so a line too long for its column can shorten the model first, then the builder's name;
+ * the name's title keeps both whole. */
 function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   const name = h(doc, "span", "aw-name");
   if (parts.user !== null) name.append(h(doc, "b", undefined, parts.user));
-  if (parts.user !== null && parts.model !== null) name.append(" ");
-  if (parts.model !== null) name.append(parts.model);
+  if (parts.model !== null) name.append(h(doc, "span", "aw-model", parts.user !== null ? ` ${parts.model}` : parts.model));
+  name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   const tags = badges(doc, parts.badges);
   return tags ? [name, tags] : [name];
 }
@@ -147,7 +161,8 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
   const named = results === "shown" ? winnerOf(r) : null;
   const winner = named !== null && named < colonies ? named : null;
   const order = winner === null ? sides.map((_, colony) => colony) : [winner, ...sides.map((_, colony) => colony).filter(colony => colony !== winner)];
-  const type = tileType(r.matchType);
+  const freeForAll = colonies > 2;
+  const type = tileType(r.matchType, colonies);
   const { result, how } = recordingResult(r);
   const ended = results === "shown" ? how ?? result : null;
   const date = whenParts(listed.when).date;
@@ -167,9 +182,12 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
   }
   meta.append(typeName);
   link.append(meta);
-  // The winner first, then each other side in colony order: two sides on most tiles, every side of a free-for-all.
-  // Hidden, every side in colony order.
-  link.append(...order.map((colony, i) => playerLine(doc, sides[colony] ?? null, i === 0 && winner !== null)));
+  // The players block. A free-for-all: every colony in colony order, filled across then down, where it starts on the map;
+  // only the winner marked. A team match or 1v1: the winner first, then the other side; hidden, colony order.
+  const lines = h(doc, "span", `aw-lines ${freeForAll ? "is-grid is-ffa" : sides.some(side => side !== null && side.seats > 1) ? "is-sides" : "is-pair"}`);
+  lines.append(...(freeForAll ? sides.map((_, colony) => colony) : order)
+    .map(colony => playerLine(doc, sides[colony] ?? null, colony === winner)));
+  link.append(lines);
   if (ended !== null) {
     const howRow = h(doc, "span", "aw-row aw-how");
     howRow.append(h(doc, "span", "aw-name", tileEnding(ended, colonies)));
