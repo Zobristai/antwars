@@ -105,6 +105,8 @@ export const RETIRED_HOUSE_HANDLES: ReadonlySet<string> = new Set([
   "gemini-4-neon-low",
   "gemini-4-neon-medium",
   "gemini-4-neon-xhigh",
+  "qwen4-max-high",
+  "qwen4-max-xhigh",
 ]);
 
 /** Whether a bare handle or an antwars/<handle> name is retired, compared case-insensitively like canonical names. */

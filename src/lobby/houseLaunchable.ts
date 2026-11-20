@@ -44,8 +44,6 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "gemini-4-hydrogen-xhigh",
   "gpt-6-2-astra-high-std",
   "qwen4-max-low",
-  "qwen4-max-high",
-  "qwen4-max-xhigh",
   "gemini-4-neon-high",
   "muse-spark-1-3",
   "muse-wonder-1-0",

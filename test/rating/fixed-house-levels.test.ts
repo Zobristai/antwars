@@ -70,8 +70,9 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   // Played at Standard: a separate model name, its level and no Fast badge.
   "gpt-6-2-astra-high-std": ["high", null, "GPT-6.2 Astra Standard", ["high"]],
   "qwen4-max-low": ["low", null, "Qwen4 Max", ["low"]],
-  "qwen4-max-high": ["high", null, "Qwen4 Max", ["high"]],
-  "qwen4-max-xhigh": ["xhigh", null, "Qwen4 Max", ["xhigh"]],
+  // Parked: no longer launched, so the retired badge follows the level; low is the one Qwen4 Max level still played.
+  "qwen4-max-high": ["high", null, "Qwen4 Max", ["high", "retired"]],
+  "qwen4-max-xhigh": ["xhigh", null, "Qwen4 Max", ["xhigh", "retired"]],
   // Parked: no longer launched, so the retired badge follows the level; high is the one Neon level still played.
   "gemini-4-neon-low": ["low", null, "Gemini 4 Neon", ["low", "retired"]],
   "gemini-4-neon-medium": ["medium", null, "Gemini 4 Neon", ["medium", "retired"]],
