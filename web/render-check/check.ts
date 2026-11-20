@@ -66,6 +66,12 @@ export interface Surface {
  */
 export const FREE_FOR_ALL_REPLAY = "2026-11-17T08-55-08-583Z-151632020035470";
 
+/**
+ * The public recording the grouped-seat replay surface plays, so the Score Band shows grouped seats: 16 Nov 2026 09:21 UTC,
+ * an Index 2v2 in which one player holds both seats of each colony, its seat badges in one head per colony.
+ */
+export const GROUPED_SEATS_REPLAY = "2026-11-16T09-21-43-735Z-11240848029112";
+
 /** The recordings surfaces' focused element: the first recording's Replay link. */
 const RECORDINGS_FOCUS = ".d1p-rec-rows > li:first-child .d1p-rec-replay";
 
@@ -82,6 +88,7 @@ export const SURFACES: readonly Surface[] = [
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
+  { id: "replay-grouped-seats", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, what: "a 2v2 replay where one player holds both seats of each colony: the Score Band's grouped seat badges over the board" },
 ];
 
 /** The browser context of a window `width` px wide, at a browser zoom of `zoom` (Surface.zoom). */

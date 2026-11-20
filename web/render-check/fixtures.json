@@ -34,6 +34,21 @@
    "label": "Free-for-all replay's full record, left out: it is 8.4 MB and the page stops reading a record after 256 KiB, as it does on a 404",
    "status": 404
   },
+  "/replays/2026-11-16T09-21-43-735Z-11240848029112": {
+   "label": "Grouped-seat replay: public recording 2026-11-16T09-21-43-735Z-11240848029112, an Index 2v2 in which one player holds both seats of each colony, ticks 300-410 (excerpt.ts; source sha256 b60e094a…, excerpt sha256 26b27d18…)",
+   "type": "application/octet-stream",
+   "files": [
+    "snapshot/bodies/2026-11-16T09-21-43-735Z-11240848029112-300-410/01.replay.jsonl",
+    "snapshot/bodies/2026-11-16T09-21-43-735Z-11240848029112-300-410/02.replay.jsonl",
+    "snapshot/bodies/2026-11-16T09-21-43-735Z-11240848029112-300-410/03.replay.jsonl",
+    "snapshot/bodies/2026-11-16T09-21-43-735Z-11240848029112-300-410/04.replay.jsonl"
+   ],
+   "sha256": "26b27d18d8c58872db7cd651ed150530a865871e52f38e9c4fba1047d91d6c3d"
+  },
+  "/matches/2026-11-16T09-21-43-735Z-11240848029112": {
+   "label": "Grouped-seat replay's full record, left out: it is 2.9 MB and the page stops reading a record after 256 KiB, as it does on a 404",
+   "status": 404
+  },
   "/replays/2026-11-18T09-37-33-466Z-22423161369746": {
    "label": "Watch's newest recording when the snapshot was recorded: public recording 2026-11-18T09-37-33-466Z-22423161369746, ticks 3000-3110 (excerpt.ts; source sha256 77287072…, excerpt sha256 191b2226…)",
    "type": "application/octet-stream",
