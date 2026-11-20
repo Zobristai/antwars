@@ -13,6 +13,8 @@ interface Navigation {
   readonly land: readonly boolean[];
   readonly fields: Map<number, Int32Array>;
   traversal?: Traversal;
+  /** nearestLand results, keyed by goal tile * 2 + (colony 0 ? 0 : 1). */
+  readonly landGoals: Map<number, number>;
 }
 const navigation = new WeakMap<Terrain, Map<string, Navigation>>();
 
@@ -32,7 +34,7 @@ function cachedTopology(config: SimConfig, terrain: Terrain): Navigation {
   if (dimensions === undefined) { dimensions = new Map(); navigation.set(terrain, dimensions); }
   let graph = dimensions.get(key);
   if (graph === undefined) {
-    graph = { land: passableMask(config, terrain), fields: new Map() };
+    graph = { land: passableMask(config, terrain), fields: new Map(), landGoals: new Map() };
     dimensions.set(key, graph);
   }
   return graph;
@@ -126,6 +128,27 @@ function distances(config: SimConfig, graph: Navigation, goal: number): Int32Arr
   return result;
 }
 
+/**
+ * The land tile nearest a water goal tile (gx, gy), by squared tile distance, ties to the lowest row and then
+ * the colony-relative column (left for colony 0, right for any other); -1 when the map has no land. It depends
+ * only on the graph's land mask, which never changes for a terrain and board size, so it is computed once per
+ * goal tile and tie side.
+ */
+function nearestLand(graph: Navigation, width: number, gx: number, gy: number, colonyZero: boolean): number {
+  const key = (gy * width + gx) * 2 + (colonyZero ? 0 : 1);
+  const known = graph.landGoals.get(key);
+  if (known !== undefined) return known;
+  let goal = -1, best = Infinity;
+  for (let i = 0; i < graph.land.length; i++) {
+    const d = (i % width - gx) ** 2 + (Math.floor(i / width) - gy) ** 2;
+    const rank = (tile: number) => Math.floor(tile / width) * width +
+      (colonyZero ? tile % width : width - 1 - tile % width);
+    if (graph.land[i] && (d < best || (d === best && (goal < 0 || rank(i) < rank(goal))))) { best = d; goal = i; }
+  }
+  graph.landGoals.set(key, goal);
+  return goal;
+}
+
 /** Shared point-goal routing for house, forage, orders and count marks. */
 export function routeToward(state: SimState, ant: Ant, x: number, y: number, arrivalOverride?: number): Vec {
   const { config, terrain } = state;
@@ -137,13 +160,7 @@ export function routeToward(state: SimState, ant: Ant, x: number, y: number, arr
   y = Math.max(0, Math.min(height * SUB - 1, y));
   let gx = Math.floor(x / SUB), gy = Math.floor(y / SUB);
   if (!graph.land[gy * width + gx]) {
-    let goal = -1, best = Infinity;
-    for (let i = 0; i < graph.land.length; i++) {
-      const d = (i % width - gx) ** 2 + (Math.floor(i / width) - gy) ** 2;
-      const rank = (tile: number) => Math.floor(tile / width) * width +
-        (ant.colony === 0 ? tile % width : width - 1 - tile % width);
-      if (graph.land[i] && (d < best || (d === best && (goal < 0 || rank(i) < rank(goal))))) { best = d; goal = i; }
-    }
+    const goal = nearestLand(graph, width, gx, gy, ant.colony === 0);
     if (goal < 0) return ZERO;
     gx = goal % width; gy = Math.floor(goal / width); x = tileCentre(gx); y = tileCentre(gy);
     notePoint(state, ant, x, y, true);

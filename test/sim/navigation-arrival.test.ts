@@ -6,7 +6,8 @@ import { beginLocalGoals, readLocalGoal } from "../../src/sim/localArrival.js";
 import { createMatch, newAnt } from "../../src/sim/map.js";
 import { routeToward } from "../../src/sim/navigation.js";
 import { advanceSoftAnts } from "../../src/sim/step.js";
-import { isPassable, moveOnLand } from "../../src/sim/terrain.js";
+import { isPassable, moveOnLand, passableMask } from "../../src/sim/terrain.js";
+import { quadrantMapConfig } from "../../src/sim/quadrantMaps.js";
 import type { ColonyId } from "../../src/sim/types.js";
 import { playable } from "../playable.ts";
 
@@ -116,5 +117,46 @@ describe.each([0, 1] as const)("substituted point arrival, colony %i", colony =>
     expect(routeToward(state, ant, waterX, y)).toEqual(expected);
     moveOnLand(state.config, state.terrain, ant, expected, speedPerTick(state.config));
     expect(routeToward(state, ant, waterX, y)).toEqual(direction(landX - ant.x, 0));
+  });
+});
+
+// A goal on water routes to the nearest land tile. That tile used to be found by scanning the whole map on
+// every call; it is now remembered per goal tile and tie side. The oracle is that scan, verbatim.
+function oracleNearestLand(land: readonly boolean[], width: number, gx: number, gy: number, colony: ColonyId): number {
+  let goal = -1, best = Infinity;
+  for (let i = 0; i < land.length; i++) {
+    const d = (i % width - gx) ** 2 + (Math.floor(i / width) - gy) ** 2;
+    const rank = (tile: number) => Math.floor(tile / width) * width +
+      (colony === 0 ? tile % width : width - 1 - tile % width);
+    if (land[i] && (d < best || (d === best && (goal < 0 || rank(i) < rank(goal))))) { best = d; goal = i; }
+  }
+  return goal;
+}
+
+describe("water goals on a four-colony board", () => {
+  it("route every colony exactly as toward the scanned nearest land tile, on first and repeated calls", () => {
+    const state = createMatch(12345, quadrantMapConfig("strait"));
+    const { config, terrain } = state;
+    const width = config.mapWidth, land = passableMask(config, terrain!);
+    const waterTiles = land.flatMap((onLand, tile) => onLand ? [] : [tile]);
+    const landTiles = land.flatMap((onLand, tile) => onLand ? [tile] : []);
+    expect(waterTiles.length).toBeGreaterThan(100);
+    let routed = 0;
+    for (let k = 0; k < 120; k++) {
+      const water = waterTiles[Math.floor((k * waterTiles.length) / 120)]!;
+      const from = landTiles[(k * 7919) % landTiles.length]!;
+      const gx = water % width, gy = Math.floor(water / width);
+      for (const colony of [0, 1, 3] as const) {
+        const goal = oracleNearestLand(land, width, gx, gy, colony);
+        const ant = newAnt(config, 1, colony, tileCentre(from % width), tileCentre(Math.floor(from / width)));
+        const viaLand = routeToward(state, { ...ant }, tileCentre(goal % width), tileCentre(Math.floor(goal / width)));
+        const first = routeToward(state, { ...ant }, tileCentre(gx), tileCentre(gy));
+        const again = routeToward(state, { ...ant }, tileCentre(gx), tileCentre(gy));
+        expect(first).toEqual(viaLand);
+        expect(again).toEqual(viaLand);
+        if (first !== ZERO) routed += 1;
+      }
+    }
+    expect(routed).toBeGreaterThan(100);
   });
 });

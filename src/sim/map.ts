@@ -384,9 +384,9 @@ export class TrackedGrid {
   }
 
   /** Each colony's ant count per tile, matching buckets(); valid only until the next sync, like it. */
-  colonyCounts(): readonly [Int32Array, Int32Array] {
+  colonyCounts(): ColonyCounts {
     this.buckets();
-    return [this.tracker.count0, this.tracker.count1];
+    return this.tracker.counts;
   }
 }
 
@@ -415,11 +415,10 @@ export class GridTracker {
   generation = 0;
   /** Full builds performed, for tests and measurement. */
   fullBuilds = 0;
-  /** @internal Read by TrackedGrid: colony 0 and colony 1 ants per tile, kept with dense. */
-  count0 = new Int32Array(0);
-  /** @internal Read by TrackedGrid. */
-  count1 = new Int32Array(0);
+  /** @internal Read by TrackedGrid: each colony's ants per tile, and all colonies' together, kept with dense. */
+  counts: ColonyCounts = { byColony: [], total: new Int32Array(0) };
   private width = -1;
+  private colonyCount = -1;
   private height = -1;
   private prevAnts: Ant[] = [];
   private prevAscending = false;
@@ -440,7 +439,10 @@ export class GridTracker {
       cur[i] = Math.floor(ant.y / SUB) * mapWidth + Math.floor(ant.x / SUB);
     }
     // The update's merge walk needs ascending ids in both this sync and the previous one.
-    if (!ascending || !this.prevAscending || mapWidth !== this.width || mapHeight !== this.height) this.fullBuild(mapWidth, mapHeight, ants, cur);
+    const colonies = state.colonies.length;
+    if (!ascending || !this.prevAscending || mapWidth !== this.width || mapHeight !== this.height || colonies !== this.colonyCount) {
+      this.fullBuild(mapWidth, mapHeight, colonies, ants, cur);
+    }
     else this.update(ants, cur);
     this.prevAscending = ascending;
     // Keep this sync as the next one's previous state (swap the tile buffers).
@@ -455,7 +457,7 @@ export class GridTracker {
     return grid;
   }
 
-  private fullBuild(width: number, height: number, ants: readonly Ant[], tiles: Int32Array): void {
+  private fullBuild(width: number, height: number, colonies: number, ants: readonly Ant[], tiles: Int32Array): void {
     this.fullBuilds += 1;
     const size = width * height;
     if (this.width !== width || this.height !== height) {
@@ -464,25 +466,27 @@ export class GridTracker {
       this.dense = new Array(size);
       this.dirtyMark = new Int32Array(size);
       this.dirtyList = new Int32Array(size);
-      this.count0 = new Int32Array(size);
-      this.count1 = new Int32Array(size);
       this.stamp = 0;
+    } else this.dense.fill(undefined);
+    if (this.colonyCount !== colonies || this.counts.total.length !== size) {
+      this.colonyCount = colonies;
+      this.counts = { byColony: Array.from({ length: colonies }, () => new Int32Array(size)), total: new Int32Array(size) };
     } else {
-      this.dense.fill(undefined);
-      this.count0.fill(0);
-      this.count1.fill(0);
+      for (const tiles of this.counts.byColony) tiles.fill(0);
+      this.counts.total.fill(0);
     }
-    const dense = this.dense, count0 = this.count0, count1 = this.count1;
+    const dense = this.dense, byColony = this.counts.byColony, total = this.counts.total;
     for (let i = 0; i < ants.length; i += 1) {
-      const bucket = dense[tiles[i]!];
-      if (bucket === undefined) dense[tiles[i]!] = [ants[i]!];
+      const tile = tiles[i]!, bucket = dense[tile];
+      if (bucket === undefined) dense[tile] = [ants[i]!];
       else bucket.push(ants[i]!);
-      if (ants[i]!.colony === 0) count0[tiles[i]!] += 1; else count1[tiles[i]!] += 1;
+      byColony[ants[i]!.colony]![tile] += 1;
+      total[tile] += 1;
     }
   }
 
   private update(ants: readonly Ant[], tiles: Int32Array): void {
-    const dense = this.dense, mark = this.dirtyMark, list = this.dirtyList, count0 = this.count0, count1 = this.count1;
+    const dense = this.dense, mark = this.dirtyMark, list = this.dirtyList, byColony = this.counts.byColony, total = this.counts.total;
     const prev = this.prevAnts, prevTiles = this.prevTiles, pn = prev.length, n = ants.length;
     const stamp = ++this.stamp;
     let dirty = 0;
@@ -492,7 +496,8 @@ export class GridTracker {
       const bucket = dense[tile]!;
       if (bucket.length === 1) dense[tile] = undefined;
       else bucket.splice(bucket.indexOf(ant), 1);
-      if (ant.colony === 0) count0[tile] -= 1; else count1[tile] -= 1;
+      byColony[ant.colony]![tile] -= 1;
+      total[tile] -= 1;
     };
     let i = 0, j = 0;
     while (i < n || j < pn) {
@@ -504,26 +509,39 @@ export class GridTracker {
       j += 1;
     }
     if (dirty === 0) return;
-    for (let k = 0; k < dirty; k += 1) { dense[list[k]!] = undefined; count0[list[k]!] = 0; count1[list[k]!] = 0; }
+    for (let k = 0; k < dirty; k += 1) {
+      const tile = list[k]!;
+      dense[tile] = undefined;
+      for (let c = 0; c < byColony.length; c += 1) byColony[c]![tile] = 0;
+      total[tile] = 0;
+    }
     for (let k = 0; k < n; k += 1) {
       const tile = tiles[k]!;
       if (mark[tile] !== stamp) continue;
       const bucket = dense[tile];
       if (bucket === undefined) dense[tile] = [ants[k]!];
       else bucket.push(ants[k]!);
-      if (ants[k]!.colony === 0) count0[tile] += 1; else count1[tile] += 1;
+      byColony[ants[k]!.colony]![tile] += 1;
+      total[tile] += 1;
     }
   }
 }
 
 function assertSameGrid(state: SimState, grid: TrackedGrid): void {
-  const fresh = buildGrid(state), buckets = grid.buckets();
+  const fresh = buildGrid(state), buckets = grid.buckets(), counts = grid.colonyCounts();
   for (let tile = 0; tile < state.config.mapWidth * state.config.mapHeight; tile += 1) {
     const want = fresh.get(tile), got = buckets[tile];
-    if (want === undefined && got === undefined) continue;
-    if (want === undefined || got === undefined || want.length !== got.length || want.some((ant, k) => ant !== got[k])) {
+    if ((want !== undefined || got !== undefined) &&
+        (want === undefined || got === undefined || want.length !== got.length || want.some((ant, k) => ant !== got[k]))) {
       throw new Error(`grid sync differs from buildGrid at tile ${tile} on tick ${state.tick}`);
     }
+    let all = 0;
+    for (let colony = 0; colony < state.colonies.length; colony += 1) {
+      const own = want === undefined ? 0 : want.reduce((n, ant) => n + (ant.colony === colony ? 1 : 0), 0);
+      if (counts.byColony[colony]![tile] !== own) throw new Error(`grid sync colony ${colony} count differs at tile ${tile} on tick ${state.tick}`);
+      all += own;
+    }
+    if (counts.total[tile] !== all) throw new Error(`grid sync total count differs at tile ${tile} on tick ${state.tick}`);
   }
 }
 
@@ -532,81 +550,91 @@ export function gridBuckets(grid: Grid): readonly (readonly Ant[] | undefined)[]
   return grid instanceof TrackedGrid ? grid.buckets() : denseBuckets.get(grid);
 }
 
+/**
+ * Ants per tile on one grid: each colony's, indexed by colony id, and every colony's together. Enemies of a
+ * colony on a tile are total minus that colony's own, for any number of colonies.
+ */
+export interface ColonyCounts {
+  readonly byColony: readonly Int32Array[];
+  readonly total: Int32Array;
+}
+
 /** Each colony's ant count per tile for a buildGrid grid, counted from its buckets on first use. */
-const bucketCounts = new WeakMap<Grid, readonly [Int32Array, Int32Array]>();
+const bucketCounts = new WeakMap<Grid, ColonyCounts>();
 
 /**
- * Each colony's ant count per tile (colony 0, colony 1) on this grid's buckets: kept by the tracker for a
+ * Each colony's ant count per tile, and the total, on this grid's buckets: kept by the tracker for a
  * TrackedGrid, counted once for a buildGrid grid; undefined for any other Map. Valid while the buckets are.
- * The counts cover two colonies only, so a match with any other number of colonies gets undefined and its
- * callers take their per-ant paths.
  */
-export function gridColonyCounts(grid: Grid, state: SimState): readonly [Int32Array, Int32Array] | undefined {
-  if (state.colonies.length !== 2) return undefined;
+export function gridColonyCounts(grid: Grid, state: SimState): ColonyCounts | undefined {
   if (grid instanceof TrackedGrid) return grid.colonyCounts();
   const dense = denseBuckets.get(grid);
   if (dense === undefined) return undefined;
   let counts = bucketCounts.get(grid);
   if (counts === undefined) {
-    const zero = new Int32Array(dense.length), one = new Int32Array(dense.length);
+    const byColony = state.colonies.map(() => new Int32Array(dense.length)), total = new Int32Array(dense.length);
     for (let tile = 0; tile < dense.length; tile += 1) {
       const bucket = dense[tile];
-      if (bucket !== undefined) for (let i = 0; i < bucket.length; i += 1) { if (bucket[i]!.colony === 0) zero[tile] += 1; else one[tile] += 1; }
+      if (bucket === undefined) continue;
+      for (let i = 0; i < bucket.length; i += 1) byColony[bucket[i]!.colony]![tile] += 1;
+      total[tile] = bucket.length;
     }
-    counts = [zero, one];
+    counts = { byColony, total };
     bucketCounts.set(grid, counts);
   }
   return counts;
 }
 
 /**
- * Per grid, each colony's ants as 2D prefix counts of gridColonyCounts: entry y * (mapWidth + 1) + x counts
- * the colony's ants on tiles in rows before y and columns before x. Read with areaCount. Valid for the grid's
- * one snapshot; gridColonyCounts is read first on every call, so a stale TrackedGrid handle still throws.
+ * Per grid, gridColonyCounts as 2D prefix counts: entry y * (mapWidth + 1) + x counts the ants on tiles in
+ * rows before y and columns before x, per colony and in total. Read with areaCount. Valid for the grid's one
+ * snapshot; gridColonyCounts is read first on every call, so a stale TrackedGrid handle still throws.
  */
-const colonyAreas = new WeakMap<Grid, readonly [Int32Array, Int32Array]>();
+const colonyAreas = new WeakMap<Grid, ColonyCounts>();
 
-export function colonyAreaCounts(state: SimState, grid: Grid): readonly [Int32Array, Int32Array] | undefined {
+function prefixArea(tiles: Int32Array, width: number, height: number): Int32Array {
+  const stride = width + 1, table = new Int32Array((height + 1) * stride);
+  for (let y = 0; y < height; y += 1) {
+    const above = y * stride, row = above + stride, at = y * width;
+    let a = 0;
+    for (let x = 0; x < width; x += 1) {
+      a += tiles[at + x]!;
+      table[row + x + 1] = table[above + x + 1]! + a;
+    }
+  }
+  return table;
+}
+
+export function colonyAreaCounts(state: SimState, grid: Grid): ColonyCounts | undefined {
   const tiles = gridColonyCounts(grid, state);
   if (tiles === undefined) return undefined;
   const cached = colonyAreas.get(grid);
   if (cached !== undefined) return cached;
-  const { mapWidth: width, mapHeight: height } = state.config, stride = width + 1;
-  const [count0, count1] = tiles;
-  const zero = new Int32Array((height + 1) * stride), one = new Int32Array((height + 1) * stride);
-  for (let y = 0; y < height; y += 1) {
-    const above = y * stride, row = above + stride, at = y * width;
-    let a = 0, b = 0;
-    for (let x = 0; x < width; x += 1) {
-      a += count0[at + x]!;
-      b += count1[at + x]!;
-      zero[row + x + 1] = zero[above + x + 1]! + a;
-      one[row + x + 1] = one[above + x + 1]! + b;
-    }
-  }
-  const counts = [zero, one] as const;
+  const { mapWidth: width, mapHeight: height } = state.config;
+  const counts = { byColony: tiles.byColony.map((t) => prefixArea(t, width, height)), total: prefixArea(tiles.total, width, height) };
   colonyAreas.set(grid, counts);
   return counts;
 }
 
-/** One colony's ants on tiles x0..x1 by y0..y1 (inclusive, inside the map) from a colonyAreaCounts table. */
+/** Ants on tiles x0..x1 by y0..y1 (inclusive, inside the map) from one colonyAreaCounts table. */
 export function areaCount(table: Int32Array, mapWidth: number, x0: number, y0: number, x1: number, y1: number): number {
   const stride = mapWidth + 1;
   return table[(y1 + 1) * stride + x1 + 1]! - table[y0 * stride + x1 + 1]! - table[(y1 + 1) * stride + x0]! + table[y0 * stride + x0]!;
 }
 
-/** Whether a per-tile count array holds no ant within Chebyshev distance r of tile (tx, ty). */
-function noneNear(state: SimState, tiles: Int32Array, tx: number, ty: number, r: number): boolean {
+/** Whether no ant of a colony other than `colony` stands within Chebyshev distance r of tile (tx, ty). */
+function noEnemyIn(state: SimState, counts: ColonyCounts, colony: ColonyId, tx: number, ty: number, r: number): boolean {
   const { mapWidth, mapHeight } = state.config;
+  const own = counts.byColony[colony]!, total = counts.total;
   const x0 = Math.max(0, tx - r), x1 = Math.min(mapWidth - 1, tx + r), y0 = Math.max(0, ty - r), y1 = Math.min(mapHeight - 1, ty + r);
-  for (let y = y0; y <= y1; y += 1) for (let x = x0, at = y * mapWidth; x <= x1; x += 1) if (tiles[at + x] !== 0) return false;
+  for (let y = y0; y <= y1; y += 1) for (let x = x0, at = y * mapWidth; x <= x1; x += 1) if (total[at + x] !== own[at + x]) return false;
   return true;
 }
 
-/** Whether no ant of the other colony stands within Chebyshev distance r of tile (tx, ty); false when unknown. */
+/** Whether no ant of another colony stands within Chebyshev distance r of tile (tx, ty); false when unknown. */
 export function noEnemyNear(state: SimState, grid: Grid, colony: ColonyId, tx: number, ty: number, r: number): boolean {
   const counts = gridColonyCounts(grid, state);
-  return counts !== undefined && Number.isInteger(r) && noneNear(state, counts[colony === 0 ? 1 : 0], tx, ty, r);
+  return counts !== undefined && Number.isInteger(r) && noEnemyIn(state, counts, colony, tx, ty, r);
 }
 
 /** Visit every ant whose tile lies within Chebyshev distance r of tile (tx, ty). */
@@ -651,7 +679,7 @@ export function hasAdjacentEnemy(state: SimState, grid: Grid, ant: Ant): boolean
   const tx = Math.floor(ant.x / SUB), ty = Math.floor(ant.y / SUB), r = gridScaleOf(state.config);
   const counts = gridColonyCounts(grid, state);
   if (counts !== undefined) {
-    if (noneNear(state, counts[ant.colony === 0 ? 1 : 0], tx, ty, r)) return false;
+    if (noEnemyIn(state, counts, ant.colony, tx, ty, r)) return false;
     // Without flyers every ant is on the ground, so any enemy in reach is one it fights.
     if (state.config.flyers === undefined) return true;
   }
