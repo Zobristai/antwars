@@ -12,6 +12,10 @@ export const MAX_RECORDING_MESSAGE_BYTES = 4 * 1024 * 1024;
 export class CorruptRecording extends Error {}
 /** A request the server answered with an error status. */
 class RecordingRefused extends Error {}
+/** A download whose body ended cleanly short of the recording: the connection was cut on the way, so reading the
+ * recording again can succeed. */
+class RecordingCutShort extends Error {}
+const CUT_SHORT = "Recording download ended partway through a message.";
 
 /** Arbitrary network boundaries, including a split u32 prefix; retain only the current chunk and packet. */
 export async function* recordingMessages(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<{ message: StreamMessage; bytes: number }> {
@@ -29,8 +33,8 @@ export async function* recordingMessages(body: ReadableStream<Uint8Array>, signa
         const next = await reader.read();
         if (next.done) {
           if (filled === 0 && eofAllowed) return null;
-          // A browser reports a dropped connection as a failed read; a body that ends cleanly here is cut short as sent.
-          throw new CorruptRecording("Recording download ended partway through a message.");
+          // A browser reports most dropped connections as a failed read, but some hops end the body cleanly instead.
+          throw new RecordingCutShort(CUT_SHORT);
         }
         chunk = next.value;
         offset = 0;
@@ -111,13 +115,15 @@ export interface RecordingOptions {
   marksWorker?: (() => MarksWorker) | null;
 }
 
-/** The waits before the marks' read is tried again after a failure (a network error or a refused request); after the
- * last it keeps being tried at the last wait, and at once when the browser reports it is back online. */
+/** The waits before the marks' read is tried again after a failure (a network error, a body that ends short of the
+ * recording, or a refused request); after the last it keeps being tried at the last wait, and at once when the browser
+ * reports it is back online. */
 export const SCAN_RETRY_MS: readonly number[] = [2000, 8000, 30000];
-/** The waits before playback reopens a recording whose download failed partway (a dropped connection, or a refused or
- * failed reopen), each also ended at once when the browser reports it is back online. Only ticks past the furthest
- * already reached start the waits over; once the last wait's reopen fails too, the failure stands. An abort from the
- * request's own signal, such as a startup timeout, is never a dropped connection: it stands at once. */
+/** The waits before playback reopens a recording whose download failed partway (a dropped connection, a body that ends
+ * short of the recording, or a refused or failed reopen), each also ended at once when the browser reports it is back
+ * online. Only ticks past the furthest already reached start the waits over; once the last wait's reopen fails too, the
+ * failure stands. An abort from the request's own signal, such as a startup timeout, is never a dropped connection: it
+ * stands at once. */
 export const RESUME_RETRY_MS: readonly number[] = [2000, 8000, 30000];
 /** Read on the page (no worker), the marks' read works at most this long between yields, so playback keeps drawing. */
 const SCAN_SLICE_MS = 8;
@@ -266,6 +272,12 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   let firstTick: number | null = null;
   let newestTick = -1;
   let endTick: number | null = null;
+  /** The last tick as recorded beside the recording, or as read from a whole download of it. A playback download that
+   * ends cleanly before this tick was cut short on the way. */
+  let knownEnd: number | null = null;
+  /** The newest tick a download has shown more of the recording after, by ending partway through the next message. A
+   * later download that ends cleanly at or before this tick was cut short on the way. */
+  let followed = Number.NEGATIVE_INFINITY;
   let done = false;
   let closed = false;
   let error: Error | null = null;
@@ -281,13 +293,18 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   let seekTo: number | null = null;
   const notify = () => { changed?.(); changed = null; };
   const duration = () => firstTick === null || endTick === null ? null : (endTick - firstTick) * TICK_MS;
+  let recordedEnd: Promise<number | null> | null = null;
+  /** The end tick recorded beside the recording, asked for once; null where there is none or it cannot be read. */
+  const readRecordedEnd = () => recordedEnd ??= Promise.resolve().then(() => options.endTick?.(lifetime.signal) ?? null).then(
+    known => known !== null && Number.isSafeInteger(known) && known >= firstTick! ? known : null, () => null);
   // Duration discovery retains no messages or boards. Missing/private/legacy history
   // falls back to a cancellable streaming scan, independent of playback backpressure.
   const discoverEnd = async () => {
     try {
-      const known = await options.endTick?.(lifetime.signal).catch(() => null);
+      const known = await readRecordedEnd();
       if (closed || endTick !== null) return;
-      if (known !== undefined && known !== null && Number.isSafeInteger(known) && known >= firstTick!) {
+      if (known !== null) {
+        knownEnd ??= known;
         endTick ??= known;
         return;
       }
@@ -305,7 +322,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         if (++count % 100 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
       }
       if (previous === null) throw new Error("Recording is empty.");
-      if (!closed) endTick = previous;
+      if (!closed) knownEnd = endTick = previous;
     } catch (cause) {
       if (!closed) durationError = cause instanceof Error ? cause.message : String(cause);
     }
@@ -332,6 +349,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
           return new Promise<void>(resolve => setTimeout(resolve, 0)).then(() => { slice = performance.now(); });
         });
       if (closed) return;
+      knownEnd ??= read.lastTick;
       endTick ??= read.lastTick;
       durationError = null;
       events = read.events;
@@ -353,8 +371,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     void scanWhole();
   };
   // One download of the recording from its first byte, queueing every tick past the newest already queued. `began` marks
-  // a response that has started streaming, so a later failure is a dropped download rather than a refused one.
-  const download = async (version: number, signal: AbortSignal, began: () => void) => {
+  // a response that has started streaming, so a later failure is a dropped download rather than a refused one; `reopen`
+  // marks a download reopened after one that was cut or dropped.
+  const download = async (version: number, signal: AbortSignal, began: () => void, reopen: boolean) => {
     const response = await request(url, { signal });
     if (closed || version !== generation) { await response.body?.cancel(); return; }
     if (!response.ok) throw new RecordingRefused(response.status === 404 ? "This recording was not found (HTTP 404)." : `Recording unavailable (HTTP ${response.status}).`);
@@ -367,12 +386,22 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
       for (;;) {
         if (queue.length >= RECORDING_AHEAD) await new Promise<void>((resolve) => { changed = resolve; });
         if (closed || version !== generation) return;
-        const next = await messages.next();
+        let next: Awaited<ReturnType<typeof messages.next>>;
+        try { next = await messages.next(); }
+        catch (cause: unknown) {
+          if (cause instanceof RecordingCutShort && previous !== null) followed = Math.max(followed, previous);
+          throw cause;
+        }
         if (closed || version !== generation) return;
         if (next.done) {
-          if (previous === null) throw new CorruptRecording("Recording is empty.");
+          // A reopen, or a read of a recording already read, that reads nothing was cut short too.
+          if (previous === null) throw firstTick === null && !reopen ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
+          // Some hops end a cut response cleanly, so a clean end is not taken as the end when it falls before a tick already
+          // reached, at or before a tick an earlier download showed more after, or before a recorded end that has arrived;
+          // the recorded end is never waited for here.
+          if (previous < newestTick || previous <= followed || (knownEnd !== null && previous < knownEnd)) throw new RecordingCutShort(CUT_SHORT);
           done = true;
-          endTick = newestTick;
+          knownEnd = endTick = newestTick;
           startScan();
           break;
         }
@@ -397,6 +426,8 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         if (stats.messages === 1) {
           resolveFirst(m);
           if (m.full?.result) endTick = m.full.result.tick + 1;
+          // Asked for once, beside playback, so a short download can be checked against it without waiting on it.
+          if (options.endTick) void readRecordedEnd().then(known => { if (known !== null && !closed) knownEnd ??= known; });
         }
         // Short recordings reach EOF without any second request. Discover an end independently only when the
         // normal reader reaches backpressure; the marks' read follows the settled end (or a short recording's EOF).
@@ -410,23 +441,24 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   };
   // A download that drops after it began streaming is reopened after RESUME_RETRY_MS and resumes past the newest queued
   // tick; a corrupt recording, or a first request that fails or is refused, stands at once, as does the last reopen's.
-  // Only a network failure (a fetch or read reports one as a TypeError) or a refused reopen is tried again: an abort or
-  // cancellation from the request's signal reports its reason instead, and stands at once, never reopened with that
-  // signal already aborted.
+  // Only a network failure (a fetch or read reports one as a TypeError), a body that ends short of the recording or a
+  // refused reopen is tried again: an abort or cancellation from the request's signal reports its reason instead, and
+  // stands at once, never reopened with that signal already aborted.
   const pump = async (version: number, signal: AbortSignal) => {
     let began = false;
     let failures = 0;
+    let reopen = false;
     for (;;) {
       const reached = newestTick;
       try {
-        await download(version, signal, () => { began = true; });
+        await download(version, signal, () => { began = true; }, reopen);
         return;
       } catch (cause: unknown) {
         if (closed || version !== generation) return;
         const failure = cause instanceof Error ? cause : new Error(String(cause));
         // Only ticks past the furthest already reached count as progress, not ticks a reopen read again.
         if (newestTick > reached) failures = 0;
-        const dropped = failure instanceof TypeError || failure instanceof RecordingRefused;
+        const dropped = failure instanceof TypeError || failure instanceof RecordingRefused || failure instanceof RecordingCutShort;
         if (!began || !dropped || failures >= RESUME_RETRY_MS.length) {
           error = failure;
           rejectFirst(error);
@@ -435,6 +467,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
         }
         await retryWait(RESUME_RETRY_MS[failures++]!, signal);
         if (closed || version !== generation) return;
+        reopen = true;
       }
     }
   };

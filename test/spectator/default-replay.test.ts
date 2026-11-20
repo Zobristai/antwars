@@ -72,6 +72,8 @@ it.each(["replay", "replay="])("%s waits for the first listed page, then plays a
     if (path === "/matches?pageToken=last") return last;
     // The stored match's rating record; this one has none, so the recording's figures stay.
     if (path === `/watch/ratings/${newest}`) return Response.json({ ratings: [] });
+    // The stored match's record, whose result names the recording's last tick.
+    if (path === `/matches/${newest}`) return Response.json({ format: "antwar.match", version: 1, id: newest, result: { tick: decodeMessage(packets.at(-1)!).tick - 1 } });
     expect(path).toBe(`/replays/${newest}`);
     return new Response(bytes);
   });
@@ -94,8 +96,9 @@ it.each(["replay", "replay="])("%s waits for the first listed page, then plays a
   expect(source.lastTick).toBe(frame.tick);
   expect(modeCopy("replay", 4, true, "/", source.storedId).detail).toBe("· recording ended");
   expect(reject).not.toHaveBeenCalled();
-  // The second read of the recording is the scrubber marks' (recording.ts); the end was settled at EOF.
-  expect(paths).toEqual(["/matches", "/matches?pageToken=last", `/watch/ratings/${newest}`, `/replays/${newest}`, `/replays/${newest}`]);
+  // The recording's recorded end is asked for once, beside playback, once its first message arrives; the second read of
+  // the recording is the scrubber marks' (recording.ts).
+  expect(paths).toEqual(["/matches", "/matches?pageToken=last", `/watch/ratings/${newest}`, `/replays/${newest}`, `/matches/${newest}`, `/replays/${newest}`]);
 });
 
 it("complete empty history shows a status and back link, not an error or bundled recording", async () => {
@@ -172,6 +175,8 @@ it.each([`replay=${newest}`, "recording=bench&capture=1"])("preserves the direct
   const request = vi.fn(async (path: string) => {
     // A stored replay also reads its match's rating record; the bundled excerpt and recordings do not.
     if (path === `/watch/ratings/${newest}`) return Response.json({ ratings: [] });
+    // A stored replay also asks for its match's recorded end, beside playback; this one has no record.
+    if (path === `/matches/${newest}`) return new Response(null, { status: 404 });
     expect(path).toBe(expected);
     return new Response(query.startsWith("recording") ? new Uint8Array(packMessages(packets)) : bytes);
   });
@@ -180,7 +185,7 @@ it.each([`replay=${newest}`, "recording=bench&capture=1"])("preserves the direct
   const source = (await openSource(new URLSearchParams(query), { now: () => 0 }, doc, vi.fn()))!;
   active.push(source);
   expect(source.recorded).toBe(true);
-  expect(request).toHaveBeenCalledTimes(query === `replay=${newest}` ? 2 : 1);
+  expect(request).toHaveBeenCalledTimes(query === `replay=${newest}` ? 3 : 1);
 });
 
 // The bundled recording is deleted: an empty ?replay with a capture or lobby parameter behaves as a bare ?replay.
@@ -191,6 +196,8 @@ it.each(["replay&capture=1", "replay&lobby=gone", "replay=&capture=1&lobby=gone"
     if (path === "/matches") return Response.json(history(newest, oldest));
     // The stored match's rating record; this one has none, so the recording's figures stay.
     if (path === `/watch/ratings/${newest}`) return Response.json({ ratings: [] });
+    // The stored match's recorded end, asked for beside playback; this one has no record.
+    if (path === `/matches/${newest}`) return new Response(null, { status: 404 });
     expect(path).toBe(`/replays/${newest}`);
     return new Response(bytes);
   });
@@ -198,7 +205,7 @@ it.each(["replay&capture=1", "replay&lobby=gone", "replay=&capture=1&lobby=gone"
   const source = (await openSource(new URLSearchParams(query), { now: () => 0 }, doc, reject))!;
   active.push(source);
   expect([source.storedId, source.source, source.recorded]).toEqual([newest, `replay /replays/${newest}`, true]);
-  expect(paths).toEqual(["/matches", `/watch/ratings/${newest}`, `/replays/${newest}`]);
+  expect(paths).toEqual(["/matches", `/watch/ratings/${newest}`, `/replays/${newest}`, `/matches/${newest}`]);
   expect(reject).not.toHaveBeenCalled();
 });
 
