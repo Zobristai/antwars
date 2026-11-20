@@ -292,7 +292,7 @@ describe("the one player line", () => {
     const { p, recordings } = show({ recordings: { status: "ready", rows: [team] } });
     for (const layout of [recordings.list]) {
       const [winner, other] = layout.byClass("d1p-rec-player");
-      expect(lineParts(winner!)).toEqual([["name", ["d1p-user:coffee-ant", "d1p-mname:GPT-6.1 Terra"]], ["badges", ["high Fast"]],
+      expect(lineParts(winner!)).toEqual([["name", ["d1p-user:coffee-ant", "d1p-mname: GPT-6.1 Terra"]], ["badges", ["high Fast"]],
         ["seats", "×2"], ["rating", "1540 ± 80"]]);
       // Fast is a bolt inside the level's badge, its word read by screen readers.
       expect(winner!.byClass("d1p-tag")[0]!.byClass("d1p-bolt")).toHaveLength(1);
@@ -336,7 +336,7 @@ describe("the one player line", () => {
       seat(0, 1, "openai/gpt-6.1-terra", "antwars/gpt-6-1-terra-max-fast", { startRating: rated(1979, 60, 40) })] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [house] } });
     const [builder, model] = recordings.list.byClass("d1p-rec-player");
-    expect(lineParts(builder!)).toEqual([["name", ["d1p-user:sample-builder", "d1p-mname:Claude Haiku 5.5"]], ["badges", ["max"]]]);
+    expect(lineParts(builder!)).toEqual([["name", ["d1p-user:sample-builder", "d1p-mname: Claude Haiku 5.5"]], ["badges", ["max"]]]);
     // The house seat: its model name leads with no username, then its rating, then its colony's result.
     expect(model!.byClass("d1p-user")).toEqual([]);
     expect(lineParts(model!).map(part => part[0]).filter(kind => kind !== "badges")).toEqual(["name", "rating"]);
@@ -351,7 +351,7 @@ describe("the one player line", () => {
     p.mounted.destroy();
   });
 
-  it("retains a 32-character thinking level in its text and full title", () => {
+  it("shows a 32-character thinking level as its first 8 characters and an ellipsis, whole in its title and read in full", () => {
     const level = "m".repeat(32);
     const row = at("rec-long-level", { seats: [
       seat(0, 0, "openai/gpt-6.1-terra", "sample-builder", { thinkingLevel: level, serviceTier: "fast" }),
@@ -359,7 +359,12 @@ describe("the one player line", () => {
     ] });
     const { p, recordings } = show({ recordings: { status: "ready", rows: [row] } });
     const shown = recordings.list.byClass("d1p-tags")[0]!;
-    expect([shown.children.map(tag => tag.textContent), shown.title]).toEqual([[`${level} Fast`], `${level} Fast`]);
+    expect(shown.title).toBe(`${level} Fast`);
+    const view = shown.byClass("d1p-lvl")[0]!;
+    expect([view.textContent, view.getAttribute("aria-hidden")]).toEqual([`${"m".repeat(8)}\u2026`, "true"]);
+    // Screen readers hear the whole level, then Fast; the bolt stays.
+    expect(shown.byClass("d1p-sr").map(node => node.textContent)).toEqual([level, " Fast"]);
+    expect(shown.byClass("d1p-bolt")).toHaveLength(1);
     p.mounted.destroy();
   });
 
@@ -651,7 +656,7 @@ describe("a model label with nothing after its provider prefix", () => {
     const { p, live: liveList, recordings } = show({ live: { status: "ready", rows: [bare] }, recordings: { status: "ready", rows: [rec] } });
     expect(lineParts(liveList.table.byClass("d1p-model")[0]!)).toEqual([["name", ["d1p-user:kain", "d1p-mname:local/"]]]);
     const line = recordings.list.byClass("d1p-rec-player")[0]!;
-    expect(lineParts(line)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname:local/"]]);
+    expect(lineParts(line)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname: local/"]]);
     expect(lineParts(line)[1]).toEqual(["badges", ["high"]]);
     p.mounted.destroy();
   });
@@ -663,7 +668,7 @@ describe("a model label with nothing after its provider prefix", () => {
     const rec = at("rec-space", { seats: [seat(0, 0, "local/ ", "omp-dolphin"), seat(0, 1, "zai/glm-5.3", "kite")] });
     const { p, live: liveList, recordings } = show({ live: { status: "ready", rows: [spaced] }, recordings: { status: "ready", rows: [rec] } });
     expect(lineParts(liveList.table.byClass("d1p-model")[0]!)).toEqual([["name", ["d1p-user:kain", "d1p-mname:local/ "]]]);
-    expect(lineParts(recordings.list.byClass("d1p-rec-player")[0]!)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname:local/ "]]);
+    expect(lineParts(recordings.list.byClass("d1p-rec-player")[0]!)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname: local/ "]]);
     p.mounted.destroy();
   });
 });
@@ -697,7 +702,10 @@ describe("a model label with nothing after its provider prefix", () => {
     const sheet = css();
     expect(sheet).toMatch(/\.d1p-rec-player \{ display: flex; align-items: center; gap: 0 var\(--aw-gap-inline\);[^}]*white-space: nowrap; \}/);
     expect(sheet).not.toMatch(/\.d1p-rec-player \{[^}]*flex-wrap/);
-    expect(sheet).toMatch(/\.d1p-rec-name \{[^}]*min-width: 0; overflow: hidden; text-overflow: ellipsis;/);
+    // The model gives way first, keeping room for its ellipsis; the builder is held by a max-width, then gives way too.
+    expect(sheet).toMatch(/\.d1p-rec-name \{ display: flex; flex: 0 100000 auto; min-width: 1\.5em; overflow: hidden;/);
+    expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-user \{ flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/);
+    expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-mname \{ flex: 0 1 auto; min-width: 1\.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre;/);
     // Live now and Waiting keep their own badges.
     expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
   });
@@ -756,7 +764,8 @@ describe("a model label with nothing after its provider prefix", () => {
     expect(name.textContent).toBe(`${handle} ${model.slice("synthetic/".length)}`);
     expect(name.title).toBe(name.textContent);
     expect(name.byClass("d1p-user")[0]!.textContent).toBe(handle);
-    expect(name.byClass("d1p-mname")[0]!.textContent).toBe(model.slice("synthetic/".length));
+    // The model holds its own leading space, so the builder and the model can shorten apart.
+    expect(name.byClass("d1p-mname")[0]!.textContent).toBe(` ${model.slice("synthetic/".length)}`);
     p.mounted.destroy();
   });
 

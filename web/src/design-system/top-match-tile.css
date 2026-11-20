@@ -155,12 +155,14 @@
   .aw-tile .aw-lines.is-grid .aw-player.is-winner, .aw-tile .aw-lines.is-grid .aw-player.is-team { margin: 0; }
   /* a line in a column never wraps: one too long for its column shortens its model name first, then its builder's name,
      each with an ellipsis; the badges keep their full width. A model name keeps room for its space and its ellipsis
-     (1.5em), so it never vanishes without one; past that the builder's name shortens. The full text stays in the name's
-     title and in the tile's title and accessible name. */
+     (1.5em), so it never vanishes without one; past that the builder's name shortens. The builder's name is held by its
+     max-width, not by a share of the shrink, so it stays whole while the model can still give way. The full text stays
+     in the name's title and in the tile's title and accessible name. */
   .aw-lines.is-grid .aw-player, .aw-lines.is-sides > .aw-side > .aw-player { flex-wrap: nowrap; }
   .aw-lines.is-grid .aw-name, .aw-lines.is-sides > .aw-side .aw-name { display: flex; min-width: 0; overflow: hidden; }
-  .aw-lines.is-grid .aw-name > b, .aw-lines.is-sides > .aw-side .aw-name > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .aw-lines.is-grid .aw-model, .aw-lines.is-sides > .aw-side .aw-model { flex: 0 1000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+  .aw-lines.is-grid .aw-name > b, .aw-lines.is-sides > .aw-side .aw-name > b { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aw-lines.is-grid .aw-name > b:has(+ .aw-model), .aw-lines.is-sides > .aw-side .aw-name > b:has(+ .aw-model) { max-width: calc(100% - 1.5em); }
+  .aw-lines.is-grid .aw-model, .aw-lines.is-sides > .aw-side .aw-model { flex: 0 1 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
   /* a team match: the sides stand one under the other, each a full-width band. A side whose seats differ is a grid of the
      same two columns a free-for-all uses; its seat-group lines fill across, then down, and a last line alone on its row
      takes the whole row. */
@@ -189,6 +191,7 @@
   .aw-lines .aw-player { flex-wrap: nowrap; }
   .aw-lines .aw-tags { flex-wrap: nowrap; }
   .aw-lines .aw-name { display: flex; min-width: 0; overflow: hidden; }
-  .aw-lines .aw-name > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .aw-lines .aw-model { flex: 0 1000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+  .aw-lines .aw-name > b { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aw-lines .aw-name > b:has(+ .aw-model) { max-width: calc(100% - 1.5em); }
+  .aw-lines .aw-model { flex: 0 1 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 }
