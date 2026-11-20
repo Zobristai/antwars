@@ -22,12 +22,39 @@ sits on the page under it with no card, and All recordings is a text link under 
 
 Each tile is one link to its match's replay. It plays nothing itself. With results shown, every tile has the same rows, in this order:
 
-1. the game type, and for a team match its seats in words ("2 per side");
-2. the winner's side, on a band of its colony's colour, the only colony colour on the tile;
-3. the other side, or in a free-for-all each other side, one under another;
-4. how the match ended, in the site's own words without the tie-break step it was decided on (" · decided on …"),
+1. the game type, and its size: "1v1", a team match's seats in words ("2 per side"), a free-for-all's colonies as sides
+   ("4 sides");
+2. the players (below);
+3. how the match ended, in the site's own words without the tie-break step it was decided on (" · decided on …"),
    and on a free-for-all also without the leading "Last colony standing"; the tile's accessible name keeps the full words;
-5. the date, with the match's length on the right.
+4. the date, with the match's length on the right.
+
+### One size for every game type
+
+Every tile is one size, whatever its game type, so the grid holds any pick without growing. The players stand in one block
+four player lines tall (80 px at the default text size) with two columns, enough for a free-for-all of up to eight colonies
+or a team match of two sides of up to four seat groups each:
+
+- **Free-for-all:** one line per colony, filled across then down in colony order, so a four-colony match's lines stand
+  where its colonies start on the map (top left, top right, bottom left, bottom right). Only the winner's line is marked,
+  its band filling its own column; hidden and shown use the same order.
+- **Team match:** the two sides one under the other, the winner's first, each a full-width band. A side whose seats are
+  alike is one full-width line. A side whose seats differ is one block, its band over all its lines; its seat groups fill
+  the two columns across, then down, and a last group alone on its row takes the whole row. In the right-hand column a
+  line's seat marks stand inside the tile, 4 px before its name.
+- **1v1:** its two lines across the full width.
+
+The block is centred between the game type and the foot rows, so a tile with fewer lines has its spare height split
+above and below them (a 1v1: 20 px each), and the game type and foot rows stand at the same y on every tile. A line keeps
+the tile's 8 px left inset and 4 px on its right, so text in the two columns stands 12 px apart. A line too long for its
+column never wraps: it shortens its model name first, then its builder's name, each with an ellipsis; its full text stays
+in the name's title and the tile's title and accessible name. With the current picks this happens only at 320 px. A badge
+longer than eight characters shows its first eight and an ellipsis, its full text in its title.
+
+Under 18em of viewport width (a 320 or 390 px phone with its text doubled, or a phone at 200 % zoom) two columns do not
+fit: the lines stack one per line in a block eight player lines tall, still one size for every tile. From 320 CSS px a
+stacked line shortens rather than wraps; below that (200 % zoom) it may wrap between items and every tile grows with the
+tallest.
 
 ### Results hidden
 
@@ -35,8 +62,8 @@ By default the tiles hide every result. A hidden tile shows only its game type, 
 Matches lists colonies in) and its date, at its foot: no winner band, no colony colour, seat marks grey on every side, no
 "how it ended" row and no length (a length equal to the time limit would say the match went to time). The result is not
 drawn and then hidden: the tile's markup and its accessible name carry none of it. The accessible name names the sides
-joined by "versus" (a free-for-all lists its colonies), then the type and the date. Hidden tiles are 106 px tall at the
-default text size; shown, 122 px.
+joined by "versus" (a free-for-all lists its colonies), then the type and the date. Hidden tiles are 146 px tall at the
+default text size; shown, 162 px.
 
 One **Show results** button, beside the reason no live match shows, shows every tile's result at once, as the rows above
 draw it, and becomes **Hide results**. It stands only while the grid has tiles. Its visible text is its accessible name and it
@@ -54,32 +81,22 @@ ordered as Matches groups them, each with one mark per seat it stands for; every
 is shortened to a count, and the tile's accessible name names every group. No rating is shown. A retired model is marked in
 the tile's accessible name and tooltip, not on the tile.
 
-Every tile in a grid is as tall as the tallest. A tile taller than its own lines keeps its last two rows (with results
-hidden, its date row) at its foot, so they line up across a row of tiles, and the space falls above them. Each extra line (a seat group,
-or a free-for-all's third or fourth side) adds 20 px to every tile in the grid ([top-matches.md](top-matches.md)).
+Every tile in a grid is as tall as the tallest, and at any one text size every tile is the same height.
 
 ## Layout rules
 
-- **Grid**: four columns from 46.125rem (738 px), two under it down to 22.5em (360 px), one under 22.5em. Every cell is the same size.
-- **Page edge**: 24 px, 16 px under 64rem, 12 px between 46.125rem and 52rem, 8 px under 24.25em. The grid gap is 12 px,
-  8 px under 64rem and 4 px between 46.125rem and 52rem.
-- **Two columns on a phone** (24.25em to 46.125rem): page edge 12 px and grid gap 4 px, not 16 and 8. The design measured its
-  widest player line with web fonts; the site draws with the visitor's system fonts, where that line (Muse Wonder Full 1.0
-  with its effort badge, in Liberation Sans) needs 157.4 px and 16 and 8 px leave 157, so its badge would wrap at 390 px.
-  12 and 4 px give it 163.
-- **Two columns on the narrowest phones** (22.5em to 24.25em, 360 to 388 px): page edge 8 px and grid gap 4 px, and the
-  tile takes the flush list's insets: 2 px on the right and 4 px between a name and its badge, the left inset keeping 8 px
-  for the seat rules. At 360 px that line then has 2.6 px to spare in Liberation Sans. One column, under 22.5em, keeps
-  its 8 px edge and the flush list below.
-- **Four columns from 46.125rem**, not the design's 46rem, for the same reason: at 736 and 737 px four columns leave
-  that line too little width in Liberation Sans and its badge wraps, so those two widths keep two columns.
+- **Grid**: two tiles across from 46.125rem (738 px), one under it. Every cell is the same size. Three across does not fit
+  at 1280 px: each player column would be about 145 px, and the widest line needs 152.2 px.
+- **Page edge**: 24 px, 16 px under 64rem, 12 px between 46.125rem and 52rem and between 24.25em and 46.125rem, 8 px under
+  24.25em. The grid gap is 12 px, 8 px under 64rem, 4 px between 46.125rem and 52rem and between 22.5em and 46.125rem.
+- **Tile width**: 450 px at 1280 px, 366 px at 390 px, 304 px at 320 px.
 - **Flush list**: under 12em (a phone at 200 % zoom, or with its text doubled) the page edge goes to 0 and the tiles lie
   flush as a list, with a rule between them, so each line keeps the width it needs.
-- **Every line on one line**: every line fits on one line from 320 px at the default text size, in Roboto and Liberation Sans.
-  The type row, a team's seats included, keeps its one line up to 200 % zoom, with one exception: an unranked team match
-  at 200 % zoom on a 320 px phone in Liberation Sans moves its seats ("2 per side"), whole, to the next line. At 200 % zoom on a 320 px phone a team player
-  line may move its whole badge onto the next line. Past that, nothing is cut: the badges move to the next line as one unit
-  and a long name wraps between words.
+- **Every line on one line**: at the default and doubled text sizes, from 320 px, every row of every tile, the title, the
+  state line and the button keep one line, in Roboto and Liberation Sans; a player line too long for its space shortens as
+  above. Player names never shorten at 360 px and wider at the default text size. At 200 % zoom on a 320 px phone a badge,
+  a team's seats ("2 per side") or a free-for-all's sides ("8 sides") may move whole to the next line, and the state line may
+  wrap between words.
 
 The render check (`web/render-check/`) judges the Watch page at 390 and 1280 px in both typefaces against these rules,
 with results hidden and shown.

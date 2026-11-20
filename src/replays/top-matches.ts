@@ -3,12 +3,12 @@ import { z } from "zod";
 import { isReplayId } from "./access.js";
 
 /**
- * The Watch page's top matches, shown when no match is live: a hand-picked list of up to 16 matches, in tile order, kept in
+ * The Watch page's top matches, shown when no match is live: a hand-picked list of up to 12 matches, in tile order, kept in
  * top-matches.json beside this file and shipped with the build (docs/top-matches.md): {"matches": ["<match id>", ...]}.
  * The route serves each listed match whose record exists and that the public visibility check passes; the picks are
  * chosen by hand, so no match-type rule applies.
  */
-export const TOP_MATCHES = 16;
+export const TOP_MATCHES = 12;
 
 const topMatchList = z.object({ matches: z.array(z.string()).max(TOP_MATCHES) });
 

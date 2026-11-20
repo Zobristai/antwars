@@ -1,7 +1,7 @@
 // The Watch page with no live match to show: the hand-picked top matches (src/replays/top-matches.ts) as a grid of the design
 // system's Top matches tiles (design-system/top-match-tile.ts), in the site's page frame. The title and the reason no live
 // match shows stand in the page band; the grid sits on the page under it, with no card around it; All recordings is a text
-// link under the grid. Four columns from tablet width up, two on a phone, one on the narrowest phones. Each tile is one link
+// link under the grid. Two tiles across from tablet width up, one on a phone. Each tile is one link
 // to its match's replay and plays nothing itself. The tiles hide their results unless the visitor chose to show them: one
 // button beside the state line shows or hides every tile's result, and the choice is remembered in this browser.
 import { topMatchTile, type TileResults } from "../design-system/top-match-tile.ts";
