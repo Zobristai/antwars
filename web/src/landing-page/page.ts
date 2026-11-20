@@ -166,7 +166,8 @@ export function mountLandingPage(doc: Document, win: Window, options: { request?
     if (next === drawn) return;
     drawn = next;
     rebuild(doc, records, () => [
-      ...(ranked ? [rankingCard(doc, ranking, "house-1v1", { search, limit: RANKING_ROWS, foot: rankingsFoot })] : []),
+      // Active models only: retired house models are left out of the first rows, with no switch.
+      ...(ranked ? [rankingCard(doc, ranking, "house-1v1", { search, limit: RANKING_ROWS, foot: rankingsFoot, retired: { shown: false } })] : []),
       ...(matches ? [recordingsCard(doc, matches, { search, tip, limit: RECORDING_ROWS, foot: matchesFoot })] : []),
     ]);
     tip.settle();
