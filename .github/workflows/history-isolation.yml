@@ -9,8 +9,9 @@
 # (.github/scripts/history-isolation.sh says why).
 # On a pull request the title, description and head branch name are matched too: a squash merge
 # writes the title and description into the commit on main, and the branch name is public with
-# the pull request. They are passed from the event through the environment, never written into
-# the shell text, and editing the title or description re-runs the check (the edited type).
+# the pull request. The script reads them from the runner's event file (GITHUB_EVENT_PATH), so
+# they are neither written into the shell text nor shown in the step's environment, and editing
+# the title or description re-runs the check (the edited type).
 # Pull requests are checked by main's copy of .github/scripts/history-isolation.sh: the
 # pull request's commits are fetched only as git objects, and none of its files is checked
 # out, sourced or run. The identifiers come from the ANTWARS_IDENTIFIERS Actions secret, and
@@ -52,9 +53,6 @@ jobs:
           PUSHER_LOGIN: ${{ github.event.pusher.name }}
           PR_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
           PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
-          ANTWARS_PR_TITLE: ${{ github.event.pull_request.title }}
-          ANTWARS_PR_BODY: ${{ github.event.pull_request.body }}
-          ANTWARS_PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           FETCH_TOKEN: ${{ github.token }}
           ANTWARS_IDENTIFIERS: ${{ secrets.ANTWARS_IDENTIFIERS }}
           ANTWARS_EXPECTED_ROOT: ${{ vars.ANTWARS_EXPECTED_ROOT }}
