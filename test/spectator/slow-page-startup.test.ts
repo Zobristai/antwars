@@ -107,7 +107,7 @@ async function watch(frameMs: number, durationMs: number, fast: boolean) {
   const opening = openSource(new URLSearchParams({ lobby: "slow-page" }), { now: () => now }, doc, reject, {
     intake: new WorkerIntake(() => port),
     source: (path) => {
-      expect(path).toBe("/watch/live/slow-page?kills=1");
+      expect(path).toBe("/watch/live/slow-page?kills=1&queenKills=1");
       if (sources.length > 0 && firstReconnectAt === null) firstReconnectAt = now;
       const s = new Source(); sources.push(s); return s;
     },
