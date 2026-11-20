@@ -121,6 +121,17 @@
 /* The Leaderboard's count beside a card's title ("35 shown") is metadata, as the Loaded time is: the text size in the
    quiet ink and its own words, on the title's baseline, never the title's caps; it adds nothing to the title's 20 px line. */
 .d1p[data-page="leaderboard"] .d1p-card-title > .d1p-count { font-size: 13px; font-weight: 400; line-height: 1; letter-spacing: normal; text-transform: none; }
+/* SHOW RETIRED: a ranking card's one switch, at the end of the title's line (under the title where the head stacks). The
+   label is its tap target, the tap's height; type and track in rem, so both grow with the browser's text size. Off: a
+   raised track, its knob in ink-2 at the start. On: the accent track, its knob in the page's ground at the end. Focus is
+   the page's own ring. Its tap reaches into the head's padding, so the head keeps the title's 20 px line. */
+.d1p-switch { display: inline-flex; flex: none; align-items: center; gap: var(--aw-space-2); min-height: var(--aw-tap); margin: calc((var(--aw-lh-title) - var(--aw-tap)) / 2) 0 calc((var(--aw-lh-title) - var(--aw-tap)) / 2) auto; align-self: center; font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink-2); white-space: nowrap; cursor: pointer; }
+.d1p-switch:hover { color: var(--aw-ink-bright); }
+.d1p-switch > input { appearance: none; position: relative; flex: none; width: 1.75rem; height: 1rem; margin: 0; border: 1px solid var(--aw-line); border-radius: var(--aw-radius-pill); background: var(--aw-raise); cursor: pointer; }
+.d1p-switch > input::before { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1rem - 6px); height: calc(1rem - 6px); border-radius: 50%; background: var(--aw-ink-2); }
+.d1p-switch:hover > input:not(:checked) { background: var(--aw-raise-hover); }
+.d1p-switch > input:checked { border-color: var(--aw-accent); background: var(--aw-accent); }
+.d1p-switch > input:checked::before { left: calc(0.75rem + 2px); background: var(--aw-bg); }
 .d1p-state { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
 /* The glyph keeps to the state's first line when the words wrap. */
 .d1p-glyph { flex: none; align-self: flex-start; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; }
@@ -468,6 +479,7 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-tab { min-height: 44px; }
   /* The state always stands under its title, whatever the title's length. */
   .d1p-card-head { flex-direction: column; align-items: flex-start; padding-top: 14px; }
+  .d1p-card-head > .d1p-switch { margin-left: 0; align-self: flex-start; }
   .d1p-think { display: block; margin-left: 0; font-size: 12px; }
   .d1p-form-mark { width: 40px; height: 44px; }
   .d1p-form-mark::before { inset: 8px 6px; }
@@ -675,6 +687,12 @@ td.c-model > .d1p-colony { display: block; }
 }
 
 @media (forced-colors: active) {
+  .d1p-switch > input { border-color: ButtonText; }
+  .d1p-switch > input::before { forced-color-adjust: none; background: ButtonText; }
+  .d1p-switch > input:checked { forced-color-adjust: none; border-color: Highlight; background: Highlight; }
+  .d1p-switch > input:checked::before { background: HighlightText; }
+  /* The checked track opts out of colour adjustment, so its focus ring is set here: CanvasText on Canvas in both states. */
+  .d1p-switch > input:focus-visible { outline-color: CanvasText; }
   .d1p-card, .d1p-stamp { border-color: CanvasText; }
   /* Fills and shadows are dropped here: badges and result stamps keep a real edge. */
   .d1p-tag, .d1p-form-mark::before { border: 1px solid CanvasText; }
