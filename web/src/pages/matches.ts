@@ -20,7 +20,7 @@ import { NO_BADGES, badgeWords, benchmarkBadges, hasBadges, type BadgeKinds } fr
 import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
-import { h } from "../ui/dom.ts";
+import { h, heldSpaces } from "../ui/dom.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
 import { rowRatingNode } from "./identity.ts";
@@ -698,6 +698,14 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
   return slot;
 }
 
+/** A span of class `cls` holding `text`, each space held to the letter after it, so the name run never ends its ellipsis
+ * after a space (ui/dom.ts heldSpaces). */
+function held(doc: Document, cls: string, text: string): HTMLElement {
+  const node = h(doc, "span", cls);
+  node.append(...heldSpaces(doc, text));
+  return node;
+}
+
 /** One player on one line: the username (builders only) and model, then the level chip (Fast as its bolt), the seat count
  * and the cyan rating badge (figure only, its "± RD" on hover, tap or focus), each the one inline gap after the part
  * before it, so the rating stands right after its line in every cell. A part with nothing to show takes no space. The
@@ -707,8 +715,8 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
-  if (parts.user !== null) name.append(h(doc, "span", "d1p-user", parts.user));
-  if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.user !== null ? ` ${parts.model}` : parts.model));
+  if (parts.user !== null) name.append(held(doc, "d1p-user", parts.user));
+  if (parts.model !== null) name.append(held(doc, "d1p-mname", parts.user !== null ? ` ${parts.model}` : parts.model));
   const words = [parts.user, parts.model].filter(word => word !== null).join(" ");
   name.title = parts.badges.retired ? `${words} (${C.retiredBadge})` : words;
   if (parts.badges.retired) name.append(h(doc, "span", "d1p-sr", `, ${C.retiredBadge}`));

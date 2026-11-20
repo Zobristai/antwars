@@ -21,7 +21,7 @@ import type { Recording } from "../matches-page/data.ts";
 import { colonySeats, seatGroups, whenParts, winnerOf, type PlayerParts, type SeatGroup } from "../pages/model.ts";
 import { DECIDED_ON, LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
-import { h } from "../ui/dom.ts";
+import { h, heldSpaces } from "../ui/dom.ts";
 
 /** A colony no seat was recorded for, as Matches words it. */
 const NOT_JOINED = "did not join";
@@ -79,13 +79,19 @@ function badges(doc: Document, kinds: BadgeKinds): HTMLElement | null {
   return tags;
 }
 
+/** `node` holding `text`, each space held to the letter after it, so a cut name never ends its ellipsis after a space. */
+function held<T extends HTMLElement>(doc: Document, node: T, text: string): T {
+  node.append(...heldSpaces(doc, text));
+  return node;
+}
+
 /** One player: the builder's name (bold) and the model, then the effort badge. The model is its own part, the space after
  * the builder's name included, so a line too long for its column can shorten the model first, then the builder's name;
  * the name's title keeps both whole. */
 function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   const name = h(doc, "span", "aw-name");
-  if (parts.user !== null) name.append(h(doc, "b", undefined, parts.user));
-  if (parts.model !== null) name.append(h(doc, "span", "aw-model", parts.user !== null ? ` ${parts.model}` : parts.model));
+  if (parts.user !== null) name.append(held(doc, h(doc, "b"), parts.user));
+  if (parts.model !== null) name.append(held(doc, h(doc, "span", "aw-model"), parts.user !== null ? ` ${parts.model}` : parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   const tags = badges(doc, parts.badges);
   return tags ? [name, tags] : [name];

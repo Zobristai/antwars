@@ -3,7 +3,7 @@
 // one run ending in a single ellipsis, the model giving way first, then the builder's name; a level of more than 8
 // characters shows its first 8 and an ellipsis; Fast's bolt keeps its 6 px and the rating stays whole; the full words stay
 // in the title and are read in full. On a Top matches tile a short builder's name beside a long model stays whole while the
-// model gives way.
+// model gives way. Wherever a name is cut, its ellipsis stands against the last letter shown, never after a space.
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -43,17 +43,20 @@ const SAMPLES = {
   widest: recording("2026-11-11T10-34-00-000Z-4", [seat(0, 0, "W".repeat(24), { modelLabel: "W".repeat(64), thinkingLevel: "W".repeat(32), serviceTier: "fast" }), OTHER]),
 };
 
-function recordingsPage(): string {
+function recordingsPage(rows: Recording[] = Object.values(SAMPLES)): string {
   const port = dom({ search: "" });
   const host = port.doc.createElement("div") as unknown as ElementPort;
   port.body.append(host);
   const mounted = mountMatches(port.doc as unknown as Document, host as unknown as HTMLElement, { refresh() {}, more() {} });
   mounted.update({ waiting: { status: "ready", rows: [] }, live: { status: "ready", rows: [] },
-    recordings: { status: "ready", rows: Object.values(SAMPLES) }, next: null });
+    recordings: { status: "ready", rows }, next: null });
   const body = markup(host);
   mounted.destroy();
   return `<!doctype html><html><head><style>${PAGE_STYLES}</style><style>html, body { margin: 0; }</style></head><body>${body}</body></html>`;
 }
+
+/** A line whose run can be cut right after a space: between the builder's name and the model, and inside the model. */
+const SPACED = recording("2026-11-11T10-34-00-000Z-8", [seat(0, 0, "ivy", { modelLabel: "kite wren" }), seat(1, 1, "fennec", { modelLabel: "zai/glm-5.3" })]);
 
 /** A four-colony free-for-all, its first colony a short builder's name on a long model: its lines stand in the tile's two columns. */
 const FREE_FOR_ALL: Recording = { ...recording("2026-11-11T10-34-00-000Z-5", [
@@ -130,7 +133,8 @@ async function recordingLines(tab: Page) {
       // One line: no taller than one of the name's lines, and ending inside its column.
       oneLine: line.getBoundingClientRect().height <= parseFloat(getComputedStyle(name).lineHeight) + 0.5 && line.getBoundingClientRect().right <= slot.right + 0.5,
       nameCut: shortened(name), userCut: past(user), modelCut: past(model), levelCut: shortened(level),
-      modelGone: model !== null && model.getBoundingClientRect().left >= edge - 0.5,
+      // Where the model begins in the run: right after the builder's name (a cut run may report its hidden first unit elsewhere).
+      modelGone: model !== null && Math.max(model.getBoundingClientRect().left, user?.getBoundingClientRect().right ?? -Infinity) >= edge - 0.5,
       nameEms: name.getBoundingClientRect().width / em,
       // The one ellipsis is the run's own: neither the builder's name nor the model draws one.
       ellipses: ellipses.map(node => node === name ? "name" : node.className),
@@ -214,7 +218,7 @@ async function tileLine(tab: Page) {
     const ellipses = [name, ...name.querySelectorAll("*")]
       .filter(node => getComputedStyle(node).textOverflow === "ellipsis" && getComputedStyle(node).overflowX !== "visible");
     return { builder: builder.textContent, builderCut: builder.getBoundingClientRect().right > edge + 0.5,
-      modelCut: model.getBoundingClientRect().right > edge + 0.5, modelGone: model.getBoundingClientRect().left >= edge - 0.5,
+      modelCut: model.getBoundingClientRect().right > edge + 0.5, modelGone: Math.max(model.getBoundingClientRect().left, builder.getBoundingClientRect().right) >= edge - 0.5,
       ellipses: ellipses.map(node => node === name ? "name" : node.className),
       bolt: bolt === null ? null : bolt.getBoundingClientRect().width,
       oneLine: player.getBoundingClientRect().height <= parseFloat(getComputedStyle(player).lineHeight) + 0.5
@@ -246,5 +250,89 @@ describe("a Top matches tile line", () => {
         } finally { await tab.close(); }
       });
     }
+  }
+});
+
+/** For each space in the name `selector` picks, the name cut just past that space (room for the space and the ellipsis, not
+ * for the letter after it), drawn black on white: the blank gap in px between the last letter shown and the ellipsis, and
+ * the width of that space. Where the ellipsis stands after the space, the gap is wider than the space; against a letter, it
+ * is only the letter's and the ellipsis's own margins, narrower than a space. */
+async function gapsAtSpaces(tab: Page, selector: string) {
+  const spaces = await tab.locator(selector).first().evaluate(name => {
+    const box = name as HTMLElement;
+    // The ellipsis in the name's own font: a probe inside it, out of its flow.
+    const probe = document.createElement("span"); probe.textContent = "…"; probe.style.position = "absolute"; box.append(probe);
+    const ellipsis = probe.getBoundingClientRect().width; probe.remove();
+    const left = box.getBoundingClientRect().left;
+    const found: { width: number; space: number }[] = [];
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let text = walker.nextNode() as Text | null; text; text = walker.nextNode() as Text | null) {
+      for (let at = 0; at < text.data.length; at++) {
+        if (text.data[at] !== " " || at + 1 >= text.data.length) continue;
+        const range = document.createRange();
+        range.setStart(text, at); range.setEnd(text, at + 1);
+        const space = range.getBoundingClientRect();
+        range.setStart(text, at + 1); range.setEnd(text, at + 2);
+        const next = range.getBoundingClientRect().width;
+        found.push({ width: space.right - left + ellipsis + next / 2, space: space.width });
+      }
+    }
+    box.style.flex = "none"; box.style.minWidth = "0"; box.style.background = "#fff"; box.style.color = "#000";
+    return found;
+  });
+  const gaps: { gap: number; space: number }[] = [];
+  for (const { width, space } of spaces) {
+    await tab.locator(selector).first().evaluate((name, width) => new Promise<void>(done => {
+      (name as HTMLElement).style.width = `${width}px`;
+      requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    }), width);
+    const shot = (await tab.locator(selector).first().screenshot()).toString("base64");
+    const gap = await tab.evaluate(async png => {
+      const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+      const data = context.getImageData(0, 0, image.width, image.height).data;
+      // A column with ink: any pixel well off white (the text in any colour), not a rule down the box's whole height.
+      const ink = (x: number) => {
+        let marked = 0;
+        for (let y = 0; y < image.height; y++) {
+          const at = (y * image.width + x) * 4;
+          if (Math.min(data[at]!, data[at + 1]!, data[at + 2]!) < 160) marked++;
+        }
+        return marked > 0 && marked < image.height * 0.8;
+      };
+      const runs: [number, number][] = [];
+      for (let x = 0, start = -1; x <= image.width; x++) {
+        const on = x < image.width && ink(x);
+        if (on && start < 0) start = x;
+        if (!on && start >= 0) { runs.push([start, x]); start = -1; }
+      }
+      // The ellipsis is the last three marks; the gap is the blank before its first dot.
+      return runs[runs.length - 3]![0] - runs[runs.length - 4]![1];
+    }, shot);
+    gaps.push({ gap, space });
+  }
+  return gaps;
+}
+
+describe("a name cut right after a space", () => {
+  for (const text of [16, 32] as const) {
+    it(`ends in an ellipsis against the last letter shown, never after the space, on Recordings with ${text} px text`, async () => {
+      const tab = await open(1280, text, recordingsPage([SPACED]));
+      try {
+        const gaps = await gapsAtSpaces(tab, ".d1p-rec-slot .d1p-rec-name");
+        expect(gaps.length).toBe(2);
+        for (const { gap, space } of gaps) expect(gap).toBeLessThanOrEqual(space);
+      } finally { await tab.close(); }
+    });
+
+    it(`ends in an ellipsis against the last letter shown, never after the space, on a Top matches tile with ${text} px text`, async () => {
+      const tab = await open(1280, text, tilePage(text === 16 ? "360px" : "720px", SPACED));
+      try {
+        const gaps = await gapsAtSpaces(tab, ".aw-player .aw-name");
+        expect(gaps.length).toBe(2);
+        for (const { gap, space } of gaps) expect(gap).toBeLessThanOrEqual(space);
+      } finally { await tab.close(); }
+    });
   }
 });
