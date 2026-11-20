@@ -4,6 +4,7 @@
 // Match metadata is separate from the single-line connection state; neither loses information to fit.
 //
 // Overlay exports are read only inside functions: overlays.ts imports this module.
+import "../../design-system/tokens.css";
 import "./deck.css";
 import { textIcon } from "../../icons/dom.ts";
 import type { HudHost, HudView, Mounted } from "../types.ts";

@@ -70,7 +70,7 @@
 .d1p-content { display: grid; gap: 24px; min-width: 0; }
 
 /* ---------------------------------------------------------------- the band: title, summary, choices */
-.d1p-title { font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+.d1p-title { font-size: var(--aw-text-title); font-weight: var(--aw-bold); line-height: var(--aw-lh-title); letter-spacing: var(--aw-track-title); text-transform: uppercase; color: var(--aw-ink-bright); }
 .d1p-title:focus { outline: none; }
 .d1p-lead { margin-top: 12px; font-size: 14px; line-height: 20px; color: var(--aw-ink-2); }
 /* The page's one Refresh, on the title's left edge with the time the lists were loaded after it: one group under the
@@ -117,10 +117,13 @@
 /* The head is one band: the card's title, and its list's state on the same baseline at the far end; where the two do not
    fit, the state takes the next line under the title. 15 px under the card's 1 px edge. */
 .d1p-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px; padding: 15px var(--d1p-inset) 11px; }
-.d1p-card-title { font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--aw-ink-bright); }
+.d1p-card-title { font-size: var(--aw-text-title); font-weight: var(--aw-bold); line-height: var(--aw-lh-title); letter-spacing: var(--aw-track-title); text-transform: uppercase; color: var(--aw-ink-bright); }
 /* The Leaderboard's count beside a card's title ("35 shown") is metadata, as the Loaded time is: the text size in the
    quiet ink and its own words, on the title's baseline, never the title's caps; it adds nothing to the title's 20 px line. */
 .d1p[data-page="leaderboard"] .d1p-card-title > .d1p-count { font-size: 13px; font-weight: 400; line-height: 1; letter-spacing: normal; text-transform: none; }
+/* The Leaderboard's title and the ranking cards' title (the Leaderboard's and the front page's) keep their px size: their
+   fit at enlarged text is designed with the rest of the Leaderboard's type, which moves onto the tokens with them. */
+.d1p-card:has(.d1p-lb, .d1p-lb-rows) .d1p-card-title, .d1p[data-page="leaderboard"] .d1p-title { font-size: 15px; line-height: 20px; }
 /* SHOW RETIRED: a ranking card's one switch, at the end of the title's line (under the title where the head stacks). The
    label is its tap target, the tap's height; type and track in rem, so both grow with the browser's text size. Off: a
    raised track, its knob in ink-2 at the start. On: the accent track, its knob in the page's ground at the end. Focus is
@@ -160,6 +163,10 @@
 .d1p-waiting .d1p-glyph[data-glyph="error"] { margin-top: calc((var(--aw-lh-body) - 7px) / 2); }
 .d1p-waiting .d1p-card-head { align-items: flex-start; }
 .d1p-waiting .d1p-card-title { line-height: var(--aw-lh-body); }
+/* Watch's band says why no live match is shown in the body type, as the Waiting card's state does, so it grows with the
+   browser's text size; the Live now and Recordings state lines keep .d1p-state's own type until theirs moves. */
+.d1p[data-page="watch"] .d1p-band .d1p-state { font-size: var(--aw-text-body); line-height: var(--aw-lh-body); }
+.d1p[data-page="watch"] .d1p-band .d1p-glyph { margin-top: calc((var(--aw-lh-body) - 8px) / 2); }
 .d1p-notice .d1p-card-head { padding-top: 14px; padding-bottom: 14px; }
 .d1p-notice .d1p-state { font-size: 14px; color: var(--aw-ink-bright); }
 .d1p-card-foot { padding: 12px var(--d1p-inset); border-top: 1px solid var(--aw-line); display: flex; flex-wrap: wrap; gap: 8px; }
@@ -451,9 +458,14 @@ td.c-model > .d1p-colony { display: block; }
 
 /* ---------------------------------------------------------------- the end block and the HUD's footer */
 .d1p-end { width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); margin: 0 auto; padding: 20px var(--d1p-pad) 16px; border-bottom: 1px solid var(--d1p-hair); }
-.d1p-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); min-height: 36px; margin: 40px auto 0; padding: 0 var(--d1p-pad) 20px; font-size: 12px; }
+.d1p-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); min-height: 36px; margin: 40px auto 0; padding: 0 var(--d1p-pad) 20px; font-size: var(--aw-text-meta); }
 .d1p .d1p-foot-current, .d1p .d1p-foot-current:hover { color: var(--aw-ink-bright); text-decoration: none; }
 .d1p-end:not([hidden]) + .d1p-foot { margin-top: 0; }
+/* Where the footer is under 19em wide (a 320 px phone with doubled text, or zoom), its links stand 8 px from the window's
+   edges, the design system's narrow page edge (page-edge.css), so "Inspired by @LambethEthan" keeps one line. */
+@media (width < 19em) {
+  .d1p .d1p-foot { padding-inline: var(--aw-space-2); }
+}
 
 /* ---------------------------------------------------------------- Rules' index above its cards under 65.5rem */
 @media (width < 65.5rem) {
@@ -471,7 +483,9 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-hero::after { height: 36px; }
   .d1p-page { background-size: 100% 136px; }
   .d1p-main { padding-top: 24px; }
-  .d1p-title, .d1p-card-title, .d1p-rule-title { font-size: 14px; }
+  .d1p-title, .d1p-card-title { font-size: var(--aw-text-lead); }
+  .d1p-rule-title { font-size: 14px; }
+  .d1p-card:has(.d1p-lb, .d1p-lb-rows) .d1p-card-title, .d1p[data-page="leaderboard"] .d1p-title { font-size: 14px; }
   .d1p-lead { margin-top: 10px; }
   /* The board choice takes the band's whole width, its groups one over the other, each size a quarter of it. */
   .d1p-boards { display: grid; flex: 1 1 100%; }

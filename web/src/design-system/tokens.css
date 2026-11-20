@@ -1,6 +1,8 @@
 /* Antwars design tokens (docs/design-system.md). Set on the page root .d1p, not :root, so they change no value outside it
-   (web/index.html sets its own --aw-tap on :root, 44 px on phones). */
-.d1p {
+   (web/index.html sets its own --aw-tap on :root, 44 px on phones). The top bar (ui/deck/deck.css .d1-top) takes them
+   too, so the live view's bar, outside .d1p, is drawn from the same values; those it shares with web/index.html's :root
+   are equal there. */
+.d1p, .d1-top {
   /* Colour: surfaces, darkest to lightest */
   --aw-bg: #121719;
   --aw-surface: #1a2225;
@@ -39,6 +41,7 @@
   --aw-text-body: 0.8125rem;    --aw-lh-body: 1.25rem;        /* 13 / 20 */
   --aw-text-lead: 0.875rem;     --aw-lh-lead: 1.25rem;        /* 14 / 20 */
   --aw-text-title: 0.9375rem;   --aw-lh-title: 1.25rem;       /* 15 / 20 */
+  --aw-text-mast: 1.125rem;                                   /* 18: the front page's wordmark */
   /* Type: weights and tracking */
   --aw-regular: 400; --aw-strong: 600; --aw-bold: 700;
   --aw-track-title: 0.04em; --aw-track-label: 0.09em; --aw-track-badge: 0.08em;
@@ -53,11 +56,12 @@
   --aw-tap: 36px; --aw-tap-touch: 44px;
   /* Layout */
   --aw-content: 912px; /* the site's general column; Matches widens to 1200 */
+  --aw-content-wide: 1200px; /* the front page's and Matches' column; the top bar's items stand inside it */
   --aw-bar: 48px;
   --aw-hero: 176px;
 }
 /* A 44 px tap target on touch screens, and wherever web/index.html sets it on :root: phones in portrait (700 px wide or
    less) and in landscape (500 px tall or less, wider than 500 px). */
 @media (pointer: coarse), (max-width: 700px), (max-height: 500px) and (min-width: 501px) {
-  .d1p { --aw-tap: 44px; }
+  .d1p, .d1-top { --aw-tap: 44px; }
 }
