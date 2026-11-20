@@ -10,7 +10,7 @@ import { Texture, type Particle, type Renderer } from "pixi.js";
 import { Waiting } from "../../web/src/waiting.ts";
 import { INBOX_CAP } from "../../web/src/inbox.ts";
 import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/intake.ts";
-import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, REPLAY_POSITION_KEY, finishedLobbyReplay, openSource, type SpectatorSource } from "../../web/src/source.ts";
+import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, REPLAY_POSITION_KEY, carryReplayPositionToFallback, finishedLobbyReplay, openSource, type SpectatorSource } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 import { mountResultModal } from "../../web/src/ui/deck/result-modal.ts";
@@ -543,16 +543,17 @@ function replayTab() {
     ? Response.json({ format: "antwar.match", version: 1, id, result: { tick: messages.at(-1)!.tick - 1 } })
     : new Response(new Uint8Array(packMessages(packets))));
   const saved = new Map<string, string>();
+  const tab = {
+    location: { pathname: "/", hash: "", origin: "http://localhost" },
+    sessionStorage: {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    },
+  };
   const page = async (params: Record<string, string>) => {
     const { doc, listeners } = documentPort();
-    Object.assign(doc.defaultView!, {
-      location: { pathname: "/", hash: "", origin: "http://localhost" },
-      sessionStorage: {
-        getItem: (key: string) => saved.get(key) ?? null,
-        setItem: (key: string, value: string) => saved.set(key, value),
-        removeItem: (key: string) => saved.delete(key),
-      },
-    });
+    Object.assign(doc.defaultView!, tab);
     const source = (await openSource(new URLSearchParams(params), { now: () => 0 }, doc, vi.fn()))!;
     return { source, leave: () => listeners.get("pagehide")?.() };
   };
@@ -571,7 +572,7 @@ function replayTab() {
     }
     return f;
   };
-  return { id, saved, page, settle };
+  return { id, saved, page, settle, view: tab as unknown as Window };
 }
 
 it.each([
@@ -641,4 +642,25 @@ it("leaving while a resumed position is still being reached passes that position
     await t.settle(third.source);
     expect(third.source.recording!.position).toBe(1000);
   } finally { third.source.close(); }
+});
+
+it.each([
+  ["a 3D board that falls back before its source opens", "3d", {}, 1000],
+  ["a 3D board whose module retry falls back before its source opens", "3d", { "aw-3d-retry": "1" }, 1000],
+  ["a 3D board reached by the board control that falls back before its source opens", "3d", { "aw-3d-manual": "1" }, 1000],
+  ["a same-board 2D reload", "2d", {}, 0],
+])("a 2D replay position survives %s only when the board changed", async (_, between, markers, resumed) => {
+  const t = replayTab();
+  const first = await t.page({ replay: t.id, board: "2d" });
+  await vi.waitFor(() => expect(first.source.recording!.duration).toBe(1900));
+  first.source.recording!.seek(1000);
+  await t.settle(first.source);
+  first.leave();
+  // The page in between never opens its source: the 3D board gives up and the page becomes the 2D board.
+  carryReplayPositionToFallback(t.view, new URLSearchParams({ replay: t.id, board: between, ...markers }));
+  const second = await t.page({ replay: t.id, board: "2d" });
+  try {
+    await t.settle(second.source);
+    expect(second.source.recording!.position).toBe(resumed);
+  } finally { second.source.close(); }
 });

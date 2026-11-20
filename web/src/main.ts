@@ -40,6 +40,7 @@ import { FlightLines, liftedBy, type DrawnFlightLine } from "./flight-lines.ts";
 import { AIR_LIFT_2D_LENGTHS } from "./flyer-lift.ts";
 import { Overlays } from "./overlays.ts";
 import { openSource } from "./source.ts";
+import { carryReplayPositionToFallback } from "./source.ts";
 import { TeamView, teamViewControl } from "./team-view.ts";
 import { Fog2D } from "./fog2d.ts";
 import { mountReplayControls } from "./replay-controls.ts";
@@ -877,6 +878,7 @@ function blockedLike(r: Rect, blocked: readonly Rect[]): boolean {
 /** The 3D board gives up (failed start, lost context, a throw while running, too slow): reload as the 2D board. */
 const fallbackTo2d = (reason = "it failed to start") => {
   console.warn(`3D board: ${reason}; reloading as the 2D board`);
+  carryReplayPositionToFallback(window, new URLSearchParams(location.search));
   location.replace(fallbackUrl(location.href));
 };
 const clean3dRetry = () => {
@@ -897,6 +899,7 @@ runBoard(boardMode(new URLSearchParams(location.search)), {
   start2d: async () => {
     // Record the effective board without reloading when WebGL2 is unavailable. The
     // return link then changes the URL, so even a fragment-bearing link re-probes 3D.
+    carryReplayPositionToFallback(window, new URLSearchParams(location.search));
     const href = fallbackUrl(location.href);
     if (href !== location.href) history.replaceState(history.state, "", href);
     await start();

@@ -15,6 +15,7 @@ import { restateRatings, storedReplayRatings } from "./replay-ratings.ts";
 import { liveStarting } from "./waiting.ts";
 import { keep } from "./ui/format.ts";
 import { boardMode, type BoardMode } from "./webgl2.ts";
+import { MANUAL_3D_PARAM, RETRY_3D_PARAM } from "./3d-recovery.ts";
 
 /** Bound discovery and the initial stream wait while a recording can stand in. */
 export const CONNECT_MS = 2000;
@@ -57,20 +58,38 @@ function rememberReplayPosition(view: Window | null, params: URLSearchParams, po
     } satisfies ReplayPosition));
   } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
 }
+/** The stored position this page would resume: this replay, saved on the other board, recently, past the start. */
+function pendingReplayPosition(raw: string | null | undefined, view: Window | null, params: URLSearchParams): ReplayPosition | null {
+  if (!raw) return null;
+  const value: unknown = JSON.parse(raw);
+  if (typeof value !== "object" || value === null ||
+    !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
+    !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
+    !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
+    Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
+    !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
+  return { route: value.route, board: value.board, positionMs: value.positionMs, at: value.at };
+}
 function consumeReplayPosition(view: Window | null, params: URLSearchParams): number | null {
   try {
     const raw = view?.sessionStorage.getItem(REPLAY_POSITION_KEY);
     view?.sessionStorage.removeItem(REPLAY_POSITION_KEY);
-    if (!raw) return null;
-    const value: unknown = JSON.parse(raw);
-    if (typeof value !== "object" || value === null ||
-      !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
-      !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
-      !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
-      Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
-      !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
-    return value.positionMs;
+    return pendingReplayPosition(raw, view, params)?.positionMs ?? null;
   } catch { return null; }
+}
+/**
+ * The 3D board is giving up before its source opened (a failed start, failed module loading, no WebGL2), so it never
+ * took the position a board change passed it. Pass that position on to the 2D board as the 3D board's own.
+ * Call on the 3D page, just before it becomes the 2D board; anything else is left as it is.
+ */
+export function carryReplayPositionToFallback(view: Window | null, params: URLSearchParams): void {
+  if (!view || boardMode(params) !== "3d") return;
+  const own = new URLSearchParams(params);
+  own.delete(RETRY_3D_PARAM); own.delete(MANUAL_3D_PARAM);
+  try {
+    const pending = pendingReplayPosition(view.sessionStorage.getItem(REPLAY_POSITION_KEY), view, own);
+    if (pending) view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({ ...pending, board: "3d" } satisfies ReplayPosition));
+  } catch { /* Storage is optional: without it the 2D board starts the replay from its beginning. */ }
 }
 
 /** A dropped feed changes source only after repeated confirmed catalog absence. */
