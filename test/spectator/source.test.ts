@@ -10,7 +10,7 @@ import { Texture, type Particle, type Renderer } from "pixi.js";
 import { Waiting } from "../../web/src/waiting.ts";
 import { INBOX_CAP } from "../../web/src/inbox.ts";
 import type { IntakeReply, IntakeRequest, IntakeWorker } from "../../web/src/intake.ts";
-import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, finishedLobbyReplay, openSource } from "../../web/src/source.ts";
+import { FALLBACK_HANDOVER_KEY, FALLBACK_HANDOVER_MS, REPLAY_POSITION_KEY, carryReplayPositionToFallback, finishedLobbyReplay, openSource, type SpectatorSource } from "../../web/src/source.ts";
 import type { EventSourceLike } from "../../web/src/stream.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
 import { mountResultModal } from "../../web/src/ui/deck/result-modal.ts";
@@ -534,4 +534,133 @@ it("reads a finished lobby's replay id only when the server names a valid one", 
   expect(await finishedLobbyReplay("x", signal, answer(Response.json([])))).toBeNull();
   expect(await finishedLobbyReplay("x", signal, answer(new Response(null, { status: 404 })))).toBeNull();
   expect(await finishedLobbyReplay("x", signal, answer(new Error("offline")))).toBeNull();
+});
+
+/** A replay page with its own document over one tab's session storage, the external port a board change keeps. */
+function replayTab() {
+  const id = "2026-10-18T12-34-56-789Z-1";
+  vi.stubGlobal("fetch", async (input: string) => input === `/matches/${id}`
+    ? Response.json({ format: "antwar.match", version: 1, id, result: { tick: messages.at(-1)!.tick - 1 } })
+    : new Response(new Uint8Array(packMessages(packets))));
+  const saved = new Map<string, string>();
+  const tab = {
+    location: { pathname: "/", hash: "", origin: "http://localhost" },
+    sessionStorage: {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, value: string) => saved.set(key, value),
+      removeItem: (key: string) => saved.delete(key),
+    },
+  };
+  const page = async (params: Record<string, string>) => {
+    const { doc, listeners } = documentPort();
+    Object.assign(doc.defaultView!, tab);
+    const source = (await openSource(new URLSearchParams(params), { now: () => 0 }, doc, vi.fn()))!;
+    return { source, leave: () => listeners.get("pagehide")?.() };
+  };
+  /** Play at a steady clock until the length is known and any seek has landed. The seek replays from the start, so
+   * only where it lands is checked, never how long it takes. */
+  const settle = async (source: SpectatorSource) => {
+    let p = new Playback(), f = new Frame();
+    let generation = source.recording!.generation;
+    for (let i = 0; i < 2000; i++) {
+      await new Promise(resolve => setImmediate(resolve));
+      const r = source.recording!;
+      if (r.generation !== generation) { generation = r.generation; p = new Playback(); f = new Frame(); }
+      for (const a of source.take(0)) p.push(a.m, a.at);
+      p.sample(source.now(0), f);
+      if (r.duration !== null && !r.seeking && i > 5) break;
+    }
+    return f;
+  };
+  return { id, saved, page, settle, view: tab as unknown as Window };
+}
+
+it.each([
+  ["2D to 3D", "2d", "3d"], ["3D to 2D", "3d", "2d"], ["default 3D to 2D", null, "2d"],
+])("a replay reopened on the other board (%s) resumes at the position it had reached", async (_, from, to) => {
+  const t = replayTab();
+  const first = await t.page({ replay: t.id, ...(from ? { board: from } : {}) });
+  await vi.waitFor(() => expect(first.source.recording!.duration).toBe(1900));
+  first.source.recording!.seek(1000);
+  const before = await t.settle(first.source);
+  const reached = first.source.recording!.position;
+  expect(reached).toBe(1000);
+  first.leave();
+  expect(t.saved.has(REPLAY_POSITION_KEY)).toBe(true);
+  const second = await t.page({ replay: t.id, board: to });
+  try {
+    expect(t.saved.has(REPLAY_POSITION_KEY)).toBe(false);
+    const after = await t.settle(second.source);
+    expect(second.source.recording!.generation).toBe(1);
+    expect(second.source.recording!.position).toBe(reached);
+    expect(after.tick).toBe(before.tick);
+  } finally { second.source.close(); }
+});
+
+it.each(["for the same board", "for another replay", "expired", "future", "malformed"])("a position record that is %s leaves a replay at its start", async invalid => {
+  const t = replayTab();
+  const first = await t.page({ replay: t.id, board: "2d" });
+  await vi.waitFor(() => expect(first.source.recording!.duration).toBe(1900));
+  first.source.recording!.seek(1000);
+  await t.settle(first.source);
+  first.leave();
+  const record = JSON.parse(t.saved.get(REPLAY_POSITION_KEY)!);
+  if (invalid === "for another replay") record.route = "/?replay=another";
+  if (invalid === "expired") record.at = Date.now() - FALLBACK_HANDOVER_MS - 1;
+  if (invalid === "future") record.at = Date.now() + 60_000;
+  t.saved.set(REPLAY_POSITION_KEY, invalid === "malformed" ? "{" : JSON.stringify(record));
+  const second = await t.page({ replay: t.id, board: invalid === "for the same board" ? "2d" : "3d" });
+  try {
+    expect(t.saved.has(REPLAY_POSITION_KEY)).toBe(false);
+    await t.settle(second.source);
+    expect(second.source.recording!.generation).toBe(0);
+    expect(second.source.recording!.position).toBe(0);
+  } finally { second.source.close(); }
+});
+
+it("leaving while a resumed position is still being reached passes that position on, not the start", async () => {
+  const t = replayTab();
+  const first = await t.page({ replay: t.id, board: "2d" });
+  await vi.waitFor(() => expect(first.source.recording!.duration).toBe(1900));
+  first.source.recording!.seek(1000);
+  await t.settle(first.source);
+  first.leave();
+  // The 3D board takes over, starts reaching 1000 ms, and falls back to 2D before it gets there.
+  const second = await t.page({ replay: t.id, board: "3d" });
+  const r = second.source.recording!;
+  for (let i = 0; i < 2000 && r.generation === 0; i++) {
+    await new Promise(resolve => setImmediate(resolve));
+    second.source.take(0);
+  }
+  expect(r.generation).toBe(1);
+  expect(r.seeking).toBe(true);
+  expect(r.position).toBe(0);
+  second.leave();
+  expect(JSON.parse(t.saved.get(REPLAY_POSITION_KEY)!).positionMs).toBe(1000);
+  const third = await t.page({ replay: t.id, board: "2d" });
+  try {
+    await t.settle(third.source);
+    expect(third.source.recording!.position).toBe(1000);
+  } finally { third.source.close(); }
+});
+
+it.each([
+  ["a 3D board that falls back before its source opens", "3d", {}, 1000],
+  ["a 3D board whose module retry falls back before its source opens", "3d", { "aw-3d-retry": "1" }, 1000],
+  ["a 3D board reached by the board control that falls back before its source opens", "3d", { "aw-3d-manual": "1" }, 1000],
+  ["a same-board 2D reload", "2d", {}, 0],
+])("a 2D replay position survives %s only when the board changed", async (_, between, markers, resumed) => {
+  const t = replayTab();
+  const first = await t.page({ replay: t.id, board: "2d" });
+  await vi.waitFor(() => expect(first.source.recording!.duration).toBe(1900));
+  first.source.recording!.seek(1000);
+  await t.settle(first.source);
+  first.leave();
+  // The page in between never opens its source: the 3D board gives up and the page becomes the 2D board.
+  carryReplayPositionToFallback(t.view, new URLSearchParams({ replay: t.id, board: between, ...markers }));
+  const second = await t.page({ replay: t.id, board: "2d" });
+  try {
+    await t.settle(second.source);
+    expect(second.source.recording!.position).toBe(resumed);
+  } finally { second.source.close(); }
 });
