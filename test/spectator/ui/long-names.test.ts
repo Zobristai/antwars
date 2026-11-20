@@ -3,8 +3,10 @@
 // one run ending in a single ellipsis, the model giving way first, then the builder's name; a level of more than 8
 // characters shows its first 8 and an ellipsis; Fast's bolt keeps its 6 px and the rating stays whole; the full words stay
 // in the title and are read in full. On a Top matches tile a short builder's name beside a long model stays whole while the
-// model gives way. Wherever a name is cut, its ellipsis stands against the last letter shown, never after a space.
+// model gives way. Wherever a name is cut, its ellipsis stands against the last letter shown, never after a space, even
+// where a model label ends in spaces.
 import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +24,10 @@ const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
 /** The Matches page's stylesheets, as its pages bundle them (pages/chrome.ts, pages/top-bar.ts, colony-palette.ts). */
 const PAGE_STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css", "pages/top-bar.css", "design-system/tokens.css", "design-system/page-edge.css", "pages/archive.css"]
   .map(path => read(`../../../web/src/${path}`))].join("\n");
+/** The script that marks a cut name (ui/cut.ts), as the page runs it, watching every name on the test page. */
+const WATCH_CUT = `${stripTypeScriptTypes(read("../../../web/src/ui/cut.ts"), { mode: "strip" })}
+for (const box of document.querySelectorAll(".d1p-rec-name, .aw-name")) watchCut(document, box);
+requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.cut = "watched"; }));`;
 /** The Top matches tile's stylesheets (design-system/top-match-tile.ts). */
 const TILE_STYLES = [TOKENS, ...["design-system/tokens.css", "design-system/top-match-tile.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 
@@ -95,6 +101,9 @@ async function open(width: number, text: 16 | 32, html: string): Promise<Page> {
   const cdp = await tab.context().newCDPSession(tab);
   await cdp.send("Page.setFontSizes", { fontSizes: { standard: text } });
   await tab.setContent(html);
+  // The page's names are marked as its client marks them, cut or whole.
+  await tab.addScriptTag({ type: "module", content: WATCH_CUT });
+  await tab.waitForSelector("html[data-cut=watched]", { state: "attached" });
   return tab;
 }
 
@@ -332,6 +341,80 @@ describe("a name cut right after a space", () => {
         const gaps = await gapsAtSpaces(tab, ".aw-player .aw-name");
         expect(gaps.length).toBe(2);
         for (const { gap, space } of gaps) expect(gap).toBeLessThanOrEqual(space);
+      } finally { await tab.close(); }
+    });
+  }
+});
+
+/** A model label that ends in spaces, as a player may report it. */
+const TRAILING = recording("2026-11-11T10-34-00-000Z-9", [seat(0, 0, "ivy", { modelLabel: `kite${" ".repeat(10)}` }), seat(1, 1, "fennec", { modelLabel: "zai/glm-5.3" })]);
+
+/** The name `selector` picks, given room for its text up to its last letter, three spaces and an ellipsis, drawn black on
+ * white: how far past its last letter its ink reaches, in px, and the width of its ellipsis. A line that draws the spaces
+ * after the last letter and then cuts them shows its ellipsis three spaces past that letter; one that draws them not at all
+ * ends at the letter, or with its ellipsis against it. */
+async function inkPastLastLetter(tab: Page, selector: string) {
+  const name = tab.locator(selector).first();
+  const { letterRight, ellipsis } = await name.evaluate(node => {
+    const box = node as HTMLElement;
+    const probe = (text: string) => {
+      const span = document.createElement("span"); span.textContent = text; span.style.position = "absolute"; span.style.whiteSpace = "pre";
+      box.append(span); const width = span.getBoundingClientRect().width; span.remove(); return width;
+    };
+    const ellipsis = probe("…"), space = probe(" ");
+    const left = box.getBoundingClientRect().left;
+    let letterRight = 0;
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let text = walker.nextNode() as Text | null; text; text = walker.nextNode() as Text | null) {
+      for (let at = 0; at < text.data.length; at++) {
+        if (/\s/.test(text.data[at]!)) continue;
+        const range = document.createRange(); range.setStart(text, at); range.setEnd(text, at + 1);
+        letterRight = Math.max(letterRight, range.getBoundingClientRect().right - left);
+      }
+    }
+    box.style.flex = "none"; box.style.minWidth = "0"; box.style.background = "#fff";
+    for (const part of [box, ...box.querySelectorAll<HTMLElement>("*")]) part.style.color = "#000";
+    box.style.width = `${letterRight + 3 * space + ellipsis + 0.5}px`;
+    return { letterRight, ellipsis };
+  });
+  await tab.evaluate(() => new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => done())))));
+  const shot = (await name.screenshot()).toString("base64");
+  const inkRight = await tab.evaluate(async png => {
+    const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
+    const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, image.width, image.height).data;
+    // A column with ink: any pixel well off white, not a rule down the box's whole height.
+    for (let x = image.width - 1; x >= 0; x--) {
+      let marked = 0;
+      for (let y = 0; y < image.height; y++) {
+        const at = (y * image.width + x) * 4;
+        if (Math.min(data[at]!, data[at + 1]!, data[at + 2]!) < 160) marked++;
+      }
+      if (marked > 0 && marked < image.height * 0.8) return x + 1;
+    }
+    return 0;
+  }, shot);
+  return { past: inkRight - letterRight, ellipsis };
+}
+
+describe("a model label that ends in spaces", () => {
+  for (const text of [16, 32] as const) {
+    it(`never draws its ellipsis after those spaces on Recordings, its title whole, with ${text} px text`, async () => {
+      const tab = await open(1280, text, recordingsPage([TRAILING]));
+      try {
+        expect(await tab.locator(".d1p-rec-slot .d1p-rec-name").first().getAttribute("title")).toBe(`ivy kite${" ".repeat(10)}`);
+        const { past, ellipsis } = await inkPastLastLetter(tab, ".d1p-rec-slot .d1p-rec-name");
+        expect(past).toBeLessThanOrEqual(ellipsis + 1);
+      } finally { await tab.close(); }
+    });
+
+    it(`never draws its ellipsis after those spaces on a Top matches tile, its title whole, with ${text} px text`, async () => {
+      const tab = await open(1280, text, tilePage(text === 16 ? "360px" : "720px", TRAILING));
+      try {
+        expect(await tab.locator(".aw-player .aw-name").first().getAttribute("title")).toBe(`ivy kite${" ".repeat(10)}`);
+        const { past, ellipsis } = await inkPastLastLetter(tab, ".aw-player .aw-name");
+        expect(past).toBeLessThanOrEqual(ellipsis + 1);
       } finally { await tab.close(); }
     });
   }

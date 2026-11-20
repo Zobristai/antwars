@@ -587,11 +587,10 @@ td.c-model > .d1p-colony { display: block; }
    model giving way first and then the username, its whole text its title and read in full. It keeps 1.5em, so a name
    never vanishes without its ellipsis. */
 .d1p-rec-name { flex: 0 100000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
-/* Where the run is cut, each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give way as one, so the
-   ellipsis always stands against a letter, never after a space. Only a cut run holds them so: a whole run draws as plain
-   text, exactly as it would without them. */
-.d1p-rec-name { container-type: scroll-state; }
-@container scroll-state(scrollable: inline-end) { .d1p-rec-name .aw-held { display: inline-block; } }
+/* Where the run is cut (aw-cut, ui/cut.ts), each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give
+   way as one, so the ellipsis always stands against a letter, never after a space. Only a cut run holds them so: a whole
+   run draws as plain text, exactly as it would without them. */
+.d1p-rec-name.aw-cut .aw-held { display: inline-block; }
 .d1p-rec-name > .d1p-user { font-weight: var(--aw-bold); color: inherit; }
 .d1p-rec-name > .d1p-mname { color: inherit; }
 /* A self-reported level of more than 8 characters shows its first 8 and an ellipsis (the view); its whole text is the

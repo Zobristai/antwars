@@ -21,6 +21,7 @@ import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h, heldSpaces } from "../ui/dom.ts";
+import { watchCut } from "../ui/cut.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
 import { rowRatingNode } from "./identity.ts";
@@ -699,7 +700,7 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
 }
 
 /** A span of class `cls` holding `text`, each space held to the letter after it, so the name run never ends its ellipsis
- * after a space (ui/dom.ts heldSpaces). */
+ * after a space (ui/dom.ts heldSpaces, ui/cut.ts). */
 function held(doc: Document, cls: string, text: string): HTMLElement {
   const node = h(doc, "span", cls);
   node.append(...heldSpaces(doc, text));
@@ -720,6 +721,7 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   const words = [parts.user, parts.model].filter(word => word !== null).join(" ");
   name.title = parts.badges.retired ? `${words} (${C.retiredBadge})` : words;
   if (parts.badges.retired) name.append(h(doc, "span", "d1p-sr", `, ${C.retiredBadge}`));
+  watchCut(doc, name);
   line.append(name);
   const badges = { ...parts.badges, retired: false };
   if (hasBadges(badges)) line.append(badgeGroup(doc, badges, 8));

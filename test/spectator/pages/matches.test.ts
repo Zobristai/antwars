@@ -668,7 +668,11 @@ describe("a model label with nothing after its provider prefix", () => {
     const rec = at("rec-space", { seats: [seat(0, 0, "local/ ", "omp-dolphin"), seat(0, 1, "zai/glm-5.3", "kite")] });
     const { p, live: liveList, recordings } = show({ live: { status: "ready", rows: [spaced] }, recordings: { status: "ready", rows: [rec] } });
     expect(lineParts(liveList.table.byClass("d1p-model")[0]!)).toEqual([["name", ["d1p-user:kain", "d1p-mname:local/ "]]]);
-    expect(lineParts(recordings.list.byClass("d1p-rec-player")[0]!)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname: local/ "]]);
+    // On Recordings the label's closing space is not drawn, so a cut name never ends in a space before its ellipsis; its
+    // title keeps the label whole.
+    const recorded = recordings.list.byClass("d1p-rec-player")[0]!;
+    expect(lineParts(recorded)[0]).toEqual(["name", ["d1p-user:omp-dolphin", "d1p-mname: local/"]]);
+    expect(recorded.byClass("d1p-rec-name")[0]!.title).toBe("omp-dolphin local/ ");
     p.mounted.destroy();
   });
 });

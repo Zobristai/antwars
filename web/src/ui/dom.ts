@@ -71,8 +71,9 @@ export function setColonyText(doc: Document, node: HTMLElement, text: string, dr
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /**
  * Text for a box that shortens with an ellipsis: each space (or run of spaces) is held to the letter after it in one span
- * of class aw-held, which the box's stylesheet draws as one unit where the box shortens, so the box is never cut right
- * after a space and its ellipsis stands against the last letter shown. The text itself, read and copied, is unchanged.
+ * of class aw-held, which the box's stylesheet draws as one unit while the box is cut (ui/cut.ts), so the box is never cut
+ * right after a space and its ellipsis stands against the last letter shown. Spaces at the end of the text have no letter
+ * after them and are not drawn; the box's title keeps the text whole.
  */
 export function heldSpaces(doc: Document, text: string): (HTMLElement | string)[] {
   const out: (HTMLElement | string)[] = [];
@@ -82,7 +83,7 @@ export function heldSpaces(doc: Document, text: string): (HTMLElement | string)[
     if (!/^\s+$/.test(letters[i]!)) { plain += letters[i]; continue; }
     let gap = "";
     while (i < letters.length && /^\s+$/.test(letters[i]!)) gap += letters[i++];
-    if (i === letters.length) { plain += gap; break; }
+    if (i === letters.length) break;
     if (plain) out.push(plain);
     plain = "";
     out.push(h(doc, "span", "aw-held", gap + letters[i]));

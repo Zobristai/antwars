@@ -22,6 +22,7 @@ import { colonySeats, seatGroups, whenParts, winnerOf, type PlayerParts, type Se
 import { DECIDED_ON, LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
 import { h, heldSpaces } from "../ui/dom.ts";
+import { watchCut } from "../ui/cut.ts";
 
 /** A colony no seat was recorded for, as Matches words it. */
 const NOT_JOINED = "did not join";
@@ -93,6 +94,7 @@ function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   if (parts.user !== null) name.append(held(doc, h(doc, "b"), parts.user));
   if (parts.model !== null) name.append(held(doc, h(doc, "span", "aw-model"), parts.user !== null ? ` ${parts.model}` : parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
+  watchCut(doc, name);
   const tags = badges(doc, parts.badges);
   return tags ? [name, tags] : [name];
 }

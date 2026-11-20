@@ -187,11 +187,11 @@
   .aw-lines .aw-tags { flex-wrap: nowrap; }
   /* the clip 0.1em outside the box: a padding the box's negative margin takes back, so its place on the line is unchanged */
   .aw-lines .aw-name { box-sizing: content-box; min-width: 1.5em; padding-inline-end: 0.1em; margin-inline-end: -0.1em; overflow: hidden;
-    text-overflow: ellipsis; white-space: pre; container-type: scroll-state; }
+    text-overflow: ellipsis; white-space: pre; }
   .aw-lines .aw-model { white-space: inherit; }
-  /* where a name is cut, each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give way as one, so its
-     ellipsis always stands against a letter, never after a space; a whole name draws as plain text */
-  @container scroll-state(scrollable: inline-end) { .aw-lines .aw-name .aw-held { display: inline-block; } }
+  /* where a name is cut (aw-cut, ui/cut.ts), each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give
+     way as one, so its ellipsis always stands against a letter, never after a space; a whole name draws as plain text */
+  .aw-lines .aw-name.aw-cut .aw-held { display: inline-block; }
 }
 @media (max-width: 17.999em) and (min-width: 320px) {
   .aw-lines .aw-name { padding-inline-end: 0; margin-inline-end: 0; }
