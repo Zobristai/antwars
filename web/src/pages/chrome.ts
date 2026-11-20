@@ -15,8 +15,9 @@ export type { PageName } from "./top-bar.ts";
 
 /** hero-battle.png, re-encoded as WebP; decorative, no text on it. */
 const HERO = new URL("./hero-battle.webp", import.meta.url).href;
-/** The HUD's rule: one Bring your agent button, in the bar from 520 px wide; narrower, at the page's end. */
-const BUTTON_IN_BAR = "(min-width: 520px)";
+/** The HUD's rule: one Bring your agent button, in the bar from 32.5em wide (520 px at default text, wider as the browser's
+ * text size grows, so the bar still fits on one line); narrower, at the page's end. */
+const BUTTON_IN_BAR = "(min-width: 32.5em)";
 
 export interface Frame {
   readonly root: HTMLElement;
