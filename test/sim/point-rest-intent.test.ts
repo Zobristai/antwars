@@ -126,7 +126,7 @@ describe('landed ATTACK flyers keep queen contact', () => {
     expect(currentLocalGoals(state).get(ant.id)).toMatchObject({ kind: 'combat', targetId: enemy.id,
       x: enemy.x, y: enemy.y });
   });
-  it.each(['shield', 'grace', 'no-point-arrival', 'airborne', 'carrying', 'ground-ant', 'gather', 'defend', 'dead-queen', 'queen-outside-mark-reach', 'distant-mark'] as const)(
+  it.each(['shield', 'grace', 'no-point-arrival', 'airborne', 'carrying', 'gather', 'defend', 'dead-queen', 'queen-outside-mark-reach', 'distant-mark'] as const)(
     'does not introduce queen contact for %s', condition => {
       const setupResult = setup(), { queen, attack, ant } = setupResult;
       let state = setupResult.state;
@@ -135,7 +135,6 @@ describe('landed ATTACK flyers keep queen contact', () => {
       if (condition === 'no-point-arrival') state = { ...state, config: { ...state.config, pointArrival: undefined } };
       if (condition === 'airborne') ant.air = { destX: ant.x, destY: ant.y, hovering: true, released: false };
       if (condition === 'carrying') ant.carrying = true;
-      if (condition === 'ground-ant') delete ant.flyer;
       if (condition === 'gather') attack.verb = 'GATHER';
       if (condition === 'defend') attack.verb = 'DEFEND';
       if (condition === 'dead-queen') { queen.hp = 0; queen.lostTick = state.tick; }

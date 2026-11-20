@@ -988,11 +988,13 @@ function defendMarkDirection(state: SimState, grid: Grid, ant: Ant, mark: Mark, 
 function countMarkDirectionNative(state: SimState, grid: Grid, food: readonly number[], ant: Ant, mark: Mark): { dir: Vec; foraging: boolean } {
   switch (mark.verb) {
     case "ATTACK":
-      // Keep landed flyers approaching a queen at their mark even after spacing breaks bite contact.
-      // Keep enemy-ant contact first, and leave other orders and historical ground-ant movement unchanged.
-      if (state.config.flyers !== undefined && ant.flyer && ant.air === undefined
+      // Keep ants on the ground approaching a queen at their mark until they are within her bite reach, even
+      // after spacing breaks bite contact. Enemy-ant contact stays first; a ground ant still goes for an enemy
+      // ant near the target before her. Other orders are unchanged, and rules without point arrival never approach.
+      if ((!ant.flyer || (state.config.flyers !== undefined && ant.air === undefined))
         && withinTiles(Math.floor(ant.x / SUB), Math.floor(ant.y / SUB), mark.tileX, mark.tileY, state.config.attackRadiusTiles)
-        && !hasAdjacentEnemy(state, grid, ant)) {
+        && !hasAdjacentEnemy(state, grid, ant)
+        && (ant.flyer || nearestEnemyNearTarget(state, grid, ant, mark.tileX, mark.tileY, state.config.attackRadiusTiles) === null)) {
         const queen = noteQueenApproach(state, ant, mark.tileX, mark.tileY);
         if (queen !== null) return { dir: queen.reached ? ZERO : routeToward(state, ant, queen.x, queen.y), foraging: false };
       }
