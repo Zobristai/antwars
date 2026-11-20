@@ -275,6 +275,9 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
   /** The last tick as recorded beside the recording, or as read from a whole download of it. A playback download that
    * ends cleanly before this tick was cut short on the way. */
   let knownEnd: number | null = null;
+  /** The newest tick a download has shown more of the recording after, by ending partway through the next message. A
+   * later download that ends cleanly at or before this tick was cut short on the way. */
+  let followed = Number.NEGATIVE_INFINITY;
   let done = false;
   let closed = false;
   let error: Error | null = null;
@@ -383,14 +386,20 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
       for (;;) {
         if (queue.length >= RECORDING_AHEAD) await new Promise<void>((resolve) => { changed = resolve; });
         if (closed || version !== generation) return;
-        const next = await messages.next();
+        let next: Awaited<ReturnType<typeof messages.next>>;
+        try { next = await messages.next(); }
+        catch (cause: unknown) {
+          if (cause instanceof RecordingCutShort && previous !== null) followed = Math.max(followed, previous);
+          throw cause;
+        }
         if (closed || version !== generation) return;
         if (next.done) {
           // A reopen, or a read of a recording already read, that reads nothing was cut short too.
           if (previous === null) throw firstTick === null && !reopen ? new CorruptRecording("Recording is empty.") : new RecordingCutShort(CUT_SHORT);
           // Some hops end a cut response cleanly, so a clean end is not taken as the end when it falls before a tick already
-          // reached, or before a recorded end that has arrived; the recorded end is never waited for here.
-          if (previous < newestTick || (knownEnd !== null && previous < knownEnd)) throw new RecordingCutShort(CUT_SHORT);
+          // reached, at or before a tick an earlier download showed more after, or before a recorded end that has arrived;
+          // the recorded end is never waited for here.
+          if (previous < newestTick || previous <= followed || (knownEnd !== null && previous < knownEnd)) throw new RecordingCutShort(CUT_SHORT);
           done = true;
           knownEnd = endTick = newestTick;
           startScan();
