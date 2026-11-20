@@ -15,7 +15,8 @@
 /* focus keeps a transparent outline, which forced-colours mode draws in the system colour */
 .aw-tile:focus-visible { outline: 2px solid transparent; outline-offset: -1px; }
 /* Every row fits on one line from 320 px at default text size. If text is enlarged or the page zoomed past that,
-   nothing is cut: badges move to the next line as one unit and a long name wraps between words. */
+   nothing is cut: badges move to the next line as one unit and a long name wraps between words. A player line is the
+   exception: it never wraps, as the last rule below says. */
 .aw-row { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; }
 /* row 1: the game type, the label face */
 .aw-meta { justify-content: space-between; gap: 0 var(--aw-space-2); margin-bottom: var(--aw-space-1); font-size: var(--aw-text-label); line-height: var(--aw-lh-label); font-weight: var(--aw-bold); letter-spacing: var(--aw-track-label); text-transform: uppercase; color: var(--aw-ink-3); }
@@ -25,6 +26,8 @@
 /* rows 2 and 3: the player line, as Matches rows draw it */
 .aw-player { column-gap: var(--aw-gap-inline); font-size: var(--aw-text-line); line-height: var(--aw-lh-line); color: var(--aw-ink); }
 .aw-name { min-width: 0; overflow-wrap: anywhere; }
+/* a player's name sits in its place on the line (aw-who), no box of its own except where a line never wraps (below) */
+.aw-who { display: contents; }
 /* the builder's name, exactly as stored, before the model */
 .aw-name > b { font-weight: var(--aw-bold); color: var(--aw-ink-bright); }
 .aw-tags { flex: none; display: inline-flex; flex-wrap: wrap; gap: var(--aw-space-1); }
@@ -153,14 +156,6 @@
   .aw-tile .aw-lines.is-grid > .aw-player, .aw-tile .aw-lines.is-grid > .aw-side { margin: 0; min-width: 0; }
   .aw-tile .aw-lines.is-grid > .aw-player, .aw-tile .aw-lines.is-grid > .aw-side > .aw-player { padding: 0 var(--aw-space-1) 0 var(--tile-pad); }
   .aw-tile .aw-lines.is-grid .aw-player.is-winner, .aw-tile .aw-lines.is-grid .aw-player.is-team { margin: 0; }
-  /* a line in a column never wraps: one too long for its column shortens its model name first, then its builder's name,
-     each with an ellipsis; the badges keep their full width. A model name keeps room for its space and its ellipsis
-     (1.5em), so it never vanishes without one; past that the builder's name shortens. The full text stays in the name's
-     title and in the tile's title and accessible name. */
-  .aw-lines.is-grid .aw-player, .aw-lines.is-sides > .aw-side > .aw-player { flex-wrap: nowrap; }
-  .aw-lines.is-grid .aw-name, .aw-lines.is-sides > .aw-side .aw-name { display: flex; min-width: 0; overflow: hidden; }
-  .aw-lines.is-grid .aw-name > b, .aw-lines.is-sides > .aw-side .aw-name > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .aw-lines.is-grid .aw-model, .aw-lines.is-sides > .aw-side .aw-model { flex: 0 1000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
   /* a team match: the sides stand one under the other, each a full-width band. A side whose seats differ is a grid of the
      same two columns a free-for-all uses; its seat-group lines fill across, then down, and a last line alone on its row
      takes the whole row. */
@@ -182,13 +177,31 @@
 @media (max-width: 17.999em) {
   .aw-lines { min-height: calc(8 * var(--aw-lh-line)); }
 }
-/* ---- stacked lines on a 320 or 390 phone with doubled text (page at least 320 CSS px): a player line never wraps either. A
-   line too long shortens its model name first, then its builder's name, each with an ellipsis; badges keep their eight
-   characters. Below 320 CSS px (a phone at 200 % zoom) the line may still wrap between items. */
-@media (max-width: 17.999em) and (min-width: 320px) {
+/* ---- every player line, in a column, across the full width (a 1v1 or a team side) or stacked, never wraps from 18em of
+   viewport width (288 px at default text) or a page of 320 CSS px. A line too long shortens its builder's name and model
+   as one run with a single ellipsis, the model giving way first, then the builder's name; badges keep their eight
+   characters. The name keeps 1.5em, so it never vanishes without its ellipsis. The full text stays in the name's title
+   and in the tile's title and accessible name. In a column or across the tile the name's clip stands 0.1em outside its
+   box, so a whole name's last letter keeps the edge it draws past it; stacked lines keep the clip at the box, as shipped.
+   Only stacked lines on a page under 320 CSS px (a phone at 200 % zoom) may still wrap between items. */
+@media (min-width: 18em), (min-width: 320px) {
   .aw-lines .aw-player { flex-wrap: nowrap; }
   .aw-lines .aw-tags { flex-wrap: nowrap; }
-  .aw-lines .aw-name { display: flex; min-width: 0; overflow: hidden; }
-  .aw-lines .aw-name > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .aw-lines .aw-model { flex: 0 1000 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+  /* the clip 0.1em outside the box: a padding the box's negative margin takes back, so its place on the line is unchanged */
+  .aw-lines .aw-name { box-sizing: content-box; min-width: 1.5em; padding-inline-end: 0.1em; margin-inline-end: -0.1em; overflow: hidden;
+    text-overflow: ellipsis; white-space: pre; }
+  .aw-lines .aw-model { white-space: inherit; }
+  /* the name's place gives way, but never narrower than the name's first letter and its whole ellipsis, drawn unseen in
+     the same place in the name's own type (data-least, ui/dom.ts leastShown), so a name cut to one letter never clips its
+     ellipsis, whatever the letter or font */
+  .aw-lines .aw-who { display: grid; }
+  .aw-lines .aw-who > .aw-name, .aw-lines .aw-who::after { grid-area: 1 / 1; }
+  .aw-lines .aw-who::after { content: attr(data-least); visibility: hidden; white-space: pre; }
+  .aw-lines .aw-who.is-builder::after { font-weight: var(--aw-bold); }
+  /* where a name is cut (aw-cut, ui/cut.ts), each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give
+     way as one, so its ellipsis always stands against a letter, never after a space; a whole name draws as plain text */
+  .aw-lines .aw-name.aw-cut .aw-held { display: inline-block; }
+}
+@media (max-width: 17.999em) and (min-width: 320px) {
+  .aw-lines .aw-name { padding-inline-end: 0; margin-inline-end: 0; }
 }
