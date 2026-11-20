@@ -20,7 +20,8 @@ import { NO_BADGES, badgeWords, benchmarkBadges, hasBadges, type BadgeKinds } fr
 import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
-import { h } from "../ui/dom.ts";
+import { h, heldSpaces, leastShown } from "../ui/dom.ts";
+import { watchCut } from "../ui/cut.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
 import { rowRatingNode } from "./identity.ts";
@@ -540,13 +541,19 @@ export function rowOutcome(row: Pick<MatchRow, "colonies" | "stamp">): string[] 
 /** A player's badges, the one style every Matches table uses: the level, with Fast drawn as a bolt in the same badge
  * ("Fast" read by screen readers and in the group's title with the other words), then retired. Only the speed tier is the
  * bolt; a level that reads "fast" is a level like any other. Fast with no level is a badge of its bolt alone. */
-export function badgeGroup(doc: Document, badges: BadgeKinds): HTMLElement {
+export function badgeGroup(doc: Document, badges: BadgeKinds, maxChars?: number): HTMLElement {
   const tags = h(doc, "span", "d1p-tags");
   tags.title = badgeWords(badges).join(" ");
   if (badges.level !== null || badges.fast) {
     const tag = h(doc, "span", "d1p-tag");
     // The word as its own text node, so the bolt can follow it in the same badge.
-    if (badges.level !== null) tag.append(badges.level);
+    const chars = badges.level === null ? [] : [...badges.level];
+    if (badges.level !== null && maxChars !== undefined && chars.length > maxChars) {
+      const shown = h(doc, "span", "d1p-lvl", `${chars.slice(0, maxChars).join("")}\u2026`);
+      shown.setAttribute("aria-hidden", "true");
+      tag.append(shown, h(doc, "span", "d1p-sr", badges.level));
+    } else if (badges.level !== null && maxChars !== undefined) tag.append(h(doc, "span", "d1p-lvl", badges.level));
+    else if (badges.level !== null) tag.append(badges.level);
     if (badges.fast) {
       const bolt = h(doc, "span", "d1p-bolt");
       bolt.setAttribute("aria-hidden", "true");
@@ -692,6 +699,14 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
   return slot;
 }
 
+/** A span of class `cls` holding `text`, each space held to the letter after it, so the name run never ends its ellipsis
+ * after a space (ui/dom.ts heldSpaces, ui/cut.ts). */
+function held(doc: Document, cls: string, text: string): HTMLElement {
+  const node = h(doc, "span", cls);
+  node.append(...heldSpaces(doc, text));
+  return node;
+}
+
 /** One player on one line: the username (builders only) and model, then the level chip (Fast as its bolt), the seat count
  * and the cyan rating badge (figure only, its "± RD" on hover, tap or focus), each the one inline gap after the part
  * before it, so the rating stands right after its line in every cell. A part with nothing to show takes no space. The
@@ -701,15 +716,19 @@ function recordingSlot(doc: Document, row: MatchRow, colony: number | null, colu
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
-  if (parts.user !== null) name.append(h(doc, "span", "d1p-user", parts.user));
-  if (parts.user !== null && parts.model !== null) name.append(" ");
-  if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
+  if (parts.user !== null) name.append(held(doc, "d1p-user", parts.user));
+  if (parts.model !== null) name.append(held(doc, "d1p-mname", parts.user !== null ? ` ${parts.model}` : parts.model));
   const words = [parts.user, parts.model].filter(word => word !== null).join(" ");
   name.title = parts.badges.retired ? `${words} (${C.retiredBadge})` : words;
   if (parts.badges.retired) name.append(h(doc, "span", "d1p-sr", `, ${C.retiredBadge}`));
-  line.append(name);
+  watchCut(doc, name);
+  // The name's place on the line, never narrower than its first letter and its whole ellipsis (archive.css).
+  const place = h(doc, "span", `d1p-rec-who${parts.user !== null ? " is-builder" : ""}`);
+  place.setAttribute("data-least", leastShown(words));
+  place.append(name);
+  line.append(place);
   const badges = { ...parts.badges, retired: false };
-  if (hasBadges(badges)) line.append(badgeGroup(doc, badges));
+  if (hasBadges(badges)) line.append(badgeGroup(doc, badges, 8));
   if (seats > 1) {
     const count = h(doc, "span", "d1p-count");
     const shown = h(doc, "span", undefined, `×${seats}`);

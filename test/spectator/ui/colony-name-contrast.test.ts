@@ -405,7 +405,7 @@ describe("Recordings keep other stored colony names outside canonical columns", 
 describe("Recordings contain a self-reported thinking level", () => {
   const longLevel = "m".repeat(32);
   for (const width of [1280, 390]) {
-    it(`bounds a 32-character level with seats and rating at ${width}px`, async () => {
+    it(`shows a 32-character level as its first 8 characters and an ellipsis, with seats and rating, at ${width}px`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 2400 } });
       try {
         await tab.setContent(quadrantsPage(longLevel).page);
@@ -414,21 +414,22 @@ describe("Recordings contain a self-reported thinking level", () => {
           const slot = node.closest(".d1p-rec-slot")!.getBoundingClientRect();
           const style = getComputedStyle(node);
           const line = node.closest(".d1p-rec-player")!;
-          return { text: [...node.children].map(tag => tag.textContent).join(" "), title: node.getAttribute("title"), clipped: node.scrollWidth > node.clientWidth,
-            overflow: style.overflowX,
+          return { shown: node.querySelector(".d1p-lvl")?.textContent, hidden: node.querySelector(".d1p-lvl")?.getAttribute("aria-hidden"),
+            read: [...node.querySelectorAll(".d1p-sr")].map(sr => sr.textContent).join(""), title: node.getAttribute("title"),
+            clipped: node.scrollWidth > node.clientWidth, overflow: style.overflowX,
             count: line.querySelector(".d1p-count")?.textContent, rating: line.querySelector(".d1p-elo-badge")?.textContent,
             children: [...line.children].map(child => { const box = child.getBoundingClientRect();
               return { text: child.textContent, leftInset: box.left - slot.left, rightInset: slot.right - box.right }; }) };
         }));
         expect(rows).toHaveLength(16);
         for (const row of rows) {
-          // One badge: the level with Fast as its bolt, read in full.
-          expect(row.text).toBe(`${longLevel} Fast`);
+          // One badge: the level's first 8 characters and an ellipsis, with Fast as its bolt; read in full, its whole text its title.
+          expect([row.shown, row.hidden]).toEqual([`${"m".repeat(8)}\u2026`, "true"]);
+          expect(row.read).toBe(`${longLevel} Fast`);
           expect(row.title).toBe(`${longLevel} Fast`);
-          // Past what any real level needs, the chip stops at 12em, clipped, its whole text its title; the count and the
-          // rating stay whole inside the cell.
-          expect(row.clipped).toBe(true);
-          expect(row.overflow).toBe("hidden");
+          // The chip is not clipped; the count and the rating stay whole inside the cell.
+          expect(row.clipped).toBe(false);
+          expect(row.overflow).toBe("visible");
           expect(row.count).toContain("×2");
           expect(row.rating).toContain("1500");
           for (const child of row.children) {
@@ -454,11 +455,15 @@ const PLAYER_LINES = () => [...document.querySelectorAll(".d1p-rec-player, .d1p-
   const centres = boxes.map(box => (box.top + box.bottom) / 2).sort((a, b) => a - b);
   let lines = 0, last = -Infinity;
   for (const centre of centres) { if (centre - last > 6) lines++; last = centre; }
-  const name = node.querySelector(":scope > .d1p-rec-name, :scope > :first-child")!;
+  const name = node.querySelector(":scope > .d1p-rec-who > .d1p-rec-name") ?? node.querySelector(":scope > :first-child")!;
   const holder = (node.closest(".d1p-rec-slot") ?? node.parentElement!).getBoundingClientRect(), own = node.getBoundingClientRect();
-  return { text: `${node.textContent!.replace(/\s+/g, " ").trim()} (name ${name.scrollWidth}/${name.clientWidth}, line ${Math.round(node.getBoundingClientRect().width)})`, lines, nameCut: name.scrollWidth > name.clientWidth + 1,
+  // A Recordings name gives way in its parts, the builder's name and the model, each with its own ellipsis.
+  const parts = [...name.querySelectorAll(":scope > .d1p-user, :scope > .d1p-mname")];
+  return { text: `${node.textContent!.replace(/\s+/g, " ").trim()} (name ${name.scrollWidth}/${name.clientWidth}, line ${Math.round(node.getBoundingClientRect().width)})`, lines,
+    nameCut: [name, ...parts].some(part => part.scrollWidth > part.clientWidth + 1),
     inside: own.left >= holder.left - 0.5 && own.right <= holder.right + 0.5,
-    title: name.getAttribute("title"), nameStyle: [getComputedStyle(name).whiteSpace, getComputedStyle(name).overflowX, getComputedStyle(name).textOverflow] };
+    title: name.getAttribute("title"), nameStyle: [getComputedStyle(name).whiteSpace, getComputedStyle(name).overflowX, getComputedStyle(name).textOverflow],
+    partStyles: parts.map(part => [part.className, getComputedStyle(part).overflowX, getComputedStyle(part).textOverflow]) };
 });
 
 /** Every colony cell's padding and its player lines' spacing: a Recordings slot, a table's colony cell, or a stacked row's
@@ -555,7 +560,9 @@ describe("every Matches player is one line", () => {
         for (const line of lines) {
           expect(line.lines, line.text).toBe(1);
           expect(line.nameCut).toBe(true);
-          expect(line.nameStyle).toEqual(["nowrap", "hidden", "ellipsis"]);
+          // One run, builder's name then model, ending in the name's single ellipsis; neither part draws its own.
+          expect(line.nameStyle).toEqual(["pre", "hidden", "ellipsis"]);
+          expect(line.partStyles).toEqual([["d1p-user", "visible", "clip"], ["d1p-mname", "visible", "clip"]]);
           expect(line.title).toContain("long-builder-" + "x".repeat(64));
           expect(line.inside).toBe(true);
         }

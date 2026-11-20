@@ -594,16 +594,32 @@ td.c-model > .d1p-colony { display: block; }
    the part before it, all centred on the band. Always one line: no stored name needs more at the default text size. A
    line too wide for its cell gives way in the name first, then in the level chip; the count and the rating stay whole. */
 .d1p-rec-player { display: flex; align-items: center; gap: 0 var(--aw-gap-inline); min-width: 0; max-width: 100%; white-space: nowrap; }
-/* SEAT NAME: 12/16 regular in the ink; a builder's username in bold, the same ink. The name (username, then model) is the
-   one part that gives way: where the line is too wide for its cell it ends in an ellipsis, its whole text its title and
-   read in full. */
-.d1p-rec-name { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); color: var(--aw-ink); }
+/* SEAT NAME: 12/16 regular in the ink; a builder's username in bold, the same ink. The name (username, then model) is one
+   run and the one part that gives way: where the line is too wide for its cell the run ends in a single ellipsis, the
+   model giving way first and then the username, its whole text its title and read in full. It keeps 1.5em, so a name
+   never vanishes without its ellipsis. */
+.d1p-rec-name { min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--aw-ink); }
+/* The name's place on the line: it gives way, but never narrower than the name's first letter and its whole ellipsis, drawn
+   unseen in the same place in the name's own type (data-least, ui/dom.ts leastShown), so a run cut to one letter never
+   clips its ellipsis, whatever the letter or font. */
+.d1p-rec-who { flex: 0 100000 auto; display: grid; font-size: var(--aw-text-line); line-height: var(--aw-lh-meta); font-weight: var(--aw-regular); }
+.d1p-rec-who > .d1p-rec-name, .d1p-rec-who::after { grid-area: 1 / 1; }
+.d1p-rec-who::after { content: attr(data-least); visibility: hidden; white-space: pre; }
+.d1p-rec-who.is-builder::after { font-weight: var(--aw-bold); }
+/* Where the run is cut (aw-cut, ui/cut.ts), each space and the letter after it (aw-held, ui/dom.ts heldSpaces) show or give
+   way as one, so the ellipsis always stands against a letter, never after a space. Only a cut run holds them so: a whole
+   run draws as plain text, exactly as it would without them. */
+.d1p-rec-name.aw-cut .aw-held { display: inline-block; }
 .d1p-rec-name > .d1p-user { font-weight: var(--aw-bold); color: inherit; }
 .d1p-rec-name > .d1p-mname { color: inherit; }
-/* A self-reported level may run to 32 characters: the chip stops at 12em, clipped, and where the name has given all it
-   can, narrower still; its whole text its title. Every real level shows whole. Positioned, so the clip also holds the
-   chip's screen-reader text, which would otherwise widen the page past a clipped chip. */
-.d1p-rec-player .d1p-tags { position: relative; flex: 0 1 auto; display: inline-flex; min-width: 0; max-width: 12em; overflow: hidden; }
+/* A self-reported level of more than 8 characters shows its first 8 and an ellipsis (the view); its whole text is the
+   group's title and is read in full. The chip never gives way while the name can: only where the name is at its least
+   (a doubled text size on a phone and a very wide level) does its level text end in an ellipsis earlier; Fast's bolt
+   never shrinks below its 6 px. Positioned, so the chip also holds its screen-reader text. */
+.d1p-rec-player .d1p-tags { position: relative; flex: 0 1 auto; display: inline-flex; min-width: 0; }
+.d1p-rec-player .d1p-tags > .d1p-tag { display: inline-flex; align-items: baseline; min-width: 0; }
+.d1p-rec-player .d1p-lvl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d1p-rec-player .d1p-tag > .d1p-bolt { flex: none; }
 /* LEVEL CHIP: 10/14 600 caps on an opaque raised fill, so it looks the same on a winner's band and off it. */
 .d1p-rec-player .d1p-tag {
   margin: 0; padding: 0 3px; border-radius: var(--aw-radius-badge); background: var(--aw-raise); vertical-align: baseline;
