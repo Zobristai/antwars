@@ -259,6 +259,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
   let resumeAt = replay ? consumeReplayPosition(view, params) : null;
+  let resumeGeneration: number | null = null;
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
   let closeStatus: (() => void) | undefined;
@@ -513,9 +514,15 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       linkState: () => state,
       take(realMs) {
         if (recording) {
-          // Resume a board change's position once the scrubber can seek (the recording's length is known).
-          if (resumeAt !== null && recording.duration !== null) { recording.seek(resumeAt); resumeAt = null; }
+          // Resume a board change's position once the scrubber can seek (the recording's length is known). The target is
+          // kept until that seek has landed, so leaving mid-seek (another board change) passes it on, not the start.
+          if (resumeAt !== null && resumeGeneration === null && recording.duration !== null) {
+            recording.seek(resumeAt);
+            resumeGeneration = recording.generation;
+          }
           const arrivals = recording.take(realMs).map(arrival => ({ ...arrival, kind: "recorded" as const }));
+          // Landed, or replaced by the visitor's own seek: the recording's position stands from here.
+          if (resumeGeneration !== null && (!recording.seeking || recording.generation !== resumeGeneration)) resumeAt = resumeGeneration = null;
           shown = arrivals.at(-1)?.m.tick ?? shown;
           if (fallback && shown >= recording.lastTick) reload();
           return arrivals;

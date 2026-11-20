@@ -616,3 +616,29 @@ it.each(["for the same board", "for another replay", "expired", "future", "malfo
     expect(second.source.recording!.position).toBe(0);
   } finally { second.source.close(); }
 });
+
+it("leaving while a resumed position is still being reached passes that position on, not the start", async () => {
+  const t = replayTab();
+  const first = await t.page({ replay: t.id, board: "2d" });
+  await vi.waitFor(() => expect(first.source.recording!.duration).toBe(1900));
+  first.source.recording!.seek(1000);
+  await t.settle(first.source);
+  first.leave();
+  // The 3D board takes over, starts reaching 1000 ms, and falls back to 2D before it gets there.
+  const second = await t.page({ replay: t.id, board: "3d" });
+  const r = second.source.recording!;
+  for (let i = 0; i < 2000 && r.generation === 0; i++) {
+    await new Promise(resolve => setImmediate(resolve));
+    second.source.take(0);
+  }
+  expect(r.generation).toBe(1);
+  expect(r.seeking).toBe(true);
+  expect(r.position).toBe(0);
+  second.leave();
+  expect(JSON.parse(t.saved.get(REPLAY_POSITION_KEY)!).positionMs).toBe(1000);
+  const third = await t.page({ replay: t.id, board: "2d" });
+  try {
+    await t.settle(third.source);
+    expect(third.source.recording!.position).toBe(1000);
+  } finally { third.source.close(); }
+});
