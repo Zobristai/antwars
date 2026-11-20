@@ -332,6 +332,37 @@ describe("a download that drops partway", () => {
     });
   }
 
+  it("plays to the end through more cuts than there are waits, each reopen that makes progress waiting only the first wait", async () => {
+    // Seven downloads in turn are cut, alternately by a network error and by a clean end partway through a message, each
+    // further into the recording than the last; the eighth is whole.
+    const points = [5, 10, 15, 20, 25, 30, 35];
+    expect(points.length).toBeGreaterThan(RESUME_RETRY_MS.length);
+    const responses = [...points.map((k, i) => (i % 2 === 0 ? dropping : ending)(mid(k))), body(bytes)];
+    let requests = 0;
+    const errors: Error[] = [];
+    const r = openRecording("/replays/many-cuts", (e) => errors.push(e), async () => new Response(responses[requests++]!));
+    const played: number[] = [];
+    const clock = { real: 0 };
+    for (const [i, k] of points.entries()) {
+      await playUntil(r, played, clock, () => played.length === k);
+      await settle();
+      expect(requests).toBe(1 + i);
+      expect(r.error).toBeNull();
+      expect(r.complete).toBe(false);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS[0]! - 1); await settle();
+      expect(requests).toBe(1 + i);
+      await vi.advanceTimersByTimeAsync(1); await settle();
+      expect(requests).toBe(2 + i);
+    }
+    await playUntil(r, played, clock, () => r.complete && r.stats.bufferedMessages === 0);
+    expect(played).toEqual(ticks);
+    expect(r.lastTick).toBe(ticks.at(-1));
+    expect(r.error).toBeNull();
+    expect(errors).toEqual([]);
+    expect(requests).toBe(points.length + 1);
+    r.close();
+  });
+
   it("still takes a clean end between messages as the recording's end when no end is known", async () => {
     let requests = 0;
     const r = openRecording("/replays/short", undefined, async () => { requests++; return new Response(ending(ends[9]!)); });
