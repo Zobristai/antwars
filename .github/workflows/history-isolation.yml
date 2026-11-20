@@ -7,6 +7,11 @@
 # accounts (the push's sender and pusher, or the pull request's sender and author, passed from
 # the event through the environment) and the encoded lines of commit signatures are not matched
 # (.github/scripts/history-isolation.sh says why).
+# On a pull request the title, description and head branch name are matched too: a squash merge
+# writes the title and description into the commit on main, and the branch name is public with
+# the pull request. The script reads them from the runner's event file (GITHUB_EVENT_PATH), so
+# they are neither written into the shell text nor shown in the step's environment, and editing
+# the title or description re-runs the check (the edited type).
 # Pull requests are checked by main's copy of .github/scripts/history-isolation.sh: the
 # pull request's commits are fetched only as git objects, and none of its files is checked
 # out, sourced or run. The identifiers come from the ANTWARS_IDENTIFIERS Actions secret, and
@@ -21,7 +26,7 @@ on:
     branches: [main]
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 permissions:
   contents: read
 jobs:

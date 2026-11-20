@@ -50,6 +50,14 @@
 #       the merge ref's first parent, which is main as GitHub merged it.
 #       FETCH_TOKEN, when set, authenticates the fetch; it is passed to git through the
 #       environment, never on a command line or in the repository configuration.
+#       The pull request's title, description and head branch name are matched too, with the
+#       same rule as a commit message: a squash merge writes the title and description into the
+#       commit on main, and the branch name is public with the pull request. They are read with
+#       python3 from the event file named by GITHUB_EVENT_PATH (set by the runner): a file, not
+#       the environment, so a description of any length fits. They are only compared, never
+#       evaluated, and a hit names the field only. The title and head branch name must be
+#       non-empty strings; the description must be a string, possibly empty, or null (no
+#       description). A missing or unreadable event file, or a field in another form, fails.
 set -euo pipefail
 export LC_ALL=C.UTF-8 GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0
 err() { echo "::error title=history-isolation::$1"; }
@@ -61,7 +69,7 @@ if [ -z "$ANTWARS_EXPECTED_ROOT" ]; then die "the ANTWARS_EXPECTED_ROOT variable
 [[ "$ANTWARS_EXPECTED_ROOT" =~ ^[0-9a-f]{40}$ ]] ||
   die "the ANTWARS_EXPECTED_ROOT variable is not a full 40-character lower-case commit SHA"
 root=$ANTWARS_EXPECTED_ROOT
-status=0 merge_absent=''
+status=0 merge_absent='' pr_text=''
 fail() { err "$1"; status=1; }
 
 # Identifiers: required, read once into a private file, then dropped from the environment.
@@ -138,6 +146,47 @@ if [ "${1:-}" = --pull-request ]; then
     git rev-parse --verify --quiet "$base^{commit}" >/dev/null || die "pull request base $base is not in this clone"
     exclude+=("$base")
   fi
+  # The pull request's own text: read from the event file into the private directory, one file
+  # per field, then matched like a message (NUL bytes dropped). The reader prints nothing: a
+  # malformed file exits 3, a field in the wrong form 4, a failed write 5.
+  [ -n "${GITHUB_EVENT_PATH:-}" ] || die "the GITHUB_EVENT_PATH variable is not set or empty"
+  read_pr='
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        pr = json.load(f)["pull_request"]
+    fields = {"title": pr["title"], "description": pr["body"], "head-ref": pr["head"]["ref"]}
+except Exception:
+    sys.exit(3)
+if fields["description"] is None:
+    fields["description"] = ""
+if not all(isinstance(v, str) for v in fields.values()) or not fields["title"] or not fields["head-ref"]:
+    sys.exit(4)
+try:
+    for name, v in fields.items():
+        with open(sys.argv[2] + "/pr-" + name, "w", encoding="utf-8", errors="replace") as f:
+            f.write(v)
+except Exception:
+    sys.exit(5)
+'
+  ev_rc=0; python3 -I -c "$read_pr" "$GITHUB_EVENT_PATH" "$tmp" || ev_rc=$?
+  case "$ev_rc" in
+    0) ;;
+    4) die "the event's pull request has no non-empty title and head branch name, or a description that is not text" ;;
+    *) die "could not read the pull request from the event file in GITHUB_EVENT_PATH (exit $ev_rc)" ;;
+  esac
+  pr_field() { # <field> <file suffix>
+    local v id
+    v=$(tr -d '\000' < "$tmp/pr-$2") || die "could not read the pull request's $1"
+    v=${v,,}
+    for id in "${ids[@]}"; do
+      if [[ "$v" == *"$id"* ]]; then fail "pull request $number: its $1 matches a private identifier"; return; fi
+    done
+  }
+  pr_field title title
+  pr_field description description
+  pr_field "head branch name" head-ref
+  pr_text="; nor does the pull request's title, description or head branch name"
   pr=refs/pull/$number
   # Each ref is listed with ls-remote --exit-code: exit 0 means listed, exit 2 means no matching
   # ref on origin, and any other exit is a lookup error. Only the merge ref may be absent.
@@ -330,6 +379,6 @@ n=$checked
 [ -z "$merge_absent" ] || echo "history-isolation: $merge_absent"
 
 if [ "$status" = 0 ]; then
-  echo "history-isolation: only root $root; $n commits not already on main checked; no author, committer or message matches a private identifier"
+  echo "history-isolation: only root $root; $n commits not already on main checked; no author, committer or message matches a private identifier$pr_text"
 fi
 exit "$status"
