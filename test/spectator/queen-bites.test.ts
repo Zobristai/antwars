@@ -5,6 +5,9 @@
  * her biters take the bite pose aimed at her ring; brackets, a name tab and a count stack are placed clear of each other.
  */
 import { describe, expect, it, vi } from "vitest";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { TICK_MS } from "../../src/live/snapshot.ts";
 import { decodeMessage, encodeMessage, withoutQueenBites, type StreamEvent, type StreamMessage } from "../../src/live/format.ts";
 import { SpectatorState } from "../../src/live/model.ts";
@@ -13,6 +16,8 @@ import { SOLDIER_HATCH_TIMING, TERRAIN_RULES, damagePerTick, type SimConfig } fr
 import type { SimEvent } from "../../src/sim/types.ts";
 import { Frame, Playback, RENDER_DELAY_MS, type QueenPulse } from "../../web/src/buffer.ts";
 import { Bites } from "../../web/src/bite.ts";
+import { Ants3D } from "../../web/src/board3d/ants3d.ts";
+import { COLONY_RGB, Ground } from "../../web/src/board3d/ground.ts";
 import { colonyTint } from "../../web/src/colony-palette.ts";
 import { EMBLEM_BAR, QUEEN_CHIP, QUEEN_EMBLEM, QUEEN_LIT, QueenHomes, emblemState, mixColour } from "../../web/src/effects.ts";
 import { markerParticles } from "../../web/src/board3d/markers3d.ts";
@@ -214,6 +219,39 @@ describe("the ants biting her", () => {
     for (const c of contacts) expect(Math.hypot(c.x - pulse.x, c.y - pulse.y)).toBeCloseTo(ring, 9);
     const antContacts = bites.contacts(0.5, "2d");
     for (const c of antContacts) expect(contacts).not.toContainEqual(c);
+  });
+
+  it("draw the same turned, leaning body on the 3D board as the 2D pose, aimed at her ring", () => {
+    // Ants3D draws each ant from the shared pose (bite.ts): heading, leaned body point and head offset.
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const L = 0.5, ground = new Ground(scene, f.board!.setup.mapW, f.board!.setup.mapH);
+      const ants3d = new Ants3D(scene, ground, L, COLONY_RGB);
+      ants3d.queenRing = () => ring;
+      const bites = new Bites();
+      bites.queenRing = () => ring;
+      ants3d.update(f);
+      bites.update(f);
+      let checked = 0;
+      for (const id of pulse.biters) {
+        const i = index(id), soldier = f.caste[i] === 1, size = L * (soldier ? 2 : 1);
+        const pose = bites.pose(i, size)!, body = bites.bodyPosition(i, size)!;
+        const mesh = scene.getMeshByName(`${soldier ? "soldiers" : "ants"}${f.colony[i]}`) as Mesh;
+        const m = mesh._thinInstanceDataStorage.matrixData!;
+        let found = false;
+        for (let o = 0; o < mesh.thinInstanceCount * 16; o += 16) {
+          if (Math.abs(m[o + 12]! - body.x) > 1e-4 || Math.abs(m[o + 14]! - (ground.mapH - body.y)) > 1e-4) continue;
+          const heading = -Math.atan2(m[o + 2]!, m[o]!);
+          expect(Math.abs(((heading - pose.rotation + 3 * Math.PI) % (2 * Math.PI)) - Math.PI)).toBeLessThan(1e-4);
+          found = true;
+        }
+        expect(found).toBe(true);
+        // Leaned toward her: its body is no farther from her than where it stands.
+        expect(Math.hypot(body.x - pulse.x, body.y - pulse.y)).toBeLessThanOrEqual(Math.hypot(f.x[i]! - pulse.x, f.y[i]! - pulse.y) + 1e-9);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(0);
+    } finally { scene.dispose(); engine.dispose(); }
   });
 
   it("face her once their bodies have turned", () => {

@@ -42,7 +42,7 @@ import { Frame, Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQuee
 import { createClock } from "../clock.ts";
 import { gpuReadback, realTimeSource, type RealNow } from "../timing.ts";
 import { CVD_MATRICES, QUEEN_EMBLEM } from "../effects.ts";
-import { QueenBiteCues } from "../queen-bites.ts";
+import { QueenBiteCues, cueKey } from "../queen-bites.ts";
 import { FONT_LICENCE, Words, loadFonts, nestRects, nestZoneRect, type Rect } from "../words.ts";
 import { Camera, FALL_MOVE_MS, easeInOut, fightLane, keepPinch, queensBox, reducedMotion, type View } from "../camera.ts";
 import { Squads, agentHues } from "../squads.ts";
@@ -750,7 +750,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     destinationLines.update(shown, toScreenInFront, teamView.choice === "full" ? null : teamView.choice, { x0: 0, y0: 0, x1: w, y1: h }, (tx, ty) => toScreenInFront(tx, ty, AIR_LIFT_3D_TILES));
     // The queen bite cues are placed first, clear of the panels, and reserved: the marks' labels and badges keep clear of them.
     const cueRects = cues.update(shown, { toScreen, bodyPx: (tx, ty, soldier) => ants.lengthTiles * tilePxAt(tx, ty) * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : []);
-    words.update(shown, toScreen, cueRects.length === 0 ? blocked : [...blocked, ...cueRects], `${viewKey()}:${overlaysOn}`, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront);
+    words.update(shown, toScreen, cueRects.length === 0 ? blocked : [...blocked, ...cueRects], `${viewKey()}:${overlaysOn}:${cueKey(cueRects)}`, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront);
     squads.updateBadges(shown, toScreen, words.badges);
     if (board?.result) endedAt ??= now;
     else endedAt = null;
@@ -898,6 +898,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     markers: () => (words.layer.visible ? words.markers() : []),
     flightLines: () => destinationLines.drawn(),
     markLabels: () => (words.layer.visible ? words.drawnLabels() : []),
+    queenCues: () => cues.placed,
     zoomAt: (f) => (cam.radius = Math.min(cam.upperRadiusLimit ?? Infinity, Math.max(cam.lowerRadiusLimit ?? 0, cam.radius / f))),
     panBy(dx, dy) {
       // As the 2D board's panBy: the board moves with the drag. Screen px become ground tiles at the target, along the

@@ -33,7 +33,7 @@ import { FoodPiles } from "./food.ts";
 import { LockoutDials } from "./flyer-lockout.ts";
 import { StartBoxes2D } from "./start-boxes2d.ts";
 import { Battles, CVD_MATRICES, FlightMoments, PlaceMarkers, QUEEN_EMBLEM, QueenHomes, cvdFilter, tiltShift, type Deficiency } from "./effects.ts";
-import { QueenBiteCues } from "./queen-bites.ts";
+import { QueenBiteCues, cueKey } from "./queen-bites.ts";
 import { FONT_LICENCE, Words, loadFonts, nestRects, nestZoneRect, type MarkStats, type Rect } from "./words.ts";
 import { Camera, FALL_MOVE_MS, LOCATE_ZOOM, easeInOut, fightLane, foundingEnvelope, lerpView, queensBox, reducedMotion, type View } from "./camera.ts";
 import { Squads, agentHues } from "./squads.ts";
@@ -157,6 +157,8 @@ export interface AntwarApi {
   flightLines(): readonly DrawnFlightLine[];
   /** Each mark's label drawn now (a count mark's reading on its plate beside its marker), with its box in screen px: the mark's own tap target. */
   markLabels(): { id: number; text: string; rect: Rect }[];
+  /** The queen bite cues drawn now (queen-bites.ts layoutCues): count stacks, tabs and brackets, in screen px. */
+  queenCues(): { stacks: { rect: Rect; rows: { text: string; x: number; y: number; w: number }[]; rowH: number }[]; tabs: { text: string; rect: Rect }[]; brackets: { x: number; y: number; side: number }[] };
   zoomAt(factor: number, x: number, y: number): void;
   panBy(dx: number, dy: number): void;
   view(): View;
@@ -213,6 +215,7 @@ window.__antwar = {
   markers: notReady,
   flightLines: notReady,
   markLabels: notReady,
+  queenCues: notReady,
   zoomAt: notReady,
   panBy: notReady,
   view: notReady,
@@ -676,7 +679,7 @@ async function start(): Promise<void> {
     // The queen bite cues are placed first, clear of the panels, and reserved: the marks' labels and badges keep clear of them.
     const antPx = antLengthPx(camera.fit.tilePx * scale) / camera.fit.tilePx * camera.view.tilePx;
     const cueRects = cues.update(shown, { toScreen: camera.toScreen, bodyPx: (_x, _y, soldier) => antPx * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : []);
-    words.update(shown, camera.toScreen, cueRects.length === 0 ? blocked : [...blocked, ...cueRects], `${viewVersion}:${overlaysOn}`, squads.anchors(shown, camera.toScreen), squads.badgeR);
+    words.update(shown, camera.toScreen, cueRects.length === 0 ? blocked : [...blocked, ...cueRects], `${viewVersion}:${overlaysOn}:${cueKey(cueRects)}`, squads.anchors(shown, camera.toScreen), squads.badgeR);
     lap("words");
     squads.updateBadges(shown, camera.toScreen, words.badges);
     lap("tags");
@@ -826,6 +829,7 @@ async function start(): Promise<void> {
     markers: () => (words.layer.visible ? words.markers() : []),
     flightLines: () => destinationLines.drawn(),
     markLabels: () => (words.layer.visible ? words.drawnLabels() : []),
+    queenCues: () => cues.placed,
     zoomAt: (f, x, y) => camera.zoomAt(f, x, y),
     panBy: (dx, dy) => camera.panBy(dx, dy),
     view: () => ({ ...camera.view }),

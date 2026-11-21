@@ -182,6 +182,11 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
   return { stacks, tabs, brackets, reserved: [...stacks.map((s) => s.rect), ...tabs.map((t) => t.rect)] };
 }
 
+/** A key that changes whenever a cue's reserved rect moves, so the marks' layout is placed again clear of it. */
+export function cueKey(rects: readonly Rect[]): string {
+  return rects.map((r) => `${r.x0},${r.y0},${r.x1},${r.y1}`).join(";");
+}
+
 /** The queen bite cues' screen layer (layoutCues), for both boards. */
 export class QueenBiteCues {
   readonly layer = new Container();
