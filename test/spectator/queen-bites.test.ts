@@ -333,6 +333,27 @@ describe("the cues' layout", () => {
     if (tx >= 0 && ty >= 0 && tx <= small.w && ty <= small.h) for (const t of placed.tabs) expect(whole(t.rect)).toBe(true);
   });
 
+  it("places a tab clear of the count stack when both fall back at that edge, neither cut nor covered", () => {
+    // Her emblem at (318, 301) one pixel under a HUD panel ending at y = 300, the ant she bites at (310, 310), two biters.
+    const queen = { id: 0, colony: 0, x: 318 * 256, y: 301 * 256, foundedTick: 0, lostTick: null, overrun: 0, hp: 50_000 };
+    const pulse: QueenPulse = { colony: 0, queenId: 0, x: 318, y: 301, biters: [1, 2], counts: [0, 2], target: { id: 9, colony: 1, soldier: false, dead: false }, chip: 0 };
+    const frame = { board: { ...f.board!, queens: [queen] }, queenPulse: [pulse], count: 1, id: Uint32Array.of(9), x: Float32Array.of(310), y: Float32Array.of(310),
+      drawX: null, drawY: null, corpses: [] } as unknown as Frame;
+    const identity = { toScreen: (x: number, y: number): [number, number] => [x, y], bodyPx: () => 14 };
+    const small = { w: 320, h: 844 }, hud = { x0: 0, y0: 0, x1: 320, y1: 300 };
+    const placed = layoutCues(frame, identity, small, [hud]);
+    expect(placed.stacks).toHaveLength(1);
+    expect(placed.tabs).toHaveLength(1);
+    const stack = placed.stacks[0]!.rect, tab = placed.tabs[0]!.rect;
+    for (const r of [stack, tab]) {
+      expect(r.x0 >= 0 && r.y0 >= 0 && r.x1 <= small.w && r.y1 <= small.h).toBe(true);
+      expect(overlaps(r, hud)).toBe(false);
+      expect(overlaps(r, emblemRect(318, 301))).toBe(false);
+    }
+    expect(overlaps(stack, tab)).toBe(false);
+    expect(placed.stacks[0]!.rows[0]!.text).toBe(`2 ${names[1]}`);
+  });
+
   it("draws nothing for a frame without records", () => {
     const empty: Pick<Frame, "queenPulse"> = { queenPulse: [] as QueenPulse[] };
     expect(layoutCues({ ...f, ...empty }, board, screen, [])).toEqual({ stacks: [], tabs: [], brackets: [], reserved: [] });

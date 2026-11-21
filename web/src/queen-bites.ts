@@ -126,22 +126,25 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
   const free = (r: Rect, extra: readonly Rect[] = []) => placer.free(r) && !extra.some((e) => overlaps(r, e));
   const onScreen = (r: Rect) => r.x0 >= 0 && r.y0 >= 0 && r.x1 <= screen.w && r.y1 <= screen.h;
   const near = (first: Rect, extra: readonly Rect[]) => NEAR.map(([dx, dy]) => shift(first, dx, dy)).find((r) => free(r, extra));
-  // The last resort, for a cue whose anchor is on screen: the first of its spots that is whole on screen and off every
-  // HUD panel, drawn on top of whatever else is there; else the nearest such place on the 4 px grid. A cue is never cut.
+  // The last resort, for a cue whose anchor is on screen: a place whole on screen and off every HUD panel, clear of
+  // every emblem and cue already placed where one exists (the first of its spots, else the nearest on the 4 px grid),
+  // else the same without that clearance, drawn on top. A cue is never cut and never covers another while room exists.
   const seen = (r: Rect) => onScreen(r) && !blocked.some((b) => overlaps(r, b));
-  const visible = (spots: readonly Rect[]): Rect | undefined => {
-    const found = spots.find(seen);
-    if (found !== undefined) return found;
-    const first = spots[0]!, reach = Math.max(screen.w, screen.h);
-    for (let d = NEAR_STEP; d <= reach; d += NEAR_STEP) {
+  const clear = (r: Rect, extra: readonly Rect[]) => !placer.rects.some((o) => overlaps(r, o)) && !extra.some((e) => overlaps(r, e));
+  const nearest = (first: Rect, ok: (r: Rect) => boolean): Rect | undefined => {
+    for (let d = NEAR_STEP, reach = Math.max(screen.w, screen.h); d <= reach; d += NEAR_STEP) {
       let best: Rect | undefined, bestD = Infinity;
       for (let k = -d; k <= d; k += NEAR_STEP) for (const [dx, dy] of [[k, -d], [k, d], [-d, k], [d, k]] as const) {
         const r = shift(first, dx, dy), dist = Math.hypot(dx, dy);
-        if (dist < bestD && seen(r)) { best = r; bestD = dist; }
+        if (dist < bestD && ok(r)) { best = r; bestD = dist; }
       }
       if (best !== undefined) return best;
     }
     return undefined;
+  };
+  const visible = (spots: readonly Rect[], extra: readonly Rect[]): Rect | undefined => {
+    const roomy = (r: Rect) => seen(r) && clear(r, extra);
+    return spots.find(roomy) ?? nearest(spots[0]!, roomy) ?? spots.find(seen) ?? nearest(spots[0]!, seen);
   };
   const inView = (x: number, y: number) => x >= 0 && y >= 0 && x <= screen.w && y <= screen.h;
   for (const p of pulses) {
@@ -156,7 +159,7 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
     const rowH = cueSize("", true).h, w = Math.max(...rows.map((r) => r.w));
     const h = rows.length * rowH + (rows.length - 1) * CUE_LABEL.rowGap;
     const spots = stackSpots(x, y, w, h);
-    const rect = spots.find((s) => free(s)) ?? near(spots[0]!, []) ?? (inView(x, y) ? visible(spots) : undefined) ?? spots[0]!;
+    const rect = spots.find((s) => free(s)) ?? near(spots[0]!, []) ?? (inView(x, y) ? visible(spots, []) : undefined) ?? spots[0]!;
     placer.occupy(rect);
     // The leader meets the row nearest her centre, at its side facing her.
     const right = (rect.x0 + rect.x1) / 2 >= x, below = (rect.y0 + rect.y1) / 2 >= y;
@@ -193,7 +196,7 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
     const box: Rect = { x0: sx - side / 2, y0: sy - side / 2, x1: sx + side / 2, y1: sy + side / 2 };
     const spots = tabSpots(box, w, h);
     const flush = spots.find((s) => free(s, stackRects));
-    const rect = flush ?? near(spots[0]!, stackRects) ?? (inView(sx, sy) ? visible(spots) : undefined) ?? spots[0]!;
+    const rect = flush ?? near(spots[0]!, stackRects) ?? (inView(sx, sy) ? visible(spots, stackRects) : undefined) ?? spots[0]!;
     placer.occupy(rect);
     tabs.push({ colony: p.colony, text, rect, leader: flush === undefined ? boxLeader(box, rect) : null });
   }
