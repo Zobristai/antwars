@@ -155,6 +155,22 @@ describe("queen bite cues in playback", () => {
     expect(chip(at).every((c) => c === 0)).toBe(true);
   });
 
+  it("start the chip again from the first message after a gap, never counting HP lost in the missing message", () => {
+    const tps = f.board!.setup.ticksPerSecond;
+    const hpAt = (m: StreamMessage, colony: number, id: number) => m.events.find((e): e is Extract<StreamEvent, { kind: "queenHp" }> => e.kind === "queenHp" && e.colony === colony && e.queenId === id)?.hp;
+    // A bitten tick whose next two ticks are in its second and also drop her HP.
+    const gap = biteTicks.find((t) => t % tps !== 0 && (t + 2) % tps > (t % tps) && simBites.get(t)!.some((b) => b.biters.length > 0 &&
+      [t, t + 1, t + 2].every((u) => hpAt(messages.find((m) => m.tick === u)!, b.colony, b.queenId) !== undefined)))!;
+    const b = simBites.get(gap)!.find((r) => r.biters.length > 0)!;
+    const without = messages.filter((m) => m.tick !== gap);
+    const pulse = (at: number) => frameAt(at * TICK_MS + 40, without).queenPulse.find((p) => p.colony === b.colony && p.queenId === b.queenId)!;
+    expect(pulse(gap + 1).chip).toBe(0);
+    const before = hpAt(messages.find((m) => m.tick === gap + 1)!, b.colony, b.queenId)!, after = hpAt(messages.find((m) => m.tick === gap + 2)!, b.colony, b.queenId)!;
+    expect(pulse(gap + 2).chip).toBe(before - after);
+    // Received without the gap, the same message's chip counts every drop since the second's first message.
+    expect(frameAt((gap + 1) * TICK_MS + 40).queenPulse.find((p) => p.colony === b.colony && p.queenId === b.queenId)!.chip).toBeGreaterThan(0);
+  });
+
   it("leave a recording without the records as it plays today", () => {
     const old = frameAt(tick * TICK_MS + 40, messages.map(withoutQueenBites));
     expect(old.queenPulse).toEqual([]);
@@ -302,6 +318,19 @@ describe("the cues' layout", () => {
     expect(moved.rect).toEqual(spots[1]);
     const everywhere = layoutCues(f, board, screen, [{ x0: 0, y0: 0, x1: screen.w, y1: screen.h }]).stacks;
     expect(everywhere.length).toBe(layoutCues(f, board, screen, []).stacks.length);
+  });
+
+  it("keeps every cue of a queen on screen whole at a 320 px window's edge under a HUD panel, never cut", () => {
+    const pulse = f.queenPulse.find((p) => p.biters.length > 0 && p.target !== null)!;
+    const small = { w: 320, h: 844 }, hud = { x0: 0, y0: 0, x1: 320, y1: 300 };
+    // Her emblem at the board's top-right corner, one pixel under the HUD: no spot of hers is both clear and whole.
+    const edge = { ...board, toScreen: (x: number, y: number): [number, number] => [318 + (x - pulse.x) * scale, 301 + (y - pulse.y) * scale] };
+    const placed = layoutCues(f, edge, small, [hud]);
+    const whole = (r: { x0: number; y0: number; x1: number; y1: number }) => r.x0 >= 0 && r.y0 >= 0 && r.x1 <= small.w && r.y1 <= small.h && !overlaps(r, hud);
+    const stack = placed.stacks.find((s) => s.queen === pulse)!;
+    expect(whole(stack.rect)).toBe(true);
+    const [tx, ty] = edge.toScreen(...((): [number, number] => { const i = Array.from(f.id.subarray(0, f.count)).indexOf(pulse.target!.id); return [f.drawX?.[i] ?? f.x[i]!, f.drawY?.[i] ?? f.y[i]!]; })());
+    if (tx >= 0 && ty >= 0 && tx <= small.w && ty <= small.h) for (const t of placed.tabs) expect(whole(t.rect)).toBe(true);
   });
 
   it("draws nothing for a frame without records", () => {

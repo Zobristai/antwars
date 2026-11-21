@@ -1209,6 +1209,8 @@ export class Playback {
   private queenPulses(m: StreamMessage, board: Board, bites: readonly QueenBite[], index: ReadonlyMap<number, number>, prev: Held | null):
     { pulses: QueenPulse[]; queenTargets: Map<number, readonly [number, number]> } {
     if (m.full !== null) { this.chipBase = new Map(); this.pulseSecond = new Map(); }
+    // After a gap the HP lost in the missing messages was not seen: the chip starts again from this message's HP.
+    else if (prev !== null && m.tick !== prev.tick + 1) this.chipBase = new Map();
     const tps = Math.max(1, board.setup.ticksPerSecond), second = Math.floor(m.tick / tps);
     const records = m.events.filter((e): e is Extract<StreamEvent, { kind: "queenBites" }> => e.kind === "queenBites");
     for (const b of bites) if (b.pulse) this.pulseSecond.set(`${b.colony}:${b.queenId}`, second);
