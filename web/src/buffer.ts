@@ -144,6 +144,10 @@ interface Held {
   board: Board;
   /** Event-confirmed combat at this message's tick, independent of ground effects. */
   engagements: readonly Engagement[];
+  /** The queen bite cues at this message's tick. */
+  pulses: readonly QueenPulse[];
+  /** Each ant biting a queen at this tick, and that queen's point (sub-tile units), for its body's facing. */
+  queenTargets: ReadonlyMap<number, readonly [number, number]>;
   /** Combat target and legacy positional-steering history, not final drawn facing. */
   facing: ReadonlyMap<number, CombatFacing>;
 }
@@ -218,6 +222,32 @@ export interface QueenHit {
   x: number;
   y: number;
   ageMs: number;
+  /**
+   * The message that carried the bite named who bit her (a queen-bites record, stream version 32): her disc is held
+   * lit instead of flashing. Absent on recordings made before the record, which keep today's flash.
+   */
+  pulse?: true;
+}
+
+/**
+ * One queen's bite cues at one message (stream version 32): the ants biting her, the ant she bites, and the HP she
+ * has lost since the last whole match second. Present for a queen whose message names a bite, and for one whose
+ * chip is still showing after her bites stopped; never on a recording without the record.
+ */
+export interface QueenPulse {
+  colony: Colony;
+  queenId: number;
+  /** Her point, in tiles. */
+  x: number;
+  y: number;
+  /** The ants biting her that are alive in this message, ascending ids. */
+  biters: readonly number[];
+  /** How many of them each colony has, index = colony id. */
+  counts: readonly number[];
+  /** The ant she bites, or null: its colony, its caste and whether it died in this message (its corpse keeps the cue). */
+  target: { id: number; colony: Colony; soldier: boolean; dead: boolean } | null;
+  /** Milli-HP she has lost since the last whole match second (since the first HP received in it, after a join, seek or gap); 0 for none. */
+  chip: number;
 }
 
 /**
@@ -406,6 +436,8 @@ interface QueenBite {
   y: number;
   /** Her HP after the bite. */
   hp: number;
+  /** The same message named who bit her (QueenHit.pulse). */
+  pulse: boolean;
 }
 
 /** The chat keeps this many lines. */
@@ -465,6 +497,8 @@ export class Frame {
   chainMarks: readonly StreamMark[] | null = null;
   /** Bites on a queen within HIT_FLASH_MS. */
   hits: QueenHit[] = [];
+  /** Each fighting queen's bite cues at the earlier bracketing message (QueenPulse); empty on recordings without them. */
+  queenPulse: readonly QueenPulse[] = [];
   /**
    * The tick playback showed each queen's loss at (by "colony:id") and the match's end at: the message
    * that carried it, or the stream's own tick where a snapshot restated it. The collapse, the lingering
@@ -1042,6 +1076,10 @@ export class Playback {
   /** Each queen's HP as last streamed, and the bites read as drops in it. */
   private lastHp = new Map<string, number>();
   private hits: QueenBite[] = [];
+  /** Each queen's HP at the start of the current match second as received (QueenPulse.chip), and that second. */
+  private chipBase = new Map<string, { second: number; hp: number }>();
+  /** The match second in which each queen last took a bite whose message named its biters: her chip shows only then. */
+  private pulseSecond = new Map<string, number>();
   /** Frame.lossShown and Frame.endShown: the message that first carried each loss and the end, within one match. */
   private lossShown = new Map<string, number>();
   private endShown: number | null = null;
@@ -1122,6 +1160,7 @@ export class Playback {
     }
     const bites = this.queenBites(m, board);
     this.hits.push(...bites);
+    const { pulses, queenTargets } = this.queenPulses(m, board, bites, index, prev);
     this.story.observe(m, board, bites);
     const engagements = this.engagementTracker.observe(m, gridScale(board.setup));
     const facing = new Map<number, CombatFacing>();
@@ -1158,7 +1197,63 @@ export class Playback {
         facing.set(id, { rotation, target: null });
       }
     }
-    this.held.push({ tick: m.tick, ants, index, trails, board, engagements, facing });
+    this.held.push({ tick: m.tick, ants, index, trails, board, engagements, facing, pulses, queenTargets });
+  }
+
+  /**
+   * This message's queen bite cues (QueenPulse), from its queen-bites records, and each queen's chip: the HP she has
+   * lost since the first HP received in this match second, shown only in a second in which a bite on her named its
+   * biters. A biter is counted only while it is alive in this message; the ant she bites keeps its cue through a death
+   * in this message. A full snapshot (a join, a seek) restates the bites under way and its own HP is the chip's start.
+   */
+  private queenPulses(m: StreamMessage, board: Board, bites: readonly QueenBite[], index: ReadonlyMap<number, number>, prev: Held | null):
+    { pulses: QueenPulse[]; queenTargets: Map<number, readonly [number, number]> } {
+    if (m.full !== null) { this.chipBase = new Map(); this.pulseSecond = new Map(); }
+    const tps = Math.max(1, board.setup.ticksPerSecond), second = Math.floor(m.tick / tps);
+    const records = m.events.filter((e): e is Extract<StreamEvent, { kind: "queenBites" }> => e.kind === "queenBites");
+    for (const b of bites) if (b.pulse) this.pulseSecond.set(`${b.colony}:${b.queenId}`, second);
+    const queenTargets = new Map<number, readonly [number, number]>();
+    const pulses: QueenPulse[] = [];
+    if (records.length === 0 && this.pulseSecond.size === 0) {
+      for (const q of board.queens ?? []) if (q.hp !== undefined) this.noteChipBase(`${q.colony}:${q.id}`, second, q.hp);
+      return { pulses, queenTargets };
+    }
+    const ants = m.ants, colonies = colonyCount(board.setup);
+    const deaths = new Map<number, Colony>();
+    for (const e of m.events) if (e.kind === "death") deaths.set(e.antId, e.colony);
+    for (const q of board.queens ?? []) {
+      const key = `${q.colony}:${q.id}`;
+      const base = q.hp === undefined ? undefined : this.noteChipBase(key, second, q.hp);
+      const chip = base === undefined || this.pulseSecond.get(key) !== second ? 0 : Math.max(0, base - q.hp!);
+      const record = records.find((r) => r.colony === q.colony && r.queenId === q.id);
+      if (record === undefined && chip === 0) continue;
+      const biters: number[] = [], counts: number[] = Array.from({ length: colonies }, () => 0);
+      for (const id of record?.biters ?? []) {
+        const i = index.get(id);
+        if (i === undefined) continue;
+        biters.push(id);
+        counts[ants.colony[i]!] = (counts[ants.colony[i]!] ?? 0) + 1;
+        queenTargets.set(id, [q.x, q.y]);
+      }
+      let target: QueenPulse["target"] = null;
+      const targetId = record?.targetId ?? null;
+      if (targetId !== null) {
+        const i = index.get(targetId), was = prev?.index.get(targetId);
+        const colony = i !== undefined ? ants.colony[i]! as Colony : deaths.get(targetId);
+        const soldier = (i !== undefined ? ants.caste?.[i] : was !== undefined ? prev!.ants.caste?.[was] : 0) === 1;
+        if (colony !== undefined) target = { id: targetId, colony, soldier, dead: i === undefined };
+      }
+      pulses.push({ colony: q.colony, queenId: q.id, x: q.x / SUB_TILE, y: q.y / SUB_TILE, biters, counts, target, chip });
+    }
+    return { pulses, queenTargets };
+  }
+
+  /** The queen's HP at the start of this match second as received: this HP, in the first message of the second. */
+  private noteChipBase(key: string, second: number, hp: number): number {
+    const base = this.chipBase.get(key);
+    if (base !== undefined && base.second === second) return base.hp;
+    this.chipBase.set(key, { second, hp });
+    return hp;
   }
 
   /**
@@ -1177,7 +1272,8 @@ export class Playback {
       const key = `${e.colony}:${e.queenId}`;
       const before = this.lastHp.get(key);
       const q = board.queens?.find((q) => q.colony === e.colony && q.id === e.queenId);
-      if (before !== undefined && e.hp < before && q !== undefined) out.push({ colony: e.colony, queenId: e.queenId, tick: m.tick, x: q.x / SUB_TILE, y: q.y / SUB_TILE, hp: e.hp });
+      const pulse = m.events.some((r) => r.kind === "queenBites" && r.colony === e.colony && r.queenId === e.queenId && r.biters.length > 0);
+      if (before !== undefined && e.hp < before && q !== undefined) out.push({ colony: e.colony, queenId: e.queenId, tick: m.tick, x: q.x / SUB_TILE, y: q.y / SUB_TILE, hp: e.hp, pulse });
       this.lastHp.set(key, e.hp);
     }
     return out;
@@ -1218,6 +1314,8 @@ export class Playback {
     this.fights = [];
     this.flights = [];
     this.hits = [];
+    this.chipBase = new Map();
+    this.pulseSecond = new Map();
     this.births = new Map();
     if (!sameMatch) {
       this.matches++;
@@ -1276,6 +1374,7 @@ export class Playback {
       frame.ants = null;
       frame.count = 0;
       frame.corpses.length = frame.fights.length = frame.flights.length = frame.marks.length = frame.hits.length = 0;
+      frame.queenPulse = [];
       frame.engagements = [];
       frame.story = [];
       frame.chat = [];
@@ -1377,8 +1476,9 @@ export class Playback {
     frame.hits.length = 0;
     for (const h of this.hits) {
       const age = rt - h.tick * TICK_MS;
-      if (age >= 0 && age < HIT_FLASH_MS) frame.hits.push({ colony: h.colony, queenId: h.queenId, x: h.x, y: h.y, ageMs: age });
+      if (age >= 0 && age < HIT_FLASH_MS) frame.hits.push({ colony: h.colony, queenId: h.queenId, x: h.x, y: h.y, ageMs: age, ...(h.pulse ? { pulse: true as const } : {}) });
     }
+    frame.queenPulse = A.pulses;
     frame.lossShown = this.lossShown;
     frame.endShown = this.endShown;
     frame.match = this.matches;
