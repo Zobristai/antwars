@@ -4,7 +4,7 @@ import type { Frame } from "../../buffer.ts";
 import { COLONY_INK, h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
 import { D1_ICON, RING } from "./icons.ts";
 import {
-  D1_COPY, PAGE_WORDS, balance, clock, coloniesOf, colonyName, dials, mapName, winConditions,
+  D1_COPY, PAGE_WORDS, QUEEN_KILLS_UNRECORDED, balance, clock, coloniesOf, colonyName, dials, mapName, queenKills, winConditions,
   type Gauge, type Lamp, type NextAntView,
 } from "./model.ts";
 import { SCORE_COPY } from "../../story.ts";
@@ -109,13 +109,13 @@ export function mountDeck(doc: Document): Deck {
     lamps.setAttribute("role", "list");
     queenValue.append(count, lamps);
     queens.append(h(doc, "span", "d1-ml", SCORE_COPY.queens), queenValue);
-    const queenKills = h(doc, "div", "d1-cell sb-queen-kills");
-    const unavailable = h(doc, "span", "d1-mv", "—");
-    unavailable.setAttribute("aria-label", "Queen kills not recorded");
-    unavailable.title = "Queen kills not recorded";
-    queenKills.append(h(doc, "span", "d1-ml", "Queen kills"), unavailable);
-    root.append(queens, queenKills);
-    return { root, values, count, lamps, next: { value: nextValue, fill: ring.querySelector<SVGCircleElement>(".d1-ring-fill"), caste, words, said, casteKey: "" } };
+    const queenKillsCell = h(doc, "div", "d1-cell sb-queen-kills");
+    const queenKillsValue = h(doc, "span", "d1-mv", "—");
+    queenKillsValue.setAttribute("aria-label", QUEEN_KILLS_UNRECORDED);
+    queenKillsValue.title = QUEEN_KILLS_UNRECORDED;
+    queenKillsCell.append(h(doc, "span", "d1-ml", "Queen kills"), queenKillsValue);
+    root.append(queens, queenKillsCell);
+    return { root, values, count, lamps, queenKills: queenKillsValue, next: { value: nextValue, fill: ring.querySelector<SVGCircleElement>(".d1-ring-fill"), caste, words, said, casteKey: "" } };
   });
 
   const lampCache = new Map<string, { node: HTMLElement; hp: HTMLElement; on: HTMLElement }>();
@@ -191,7 +191,7 @@ export function mountDeck(doc: Document): Deck {
       setAttr(holdRow, "title", win.holdText || null);
       setText(holdRule, count > 2 ? ">50% majority" : "");
       setHidden(holdRule, count <= 2);
-      const ds = dials(frame);
+      const ds = dials(frame), qk = queenKills(frame);
       setHidden(headings[3]!, !ds.some(d => d.flyers !== null));
       for (const c of slots) {
         const e = economies[c]!, d = ds[c];
@@ -207,6 +207,11 @@ export function mountDeck(doc: Document): Deck {
         setText(e.count, win.standing[c] ?? "—");
         e.count.setAttribute("aria-label", `${colonyName(c, setup)} standing queens: ${win.standing[c] ?? "—"}`);
         e.lamps.setAttribute("aria-label", `${colonyName(c, setup)} queens`);
+        const queenKillFigure = qk[c] ?? null;
+        const killsSaid = queenKillFigure === null ? QUEEN_KILLS_UNRECORDED : `${colonyName(c, setup)} queen kills: ${queenKillFigure}`;
+        setText(e.queenKills, queenKillFigure ?? "—");
+        setAttr(e.queenKills, "aria-label", killsSaid);
+        if (e.queenKills.title !== killsSaid) e.queenKills.title = killsSaid;
         const nodes = (win.lamps[c] ?? []).map(lampNode);
         if (nodes.length !== e.lamps.childElementCount || nodes.some((node, i) => e.lamps.children[i] !== node)) e.lamps.replaceChildren(...nodes);
       }

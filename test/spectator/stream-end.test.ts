@@ -58,7 +58,7 @@ it("opts in on the browser transport and keeps existing query parameters when re
     source: path => { paths.push(path); return new Source(); },
   });
   link.reopen();
-  expect(paths).toEqual(["/watch/live/lobby?existing=value&kills=1", "/watch/live/lobby?existing=value&kills=1"]);
+  expect(paths).toEqual(["/watch/live/lobby?existing=value&kills=1&queenKills=1", "/watch/live/lobby?existing=value&kills=1&queenKills=1"]);
   link.close();
 });
 

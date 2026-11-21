@@ -29,7 +29,7 @@ it.each([0, 60, 300])("carries lobby status delay %s through the actual source t
   const reject = vi.fn();
   const source = await openSource(new URLSearchParams({ lobby: lobbyId, watch: "1" }), { now: () => 0 }, doc, reject, {
     source: path => {
-      expect(path).toBe(`/watch/live/${lobbyId}?kills=1`);
+      expect(path).toBe(`/watch/live/${lobbyId}?kills=1&queenKills=1`);
       queueMicrotask(() => es.onmessage?.({ data: deflateRawSync(bytes).toString("base64") } as MessageEvent<string>));
       return es;
     }, intake,

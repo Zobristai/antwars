@@ -6,7 +6,7 @@ import { comparison, logLines, matchLogs, startComparisonMatch, tempDir } from "
 import { describe, expect, it } from "vitest";
 import { headerLine, replay, stateHash } from "../../src/sim/log.ts";
 import { HISTORICAL_CONFIG } from "../sim/fixtures.ts";
-import { decodeMessage, encodeMessage, GRID_SCALE_STREAM_VERSION, streamQueens } from "../../src/live/format.ts";
+import { decodeMessage, encodeMessage, GRID_SCALE_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, streamQueens, withoutQueenKills } from "../../src/live/format.ts";
 import { SpectatorState } from "../../src/live/model.ts";
 import { playScripted, recordLog } from "../../src/live/record.ts";
 import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
@@ -24,9 +24,16 @@ describe("recording writer compatibility", () => {
     // was 106825 bytes, fc9053014935e5d33aa889d04fffc307db7261189b83de668ce15ae650718c30.
     const config = playable({ ...PUBLIC_CONFIG, terrain: undefined, matchTicks: 200 });
     const { lines } = playScripted({ seed: 17, config, agents: 2, ticks: 200 });
-    const bytes = packMessages(recordLog(lines));
-    expect(bytes.length).toBe(120303);
-    expect(sha256(bytes)).toBe("55f8923277c56bb9ab41da2e47d5186866bb9602bfe12e710741fb2169dcad2b");
+    const messages = recordLog(lines);
+    // Public rules credit queen kills, which the writer records at version 31. With them taken out, every other
+    // byte is the earlier pin's.
+    expect(messages[0]![2]).toBe(QUEEN_KILLS_STREAM_VERSION);
+    const earlier = packMessages(messages.map(bytes => encodeMessage(withoutQueenKills(decodeMessage(bytes)))));
+    expect(earlier.length).toBe(120303);
+    expect(sha256(earlier)).toBe("55f8923277c56bb9ab41da2e47d5186866bb9602bfe12e710741fb2169dcad2b");
+    const bytes = packMessages(messages);
+    expect(bytes.length).toBe(120311);
+    expect(sha256(bytes)).toBe("5a04f561ff868ca7a6dcd252d8cf41accf17bf04fcb8b328a56bd1b85cf9acdc");
   });
 
   it("every new header and ordinary live/scripted recording names ant115", () => {

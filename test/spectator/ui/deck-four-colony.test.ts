@@ -13,7 +13,7 @@ import { SUPERCOLONY_NAMES, colonyNameNote, colourCss } from "../../../src/sim/c
 import { SUB_TILE, type StreamAgent, type StreamEvent, type StreamFull, type StreamMessage, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
 import { TICK_MS } from "../../../src/live/snapshot.ts";
 import { SCORE_COPY } from "../../../web/src/story.ts";
-import { D1_COPY, colonyRows, resultView } from "../../../web/src/ui/deck/model.ts";
+import { D1_COPY, QUEEN_KILLS_UNRECORDED, colonyRows, queenKills, resultView } from "../../../web/src/ui/deck/model.ts";
 import { mountDeckHud } from "../../../web/src/ui/deck/hud.ts";
 import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
@@ -349,4 +349,75 @@ describe("the single-line state and separate match metadata", () => {
     expect(host.byClass("sb-meta-item").map(n => n.textContent)).toEqual(["not live", "4 agents", "15 Nov 2026"]);
     expect(one(host, "d1-back").hidden).toBe(false);
   });
+});
+
+// The Queen kills cell: the recorded count, zero included, where the recording carries it (version 31); where it does
+// not, the dash said as not recorded, never a count derived from queens lost.
+describe("the Queen kills cell", () => {
+  const cells = (host: ElementPort) => host.byClass("d1-team").filter(shownIn).map(team => one(team, "sb-queen-kills").byClass("d1-mv")[0]!);
+
+  it("shows each colony's recorded queen kills, zero included, in a four-colony and a two-colony match", () => {
+    const { host, hud } = mounted();
+    const quad = quadFrame({ lost: [1] }); quad.board!.queenKills = [0, 0, 1, 0];
+    hud.update(view(quad));
+    expect(cells(host).map(n => n.textContent)).toEqual(["0", "0", "1", "0"]);
+    expect(cells(host).map(n => n.getAttribute("aria-label"))).toEqual(NAMES.map((name, c) => `${name} queen kills: ${[0, 0, 1, 0][c]}`));
+    const pair = pairFrame(); pair.board!.queenKills = [1, 0];
+    hud.update(view(pair));
+    expect(cells(host).map(n => n.textContent)).toEqual(["1", "0"]);
+  });
+
+  it("keeps the not-recorded dash for a recording that carries no queen kills, even with a queen lost", () => {
+    const { host, hud } = mounted();
+    const quad = quadFrame({ lost: [1] });
+    quad.board!.queenKills = [0, 0, 1, 0]; hud.update(view(quad));
+    hud.update(view(quadFrame({ lost: [1] })));
+    for (const cell of cells(host)) {
+      expect(cell.textContent).toBe("—");
+      expect(cell.getAttribute("aria-label")).toBe(QUEEN_KILLS_UNRECORDED);
+      expect(cell.title).toBe(QUEEN_KILLS_UNRECORDED);
+    }
+  });
+
+  for (const live of [false, true]) {
+    it(`carries recorded queen kills through playback to the end, and keeps them on a frame without a change (${live ? "live" : "replay"})`, () => {
+      const messages = recording();
+      messages[0]!.full!.queenKills = [0, 0, 0, 0];
+      messages[1]!.events.push({ kind: "queenKills", totals: [0, 0, 1, 0] });
+      // Decoded as the stream format reads them back (the codec's own round trip is test/live/queen-kills-stream.test.ts).
+      const decoded = messages;
+      const playback = new Playback(live ? { live: true } : undefined), preparation = new TickPreparation();
+      for (const m of decoded) {
+        if (live) playback.pushPrepared(preparation.prepare(m)!, m.tick * TICK_MS);
+        else playback.push(m, m.tick * TICK_MS);
+      }
+      const figures: string[] = [];
+      for (let now = 0; now <= decoded.at(-1)!.tick * TICK_MS + 10_000; now += TICK_MS) {
+        const frame = new Frame();
+        if (playback.sample(now, frame)) figures.push(JSON.stringify(queenKills(frame)));
+      }
+      expect(figures.filter((s, i, all) => s !== all[i - 1]).map(s => JSON.parse(s))).toEqual([["0", "0", "0", "0"], ["0", "0", "1", "0"]]);
+    });
+  }
+
+  for (const width of [1280, 390, 320]) {
+    it(`lays a count out in the same box as the dash, on one line, at ${width}px`, async () => {
+      const boxes: { width: number; height: number; lines: number }[][] = [];
+      for (const totals of [undefined, [0, 12, 3, 0]]) {
+        const { host, hud } = mounted(width >= 760);
+        const f = quadFrame(); if (totals) f.board!.queenKills = totals;
+        hud.update(view(f));
+        const page = await browser.newPage({ viewport: { width, height: 844 } });
+        try {
+          await page.setContent(`<!doctype html>${root()}<head><style>${STYLES}</style></head><body><div class="aw-hud">${markup(host)}</div></body></html>`);
+          boxes.push(await page.evaluate(() => [...document.querySelectorAll(".sb-queen-kills")].map(cell => {
+            const r = cell.getBoundingClientRect(), value = cell.querySelector(".d1-mv")!;
+            return { width: Math.round(r.width * 10) / 10, height: Math.round(r.height * 10) / 10, lines: value.getClientRects().length };
+          })));
+        } finally { await page.close(); }
+      }
+      expect(boxes[1]).toEqual(boxes[0]);
+      for (const box of boxes[1]!) expect(box.lines).toBe(1);
+    });
+  }
 });

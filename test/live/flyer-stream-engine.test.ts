@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.ts";
 import {
-  FLYER_STREAM_VERSION, SUB_TILE, decodeMessage, encodeMessage, encodeReplayMessage, type StreamFlyer, type StreamMessage,
+  FLYER_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, SUB_TILE, decodeMessage, encodeMessage, encodeReplayMessage, type StreamFlyer, type StreamMessage,
 } from "../../src/live/format.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.ts";
@@ -189,7 +189,8 @@ describe("an air fight a viewer joins before it takes off", () => {
     for (const bytes of deltas.slice(0, JOIN - START)) board.apply(decodeMessage(bytes));
     const joined = [encodeReplayMessage(board.message()), ...deltas.slice(JOIN - START)].map(decodeMessage);
     expect(joined[0]!.tick).toBe(JOIN);
-    expect(encodeMessage(board.message())[2]).toBe(FLYER_STREAM_VERSION);
+    // A public match's opening carries its queen kills, zero included, so it is written at the queen-kills version.
+    expect(encodeMessage(board.message())[2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     expectFightSeen(frames(joined, "recorded"));
     // A recording played from its start, then sought into the ground fight and played on past the take-off.
     const bytes = packMessages([encodeReplayMessage(opening), ...deltas]);

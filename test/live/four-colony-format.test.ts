@@ -5,7 +5,7 @@ import { decodeMessage as oldDecode } from "./fixtures/pre-queen-ranking-format.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-  COLONY_NAMES_STREAM_VERSION, FOUR_COLONY_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage,
+  COLONY_NAMES_STREAM_VERSION, FOUR_COLONY_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage, withoutQueenKills,
   type StreamAnts, type StreamEvent, type StreamFull, type StreamMessage, type StreamQueen, type StreamResult,
 } from "../../src/live/format.ts";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.ts";
@@ -195,7 +195,9 @@ describe("a four-colony match on the spectator stream", () => {
 });
 
 // Two-colony matches recorded on the live and public paths, and their reconnect snapshot, as the encoder wrote them
-// before version 27 existed: each message's version, and the SHA-256 of the messages packed as a recording.
+// before version 27 existed: each message's version, and the SHA-256 of the messages packed as a recording. Queen
+// kills (version 31) are later content where the rules credit them; they are taken out before comparing, so these
+// hashes still prove every other byte unchanged.
 const TWO_COLONY_BEFORE = {
   rated: {
     versions: [4, 18, 25],
@@ -230,7 +232,9 @@ describe("two-colony messages beside four colonies", () => {
     const recorder = new SpectatorRecorder(createMatch(17, config), players);
     const messages: StreamMessage[] = [{ ...recorder.initial(), full: recorder.initialFull() }];
     playScripted({ seed: 17, config, agents: 4, ticks: 300, attack: true }, out => { messages.push({ ...recorder.record(out), full: null }); });
-    const live = messages.map(encodeMessage);
+    expect(messages[0]!.full!.queenKills !== undefined).toBe(config.queenKillsFirst === true);
+    const earlier = messages.map(withoutQueenKills);
+    const live = earlier.map(encodeMessage);
     const first = decodeMessage(live[0]!);
     const state = new SpectatorState(first.full!, first.tick, first.ants);
     for (const bytes of live.slice(1)) state.apply(decodeMessage(bytes));
@@ -238,7 +242,7 @@ describe("two-colony messages beside four colonies", () => {
     expect({
       versions: [...new Set(live.map(bytes => bytes[2]!))].sort((a, b) => a - b),
       live: sha256(packMessages(live)),
-      stored: sha256(packMessages(messages.map(m => encodePublicMessage(m)))),
+      stored: sha256(packMessages(earlier.map(m => encodePublicMessage(m)))),
       reconnect: [reconnect[2], sha256(reconnect)],
     }).toEqual(TWO_COLONY_BEFORE[label]);
     expect(first.full!.setup).not.toHaveProperty("colonies");
