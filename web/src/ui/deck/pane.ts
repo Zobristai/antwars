@@ -26,10 +26,16 @@ export interface TeamHooks {
   search(): string;
   /** Each colony's economy (deck.ts), placed under its name. */
   readonly economy: readonly HTMLElement[];
+  /** Narrow scroll container (.d1-below) for deep-scroll collapse recovery and playback scroll anchoring. */
+  readonly narrowScroller?: HTMLElement;
 }
 export interface Teams {
   /** Stable colony containers, hidden when absent from the displayed match. */
   readonly teams: readonly HTMLElement[];
+  /** Shared side-by-side History strip mounted under the colony rows at 1200 px and wider. */
+  readonly historyStrip: HTMLElement;
+  /** Move colony Histories and sticky card headers across the 1200 px layout boundary. */
+  setWide(wide: boolean): void;
   /** The result's modal dialog, for the page to place over the whole screen. */
   readonly result: HTMLDialogElement;
   /** The recording's offer, for the footer. */
@@ -119,7 +125,21 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   };
   listen(doc, "pointerdown", e => { const at = e.target as Node | null; if (tipFor && !(at && (tip.contains(at) || tipFor.contains(at)))) hideTip(); });
 
-  // ---------------------------------------------------------------- the team containers
+  // ---------------------------------------------------------------- the shared desktop History strip & team containers
+  const historyStrip = h(doc, "div", "sb-history-strip");
+  historyStrip.setAttribute("role", "region");
+  historyStrip.setAttribute("aria-label", D1_COPY.history);
+  const historyStripTitle = h(doc, "h3", "d1-kicker sb-history-strip-title", D1_COPY.history);
+  const historyCols = h(doc, "div", "sb-history-cols");
+  historyStrip.append(historyStripTitle, historyCols);
+  setHidden(historyStrip, true);
+  const historyOpen = colonies.map(() => false);
+  let wideLayout = false;
+  let current: Selected = NOTHING;
+  let syncHistory = () => {};
+  let clearPicked = () => {};
+  let recoverCollapsedScroll = (_colony: Colony) => {};
+
   const teamNodes = colonies.map(colony => {
     const section = h(doc, "section", `d1-team c${colony}`);
     section.tabIndex = -1;
@@ -138,25 +158,32 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     player.append(playerName, playerTags, playerElo, playerSeats, playerResult);
     // Hidden until a colony has one player holding several seats (writePlayer).
     setHidden(player, true);
-    head.append(name, members, player);
+    head.append(name, members);
     // The agents: one small row each under the colony name, its badge, name, model and rating; none for one
     // player, whose heading names it once.
     const rows = h(doc, "ol", "d1-agents");
     rows.setAttribute("aria-label", `${colonyName(colony)} agents`);
-    // The game history, the whole panel below: every row newest first, in every match; empty, one quiet line of a
-    // row's height, which the first row replaces.
-    const line = h(doc, "section", "d1-timeline");
+    // The game history: side-by-side strip columns at 1200 px and wider, or directly under each colony card narrower.
+    const line = h(doc, "section", `d1-timeline c${colony}`);
     line.setAttribute("aria-label", `${colonyName(colony)} ${D1_COPY.history.toLowerCase()}`);
+    line.style.setProperty("--sb-ink", COLONY_CSS[colony]!);
     const entries = h(doc, "ol", "d1-tl");
     const none = h(doc, "li", "d1-tl-entry d1-tl-none", D1_COPY.timelineNone);
+    const lineHead = h(doc, "header", "sb-history-head");
+    const colName = h(doc, "h4", "sb-history-col-name", colonyName(colony));
+    const kicker = h(doc, "h3", "d1-kicker sb-history-kicker", D1_COPY.history);
     const ledger = h(doc, "dl", "sb-detail-stat"), hatched = h(doc, "dd", "d1-mv");
     ledger.append(h(doc, "dt", "d1-ml", SCORE_COPY.hatched), hatched);
-    line.append(ledger, h(doc, "h3", "d1-kicker", D1_COPY.history), entries);
+    lineHead.append(colName, kicker, ledger);
+    line.append(lineHead, entries);
     const out = h(doc, "span", "d1-tag d1-team-out", D1_COPY.eliminated);
     setHidden(out, true);
     if (colonies.length > 2) head.append(out);
+    const stickyBar = h(doc, "div", "sb-sticky-bar");
+    setHidden(stickyBar, true);
     const identity = h(doc, "div", "sb-identity");
     identity.append(head, rows);
+    identity.insertBefore(player, rows);
     const historyButton = h(doc, "button", "sb-history");
     historyButton.type = "button";
     historyButton.textContent = "≡";
@@ -167,24 +194,75 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     setHidden(line, true);
     listen(historyButton, "click", () => {
       const open = historyButton.getAttribute("aria-expanded") !== "true";
-      setAttr(historyButton, "aria-expanded", String(open));
-      setHidden(line, !open);
-      if (open) { actions.select(null); actions.selectAgent(-1); }
+      historyOpen[colony] = open;
+      if (open) {
+        actions.select(null);
+        actions.selectAgent(-1);
+        clearPicked();
+        if (wideLayout) historyStrip.scrollTop = 0;
+      }
+      syncHistory();
+      if (!open) recoverCollapsedScroll(colony);
     });
     listen(line, "keydown", e => {
       if ((e as KeyboardEvent).key !== "Escape") return;
+      historyOpen[colony] = false;
       setAttr(historyButton, "aria-expanded", "false"); setHidden(line, true); historyButton.focus();
+      syncHistory();
+      recoverCollapsedScroll(colony);
     });
     line.tabIndex = 0;
     section.append(identity, hooks.economy[colony], historyButton, line);
+    section.prepend(stickyBar);
     // Each row's node by its key, written again only when what it shows changes.
     const lineNodes = new Map<string, { li: HTMLLIElement; written: string }>();
-    return { section, name, out, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
-      playerRd: "", playerKey: "", rows, line, entries, none, lineNodes, historyButton, hatched,
+    return { section, stickyBar, identity, head, name, colName, out, members, membersKey: "", player, playerName, playerTitle, playerModel, playerTags, playerElo, playerSeats, playerResult,
+      playerRd: "", playerKey: "", rows, line, lineHead, entries, none, lineNodes, historyButton, hatched,
       memberButtons: new Map<number, HTMLButtonElement>(),
       memberNodes: new Map<number, { icon: HTMLElement; idle: HTMLElement }>(),
       memberModels: new Map<number, Member>() };
   });
+
+  syncHistory = () => {
+    let openInStrip = 0;
+    for (const colony of colonies) {
+      const team = teamNodes[colony]!;
+      const picked = current.kind !== "none" && current.colony === colony;
+      const visible = historyOpen[colony]! && !picked && !team.section.hidden;
+      setAttr(team.historyButton, "aria-expanded", String(visible));
+      setHidden(team.line, !visible);
+      flag(team.section, "is-history-open", visible);
+      if (visible && wideLayout) openInStrip++;
+    }
+    setHidden(historyStrip, !wideLayout || openInStrip === 0);
+  };
+
+  recoverCollapsedScroll = (colony: Colony) => {
+    if (wideLayout) return;
+    const scroller = hooks.narrowScroller;
+    if (!scroller || typeof scroller.getBoundingClientRect !== "function" || typeof scroller.scrollTop !== "number") return;
+    const top = teamNodes[colony]!.section.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    if (top < 0) scroller.scrollTop = Math.max(0, scroller.scrollTop + top);
+  };
+
+  const setWide = (wide: boolean) => {
+    wideLayout = wide;
+    for (const team of teamNodes) {
+      if (wide) {
+        setHidden(team.stickyBar, true);
+        if (team.head.parentElement !== team.identity) team.identity.prepend(team.head);
+        if (team.historyButton.parentElement !== team.section) team.section.append(team.historyButton);
+        if (team.line.parentElement !== historyCols) historyCols.append(team.line);
+      } else {
+        setHidden(team.stickyBar, false);
+        if (team.head.parentElement !== team.stickyBar) team.stickyBar.append(team.head);
+        if (team.historyButton.parentElement !== team.stickyBar) team.stickyBar.append(team.historyButton);
+        if (team.stickyBar.parentElement !== team.section) team.section.prepend(team.stickyBar);
+        if (team.line.parentElement !== team.section) team.section.append(team.line);
+      }
+    }
+    syncHistory();
+  };
 
   for (const team of teamNodes) {
     rdTip(team.playerElo, () => team.playerRd);
@@ -390,17 +468,17 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     if (row.member) setMarkup(who, row.member.badge);
     const icon = h(doc, "span", "d1-log-icon");
     setMarkup(icon, glyphMarkup(row.glyph, colony, row.member?.shade ?? COLONY_CSS[colony]));
-    const what = h(doc, "span", "d1-tl-what");
+    const what = h(doc, "p", "d1-tl-what");
     // An arrival row says so before its order, its time column left blank: it is a state, not a timed event.
     if (row.arrival) what.append(h(doc, "span", "d1-log-lead", D1_COPY.onArrival));
     what.append(h(doc, "span", "d1-log-text", row.what));
-    if (row.intent) what.append(h(doc, "span", "d1-log-intent", row.intent));
+    if (row.intent) what.append(" ", h(doc, "span", "d1-log-intent", row.intent));
     if (row.mark) {
       const mark = h(doc, "span", "d1-log-mark");
       const markSymbol = h(doc, "span", "d1-log-icon");
       setMarkup(markSymbol, markIcon(row.mark.verb, row.member?.shade ?? COLONY_CSS[colony], 13));
       mark.append(h(doc, "span", "d1-log-mark-word", D1_COPY.arrivalMark), markSymbol, h(doc, "span", "d1-log-text", row.mark.text));
-      what.append(mark);
+      what.append(" ", mark);
     }
     const parts: HTMLElement[] = [h(doc, "span", "d1-when", row.when), who, icon, what];
     if (row.refused) parts.push(h(doc, "span", "d1-log-refused", D1_COPY.refused));
@@ -485,7 +563,6 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   antCard.append(antHead);
   selectedEl.append(card, antCard);
 
-  let current: Selected = NOTHING;
   const closeSelection = () => {
     const was = selectedAgent;
     const home = current.kind === "none" ? null : teamNodes[current.colony]!.section;
@@ -514,11 +591,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const place = (sel: Selected) => {
     current = sel;
     for (const colony of colonies) flag(teamNodes[colony]!.section, "is-picked", sel.kind !== "none" && sel.colony === colony);
-    if (sel.kind === "none") { selectedEl.hidden = true; return; }
+    if (sel.kind === "none") { selectedEl.hidden = true; syncHistory(); return; }
     const home = teamNodes[sel.colony]!.section;
     if (selectedEl.parentElement !== home) home.append(selectedEl);
     selectedEl.hidden = false;
+    syncHistory();
   };
+  clearPicked = () => { if (current.kind !== "none") place(NOTHING); };
 
   let cardKey = "";
   let historyKey = "";
@@ -613,14 +692,34 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     for (const colony of colonies) {
       const node = teamNodes[colony]!, named = colonyName(colony, setup), note = colonyNote(colony, setup);
       node.name.textContent = named;
+      node.colName.textContent = named;
       if (note) node.name.title = note; else node.name.removeAttribute("title");
       node.rows.setAttribute("aria-label", `${named} agents`);
       node.line.setAttribute("aria-label", `${named} ${D1_COPY.history.toLowerCase()}`);
       node.historyButton.setAttribute("aria-label", `${named} history`);
     }
   };
+  /** Keep the visible scrolled History row pinned in place when playback prepends new rows while scrolled down. */
+  const captureScrollAnchor = () => {
+    const scroller = wideLayout ? historyStrip : hooks.narrowScroller;
+    if (!scroller || typeof scroller.getBoundingClientRect !== "function" || typeof scroller.scrollTop !== "number" || scroller.scrollTop <= 0) return null;
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    for (const team of teamNodes) {
+      if (team.line.hidden || team.section.hidden) continue;
+      const pinned = wideLayout ? team.lineHead : team.stickyBar;
+      const pinnedBottom = typeof pinned.getBoundingClientRect === "function" ? pinned.getBoundingClientRect().bottom : scrollerTop;
+      const threshold = Math.max(scrollerTop, pinnedBottom);
+      for (const child of Array.from(team.entries.children)) {
+        const rect = child.getBoundingClientRect();
+        if (rect.height > 0 && rect.bottom > threshold) return { scroller, node: child, top: rect.top };
+      }
+    }
+    return null;
+  };
   return {
     teams: teamNodes.map(t => t.section),
+    historyStrip,
+    setWide,
     result: resultModal.dialog,
     offer,
     update(view, connecting) {
@@ -630,16 +729,17 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       if (lastMatch !== (frame?.match ?? null)) {
         lastMatch = frame?.match ?? null;
         lastSecond = -1; lastStory = -1; lastCommands = null;
-        for (const team of teamNodes) {
-          setAttr(team.historyButton, "aria-expanded", "false"); setHidden(team.line, true);
-        }
+        historyOpen.fill(false);
+        syncHistory();
       }
       const status = colonyRows(frame);
       const count = b?.setup.queens.length ?? 2;
       for (const c of colonies) {
         setHidden(teamNodes[c].section, c >= count);
+        if (c >= count) historyOpen[c] = false;
         setHidden(teamNodes[c].out, !status?.rows[c]?.eliminated);
       }
+      syncHistory();
       selectedAgent = view.selectedAgent;
       const hatched = hatchedTotals(frame);
       for (const colony of colonies) setText(teamNodes[colony]!.hatched, hatched[colony] ?? "—");
@@ -673,7 +773,12 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         lastStory = stories;
         lastCommands = commands;
         lastSeed = seed;
+        const anchor = captureScrollAnchor();
         for (const colony of colonies) writeHistory(colony, gameHistory(frame, colony, seed));
+        if (anchor && anchor.node.isConnected) {
+          const delta = anchor.node.getBoundingClientRect().top - anchor.top;
+          if (Math.abs(delta) > 0.5) anchor.scroller.scrollTop += delta;
+        }
       }
       const sel = selected(frame, view.selected, view.selectedAgent);
       if (sel.kind !== "agent" || sel.index !== targetFor) { if (targetFor >= 0) { targetFor = -1; light(-1); } }
