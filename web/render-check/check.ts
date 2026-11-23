@@ -1,7 +1,8 @@
 /**
- * Render check: renders every surface of a built site at 1280 and 390 px, in Roboto and in Liberation Sans, and
- * judges each render by the in-page rules (rules.ts). Data comes only from the committed snapshot and labelled
- * fixtures (serve.ts). A failure fails the run unless the reviewed held list (held.json) already holds it.
+ * Render check: renders every surface of a built site at 1280, 390 and 320 px, at default (16 px) and doubled
+ * (32 px browser default) text, in Roboto and in Liberation Sans, and judges each render by the in-page rules
+ * (rules.ts). Data comes only from the committed snapshot and labelled fixtures (serve.ts). A failure fails the run
+ * unless the reviewed held list (held.json) already holds it.
  *
  *   npm run build:web && npm run render-check
  *   node --import ./src/ts-resolve.mjs web/render-check/check.ts [--dist web/dist] [--out out/render-check]
@@ -13,13 +14,14 @@
  * The browser is CHROME_BIN (CI sets it to the Playwright image's Chromium).
  */
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
 import { PUBLIC_CONFIG } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { renderRules, rulesAssets } from "../rules.ts";
-import { TYPEFACES, drawnFonts, fontProblem, fontconfigFor, typefaceSlug } from "./fonts.ts";
+import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
 import { RULE_LIMITS, judgePage, type Box, type Finding, type PageJudgement } from "./rules.ts";
 import { ORIGIN, SNAPSHOT_DIR, readFixtures, readSnapshot, serveSite, writeSnapshot } from "./serve.ts";
@@ -28,7 +30,8 @@ const HERE = import.meta.dirname;
 const REPO = resolve(HERE, "../..");
 const CHROMIUM_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--no-sandbox"];
 
-export const WIDTHS = [1280, 390] as const;
+export const WIDTHS = [1280, 390, 320] as const;
+export { DEFAULT_TEXT_SIZE, TEXT_SIZES, type TextSize };
 
 /** How far into its recording a HUD is judged, on the page's stepped clock. */
 export const HUD_PLAY_MS = 10_000;
@@ -42,14 +45,16 @@ export const HUD_PLAY_MS = 10_000;
  */
 export interface Surface {
   id: string; url: string; hud: boolean; what: string;
-  /** Fixtures this surface alone answers with (a file beside this one), over the shared ones; the page's clock is then
-   * fixed at the snapshot's time, so the times it derives from them are the same on every run. */
+  /** Fixtures this surface alone answers with (a file beside this one), over the shared ones. Every surface runs with
+   * the page's wall clock fixed at the snapshot's time, so derived times and "Loaded HH:MM UTC" labels never vary. */
   fixtures?: string;
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
   board?: boolean;
   /** The window widths it is rendered at (default WIDTHS). */
   widths?: readonly number[];
+  /** The browser default text sizes (px) it is rendered at (default TEXT_SIZES). */
+  textSizes?: readonly TextSize[];
   /** Browser zoom, as Chrome lays out page zoom: the window keeps its size in device pixels, the page lays out in a
    * viewport that many times smaller, drawn at that many device pixels a CSS pixel. */
   zoom?: number;
@@ -83,22 +88,23 @@ export const SURFACES: readonly Surface[] = [
   { id: "matches", url: "/?page=matches", hud: false, what: "the Matches page (all recordings)" },
   { id: "waiting", url: "/?page=matches", hud: false, what: "the Matches page with agents waiting and matches live (fixture: Waiting and Live now rows)", fixtures: "waiting-fixture.json" },
   { id: "recordings", url: "/?page=matches", hud: false, what: "the Matches page with a Recordings list of the cases the snapshot lacks (fixture: a sample Scripted bot win in Lake Skinner; snapshot rows), its first Replay link focused", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS },
-  { id: "recordings-zoom-200", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 200 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], zoom: 2 },
-  { id: "recordings-zoom-400", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 400 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], zoom: 4 },
+  { id: "recordings-zoom-200", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 200 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], textSizes: [DEFAULT_TEXT_SIZE], zoom: 2 },
+  { id: "recordings-zoom-400", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 400 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], textSizes: [DEFAULT_TEXT_SIZE], zoom: 4 },
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
   { id: "replay-grouped-seats", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, what: "a 2v2 replay where one player holds both seats of each colony: the Score Band's grouped seat badges over the board" },
 ];
 
-/** The browser context of a window `width` px wide, at a browser zoom of `zoom` (Surface.zoom). */
+/** The browser context of a window `width` px wide, at a browser zoom of `zoom` (Surface.zoom). Phone screens
+ * (width < 600) render at 2× device scale so subpixel text layout matches real phones rather than 1× integer hinting. */
 export const viewport = (width: number, zoom = 1) => width < 600
-  ? { viewport: { width: Math.round(width / zoom), height: Math.round(844 / zoom) }, isMobile: true, hasTouch: true, deviceScaleFactor: zoom }
+  ? { viewport: { width: Math.round(width / zoom), height: Math.round(844 / zoom) }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 * zoom }
   : { viewport: { width: Math.round(width / zoom), height: Math.round(800 / zoom) }, deviceScaleFactor: zoom };
 
-/** The page and every box that scrolls back at its start: the state the page is judged in. A box that clips without
- * scrolling (overflow hidden or clip) is left exactly as the page set it. */
-const scrollHome = (page: Page) => page.evaluate(() => {
+/** Return scrollable boxes to their start without disturbing clipping boxes, then let scroll events and the
+ * animation-frame work they schedule finish before judging the layout. */
+export const scrollHome = (page: Page) => page.evaluate(async () => {
   scrollTo(0, 0);
   for (const e of document.querySelectorAll("*")) {
     if (!e.scrollTop && !e.scrollLeft) continue;
@@ -106,6 +112,9 @@ const scrollHome = (page: Page) => page.evaluate(() => {
     if (/auto|scroll/.test(cs.overflowY)) e.scrollTop = 0;
     if (/auto|scroll/.test(cs.overflowX)) e.scrollLeft = 0;
   }
+  // A scroll event can schedule work for the next animation frame. Cross both frame boundaries rather than
+  // racing that callback when the page is judged or using a time-based sleep.
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 });
 
 /** Where every box that clips without scrolling is scrolled to (the page can set it; the reader cannot). */
@@ -125,6 +134,36 @@ export async function boardReadiness(page: Page, timeoutMs = 30_000): Promise<Bo
     window.__antwar.ready.then((): BoardReadiness => ({ state: "ready" }),
       (e: unknown): BoardReadiness => ({ state: "rejected", reason: String((e as Error)?.message ?? e) })),
     new Promise<BoardReadiness>(res => setTimeout(() => res({ state: "timed out", ms }), ms))]), timeoutMs);
+}
+
+/**
+ * Wait for a Watch page (which may show either a live board or the top-matches list) to settle: resolves with
+ * BoardReadiness if its board becomes ready or rejects, or null as soon as the top-matches list (#aw-top-matches-page)
+ * mounts so a no-live-match render does not wait 30 s for a board that will not load.
+ */
+export async function watchReadiness(page: Page, timeoutMs = 30_000): Promise<BoardReadiness | null> {
+  return page.evaluate(ms => new Promise<BoardReadiness | null>(res => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let observer: MutationObserver | undefined;
+    const done = (v: BoardReadiness | null) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      observer?.disconnect();
+      res(v);
+    };
+    if (document.getElementById("aw-top-matches-page")) { done(null); return; }
+    observer = new MutationObserver(() => {
+      if (document.getElementById("aw-top-matches-page")) done(null);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.__antwar.ready.then(
+      () => done({ state: "ready" }),
+      (e: unknown) => done({ state: "rejected", reason: String((e as Error)?.message ?? e) }),
+    );
+    timer = setTimeout(() => done({ state: "timed out", ms }), ms);
+  }), timeoutMs);
 }
 
 /** What playing a replay's recording to HUD_PLAY_MS showed: how far its board got, and whether its HUD is on screen. */
@@ -177,10 +216,11 @@ async function settle(page: Page, surface: Surface): Promise<{ readiness: BoardR
   let playback: Playback | null = null;
   if (surface.hud) {
     await page.waitForFunction(() => window.__antwar?.ready !== undefined, undefined, { timeout: 30_000 });
-    // A page that draws no board (Watch showing a list) may never settle ready; a surface that needs one
-    // (surface.board) is then invalid (boardProblem).
-    readiness = await boardReadiness(page);
-    const board = readiness.state === "ready";
+    // A page that draws no board (Watch showing the top-matches list) never resolves __antwar.ready; watchReadiness
+    // returns null as soon as the list mounts instead of waiting out the 30 s board timeout. A surface that needs a
+    // board (surface.board) waits on boardReadiness and is invalid if it never settles (boardProblem).
+    readiness = surface.board ? await boardReadiness(page) : await watchReadiness(page);
+    const board = readiness?.state === "ready";
     // Play the recording to HUD_PLAY_MS in 100 ms steps of the page's clock, yielding only while its download catches
     // up, then draw that one frame (again once what it loads has arrived). Nothing moves after it. (A page with no board, such as Watch showing a list,
     // has nothing to play.)
@@ -426,6 +466,20 @@ interface Options {
   record: boolean; updateHeld: boolean; chrome: string;
 }
 
+/** A bounded permit gate so software-rendered 3D replays stay capped while lightweight DOM surfaces run in parallel. */
+function createGate(limit: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const queue: (() => void)[] = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= limit) await new Promise<void>(res => queue.push(res));
+    active++;
+    try { return await fn(); } finally {
+      active--;
+      queue.shift()?.();
+    }
+  };
+}
+
 async function renderAll(o: Options): Promise<Render[]> {
   const snapshot = await readSnapshot().catch(() => ({ recordedFrom: "https://antwars.ai", recordedAt: new Date().toISOString(), responses: {} }));
   const fixtures = await readFixtures([join(HERE, "fixtures.json"), ...o.fixtureFiles]);
@@ -434,90 +488,129 @@ async function renderAll(o: Options): Promise<Render[]> {
   const manifest = JSON.parse(await readFile(join(o.dist, ".vite/manifest.json"), "utf8"));
   const rulesPage = () => renderRules(newMatchConfig(PUBLIC_CONFIG), { undrawn: true, assets: rulesAssets(manifest) });
   const held = await readHeld(o.heldFile).catch(() => ({ note: "", held: [] }));
-  const renders: Render[] = [];
   const fontRoot = join(o.out, ".fontconfig");
   await mkdir(join(o.out, "renders"), { recursive: true });
-  for (const typeface of TYPEFACES) {
+  const jobs: { width: number; textSize: TextSize; surface: Surface }[] = [];
+  for (const width of WIDTHS) for (const textSize of TEXT_SIZES) for (const surface of o.surfaces) {
+    if (!(surface.widths ?? WIDTHS).includes(width)) continue;
+    if (!(surface.textSizes ?? TEXT_SIZES).includes(textSize)) continue;
+    jobs.push({ width, textSize, surface });
+  }
+  const perBrowser = o.record ? 1 : Math.max(1, Math.min(2, Math.floor(availableParallelism() / TYPEFACES.length)));
+  const renderTypeface = async (typeface: (typeof TYPEFACES)[number]): Promise<Render[]> => {
     const conf = await fontconfigFor(typeface, fontRoot);
+    const out: Render[] = Array.from({ length: jobs.length });
+    const boardGate = createGate(1);
     let browser: Browser | null = null;
     try {
       browser = await chromium.launch({ executablePath: o.chrome, args: CHROMIUM_FLAGS, env: { ...process.env, FONTCONFIG_FILE: conf } });
-      for (const width of WIDTHS) for (const surface of o.surfaces) {
-        if (!(surface.widths ?? WIDTHS).includes(width)) continue;
-        const context = await browser.newContext({ ...viewport(width, surface.zoom), timezoneId: "UTC", locale: "en-GB", reducedMotion: "reduce" });
-        if (surface.fixtures) await context.clock.setFixedTime(new Date(snapshot.recordedAt));
-        const served = await serveSite(context, { dist: o.dist, snapshot, fixtures: surfaceFixtures.get(surface.id) ?? fixtures, rulesPage, record: o.record });
-        const page = await context.newPage();
-        if (surface.storage) await page.addInitScript(stored => { for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value); }, surface.storage);
-        if (surface.hud) {
-          await page.addInitScript(() => {
-            const clock = window as unknown as { __replayTime: number };
-            clock.__replayTime = 0;
-            Object.defineProperty(performance, "now", { value: () => clock.__replayTime });
-          });
-        }
-        const pageErrors: string[] = [];
-        page.on("pageerror", e => pageErrors.push(String(e.message ?? e)));
-        const base = `renders/${surface.id}-${width}-${typefaceSlug(typeface)}`;
-        const invalid: string[] = [];
-        let judged: PageJudgement = { failures: [], tight: [], counted: { items: 0, grids: 0, tiles: 0 } };
-        let fonts: Record<string, number> = {};
-        let images: string[] = [];
-        let failureImages: string[] = [];
-        let failureInView: boolean[] = [];
+      const activeBrowser = browser;
+      let next = 0;
+      const runJob = async ({ width, textSize, surface }: (typeof jobs)[number]): Promise<Render> => {
+        const context = await activeBrowser.newContext({ ...viewport(width, surface.zoom), timezoneId: "UTC", locale: "en-GB", reducedMotion: "reduce" });
+        let textSession: CDPSession | null = null;
         try {
-          await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
-          const settled = await settle(page, surface);
-          const noBoard = boardProblem(surface, settled.readiness, settled.playback);
-          if (noBoard) invalid.push(noBoard);
-          if (surface.focus) {
-            // Focused as the keyboard does, which scrolls it into view: the page is judged and rendered from there.
-            const focused = await page.evaluate(selector => {
-              const el = document.querySelector<HTMLElement>(selector);
-              el?.focus();
-              return !!el && el.matches(":focus-visible");
-            }, surface.focus);
-            if (!focused) invalid.push(`${surface.focus} was not shown with keyboard focus`);
+          // Fix wall-clock Date to snapshot.recordedAt on every surface so "Loaded HH:MM UTC" and relative times never
+          // drift by the current minute (timers and performance.now are unaffected).
+          await context.clock.setFixedTime(new Date(snapshot.recordedAt));
+          const served = await serveSite(context, { dist: o.dist, snapshot, fixtures: surfaceFixtures.get(surface.id) ?? fixtures, rulesPage, record: o.record });
+          const page = await context.newPage();
+          textSession = await applyTextSize(page, textSize);
+          if (surface.storage) await page.addInitScript(stored => { for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value); }, surface.storage);
+          if (surface.hud) {
+            await page.addInitScript(() => {
+              const clock = window as unknown as { __replayTime: number };
+              clock.__replayTime = 0;
+              Object.defineProperty(performance, "now", { value: () => clock.__replayTime });
+            });
           }
-          judged = await page.evaluate(judgePage, RULE_LIMITS);
-          fonts = await drawnFonts(page);
-          const wrongFont = fontProblem(typeface, fonts);
-          if (wrongFont) invalid.push(wrongFont);
-          if (judged.counted.items === 0) invalid.push("the page laid out no text to judge");
-          // Marked as held when the held list has this rule on this element and text; the verdict decides by extent.
-          const heldAt = new Set(held.held.filter(h => h.surface === surface.id && h.width === width && h.typeface === typeface)
-            .map(h => [h.rule, h.element, h.text].join("|")));
-          const marked = judged.failures.flatMap((f, i) => f.box && f.anchor
-            ? [{ i, mark: { box: f.box, anchor: f.anchor, label: `${f.rule}: ${f.measure}`, held: heldAt.has([f.rule, f.element, f.text].join("|")) } }] : []);
-          const shot = await shoot(page, marked.map(m => m.mark), base, o.out);
-          images = shot.images;
-          if (shot.marksMoved) invalid.push(`the marks changed the page's size: ${shot.marksMoved}`);
-          if (shot.clipScrolled) invalid.push(`a box that clips was scrolled while its renders were saved: ${shot.clipScrolled}`);
-          failureImages = judged.failures.map(() => images[0]!);
-          // A finding with no box (a page wider than the viewport) is about the whole page: its render is the first.
-          failureInView = judged.failures.map(() => true);
-          marked.forEach((m, k) => { failureImages[m.i] = shot.shownIn[k]!; failureInView[m.i] = shot.inView[k]!; });
-          // The renders show the layout judged: judged again after they are saved, it finds the same.
-          if (fingerprint(await page.evaluate(judgePage, RULE_LIMITS)) !== fingerprint(judged)) {
-            invalid.push("the layout changed while its renders were saved");
+          const pageErrors: string[] = [];
+          page.on("pageerror", e => pageErrors.push(String(e.message ?? e)));
+          const base = `renders/${surface.id}-${width}-${textSize}px-${typefaceSlug(typeface)}`;
+          const invalid: string[] = [];
+          let judged: PageJudgement = { failures: [], tight: [], counted: { items: 0, grids: 0, tiles: 0 } };
+          let fonts: Record<string, number> = {};
+          let images: string[] = [];
+          let failureImages: string[] = [];
+          let failureInView: boolean[] = [];
+          try {
+            await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
+            const settled = await settle(page, surface);
+            const wrongTextSize = textSizeProblem(textSize, await rootFontSize(page));
+            if (wrongTextSize) invalid.push(wrongTextSize);
+            const noBoard = boardProblem(surface, settled.readiness, settled.playback);
+            if (noBoard) invalid.push(noBoard);
+            if (surface.focus) {
+              // Focused as the keyboard does, which scrolls it into view: the page is judged and rendered from there.
+              const focused = await page.evaluate(selector => {
+                const el = document.querySelector<HTMLElement>(selector);
+                el?.focus();
+                return !!el && el.matches(":focus-visible");
+              }, surface.focus);
+              if (!focused) invalid.push(`${surface.focus} was not shown with keyboard focus`);
+            }
+            judged = await page.evaluate(judgePage, RULE_LIMITS);
+            fonts = await drawnFonts(page);
+            const wrongFont = fontProblem(typeface, fonts);
+            if (wrongFont) invalid.push(wrongFont);
+            if (judged.counted.items === 0) invalid.push("the page laid out no text to judge");
+            // Marked as held when the held list has this rule on this element and text; the verdict decides by extent.
+            const heldAt = new Set(held.held.filter(h => h.surface === surface.id && h.width === width && h.textSize === textSize && h.typeface === typeface)
+              .map(h => [h.rule, h.element, h.text].join("|")));
+            const marked = judged.failures.flatMap((f, i) => f.box && f.anchor
+              ? [{ i, mark: { box: f.box, anchor: f.anchor, label: `${f.rule}: ${f.measure}`, held: heldAt.has([f.rule, f.element, f.text].join("|")) } }] : []);
+            const shot = await shoot(page, marked.map(m => m.mark), base, o.out);
+            images = shot.images;
+            if (shot.marksMoved) invalid.push(`the marks changed the page's size: ${shot.marksMoved}`);
+            if (shot.clipScrolled) invalid.push(`a box that clips was scrolled while its renders were saved: ${shot.clipScrolled}`);
+            failureImages = judged.failures.map(() => images[0]!);
+            // A finding with no box (a page wider than the viewport) is about the whole page: its render is the first.
+            failureInView = judged.failures.map(() => true);
+            marked.forEach((m, k) => { failureImages[m.i] = shot.shownIn[k]!; failureInView[m.i] = shot.inView[k]!; });
+            // The renders show the layout judged: judged again after they are saved, it finds the same.
+            if (fingerprint(await page.evaluate(judgePage, RULE_LIMITS)) !== fingerprint(judged)) {
+              invalid.push("the layout changed while its renders were saved");
+            }
+          } catch (error) {
+            invalid.push(`did not render: ${(error as Error).message.split("\n")[0]}`);
+            images = [`${base}.png`];
+            failureImages = judged.failures.map(() => images[0]!);
+            await page.screenshot({ path: join(o.out, images[0]!) }).catch(() => undefined);
           }
-        } catch (error) {
-          invalid.push(`did not render: ${(error as Error).message.split("\n")[0]}`);
-          images = [`${base}.png`];
-          failureImages = judged.failures.map(() => images[0]!);
-          await page.screenshot({ path: join(o.out, images[0]!) }).catch(() => undefined);
+          if (served.unanswered.length) invalid.push(`requests outside the snapshot and fixtures: ${[...new Set(served.unanswered)].join(", ")}`);
+          console.log(`${surface.id} ${width} ${textSize}px ${typeface}: ${judged.failures.length} failures, ${judged.tight.length} tight, ${judged.counted.items} items, ${judged.counted.grids} grids${invalid.length ? `; INVALID: ${invalid.join("; ")}` : ""}`);
+          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, pageErrors, fixtures: [...served.fixturesUsed] };
+        } finally {
+          await textSession?.detach().catch(() => undefined);
+          await context.close();
         }
-        if (served.unanswered.length) invalid.push(`requests outside the snapshot and fixtures: ${[...new Set(served.unanswered)].join(", ")}`);
-        renders.push({ surface: surface.id, url: surface.url, width, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, pageErrors, fixtures: [...served.fixturesUsed] });
-        console.log(`${surface.id} ${width} ${typeface}: ${judged.failures.length} failures, ${judged.tight.length} tight, ${judged.counted.items} items, ${judged.counted.grids} grids${invalid.length ? `; INVALID: ${invalid.join("; ")}` : ""}`);
-        await context.close();
-      }
+      };
+      const worker = async () => {
+        for (;;) {
+          const i = next++;
+          if (i >= jobs.length) return;
+          const job = jobs[i]!;
+          out[i] = job.surface.board ? await boardGate(() => runJob(job)) : await runJob(job);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(perBrowser, jobs.length) }, worker));
+      return out;
     } finally {
       await browser?.close();
-      if (o.record) await writeSnapshot(snapshot);
     }
+  };
+  let renders: Render[];
+  try {
+    if (o.record) {
+      renders = [];
+      for (const typeface of TYPEFACES) renders.push(...await renderTypeface(typeface));
+    } else {
+      renders = (await Promise.all(TYPEFACES.map(renderTypeface))).flat();
+    }
+  } finally {
+    if (o.record) await writeSnapshot(snapshot);
+    await rm(fontRoot, { recursive: true, force: true });
   }
-  await rm(fontRoot, { recursive: true, force: true });
   return renders;
 }
 
@@ -539,11 +632,12 @@ async function main(): Promise<void> {
     fixtureFiles: values.fixtures.map(f => resolve(f)), surfaces: chosen, record: values.record,
     updateHeld: values["update-held"], chrome: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
   };
+  const startedAt = Date.now();
   await rm(join(o.out, "renders"), { recursive: true, force: true });
   const renders = await renderAll(o);
   const held = await readHeld(o.heldFile).catch(() => ({ note: "Failures already on main, reviewed. Only a failure not held here, or above its count, fails the check.", held: [] }));
   if (o.updateHeld) {
-    await writeFile(o.heldFile, JSON.stringify(heldFrom(renders, held, "on main when the render check was introduced"), null, 1) + "\n");
+    await writeFile(o.heldFile, JSON.stringify(heldFrom(renders, held, "Already on main when this coverage was added to the render check."), null, 1) + "\n");
     console.log(`held list rewritten: ${o.heldFile}`);
   }
   const snapshot = await readSnapshot();
@@ -552,6 +646,7 @@ async function main(): Promise<void> {
     build: values.label || process.env.GITHUB_SHA || o.dist,
     snapshot: `${snapshot.recordedFrom} recorded ${snapshot.recordedAt} (web/render-check/snapshot) plus labelled fixtures`,
   });
+  console.log(`render check wall time: ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
   if (!verdict.passed) process.exitCode = 1;
 }
 

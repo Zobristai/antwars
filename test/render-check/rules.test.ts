@@ -1,12 +1,15 @@
 // The render check's rules (web/render-check/rules.ts) on small pages in Chromium: each rule fails on a page
 // that breaks it and passes on the same page laid out correctly. Fixed fonts (monospace) keep widths predictable.
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
-import { heldFrom, judge, type HeldList, type Render } from "../../web/render-check/report.ts";
+import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
+import { heldFrom, judge, markdown, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
 import { RESULTS_KEY } from "../../web/src/pages/top-matches.ts";
-import { SURFACES, boardProblem, boardReadiness, playRecording, type BoardReadiness, type Playback } from "../../web/render-check/check.ts";
+import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, playRecording, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback } from "../../web/render-check/check.ts";
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
@@ -258,8 +261,8 @@ describe("render check rules", () => {
 
 describe("render check verdict", () => {
   const finding = (text: string, extent: number): Finding => ({ rule: "clipped", element: "a", text, measure: "", extent, box: null });
-  const render = (failures: Finding[]): Render => ({ surface: "matches", url: "/", width: 390, typeface: "Roboto", failures, tight: [], images: [""], failureImages: failures.map(() => ""), fonts: {}, invalid: [], pageErrors: [], fixtures: [] });
-  const entry = (text: string, extent: number) => ({ surface: "matches", width: 390, typeface: "Roboto" as const, rule: "clipped" as const, element: "a", text, extent, why: "" });
+  const render = (failures: Finding[], width = 390, textSize: TextSize = 16): Render => ({ surface: "matches", url: "/", width, textSize, typeface: "Roboto", failures, tight: [], images: [""], failureImages: failures.map(() => ""), fonts: {}, invalid: [], pageErrors: [], fixtures: [] });
+  const entry = (text: string, extent: number, width = 390, textSize: TextSize = 16) => ({ surface: "matches", width, textSize, typeface: "Roboto" as const, rule: "clipped" as const, element: "a", text, extent, why: "" });
   const held: HeldList = { note: "", held: [entry("Gemini 4 Hydrogen", 20), entry("Gemini 4 Hydrogen", 12)] };
 
   it("passes the findings the held list holds, no worse than held", () => {
@@ -272,17 +275,141 @@ describe("render check verdict", () => {
     expect(judge([render([finding("Gemini 4 Hydrogen", 1), finding("Gemini 4 Hydrogen", 1), finding("Gemini 4 Hydrogen", 1)])], held).newFailures).toHaveLength(1);
     expect(judge([render([finding("Claude Opus 5.5", 1)])], held).passed).toBe(false);
   });
+  it("keeps held findings separate by width and text size", () => {
+    // Held at 390 px / 16 px does not excuse the same finding at 320 px or at 32 px doubled text.
+    const at320 = judge([render([finding("Gemini 4 Hydrogen", 12)], 320, 16)], held);
+    expect(at320.passed).toBe(false);
+    expect(at320.newFailures).toHaveLength(1);
+    const doubled = judge([render([finding("Gemini 4 Hydrogen", 12)], 390, 32)], held);
+    expect(doubled.passed).toBe(false);
+    expect(doubled.newFailures).toHaveLength(1);
+    const md = markdown(doubled, [render([finding("Gemini 4 Hydrogen", 12)], 390, 32)], { build: "head", snapshot: "snap" });
+    expect(md).toContain("| Surface | Width | Text size | Typeface |");
+    expect(md).toContain("| matches | 390 | 32 px | Roboto |");
+  });
   it("fails an invalid render and reports held entries not matched", () => {
     const v = judge([{ ...render([]), invalid: ["wrong typeface"] }], held);
     expect(v.passed).toBe(false);
     expect(v.heldUnused).toHaveLength(2);
   });
   it("writes a held list that holds exactly the run it came from", () => {
-    const r = render([finding("Gemini 4 Hydrogen", 7), finding("Claude Opus 5.5", 3)]);
+    const r = render([finding("Gemini 4 Hydrogen", 7), finding("Claude Opus 5.5", 3)], 320, 32);
     const list = heldFrom([r], { note: "", held: [] }, "reason");
-    expect(list.held.map(e => e.why)).toEqual(["reason", "reason"]);
+    expect(list.held.map(e => [e.width, e.textSize, e.why])).toEqual([[320, 32, "reason"], [320, 32, "reason"]]);
     expect(judge([r], list).passed).toBe(true);
-    expect(judge([render([finding("Gemini 4 Hydrogen", 9)])], list).passed).toBe(false);
+    expect(judge([render([finding("Gemini 4 Hydrogen", 9)], 320, 32)], list).passed).toBe(false);
+  });
+});
+
+describe("render check widths and doubled text", () => {
+  it("settles scroll-driven animation-frame state at home without moving clipping boxes", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent(`<!doctype html><div id="scroll" style="height:100px;overflow:auto"><div style="height:1000px"></div></div><div id="clip" style="height:100px;overflow:hidden"><div style="height:1000px"></div></div><script>
+        const scroll = document.querySelector('#scroll');
+        scroll.addEventListener('scroll', () => requestAnimationFrame(() => document.body.dataset.active = scroll.scrollTop ? 'end' : 'home'));
+        scroll.scrollTop = 400;
+        document.querySelector('#clip').scrollTop = 50;
+      </script>`);
+      await page.waitForFunction(() => document.body.dataset.active === "end");
+      await scrollHome(page);
+      expect(await page.evaluate(() => ({ active: document.body.dataset.active, scroll: document.querySelector("#scroll")!.scrollTop, clip: document.querySelector("#clip")!.scrollTop })))
+        .toEqual({ active: "home", scroll: 0, clip: 50 });
+    } finally { await page.close(); }
+  });
+
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (124 renders)", () => {
+    expect([...WIDTHS]).toEqual([1280, 390, 320]);
+    expect([...TEXT_SIZES]).toEqual([16, 32]);
+    expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    expect(viewport(390)).toEqual({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    expect(viewport(1280)).toEqual({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    expect(viewport(1280, 2)).toEqual({ viewport: { width: 640, height: 400 }, deviceScaleFactor: 2 });
+    expect(viewport(1280, 4)).toEqual({ viewport: { width: 320, height: 200 }, deviceScaleFactor: 4 });
+    let count = 0;
+    for (const _typeface of TYPEFACES) {
+      for (const width of WIDTHS) for (const textSize of TEXT_SIZES) for (const surface of SURFACES) {
+        if (!(surface.widths ?? WIDTHS).includes(width)) continue;
+        if (!(surface.textSizes ?? TEXT_SIZES).includes(textSize)) continue;
+        count++;
+      }
+    }
+    expect(count).toBe(124);
+  });
+
+  it("renders phones at 2x device scale so subpixel glyph wrapping in Liberation Sans at 320 px doubled text is caught", async () => {
+    const fontRoot = await mkdtemp(`${tmpdir()}/render-check-dpr-`);
+    let fontBrowser: Browser | null = null;
+    try {
+      const conf = await fontconfigFor("Liberation Sans", fontRoot);
+      fontBrowser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: conf } });
+      const checkPadding = async (padPx: number) => {
+        const ctx = await fontBrowser!.newContext({ ...viewport(320) });
+        const page = await ctx.newPage();
+        const cdp = await applyTextSize(page, 32);
+        try {
+          await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:system-ui,sans-serif} footer{display:flex;flex-wrap:wrap;gap:0 16px;width:100%;box-sizing:border-box;padding:0 ${padPx}px 20px;font-size:0.75rem} a{display:inline-flex;align-items:center;min-height:44px}</style><footer><a>Rules</a><a>Inspired by @LambethEthan</a></footer>`);
+          return await page.evaluate(judgePage, RULE_LIMITS);
+        } finally {
+          await cdp.detach().catch(() => undefined);
+          await ctx.close();
+        }
+      };
+      // At 2x device scale, 8 px side padding (304 px box) wraps the 24 px Liberation Sans footer credit; 4 px (312 px box) fits one line.
+      expect(rules(await checkPadding(8))).toContain("wrap");
+      expect(rules(await checkPadding(4))).not.toContain("wrap");
+    } finally {
+      await fontBrowser?.close();
+      await rm(fontRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("applies 32 px browser default text through Page.setFontSizes and catches a wrap at 320 px with doubled text", async () => {
+    // Two 5.25rem inline-block words (~10.8rem total): fits 390 px at 16/32 px and 320 px at 16 px, wraps only at 320 px with 32 px doubled text.
+    const html = `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0} label{display:block;font-size:1rem;line-height:1.25} label span{display:inline-block;width:5.25rem}</style><label><span>First</span> <span>Second</span></label>`;
+    const run = async (width: number, textSize: TextSize) => {
+      const context = await browser.newContext({ ...viewport(width) });
+      const page = await context.newPage();
+      const cdp = await applyTextSize(page, textSize);
+      try {
+        await page.setContent(html);
+        const actual = await rootFontSize(page);
+        expect(textSizeProblem(textSize, actual)).toBeNull();
+        // Reading drawnFonts opens and detaches its own CDP session and must not revert Page.setFontSizes.
+        await drawnFonts(page);
+        expect(textSizeProblem(textSize, await rootFontSize(page))).toBeNull();
+        return await page.evaluate(judgePage, RULE_LIMITS);
+      } finally {
+        await cdp.detach().catch(() => undefined);
+        await context.close();
+      }
+    };
+    expect(rules(await run(390, 16))).not.toContain("wrap");
+    expect(rules(await run(320, 16))).not.toContain("wrap");
+    expect(rules(await run(390, 32))).not.toContain("wrap");
+    // At 320 px with doubled text (root 32 px -> ~346 px wide), it exceeds 320 px and wraps.
+    expect(rules(await run(320, 32))).toContain("wrap");
+  });
+
+  it("reports a root font-size mismatch as invalid", () => {
+    expect(textSizeProblem(16, 16)).toBeNull();
+    expect(textSizeProblem(32, 32)).toBeNull();
+    expect(textSizeProblem(32, 16)).toMatch(/16 px.*expected 32 px/);
+    expect(textSizeProblem(32, Number.NaN)).toMatch(/unreadable.*expected 32 px/);
+  });
+
+  it("stops waiting for a Watch board as soon as the top-matches list mounts, while still resolving a live board", async () => {
+    const page = await browser.newPage();
+    try {
+      const t0 = Date.now();
+      await page.setContent(`<!doctype html><div id="aw-top-matches-page"></div><script>window.__antwar = { ready: new Promise(() => {}) };</script>`);
+      expect(await watchReadiness(page, 5_000)).toBeNull();
+      expect(Date.now() - t0).toBeLessThan(1_000);
+      await page.setContent(`<!doctype html><script>window.__antwar = { ready: new Promise(() => {}) }; setTimeout(() => { const d = document.createElement("div"); d.id = "aw-top-matches-page"; document.body.append(d); }, 50);</script>`);
+      expect(await watchReadiness(page, 5_000)).toBeNull();
+      await page.setContent(`<!doctype html><script>window.__antwar = { ready: Promise.resolve({}) };</script>`);
+      expect(await watchReadiness(page, 5_000)).toEqual({ state: "ready" });
+    } finally { await page.close(); }
   });
 });
 
@@ -401,10 +528,10 @@ describe("render check replay readiness", () => {
 
   it("names the page, width and typeface of a replay that never became ready", () => {
     const problem = boardProblem(replay, { state: "timed out", ms: 30_000 }, null)!;
-    const render: Render = { surface: replay.id, url: replay.url, width: 390, typeface: "Roboto", failures: [], tight: [], images: [], failureImages: [], failureInView: [], fonts: {}, invalid: [problem], pageErrors: [], fixtures: [] };
+    const render: Render = { surface: replay.id, url: replay.url, width: 390, textSize: 16, typeface: "Roboto", failures: [], tight: [], images: [], failureImages: [], failureInView: [], fonts: {}, invalid: [problem], pageErrors: [], fixtures: [] };
     const verdict = judge([render], { note: "", held: [] });
     expect(verdict.passed).toBe(false);
-    expect(verdict.invalid).toEqual([{ surface: "replay-free-for-all", width: 390, typeface: "Roboto", problem }]);
+    expect(verdict.invalid).toEqual([{ surface: "replay-free-for-all", width: 390, textSize: 16, typeface: "Roboto", problem }]);
   });
 });
 

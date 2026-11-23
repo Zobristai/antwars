@@ -99,5 +99,5 @@ Every tile in a grid is as tall as the tallest, and at any one text size every t
   a team's seats ("2 per side") or a free-for-all's sides ("8 sides") may move whole to the next line, and the state line may
   wrap between words.
 
-The render check (`web/render-check/`) judges the Watch page at 390 and 1280 px in both typefaces against these rules,
+The render check (`web/render-check/`) judges the Watch page at 320, 390 and 1280 px, at default and doubled text, in both typefaces against these rules,
 with results hidden and shown.

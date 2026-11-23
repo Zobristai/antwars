@@ -1,9 +1,10 @@
 {
- "note": "Failures already on main (de24782) when the render check was introduced, reviewed. Each entry holds one finding: one rule on one element and text of one surface, width and typeface, at the extent it was found (lines for wrap, tiles missing the part for part-uneven, otherwise px). A finding not held here, or found further than its held extent, fails the check; held findings show as warnings. Changes to this file are reviewed like code; shrink it as fixes land.",
+ "note": "Failures already on main when the render check or its width and text-size coverage was added, reviewed. Each entry holds one finding: one rule on one element and text of one surface, width, text size and typeface, at the extent it was found (lines for wrap, tiles missing the part for part-uneven, otherwise px). A finding not held here, or found further than its held extent, fails the check; held findings show as warnings. Changes to this file are reviewed like code; shrink it as fixes land.",
  "held": [
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
@@ -14,6 +15,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
@@ -24,6 +26,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
@@ -34,6 +37,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "wrap",
    "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
@@ -44,6 +48,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
@@ -54,6 +59,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
@@ -64,6 +70,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
@@ -74,6 +81,7 @@
   {
    "surface": "landing",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "wrap",
    "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
@@ -84,6 +92,7 @@
   {
    "surface": "landing",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
@@ -94,6 +103,7 @@
   {
    "surface": "landing",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
@@ -104,6 +114,7 @@
   {
    "surface": "landing",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
@@ -114,6 +125,7 @@
   {
    "surface": "landing",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
@@ -124,6 +136,7 @@
   {
    "surface": "landing",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
@@ -134,6 +147,7 @@
   {
    "surface": "landing",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
@@ -144,6 +158,7 @@
   {
    "surface": "leaderboard",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -154,6 +169,7 @@
   {
    "surface": "leaderboard",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -164,6 +180,7 @@
   {
    "surface": "leaderboard",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -174,6 +191,7 @@
   {
    "surface": "leaderboard",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -184,6 +202,7 @@
   {
    "surface": "matches",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -194,6 +213,7 @@
   {
    "surface": "matches",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -204,6 +224,7 @@
   {
    "surface": "matches",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -214,6 +235,7 @@
   {
    "surface": "matches",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -224,6 +246,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -234,6 +257,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
@@ -244,6 +268,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "part-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
@@ -254,6 +279,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -264,6 +290,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -274,6 +301,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -284,6 +312,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
@@ -294,6 +323,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "part-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
@@ -304,6 +334,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -314,6 +345,7 @@
   {
    "surface": "rules",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -324,6 +356,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -334,6 +367,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
@@ -344,6 +378,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "part-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
@@ -354,6 +389,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -364,6 +400,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -374,6 +411,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -384,6 +422,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
@@ -394,6 +433,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "part-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
@@ -404,6 +444,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -414,6 +455,7 @@
   {
    "surface": "rules",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
@@ -424,6 +466,7 @@
   {
    "surface": "waiting",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -434,6 +477,7 @@
   {
    "surface": "waiting",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -444,6 +488,7 @@
   {
    "surface": "waiting",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -454,6 +499,7 @@
   {
    "surface": "waiting",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -464,6 +510,7 @@
   {
    "surface": "recordings",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -474,6 +521,7 @@
   {
    "surface": "recordings-zoom-200",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -484,6 +532,7 @@
   {
    "surface": "recordings-zoom-400",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -494,6 +543,7 @@
   {
    "surface": "recordings",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -504,6 +554,7 @@
   {
    "surface": "recordings",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -514,6 +565,7 @@
   {
    "surface": "recordings-zoom-200",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -524,6 +576,7 @@
   {
    "surface": "recordings-zoom-400",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -534,6 +587,7 @@
   {
    "surface": "recordings",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -544,6 +598,7 @@
   {
    "surface": "watch",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -554,6 +609,7 @@
   {
    "surface": "watch",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -564,6 +620,7 @@
   {
    "surface": "watch",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -574,6 +631,7 @@
   {
    "surface": "watch",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -584,6 +642,7 @@
   {
    "surface": "watch-results-shown",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -594,6 +653,7 @@
   {
    "surface": "watch-results-shown",
    "width": 1280,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -604,6 +664,7 @@
   {
    "surface": "watch-results-shown",
    "width": 390,
+   "textSize": 16,
    "typeface": "Liberation Sans",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -614,6 +675,7 @@
   {
    "surface": "watch-results-shown",
    "width": 390,
+   "textSize": 16,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
