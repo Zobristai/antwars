@@ -17,7 +17,6 @@ import { SUPERCOLONY_NAMES, colonyColours, colonyNameNote, colourCss } from "../
 import { SEAT, isBenchmark, rowName } from "../compose.ts";
 import { C } from "../leaderboard-page/copy.ts";
 import { NO_BADGES, badgeWords, benchmarkBadges, hasBadges, type BadgeKinds } from "../leaderboard-page/view.ts";
-import { SCRIPTED_BOT, isScriptedSeat } from "../scripted-seat.ts";
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h, heldSpaces, leastShown } from "../ui/dom.ts";
@@ -162,17 +161,12 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
 /** A live colony's players, one line each: a house handle by its own row's model name and badges (the HUD's rowName), with
  * no username; a builder by its username, then the model it self-reported (seatModelName; none where the label only repeats
  * the username) with the level and Fast badges it reported on joining (benchmarkLabel; only with a model), then its rating
- * badge where the catalog gives one; a seat seen joining with no model shows SCRIPTED_BOT alone. An identity holding several
+ * badge where the catalog gives one. An identity holding several
  * seats is "<name> #<seat>" on each (compose.ts SEAT): where a colony holds several of them it is listed there once, with how many seats it holds;
  * a seat it holds alone in its colony keeps its "#<seat>". */
 export function livePlayers(seats: readonly LiveSeat[]): SeatGroup[] {
   return seatGroups(seats.map((seat): SeatEntry => {
     const who = SEAT.exec(seat.displayName)?.[1] ?? seat.displayName;
-    // A seat seen joining with no model is scripted (scripted-seat.ts): no name, badges or rating, alike whoever holds it.
-    if (seat.joined === true && isScriptedSeat(who, seat.modelLabel)) {
-      const parts = { user: null, model: SCRIPTED_BOT, badges: NO_BADGES };
-      return { who: JSON.stringify(["scripted"]), parts, alike: parts, rating: null };
-    }
     const house = isBenchmark(who);
     const reported = seat.modelLabel && !house ? seatModelName(seat.modelLabel, who) : null;
     const model = reported !== null && reported !== who ? reported : null;
