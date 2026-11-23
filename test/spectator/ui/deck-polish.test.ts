@@ -76,7 +76,10 @@ describe("deck polish", () => {
 
   it("keeps phone navigation targets on public pages without changing the live bar", () => {
     const pages = block("@media (max-width: 559px)");
+    expect(rule(".d1-top .d2-nav", pages)).toMatch(/margin-left: auto/);
     expect(rule(".d1-top .d2-nav-link", pages)).toMatch(/min-height: 44px; padding: 0 5px/);
+    expect(rule('.d1-top .d2-nav-link[aria-current="page"]::after', pages)).toMatch(/left: 5px; right: 5px; bottom: 9px/);
+    expect(rule(".d1-top-end", pages)).toMatch(/margin-left: 4px/);
     const live = block("@media (max-width: 34.9375em)");
     expect(rule(".d1 .d1-top .d2-nav-link", live)).toMatch(/min-height: 44px; padding: 0 5px/);
   });
