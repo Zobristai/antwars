@@ -21,9 +21,10 @@ afterAll(async () => { await browser?.close(); });
 
 const BASE = "<style>body{margin:0;font:16px/20px 'Liberation Mono',monospace} p{margin:0} .tile{border:1px solid #888;padding:4px} .grid{display:grid;grid-template-columns:repeat(2,150px);gap:8px}</style>";
 
-async function judged(body: string, width = 400): Promise<PageJudgement> {
+async function judged(body: string, width = 400, textSize: TextSize = 16): Promise<PageJudgement> {
   const page = await browser.newPage({ viewport: { width, height: 600 } });
   try {
+    if (textSize !== 16) await applyTextSize(page, textSize);
     await page.setContent(`<!doctype html><html><head>${BASE}</head><body>${body}</body></html>`);
     return await page.evaluate(judgePage, RULE_LIMITS);
   } finally { await page.close(); }
@@ -157,6 +158,46 @@ describe("render check rules", () => {
     expect(rules(fits)).toEqual([]);
   });
 
+  describe("designed player name ellipses", () => {
+    const words = "Riverbank Very Long Model";
+    const run = (tile: boolean, css = "", title = words) => {
+      const name = `<span class="${tile ? "aw-name" : "d1p-rec-name"} aw-cut" title="${title}" `
+        + `style="display:block;width:100px;overflow:hidden;white-space:pre;text-overflow:ellipsis;${css}">`
+        + `<b>Riverbank</b><span> Very Long<span class="aw-held" style="display:inline-block"> M</span>odel</span></span>`;
+      return tile ? `<a class="aw-tile" aria-label="${words} versus Bob"><span class="aw-player"><span class="aw-who">${name}</span></span></a>`
+        : `<span class="d1p-rec-player"><span class="d1p-rec-who">${name}</span></span>`;
+    };
+    it.each(["tile", "recording"])("allows the %s name to shorten only as designed", async kind => {
+      const tile = kind === "tile";
+      expect(rules(await judged(run(tile), 390, 32))).toEqual([]);
+      const narrow = rules(await judged(run(tile), 320));
+      if (tile) expect(narrow).toEqual([]);
+      else expect(narrow).toContain("clipped");
+      expect(rules(await judged(run(tile), 390))).toContain("clipped");
+      expect(rules(await judged(run(tile, "text-overflow:clip"), 390, 32))).toContain("clipped");
+      expect(rules(await judged(run(tile, "", "Wrong name"), 390, 32))).toContain("clipped");
+    });
+
+    it("does not count a name’s cut state or held spaces as extra tile parts", async () => {
+      const cut = run(true);
+      const whole = '<a class="aw-tile" aria-label="Bob versus Alice"><span class="aw-player"><span class="aw-who">'
+        + '<span class="aw-name" title="Bob"><b>Bob</b></span></span></span></a>';
+      const parts = async (extra: string) => (await judged(`<ol class="grid"><li class="tile">${cut}${extra}</li>`
+        + `<li class="tile">${whole}</li></ol>`, 320, 32)).failures.filter(f => f.rule === "part-uneven").map(f => f.element);
+      expect(await parts("")).toEqual([]);
+      expect(await parts('<span class="rating">1500</span>')).toEqual(["ol.grid > span.rating"]);
+    });
+
+    it("still fails other cuts to a shortened name and an unrelated name", async () => {
+      const nested = run(false).replace("<b>", '<b style="display:inline-block;width:20px;overflow:hidden">');
+      expect(rules(await judged(nested, 320, 32))).toContain("clipped");
+      expect(rules(await judged(run(false, "height:8px"), 320, 32))).toContain("clipped");
+      expect(rules(await judged(`<div style="overflow:hidden;width:50px">${run(false)}</div>`, 320, 32))).toContain("clipped");
+      expect(rules(await judged(`<div style="margin-left:300px">${run(false)}</div>`, 320, 32))).toContain("offscreen");
+      expect(rules(await judged(run(false).replace("d1p-rec-name", "d1p-name"), 320, 32))).toContain("clipped");
+    });
+  });
+
   it("fails text cut by its own box, and an image or control cut by its container, but not an image cropped within its box", async () => {
     expect(rules(await judged('<div style="width:80px;white-space:nowrap;overflow:hidden">A long colony name</div>', 390))).toContain("clipped");
     expect(rules(await judged('<div style="width:80px;overflow:hidden"><img style="display:block;margin-left:40px;width:60px;height:20px" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>'))).toContain("clipped");
@@ -204,6 +245,39 @@ describe("render check rules", () => {
     expect(rules(even)).toEqual([]);
     const empty = await judged('<ol class="grid"><li class="tile" style="height:120px"><span>One</span></li><li class="tile" style="height:120px"><span>Two</span></li></ol>');
     expect(rules(empty)).toContain("tile-empty");
+  });
+
+  it("allows only the reserved space at the ends of a stacked player block, independent of the picks", async () => {
+    const css = await Promise.all(["tokens", "top-match-tile"].map(file => readFile(`web/src/design-system/${file}.css`, "utf8")));
+    const tile = (players: number) => `<li><a class="aw-tile"><span class="aw-row aw-meta">Challenge</span><span class="aw-lines">`
+      + Array.from({ length: players }, (_, i) => `<span class="aw-row aw-player"><b>Player ${i + 1}</b></span>`).join("")
+      + '</span><span class="aw-row aw-date">Nov 18</span></a></li>';
+    const page = (cssChange = "", count = 2) => `<style>${css.join("\n")} ${cssChange}</style><main class="d1p"><ol class="aw-grid">${tile(count)}${tile(count)}</ol></main>`;
+    const gaps = (j: PageJudgement) => j.failures.filter(f => f.rule === "tile-empty" || f.rule === "page-empty");
+    for (const width of [320, 390, 1280]) for (const size of [16, 32] as const) {
+      expect(gaps(await judged(page(), width, size))).toEqual([]);
+    }
+    expect(gaps(await judged(page("", 6), 320, 32))).toEqual([]);
+    const excess = gaps(await judged(page(".aw-lines {min-height:12.5rem}"), 320, 32));
+    expect(excess.map(f => f.rule)).toEqual(expect.arrayContaining(["tile-empty", "page-empty"]));
+    // A smaller gap between players gets no centering budget even if an end gap is larger.
+    expect(gaps(await judged(page(".aw-player + .aw-player {margin-top:2rem}"), 320, 32))).toContainEqual(
+      expect.objectContaining({ rule: "tile-empty", measure: expect.stringContaining("limit 60 px") }));
+    expect(gaps(await judged(page(".aw-date {margin-bottom:2.5rem}"), 390))).toContainEqual(
+      expect.objectContaining({ rule: "tile-empty", measure: expect.stringContaining("limit 30 px") }));
+  });
+
+  it("scales the page band with text but not the landing page's fixed section spacing", async () => {
+    const band = (px: number, fixed: boolean) => `<main class="${fixed ? "fg-inner" : "page"}" style="--fg-gap:${px}px">`
+      + '<section>Above</section><section style="margin-top:var(--fg-gap)">Below</section></main>';
+    for (const size of [16, 32] as const) {
+      const limit = size * 3;
+      expect(rules(await judged(band(limit - 8, false), 390, size))).not.toContain("page-empty");
+      expect((await judged(band(limit + 8, false), 390, size)).failures).toContainEqual(expect.objectContaining(
+        { rule: "page-empty", measure: expect.stringContaining(`limit ${limit} px`) }));
+      expect((await judged(band(56, true), 390, size)).failures).toContainEqual(expect.objectContaining(
+        { rule: "page-empty", measure: expect.stringContaining("limit 48 px") }));
+    }
   });
 
   it("judges a grid laid out in one column, as at phone width", async () => {
