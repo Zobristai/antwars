@@ -18,9 +18,9 @@ import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
-import { PUBLIC_CONFIG } from "../../src/sim/config.ts";
+import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
-import { renderRules, rulesAssets } from "../rules.ts";
+import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
 import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
 import { RULE_LIMITS, judgePage, type Box, type Finding, type PageJudgement } from "./rules.ts";
@@ -571,13 +571,24 @@ export function createGate(limit: number): <T>(fn: () => Promise<T>) => Promise<
   };
 }
 
+// The server's default for a public match, before the map is drawn (src/server.ts comparisonOptions).
+const undrawnConfig = newMatchConfig(rulesConfig("redesign"));
+const expectedRulesTitles = ruleSections(undrawnConfig, { undrawn: true }).map(section => section.title);
+
+/** Check the enhanced page, not the index links or the hidden server HTML. */
+export async function rulesSectionsProblem(page: Page): Promise<string | null> {
+  const titles = await page.locator(".d1p-rule > h3.d1p-rule-title:visible").allTextContents();
+  const missing = expectedRulesTitles.filter(title => !titles.includes(title));
+  return missing.length ? `Rules section titles not shown: ${missing.join(", ")}` : null;
+}
+
 async function renderAll(o: Options): Promise<Render[]> {
   const snapshot = await readSnapshot().catch(() => ({ recordedFrom: "https://antwars.ai", recordedAt: new Date().toISOString(), responses: {} }));
   const fixtures = await readFixtures([join(HERE, "fixtures.json"), ...o.fixtureFiles]);
   const surfaceFixtures = new Map(await Promise.all(o.surfaces.filter(s => s.fixtures)
     .map(async s => [s.id, { ...fixtures, ...await readFixtures([join(HERE, s.fixtures!)]) }] as const)));
   const manifest = JSON.parse(await readFile(join(o.dist, ".vite/manifest.json"), "utf8"));
-  const rulesPage = () => renderRules(newMatchConfig(PUBLIC_CONFIG), { undrawn: true, assets: rulesAssets(manifest) });
+  const rulesPage = () => renderRules(undrawnConfig, { undrawn: true, assets: rulesAssets(manifest) });
   const held = await readHeld(o.heldFile).catch(() => ({ note: "", held: [] }));
   const fontRoot = join(o.out, ".fontconfig");
   await mkdir(join(o.out, "renders"), { recursive: true });
@@ -628,6 +639,10 @@ async function renderAll(o: Options): Promise<Render[]> {
           try {
             await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
             const settled = await settle(page, surface, evidence);
+            if (surface.id === "rules") {
+              const missingSections = await rulesSectionsProblem(page);
+              if (missingSections) invalid.push(missingSections);
+            }
             const wrongTextSize = textSizeProblem(textSize, await rootFontSize(page));
             if (wrongTextSize) invalid.push(wrongTextSize);
             const noBoard = boardProblem(surface, settled.readiness, settled.playback);

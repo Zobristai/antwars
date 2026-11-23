@@ -161,6 +161,25 @@ export const SLOT_UNHEARD_MS = 20_000;
 /** How long from its registration a successor waits for a valid save of an earlier run's match before ending it not played. */
 export const HANDOVER_SAVE_WAIT_MS = 20_000;
 
+/** Copy a match result's mutable fields without throwing on a malformed Free-for-all finish, so release can free the slot and record why. */
+function snapshotFfa(ffa: NonNullable<MatchResult["ffa"]>): NonNullable<MatchResult["ffa"]> {
+  const raw: unknown = ffa;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return ffa;
+  return Array.isArray(ffa.order)
+    ? { ...ffa, order: [...ffa.order] as [number, number, number, number] }
+    : { ...ffa };
+}
+
+function snapshotResult(result: MatchResult): MatchResult {
+  const raw: unknown = result;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return result;
+  return {
+    reason: result.reason,
+    ...(result.ffa === undefined ? {} : { ffa: snapshotFfa(result.ffa) }),
+    eliminations: Array.isArray(result.eliminations) ? result.eliminations.map(e => (typeof e === "object" && e !== null ? { ...e } : e)) : result.eliminations,
+  };
+}
+
 /** Every seat of the holder, each numbered 1.. among the seats its identity holds, in stored order. */
 const seatsOf = (holder: SlotHolder): LobbySeat[] => {
   const held = new Map<string, number>();
@@ -380,7 +399,7 @@ export async function startSlotRunner<S extends SaveIdentity = SaveIdentity>(opt
       // Snapshot metadata with the outcome: retries must not read a later match's agents.
       pending = { lobbyId: current, outcome, thinkingLevels: thinkingLevels && { ...thinkingLevels }, serviceTiers: serviceTiers && { ...serviceTiers },
         modelLabels: modelLabels && { ...modelLabels }, ...(absentColonies?.length ? { absentColonies: [...absentColonies] } : {}),
-        ...(result === undefined ? {} : { result: { reason: result.reason, ...(result.ffa === undefined ? {} : { ffa: { ...result.ffa, order: [...result.ffa.order] as [number, number, number, number] } }), eliminations: result.eliminations.map(e => ({ ...e })) } }) };
+        ...(result === undefined ? {} : { result: snapshotResult(result) }) };
     },
     close() {
       closed = true;
