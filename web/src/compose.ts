@@ -10,7 +10,6 @@ import { HOUSE_USERNAME } from "../../src/identity/houseOwnership.ts";
 import { houseLabel, isRetiredHouse } from "../../src/rating/houseLabels.ts";
 import { benchmarkLabel } from "./leaderboard-page/view.ts";
 import { nameParts, recordedIdentity, type NameParts } from "./pages/model.ts";
-import { isScriptedAgent } from "./scripted-seat.ts";
 
 /** "name #seat": one identity holding several seats (src/live/watch-controller.ts seatIdentities). Names hold no space or "#". */
 export const SEAT = /^(.+) #(\d+)$/;
@@ -87,14 +86,13 @@ function ratingNumber(value: number): string { return String(Math.round(value));
  */
 export interface RatingRow { readonly name: string; readonly badges: readonly string[]; readonly text: string }
 
-/** Read only the played result, never live account totals or undelayed store outcome; a scripted seat has no line. */
+/** Read only the played result, never live account totals or undelayed store outcome. */
 export function ratingResultRows(rated: boolean | undefined, agents: readonly StreamAgent[], result: StreamResult | null): RatingRow[] {
   const note = (text: string): RatingRow[] => [{ name: "", badges: [], text }];
   if (result === null || rated === undefined) return [];
   if (!rated) return note("Unrated match · no rating change");
   if (result.ratingChanges === undefined) return note("Rated match · rating update pending");
-  // A scripted seat shows no rating (scripted-seat.ts), so it has no line here.
-  return result.ratingChanges.filter(change => !isScriptedAgent(agents[change.agent])).map(change => {
+  return result.ratingChanges.map(change => {
     const identity = agents[change.agent]?.identity;
     const named = identity ? rowName(identity.displayName, undefined) : null;
     // The change between the shown whole numbers, so the line always adds up.
