@@ -2018,12 +2018,34 @@
    "surface": "watch",
    "width": 320,
    "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
    "text": "",
    "extent": 440,
    "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
   },
   {
    "surface": "watch",
@@ -2150,12 +2172,34 @@
    "surface": "watch-results-shown",
    "width": 320,
    "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
    "text": "",
    "extent": 440,
    "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
   },
   {
    "surface": "watch-results-shown",
