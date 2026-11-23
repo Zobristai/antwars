@@ -382,24 +382,40 @@ export async function saveInvalidEvidence(out: string, id: string, invalid: stri
  * "screen not still".
  */
 export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promise<HudOnScreen> {
-  const shot = () => page.screenshot({ animations: "disabled", caret: "hide" });
+  const capture = () => page.screenshot({ animations: "disabled", caret: "hide" });
+  // Restoring the HUD can repaint a rounded edge differently from an untouched one. Give each compared
+  // state the same repaint: hide the page without changing its layout, paint it, then restore it and capture.
+  const shot = async () => {
+    const blank = await page.addStyleTag({ content: ":root, :root * { visibility: hidden !important; }" });
+    try { await capture(); } finally { await blank.evaluate(e => (e as Element).remove()); }
+    return capture();
+  };
   const hidden = `:is(${HUD_ROOT}), :is(${HUD_ROOT}) * { visibility: hidden !important; }`;
   const noClip = "clip-path: none !important; mask: none !important; -webkit-mask: none !important; clip: auto !important;";
   const unclipped = `:is(${HUD_ROOT}), :has(:is(${HUD_ROOT})) { ${noClip} }`;
   /** Whether the screen is the same with css added, or "screen not still". */
   const sameWith = async (css: string): Promise<boolean | "screen not still"> => {
+    let visiblePair: { before: Buffer; altered: Buffer } | undefined;
     for (let attempt = 0; attempt < HUD_COMPARE_TRIES; attempt++) {
       const comparison: RenderEvidence["comparisons"][number] = { kind: css === hidden ? "hidden" : "unclipped", attempt };
       evidence?.comparisons.push(comparison);
       const before = await shot();
       if (evidence) comparison.before = before;
       const style = await page.addStyleTag({ content: css });
-      const altered = await shot();
-      if (evidence) comparison.altered = altered;
-      await style.evaluate(e => (e as Element).remove());
+      let altered: Buffer;
+      try {
+        altered = await shot();
+        if (evidence) comparison.altered = altered;
+      } finally { await style.evaluate(e => (e as Element).remove()); }
       const after = await shot();
       if (evidence) comparison.after = after;
-      if (before.equals(after)) return before.equals(altered);
+      if (!before.equals(after)) continue;
+      if (before.equals(altered)) return true;
+      if (css !== hidden) return false;
+      // A stray pixel in just the hidden shot isn't proof that the HUD painted anything. Reapply the hide
+      // and require exactly the same pair of images before accepting that difference as visible HUD paint.
+      if (visiblePair?.before.equals(before) && visiblePair.altered.equals(altered)) return false;
+      visiblePair = { before, altered };
     }
     return "screen not still";
   };

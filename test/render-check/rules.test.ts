@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
 import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
@@ -473,7 +473,7 @@ describe("render check replay readiness", () => {
       const saved = JSON.parse(await readFile(join(dir, ref), "utf8"));
       expect(saved.invalid).toEqual(["HUD clipped"]);
       expect(saved.clipState.chain).toEqual(expect.arrayContaining([expect.objectContaining({ clipPath: "inset(40px 0px 0px)" })]));
-      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "unclipped"]);
+      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "hidden", "unclipped"]);
       for (const c of saved.comparisons) for (const file of Object.values(c.files) as string[]) {
         expect((await readFile(join(dir, "invalid-evidence", file))).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
       }
@@ -484,17 +484,43 @@ describe("render check replay readiness", () => {
     } finally { await page.close(); await rm(dir, { recursive: true, force: true }); }
   });
 
+  it("does not count a one-pixel change in the hidden shot as paint from a covered HUD", async () => {
+    const page = await browser.newPage({ viewport: { width: 320, height: 180 } });
+    try {
+      await page.setContent('<div class="d1-hud">Score Band</div><div id="board" style="position:fixed;inset:0;background:#123"></div>');
+      const capture = page.screenshot.bind(page);
+      let planted = false, blankFrames = 0;
+      vi.spyOn(page, "screenshot").mockImplementation(async options => {
+        const [pageVisible, hudVisible] = await page.evaluate(() => [document.body, document.querySelector(".d1-hud")!]
+          .map(e => getComputedStyle(e).visibility === "visible"));
+        if (!pageVisible) blankFrames++;
+        if (planted || !pageVisible || hudVisible) return capture(options);
+        planted = true;
+        const dot = await page.addStyleTag({ content: "#board::after {content:'';position:absolute;left:0;top:0;width:1px;height:1px;background:white}" });
+        try { return await capture(options); } finally { await dot.evaluate(e => (e as Element).remove()); }
+      });
+      const evidence: RenderEvidence = { comparisons: [] };
+      expect(await hudOnScreen(page, evidence)).toBe("not shown");
+      expect(planted).toBe(true);
+      expect(blankFrames).toBe(3 * evidence.comparisons.length); // the blank frames are painted but never judged
+      const [noisy, clean] = evidence.comparisons;
+      expect(noisy!.before!.equals(noisy!.after!)).toBe(true);
+      expect(noisy!.before!.equals(noisy!.altered!)).toBe(false);
+      expect(clean!.before!.equals(clean!.altered!)).toBe(true);
+    } finally { await page.close(); }
+  });
+
   it("does not compare unclipped screenshots when the HUD and its ancestors have no clip or mask", async () => {
     const page = await browser.newPage();
     try {
       await page.setContent('<div class="d1-hud" style="position:fixed;inset:0;background:#333;color:white">Score Band</div>');
       const evidence: RenderEvidence = { comparisons: [] };
       expect(await hudOnScreen(page, evidence)).toBe("shown");
-      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden"]);
+      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden"]);
       await page.setContent('<div style="position:fixed;left:0;top:0;width:300px;height:30px;overflow:hidden;transform:translateZ(0)"><div class="d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;background:#333;color:white">Score Band</div></div>');
       const overflowEvidence: RenderEvidence = { comparisons: [] };
       await hudOnScreen(page, overflowEvidence);
-      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "unclipped"]);
+      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden", "unclipped"]);
     } finally { await page.close(); }
   });
 
