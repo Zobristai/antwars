@@ -18,10 +18,11 @@ import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
-import { PUBLIC_CONFIG } from "../../src/sim/config.ts";
+import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
-import { renderRules, rulesAssets } from "../rules.ts";
+import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
 import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
+import { HUD_SAMPLE_CYCLES, measureHudProbe, type HudMeasurement, type HudOnScreen, type HudProbe, type HudTriplet } from "./hud-pixels.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
 import { RULE_LIMITS, judgePage, type Box, type Finding, type PageJudgement } from "./rules.ts";
 import { ORIGIN, SNAPSHOT_DIR, readFixtures, readSnapshot, serveSite, writeSnapshot } from "./serve.ts";
@@ -199,6 +200,7 @@ export function boardProblem(surface: Pick<Surface, "board">, readiness: BoardRe
     : playback.error ? `its recording failed while playing (${playback.error})`
     : playback.playbackTick <= playback.startTick ? `its recording did not play: the board was still at its first tick (${playback.startTick}) after ${HUD_PLAY_MS / 1000} s`
     : playback.hud === "screen not still" ? "the screen kept changing while its HUD was compared with and without it, so whether the HUD showed could not be judged"
+    : playback.hud === "insufficient HUD paint" ? "too few stable pixels changed when its HUD was hidden to prove that it was shown over the board"
     : playback.hud === "not shown" ? "no match HUD was shown over the board"
     : playback.hud === "clipped" ? "its match HUD was cut: the HUD or an element containing it clips part of it (clip-path, mask, clip or overflow)"
     : null;
@@ -324,12 +326,13 @@ export async function playRecording(page: Page, playMs = HUD_PLAY_MS, evidence?:
   return played.hud === "shown" ? { ...played, hud: await hudOnScreen(page, evidence) } : played;
 }
 
-export type HudOnScreen = "shown" | "not shown" | "clipped" | "screen not still";
+export type { HudOnScreen } from "./hud-pixels.ts";
 
 /** Evidence kept only if the render is invalid; comparisons that never ran are explicitly absent. */
 export interface RenderEvidence {
   clipState?: unknown;
-  comparisons: { kind: "hidden" | "unclipped"; attempt: number; before?: Buffer; altered?: Buffer; after?: Buffer }[];
+  comparisons: (HudTriplet & { kind: HudProbe; attempt: number })[];
+  measurements?: Partial<Record<HudProbe, HudMeasurement>>;
 }
 
 /** Geometry and clipping styles of the HUD and its ancestors, at the time playback is judged. */
@@ -367,7 +370,7 @@ export async function saveInvalidEvidence(out: string, id: string, invalid: stri
     return { kind, attempt, files };
   }));
   const ref = `invalid-evidence/${id}.json`;
-  await writeFile(join(out, ref), JSON.stringify({ invalid, clipState: evidence.clipState, comparisons }, null, 2) + "\n");
+  await writeFile(join(out, ref), JSON.stringify({ invalid, clipState: evidence.clipState, comparisons, measurements: evidence.measurements }, null, 2) + "\n");
   return ref;
 }
 
@@ -376,32 +379,28 @@ export async function saveInvalidEvidence(out: string, id: string, invalid: stri
  * - with the HUD (HUD_ROOT and everything in it) hidden: if the screen is the same, the HUD painted nothing;
  * - with every clip-path, mask and clip lifted from the HUD and the elements containing it: if the screen changes, one
  *   cut part of it. (A container's overflow clipping is measured in playRecording instead.)
- * Nothing else may change between the shots: animation frames are held for the comparison (and run afterwards), CSS
- * animations are stopped, and the unaltered shot is taken again after each altered one. If those two differ,
- * something other than the HUD moved; that comparison is tried again, and after HUD_COMPARE_TRIES it is
- * "screen not still".
+ * Hold animation frames during both probes and collect all cycles, including the restored visible image each time.
+ * measureHudProbe distinguishes consistent changes caused by the probe from pixels that vary within a state.
  */
 export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promise<HudOnScreen> {
   const shot = () => page.screenshot({ animations: "disabled", caret: "hide" });
   const hidden = `:is(${HUD_ROOT}), :is(${HUD_ROOT}) * { visibility: hidden !important; }`;
   const noClip = "clip-path: none !important; mask: none !important; -webkit-mask: none !important; clip: auto !important;";
   const unclipped = `:is(${HUD_ROOT}), :has(:is(${HUD_ROOT})) { ${noClip} }`;
-  /** Whether the screen is the same with css added, or "screen not still". */
-  const sameWith = async (css: string): Promise<boolean | "screen not still"> => {
-    for (let attempt = 0; attempt < HUD_COMPARE_TRIES; attempt++) {
-      const comparison: RenderEvidence["comparisons"][number] = { kind: css === hidden ? "hidden" : "unclipped", attempt };
-      evidence?.comparisons.push(comparison);
-      const before = await shot();
-      if (evidence) comparison.before = before;
-      const style = await page.addStyleTag({ content: css });
-      const altered = await shot();
-      if (evidence) comparison.altered = altered;
-      await style.evaluate(e => (e as Element).remove());
-      const after = await shot();
-      if (evidence) comparison.after = after;
-      if (before.equals(after)) return before.equals(altered);
+  const probe = async (kind: HudProbe): Promise<HudOnScreen> => {
+    const samples: HudTriplet[] = [];
+    for (let attempt = 0; attempt < HUD_SAMPLE_CYCLES; attempt++) {
+      const sample: RenderEvidence["comparisons"][number] = { kind, attempt };
+      samples.push(sample);
+      evidence?.comparisons.push(sample);
+      sample.before = await shot();
+      const style = await page.addStyleTag({ content: kind === "hidden" ? hidden : unclipped });
+      try { sample.altered = await shot(); } finally { await style.evaluate(e => (e as Element).remove()); }
+      sample.after = await shot();
     }
-    return "screen not still";
+    const measurement = measureHudProbe(kind, samples);
+    if (evidence) (evidence.measurements ??= {})[kind] = measurement;
+    return measurement.verdict;
   };
   await page.evaluate(() => {
     const w = window as unknown as { __heldFrames?: { run: typeof requestAnimationFrame; queued: FrameRequestCallback[] } };
@@ -412,8 +411,8 @@ export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promis
   });
   try {
     await page.waitForTimeout(100); // frames already requested run once, and request the next from the held queue
-    const withoutHud = await sameWith(hidden);
-    if (withoutHud !== false) return withoutHud === true ? "not shown" : withoutHud;
+    const visibility = await probe("hidden");
+    if (visibility !== "shown") return visibility;
     // Only omit this comparison when there is no clip or mask and no overflow-clipping ancestor cuts the HUD box.
     // Otherwise an unrelated screenshot pixel change can look like a clip even though no clip can be lifted.
     const noClipping = await page.evaluate(hudRoot => {
@@ -432,8 +431,7 @@ export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promis
       return true;
     }, HUD_ROOT);
     if (noClipping) return "shown";
-    const withoutClips = await sameWith(unclipped);
-    return withoutClips === true ? "shown" : withoutClips === false ? "clipped" : withoutClips;
+    return await probe("unclipped");
   } finally {
     await page.evaluate(() => {
       const w = window as unknown as { __heldFrames?: { run: typeof requestAnimationFrame; queued: FrameRequestCallback[] } };
@@ -445,9 +443,6 @@ export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promis
     });
   }
 }
-
-/** How many times hudOnScreen tries one comparison before it gives up on a screen that moves. */
-export const HUD_COMPARE_TRIES = 3;
 
 export interface Mark { box: Box; anchor: NonNullable<Finding["anchor"]>; label: string; held: boolean }
 
@@ -555,13 +550,24 @@ export function createGate(limit: number): <T>(fn: () => Promise<T>) => Promise<
   };
 }
 
+// The server's default for a public match, before the map is drawn (src/server.ts comparisonOptions).
+const undrawnConfig = newMatchConfig(rulesConfig("redesign"));
+const expectedRulesTitles = ruleSections(undrawnConfig, { undrawn: true }).map(section => section.title);
+
+/** Check the enhanced page, not the index links or the hidden server HTML. */
+export async function rulesSectionsProblem(page: Page): Promise<string | null> {
+  const titles = await page.locator(".d1p-rule > h3.d1p-rule-title:visible").allTextContents();
+  const missing = expectedRulesTitles.filter(title => !titles.includes(title));
+  return missing.length ? `Rules section titles not shown: ${missing.join(", ")}` : null;
+}
+
 async function renderAll(o: Options): Promise<Render[]> {
   const snapshot = await readSnapshot().catch(() => ({ recordedFrom: "https://antwars.ai", recordedAt: new Date().toISOString(), responses: {} }));
   const fixtures = await readFixtures([join(HERE, "fixtures.json"), ...o.fixtureFiles]);
   const surfaceFixtures = new Map(await Promise.all(o.surfaces.filter(s => s.fixtures)
     .map(async s => [s.id, { ...fixtures, ...await readFixtures([join(HERE, s.fixtures!)]) }] as const)));
   const manifest = JSON.parse(await readFile(join(o.dist, ".vite/manifest.json"), "utf8"));
-  const rulesPage = () => renderRules(newMatchConfig(PUBLIC_CONFIG), { undrawn: true, assets: rulesAssets(manifest) });
+  const rulesPage = () => renderRules(undrawnConfig, { undrawn: true, assets: rulesAssets(manifest) });
   const held = await readHeld(o.heldFile).catch(() => ({ note: "", held: [] }));
   const fontRoot = join(o.out, ".fontconfig");
   await mkdir(join(o.out, "renders"), { recursive: true });
@@ -612,6 +618,10 @@ async function renderAll(o: Options): Promise<Render[]> {
           try {
             await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
             const settled = await settle(page, surface, evidence);
+            if (surface.id === "rules") {
+              const missingSections = await rulesSectionsProblem(page);
+              if (missingSections) invalid.push(missingSections);
+            }
             const wrongTextSize = textSizeProblem(textSize, await rootFontSize(page));
             if (wrongTextSize) invalid.push(wrongTextSize);
             const noBoard = boardProblem(surface, settled.readiness, settled.playback);

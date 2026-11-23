@@ -49,9 +49,9 @@ interface Row { colony: number; count: number; text: string; w: number }
  * A stack as placed: its rows top to bottom in colony order, each aligned to the side facing her (left beside her right,
  * right beside her left), and its box; the leader from her ring to its row nearest her.
  */
-export interface PlacedStack { queen: QueenPulse; rows: (Row & { x: number; y: number })[]; rect: Rect; rowH: number; leader: [number, number, number, number]; leaderColony: number }
+export interface PlacedStack { onTop: boolean; queen: QueenPulse; rows: (Row & { x: number; y: number })[]; rect: Rect; rowH: number; leader: [number, number, number, number]; leaderColony: number }
 /** A tab as placed: its text and box; its leader to its box where it is not flush with it. */
-export interface PlacedTab { colony: number; text: string; rect: Rect; leader: [number, number, number, number] | null }
+export interface PlacedTab { onTop: boolean; colony: number; text: string; rect: Rect; leader: [number, number, number, number] | null }
 /** A bracket box drawn: its centre, side and colour. */
 export interface PlacedBrackets { queen: QueenPulse; x: number; y: number; side: number; colour: number }
 
@@ -110,13 +110,14 @@ function boxLeader(box: Rect, tab: Rect): [number, number, number, number] {
  * keeps clear of.
  */
 export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" | "id" | "x" | "y" | "drawX" | "drawY" | "corpses">,
-  board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[]): { stacks: PlacedStack[]; tabs: PlacedTab[]; brackets: PlacedBrackets[]; reserved: Rect[] } {
+  board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[], markers: readonly Rect[] = []): { stacks: PlacedStack[]; tabs: PlacedTab[]; brackets: PlacedBrackets[]; reserved: Rect[] } {
   const stacks: PlacedStack[] = [], tabs: PlacedTab[] = [], brackets: PlacedBrackets[] = [];
   const b = frame.board;
   if (!b || frame.queenPulse.length === 0) return { stacks, tabs, brackets, reserved: [] };
   const names = colonyNamesOf(b.setup).map(cueName);
   const pulses = [...frame.queenPulse].sort((p, q) => p.colony - q.colony || p.queenId - q.queenId);
   const placer = new Placer(screen.w, screen.h, blocked);
+  for (const r of markers) placer.occupy(r);
   // Every standing queen's emblem and bar, fighting or not, is kept clear.
   for (const q of streamQueens(b)) {
     if (q.lostTick !== null) continue;
@@ -126,9 +127,8 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
   const free = (r: Rect, extra: readonly Rect[] = []) => placer.free(r) && !extra.some((e) => overlaps(r, e));
   const onScreen = (r: Rect) => r.x0 >= 0 && r.y0 >= 0 && r.x1 <= screen.w && r.y1 <= screen.h;
   const near = (first: Rect, extra: readonly Rect[]) => NEAR.map(([dx, dy]) => shift(first, dx, dy)).find((r) => free(r, extra));
-  // The last resort, for a cue whose anchor is on screen: a place whole on screen and off every HUD panel, clear of
-  // every emblem and cue already placed where one exists (the first of its spots, else the nearest on the 4 px grid),
-  // else the same without that clearance, drawn on top. A cue is never cut and never covers another while room exists.
+  // The last resort is the first spot drawn on top. If the HUD or viewport would cut it, retain the edge
+  // rescue: find a whole, visible spot, preferring one clear of the other cues and emblems.
   const seen = (r: Rect) => onScreen(r) && !blocked.some((b) => overlaps(r, b));
   const clear = (r: Rect, extra: readonly Rect[]) => !placer.rects.some((o) => overlaps(r, o)) && !extra.some((e) => overlaps(r, e));
   const nearest = (first: Rect, ok: (r: Rect) => boolean): Rect | undefined => {
@@ -143,6 +143,7 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
     return undefined;
   };
   const visible = (spots: readonly Rect[], extra: readonly Rect[]): Rect | undefined => {
+    if (seen(spots[0]!)) return spots[0];
     const roomy = (r: Rect) => seen(r) && clear(r, extra);
     return spots.find(roomy) ?? nearest(spots[0]!, roomy) ?? spots.find(seen) ?? nearest(spots[0]!, seen);
   };
@@ -159,16 +160,17 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
     const rowH = cueSize("", true).h, w = Math.max(...rows.map((r) => r.w));
     const h = rows.length * rowH + (rows.length - 1) * CUE_LABEL.rowGap;
     const spots = stackSpots(x, y, w, h);
-    const rect = spots.find((s) => free(s)) ?? near(spots[0]!, []) ?? (inView(x, y) ? visible(spots, []) : undefined) ?? spots[0]!;
+    const fit = spots.find((s) => free(s)) ?? near(spots[0]!, []);
+    const rect = fit ?? (inView(x, y) ? visible(spots, []) : undefined) ?? spots[0]!;
     placer.occupy(rect);
     // The leader meets the row nearest her centre, at its side facing her.
     const right = (rect.x0 + rect.x1) / 2 >= x, below = (rect.y0 + rect.y1) / 2 >= y;
     const placedRows = rows.map((row, k) => ({ ...row, x: right ? rect.x0 : rect.x1 - row.w, y: rect.y0 + k * (rowH + CUE_LABEL.rowGap) }));
     const nearest = below ? placedRows[0]! : placedRows[placedRows.length - 1]!;
-    stacks.push({ queen: p, rows: placedRows, rect, rowH, leaderColony: nearest.colony,
+    stacks.push({ onTop: fit === undefined, queen: p, rows: placedRows, rect, rowH, leaderColony: nearest.colony,
       leader: ringLeader(x, y, right ? nearest.x : nearest.x + nearest.w, nearest.y + rowH / 2) });
   }
-  const stackRects = stacks.map((s) => grow(s.rect, TAB_STACK_CLEAR - GAP));
+  const stackRects = stacks.map((s) => grow(s.rect, TAB_STACK_CLEAR));
   // Her target's brackets and tab, after every stack: one tab per ant, each queen's brackets in her own colour.
   const tabbed = new Map<number, number>();
   const pointOf = (id: number, dead: boolean): [number, number] | null => {
@@ -196,16 +198,19 @@ export function layoutCues(frame: Pick<Frame, "board" | "queenPulse" | "count" |
     const box: Rect = { x0: sx - side / 2, y0: sy - side / 2, x1: sx + side / 2, y1: sy + side / 2 };
     const spots = tabSpots(box, w, h);
     const flush = spots.find((s) => free(s, stackRects));
-    const rect = flush ?? near(spots[0]!, stackRects) ?? (inView(sx, sy) ? visible(spots, stackRects) : undefined) ?? spots[0]!;
+    const fit = flush ?? near(spots[0]!, stackRects);
+    const rect = fit ?? (inView(sx, sy) ? visible(spots, stackRects) : undefined) ?? spots[0]!;
     placer.occupy(rect);
-    tabs.push({ colony: p.colony, text, rect, leader: flush === undefined ? boxLeader(box, rect) : null });
+    tabs.push({ onTop: fit === undefined, colony: p.colony, text, rect, leader: flush === undefined ? boxLeader(box, rect) : null });
   }
   return { stacks, tabs, brackets, reserved: [...stacks.map((s) => s.rect), ...tabs.map((t) => t.rect)] };
 }
 
-/** A key that changes whenever a cue's reserved rect moves, so the marks' layout is placed again clear of it. */
-export function cueKey(rects: readonly Rect[]): string {
-  return rects.map((r) => `${r.x0},${r.y0},${r.x1},${r.y1}`).join(";");
+/** Within either paint layer stacks precede tabs, each with their text above their plates. */
+function labelParts(layer: Container) {
+  const stackPlates = new Graphics(), stackTexts = new Container(), tabPlates = new Graphics(), tabTexts = new Container();
+  layer.addChild(stackPlates, stackTexts, tabPlates, tabTexts);
+  return { stackPlates, stackTexts, tabPlates, tabTexts };
 }
 
 /** The queen bite cues' screen layer (layoutCues), for both boards. */
@@ -213,30 +218,30 @@ export class QueenBiteCues {
   readonly layer = new Container();
   private readonly sparks = new Graphics();
   private readonly brackets = new Graphics();
-  private readonly stackPlates = new Graphics();
-  private readonly stackTexts = new Container();
-  private readonly tabPlates = new Graphics();
-  private readonly tabTexts = new Container();
+  readonly aboveBadges = new Container();
+  private readonly normal;
+  private readonly raised = labelParts(this.aboveBadges);
   private readonly pool: BitmapText[] = [];
   private used = 0;
   /** This frame's placement, for the stills' checks. */
   placed: ReturnType<typeof layoutCues> = { stacks: [], tabs: [], brackets: [], reserved: [] };
 
   constructor() {
-    this.layer.addChild(this.sparks, this.brackets, this.stackPlates, this.stackTexts, this.tabPlates, this.tabTexts);
+    this.layer.addChild(this.sparks, this.brackets);
+    this.normal = labelParts(this.layer);
   }
 
   /** Lay out and draw this frame's cues; returns the rects the marks' layout keeps clear of. */
-  update(frame: Frame, board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[]): readonly Rect[] {
-    for (const g of [this.sparks, this.brackets, this.stackPlates, this.tabPlates]) g.clear();
-    this.used = 0;
+  update(frame: Frame, board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[], markers: readonly Rect[]): readonly Rect[] {
+    this.sparks.clear();
+    this.brackets.clear();
     // The contacts of the ants biting her, on her ring, above her emblem so the mob cannot hide them.
     for (const c of renderedQueenBiteContacts(frame)) {
       const [x, y] = board.toScreen(c.x, c.y);
       if (Number.isFinite(x) && Number.isFinite(y)) this.sparks.circle(x, y, GROUND_SPARK.r);
     }
     this.sparks.fill({ color: GROUND_SPARK.tint, alpha: GROUND_SPARK.alpha });
-    const placed = this.placed = layoutCues(frame, board, screen, blocked);
+    const placed = this.placed = layoutCues(frame, board, screen, blocked, markers);
     for (const br of placed.brackets) {
       const half = br.side / 2, arm = Math.min(CUE_BRACKETS.arm, br.side / 3);
       const x0 = br.x - half, y0 = br.y - half, x1 = br.x + half, y1 = br.y + half;
@@ -250,22 +255,32 @@ export class QueenBiteCues {
       path();
       this.brackets.stroke({ width: CUE_BRACKETS.width, color: br.colour, cap: "square", join: "miter" });
     }
-    for (const s of placed.stacks) {
+    return placed.reserved;
+  }
+
+  /** Once badges have followed their ants, lift only fallback labels or those a badge still touches. */
+  drawLabels(badges: readonly Rect[]): void {
+    for (const p of [this.normal, this.raised]) { p.stackPlates.clear(); p.tabPlates.clear(); }
+    this.used = 0;
+    // A badge's two-pixel outline is centred on its footprint.
+    const parts = (cue: PlacedStack | PlacedTab) => cue.onTop || badges.some(b => overlaps(grow(b, 1), cue.rect)) ? this.raised : this.normal;
+    for (const s of this.placed.stacks) {
+      const { stackPlates, stackTexts } = parts(s);
       const [lx0, ly0, lx1, ly1] = s.leader;
-      this.stackPlates.moveTo(lx0, ly0).lineTo(lx1, ly1).stroke({ width: CUE_LABEL.leader, color: colonyTint(s.leaderColony) });
+      stackPlates.moveTo(lx0, ly0).lineTo(lx1, ly1).stroke({ width: CUE_LABEL.leader, color: colonyTint(s.leaderColony) });
       for (const row of s.rows) {
-        this.stackPlates.roundRect(row.x, row.y, row.w, s.rowH, CUE_LABEL.radius).fill({ color: 0x0b0907, alpha: LABEL_PLATE_ALPHA });
-        this.stackPlates.rect(row.x, row.y, CUE_LABEL.bar, s.rowH).fill({ color: colonyTint(row.colony) });
-        this.text(this.stackTexts, row.text, row.x + CUE_LABEL.bar + CUE_LABEL.padX, row.y + CUE_LABEL.padY);
+        stackPlates.roundRect(row.x, row.y, row.w, s.rowH, CUE_LABEL.radius).fill({ color: 0x0b0907, alpha: LABEL_PLATE_ALPHA });
+        stackPlates.rect(row.x, row.y, CUE_LABEL.bar, s.rowH).fill({ color: colonyTint(row.colony) });
+        this.text(stackTexts, row.text, row.x + CUE_LABEL.bar + CUE_LABEL.padX, row.y + CUE_LABEL.padY);
       }
     }
-    for (const t of placed.tabs) {
-      if (t.leader) this.tabPlates.moveTo(t.leader[0], t.leader[1]).lineTo(t.leader[2], t.leader[3]).stroke({ width: CUE_LABEL.leader, color: colonyTint(t.colony) });
-      this.tabPlates.roundRect(t.rect.x0, t.rect.y0, t.rect.x1 - t.rect.x0, t.rect.y1 - t.rect.y0, CUE_LABEL.radius).fill({ color: 0x0b0907, alpha: LABEL_PLATE_ALPHA });
-      this.text(this.tabTexts, t.text, t.rect.x0 + CUE_LABEL.padX, t.rect.y0 + CUE_LABEL.padY);
+    for (const t of this.placed.tabs) {
+      const { tabPlates, tabTexts } = parts(t);
+      if (t.leader) tabPlates.moveTo(t.leader[0], t.leader[1]).lineTo(t.leader[2], t.leader[3]).stroke({ width: CUE_LABEL.leader, color: colonyTint(t.colony) });
+      tabPlates.roundRect(t.rect.x0, t.rect.y0, t.rect.x1 - t.rect.x0, t.rect.y1 - t.rect.y0, CUE_LABEL.radius).fill({ color: 0x0b0907, alpha: LABEL_PLATE_ALPHA });
+      this.text(tabTexts, t.text, t.rect.x0 + CUE_LABEL.padX, t.rect.y0 + CUE_LABEL.padY);
     }
     for (let i = this.used; i < this.pool.length; i++) this.pool[i]!.visible = false;
-    return placed.reserved;
   }
 
   /** One ink label in the board font, from the pool, in parent. */

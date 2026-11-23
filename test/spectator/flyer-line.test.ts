@@ -213,7 +213,8 @@ describe("flyer LINE mark with the 3D camera close to the ground", () => {
 
   it("is sampled on the 3D board through the board's projection that gives no point at or behind the near plane", () => {
     const src = readFileSync("web/src/board3d/main3d.ts", "utf8");
-    expect(src).toMatch(/words\.update\(shown, toScreen, [^;]*, toScreenInFront\);/);
+    expect(src).toContain("words.projectMarkers(shown, toScreen, placementView, toScreenInFront)");
+    expect(src).toMatch(/words\.update\(shown, toScreen, [^;]*, toScreenInFront, cueRects\);/);
   });
 });
 
