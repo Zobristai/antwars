@@ -501,14 +501,16 @@ describe("render check replay readiness", () => {
     const dir = await mkdtemp(join(tmpdir(), "render-invalid-"));
     const page = await browser.newPage();
     try {
-      await page.setContent('<div style="position:fixed;inset:0;clip-path:inset(40px 0 0 0)"><div class="d1-hud" style="position:fixed;inset:0"><b>Score Band</b><p style="margin-top:50px">Clock</p></div></div>');
+      // The clock still paints a solid patch below the cut, independently of its font.
+      await page.setContent('<div style="position:fixed;inset:0;clip-path:inset(40px 0 0 0)"><div class="d1-hud" style="position:fixed;inset:0"><b>Score Band</b><p style="margin-top:50px;width:40px;background:#ddd">Clock</p></div></div>');
       const evidence: RenderEvidence = { clipState: await captureClipState(page), comparisons: [] };
       expect(await hudOnScreen(page, evidence)).toBe("clipped");
       const ref = await saveInvalidEvidence(dir, "replay-320-32px-roboto", ["HUD clipped"], evidence);
       const saved = JSON.parse(await readFile(join(dir, ref), "utf8"));
       expect(saved.invalid).toEqual(["HUD clipped"]);
+      expect(saved.measurements.unclipped.verdict).toBe("clipped");
       expect(saved.clipState.chain).toEqual(expect.arrayContaining([expect.objectContaining({ clipPath: "inset(40px 0px 0px)" })]));
-      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "hidden", "unclipped"]);
+      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "hidden", "hidden", "unclipped", "unclipped", "unclipped"]);
       for (const c of saved.comparisons) for (const file of Object.values(c.files) as string[]) {
         expect((await readFile(join(dir, "invalid-evidence", file))).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
       }
@@ -524,20 +526,18 @@ describe("render check replay readiness", () => {
     try {
       await page.setContent('<div class="d1-hud">Score Band</div><div id="board" style="position:fixed;inset:0;background:#123"></div>');
       const capture = page.screenshot.bind(page);
-      let planted = false, blankFrames = 0;
+      let planted = false;
       vi.spyOn(page, "screenshot").mockImplementation(async options => {
-        const [pageVisible, hudVisible] = await page.evaluate(() => [document.body, document.querySelector(".d1-hud")!]
-          .map(e => getComputedStyle(e).visibility === "visible"));
-        if (!pageVisible) blankFrames++;
-        if (planted || !pageVisible || hudVisible) return capture(options);
+        const hidden = await page.locator(".d1-hud").evaluate(e => getComputedStyle(e).visibility === "hidden");
+        if (planted || !hidden) return capture(options);
         planted = true;
         const dot = await page.addStyleTag({ content: "#board::after {content:'';position:absolute;left:0;top:0;width:1px;height:1px;background:white}" });
         try { return await capture(options); } finally { await dot.evaluate(e => (e as Element).remove()); }
       });
       const evidence: RenderEvidence = { comparisons: [] };
-      expect(await hudOnScreen(page, evidence)).toBe("not shown");
+      expect(await hudOnScreen(page, evidence)).toBe("screen not still");
       expect(planted).toBe(true);
-      expect(blankFrames).toBe(3 * evidence.comparisons.length); // the blank frames are painted but never judged
+      expect(evidence.measurements?.hidden).toMatchObject({ stableDifferences: 0, alteredVariablePixels: 1 });
       const [noisy, clean] = evidence.comparisons;
       expect(noisy!.before!.equals(noisy!.after!)).toBe(true);
       expect(noisy!.before!.equals(noisy!.altered!)).toBe(false);
@@ -545,17 +545,31 @@ describe("render check replay readiness", () => {
     } finally { await page.close(); }
   });
 
+  it.each(["clip-path:inset(0 1px 0 0)", "mask-image:linear-gradient(to right, black 31px, transparent 31px)"])(
+    "detects a single device pixel removed by %s", async css => {
+      const page = await browser.newPage({ viewport: { width: 80, height: 32 }, deviceScaleFactor: 1 });
+      try {
+        // Only the 1px dot paints in the rightmost column. A separate square proves visibility.
+        await page.setContent(`<div class="d1-hud" style="position:fixed;left:0;top:0;width:32px;height:20px;${css}">
+          <div style="width:20px;height:20px;background:black"></div>
+          <div style="position:absolute;right:0;top:0;width:1px;height:1px;background:black"></div></div>`);
+        const evidence: RenderEvidence = { comparisons: [] };
+        expect(await hudOnScreen(page, evidence)).toBe("clipped");
+        expect(evidence.measurements?.unclipped).toMatchObject({ stableDifferences: 1, variablePixels: 0 });
+      } finally { await page.close(); }
+    });
+
   it("does not compare unclipped screenshots when the HUD and its ancestors have no clip or mask", async () => {
     const page = await browser.newPage();
     try {
       await page.setContent('<div class="d1-hud" style="position:fixed;inset:0;background:#333;color:white">Score Band</div>');
       const evidence: RenderEvidence = { comparisons: [] };
       expect(await hudOnScreen(page, evidence)).toBe("shown");
-      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden"]);
+      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden", "hidden"]);
       await page.setContent('<div style="position:fixed;left:0;top:0;width:300px;height:30px;overflow:hidden;transform:translateZ(0)"><div class="d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;background:#333;color:white">Score Band</div></div>');
       const overflowEvidence: RenderEvidence = { comparisons: [] };
       await hudOnScreen(page, overflowEvidence);
-      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden", "unclipped"]);
+      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden", "hidden", "unclipped", "unclipped", "unclipped"]);
     } finally { await page.close(); }
   });
 
