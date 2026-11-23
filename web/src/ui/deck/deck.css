@@ -1004,6 +1004,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1 .d1-top > .d1-pages { margin-left: calc(-1 * var(--aw-space-2)); }
 }
 
+/* At 320 px with doubled text the footer credit needs more than the 304 px between its usual insets. */
+@media (width < 12em) {
+  .score-band .d1-foot { padding-inline: var(--aw-space-1); }
+}
+
 /* Below the ordinary phone width, page zoom leaves less room than a one-line label.
    Keep whole words and controls, let existing groups take the space they need. */
 @media (max-width: 319px) {

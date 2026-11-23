@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { chromium } from "playwright-core";
+import { applyTextSize, fontconfigFor } from "../../../web/render-check/fonts.ts";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
 import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
@@ -254,6 +255,25 @@ describe("scrolling HUD fit evidence", () => {
       const selected = await page.locator(".d1-member").evaluate(e => ({ button: getComputedStyle(e).backgroundColor,
         badge: getComputedStyle(e.querySelector(".sb-seat-badge")!).outlineStyle, idle: getComputedStyle(e.querySelector(".sb-idle")!).outlineStyle }));
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
+    } finally { await browser.close(); }
+  });
+  it("keeps the enlarged footer attribution on one line on a high-density 320 px phone", async () => {
+    const css = ["design-system/tokens.css", "ui/ui.css", "ui/deck/deck.css"].map(path =>
+      readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor("Liberation Sans") } });
+    try {
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      await applyTextSize(page, 32);
+      await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0}${css}</style>
+        <main class="d1 score-band"><footer class="d1-foot"><span class="sb-rules-key">Rules · Key</span><a class="d2-link">Inspired by @LambethEthan</a></footer></main>`);
+      const link = page.locator(".d1-foot .d2-link");
+      const result = await link.evaluate(el => {
+        const range = document.createRange(); range.selectNodeContents(el);
+        return { font: getComputedStyle(el).fontSize, lines: range.getClientRects().length,
+          inside: [...range.getClientRects()].every(r => r.left >= 0 && r.right <= innerWidth) };
+      });
+      expect(result).toEqual({ font: "24px", lines: 1, inside: true });
     } finally { await browser.close(); }
   });
   it("reserves idle slots and lets the footer Key expand without clipping or breaking its controls", async () => {
