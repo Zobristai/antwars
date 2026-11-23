@@ -2,7 +2,7 @@
  "note": "Responses the public site cannot give on demand, each named for the state it stands for. The report lists every fixture a render used. Replay excerpts are cut from the public recordings by excerpt.ts and committed as readable text (replay-text.ts) in files of at most 64 KB, read in order; the server packs them into the bytes the site serves and checks those bytes against sha256.",
  "fixtures": {
   "/matches/users": {
-   "label": "Users ledger: sample public rows showing multiple agents, an own match, provisional and unranked users, and distinct reported models",
+   "label": "Users ledger: sample public rows showing multiple agents, an own match, a provisional agent rating and an unranked user, and distinct reported models",
    "body": {
     "users": [
      {
@@ -41,7 +41,8 @@
       "ranked": {
        "rating": 1485.4,
        "rd": 90,
-       "ratedMatches": 2
+       "ratedMatches": 2,
+       "via": "river-ant/spar"
       }
      }
     ]

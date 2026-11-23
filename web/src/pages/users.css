@@ -24,6 +24,7 @@
 .users-agent.is-next::before { content: ', '; }
 .users-card .d1p-prov, .users-card .d1p-elo-badge { font-size: var(--aw-text-badge-sm); line-height: var(--aw-lh-badge-sm); }
 .users-card .d1p-prov { margin-left: 6px; }
+.users-via { display: block; font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); }
 .users-own { display: block; font-size: var(--aw-text-label); } .users-more-models { white-space: nowrap; margin-left: 6px; font-size: inherit; }
 .users-replay { color: var(--aw-ink-2); text-decoration: underline; }
 .users-notes, .users-message { padding: 10px var(--d1p-inset) 12px; }

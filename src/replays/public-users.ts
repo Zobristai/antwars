@@ -8,58 +8,41 @@ interface User {
   latest: { startedAt: string; id: string }; models: Map<string, string>;
 }
 
-type Recheck = (rows: TypedHistorySummary[], signal: AbortSignal) => Promise<TypedHistorySummary[]>;
-
-/** Defer the tally until all reads of the ranking have finished and contributing recordings have passed a second check. */
-export async function publicUsers(batches: AsyncIterable<readonly TypedHistorySummary[]>, ratings: Pick<Ratings, "leaderboard"> | undefined, signal: AbortSignal, recheck: Recheck) {
-  const ids = new Set<string>(), names = new Set<string>(), candidates: TypedHistorySummary[] = [];
-  let bytes = 0;
+/** The scanner yields unique public recordings. Retain only displayed users, their distinct handles and model labels. */
+export async function publicUsers(batches: AsyncIterable<readonly TypedHistorySummary[]>, ratings: Pick<Ratings, "leaderboard"> | undefined, signal: AbortSignal) {
+  const users = new Map<string, User>();
   for await (const batch of batches) for (const match of batch) {
     signal.throwIfAborted();
-    if (ids.has(match.id) || neverJoined(match)) continue;
-    const handles = match.seats.flatMap(s => s.handle && !isHouseHandle(s.handle) ? [s.handle] : []);
-    if (!handles.length) continue;
-    bytes += Buffer.byteLength(JSON.stringify(match));
-    if (bytes > 8 * 1024 * 1024) throw new Error("Listing size limit reached");
-    ids.add(match.id); candidates.push(match);
-    for (const handle of handles) names.add(handle.split("/", 1)[0]!);
+    if (!neverJoined(match)) tally(users, match);
   }
   const ranked = new Map<string, { rating: number; rd: number; ratedMatches: number }>();
-  if (candidates.length) {
+  if (users.size) {
     if (!ratings) throw new Error("Rankings unavailable");
-    const cursors = new Set<string>(); let cursor: string | undefined;
-    let storagePages = 0;
-    const beforeStoragePage = () => {
-      signal.throwIfAborted();
-      if (++storagePages > 64) throw new Error("Ranking scan limit reached");
-    };
+    let cursor: string | undefined;
     do {
       signal.throwIfAborted();
-      const result = await ratings.leaderboard({ mode: "1v1", scope: "everyone", limit: 50, cursor, beforeStoragePage });
+      const result = await ratings.leaderboard({ mode: "1v1", scope: "everyone", limit: 50, cursor, signal });
       signal.throwIfAborted();
       if (!result.ok) throw new Error("Rankings unavailable");
       for (const { displayName, rating, rd, ratedMatches } of result.value.entries) {
-        if (names.has(displayName)) ranked.set(displayName, { rating, rd, ratedMatches });
+        const user = users.get(displayName.split("/", 1)[0]!);
+        if (user && (displayName === user.username || user.agents.has(displayName))) ranked.set(displayName, { rating, rd, ratedMatches });
       }
+      if (result.value.next !== undefined && cursor === result.value.next) throw new Error("Repeated ranking continuation");
       cursor = result.value.next;
-      if (cursor !== undefined) {
-        if (cursors.size >= 63 || cursors.has(cursor)) throw new Error("Repeated ranking continuation");
-        cursors.add(cursor);
-      }
     } while (cursor !== undefined);
-  }
-
-  const users = new Map<string, User>();
-  for (let start = 0; start < candidates.length; start += 20) {
-    signal.throwIfAborted();
-    const visible = await recheck(candidates.slice(start, start + 20), signal);
-    for (const match of visible) tally(users, match);
   }
   signal.throwIfAborted();
   return [...users.values()].map(({ username, agents, latest, matches, wins, losses, own, models }) => {
     const labels = [...models].sort(([a, at], [b, bt]) => bt.localeCompare(at) || a.localeCompare(b));
-    return { username, agents: [...agents].sort(), matches, wins, losses, own, latest, model: labels[0]?.[0] ?? null,
-      moreModels: Math.max(0, labels.length - 1), ranked: ranked.get(username) ?? null };
+    const played = [...agents].sort();
+    let rating = ranked.get(username), via: string | undefined;
+    if (!rating) for (const handle of played) {
+      const agent = ranked.get(handle);
+      if (agent && (!rating || agent.rating > rating.rating)) { rating = agent; via = handle; }
+    }
+    return { username, agents: played, matches, wins, losses, own, latest, model: labels[0]?.[0] ?? null,
+      moreModels: Math.max(0, labels.length - 1), ranked: rating ? { ...rating, ...(via ? { via } : {}) } : null };
   });
 }
 

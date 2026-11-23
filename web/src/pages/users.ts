@@ -32,7 +32,12 @@ export function usersLedger(doc: Document, search: string) {
       case "Matches": return [h(doc, "span", undefined, String(user.matches))];
       case "Record": return [h(doc, "span", undefined, `${user.wins}–${user.losses}`), ...(user.own ? [h(doc, "small", "users-own", `+${user.own} own`)] : [])];
       case "Agents": return user.agents.map((agent, i) => h(doc, "span", `users-agent${i ? " is-next" : ""}`, agent));
-      case "Ranked 1v1": return user.ranked ? ratingNodes(doc, user.ranked) : [h(doc, "span", "users-muted", "Not ranked")];
+      case "Ranked 1v1": {
+        if (!user.ranked) return [h(doc, "span", "users-muted", "Not ranked")];
+        const nodes = ratingNodes(doc, user.ranked);
+        if (user.ranked.via) nodes.push(h(doc, "small", "users-via", `via ${user.ranked.via}`));
+        return nodes;
+      }
       case "Model, self-reported": return [h(doc, "span", user.model ? undefined : "users-muted", user.model ?? "No model reported"), ...(user.moreModels ? [h(doc, "small", "users-more-models", `+${user.moreModels} more`)] : [])];
       case "Last played": {
         const date = whenParts(utcStamp(user.latest.startedAt) ?? "Start unknown").date;

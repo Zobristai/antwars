@@ -3,12 +3,13 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
-import { createPublicVisibility } from "../../src/identity/publicVisibility.ts";
+import { createPublicVisibility, usersOwnerPolicy } from "../../src/identity/publicVisibility.ts";
 import { historyRoutes, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
 import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
-import type { LeaderboardEntry } from "../../src/rating/ratings.ts";
+import { createRatings, type LeaderboardEntry } from "../../src/rating/ratings.ts";
 import { createTestRecordings } from "../../src/replays/test-recordings.ts";
 import { neverJoined } from "../../web/src/ui/format.ts";
+import { createFirestore } from "../../src/store/firestore.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
 const clean: (() => Promise<void>)[] = [];
@@ -43,7 +44,7 @@ it("agrees with the entire visible Matches list, including ownership, markers, l
   const source: HistorySource = {
     async list(token) { const i = Number(token ?? 0); return { matches: all.slice(i, i + 20), nextPageToken: i + 20 < all.length ? String(i + 20) : null }; },
     continuationAfter: id => String(1 + all.findIndex(row => row.id === id)), async open() { throw Error("unexpected download"); },
-    async *scan() { yield all.slice(0, 20); yield [...all.slice(20), team]; },
+    async *scan() { yield all.slice(0, 20); yield all.slice(20); },
   };
   const lookup: RecordingLobbyLookup = async id => id === typed.id ? { kind: "public", test: true, mode: null, size: 1, colonies: [[], []] } : null;
   const leaderboard = vi.fn(async (opts?: {cursor?: string}) => ({ ok: true as const, value: opts?.cursor ? { entries: [score("fern")] } : { entries: [score("excluded")], next: "more" } }));
@@ -117,26 +118,92 @@ it("keeps an unfinished ranking read in its build slot after disconnect and dead
   } finally { finish.resolve(); }
 });
 
-it("rechecks contributing recordings after ranking and before publishing the listing", async () => {
+it("applies public visibility as each page arrives", async () => {
   const earlier = oneMatch(), later = match(1, ["fern", "spruce"]);
   earlier.seats[0]!.modelLabel = "earlier"; later.seats[0]!.modelLabel = "later";
   const { store, docs } = memoryWatchStore(), lobbyId = randomUUID(), owner = randomUUID(), excluded = randomUUID();
   const ownership = (id: string, who: string) => docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([who]) });
   ownership(earlier.id, owner); ownership(later.id, owner);
   const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded]);
-  const source = sourceWith(async function* () { yield [earlier]; yield [later]; });
-  const leaderboard = async () => { ownership(later.id, excluded); return { ok: true as const, value: { entries: [score("spruce")] } }; };
+  const source = sourceWith(async function* () { yield [earlier]; ownership(later.id, excluded); yield [later]; });
+  const leaderboard = async () => { return { ok: true as const, value: { entries: [score("spruce")] } }; };
   const origin = await listen(source, undefined, { publicVisibility: visibility, ratings: { leaderboard } });
   const { users } = await (await fetch(origin + "/matches/users")).json();
   expect(users.map((u: { username: string }) => u.username).sort()).toEqual(["fern", "river"]);
   expect(users[0]).toMatchObject({ username: "fern", matches: 1, wins: 1, latest: { id: earlier.id }, model: "earlier", moreModels: 0 });
 });
 
-it("refuses an over-budget history without serving partial rows or immediately rescanning", async () => {
-  const scan = vi.fn(async function* () { yield Array.from({ length: 4097 }, oneMatch); });
-  const origin = await listen(sourceWith(scan));
-  for (let i = 0; i < 2; i++) {
-    const r = await fetch(origin + "/matches/users"); expect(r.status).toBe(503); expect(await r.json()).not.toHaveProperty("users");
-  }
+it("streams many pages into two user totals without retaining the input rows", async () => {
+  // The producer reuses a single page's row objects. Buffering the rows (or their ids) is not needed.
+  const page = Array.from({ length: 20 }, (_, i) => match(i, ["fern", "river"]));
+  const scan = vi.fn(async function* () {
+    for (let i = 0; i < 300; i++) {
+      for (let j = 0; j < page.length; j++) Object.assign(page[j]!, match(i * 20 + j, ["fern", "river"], { winner: i % 2 }));
+      yield page;
+    }
+    for (const row of page) row.seats = [];
+  });
+  const origin = await listen(sourceWith(scan), undefined, { ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const r = await fetch(origin + "/matches/users"); expect(r.status).toBe(200);
+  const { users } = await r.json(); expect(users).toHaveLength(2);
+  for (const user of users) expect(user).toMatchObject({ matches: 6000, wins: 3000, losses: 3000, latest: { id: page[19]!.id } });
   expect(scan).toHaveBeenCalledTimes(1);
+});
+
+it("invalidates a warm response when the configured owner set changes", async () => {
+  const { store, docs } = memoryWatchStore(), owner = randomUUID(), lobbyId = randomUUID();
+  let ids: string[] = [];
+  const row = oneMatch(); docs.set(`replayOwnership/${row.id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([owner]) });
+  const usersPolicy = usersOwnerPolicy(() => ids, store, { replayLobby: async () => ({ state: "none" }) });
+  const scan = vi.fn(async function* () { yield [row]; });
+  const origin = await listen(sourceWith(scan), undefined, { usersPolicy, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => (await (await fetch(origin + "/matches/users")).json()).users;
+  expect(await read()).toHaveLength(2); ids = [owner]; expect(await read()).toEqual([]); expect(await read()).toEqual([]);
+  ids = []; expect(await read()).toHaveLength(2); expect(scan).toHaveBeenCalledTimes(3);
+});
+
+it.each([
+  { name: "own name takes precedence", scores: [["fern", 1480], ["fern/scout", 1600]] as const, rating: 1480, via: undefined },
+  { name: "one ranked agent", scores: [["fern/wing", 1520]] as const, rating: 1520, via: "fern/wing" },
+  { name: "highest played agent", scores: [["fern/unplayed", 2000], ["fern/wing", 1590], ["fern/scout", 1550]] as const, rating: 1590, via: "fern/wing" },
+  { name: "neither the user nor a played agent", scores: [["other", 1700]] as const, rating: null, via: undefined },
+])("uses the public ranking for $name", async ({ scores, rating, via }) => {
+  const source = sourceWith(async function* () { yield [match(0, ["fern/wing", "river", "fern/scout"])]; });
+  const leaderboard = async () => ({ ok: true as const, value: { entries: scores.map(([name, r]) => ({ ...score(name), rating: r })) } });
+  const origin = await listen(source, undefined, { ratings: { leaderboard } });
+  const { users } = await (await fetch(origin + "/matches/users")).json();
+  expect(users[0].agents).toEqual(["fern/scout", "fern/wing"]);
+  expect(users[0].ranked).toEqual(rating === null ? null : { rating, rd: 82, ratedMatches: 9, ...(via ? { via } : {}) });
+});
+
+it("cancels the ranking transport when the last Users reader leaves, without affecting ordinary rankings", async () => {
+  const entered = Promise.withResolvers<void>(), canceled = Promise.withResolvers<void>();
+  let cancelNext = false;
+  const request: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/usernames/antwars")) return Response.json({ error: { status: "NOT_FOUND" } }, { status: 404 });
+    if (!String(url).endsWith(":runQuery")) throw Error("Unexpected read");
+    if (cancelNext) {
+      cancelNext = false; entered.resolve();
+      await once(init!.signal!, "abort"); canceled.resolve(); throw init!.signal!.reason;
+    }
+    return Response.json([{ readTime: "2026-11-01T00:00:00Z" }]);
+  };
+  const ratings = createRatings(createFirestore({ projectId: "fixture", namespace: "ranking", emulatorHost: "localhost:8080", request }));
+  await ratings.houseBackfill;
+  const origin = await listen(sourceWith(async function* () { yield [oneMatch()]; }), undefined, { ratings });
+  cancelNext = true;
+  const controller = new AbortController();
+  const r = fetch(origin + "/matches/users", { signal: controller.signal }).catch(() => null);
+  await entered.promise; controller.abort(); await canceled.promise; expect(await r).toBeNull();
+  expect(await ratings.leaderboard()).toEqual({ ok: true, value: { entries: [] } });
+});
+
+it("logs a fixed, data-free message when the Users listing returns 503", async () => {
+  const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const origin = await listen(sourceWith(async function* () { yield [oneMatch()]; }), undefined,
+      { ratings: { async leaderboard() { throw Error("fixture-specific private detail"); } } });
+    expect((await fetch(origin + "/matches/users")).status).toBe(503);
+    expect(log.mock.calls).toEqual([["Users listing unavailable (503)"]]);
+  } finally { log.mockRestore(); }
 });

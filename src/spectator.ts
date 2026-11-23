@@ -25,7 +25,7 @@ import { renderRules, rulesAssets, type RulesAssets } from "../web/rules.js";
 import type { ReplayStore } from "./replays/store.js";
 import type { ReplaySource } from "./replays/access.js";
 import type { HistorySource } from "./replays/history-source.js";
-import { historyRoutes } from "./replays/history-routes.js";
+import { historyRoutes, type HistoryRouteOptions } from "./replays/history-routes.js";
 import { replayRoutes } from "./replays/replay-routes.js";
 import type { PrivateArchive } from "./replays/private-archive.js";
 import type { RecordHandoff } from "./records/handoff.js";
@@ -69,6 +69,7 @@ export interface SpectatedServer extends GameServer {
 
 export interface SpectatedServerOptions extends ServerOptions {
   readonly publicVisibility?: PublicVisibility;
+  readonly usersPolicy?: HistoryRouteOptions["usersPolicy"];
   /** The recording-level test markers (src/replays/test-recordings.ts): written for a test match, read by public lists. */
   readonly testRecordings?: TestRecordings;
   readonly replayStore?: ReplayStore;
@@ -154,7 +155,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
       const read = await lobbies.readLobby(found.lobbyId);
       return read.ok ? read.value : null;
     } : undefined;
-    server.mount("/matches", historyRoutes(options.historySource, lookup, { ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
+    server.mount("/matches", historyRoutes(options.historySource, lookup, { usersPolicy: options.usersPolicy, ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
   }
   server.mount("/rules", (req, res, game) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

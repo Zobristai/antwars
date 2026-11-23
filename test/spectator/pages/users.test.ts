@@ -28,3 +28,13 @@ it("places Users before Recordings, sorts before paging, and leaves other lists'
   }
   page.destroy();
 });
+
+it("identifies an agent-derived rating in the ranked cell, without labelling an owner's own rating", () => {
+  const p = dom(), own = row(1), agent = { ...row(2), ranked: { ...row(2).ranked!, via: "sample/wing" } };
+  const page = mountMatches(p.doc, p.doc.body, { refresh() {}, more() {} });
+  page.update({ live: empty, waiting: empty, recordings: empty, next: null, users: { status: "ready", rows: [own, agent] } });
+  const ranked = p.body.byClass("users-card")[0]!.byClass("field-4").filter(el => el.tag === "td");
+  expect(ranked[0]!.byClass("users-via")).toHaveLength(0);
+  expect(ranked[1]!.byClass("users-via")[0]!.textContent).toBe("via sample/wing");
+  page.destroy();
+});

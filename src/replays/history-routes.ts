@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { peek } from "../net/relay.js";
 import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
-import { USERS_SCAN_RECORDS, validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
+import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
@@ -217,6 +217,7 @@ export interface HistoryRouteOptions {
   readonly ratings?: Pick<Ratings, "leaderboard">;
   readonly usersDeadlineMs?: number;
   readonly usersNow?: () => number;
+  readonly usersPolicy?: () => { digest: string; visibility?: PublicVisibility };
   readonly publicVisibility?: PublicVisibility;
   /** Longest a record download may go without handing the client a chunk; past it the download is dropped. */
   readonly recordIdleMs?: number;
@@ -340,75 +341,88 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
 export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLookup,
   options: HistoryRouteOptions = {}): MountHandler {
   const recordIdleMs = options.recordIdleMs ?? RECORD_IDLE_MS;
-  const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies, { unsettledMs: options.unsettledLobbyMs });
-  const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
-  const types = recordingMatchTypes(cached);
+  // A whole-history build uses a fresh projection per page; it never populates the route's long-lived row caches.
+  function projection(policy: PublicVisibility | undefined, fresh: boolean) {
+    const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies, { unsettledMs: options.unsettledLobbyMs });
+    const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
+    const types = recordingMatchTypes(cached);
+
+    /** Test status and the served type come from the same sources in both public lists. */
+    async function nonTest(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+      const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id), fresh ? signal : undefined, fresh)]);
+      return { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
+    }
+    async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+      const typed = await nonTest(listed, signal);
+      // A request that has ended starts no further lookups.
+      signal.throwIfAborted();
+      const filled = handles === undefined ? typed : await handles(typed);
+      // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
+      return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+    }
+    async function visibleRows<T extends HistorySummary>(rows: T[], signal: AbortSignal) {
+      signal.throwIfAborted();
+      return policy ? publiclyVisible(rows, row => policy.replayVisible(row.id), signal) : rows;
+    }
+    async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
+      return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
+    }
+    return { serve, serveVisible };
+  }
+  const { serve, serveVisible } = projection(options.publicVisibility, false);
   const continuations = listingContinuations();
-  /** Test status and the served type come from the same sources in both public lists. */
-  async function nonTest(listed: HistoryPage): Promise<ServedPage> {
-    const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id))]);
-    return { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
-  }
-  async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
-    const typed = await nonTest(listed);
-    // A request that has ended starts no further lookups.
-    signal.throwIfAborted();
-    const filled = handles === undefined ? typed : await handles(typed);
-    // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
-    return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
-  }
-  async function visibleRows<T extends HistorySummary>(rows: T[], signal: AbortSignal) {
-    signal.throwIfAborted();
-    return options.publicVisibility ? publiclyVisible(rows, row => options.publicVisibility!.replayVisible(row.id), signal) : rows;
-  }
-  async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
-    return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
-  }
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
 
-  async function* userBatches(signal: AbortSignal) {
+  async function* userBatches(signal: AbortSignal, policy: PublicVisibility | undefined) {
     if (!source.scan) throw new Error("History scan unavailable");
-    let scanned = 0;
     for await (const batch of source.scan(signal)) {
-      scanned += Math.max(1, batch.length);
-      if (scanned > USERS_SCAN_RECORDS) throw new Error("History scan record limit reached");
-      yield (await serveVisible({ matches: batch, nextPageToken: null }, signal)).matches;
+      signal.throwIfAborted();
+      yield (await projection(policy, true).serveVisible({ matches: batch, nextPageToken: null }, signal)).matches;
     }
   }
-  async function recheck(rows: TypedHistorySummary[], signal: AbortSignal) {
-    const visible = await visibleRows(rows, signal);
-    return (await nonTest({ matches: visible, nextPageToken: null })).matches;
+  const policyNow = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
+  const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
+  let snapshot: { body?: Buffer; expires: number; digest: string } | undefined;
+  type Flight = { reply: Promise<Buffer>; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
+  let flight: Flight | undefined;
+  function begin(policy: ReturnType<typeof policyNow>): Flight {
+    const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
+    const started = usersNow();
+    const work = publicUsers(userBatches(signal, policy.visibility), options.ratings, signal).then(rows => {
+      signal.throwIfAborted();
+      const body = Buffer.from(JSON.stringify({ users: rows }));
+      const published = usersNow();
+      if (published - started >= usersDeadline || policy.digest !== policyNow().digest) throw new Error("Listing expired");
+      snapshot = { body, digest: policy.digest, expires: published + 60_000 };
+      return body;
+    }).catch(error => {
+      snapshot = { digest: policy.digest, expires: usersNow() + 60_000 };
+      throw error;
+    }).finally(() => { flight = undefined; });
+    return { reply: untilAborted(work, signal), settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
   }
-
-  const usersDeadline = options.usersDeadlineMs ?? 240_000, usersNow = options.usersNow ?? Date.now;
-  let snapshot: Buffer | undefined, expires = 0;
-  let flight: { reply: Promise<Buffer>; signal: AbortSignal; admissions: number } | undefined;
-  async function users(signal: AbortSignal) {
-    if (usersNow() < expires) {
-      if (snapshot) return snapshot;
-      throw new Error("Users listing temporarily unavailable");
-    }
-    if (!flight) {
+  async function users(signal: AbortSignal): Promise<Buffer> {
+    for (;;) {
+      signal.throwIfAborted();
+      const policy = policyNow();
+      if (snapshot && snapshot.digest === policy.digest && usersNow() < snapshot.expires) {
+        if (snapshot.body) return snapshot.body;
+        throw new Error("Users listing temporarily unavailable");
+      }
       snapshot = undefined;
-      // The build belongs to the listing, not to a client. Disconnects end only that client's wait.
-      const deadline = AbortSignal.timeout(usersDeadline);
-      const work = publicUsers(userBatches(deadline), options.ratings, deadline, recheck)
-        .then(rows => {
-          deadline.throwIfAborted();
-          snapshot = Buffer.from(JSON.stringify({ users: rows }));
-          return snapshot;
-        }).finally(() => {
-          // Release the slot only when work really settles (in particular, an outstanding ranking read).
-          // A failed build also waits one cache period before retrying. Never return expired data.
-          expires = usersNow() + 60_000;
-          flight = undefined;
-        });
-      flight = { reply: untilAborted(work, deadline), signal: deadline, admissions: 0 };
+      const build = flight ??= begin(policy);
+      if (++build.admissions > 128) throw new Error("Listing busy");
+      if (build.digest !== policy.digest) {
+        build.stop.abort();
+        await untilAborted(build.settled, signal);
+        continue;
+      }
+      build.signal.throwIfAborted();
+      build.waiters++;
+      try { return await untilAborted(build.reply, signal); }
+      finally { if (--build.waiters === 0 && flight === build) build.stop.abort(); }
     }
-    flight.signal.throwIfAborted();
-    if (++flight.admissions > 128) throw new Error("Listing busy");
-    return untilAborted(flight.reply, signal);
   }
   const picks = options.topMatches ?? shippedTopMatchList();
   /** The listed records' complete summaries: a complete record is never replaced (records/record-store.ts save), so it is kept. */
@@ -516,6 +530,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (res.destroyed) return;
       if (res.headersSent) { res.destroy(); return; }
       if (error instanceof InvalidContinuation) { res.writeHead(400, { "cache-control": "no-store" }).end(); return; }
+      if (usersList) console.warn("Users listing unavailable (503)");
       const body = Buffer.from(JSON.stringify({ error: "Match history temporarily unavailable. Please try again." }));
       res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store", "content-length": String(body.length) });
       res.end(req.method === "HEAD" ? undefined : body);
