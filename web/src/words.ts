@@ -189,6 +189,11 @@ function clearOf(s: Rect, rects: readonly Rect[]): boolean {
   return !rects.some((d) => overlaps(s, d));
 }
 
+/** A fallback badge keeps the same gap from bite text as a free Placer spot. */
+function clearOfCues(s: Rect, cues: readonly Rect[]): boolean {
+  return !cues.some(c => s.x0 - GAP < c.x1 && c.x0 < s.x1 + GAP && s.y0 - GAP < c.y1 && c.y0 < s.y1 + GAP);
+}
+
 /**
  * Place each squad's badge (radius r) beside its anchor ant, in the order given,
  * into a placer that already holds the overlays and the markers (dots): the
@@ -199,17 +204,22 @@ function clearOf(s: Rect, rects: readonly Rect[]): boolean {
  * and never covers a marker while a spot clear of the markers exists, since taps
  * go to badges before marks.
  */
-export function placeBadges(placer: Placer, anchors: readonly (readonly [number, number, number])[], r: number, dots: readonly Rect[], labels: readonly Rect[] = []): Map<number, Rect> {
+export function placeBadges(placer: Placer, anchors: readonly (readonly [number, number, number])[], r: number, dots: readonly Rect[], labels: readonly Rect[] = [], cues: readonly Rect[] = []): Map<number, Rect> {
   const out = new Map<number, Rect>();
   for (const [agent, sx, sy] of anchors) {
     const spots = badgeSpots(sx, sy, r);
-    const clear = (s: Rect) => clearOf(s, dots) && clearOf(s, labels);
-    const near = () => nearSpots(sx, sy, r);
+    const away = (s: Rect) => clearOf(s, dots) && (!cues.length || (onScreen(s, placer.size) && clearOfCues(s, cues)));
+    const clear = (s: Rect) => away(s) && clearOf(s, labels);
+    let further: Rect[] | undefined;
+    const near = () => further ??= nearSpots(sx, sy, r);
     const spot =
       spots.find((s) => placer.free(s)) ??
       spots.find(clear) ??
       near().find((s) => placer.free(s)) ??
       near().find((s) => onScreen(s, placer.size) && clear(s)) ??
+      spots.find(away) ??
+      (cues.length ? near().find((s) => onScreen(s, placer.size) && away(s)) : undefined) ??
+      spots.find((s) => onScreen(s, placer.size) && clearOf(s, dots)) ??
       spots.find((s) => clearOf(s, dots)) ??
       spots[0]!;
     placer.occupy(spot);
@@ -608,6 +618,8 @@ export class Words {
   private labelPx = 0;
   private screen: { w: number; h: number };
   private key: unknown[] = [];
+  private projectionKey: unknown[] = [];
+  private cueRects: readonly Rect[] = [];
   private showLabels = true;
 
   get labelsVisible(): boolean {
@@ -681,6 +693,7 @@ export class Words {
 
   /** The screen changed size (resize or rotation): the labels are rebuilt at sizes for the new screen. */
   resize(screen: { w: number; h: number }): void {
+    this.projectionKey = [];
     this.screen = { w: screen.w, h: screen.h };
     this.setSizes(screen.w);
     for (const l of this.labels.values()) l.text.destroy();
@@ -827,7 +840,7 @@ export class Words {
    * point (NaN) for ground at or behind the 3D camera's near plane, through which the flyer LINE marks' air segments
    * are sampled and the air routes' legs end at that plane; the 2D board's toScreen already is one.
    */
-  update(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], viewKey: unknown, badgeAnchors: readonly (readonly [number, number, number])[] = [], badgeR = 0, inFront: Project = toScreen): Placer {
+  update(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], viewKey: unknown, badgeAnchors: readonly (readonly [number, number, number])[] = [], badgeR = 0, inFront: Project = toScreen, cues: readonly Rect[] = []): Placer {
     const visible = frame.marks;
     this.now = frame.tick;
     this.agents = frame.board?.agents ?? [];
@@ -835,10 +848,12 @@ export class Words {
     // Placement is chosen again when the marks, the view or the squads change, and otherwise at most once a
     // playback second; the alphas and the badges' positions are painted every frame (only
     // placement choices are cached; transforms and opacity are computed every frame).
-    const key = [frame.board?.marks ?? null, viewKey, blocked.length, visible.length, badgeAnchors.length, Math.floor(frame.tick / 10)];
+    const dots = this.projectMarkers(frame, toScreen, viewKey, inFront);
+    const key = [dots, blocked.length, badgeAnchors.length, cues.map(r => `${r.x0},${r.y0},${r.x1},${r.y1}`).join(";")];
     if (key.some((v, i) => v !== this.key[i])) {
       this.key = key;
-      this.layout(frame, toScreen, blocked, badgeAnchors, badgeR, inFront);
+      this.cueRects = cues;
+      this.layout(frame, cues.length ? [...blocked, ...cues] : blocked, badgeAnchors, badgeR, inFront);
     }
     this.paint(frame, badgeAnchors);
     const top = visible.reduce<StreamMark | null>((best, v) => (best === null || v.mark.answered > best.answered || (v.mark.answered === best.answered && v.mark.id > best.id) ? v.mark : best), null);
@@ -846,20 +861,19 @@ export class Words {
     return this.placer;
   }
 
-  /** The placement choices: each marker's point, each label's spot, each badge's offset from its anchor. */
-  private layout(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], blocked: readonly Rect[], badgeAnchors: readonly (readonly [number, number, number])[], badgeR: number, inFront: Project): void {
-    // One placer, seeded in order: the overlays, the markers with their labels, then the badges.
-    const placer = new Placer(this.screen.w, this.screen.h, blocked);
+  /** Project the fixed markers once, before cues or movable labels choose their spots. The paint uses these same points. */
+  projectMarkers(frame: Frame, toScreen: (tx: number, ty: number) => [number, number], viewKey: unknown, inFront: Project = toScreen): readonly Rect[] {
+    const key = [frame.board?.marks, viewKey, frame.marks.length, Math.floor(frame.tick / 10)];
+    if (key.every((v, i) => v === this.projectionKey[i])) return this.dots;
+    this.projectionKey = key;
     const dots: Rect[] = [];
     this.points = [];
     this.pointById = new Map();
-    const labelled = new Set<number>();
     for (const { mark: m } of frame.marks) {
       const [sx, sy] = toScreen(m.tileX + 0.5, m.tileY + 0.5);
       const x = Math.round(sx);
       const y = Math.round(sy);
       const r = markerRect(x, y);
-      placer.occupy(r);
       dots.push(r);
       const p = { mark: m, x, y };
       this.points.push(p);
@@ -882,7 +896,6 @@ export class Words {
         const [gx, gy] = segment.end;
         const h = AIR_SEGMENT.w + 3;
         const r = { x0: gx - h, y0: gy - AIR_SEGMENT.lift - h, x1: gx + h, y1: gy + h };
-        placer.occupy(r);
         dots.push(r);
         continue;
       }
@@ -892,9 +905,19 @@ export class Words {
       this.lines.set(m.id, line);
       const h = LINE_DOTS.endR + 3;
       const r = { x0: line.end[0] - h, y0: line.end[1] - h, x1: line.end[0] + h, y1: line.end[1] + h };
-      placer.occupy(r);
       dots.push(r);
     }
+    this.dots = dots;
+    return dots;
+  }
+
+  /** With fixed markers and bite cues reserved, place each mark label and badge. */
+  private layout(frame: Frame, blocked: readonly Rect[], badgeAnchors: readonly (readonly [number, number, number])[], badgeR: number, inFront: Project): void {
+    const dots = this.dots;
+    const placer = new Placer(this.screen.w, this.screen.h, blocked);
+    for (const r of dots) placer.occupy(r);
+    const labelled = new Set<number>();
+    const screen = { x0: 0, y0: 0, x1: this.screen.w, y1: this.screen.h };
     // Each air route, linked from the sampled message's whole board as the simulation links them (in a colony's view
     // too, chainMarks), through its drawn markers, its legs only between waypoints drawn; cut only on screen and in front
     // of the 3D camera's near plane (inFront); like a LINE mark's dots, its dashes are not reserved.
@@ -938,9 +961,8 @@ export class Words {
       }
     }
     this.stats.labels = labelled.size;
-    this.badges = placeBadges(placer, badgeAnchors, badgeR, dots, [...this.labels.values()].flatMap((l) => (l.rect === null ? [] : [l.rect])));
+    this.badges = placeBadges(placer, badgeAnchors, badgeR, dots, [...this.labels.values()].flatMap((l) => (l.rect === null ? [] : [l.rect])), this.cueRects);
     this.badgeR = badgeR;
-    this.dots = dots;
     this.blocked = blocked;
     this.badgeOffsets = new Map();
     for (const [agent, sx, sy] of badgeAnchors) {
@@ -1068,15 +1090,15 @@ export class Words {
       const cx = sx + off[0];
       const cy = sy + off[1];
       let b: Rect = { x0: cx - r, y0: cy - r, x1: cx + r, y1: cy + r };
-      if (!clearOf(b, labels) || !clearOf(b, this.dots)) {
+      if (!clearOf(b, labels) || !clearOf(b, this.dots) || !clearOfCues(b, this.cueRects)) {
         // Never over a marker while a spot clear of the markers exists, so a tap on a marker reaches its mark (taps go
         // to badges first); among those (its BADGE_SPOTS, then its further spots, nearest first, on screen and off the
         // overlays), one clear of the labels too, else the badge stays (or takes the first) and the label it covers
         // moves (moveLabelsOffBadges).
         const others = [...badges.values()];
         const screen = [this.screen.w, this.screen.h] as const;
-        const spots = [...badgeSpots(sx, sy, r), ...nearSpots(sx, sy, r)].filter((s) => onScreen(s, screen) && clearOf(s, this.dots) && clearOf(s, this.blocked));
-        const spot = spots.find((s) => clearOf(s, labels) && clearOf(s, others)) ?? spots.find((s) => clearOf(s, labels)) ?? (clearOf(b, this.dots) ? undefined : spots[0]);
+        const spots = [...badgeSpots(sx, sy, r), ...nearSpots(sx, sy, r)].filter((s) => onScreen(s, screen) && clearOf(s, this.dots) && clearOf(s, this.blocked) && clearOfCues(s, this.cueRects));
+        const spot = spots.find((s) => clearOf(s, labels) && clearOf(s, others)) ?? spots.find((s) => clearOf(s, labels)) ?? (clearOf(b, this.dots) && clearOfCues(b, this.cueRects) ? undefined : spots[0]);
         if (spot !== undefined) {
           b = spot;
           this.badgeOffsets.set(agent, [(spot.x0 + spot.x1) / 2 - sx, (spot.y0 + spot.y1) / 2 - sy]);
