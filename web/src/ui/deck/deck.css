@@ -72,16 +72,16 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 @media (width < 46rem) {
   :is(.d1, .d1p) .d1-top { column-gap: var(--aw-space-2); padding-inline: max(var(--aw-space-4), (100% - var(--aw-content-wide)) / 2); }
 }
-/* Where the brand and the three pages do not fit on one line (under 23.5em: 320 px phones, a 390 px phone with enlarged
-   text or zoom), the pages take a line of their own under the brand, as the front page's mast does on a phone; each
-   page's name moves whole to a further line rather than run off the screen. */
+/* On the site's other pages, where the brand and the three pages do not fit on one line (under 23.5em: 320 px phones, a
+   390 px phone with enlarged text or zoom), the pages take a line of their own under the brand, as the front page's mast
+   does on a phone; each page's name moves whole to a further line rather than run off the screen. */
 @media (width < 23.5em) {
-  :is(.d1, .d1p) .d1-top { flex-wrap: wrap; row-gap: 0; padding-block: 0; }
-  .d1-top > .d1-brand { min-height: var(--aw-bar); }
-  :is(.d1, .d1p) .d1-top .d2-nav { order: 3; flex: 1 1 100%; flex-wrap: wrap; column-gap: var(--aw-space-2); margin: 0 calc(-1 * var(--aw-gap-inline)); }
-  :is(.d1, .d1p) .d1-top .d2-nav-link { padding-inline: var(--aw-gap-inline); }
-  :is(.d1, .d1p) .d1-top .d2-nav-link[aria-current="page"]::after { left: var(--aw-gap-inline); right: var(--aw-gap-inline); }
-  :is(.d1, .d1p) .d1-top-end { order: 2; }
+  .d1p .d1-top { flex-wrap: wrap; row-gap: 0; padding-block: 0; }
+  .d1p .d1-top > .d1-brand { min-height: var(--aw-bar); }
+  .d1p .d1-top .d2-nav { order: 3; flex: 1 1 100%; flex-wrap: wrap; column-gap: var(--aw-space-2); margin: 0 calc(-1 * var(--aw-gap-inline)); }
+  .d1p .d1-top .d2-nav-link { padding-inline: var(--aw-gap-inline); }
+  .d1p .d1-top .d2-nav-link[aria-current="page"]::after { left: var(--aw-gap-inline); right: var(--aw-gap-inline); }
+  .d1p .d1-top-end { order: 2; }
 }
 /* The primary action of its context: the one cyan pill, the emblem's cyan, its text the page's dark. */
 .d1-agent-button {
@@ -145,12 +145,15 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* An explicit replay's own speed and position controls (replay-controls.ts), just before the board controls:
    pushed against them, 8px apart. */
 .d1-transport { display: flex; align-items: center; margin: 0 -4px 0 auto; }
-.d1 .aw-replay-controls { position: relative; display: flex; width: auto; min-width: 0; align-items: center; gap: 8px; height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 12px; color: var(--aw-ink); }
+.d1 .aw-replay-controls { position: relative; display: grid; grid-template-columns: auto auto auto; grid-template-rows: var(--d1-tap); width: auto; min-width: 0; max-width: 100%; align-items: center; gap: 0 8px; min-height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 12px; color: var(--aw-ink); }
+.d1 .aw-replay-controls:has(> .aw-replay-state:not(:empty)) { padding-bottom: 8px; border-radius: calc(var(--d1-tap) / 2); }
 .d1 .aw-replay-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--aw-ink-2); }
 .d1 .aw-replay-controls select { min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); color: var(--aw-ink); font: inherit; }
 .d1 .aw-replay-controls input { width: clamp(72px, 18vw, 280px); min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); margin: 0; accent-color: var(--aw-ink-bright); }
 .d1 .aw-replay-time { font-size: 12px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
-.d1 .aw-replay-state { position: absolute; min-height: 0; right: 12px; bottom: calc(100% + 4px); padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
+/* Replay status takes its own row inside the transport pill whenever it has text, so it never floats over
+   metadata or the board and never clips at the top of the stacked scroller. */
+.d1 .aw-replay-state { grid-column: 1 / -1; justify-self: start; min-width: 0; max-width: calc(100% - 6px); min-height: 0; margin-right: 6px; padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
 .d1 .aw-replay-state:empty { display: none; }
 /* A recording's Back to live, at the legend's end, as today's HUD offers it on its status line. */
 .d1-back { flex: none; margin-left: 10px; color: var(--aw-ink-bright); font-weight: 600; letter-spacing: 0; text-transform: none; text-underline-offset: 3px; }
@@ -447,7 +450,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-dialog .d1-close { width: 36px; height: 36px; background: var(--aw-raise); }
 
 /* ---------------------------------------------------------------- one column: the deck scrolling over the fixed board */
-@media (max-width: 1279px) {
+@media (max-width: 79.9375em) {
   .d1-hud { grid-template-rows: auto 4px minmax(0, 1fr) 12px auto auto; }
   .d1-frame { grid-template-rows: var(--d1-window-h) var(--d1-lane); --d1-window-h: min(calc((100vw - 24px) / 1.37), calc(100vh * 0.46)); }
   .d1-below { position: relative; z-index: 1; grid-column: 2; grid-row: 3; display: block; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line); pointer-events: auto; }
@@ -470,7 +473,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Stacked: the score full width with each row's figures over its tracks, then one team after the other; too tall to
    stand over the board, so the board comes first and the deck, its end and the footer scroll beneath it. */
-@media (max-width: 759px) {
+@media (max-width: 47.4375em) {
   .d1-hud { grid-template-rows: auto 4px auto 8px minmax(0, 1fr); }
   .d1-frame { grid-row: 3; }
   .d1-below { grid-row: 5; border-radius: 14px 14px 0 0; }
@@ -498,17 +501,24 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-hold-win.c1 { flex-direction: row-reverse; }
 }
 
-/* The phone: the frame edge to edge, every target 44 px, two-line rows, the dialog a bottom sheet. */
+/* The public pages retain the phone navigation's original alignment, targets and underline. */
 @media (max-width: 559px) {
-  .d1 { --d1-lane: 52px; --d1-tap: 44px; }
-  .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 4px auto minmax(0, 1fr); }
-  .d1-top { padding: 0 2px 0 12px; gap: 8px; }
-  .d1-top-credit { display: none; }
-  .d1-home > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
   .d1-top .d2-nav { margin-left: auto; }
   .d1-top .d2-nav-link { min-height: 44px; padding: 0 5px; }
   .d1-top .d2-nav-link[aria-current="page"]::after { left: 5px; right: 5px; bottom: 9px; }
   .d1-top-end { margin-left: 4px; }
+}
+
+/* The phone: the frame edge to edge, every target 44 px, two-line rows, the dialog a bottom sheet. */
+@media (max-width: 34.9375em) {
+  .d1 { --d1-lane: 52px; --d1-tap: 44px; }
+  .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 4px auto minmax(0, 1fr); }
+  .d1 .d1-top-credit { display: none; }
+  .d1 .d1-home > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
+  .d1 .d1-top .d2-nav { margin-left: auto; }
+  .d1 .d1-top .d2-nav-link { min-height: 44px; padding: 0 5px; }
+  .d1 .d1-top .d2-nav-link[aria-current="page"]::after { left: 5px; right: 5px; bottom: 9px; }
+  .d1 .d1-top-end { margin-left: 4px; }
   .d1-frame { grid-column: 1; grid-row: 3; border-radius: 0; --d1-window-h: min(73vw, calc(100vh * 0.42)); }
   /* The legend wraps rather than truncating; its first line stays on the rule. */
   .d1-legend { display: block; left: 6px; max-width: calc(100% - 12px); white-space: normal; }
@@ -527,8 +537,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-frame:has(> .d1-lane > .d1-transport:not([hidden])) { --d1-lane: calc(var(--d1-tap) * 2 + 16px); }
   .d1-lane:has(> .d1-transport:not([hidden])) { flex-wrap: wrap; align-content: center; row-gap: 4px; }
   .d1-transport { order: -1; flex: 1 1 100%; min-width: 0; margin: 0; }
-  .d1 .aw-replay-controls { flex: 1 1 auto; }
-  .d1 .aw-replay-controls input { flex: 1 1 0; width: auto; }
+  .d1 .aw-replay-controls { flex: 1 1 auto; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .d1 .aw-replay-controls input { width: 100%; }
   /* The team picker and four board buttons already use the phone's width. A present caption needs its own row;
      an empty caption keeps the original lane height. Replay transport remains on its existing row above it. */
   .d1-frame:has(.d1-caption:not([data-kind="none"])) { --d1-lane: calc(var(--d1-tap) * 2 + 16px); }
@@ -560,16 +570,24 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-history-line { min-height: 44px; }
   .d1-chip { min-height: 44px; padding: 0 16px; }
   .d1-deck-end { padding: 20px 8px 16px; border-bottom: 1px solid var(--d1-hair); }
-  .d1-agent-button { min-height: 44px; font-size: 14px; }
-  .d1p .d1-agent-button { font-size: var(--aw-text-lead); }
-  .d1p .d1-agent-button:is([data-key="waiting-challenge"], [data-key="challenge-new"]) { font-size: 14px; }
-  :is(.d1-top-end, .d1p-end) > .d1-agent-button[aria-haspopup] { font-size: var(--aw-text-lead); }
+  .d1 .d1-agent-button { min-height: 44px; font-size: 14px; }
+  .d1 .d1-top-end > .d1-agent-button[aria-haspopup] { font-size: var(--aw-text-lead); }
   .d1-foot { padding: 4px 8px 8px; gap: 0 12px; flex-wrap: wrap; }
   .d1-foot .d2-link { min-height: 44px; }
   .d1-foot-credit { display: inline; margin-left: auto; font-size: 12px; }
-  .d1-dialog { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0; }
-  .d1-dialog .aw-byoa-copy { min-height: 44px; padding: 0 20px; }
-  .d1-dialog .d1-close { width: 44px; height: 44px; }
+  .d1 .d1-dialog:not(.d1-result-dialog) { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0; }
+  .d1 .d1-dialog .aw-byoa-copy { min-height: 44px; padding: 0 20px; }
+  .d1 .d1-dialog .d1-close { width: 44px; height: 44px; }
+}
+
+/* Other pages keep their phone button and dialog sizing at the existing 559 px threshold. */
+@media (max-width: 559px) {
+  .d1p .d1-agent-button { min-height: 44px; font-size: var(--aw-text-lead); }
+  .d1p .d1-agent-button:is([data-key="waiting-challenge"], [data-key="challenge-new"]) { font-size: 14px; }
+  .d1p :is(.d1-top-end, .d1p-end) > .d1-agent-button[aria-haspopup] { font-size: var(--aw-text-lead); }
+  .d1p .d1-dialog { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0; }
+  .d1p .d1-dialog .aw-byoa-copy { min-height: 44px; padding: 0 20px; }
+  .d1p .d1-dialog .d1-close { width: 44px; height: 44px; }
 }
 
 /* The narrowest phones: the wordmark and the three pages fit beside the emblem without running off the screen. */
@@ -630,7 +648,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-result-dialog .rd-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 24px 28px; }
 .d1-result-dialog .d1-result-next { margin: 0; color: #b4c0c3; font-size: 13px; white-space: nowrap; }
 .d1-result-dialog .d1-share { margin: 0; min-height: 36px; padding: 0 16px; font-family: Arial, sans-serif; font-size: 14px; white-space: nowrap; }
-@media(max-width:600px) {
+@media (max-width: 37.5em) {
  .d1-dialog.d1-result-dialog { width: calc(100vw - 24px); border-radius: 14px; }
  .d1-result-dialog .d1-result-top { padding: 18px 20px 16px; }
  .d1-result-dialog .d1-result-head { font-size: 30px; }
@@ -649,7 +667,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
  .d1-result-dialog .d1-share { min-height: 44px; }
  .d1-result-dialog .d1-result-next { text-align: center; order: 1; }
 }
-@media(min-width:601px) {
+@media (min-width: 37.5625em) {
  .d1-result-dialog .rd-standings:not(.is-rated) .rd-identity { grid-template-columns: 112px minmax(0,1fr); align-items: center; gap: 12px; }
 }
 
@@ -665,7 +683,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-result-dialog .rd-columns { border-top: 0; }
 .d1-result-dialog .rd-decisive { border-radius: 0; background: transparent; border-left: 2px solid #59656c; padding-top: 0; padding-bottom: 0; }
 .d1-result-dialog .d1-share { background: var(--d1-side); color: #102126; border-radius: 4px; }
-@media(max-width:600px) {
+@media (max-width: 37.5em) {
  .d1-dialog.d1-result-dialog { border-radius: 4px; }
  .d1-result-dialog .d1-result-top { padding: 18px 20px; }
  .d1-result-dialog .d1-result-head { font-size: 30px; }
@@ -677,6 +695,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Score Band: shared comparison, aligned colony rows, then the unchanged board window.
    At narrow widths the clock/map lead colony cards and comparison follows them. */
+.score-band { --d1-legend-half: 8px; }
 .score-band.d1-hud { grid-template-rows: auto 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
 .score-band .d1-below { display: contents; }
 .score-band .d1-deck {
@@ -775,7 +794,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-log-mark > .d1-log-text { min-width: 0; overflow-wrap: break-word; }
 .sb-detail-stat { display: inline-flex; align-items: baseline; gap: 6px; margin: 0; white-space: nowrap; }
 .sb-detail-stat > dt, .sb-detail-stat > dd { margin: 0; white-space: nowrap; }
-@media (min-width: 1200px) {
+@media (min-width: 75em) {
   .score-band.d1-hud:has(.sb-history-strip:not([hidden])) {
     grid-template-rows: auto 4px minmax(0, auto) 16px minmax(244px, 1fr) minmax(36px, auto);
   }
@@ -827,11 +846,13 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   }
 }
 .score-band .d1-ml { overflow: visible; text-overflow: clip; }
-.score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) var(--d1-lane); }
+.score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) minmax(var(--d1-lane), auto); }
+.score-band .d1-frame > :not(.d1-legend) { grid-column: 1; }
 .sb-metadata { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px 4px; background: var(--aw-bg); z-index: 1; color: var(--aw-ink-2); font-size: 12px; pointer-events: auto; }
 .sb-meta-item { white-space: nowrap; }
 .score-band .d1-window { grid-row: 2; }
 .score-band .d1-lane { grid-row: 3; }
+.score-band .d1-frame > .d1-lane:has(.aw-replay-state:not(:empty)) { padding-block: var(--aw-space-1); }
 .score-band .d1-back { margin-left: auto; }
 .score-band .d1-legend { display: flex; white-space: nowrap; letter-spacing: .02em; }
 .score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
@@ -841,20 +862,29 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-key-toggle:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .sb-key { flex: 0 0 100%; min-width: 0; white-space: normal; line-height: 1.5; }
 .sb-key p { margin: 8px 0; }
-@media (max-width: 1199px) {
+@media (max-width: 74.9375em) {
   .sb-key-toggle { min-width: 44px; min-height: 44px; }
 }
 
-/* Keep in sync with DECK_FIRST: the Flyers grid needs 1179 px including gutters. */
-@media (max-width: 1199px) {
-  /* The host must retain scrolling access to controls outside the narrow frame; the deck scrolls independently below. */
-  .score-band.d1-hud { grid-template-rows: auto 8px auto 8px minmax(0, 1fr); overflow: visible; }
-  .score-band .d1-frame { grid-row: 3; grid-template-rows: auto var(--d1-window-h) var(--d1-lane); --d1-window-h: min(73vw, 42vh); }
-  .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; overflow-anchor: auto; background: var(--aw-surface); min-height: 0; pointer-events: auto; }
+/* Keep in sync with DECK_FIRST: 75em (1200 px at default text) fits the Flyers grid before stacking. */
+@media (max-width: 74.9375em) {
+  /* The frame holds the legend and the window only; metadata and the board control strip open the one scroller under it. */
+  .score-band.d1-hud { grid-template-rows: auto var(--d1-legend-half) auto 8px minmax(0, 1fr); overflow: visible; }
+  .score-band .d1-frame { grid-row: 3; grid-template-rows: var(--d1-window-h); padding-top: var(--d1-legend-half); --d1-window-h: min(73vw, 42vh); }
+  .score-band .d1-frame > .d1-window { grid-row: 1; }
+  .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; overflow-anchor: auto; padding-bottom: 1px; background: var(--aw-surface); min-height: 0; pointer-events: auto; }
+  .score-band .d1-below > .sb-metadata { position: relative; z-index: 1; padding: var(--aw-space-2) var(--aw-space-2) var(--aw-space-1); background: none; }
+  .score-band .d1-below > .d1-lane {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--aw-space-2) var(--aw-space-1);
+    padding: var(--aw-space-1) var(--aw-space-2) var(--aw-space-2); border-top: 0; border-bottom: 1px solid var(--d1-hair); border-radius: 0; background: none;
+  }
+  .score-band .d1-below > .d1-lane > .d1-transport { order: -1; flex: 1 1 100%; margin: 0; }
+  .score-band .d1-below > .d1-lane > .d1-controls { flex-wrap: wrap; row-gap: var(--aw-space-2); }
   .score-band .d1-deck, .score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) { display: flex; flex-direction: column; gap: 0; padding: 0 8px; border-radius: 0; box-shadow: none; }
   .sb-band { display: contents; }
   .sb-deck-table { display: contents; }
-  .sb-clock-map { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; padding: 12px 0; border: 0; gap: 8px; }
+  .sb-clock-map { display: flex; flex-direction: column; align-items: start; justify-content: space-between; padding: 12px 0; border: 0; gap: var(--aw-space-1); }
+  .score-band .sb-clock-map .d1-map { flex-wrap: wrap; justify-content: start; column-gap: var(--aw-space-2); }
   .sb-columns { display: none; }
   .score-band .d1-team { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 12px 6px; padding: 12px 0; border-top: 1px solid var(--d1-hair); border-bottom: 0; }
   .score-band .d1-team:has(> .sb-sticky-bar:not([hidden])) { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
@@ -899,9 +929,19 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-foot { position: relative; flex-wrap: wrap; gap: 0 12px; padding: 8px; }
   .score-band .d1-deck-end { padding: 16px 8px; }
 }
-@media (max-width: 559px) {
-  .score-band.d1-hud { grid-template-rows: auto 8px auto minmax(0, 1fr); }
+/* In stacked form at 40em and wider (wide windows at enlarged text or 200% zoom), keep at least desktop board height. */
+@media (min-width: 40em) and (max-width: 74.9375em) {
+  .score-band .d1-frame { --d1-window-h: min(73vw, 46vh); }
+}
+/* From 1200 CSS px wide when stacked by enlarged text, never shrink the board window below the desktop live window. */
+@media (min-width: 1200px) and (max-width: 74.9375em) {
+  .score-band .d1-frame { --d1-window-h: max(min(73vw, 46vh), calc(100vh - 431px)); }
+}
+@media (max-width: 34.9375em) {
+  .score-band.d1-hud { grid-template-rows: auto var(--d1-legend-half) auto minmax(0, 1fr); }
   .score-band .d1-below { grid-row: 4; }
+  .score-band .d1-below > .d1-lane > .d1-caption:not([data-kind="none"]) { flex: 1 0 100%; }
+  .score-band .d1-below > .d1-lane > .d1-controls { flex: 1 1 100%; }
   .score-band .d1-name { font-size: 14px; letter-spacing: .02em; }
   .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; font-size: 12px; }
   .score-band :is(.d1-title, .d1-model) { font-size: 13px; }
@@ -909,16 +949,57 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .sb-metadata { padding: 8px 8px 4px; }
   .score-band .d1-tl-entry { min-height: 28px; line-height: 18px; padding-block: 5px; }
 }
+/* Under 24em the point-of-view select takes its own row and the four round controls take the next. */
+@media (max-width: 23.99em) {
+  .score-band .d1-below .aw-team-view { flex: 0 1 60%; min-width: 0; max-width: 100%; margin-right: 40%; }
+}
+/* Under 20em (phones at doubled text or 200% zoom) the select fills its row and the round controls wrap whole under it. */
+@media (max-width: 19.99em) {
+  .score-band .d1-controls { flex-wrap: wrap; row-gap: var(--aw-space-2); min-width: 0; max-width: 100%; }
+  .score-band .d1-below .aw-team-view, .score-band .aw-team-view { flex: 1 1 100%; max-width: 100%; min-width: 0; margin-right: 0; }
+}
+
+/* Under 20em wide and 25em tall the board window joins the scroller as its first item at full height; the bar stays pinned. */
+.score-band.d1-hud.d1-joined { grid-template-rows: auto 0 0 minmax(0, 1fr); }
+.score-band.d1-joined .d1-top { background: var(--aw-bg); }
+.score-band.d1-joined .d1-below { background: none; }
+.score-band.d1-joined .d1-below > :not(.d1-frame) { position: relative; z-index: 1; background: var(--aw-surface); }
+.score-band.d1-joined .d1-below > .d1-frame { margin-top: calc(var(--d1-legend-half) + 4px); }
+
+/* Live view pinned phone bar: under 32.5em one line with Watch, Matches and Leaderboard behind Site pages; under 12.5em
+   two rows (brand, then Site pages), each whole and on one line. Placed after phone header rules so live view wins. */
+.d1-pages { display: none; }
+.d1 .d1-pages-chevron { display: inline-block; width: 0.42em; height: 0.42em; margin: 0 0.1em 0.22em 0.5em; border: solid currentColor; border-width: 0 0.12em 0.12em 0; transform: rotate(45deg); }
+.d1[data-menu="open"] .d1-pages-chevron { transform: rotate(-135deg); margin-bottom: -0.12em; }
+@media (max-width: 32.49em) {
+  .d1 .d1-top { flex-wrap: nowrap; column-gap: var(--aw-space-2); padding: 0 var(--aw-space-2); }
+  .d1 .d1-top > .d1-brand { min-height: var(--aw-bar); }
+  .d1 .d1-top > .d2-nav { display: none; }
+  .d1 .d1-top > .d1-pages {
+    display: inline-flex; align-items: center; margin-left: auto; min-height: var(--aw-tap-touch); padding: 0 var(--aw-space-2); border: 0; border-radius: var(--aw-radius-card);
+    background: none; color: var(--aw-ink-bright); font: inherit; font-size: var(--aw-text-body); font-weight: 600; white-space: nowrap; cursor: pointer;
+  }
+  .d1 .d1-top > .d1-pages:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
+  .d1[data-menu="open"] .d1-top > .d1-pages { background: var(--aw-raise); }
+  .d1[data-menu="open"] .d1-top { z-index: 7; }
+  .d1[data-menu="open"] .d1-top > .d2-nav {
+    display: flex; flex-direction: column; align-items: flex-start; position: absolute; z-index: 6; top: calc(100% - 4px); right: var(--aw-space-2); left: auto;
+    min-width: 10em; margin: 0; padding: var(--aw-space-1); border-radius: var(--aw-radius-card); background: var(--aw-surface);
+    box-shadow: inset 0 0 0 1px var(--aw-line), 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .d1[data-menu="open"] .d1-top .d2-nav-link { min-height: var(--aw-tap-touch); padding: 0 var(--aw-space-3); font-size: var(--aw-text-body); }
+  .d1[data-menu="open"] .d1-top .d2-nav-link[aria-current="page"]::after { left: var(--aw-space-3); right: var(--aw-space-3); bottom: 9px; }
+}
+@media (max-width: 12.49em) {
+  .d1 .d1-top { flex-wrap: wrap; }
+  .d1 .d1-top > .d1-brand { flex: 1 0 100%; }
+  .d1 .d1-top > .d1-pages { margin-left: calc(-1 * var(--aw-space-2)); }
+}
 
 /* Below the ordinary phone width, page zoom leaves less room than a one-line label.
    Keep whole words and controls, let existing groups take the space they need. */
 @media (max-width: 319px) {
-  .score-band .d1-frame { grid-template-rows: auto auto var(--d1-window-h) var(--d1-lane); }
-  .score-band .d1-legend { position: static; grid-row: 1; display: block; max-width: none; padding: 4px 8px; white-space: normal; }
   .score-band .d1-legend-rest, .score-band .sb-meta-item { white-space: normal; overflow-wrap: normal; word-break: normal; }
-  .score-band .sb-metadata { grid-row: 2; }
-  .score-band .d1-window { grid-row: 3; }
-  .score-band .d1-lane { grid-row: 4; }
   .sb-clock-map { flex-direction: column; align-items: start; gap: 6px; }
   .score-band .d1-map { flex-wrap: wrap; }
   .score-band .d1-map-name { white-space: normal; overflow-wrap: normal; word-break: normal; }
@@ -931,6 +1012,34 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-cell > .d1-ml { white-space: normal; overflow-wrap: normal; word-break: normal; }
   .score-band .d1-econ > .sb-queens, .score-band .d1-econ.has-flyers > .sb-queens { grid-column: 1 / -1; flex-wrap: wrap; }
   .score-band .sb-queen-value { flex: 1 1 100%; min-width: 0; }
+}
+/* Below 320 CSS px (phones at 200% zoom): caption wraps between words without an ellipsis, replay transport wraps whole
+   items with the seek bar on its own row, four-colony gauge figures wrap whole while hidden gauges stay hidden, and the
+   legend stays set into the frame's top rule. */
+@media (max-width: 319.9px) {
+  .score-band .d1-cap-what, .score-band .d1-cap-who { white-space: normal; overflow: visible; text-overflow: clip; }
+  .score-band .d1-caption { align-items: start; }
+  .score-band .aw-replay-controls { display: flex; flex-wrap: wrap; height: auto; min-height: var(--d1-tap); row-gap: var(--aw-space-1); padding-block: var(--aw-space-1); border-radius: 22px; }
+  .score-band .aw-replay-controls input { flex: 1 1 100%; order: 3; }
+  .score-band .aw-replay-time { white-space: nowrap; }
+  .score-band .aw-replay-state { flex: 0 1 auto; order: 4; white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .sb-gauge .sb-values:not([hidden]):has(> .sb-figure.c2:not([hidden])) { display: flex; flex-wrap: wrap; column-gap: var(--aw-space-3); row-gap: 2px; }
+  .score-band .d1-frame > .d1-legend {
+    position: absolute; display: flex; top: calc(-1 * var(--d1-legend-half)); left: 4px; padding: 0 4px; white-space: nowrap;
+  }
+}
+
+/* From 320 CSS px, allow these labels to wrap between words when needed, including at the page's own spacing.
+   Gauge figures move to another row when measured content no longer fits. */
+@media (min-width: 320px) {
+  .score-band :is(.d1-clock, .d1-map-name, .d1-agent-button) { white-space: normal; }
+  .score-band .aw-replay-state { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .d1-agent-button { text-align: center; }
+  .score-band .sb-key .sb-key-term { display: inline-block; max-width: 100%; }
+}
+@media (min-width: 320px) and (max-width: 74.9375em) {
+  .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; }
+  .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) > .sb-figure { flex: 1 1 0; }
 }
 
 /* Below 240 CSS px (phone screens at 200% zoom), keep History headings stacked as distinct blocks and move the

@@ -54,8 +54,8 @@ describe("deck polish", () => {
     expect(rule(".d1-home")).toMatch(/text-decoration: none/);
     expect(rule(".d1-home:focus-visible > *")).toMatch(/outline: 2px solid/);
     expect(rule(".d1-brand > .d1-top-credit")).toMatch(/grid-column: 2; grid-row: 2/);
-    const phone = block("@media (max-width: 559px)");
-    expect(rule(".d1-top-credit", phone)).toMatch(/display: none/);
+    const phone = block("@media (max-width: 34.9375em)");
+    expect(rule(".d1 .d1-top-credit", phone)).toMatch(/display: none/);
   });
 
   it("keeps the team container a size container (its parts read its width)", () => {
@@ -72,6 +72,16 @@ describe("deck polish", () => {
     expect(rule(".d1-who")).toMatch(/flex-wrap: wrap/);
     expect(rule(".d1-title")).not.toMatch(/text-overflow|white-space: nowrap/);
     expect(CSS).not.toMatch(/\.d1-who \{[^}]*nowrap/);
+  });
+
+  it("keeps phone navigation targets on public pages without changing the live bar", () => {
+    const pages = block("@media (max-width: 559px)");
+    expect(rule(".d1-top .d2-nav", pages)).toMatch(/margin-left: auto/);
+    expect(rule(".d1-top .d2-nav-link", pages)).toMatch(/min-height: 44px; padding: 0 5px/);
+    expect(rule('.d1-top .d2-nav-link[aria-current="page"]::after', pages)).toMatch(/left: 5px; right: 5px; bottom: 9px/);
+    expect(rule(".d1-top-end", pages)).toMatch(/margin-left: 4px/);
+    const live = block("@media (max-width: 34.9375em)");
+    expect(rule(".d1 .d1-top .d2-nav-link", live)).toMatch(/min-height: 44px; padding: 0 5px/);
   });
 
   it("tightens the top bar on the narrowest phones so the pages stay on the screen", () => {

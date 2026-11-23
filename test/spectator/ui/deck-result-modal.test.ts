@@ -2,6 +2,7 @@
 // with frames; the stylesheet half reads deck.css's contracts. Neither is visual evidence: browser captures are that.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { chromium } from "playwright-core";
 import { Frame, type Board, type StoryEntry } from "../../../web/src/buffer.ts";
 import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
 import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
@@ -366,6 +367,40 @@ describe("the match result as a modal over the screen", () => {
     expect(HUD).not.toMatch(/deck\.score\.append\(teams\.result/);
     expect(HUD).toMatch(/root\.append\([^)]*teams\.result\)/);
   });
+
+  it("centres the rendered result dialog on phones while keeping the agent dialog a bottom sheet", async () => {
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
+    const roboto = readFileSync(new URL("../../../node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf", import.meta.url)).toString("base64");
+    for (const size of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${size}`] });
+      try {
+        for (const width of [320, 390]) for (const font of ["Roboto", "Liberation Sans"]) {
+          const page = await browser.newPage({ viewport: { width, height: 844 } });
+          try {
+            await page.setContent(`<style>@font-face{font-family:Roboto;src:url(data:font/ttf;base64,${roboto})}${tokens}html,body{margin:0;height:100%}body{font-family:'${font}',sans-serif}${CSS}</style><div class="d1"><dialog class="d1-dialog d1-result-dialog"><div class="d1-result-top"><h1 class="d1-result-head">Match result</h1></div><div class="rd-standings">Final standings</div></dialog><dialog class="d1-dialog"><div class="d1-dialog-body">Bring your agent</div></dialog></div>`);
+            await page.evaluate(() => document.fonts.ready);
+            const measure = await page.evaluate(() => {
+              const result = document.querySelector<HTMLDialogElement>(".d1-result-dialog")!;
+              const agent = document.querySelector<HTMLDialogElement>(".d1-dialog:not(.d1-result-dialog)")!;
+              result.showModal();
+              const r = result.getBoundingClientRect();
+              const box = { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+              result.close();
+              agent.showModal();
+              const a = agent.getBoundingClientRect();
+              return { box, agentBottom: a.bottom };
+            });
+            const tag = `${width}px ${font} text ${size}px`;
+            expect(Math.abs(measure.box.left - (width - measure.box.right)), `${tag}: horizontally centred`).toBeLessThanOrEqual(1);
+            expect(Math.abs(measure.box.top - (844 - measure.box.bottom)), `${tag}: vertically centred`).toBeLessThanOrEqual(1);
+            expect(measure.box.left, `${tag}: inside viewport`).toBeGreaterThanOrEqual(0);
+            expect(measure.box.right, `${tag}: inside viewport`).toBeLessThanOrEqual(width);
+            expect(measure.agentBottom, `${tag}: agent bottom sheet`).toBeCloseTo(844, 0);
+          } finally { await page.close(); }
+        }
+      } finally { await browser.close(); }
+    }
+  }, 60_000);
 
   it("is centred and fits a 390 px phone at every width: no bottom sheet, inner scroll when taller than the screen", () => {
     const at = CSS.indexOf(".d1-dialog.d1-result-dialog {");

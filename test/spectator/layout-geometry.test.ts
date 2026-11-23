@@ -200,14 +200,14 @@ describe("headless-browser smoke of the landing and dock pages", () => {
   }
 });
 
-// Score Band carries recording state and Back to live in the board frame rather than the retired dock footer.
+// Score Band carries recording state on the board frame and Back to live directly under the board in stacked layout.
 // Each remains drawn in full, inside every clipping ancestor and on screen.
 describe("the Score Band recording state and return link", () => {
   for (const { width, height } of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     it(`shows the recording's state and Back to live at ${width}px`, async () => {
       const { page } = await open("dock", width, height);
       try {
-        const shown = await shownText(page, ".d1-frame", [".d1-mode", ".d1-back"]);
+        const shown = await shownText(page, ".score-band", [".d1-mode", ".d1-back"]);
         expect(shown[0]).toMatch(/^\.d1-mode: RECORDING/);
         expect(shown[1]).toBe(".d1-back: Back to live");
       } finally { await page.context().close(); }
@@ -219,20 +219,20 @@ it("rejects a missing, hidden, offscreen or ancestor-clipped return link on Scor
   const { page } = await open("dock", 390, 844);
   try {
     const back = page.locator(".d1-back");
-    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: Back to live"]);
+    expect(await shownText(page, ".score-band", [".d1-back"])).toEqual([".d1-back: Back to live"]);
     await back.evaluate(node => { node.style.visibility = "hidden"; });
-    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: not drawn"]);
+    expect(await shownText(page, ".score-band", [".d1-back"])).toEqual([".d1-back: not drawn"]);
     await back.evaluate(node => { node.style.visibility = ""; node.style.transform = "translateX(1000px)"; });
-    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: off screen"]);
+    expect(await shownText(page, ".score-band", [".d1-back"])).toEqual([".d1-back: off screen"]);
     await back.evaluate(node => {
       node.style.transform = "";
       const clip = document.createElement("span");
       clip.style.cssText = "display:block;width:1px;height:20px;overflow:hidden;flex:none";
       node.before(clip); clip.append(node);
     });
-    expect((await shownText(page, ".d1-frame", [".d1-back"]))[0]).toMatch(/^\.d1-back: cut by/);
+    expect((await shownText(page, ".score-band", [".d1-back"]))[0]).toMatch(/^\.d1-back: cut by/);
     await back.evaluate(node => node.remove());
-    expect(await shownText(page, ".d1-frame", [".d1-back"])).toEqual([".d1-back: missing"]);
+    expect(await shownText(page, ".score-band", [".d1-back"])).toEqual([".d1-back: missing"]);
   } finally { await page.context().close(); }
 }, 60_000);
 
