@@ -50,7 +50,7 @@ function play(f: Awaited<ReturnType<typeof fixture>>, seq: number, o: ScriptOpti
 }
 async function watch(f: Awaited<ReturnType<typeof fixture>>, seq: number) {
   // Watched as the current page asks for it: a recording stores that public stream, kill totals and queen kills included.
-  const client = await SseClient.connect(f.server.url(`/live/${seq}?kills=1&queenKills=1`));
+  const client = await SseClient.connect(f.server.url(`/live/${seq}?kills=1&queenKills=1&queenBites=1`));
   cleanup.push(() => client.close());
   const res = await served(f.server, f.server.responses.length);
   return { client, res };
