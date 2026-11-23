@@ -4,7 +4,7 @@ import { FIT_TARGETS, fitProblems, nameTapPoints, recordingPositionMs, type Text
 
 const deck = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
 const ui = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8");
-const phone = deck.slice(deck.indexOf("@media (max-width: 559px)"));
+const phone = deck.slice(deck.indexOf("@media (max-width: 34.9375em)"));
 const fit: TextFit = { text: "Back to live", target: true, lines: 1, clipped: false, outside: false };
 
 describe("match label fit", () => {
@@ -46,7 +46,7 @@ describe("match label fit", () => {
   });
   it("keeps Back to live whole only in the phone override", () => {
     expect(phone).toContain(".d1-back { display: inline-block; white-space: nowrap; }");
-    expect(deck.slice(0, deck.indexOf("@media (max-width: 559px)"))).not.toContain(".d1-back { display: inline-block");
+    expect(deck.slice(0, deck.indexOf("@media (max-width: 34.9375em)"))).not.toContain(".d1-back { display: inline-block");
   });
   it("allocates a caption row only when an event exists, preserving the replay row", () => {
     expect(phone).toContain('.d1-frame:has(.d1-caption:not([data-kind="none"]))');

@@ -451,10 +451,14 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   const viewKey = () => `${w}x${h}:${cam.alpha.toFixed(3)},${cam.beta.toFixed(3)},${cam.radius.toFixed(2)},${cam.target.x.toFixed(2)},${cam.target.z.toFixed(2)}`;
 
   let resized = true;
-  window.addEventListener("resize", () => (resized = true));
+  // A moved HUD window (scrolling or stacked layout changes) refits the board even when the browser window keeps its size.
+  window.addEventListener("resize", () => { resized = true; areaStale = true; });
   const refit = () => {
     resized = false;
-    if (window.innerWidth === w && window.innerHeight === h) return;
+    if (window.innerWidth === w && window.innerHeight === h) {
+      if (overlaysOn && frame.board) refitArea();
+      return;
+    }
     const before = camPose();
     w = window.innerWidth;
     h = window.innerHeight;

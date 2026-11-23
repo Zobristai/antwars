@@ -436,10 +436,14 @@ async function start(): Promise<void> {
   // After a rotation or window resize, the next frame re-fits everything sized to the screen and shows the whole board.
   // Starts true: the first frame also catches a resize while waiting for the first snapshot, before this listener existed.
   let resized = true;
-  window.addEventListener("resize", () => (resized = true));
+  // A moved HUD window (scrolling or stacked layout changes) refits the board even when the browser window keeps its size.
+  window.addEventListener("resize", () => { resized = true; areaStale = true; });
   const refit = () => {
     resized = false;
-    if (window.innerWidth === w && window.innerHeight === h) return;
+    if (window.innerWidth === w && window.innerHeight === h) {
+      if (overlaysOn && frame.board) refitArea();
+      return;
+    }
     w = window.innerWidth;
     h = window.innerHeight;
     renderer.resize(w, h, internalResolution(w, h));

@@ -54,8 +54,8 @@ describe("deck polish", () => {
     expect(rule(".d1-home")).toMatch(/text-decoration: none/);
     expect(rule(".d1-home:focus-visible > *")).toMatch(/outline: 2px solid/);
     expect(rule(".d1-brand > .d1-top-credit")).toMatch(/grid-column: 2; grid-row: 2/);
-    const phone = block("@media (max-width: 559px)");
-    expect(rule(".d1-top-credit", phone)).toMatch(/display: none/);
+    const phone = block("@media (max-width: 34.9375em)");
+    expect(rule(".d1 .d1-top-credit", phone)).toMatch(/display: none/);
   });
 
   it("keeps the team container a size container (its parts read its width)", () => {
