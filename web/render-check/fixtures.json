@@ -45,7 +45,7 @@
    "sha256": "191b22262a5229108c5db88572ea0a99eb67e3a35c6d8c817a23b67af543e688"
   },
   "/matches/top": {
-   "label": "Watch's top matches: the 12 hand-picked matches of src/replays/top-matches.json, in its order, each row exactly as GET /matches served it in the public listing recorded 2026-11-18T08:06:21Z. None is a test match.",
+   "label": "Watch's top matches: the 12 hand-picked matches of src/replays/top-matches.json, in its order, each row exactly as GET /matches served it in the public listing recorded 2026-11-23T05:31:02Z. None is a test match.",
    "type": "application/json",
    "file": "top-matches-fixture.json"
   }
