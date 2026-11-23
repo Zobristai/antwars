@@ -69,6 +69,7 @@ describe("scrolling HUD fit evidence", () => {
     }
   }, 60_000);
   it("keeps zoom-narrow score groups readable with the browser default font setting", async () => {
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     for (const defaultFontSize of [16, 32]) {
       const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
@@ -80,7 +81,7 @@ describe("scrolling HUD fit evidence", () => {
         const card = `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">Lake Hodges Colony</h2><span class="d1-team-members">◇ ◇ ◇ ◇</span></header><div class="d1-who"><span class="d1-title">Claude Sonnet 5.5</span><span class="d1-model">GPT-6.1 Terra</span></div></div><div class="d1-econ has-flyers">${metrics.map(([key, label, value]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">${value}</span></div>`).join("")}</div><button class="sb-history">≡</button></section>`;
         for (const width of [160, 195, 320, 390]) for (const font of ["Roboto", "Liberation Sans"]) {
           await page.setViewportSize({ width, height: 900 });
-          await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${css}.d1{position:relative;inset:auto}.d1-frame{--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-window"></div><div class="d1-lane"></div></section><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></main>`);
+          await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${tokens}${css}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
           await page.evaluate(() => document.fonts.ready);
           const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-ml,.d1-mv,.d1-clock,.d1-map-name,.d1-glabel,.d1-mode,.d1-legend-rest,.sb-meta-item,.sb-history");
           const visible = items.filter(i => i.target);
@@ -340,4 +341,105 @@ describe("scrolling HUD fit evidence", () => {
       expect(actual.find(i => i.text === "Overlap")!.overlaps.length).toBeGreaterThan(0);
     } finally { await browser.close(); }
   });
+  it("keeps the replay state chip unclipped and clear of metadata, caption, controls and board across widths", async () => {
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
+    const hostCss = readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
+    const htmlStyle = readFileSync(new URL("../../../web/index.html", import.meta.url), "utf8").match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? "";
+    const roboto400 = readFileSync(new URL("../../../node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf", import.meta.url)).toString("base64");
+    const roboto600 = readFileSync(new URL("../../../node_modules/@expo-google-fonts/roboto/600SemiBold/Roboto_600SemiBold.ttf", import.meta.url)).toString("base64");
+    const stateText = "Duration unavailable — playback continues";
+    const cases: { width: number; height: number; defaultFontSize: number; stacked: boolean; oneLine: boolean }[] = [
+      { width: 1280, height: 800, defaultFontSize: 16, stacked: false, oneLine: true },
+      { width: 640, height: 400, defaultFontSize: 16, stacked: true, oneLine: true },
+      { width: 390, height: 844, defaultFontSize: 16, stacked: true, oneLine: true },
+      { width: 320, height: 844, defaultFontSize: 16, stacked: true, oneLine: true },
+      { width: 195, height: 422, defaultFontSize: 16, stacked: true, oneLine: false },
+      { width: 160, height: 422, defaultFontSize: 16, stacked: true, oneLine: false },
+      { width: 1280, height: 800, defaultFontSize: 32, stacked: true, oneLine: true },
+      { width: 390, height: 844, defaultFontSize: 32, stacked: true, oneLine: true },
+      { width: 320, height: 844, defaultFontSize: 32, stacked: true, oneLine: true },
+    ];
+    for (const defaultFontSize of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
+      try {
+        for (const c of cases.filter(x => x.defaultFontSize === defaultFontSize)) for (const font of ["Roboto", "Liberation Sans"]) {
+          const page = await browser.newPage({ viewport: { width: c.width, height: c.height } });
+          try {
+            const metaHtml = `<div class="sb-metadata"><span class="sb-meta-item">not live</span><span class="sb-meta-item">unrated match</span><span class="sb-meta-item">4 agents</span><span class="sb-meta-item">17 Nov 2026</span><a class="d1-back" href="/">Back to live</a></div>`;
+            const laneHtml = `<div class="d1-lane"><div class="d1-caption" data-kind="event"><span class="d1-cap-bar"></span><span class="d1-cap-what">Takes the territory lead</span><span class="d1-cap-meta"><span class="d1-cap-when">10:07</span><span class="d1-cap-who">Lake Hodges Colony</span></span></div><div class="d1-transport"><div class="aw-replay-controls" role="group" aria-label="Replay playback"><label>Speed <select aria-label="Replay speed"><option>1×</option></select></label><input type="range" min="0" max="0" value="0" disabled aria-label="Replay position"><output class="aw-replay-time">0:00 / …</output><span class="aw-replay-state" role="status"></span></div></div><div class="d1-controls" role="group" aria-label="Board controls"><select class="aw-team-view" aria-label="View"><option>Full view</option></select><button class="d1-btn" aria-label="Whole board">□</button><button class="d1-btn" aria-label="Zoom out">−</button><button class="d1-btn" aria-label="Zoom in">+</button><a class="d1-btn d1-btn-board" href="#board">2D</a></div></div>`;
+            const body = c.stacked
+              ? `<section class="d1-frame"><p class="d1-legend"><span class="d1-dot" data-kind="recording"></span><span class="d1-mode">RECORDING</span><span class="d1-legend-rest"></span></p><div class="d1-window"></div></section><div class="d1-below">${metaHtml}${laneHtml}<section class="d1-deck"><div style="height:1500px;flex:none"></div></section></div>`
+              : `<div class="d1-below"><section class="d1-deck"><div style="height:180px"></div></section></div><section class="d1-frame"><p class="d1-legend"><span class="d1-dot" data-kind="recording"></span><span class="d1-mode">RECORDING</span><span class="d1-legend-rest"></span></p>${metaHtml}<div class="d1-window"></div>${laneHtml}</section><footer class="d1-foot"></footer>`;
+            await page.setContent(`<style>@font-face{font-family:Roboto;font-weight:400;src:url(data:font/ttf;base64,${roboto400})}@font-face{font-family:Roboto;font-weight:600;src:url(data:font/ttf;base64,${roboto600})}html,body{margin:0;overflow:hidden}${htmlStyle}${tokens}:root,.d1p,.d1-top,.d1{--aw-sans:'${font}',sans-serif}${hostCss}${css}</style><div class="aw-hud"><div class="d1 d1-hud score-band"><header class="d1-top" style="height:48px"></header>${body}</div></div>`);
+            // At rest (empty state), the chip is hidden and desktop keeps its exact 44 px lane height.
+            const emptyState = await page.evaluate(() => ({
+              display: getComputedStyle(document.querySelector(".aw-replay-state")!).display,
+              laneH: document.querySelector(".d1-lane")!.getBoundingClientRect().height,
+            }));
+            expect(emptyState.display).toBe("none");
+            if (!c.stacked) expect(emptyState.laneH).toBeCloseTo(44, 1);
+
+            await page.evaluate((text) => { document.querySelector(".aw-replay-state")!.textContent = text; }, stateText);
+            const measure = () => page.evaluate(() => {
+              const rect = (s: string) => { const r = document.querySelector(s)!.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+              const chipEl = document.querySelector(".aw-replay-state")!;
+              const chip = rect(".aw-replay-state");
+              const pill = rect(".aw-replay-controls");
+              const below = rect(".d1-below");
+              const win = rect(".d1-window");
+              const meta = rect(".sb-metadata");
+              const caption = rect(".d1-caption");
+              const controls = rect(".d1-controls");
+              const row1 = [".aw-replay-controls label", ".aw-replay-controls input", ".aw-replay-controls output"].map(rect);
+              const splitWords: string[] = [];
+              const textNode = chipEl.firstChild;
+              if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                const value = textNode.textContent ?? "";
+                for (const m of value.matchAll(/\S+/g)) {
+                  const range = document.createRange();
+                  range.setStart(textNode, m.index!);
+                  range.setEnd(textNode, m.index! + m[0].length);
+                  const rects = [...range.getClientRects()].filter(r => r.width > 0.5 && r.height > 0.5);
+                  const ys = new Set(rects.map(r => Math.round(r.top)));
+                  if (ys.size > 1) splitWords.push(m[0]);
+                }
+              }
+              return { chip, pill, below, win, meta, caption, controls, row1, scrollWidth: document.documentElement.scrollWidth, belowScrollW: document.querySelector(".d1-below")!.scrollWidth, belowClientW: document.querySelector(".d1-below")!.clientWidth, splitWords };
+            });
+            const overlap = (a: { left: number; right: number; top: number; bottom: number }, b: { left: number; right: number; top: number; bottom: number }) =>
+              Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+            const atRest = await measure();
+            expect(atRest.splitWords).toEqual([]);
+            expect(atRest.scrollWidth).toBeLessThanOrEqual(c.width);
+            expect(atRest.chip.left).toBeGreaterThanOrEqual(atRest.pill.left - 0.5);
+            expect(atRest.chip.right).toBeLessThanOrEqual(atRest.pill.right + 0.5);
+            expect(atRest.chip.right).toBeLessThanOrEqual(c.width + 0.5);
+            expect(atRest.chip.bottom).toBeLessThanOrEqual(atRest.pill.bottom + 0.5);
+            if (c.oneLine) expect(atRest.chip.height).toBeLessThanOrEqual(22);
+            expect(overlap(atRest.chip, atRest.meta)).toBe(false);
+            expect(overlap(atRest.chip, atRest.caption)).toBe(false);
+            expect(overlap(atRest.chip, atRest.controls)).toBe(false);
+            expect(overlap(atRest.chip, atRest.win)).toBe(false);
+            for (const item of atRest.row1) expect(overlap(atRest.chip, item)).toBe(false);
+
+            if (c.stacked) {
+              expect(atRest.belowScrollW).toBeLessThanOrEqual(atRest.belowClientW + 1);
+              // Scrolling the transport row to the top of the scroller keeps the chip wholly unclipped.
+              await page.evaluate(() => {
+                const belowEl = document.querySelector(".d1-below") as HTMLElement;
+                const laneEl = document.querySelector(".d1-lane") as HTMLElement;
+                belowEl.scrollTop = laneEl.offsetTop;
+              });
+              const scrolled = await measure();
+              expect(scrolled.chip.top).toBeGreaterThanOrEqual(scrolled.below.top - 0.5);
+              expect(scrolled.chip.bottom).toBeLessThanOrEqual(scrolled.below.bottom + 0.5);
+              expect(overlap(scrolled.chip, scrolled.caption)).toBe(false);
+              expect(overlap(scrolled.chip, scrolled.controls)).toBe(false);
+            }
+          } finally { await page.close(); }
+        }
+      } finally { await browser.close(); }
+    }
+  }, 90_000);
 });

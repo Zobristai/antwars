@@ -7,18 +7,49 @@ import { dom, type ElementPort } from "../pages/dom.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 const visible = (n: ElementPort): boolean => !n.hidden && (!n.parent || visible(n.parent));
-function mount(board: "2d" | "3d", width = 1280) {
-  const port = dom({ wide: true });
-  port.win.matchMedia = (query = "") => ({
-    media: query, matches: width >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? Infinity), onchange: null,
-    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent() { return true; },
+function evalMedia(query: string, width: number, height: number, rootPx: number): boolean {
+  const parts = query.split(/\s+and\s+/i);
+  return parts.every(part => {
+    const m = /\((min|max)-(width|height):\s*([\d.]+)(px|em)\)/i.exec(part);
+    if (!m) return false;
+    const bound = m[1]!.toLowerCase(), axis = m[2]!.toLowerCase();
+    const limit = Number(m[3]) * (m[4]!.toLowerCase() === "em" ? rootPx : 1);
+    const value = axis === "width" ? width : height;
+    return bound === "min" ? value >= limit : value <= limit;
   });
+}
+function mount(board: "2d" | "3d", width = 1280, height = 800, rootPx = 16) {
+  const port = dom({ wide: true });
+  let curW = width, curH = height, curRoot = rootPx;
+  const queries: { query: string; matches: boolean; listeners: Set<(e: Event) => void> }[] = [];
+  port.win.matchMedia = (query = "") => {
+    const entry = { query, matches: evalMedia(query, curW, curH, curRoot), listeners: new Set<(e: Event) => void>() };
+    queries.push(entry);
+    return {
+      media: query,
+      get matches() { return entry.matches; },
+      onchange: null,
+      addEventListener(_type: string, fn: (e: Event) => void) { entry.listeners.add(fn); },
+      removeEventListener(_type: string, fn: (e: Event) => void) { entry.listeners.delete(fn); },
+      addListener() {}, removeListener() {}, dispatchEvent() { return true; },
+    } as unknown as MediaQueryList;
+  };
+  const resizeTo = (nextW: number, nextH = curH, nextRoot = curRoot) => {
+    curW = nextW; curH = nextH; curRoot = nextRoot;
+    for (const entry of queries) {
+      const next = evalMedia(entry.query, curW, curH, curRoot);
+      if (next !== entry.matches) {
+        entry.matches = next;
+        for (const fn of [...entry.listeners]) fn(new Event("change"));
+      }
+    }
+  };
   Object.assign(port.win.location, { href: `https://antwars.example/?board=${board}`, pathname: "/" });
   const host = port.doc.createElement("div") as unknown as ElementPort; port.body.append(host);
   let selectedAgent = -1;
   const actions = { select() {}, selectAgent(index: number) { selectedAgent = index; }, pointOrder() {}, hover() {}, focusMark() {}, openSheet() {} } as unknown as HudActions;
   const hud = mountDeckHud({ doc: port.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
-  return { host, doc: port.doc, chosen: () => selectedAgent,
+  return { host, doc: port.doc, events: port.events, hud, resizeTo, chosen: () => selectedAgent,
     show: (frame: ReturnType<typeof scoreFrame> | null) => hud.update({ frame, board, connection: "live", selected: null, selectedAgent, mode: null, stalled: false } as HudView) };
 }
 
@@ -212,5 +243,84 @@ describe("one Score Band for every match", () => {
     expect(balance(f).kills.figures).toEqual(["—", "—", "—", "—"]);
     f.board!.kills = [1, 5, 3, 7];
     expect(balance(f).kills.figures).toEqual(["1", "5", "3", "7"]);
+  });
+  it("opens and closes the Site pages menu by click, Escape, outside pointerdown and wide resize", () => {
+    const { host, doc, events, resizeTo, hud } = mount("3d", 390, 844);
+    const root = host.byClass("d1-hud")[0]!;
+    const top = host.byClass("d1-top")[0]!;
+    const pages = host.byClass("d1-pages")[0]!;
+    const nav = host.byClass("d2-nav")[0]!;
+    expect(pages.tag).toBe("button");
+    expect(pages.type).toBe("button");
+    expect(pages.textContent).toBe("Site pages");
+    expect(pages.getAttribute("aria-expanded")).toBe("false");
+    expect(pages.getAttribute("aria-controls")).toBe(nav.id);
+    expect(pages.byClass("d1-pages-chevron")[0]!.getAttribute("aria-hidden")).toBe("true");
+    // Tab order: Site pages sits directly before the page links, with Watch marked current.
+    expect(top.children.indexOf(pages) + 1).toBe(top.children.indexOf(nav));
+    expect(nav.children.map(link => [link.textContent, link.getAttribute("aria-current")])).toEqual([
+      ["Watch", "page"], ["Matches", null], ["Leaderboard", null],
+    ]);
+    pages.click();
+    expect(root.dataset.menu).toBe("open");
+    expect(pages.getAttribute("aria-expanded")).toBe("true");
+    // Pointerdown inside the bar keeps the menu open; outside closes it.
+    events.fire("pointerdown", { target: nav });
+    expect(root.dataset.menu).toBe("open");
+    events.fire("pointerdown", { target: root });
+    expect(root.dataset.menu).toBeUndefined();
+    expect(pages.getAttribute("aria-expanded")).toBe("false");
+    // Escape closes and returns focus to the Site pages button.
+    pages.click();
+    nav.children[0]!.focus();
+    root.fire("keydown", { key: "Escape" });
+    expect(root.dataset.menu).toBeUndefined();
+    expect(pages.getAttribute("aria-expanded")).toBe("false");
+    expect(doc.activeElement).toBe(pages);
+    // Crossing wider than 32.5em closes the menu automatically.
+    pages.click();
+    expect(root.dataset.menu).toBe("open");
+    resizeTo(1280, 800, 16);
+    expect(root.dataset.menu).toBeUndefined();
+    expect(pages.getAttribute("aria-expanded")).toBe("false");
+    hud.destroy();
+  });
+  it("moves metadata and board controls into the scroller under 75em, joins the window on short narrow screens, and restores cleanly", () => {
+    const { host, doc, resizeTo, hud } = mount("3d", 1280, 800, 16);
+    const root = host.byClass("d1-hud")[0]!;
+    const frame = host.byClass("d1-frame")[0]!;
+    const below = host.byClass("d1-below")[0]!;
+    const metadata = host.byClass("sb-metadata")[0]!;
+    const lane = host.byClass("d1-lane")[0]!;
+    const hole = host.byClass("d1-window")[0]!;
+    // Wide desktop: metadata and lane stand in the frame around the board window.
+    expect(frame.children.map(c => c.className)).toEqual(["d1-legend", "sb-metadata", "d1-window", "d1-lane"]);
+    expect(root.classList.contains("d1-joined")).toBe(false);
+    // Doubled text at 1280x800 (40em < 75em): stacks metadata and lane at the start of the scroller.
+    const boardToggle = host.byClass("d1-btn-board")[0]!;
+    boardToggle.focus();
+    resizeTo(1280, 800, 32);
+    expect(frame.children.map(c => c.className)).toEqual(["d1-legend", "d1-window"]);
+    expect(below.children[0]).toBe(metadata);
+    expect(below.children[1]).toBe(lane);
+    expect(root.classList.contains("d1-joined")).toBe(false);
+    expect(doc.activeElement).toBe(boardToggle);
+    // Short narrow screen (320x568 at doubled text: 10em x 17.75em): window joins scroller first.
+    resizeTo(320, 568, 32);
+    expect(root.classList.contains("d1-joined")).toBe(true);
+    expect(below.children[0]).toBe(frame);
+    expect(below.children[1]).toBe(metadata);
+    expect(below.children[2]).toBe(lane);
+    expect(hole.parent).toBe(frame);
+    // Returning to tall phone restores frame outside the scroller.
+    resizeTo(320, 844, 32);
+    expect(root.classList.contains("d1-joined")).toBe(false);
+    expect(frame.parent).toBe(root);
+    expect(below.children[0]).toBe(metadata);
+    expect(below.children[1]).toBe(lane);
+    // Returning to desktop restores metadata and lane inside the frame.
+    resizeTo(1280, 800, 16);
+    expect(frame.children.map(c => c.className)).toEqual(["d1-legend", "sb-metadata", "d1-window", "d1-lane"]);
+    hud.destroy();
   });
 });
