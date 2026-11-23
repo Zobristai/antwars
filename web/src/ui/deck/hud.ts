@@ -109,10 +109,12 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const deckEl = h(doc, "section", "d1-deck");
   deckEl.setAttribute("aria-label", "Match");
   const deck = mountDeck(doc);
-  const teams = mountTeams(doc, actions, { search, economy: deck.economy });
+  const teams = mountTeams(doc, actions, { search, economy: deck.economy, narrowScroller: below });
   const band = h(doc, "div", "sb-band");
   band.append(deck.header, deck.score);
-  deckEl.append(band, deck.columns, ...teams.teams);
+  const table = h(doc, "div", "sb-deck-table");
+  table.append(deck.columns, ...teams.teams);
+  deckEl.append(band, table, teams.historyStrip);
   const deckEnd = h(doc, "div", "d1-deck-end");
   const foot = h(doc, "footer", "d1-foot");
   const rules = h(doc, "a", "d2-link", "Rules");
@@ -159,7 +161,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let placed = false;
   const placeDeck = () => {
     const focused = doc.activeElement as HTMLElement | null;
-    if (deckFirst === null || deckFirst.matches) {
+    const wideDeck = deckFirst === null || deckFirst.matches;
+    if (wideDeck) {
       band.append(deck.score);
       top.after(below, frameEl, foot);
     } else {
@@ -167,6 +170,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
       below.append(foot);
       top.after(frameEl, below);
     }
+    teams.setWide(wideDeck);
     // A moved node loses the focus: a viewer who zooms across the width keeps their place.
     if (focused && focused !== doc.activeElement && root.contains(focused)) focused.focus({ preventScroll: true });
     // The board's window moved: fit the board to it again, as after a resize.
