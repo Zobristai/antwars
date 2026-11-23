@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { chromium } from "playwright-core";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
+import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
+import { dom, type ElementPort } from "../pages/dom.ts";
+import { markup } from "./port-markup.ts";
 import { roster } from "../../../web/src/ui/deck/model.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
@@ -106,6 +109,42 @@ describe("scrolling HUD fit evidence", () => {
       } finally { await browser.close(); }
     }
   }, 60_000);
+  it("doubles comparison type without splitting four-colony figures or showing unavailable values", async () => {
+    const css = ["design-system/tokens.css", "ui/deck/deck.css"].map(path =>
+      readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
+    const deck = mountDeck(dom().doc), frame = scoreFrame(4);
+    frame.board!.held = [10, 10, 60, 20];
+    frame.board!.territoryWin = { colony: 2, startTick: 5900, winTick: 6100 };
+    deck.update(frame);
+    const band = [deck.header, deck.score].map(el => markup(el as unknown as ElementPort)).join("");
+    const sizes = { ".d1-clock": 15, ".sb-comparison h3": 11, ".sb-value": 13, ".sb-unavailable": 12,
+      ".sb-holder": 12, ".sb-rule": 12, ".sb-hold-words": 14 };
+    for (const size of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+        args: ["--no-sandbox", `--blink-settings=defaultFontSize=${size}`] });
+      try {
+        const page = await browser.newPage();
+        await page.setContent(`<style>${css} body{margin:0}</style><main class="d1 score-band"><div class="d1-deck"><div class="sb-band">${band}</div></div></main>`);
+        for (const width of [320, 390, 1280]) {
+          await page.setViewportSize({ width, height: 844 });
+          for (const [selector, base] of Object.entries(sizes)) {
+            const actual = await page.locator(selector).evaluateAll(els => els.filter(e => e.checkVisibility()).map(e => getComputedStyle(e).fontSize));
+            expect(new Set(actual), selector).toEqual(new Set([`${base * size / 16}px`]));
+          }
+          expect(await page.locator(".sb-unavailable:visible").first().textContent()).toBe("Not recorded");
+          expect(await page.locator(".sb-gauge").first().locator(".sb-figure:visible").count()).toBe(0);
+          const figures = page.locator(".sb-gauge").nth(1).locator(".sb-figure:visible");
+          const boxes = await figures.evaluateAll(els => els.map(e => {
+            const value = e.querySelector(".sb-value")!.getBoundingClientRect();
+            return { left: e.getBoundingClientRect().left, right: value.right, top: value.top };
+          }));
+          expect(boxes).toHaveLength(4);
+          expect(new Set(boxes.map(b => b.top)).size).toBe(1);
+          boxes.forEach((b, i) => expect(b.right).toBeLessThanOrEqual(boxes[i + 1]?.left ?? width));
+        }
+      } finally { await browser.close(); }
+    }
+  });
   it("keeps metric cells inside the deck across the narrow-to-desktop boundary", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
