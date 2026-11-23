@@ -501,6 +501,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-hold-win.c1 { flex-direction: row-reverse; }
 }
 
+/* The public pages retain the phone navigation's original touch target and padding. */
+@media (max-width: 559px) {
+  .d1-top .d2-nav-link { min-height: 44px; padding: 0 5px; }
+}
+
 /* The phone: the frame edge to edge, every target 44 px, two-line rows, the dialog a bottom sheet. */
 @media (max-width: 34.9375em) {
   .d1 { --d1-lane: 52px; --d1-tap: 44px; }

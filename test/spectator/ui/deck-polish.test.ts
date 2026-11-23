@@ -74,6 +74,13 @@ describe("deck polish", () => {
     expect(CSS).not.toMatch(/\.d1-who \{[^}]*nowrap/);
   });
 
+  it("keeps phone navigation targets on public pages without changing the live bar", () => {
+    const pages = block("@media (max-width: 559px)");
+    expect(rule(".d1-top .d2-nav-link", pages)).toMatch(/min-height: 44px; padding: 0 5px/);
+    const live = block("@media (max-width: 34.9375em)");
+    expect(rule(".d1 .d1-top .d2-nav-link", live)).toMatch(/min-height: 44px; padding: 0 5px/);
+  });
+
   it("tightens the top bar on the narrowest phones so the pages stay on the screen", () => {
     const tiny = block("@media (max-width: 359px)");
     expect(rule(".d1-top .d2-nav-link", tiny)).toMatch(/padding: 0 3px/);
