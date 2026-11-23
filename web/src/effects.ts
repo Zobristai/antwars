@@ -147,21 +147,38 @@ export interface EmblemState {
   /** The bar's fill, 0..1 (0 through her collapse); null on a recording without queen HP, which draws no bar. */
   bar: number | null;
   flash: number;
+  /**
+   * A bite whose message named its biters landed in the last HIT_FLASH_MS (QueenHit.pulse): her disc is held lit at
+   * QUEEN_LIT, with no spreading ring and no white flash on her bar. False on recordings made before that record.
+   */
+  lit: boolean;
+  /** The bar's chip: the share of her full HP she has lost since the last whole match second (QueenPulse.chip), 0..bar's room. */
+  chip: number;
 }
+
+/** A queen's disc while bites on her land: mixed this far from the board's dark toward her colour, the level the old flash never fell below. */
+export const QUEEN_LIT = 0.42;
+/** Her bar's chip: her colour mixed this far toward white, the bar's own flash colour. */
+export const QUEEN_CHIP = 0.6;
 
 /** What stays of a lost queen's emblem once her collapse is over: dimmed and a little smaller, a landmark of where she was. */
 export const LOST_EMBLEM = { alpha: 0.35, scale: 0.78 } as const;
 
-export function emblemState(q: StreamQueen, frame: Pick<Frame, "board" | "targetMs" | "hits" | "lossShown">, reduced = reducedMotion()): EmblemState | null {
+export function emblemState(q: StreamQueen, frame: Pick<Frame, "board" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, reduced = reducedMotion()): EmblemState | null {
   const board = frame.board;
   if (!board) return null;
   const lossAge = queenLossAge(q, frame.targetMs, frame.lossShown.get(`${q.colony}:${q.id}`));
   const k = lossAge === null ? 0 : reduced ? 1 : Math.min(1, Math.max(0, lossAge) / QUEEN_COLLAPSE_MS);
   const hp = boardQueenHp(board);
   const bar = hp === undefined ? null : lossAge === null ? Math.min(1, (q.hp ?? 0) / hp.hp) : 0;
-  let flash = 0;
-  for (const h of frame.hits) if (h.colony === q.colony && h.queenId === q.id) flash = Math.max(flash, 1 - h.ageMs / HIT_FLASH_MS);
-  return { scale: 1 - k * k * (1 - LOST_EMBLEM.scale), alpha: 1 - k * (1 - LOST_EMBLEM.alpha), zone: 1 - k, bar, flash };
+  let flash = 0, lit = false;
+  for (const h of frame.hits) if (h.colony === q.colony && h.queenId === q.id) {
+    if (h.pulse) lit = true;
+    else flash = Math.max(flash, 1 - h.ageMs / HIT_FLASH_MS);
+  }
+  const lost = frame.queenPulse?.find((p) => p.colony === q.colony && p.queenId === q.id)?.chip ?? 0;
+  const chip = hp === undefined || bar === null || lossAge !== null ? 0 : Math.max(0, Math.min(1 - bar, lost / hp.hp));
+  return { scale: 1 - k * k * (1 - LOST_EMBLEM.scale), alpha: 1 - k * (1 - LOST_EMBLEM.alpha), zone: 1 - k, bar, flash, lit, chip };
 }
 
 /** A colour part way (t, 0..1) from a to b, by channel. */
@@ -196,7 +213,7 @@ export class QueenHomes {
     this.px = 1 / tilePx;
   }
 
-  update(frame: Pick<Frame, "board" | "targetMs" | "hits" | "lossShown">, reduced = reducedMotion()) {
+  update(frame: Pick<Frame, "board" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, reduced = reducedMotion()) {
     const g = this.layer;
     const emblem = this.emblems;
     const px = this.px;
@@ -237,13 +254,15 @@ export class QueenHomes {
       const qy = q.y / SUB_TILE;
       // The flash: a white ring spreading from the disc (not under reduced motion), and the disc lit in the colony's colour.
       if (s.flash > 0 && !reduced) emblem.circle(qx, qy, (QUEEN_EMBLEM.r + 1 + FLASH_SPREAD * (1 - s.flash)) * px).stroke({ width: 2 * px, color: 0xffffff, alpha: 0.9 * s.flash });
-      emblem.circle(qx, qy, QUEEN_EMBLEM.r * s.scale * px).fill({ color: mixColour(0x0b0907, colour, 0.5 * s.flash), alpha: 0.85 * s.alpha }).stroke({ width: QUEEN_EMBLEM.ringW * px, color: colour, alpha: 0.95 * s.alpha });
+      emblem.circle(qx, qy, QUEEN_EMBLEM.r * s.scale * px).fill({ color: mixColour(0x0b0907, colour, Math.max(s.lit ? QUEEN_LIT : 0, 0.5 * s.flash)), alpha: 0.85 * s.alpha }).stroke({ width: QUEEN_EMBLEM.ringW * px, color: colour, alpha: 0.95 * s.alpha });
       const crownR = QUEEN_EMBLEM.crown * s.scale * px;
       if (!this.icons.draw("crown", qx - crownR, qy - crownR, crownR * 2, crownR * 2, colour, s.alpha)) emblem.poly(crownPolygon(QUEEN_EMBLEM.crown * s.scale * px).map((v, i) => v + (i % 2 === 0 ? qx : qy))).fill({ color: colour, alpha: s.alpha });
       if (s.zone > 0 && s.bar !== null) {
         const w = EMBLEM_BAR.w * px, h = EMBLEM_BAR.h * px, y = qy + (QUEEN_EMBLEM.r + EMBLEM_BAR.gap) * px;
         emblem.rect(qx - w / 2, y, w, h).fill({ color: 0x090807, alpha: 0.9 * s.zone });
         if (s.bar > 0) emblem.rect(qx - w / 2, y, w * s.bar, h).fill({ color: mixColour(colour, 0xffffff, s.flash), alpha: s.zone });
+        // The chip: from the fill to where it stood at the last whole match second, cut to nothing as each second turns.
+        if (s.chip > 0) emblem.rect(qx - w / 2 + w * s.bar, y, w * s.chip, h).fill({ color: mixColour(colour, 0xffffff, QUEEN_CHIP), alpha: s.zone });
       }
     }
   }

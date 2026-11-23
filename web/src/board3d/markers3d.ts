@@ -9,17 +9,19 @@ import { TICK_MS } from "../../../src/live/snapshot.ts";
 import type { Frame } from "../buffer.ts";
 import { colonyTint } from "../colony-palette.ts";
 import { reducedMotion } from "../camera.ts";
-import { EMBLEM_BAR, QUEEN_EMBLEM, STORY_MARK_MS, crownPolygon, emblemState, mixColour } from "../effects.ts";
+import { EMBLEM_BAR, QUEEN_CHIP, QUEEN_EMBLEM, QUEEN_LIT, STORY_MARK_MS, crownPolygon, emblemState, mixColour } from "../effects.ts";
 import { visibleStory } from "../story.ts";
 
 /** One queen emblem per colony, index = colony id; a match has at most four colonies. */
 const QUEEN_KINDS = ["queen0", "queen1", "queen2", "queen3"] as const;
+/** The same emblems with the disc held lit (effects.ts QUEEN_LIT), drawn in the atlas, so its pixels match the 2D board's. */
+const LIT_KINDS = ["lit0", "lit1", "lit2", "lit3"] as const;
 
 export type Project = (x: number, y: number) => [number, number];
 export interface ScreenPoint { x: number; y: number }
 export type ProjectToRef = (x: number, y: number, out: ScreenPoint) => void;
 export interface MarkerParticle {
-  kind: "ring" | "dot" | "line" | (typeof QUEEN_KINDS)[number];
+  kind: "ring" | "dot" | "line" | (typeof QUEEN_KINDS)[number] | (typeof LIT_KINDS)[number];
   x: number;
   y: number;
   scaleX: number;
@@ -40,6 +42,10 @@ export const MARKER_FRAMES: Readonly<Record<MarkerParticle["kind"], MarkerFrame>
   queen1: { x: 562, y: 50, width: 28, height: 28 },
   queen2: { x: 690, y: 50, width: 28, height: 28 },
   queen3: { x: 818, y: 50, width: 28, height: 28 },
+  lit0: { x: 946, y: 50, width: 28, height: 28 },
+  lit1: { x: 1074, y: 50, width: 28, height: 28 },
+  lit2: { x: 1202, y: 50, width: 28, height: 28 },
+  lit3: { x: 1330, y: 50, width: 28, height: 28 },
 };
 
 /** Screen-space specs, reused between frames including after a temporary empty board.
@@ -78,7 +84,7 @@ export class MarkerSpecs3D {
    * and shrinking through a lost queen's collapse, the HP bar under the emblem (none on a recording
    * without queen HP) and the hit flash as a white ring spreading from the disc.
    */
-  update(frame: Pick<Frame, "board" | "story" | "targetMs" | "hits" | "lossShown">, project: ProjectToRef, reduced = reducedMotion()): void {
+  update(frame: Pick<Frame, "board" | "story" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, project: ProjectToRef, reduced = reducedMotion()): void {
     this.count = 0;
     this.shown = 0;
     const setup = frame.board?.setup;
@@ -104,11 +110,14 @@ export class MarkerSpecs3D {
         const radius = QUEEN_EMBLEM.r + 1 + 7 * (1 - s.flash);
         this.put("ring", this.point.x, this.point.y, radius / 30, radius / 30, 0xffffff, 0.9 * s.flash);
       }
-      this.put(QUEEN_KINDS[colony]!, this.point.x, this.point.y, s.scale, s.scale, mixColour(0xffffff, colonyTint(colony), 0.5 * s.flash), s.alpha);
+      // Held lit, the emblem is its own lit drawing, untinted, the same disc as the 2D board's; otherwise today's tint.
+      if (s.lit) this.put(LIT_KINDS[colony]!, this.point.x, this.point.y, s.scale, s.scale, 0xffffff, s.alpha);
+      else this.put(QUEEN_KINDS[colony]!, this.point.x, this.point.y, s.scale, s.scale, mixColour(0xffffff, colonyTint(colony), 0.5 * s.flash), s.alpha);
       if (s.zone > 0 && s.bar !== null) {
         const y = this.point.y + QUEEN_EMBLEM.r + EMBLEM_BAR.gap + 1;
         this.put("line", this.point.x, y, EMBLEM_BAR.w / 112, 1.5, 0x111111, s.zone);
         if (s.bar > 0) this.put("line", this.point.x - (EMBLEM_BAR.w / 2) * (1 - s.bar), y, (EMBLEM_BAR.w * s.bar) / 112, 1.5, mixColour(colonyTint(colony), 0xffffff, s.flash), s.zone);
+        if (s.chip > 0) this.put("line", this.point.x - EMBLEM_BAR.w / 2 + EMBLEM_BAR.w * (s.bar + s.chip / 2), y, (EMBLEM_BAR.w * s.chip) / 112, 1.5, mixColour(colonyTint(colony), 0xffffff, QUEEN_CHIP), s.zone);
       }
     }
     for (const e of visibleStory(frame.story)) {
@@ -137,7 +146,7 @@ export class MarkerSpecs3D {
 
 /** Convenience snapshot for callers with a tuple-returning projector. The live layer uses
  * MarkerSpecs3D and ProjectToRef directly so it doesn't allocate this snapshot each frame. */
-export function markerParticles(frame: Pick<Frame, "board" | "story" | "targetMs" | "hits" | "lossShown">, project: Project, reduced = reducedMotion()): { particles: MarkerParticle[]; shown: number } {
+export function markerParticles(frame: Pick<Frame, "board" | "story" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, project: Project, reduced = reducedMotion()): { particles: MarkerParticle[]; shown: number } {
   const specs = new MarkerSpecs3D();
   specs.update(frame, (x, y, out) => { const xy = project(x, y); out.x = xy[0]; out.y = xy[1]; }, reduced);
   return { particles: specs.particles, shown: specs.shown };
@@ -174,11 +183,16 @@ export class BoardMarkers3D {
       const x = (3 + c) * CELL + 64;
       g.circle(x, 64, QUEEN_EMBLEM.r).fill({ color: 0x0b0907, alpha: 0.85 }).stroke({ width: QUEEN_EMBLEM.ringW, color: colonyTint(c) });
       if (!crowns.draw("crown", x - QUEEN_EMBLEM.crown, 64 - QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, colonyTint(c))) g.poly(crownPolygon(QUEEN_EMBLEM.crown).map((v, i) => v + (i % 2 === 0 ? x : 64))).fill({ color: colonyTint(c) });
+      // Its lit drawing: the disc mixed toward the colony (QUEEN_LIT), ring and crown at full strength.
+      const lx = (7 + c) * CELL + 64;
+      g.circle(lx, 64, QUEEN_EMBLEM.r).fill({ color: mixColour(0x0b0907, colonyTint(c), QUEEN_LIT), alpha: 0.85 }).stroke({ width: QUEEN_EMBLEM.ringW, color: colonyTint(c) });
+      if (!crowns.draw("crown", lx - QUEEN_EMBLEM.crown, 64 - QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, 2 * QUEEN_EMBLEM.crown, colonyTint(c))) g.poly(crownPolygon(QUEEN_EMBLEM.crown).map((v, i) => v + (i % 2 === 0 ? lx : 64))).fill({ color: colonyTint(c) });
     }
     const holder = new Container();
     holder.addChild(g, crowns.layer);
-    const kinds = ["ring", "dot", "line", ...QUEEN_KINDS.slice(0, this.colonies)] as const;
-    const atlas = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, CELL * kinds.length, CELL), resolution: renderer.resolution, antialias: true });
+    const kinds = ["ring", "dot", "line", ...QUEEN_KINDS.slice(0, this.colonies), ...LIT_KINDS.slice(0, this.colonies)] as const;
+    // The lit emblems sit after the four queen cells, whatever the colony count.
+    const atlas = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, CELL * (7 + this.colonies), CELL), resolution: renderer.resolution, antialias: true });
     atlas.source.scaleMode = "linear";
     const textures = Object.fromEntries(kinds.map((kind) => {
       const f = MARKER_FRAMES[kind];

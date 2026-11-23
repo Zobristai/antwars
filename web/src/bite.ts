@@ -6,6 +6,9 @@ import { adjacentWithSlack, TICK_MS } from "../../src/live/snapshot.ts";
 import { gridScale } from "./grid-scale.ts";
 import { flyerOf, isAirborne } from "./flyer-state.ts";
 
+/** The viewer prefers reduced motion (camera.ts reducedMotion, which the playback worker cannot import). */
+const reducedMotion = (): boolean => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 export interface Engagement {
   readonly a: number;
   readonly b: number;
@@ -102,7 +105,13 @@ interface Lean {
 }
 const drawnContacts = new WeakMap<Frame, {
   renderMs: number; points: readonly { x: number; y: number }[]; pairs: readonly (readonly [number, number])[]; workerLength: number;
+  queenPoints: readonly { x: number; y: number }[];
 }>();
+/** The ant renderer's contacts of ants biting a queen, on her ring (tiles), which the queen cues draw above her emblem. */
+export function renderedQueenBiteContacts(frame: Frame): readonly { x: number; y: number }[] {
+  const drawn = drawnContacts.get(frame);
+  return drawn?.renderMs === frame.renderMs ? drawn.queenPoints : [];
+}
 /** The ant renderer publishes its exact head contacts before the battle layer draws. */
 export function renderedBiteContacts(frame: Frame): readonly { x: number; y: number }[] {
   const drawn = drawnContacts.get(frame);
@@ -156,7 +165,15 @@ export class Bites {
   private frame: Frame | null = null;
   private actors = new Map<number, Actor>();
   private pairs = new Map<number, Engagement>();
+  /** Each ant biting a queen this frame and her point, in tiles (Frame.queenPulse). */
+  private queenPairs = new Map<number, { x: number; y: number }>();
   private poses = new Map<number, BitePose>();
+  /**
+   * The radius of a queen's emblem ring at her point (tiles), toward the unit direction (ux, uy), which the board sets: the
+   * emblem keeps its CSS px size, so an ant biting her aims at her ring as drawn at this zoom and its contact lands there.
+   */
+  queenRing: (x: number, y: number, ux: number, uy: number) => number = () => 0.5;
+  private reduced = false;
   private key = "";
   private leans = new Map<string, Map<number, Lean>>();
   private positions = new Map<number, { x: number; y: number }>();
@@ -165,7 +182,8 @@ export class Bites {
   private lastRenderMs = -Infinity;
   private setup: object | undefined;
 
-  update(frame: Frame): void {
+  update(frame: Frame, reduced = reducedMotion()): void {
+    this.reduced = reduced;
     const setup = frame.board?.setup;
     if (frame.renderMs < this.lastRenderMs || setup !== this.setup) { this.leans.clear(); this.builtAt.clear(); }
     this.lastRenderMs = frame.renderMs; this.setup = setup;
@@ -186,11 +204,19 @@ export class Bites {
       if (a.dead) a.caste = p.caste ?? 0;
       this.pairs.set(p.a, p);
     }
+    // An ant biting a queen bites no ant this tick: the simulation lets it bite her only with no enemy ant in reach.
+    this.queenPairs.clear();
+    for (const q of frame.queenPulse) for (const id of q.biters) {
+      const a = this.actors.get(id);
+      if (!a || a.dead) continue;
+      this.pairs.delete(id);
+      this.queenPairs.set(id, { x: q.x, y: q.y });
+    }
     if (this.actors.size === 0) { this.leans.clear(); this.builtAt.clear(); }
   }
 
-  private lean(states: Map<number, Lean>, id: number, goalX: number, goalY: number, pair?: Engagement): { x: number; y: number } {
-    const f = this.frame!, event = pair ? `${pair.tick}:${pair.b}` : null;
+  private lean(states: Map<number, Lean>, id: number, goalX: number, goalY: number, pair?: { readonly tick: number; readonly event: string }): { x: number; y: number } {
+    const f = this.frame!, event = pair ? pair.event : null;
     let state = states.get(id);
     if (!state) {
       if (!pair) return { x: 0, y: 0 };
@@ -229,7 +255,7 @@ export class Bites {
     // regardless of frame alignment. Neither hits nor retargets reset it.
     const jawOpen = age < 25 ? smooth(age / 25) : age < 100 ? 1 : age < 125 ? 1 - smooth((age - 100) / 25) : 0;
     const visiting = new Set<number>();
-    for (const id of states.keys()) if (!this.pairs.has(id)) {
+    for (const id of states.keys()) if (!this.pairs.has(id) && !this.queenPairs.has(id)) {
       const a = this.actors.get(id)!;
       const lean = this.lean(states, id, 0, 0);
       this.positions.set(id, { x: a.x + lean.x, y: a.y + lean.y });
@@ -267,7 +293,7 @@ export class Bites {
       // not between body centres. The head's cap is relative to the leaned body.
       const gx = cx - a.x - cos * tip(a), gy = cy - a.y - sin * tip(a), gap = Math.hypot(gx, gy);
       const bodyReach = Math.min(BITE_BODY_REACH, Math.max(0, gap - BITE_HEAD_REACH)) * reach;
-      const lean = this.lean(states!, id, gap ? gx / gap * bodyReach : 0, gap ? gy / gap * bodyReach : 0, p);
+      const lean = this.lean(states!, id, gap ? gx / gap * bodyReach : 0, gap ? gy / gap * bodyReach : 0, { tick: p.tick, event: `${p.tick}:${p.b}` });
       const x = a.x + lean.x, y = a.y + lean.y;
       const hx = cx - x - cos * tip(a), hy = cy - y - sin * tip(a), remaining = Math.hypot(hx, hy);
       const headScale = remaining ? Math.min(1, BITE_HEAD_REACH / remaining) * reach : 0;
@@ -277,10 +303,39 @@ export class Bites {
       this.positions.set(id, { x, y });
       this.poses.set(id, pose); return pose;
     };
+    // An ant biting a queen: the bite pose aimed at her ring as drawn (queenRing), turned to face her, its contact on
+    // her ring. Under reduced motion it is held at contact with its jaws closed, no chomp. One standing inside her
+    // ring at this zoom is already at it: it chomps where it stands and its contact stays on her ring.
+    for (const [id, q] of this.queenPairs) {
+      const a = this.actors.get(id)!;
+      const dx = a.x - q.x, dy = a.y - q.y, d = Math.hypot(dx, dy);
+      const ux = d > 1e-6 ? dx / d : 1, uy = d > 1e-6 ? dy / d : 0, ring = Math.max(0, this.queenRing(q.x, q.y, ux, uy));
+      const cx = q.x + ux * ring, cy = q.y + uy * ring;
+      const rotation = a.drawRotation ?? Math.atan2(-uy, -ux);
+      const cos = Math.cos(rotation), sin = Math.sin(rotation);
+      const phase = this.reduced ? 1 : reach, open = this.reduced ? 0 : jawOpen;
+      const gx = cx - a.x - cos * tip(a), gy = cy - a.y - sin * tip(a), gap = Math.hypot(gx, gy);
+      const toward = d > ring && gx * cos + gy * sin > 0;
+      const bodyReach = toward ? Math.min(BITE_BODY_REACH, Math.max(0, gap - BITE_HEAD_REACH)) * phase : 0;
+      const goalX = gap ? gx / gap * bodyReach : 0, goalY = gap ? gy / gap * bodyReach : 0, event = `queen:${q.x}:${q.y}`;
+      // Under reduced motion the lean is a cut to contact, not a 100 ms ease.
+      if (this.reduced) states.set(id, { x: goalX, y: goalY, at: f.renderMs, since: f.renderMs, fromX: goalX, fromY: goalY, event });
+      const lean = this.lean(states, id, goalX, goalY, { tick: f.tick, event });
+      const x = a.x + lean.x, y = a.y + lean.y;
+      const hx = cx - x - cos * tip(a), hy = cy - y - sin * tip(a), remaining = Math.hypot(hx, hy);
+      const headScale = toward && remaining ? Math.min(1, BITE_HEAD_REACH / remaining) * phase : 0;
+      const wx = hx * headScale, wy = hy * headScale;
+      const touching = !toward || remaining <= BITE_HEAD_REACH + 1e-6;
+      const pose: BitePose = { x, y, rotation, headOffset: wx * cos + wy * sin, headSideOffset: -wx * sin + wy * cos, gap: toward ? gap : 0,
+        jawOpen: open, contact: { x: cx, y: cy }, contacting: touching && (this.reduced || (age >= 125 && age < BITE_CONTACT_END_MS)) };
+      this.positions.set(id, { x, y });
+      this.poses.set(id, pose);
+    }
     for (const id of this.pairs.keys()) resolve(id);
     // A shared boundary is a real contact only when both reciprocal heads reach it.
     for (const [id, pose] of this.poses) {
-      const target = this.pairs.get(id)!.b;
+      const target = this.pairs.get(id)?.b;
+      if (target === undefined) continue;
       if (this.pairs.get(target)?.b === id && !this.poses.get(target)?.contacting) pose.contacting = false;
     }
     // A walking ant can finish a short body recovery without inventing a bite.
@@ -317,14 +372,26 @@ export class Bites {
   publishContacts(workerLength: number, model: BiteModel): void {
     if (!this.frame) return;
     const pairs: [number, number][] = [];
-    drawnContacts.set(this.frame, { renderMs: this.frame.renderMs, points: this.contacts(workerLength, model, pairs), pairs, workerLength });
+    drawnContacts.set(this.frame, { renderMs: this.frame.renderMs, points: this.contacts(workerLength, model, pairs), pairs, workerLength,
+      queenPoints: this.queenContacts(workerLength, model) });
+  }
+
+  /** The contacts of ants biting a queen, on her ring, this frame. */
+  queenContacts(workerLength: number, model: BiteModel): readonly { x: number; y: number }[] {
+    this.build(workerLength, model);
+    const out: { x: number; y: number }[] = [];
+    for (const id of this.queenPairs.keys()) {
+      const p = this.poses.get(id);
+      if (p?.contacting) out.push(p.contact);
+    }
+    return out;
   }
 
   /** pairs, when given, receives each contact's biting pair (attacker, target), index-aligned with the contacts. */
   contacts(workerLength: number, model: BiteModel, pairs?: [number, number][]): readonly { x: number; y: number }[] {
     this.build(workerLength, model);
     const out: { x: number; y: number }[] = [];
-    for (const [id, p] of this.poses) if (p.contacting) {
+    for (const [id, p] of this.poses) if (p.contacting && !this.queenPairs.has(id)) {
       const target = this.pairs.get(id)!.b;
       if (this.pairs.get(target)?.b === id && id > target) continue;
       out.push(p.contact);

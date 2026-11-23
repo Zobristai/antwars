@@ -37,6 +37,8 @@ interface Tick {
   board: { setup: StreamSetup };
   facing: ReadonlyMap<number, { rotation: number; target: number | null }>;
   engagements: readonly Engagement[];
+  /** Each ant biting a queen at this tick and her point (sub-tile units): its body turns to face her. */
+  queenTargets?: ReadonlyMap<number, readonly [number, number]>;
 }
 interface State { x: number; y: number; rotation: number; since: number | null; recovering: boolean }
 interface Trail { values: Float64Array; moving: Uint8Array; end: State; ground?: boolean }
@@ -223,6 +225,22 @@ export class Pivots {
       // Nested records are immutable; rebuilding a cold interval cannot mutate
       // the checkpoint that a later seek will reconstruct from.
       const history: FacingHistory = before ? { ...before } : { canonical: null, goal: null, pending: null, qualified: null };
+      const queen = A.queenTargets?.get(id);
+      if (queen !== undefined) {
+        // An ant biting a queen turns to face her at the shared capped rate, as a bite on an ant turns it to its target.
+        const qx = queen[0] / SUB_TILE, qy = queen[1] / SUB_TILE;
+        const at = (u: number) => {
+          const sx = ax + (bx - ax) * u, sy = ay + (by - ay) * u;
+          return distanceOf(qx - sx, qy - sy) > 1e-8 ? Math.atan2(qy - sy, qx - sx) : rotation;
+        };
+        for (let ms = 1; ms <= span; ms++) {
+          rotation += Math.max(-BODY_TURN_PER_MS, Math.min(BODY_TURN_PER_MS, delta(rotation, at(ms / span))));
+          if (values) values[ms] = rotation;
+        }
+        history.canonical = null; history.goal = null; history.pending = null; history.qualified = null;
+        trails.set(id, { values, end: rotation, history });
+        continue;
+      }
       if (facing?.target == null) {
         const initial = rotation, time = A.tick * TICK_MS;
         let dh = delta(initial, travel);

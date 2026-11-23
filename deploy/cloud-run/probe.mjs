@@ -169,7 +169,7 @@ export function sseParser(onFrame) {
 // The spectator stream versions src/live/format.ts defines, STREAM_VERSION through its
 // latest *_STREAM_VERSION; every one shares the header read below. Plain Node cannot
 // import format.ts, so probe.test.ts binds this range to those constants.
-export const SPECTATOR_STREAM_VERSIONS = Object.freeze({ min: 4, max: 30 });
+export const SPECTATOR_STREAM_VERSIONS = Object.freeze({ min: 4, max: 32 });
 
 /** Read just the public binary header: magic, version, flags, varint tick. */
 export function spectatorTick(data) {
