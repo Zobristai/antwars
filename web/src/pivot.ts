@@ -5,6 +5,7 @@
 import { SUB_TILE, type StreamAnts, type StreamSetup } from "../../src/live/format.ts";
 import { TICK_MS } from "../../src/live/snapshot.ts";
 import { adjacentWithSlack, type Engagement } from "./bite.ts";
+import { isAirborne } from "./flyer-state.ts";
 import { gridScale } from "./grid-scale.ts";
 
 /** The single drawn-body tuning point, shared by both boards and all facing paths. */
@@ -327,6 +328,22 @@ export class Pivots {
         }
         s.x = bx; s.y = by; s.rotation = initial + Math.sign(dh) * Math.min(Math.abs(dh), POSITION_STEER_PER_MS * span);
         s.recovering = true; s.since = null;
+        result.trails.set(id, { values, moving, end: s });
+        continue;
+      }
+      // A flyer in the air at either end of this interval flew it: the game flies it on one straight line over water,
+      // rock and ants (src/sim/flyers.ts), take-off and landing steps included. Draw that line in closed form from where
+      // its body is drawn; the ground route below is for walking ants only, and costs a corner search per ms.
+      if (span > 0 && (isAirborne(A.ants.flyers?.[i] ?? null) || (j !== undefined && isAirborne(B!.ants.flyers?.[j] ?? null)))) {
+        const fx = s.x, fy = s.y, dx = bx - fx, dy = by - fy, moves = distanceOf(dx, dy) > 1e-8;
+        const initial = s.rotation, dh = moves ? delta(initial, Math.atan2(dy, dx)) : 0;
+        if (full) for (let ms = 1; ms <= span; ms++) {
+          values[ms * 3] = fx + dx * ms / span; values[ms * 3 + 1] = fy + dy * ms / span;
+          values[ms * 3 + 2] = initial + Math.sign(dh) * Math.min(Math.abs(dh), POSITION_STEER_PER_MS * ms);
+          moving[ms] = moves ? 1 : 0;
+        }
+        s.x = bx; s.y = by; s.rotation = initial + Math.sign(dh) * Math.min(Math.abs(dh), POSITION_STEER_PER_MS * span);
+        s.since = null; s.recovering = false;
         result.trails.set(id, { values, moving, end: s });
         continue;
       }
