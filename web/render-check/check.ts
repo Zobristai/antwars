@@ -210,7 +210,7 @@ export function boardProblem(surface: Pick<Surface, "board">, readiness: BoardRe
  * through once, and so is every box that scrolls inside it, so lazy parts render before it is judged; then
  * everything is scrolled back to the top.
  */
-async function settle(page: Page, surface: Surface): Promise<{ readiness: BoardReadiness | null; playback: Playback | null }> {
+async function settle(page: Page, surface: Surface, evidence: RenderEvidence): Promise<{ readiness: BoardReadiness | null; playback: Playback | null }> {
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
   let readiness: BoardReadiness | null = null;
   let playback: Playback | null = null;
@@ -224,7 +224,7 @@ async function settle(page: Page, surface: Surface): Promise<{ readiness: BoardR
     // Play the recording to HUD_PLAY_MS in 100 ms steps of the page's clock, yielding only while its download catches
     // up, then draw that one frame (again once what it loads has arrived). Nothing moves after it. (A page with no board, such as Watch showing a list,
     // has nothing to play.)
-    if (board) playback = await playRecording(page);
+    if (board) playback = await playRecording(page, HUD_PLAY_MS, evidence);
   }
   await page.waitForTimeout(1_500);
   await page.evaluate(async () => {
@@ -265,7 +265,7 @@ function watchRequests(page: Page): { settled(quietMs?: number, timeoutMs?: numb
  * played frame loads (the HUD's icons, the board's shaders) is let finish before that frame is drawn again, at the same
  * moment, and judged.
  */
-export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<Playback> {
+export async function playRecording(page: Page, playMs = HUD_PLAY_MS, evidence?: RenderEvidence): Promise<Playback> {
   const requests = watchRequests(page);
   const stepped = await page.evaluate(async ({ playMs }) => {
     const clock = window as unknown as { __replayTime: number };
@@ -316,11 +316,60 @@ export async function playRecording(page: Page, playMs = HUD_PLAY_MS): Promise<P
     const hud = !(visible && onScreen) ? "not shown" : cutByContainer ? "clipped" : "shown";
     return { startTick: stepped.startTick ?? last.playbackTick, playbackTick: last.playbackTick, playbackMs: last.playbackMs, hud, error } satisfies Playback;
   }, { stepped, hudRoot: HUD_ROOT });
+  if (evidence) {
+    try { evidence.clipState = await captureClipState(page); }
+    catch (error) { evidence.clipState = { unavailable: String(error) }; }
+  }
   // Styles can still hide all or part of it (clip-path, mask, a clipping box, the board drawn over it): see hudOnScreen.
-  return played.hud === "shown" ? { ...played, hud: await hudOnScreen(page) } : played;
+  return played.hud === "shown" ? { ...played, hud: await hudOnScreen(page, evidence) } : played;
 }
 
 export type HudOnScreen = "shown" | "not shown" | "clipped" | "screen not still";
+
+/** Evidence kept only if the render is invalid; comparisons that never ran are explicitly absent. */
+export interface RenderEvidence {
+  clipState?: unknown;
+  comparisons: { kind: "hidden" | "unclipped"; attempt: number; before?: Buffer; altered?: Buffer; after?: Buffer }[];
+}
+
+/** Geometry and clipping styles of the HUD and its ancestors, at the time playback is judged. */
+export const captureClipState = (page: Page) => page.evaluate(hudRoot => {
+  const root = document.querySelector(hudRoot);
+  const measure = (e: Element) => {
+    const cs = getComputedStyle(e), rect = e.getBoundingClientRect();
+    return { element: `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ""}${[...e.classList].map(c => `.${c}`).join("")}`,
+      rect: rect.toJSON(), clientWidth: e.clientWidth, clientHeight: e.clientHeight, clientLeft: e.clientLeft,
+      clientTop: e.clientTop, scrollWidth: e.scrollWidth, scrollHeight: e.scrollHeight, scrollLeft: e.scrollLeft,
+      scrollTop: e.scrollTop, overflowX: cs.overflowX, overflowY: cs.overflowY, clipPath: cs.clipPath,
+      maskImage: cs.maskImage, clip: cs.clip, opacity: cs.opacity, visibility: cs.visibility };
+  };
+  const chain: object[] = [];
+  for (let e = root; e; e = e.parentElement) chain.push(measure(e));
+  // For a non-HUD or failed navigation, capture the page's clipping and scrolling boxes instead.
+  const boxes = root ? [] : [...document.querySelectorAll("*")].filter(e => {
+    const cs = getComputedStyle(e);
+    return cs.overflowX !== "visible" || cs.overflowY !== "visible" || cs.clipPath !== "none" || cs.maskImage !== "none" || cs.clip !== "auto";
+  }).map(measure);
+  return { viewport: { width: innerWidth, height: innerHeight, deviceScaleFactor: devicePixelRatio }, rootFound: !!root, chain, boxes };
+}, HUD_ROOT);
+
+/** Write the comparisons that actually ran, including partial captures if a screenshot failed. */
+export async function saveInvalidEvidence(out: string, id: string, invalid: string[], evidence: RenderEvidence): Promise<string> {
+  const dir = join(out, "invalid-evidence");
+  await mkdir(dir, { recursive: true });
+  const comparisons = await Promise.all(evidence.comparisons.map(async ({ kind, attempt, before, altered, after }) => {
+    const files: Record<string, string | null> = {};
+    for (const [stage, data] of [["before", before], ["altered", altered], ["after", after]] as const) {
+      const name = `${id}-${kind}-${attempt}-${stage}.png`;
+      if (data) await writeFile(join(dir, name), data);
+      files[stage] = data ? name : null;
+    }
+    return { kind, attempt, files };
+  }));
+  const ref = `invalid-evidence/${id}.json`;
+  await writeFile(join(out, ref), JSON.stringify({ invalid, clipState: evidence.clipState, comparisons }, null, 2) + "\n");
+  return ref;
+}
 
 /**
  * What the screen shows of the match HUD, by comparing it with two altered screens:
@@ -332,7 +381,7 @@ export type HudOnScreen = "shown" | "not shown" | "clipped" | "screen not still"
  * something other than the HUD moved; that comparison is tried again, and after HUD_COMPARE_TRIES it is
  * "screen not still".
  */
-export async function hudOnScreen(page: Page): Promise<HudOnScreen> {
+export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promise<HudOnScreen> {
   const shot = () => page.screenshot({ animations: "disabled", caret: "hide" });
   const hidden = `:is(${HUD_ROOT}), :is(${HUD_ROOT}) * { visibility: hidden !important; }`;
   const noClip = "clip-path: none !important; mask: none !important; -webkit-mask: none !important; clip: auto !important;";
@@ -340,11 +389,17 @@ export async function hudOnScreen(page: Page): Promise<HudOnScreen> {
   /** Whether the screen is the same with css added, or "screen not still". */
   const sameWith = async (css: string): Promise<boolean | "screen not still"> => {
     for (let attempt = 0; attempt < HUD_COMPARE_TRIES; attempt++) {
+      const comparison: RenderEvidence["comparisons"][number] = { kind: css === hidden ? "hidden" : "unclipped", attempt };
+      evidence?.comparisons.push(comparison);
       const before = await shot();
+      if (evidence) comparison.before = before;
       const style = await page.addStyleTag({ content: css });
       const altered = await shot();
+      if (evidence) comparison.altered = altered;
       await style.evaluate(e => (e as Element).remove());
-      if (before.equals(await shot())) return before.equals(altered);
+      const after = await shot();
+      if (evidence) comparison.after = after;
+      if (before.equals(after)) return before.equals(altered);
     }
     return "screen not still";
   };
@@ -528,6 +583,7 @@ async function renderAll(o: Options): Promise<Render[]> {
           page.on("pageerror", e => pageErrors.push(String(e.message ?? e)));
           const base = `renders/${surface.id}-${width}-${textSize}px-${typefaceSlug(typeface)}`;
           const invalid: string[] = [];
+          const evidence: RenderEvidence = { comparisons: [] };
           let judged: PageJudgement = { failures: [], tight: [], counted: { items: 0, grids: 0, tiles: 0 } };
           let fonts: Record<string, number> = {};
           let images: string[] = [];
@@ -535,7 +591,7 @@ async function renderAll(o: Options): Promise<Render[]> {
           let failureInView: boolean[] = [];
           try {
             await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
-            const settled = await settle(page, surface);
+            const settled = await settle(page, surface, evidence);
             const wrongTextSize = textSizeProblem(textSize, await rootFontSize(page));
             if (wrongTextSize) invalid.push(wrongTextSize);
             const noBoard = boardProblem(surface, settled.readiness, settled.playback);
@@ -578,8 +634,16 @@ async function renderAll(o: Options): Promise<Render[]> {
             await page.screenshot({ path: join(o.out, images[0]!) }).catch(() => undefined);
           }
           if (served.unanswered.length) invalid.push(`requests outside the snapshot and fixtures: ${[...new Set(served.unanswered)].join(", ")}`);
+          let invalidEvidence: string | undefined;
+          if (invalid.length) {
+            if (evidence.clipState === undefined) {
+              try { evidence.clipState = await captureClipState(page); }
+              catch (error) { evidence.clipState = { unavailable: String(error) }; }
+            }
+            invalidEvidence = await saveInvalidEvidence(o.out, `${surface.id}-${width}-${textSize}px-${typefaceSlug(typeface)}`, invalid, evidence);
+          }
           console.log(`${surface.id} ${width} ${textSize}px ${typeface}: ${judged.failures.length} failures, ${judged.tight.length} tight, ${judged.counted.items} items, ${judged.counted.grids} grids${invalid.length ? `; INVALID: ${invalid.join("; ")}` : ""}`);
-          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, pageErrors, fixtures: [...served.fixturesUsed] };
+          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, ...(invalidEvidence ? { invalidEvidence } : {}), pageErrors, fixtures: [...served.fixturesUsed] };
         } finally {
           await textSession?.detach().catch(() => undefined);
           await context.close();
@@ -634,6 +698,7 @@ async function main(): Promise<void> {
   };
   const startedAt = Date.now();
   await rm(join(o.out, "renders"), { recursive: true, force: true });
+  await rm(join(o.out, "invalid-evidence"), { recursive: true, force: true });
   const renders = await renderAll(o);
   const held = await readHeld(o.heldFile).catch(() => ({ note: "Failures already on main, reviewed. Only a failure not held here, or above its count, fails the check.", held: [] }));
   if (o.updateHeld) {

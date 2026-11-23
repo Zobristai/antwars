@@ -26,6 +26,8 @@ export interface Render {
   fonts: Record<string, number>;
   /** Problems that make this render itself invalid: wrong typeface, unanswered requests, a page that did not load. */
   invalid: string[];
+  /** JSON metadata and comparison-image references, retained for an invalid render. */
+  invalidEvidence?: string;
   pageErrors: string[];
   fixtures: string[];
 }
@@ -50,7 +52,7 @@ export interface Verdict {
   newFailures: Judged[];
   heldFailures: Judged[];
   tight: Judged[];
-  invalid: { surface: string; width: number; textSize: TextSize; typeface: Typeface; problem: string }[];
+  invalid: { surface: string; width: number; textSize: TextSize; typeface: Typeface; problem: string; evidence?: string }[];
   /** Held entries this run did not match: fixed, or now worse (then also a new failure). The list can shrink. */
   heldUnused: HeldEntry[];
 }
@@ -75,7 +77,7 @@ export function judge(renders: readonly Render[], held: HeldList): Verdict {
       newFailures.push(was ? { ...judged, measure: `${judged.measure}; held at ${was.extent}, now ${f.extent}` } : judged);
     }
     for (const f of r.tight) tight.push({ ...f, ...at, image: r.images[0] ?? "", held: false });
-    for (const problem of r.invalid) invalid.push({ surface: r.surface, width: r.width, textSize: r.textSize, typeface: r.typeface, problem });
+    for (const problem of r.invalid) invalid.push({ ...at, problem, ...(r.invalidEvidence ? { evidence: r.invalidEvidence } : {}) });
   }
   const heldUnused = [...open.values()].flat();
   return { passed: newFailures.length === 0 && invalid.length === 0, newFailures, heldFailures, tight, invalid, heldUnused };
@@ -108,7 +110,7 @@ export function markdown(v: Verdict, renders: readonly Render[], context: { buil
   out.push(`Build: ${context.build}. Data: ${context.snapshot}.`, "");
   out.push(`${renders.length} renders. ${v.newFailures.length} new failures, ${v.invalid.length} invalid renders, ${v.heldFailures.length} held failures (already on main, reviewed in held.json), ${v.tight.length} tight fits (listed, not failed).`, "");
   if (v.invalid.length) {
-    out.push("## Invalid renders", "", ...v.invalid.map(i => `- ${where(i)}: ${i.problem}`), "");
+    out.push("## Invalid renders", "", ...v.invalid.map(i => `- ${where(i)}: ${i.problem}${i.evidence ? ` ([evidence](${i.evidence}))` : ""}`), "");
   }
   const table = (title: string, rows: Judged[]) => {
     if (!rows.length) return;

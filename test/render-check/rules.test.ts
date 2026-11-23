@@ -1,7 +1,8 @@
 // The render check's rules (web/render-check/rules.ts) on small pages in Chromium: each rule fails on a page
 // that breaks it and passes on the same page laid out correctly. Fixed fonts (monospace) keep widths predictable.
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
@@ -9,7 +10,7 @@ import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, text
 import { heldFrom, judge, markdown, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
 import { RESULTS_KEY } from "../../web/src/pages/top-matches.ts";
-import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, playRecording, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback } from "../../web/render-check/check.ts";
+import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, hudOnScreen, playRecording, saveInvalidEvidence, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
@@ -445,6 +446,28 @@ describe("render check replay readiness", () => {
     } finally { await page.close(); }
   }
 
+  it("retains the comparison images and clipping measurements of an invalid HUD", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "render-invalid-"));
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<div style="position:fixed;inset:0;clip-path:inset(40px 0 0 0)"><div class="d1-hud" style="position:fixed;inset:0"><b>Score Band</b><p style="margin-top:50px">Clock</p></div></div>');
+      const evidence: RenderEvidence = { clipState: await captureClipState(page), comparisons: [] };
+      expect(await hudOnScreen(page, evidence)).toBe("clipped");
+      const ref = await saveInvalidEvidence(dir, "replay-320-32px-roboto", ["HUD clipped"], evidence);
+      const saved = JSON.parse(await readFile(join(dir, ref), "utf8"));
+      expect(saved.invalid).toEqual(["HUD clipped"]);
+      expect(saved.clipState.chain).toEqual(expect.arrayContaining([expect.objectContaining({ clipPath: "inset(40px 0px 0px)" })]));
+      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "unclipped"]);
+      for (const c of saved.comparisons) for (const file of Object.values(c.files) as string[]) {
+        expect((await readFile(join(dir, "invalid-evidence", file))).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+      }
+      const incomplete: RenderEvidence = { clipState: { unavailable: "navigation failed" }, comparisons: [{ kind: "hidden", attempt: 0, before: Buffer.from("partial") }] };
+      const partialRef = await saveInvalidEvidence(dir, "partial", ["did not render"], incomplete);
+      const partial = JSON.parse(await readFile(join(dir, partialRef), "utf8"));
+      expect(partial.comparisons[0].files).toEqual({ before: "partial-hidden-0-before.png", altered: null, after: null });
+    } finally { await page.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
   it("makes a replay invalid when its board fails to load or never becomes ready", async () => {
     const rejected = await readiness('Promise.reject(new Error("recording 404"))');
     expect(rejected).toEqual({ state: "rejected", reason: "recording 404" });
@@ -532,6 +555,9 @@ describe("render check replay readiness", () => {
     const verdict = judge([render], { note: "", held: [] });
     expect(verdict.passed).toBe(false);
     expect(verdict.invalid).toEqual([{ surface: "replay-free-for-all", width: 390, textSize: 16, typeface: "Roboto", problem }]);
+    const withEvidence = judge([{ ...render, invalidEvidence: "invalid-evidence/replay.json" }], { note: "", held: [] });
+    expect(withEvidence.invalid[0]?.evidence).toBe("invalid-evidence/replay.json");
+    expect(markdown(withEvidence, [render], { build: "test", snapshot: "test" })).toContain("[evidence](invalid-evidence/replay.json)");
   });
 });
 
