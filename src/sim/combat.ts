@@ -108,6 +108,8 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
   const ownGroundHit = (ant: Ant): number => ant.flyer === true ? flyerBonus : ant.caste === "soldier" ? soldierBonus : workerBonus;
   const damage = new Map<number, number>();
   const queenDamage = new Map<QueenState, number>();
+  // Spectators only: the ants biting each queen this tick, by queen, reported with her own bite.
+  const queenBiters = new Map<QueenState, number[]>();
   // Do not track damage sources in historical rules or when there is no live count mark.
   const marks = config.countMarks?.combatTotals ? new Map(state.marks
     .filter(mark => mark.verb !== undefined && mark.count !== undefined && mark.laidTick <= tick && tick - mark.laidTick < config.markLifetimeTicks)
@@ -141,6 +143,8 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
           const bite = baseHit(ant), dealt = queenDamage.get(queen) ?? 0;
           if (credit !== undefined) creditLastHit(credit, queen, queen.hp ?? config.queenHp.hp, dealt, bite, ant.colony);
           queenDamage.set(queen, dealt + bite);
+          const biters = queenBiters.get(queen);
+          if (biters === undefined) queenBiters.set(queen, [ant.id]); else biters.push(ant.id);
         }
       }
       continue;
@@ -158,7 +162,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
     }
     ant.lastTargetId = target.id;
   }
-  if (config.queenHp !== undefined) resolveQueens(state, grid, tick, events, damage, queenDamage, sources, credit);
+  if (config.queenHp !== undefined) resolveQueens(state, grid, tick, events, damage, queenDamage, queenBiters, sources, credit);
   if (damage.size === 0) return;
   const survivors: Ant[] = [];
   for (const ant of state.ants) {
@@ -214,13 +218,14 @@ export function adjacentEnemyQueen(state: SimState, ant: Ant): QueenState | null
  * regains regenHp each regenIntervalTicks, up to her full HP. Airborne flyers
  * are neither bitten nor counted as near.
  */
-function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEvent[], damage: Map<number, number>, queenDamage: ReadonlyMap<QueenState, number>, sources?: Map<number, DamageSource>, credit?: KillCredit): void {
+function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEvent[], damage: Map<number, number>, queenDamage: ReadonlyMap<QueenState, number>, queenBiters: ReadonlyMap<QueenState, number[]>, sources?: Map<number, DamageSource>, credit?: KillCredit): void {
   const rules = state.config.queenHp!;
   for (const colony of state.colonies) {
     for (const q of activeQueens(colony)) {
       const qx = Math.floor(q.queenX / SUB);
       const qy = Math.floor(q.queenY / SUB);
       const before = q.hp ?? rules.hp;
+      let bitten: number | null = null;
       const perTick = "damagePerSecond" in rules ? Math.trunc(rules.damagePerSecond / state.config.ticksPerSecond) : undefined;
       if (!("biteDamage" in rules) || tick - (q.lastBiteTick ?? -rules.biteIntervalTicks) >= rules.biteIntervalTicks) {
         let target: Ant | null = null;
@@ -235,7 +240,13 @@ function resolveQueens(state: SimState, grid: Grid, tick: number, events: SimEve
           damage.set(hit.id, (damage.get(hit.id) ?? 0) + amount);
           if (sources !== undefined) recordSource(sources, hit.id, amount, null);
           if ("biteDamage" in rules) q.lastBiteTick = tick;
+          bitten = hit.id;
         }
+      }
+      const biters = queenBiters.get(q);
+      if (biters !== undefined || bitten !== null) {
+        events.push({ type: "queen_bites", tick, colony: colony.id, queenId: q.id, tileX: qx, tileY: qy,
+          biters: biters === undefined ? [] : biters.sort((a, b) => a - b), targetId: bitten });
       }
       let hp = before - (queenDamage.get(q) ?? 0);
       let enemyNear = false;

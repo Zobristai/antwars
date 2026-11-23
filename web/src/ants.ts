@@ -307,6 +307,8 @@ export class Ants {
   private flyerBiteHeads: Texture[][][];
   private shadowFrame: Texture;
   private readonly bites = new Bites();
+  /** Where an ant biting a queen aims: her emblem ring's radius in tiles at the board's zoom (Bites.queenRing). */
+  set queenRing(ring: Bites["queenRing"]) { this.bites.queenRing = ring; }
   private corpseFrame: Texture[];
   private ants: Particle[] = [];
   private corpses: Particle[] = [];

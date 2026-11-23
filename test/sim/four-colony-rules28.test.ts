@@ -97,7 +97,7 @@ describe("a four-colony match on the served rules", () => {
 
   it("streams four colonies and flyers with optional kill totals, and decodes them together", () => {
     const [first, ...rest] = run.messages.map(m => encodeMessage(m));
-    // Rules 28 credit queen kills, recorded at version 31 beside the kill totals; without them the totals keep 30.
+    // Rules 28 credit queen kills, recorded at version 33 beside the kill totals; without them the totals keep 30.
     expect(first![2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     expect(decodeMessage(first!).full!.kills).toEqual(run.messages[0]!.full!.kills);
     expect(decodeMessage(first!).full!.queenKills).toEqual([0, 0, 0, 0]);

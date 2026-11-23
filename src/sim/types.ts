@@ -460,6 +460,11 @@ export type SimEvent =
   | (AntEventBase & { readonly type: "queen_founded" | "queen_lost"; readonly colony: ColonyId; readonly queenId: number; readonly foodCost?: number })
   /** A queen's HP changed (redesign only). */
   | (AntEventBase & { readonly type: "queen_hp"; readonly colony: ColonyId; readonly queenId: number; readonly hp: number })
+  /**
+   * A queen with HP fought this tick, for spectators only: the ants that bit her (ascending ids) and the ant she bit,
+   * or null. Emitted only for a queen with a biter or a target; it changes no rule and is never shown to agents.
+   */
+  | (AntEventBase & { readonly type: "queen_bites"; readonly colony: ColonyId; readonly queenId: number; readonly biters: readonly number[]; readonly targetId: number | null })
   | { readonly type: "match_end"; readonly tick: number; readonly result: MatchResult }
   | (AntEventBase & {
       readonly type: "mark_laid";

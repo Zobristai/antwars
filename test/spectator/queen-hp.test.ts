@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Graphics } from "pixi.js";
 import { TICK_MS } from "../../src/live/snapshot.ts";
-import { decodeMessage, encodePublicMessage, streamQueens, type StreamEvent, type StreamQueen } from "../../src/live/format.ts";
+import { decodeMessage, encodePublicMessage, streamQueens, withoutQueenBites, type StreamEvent, type StreamQueen } from "../../src/live/format.ts";
 import { COLONY_NAMES, QUEEN_HP_RULES, SOLDIER_HATCH_TIMING, TERRAIN_RULES } from "../../src/sim/config.ts";
 import { ATTACK_LULL_S, FALL_FRAME_PAD, Frame, HIT_FLASH_MS, Playback, QUEEN_COLLAPSE_MS, QUEEN_FRAME_TILES, RENDER_DELAY_MS, RESULT_BEAT_MS, fallWindow, fallenColonies, fallenNests, fallenQueen, fallenQueenBox, queenLossAge, resultShownAt } from "../../web/src/buffer.ts";
 import { COLONY_TINT } from "../../web/src/ants.ts";
@@ -23,8 +23,10 @@ vi.setConfig({ testTimeout: 60_000 });
 
 // A queen-hit/fall scene with pursuit DEFEND, on rules 27: seed 6065 has three attacks on the lost queen, the last fatal,
 // and the other queen is never bitten (seed 6016 had this scene while the stored config's periodic store payout ran).
+// Without its queen-bite records, as recordings made before them are: the flash these tests read is theirs
+// (queen-bites.test.ts reads the same match with them).
 const messages = playRedesign({ seed: 6065, agents: 9, ticks: 4000,
-  sceneSettings: { terrain: TERRAIN_RULES, hatchTiming: SOLDIER_HATCH_TIMING } });
+  sceneSettings: { terrain: TERRAIN_RULES, hatchTiming: SOLDIER_HATCH_TIMING } }).map(withoutQueenBites);
 const lostAt = messages.find((m) => m.events.some((e) => e.kind === "queenLost"))!;
 const lost = (lostAt.events.find((e) => e.kind === "queenLost") as Extract<StreamEvent, { queen: StreamQueen }>).queen;
 const endAt = messages.find((m) => m.events.some((e) => e.kind === "end"))!;
@@ -174,7 +176,7 @@ describe("bites on a queen (the hit flash)", () => {
     const q: StreamQueen = { id: 0, colony: 0, x: 256, y: 256, foundedTick: 0, lostTick: null, overrun: 30 };
     const f = new Frame();
     f.board = { setup: { mapW: 8, mapH: 8, ticksPerSecond: 10, matchTicks: 7200, idleTicks: 600, overrunRadiusTiles: 2, queens: [[256, 256], [1792, 1792]] }, queens: [q, { ...q, id: 0, colony: 1, x: 1792, y: 1792 }], overrunRequired: 100 } as unknown as Frame["board"];
-    expect(emblemState(q, f)).toEqual({ scale: 1, alpha: 1, zone: 1, bar: null, flash: 0 });
+    expect(emblemState(q, f)).toEqual({ scale: 1, alpha: 1, zone: 1, bar: null, flash: 0, lit: false, chip: 0 });
     const homes = new QueenHomes(10);
     homes.update(f);
     const shapes = drawn2d(homes);

@@ -13,7 +13,6 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "gpt-6-1-sol-high-fast",
   "gpt-6-1-sol-xhigh-fast",
   "gpt-6-1-terra-max-fast",
-  "gpt-6-astra",
   "gpt-6-luna",
   "claude-sonnet-5-5",
   "glm-5-3",

@@ -7,7 +7,7 @@ import { COLONY_NAMES, PUBLIC_CONFIG, TERRAIN_RULES, type MapDefinition } from "
 import { isQuadrantRotation } from "../sim/mapBoard.js";
 import { quadrantMatchMaps } from "../sim/mapShapes.js";
 import { ffaRatingWrites } from "../rating/ffa.js";
-import { parseFfaFinish } from "../sim/ffaFinish.js";
+import { parseFfaFinish, type FfaFinish } from "../sim/ffaFinish.js";
 import { isValidId, matchTime, ratingWrites, type ModelLabels, type RankedMode, type ServiceTiers, type ThinkingLevels, type Winner } from "../rating/ratings.js";
 import { noteSlotTaken } from "../slots/wake.js";
 import type { Fields, Store, TransactionRead, Write } from "../store/firestore.js";
@@ -45,6 +45,8 @@ import { lobbyPageUrl } from "./site.js";
  *                       colonyNames is the pair its begun match plays under, JSON, or ""
  *                       for the rated names, written when the match begins or is adopted
  *                       (absent on a match an older server began, which kept the rated names);
+ *                       resultFailure, written with rated "false" only when a Free-for-all
+ *                       match's finish was malformed at release (result is omitted), is why;
  *                       ratingFailure, written with rated "false" only when a rated Free-for-all
  *                       match's rating step refused its result at release, is why
  *   slots/{kind}-{n}    { lobbyId }  present only while the slot is held
@@ -309,7 +311,9 @@ export interface Lobbies {
    * none), teams by colony with each identity once; nothing else is rated. An abandoned
    * house challenge whose absentColonies (the colonies whose seat never joined) include its
    * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby, never rated, also stores
-   * result when given; no other lobby stores it. A rated Free-for-all result its rating step refuses (anything
+   * result when given; no other lobby stores it. A malformed Free-for-all finish releases the slot all the same,
+   * omitting result and leaving the lobby unrated with resultFailure recorded (skipping rating). A rated Free-for-all
+   * result its rating step refuses (anything
    * but a failed store read, which rejects the call so it is retried) releases the slot all the same, leaving the
    * lobby unrated with ratingFailure recorded; a result already rated identically is not refused.
    */
@@ -801,23 +805,38 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     let outcome = "";
     let heldAbsent = false;
     let result: Fields = {};
+    let resultFailure: string | null = null;
     let ratingFailure: string | null = null;
     if (ending) {
       if (docs.get(instancePath(fields.slot))?.runId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       if (ending.outcome !== "not_played" && fields.matchRunId !== ending.runId) return { result: refuse("superseded") as Released, writes: [] };
       outcome = ending.outcome;
       heldAbsent = outcome === "abandoned" && !!fields.challengeId && (ending.absentColonies ?? []).includes(HELD_COLONY);
+      let ffaFinish: FfaFinish | undefined;
       if (ending.result !== undefined && fields.mode === QUADRANTS) {
-        if (ending.result.ffa !== undefined) parseFfaFinish(ending.result.ffa);
-        result = { result: JSON.stringify(ending.result) };
+        // A malformed Free-for-all finish would fail on every poll retry and hold the slot for ever;
+        // release the slot, omit result, leave the match unrated and record why. No store read runs here,
+        // so temporary store failures during release still throw and retry.
+        try {
+          if (typeof ending.result !== "object" || ending.result === null || Array.isArray(ending.result)) throw new Error("invalid Free-for-all finish");
+          if (ending.result.ffa !== undefined) ffaFinish = parseFfaFinish(ending.result.ffa);
+          const stored = ffaFinish === undefined ? ending.result : { ...ending.result, ffa: ffaFinish };
+          const encoded = JSON.stringify(stored);
+          if (typeof encoded !== "string") throw new Error("invalid Free-for-all finish");
+          result = { result: encoded };
+        } catch (error) {
+          ffaFinish = undefined;
+          resultFailure = error instanceof Error ? error.message : String(error);
+          console.error(`antwar lobby ${lobbyId}: Free-for-all finish malformed, releasing without storing result: ${resultFailure}`);
+        }
       }
       const winner = ratedWinner(ending.outcome);
       if (fields.mode === QUADRANTS) {
         // Never route four participants through the two-colony Glicko or Model Index paths.
         // An old/missing finish cannot be rated; an explicit gate never backfills past results.
-        if (settings.ffaLiveEnabled === true && fields.rated === "true" && ending.result?.ffa !== undefined &&
+        if (settings.ffaLiveEnabled === true && fields.rated === "true" && ffaFinish !== undefined &&
             (ending.outcome === "draw" || /^colony_[0-3]_won$/.test(ending.outcome))) {
-          const finish = ending.result.ffa, reason = ending.result.reason;
+          const finish = ffaFinish, reason = ending.result!.reason;
           // A failed store read is temporary: it is rethrown and the whole release retried. Any other
           // failure of the rating step rejects this match on every retry, so the slot is released and
           // the match left unrated with the failure recorded, rather than held for ever.
@@ -853,6 +872,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     return {
       result: ok({ next: settled.handedTo[0] ?? null }) as Released,
       writes: [{ op: "update", path: lobbyPath(lobbyId), fields: { state: "ended", slot: "", outcome, ...(outcome === "abandoned" ? { rated: "false" } : {}),
+        ...(resultFailure !== null ? { rated: "false", resultFailure } : {}),
         ...(ratingFailure !== null ? { rated: "false", ratingFailure } : {}), ...(heldAbsent ? { heldAbsent: "true" } : {}), ...result } }, ...settled.writes, ...writes] as Write[],
     };
   }

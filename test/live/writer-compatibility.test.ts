@@ -25,7 +25,7 @@ describe("recording writer compatibility", () => {
     const config = playable({ ...PUBLIC_CONFIG, terrain: undefined, matchTicks: 200 });
     const { lines } = playScripted({ seed: 17, config, agents: 2, ticks: 200 });
     const messages = recordLog(lines);
-    // Public rules credit queen kills, which the writer records at version 31. With them taken out, every other
+    // Public rules credit queen kills, which the writer records at version 33. With them taken out, every other
     // byte is the earlier pin's.
     expect(messages[0]![2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     const earlier = packMessages(messages.map(bytes => encodeMessage(withoutQueenKills(decodeMessage(bytes)))));
@@ -33,7 +33,7 @@ describe("recording writer compatibility", () => {
     expect(sha256(earlier)).toBe("55f8923277c56bb9ab41da2e47d5186866bb9602bfe12e710741fb2169dcad2b");
     const bytes = packMessages(messages);
     expect(bytes.length).toBe(120311);
-    expect(sha256(bytes)).toBe("5a04f561ff868ca7a6dcd252d8cf41accf17bf04fcb8b328a56bd1b85cf9acdc");
+    expect(sha256(bytes)).toBe("3177f1e62352fdb8a76f655736c27c8f4b7537d6c2cbea5bd0b3098f9cb44339");
   });
 
   it("every new header and ordinary live/scripted recording names ant115", () => {

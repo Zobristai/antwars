@@ -364,6 +364,8 @@ export class Ants3D {
   private gait = new Map<number, { x: number; y: number; ph: number; seen: number }>();
   private stamp = 0;
   private readonly bites = new Bites();
+  /** Where an ant biting a queen aims: her emblem ring's radius in tiles where she stands on screen (Bites.queenRing). */
+  set queenRing(ring: Bites["queenRing"]) { this.bites.queenRing = ring; }
   private readonly ground: Ground;
   /** Ant length in tiles. */
   lengthTiles: number;

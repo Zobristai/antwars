@@ -161,6 +161,8 @@ export class TeamView {
     out.endShown = frame.endShown;
     out.match = frame.match;
     out.hits = frame.hits;
+    // A queen's bite cues where the colony sees her, or for its own queens.
+    out.queenPulse = frame.queenPulse.filter((q) => q.colony === colony || seen(q.x, q.y));
     out.chat = frame.chat;
 
     // Own ants always (each stands in its own sight); enemy ants only on a tile in sight at this tick.

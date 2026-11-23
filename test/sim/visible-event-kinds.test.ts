@@ -15,6 +15,7 @@ const SIGHTED_BY_KIND = {
   count_mark_accepted: false,
   overrun_progress: false,
   queen_hp: false,
+  queen_bites: false,
   match_end: false,
   agent_join: false,
   agent_call: false,

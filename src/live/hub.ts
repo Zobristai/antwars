@@ -28,7 +28,7 @@ import { promisify } from "node:util";
 import { deflateRaw, deflateRawSync, inflateRaw } from "node:zlib";
 import type { SimState, StepOutput } from "../sim/types.js";
 import { DEFAULT_LIVE_CONFIG, type LiveConfig } from "./config.js";
-import { decodeMessage, encodeMessage, encodePublicMessage, withoutKillTotals, withoutQueenKills, type StreamAgent, type StreamMessage, type StreamRatingChange } from "./format.js";
+import { decodeMessage, encodeMessage, encodePublicMessage, withoutKillTotals, withoutQueenBites, withoutQueenKills, type StreamAgent, type StreamMessage, type StreamRatingChange } from "./format.js";
 import { SpectatorRecorder, SpectatorState, type RecorderResume, type SpectatorPlayerOptions, type TickRecord } from "./model.js";
 import { ReplayRecording } from "../replays/recording.js";
 import type { RecordHandoff } from "../records/handoff.js";
@@ -223,23 +223,26 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
 interface WireForm {
   readonly kills: boolean;
   readonly queenKills: boolean;
+  readonly queenBites: boolean;
 }
 
-const CURRENT_FORM: WireForm = { kills: true, queenKills: true };
+const CURRENT_FORM: WireForm = { kills: true, queenKills: true, queenBites: true };
 
 /** Whether a message carries content the form has not opted into; if not, the current frame serves it unchanged. */
 function beyondForm(message: { readonly full?: StreamMessage["full"]; readonly events: StreamMessage["events"] }, form: WireForm): boolean {
   const carries = (kind: "kills" | "queenKills") => message.full?.[kind] !== undefined || message.events.some(e => e.kind === kind);
-  return (!form.kills && carries("kills")) || (!form.queenKills && carries("queenKills"));
+  return (!form.kills && carries("kills")) || (!form.queenKills && carries("queenKills"))
+    || (!form.queenBites && message.events.some(e => e.kind === "queenBites"));
 }
 
 function formKey(form: WireForm): string {
-  return `${form.kills ? 1 : 0}${form.queenKills ? 1 : 0}`;
+  return `${form.kills ? 1 : 0}${form.queenKills ? 1 : 0}${form.queenBites ? 1 : 0}`;
 }
 
 function inForm(message: StreamMessage, form: WireForm): StreamMessage {
   const withKills = form.kills ? message : withoutKillTotals(message);
-  return form.queenKills ? withKills : withoutQueenKills(withKills);
+  const withQueenKills = form.queenKills ? withKills : withoutQueenKills(withKills);
+  return form.queenBites ? withQueenKills : withoutQueenBites(withQueenKills);
 }
 
 interface Spectator extends WireForm {
@@ -511,6 +514,7 @@ class MatchStream {
     if (this.access) this.hub.recordReleased(this.access, this.released.full.agents);
     let full: string | null = null;
     const olderFulls = new Map<string, string>(), olderDeltas = new Map<string, string>();
+    let releasedMessage: StreamMessage | undefined;
     if (this.recording !== null) {
       if (first) {
         const opening = this.fullPayload(this.released);
@@ -522,7 +526,8 @@ class MatchStream {
     }
     for (const s of this.spectators) {
       if (s.needsFull) {
-        if (!beyondForm({ full: this.released.full, events: [] }, s)) {
+        releasedMessage ??= this.released.message();
+        if (!beyondForm(releasedMessage, s)) {
           full ??= this.fullFrame(this.released);
           this.hub.write(s, full);
         } else {
@@ -841,7 +846,8 @@ export class LiveHub {
     });
     res.flushHeaders();
     const s: Spectator = { res, stream, kills: url.searchParams.get("kills") === "1",
-      queenKills: url.searchParams.get("queenKills") === "1", needsFull: true, timer: null, finalFlushTimer: null };
+      queenKills: url.searchParams.get("queenKills") === "1", queenBites: url.searchParams.get("queenBites") === "1",
+      needsFull: true, timer: null, finalFlushTimer: null };
     // An intermediary may hold the headers until the first body byte, which the delay can postpone for minutes.
     this.write(s, HEARTBEAT);
     req.on("close", () => {

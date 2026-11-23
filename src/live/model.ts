@@ -491,6 +491,8 @@ export class SpectatorRecorder {
       }
       case "queen_hp":
         return { kind: "queenHp", colony: e.colony, queenId: e.queenId, hp: e.hp };
+      case "queen_bites":
+        return { kind: "queenBites", colony: e.colony, queenId: e.queenId, biters: [...e.biters], targetId: e.targetId };
       case "overrun_progress":
         return e.queenId === undefined ? { kind: "overrun", colony: e.colony, progress: e.progressTicks, required: e.requiredTicks }
           : { kind: "queenOverrun", colony: e.colony, queenId: e.queenId, progress: e.progressTicks, required: e.requiredTicks };
@@ -590,6 +592,8 @@ export class SpectatorState {
    * begins (on a new target), so the full message restates those under way between two flyers for a viewer who joins.
    */
   private readonly bites = new Map<number, Extract<StreamEvent, { kind: "fight" }>>();
+  /** The queen bites of the record at this tick, restated by every full message so a joiner sees them at once. */
+  private queenBites: Extract<StreamEvent, { kind: "queenBites" }>[] = [];
 
   /** events: those of the handover-saved message the board was read from (savedMessage), each bite it remembered. */
   constructor(full: StreamFull, tick: number, ants: StreamAnts, events: readonly StreamEvent[] = []) {
@@ -597,10 +601,12 @@ export class SpectatorState {
     this.tick = tick;
     this.ants = ants;
     this.noteBites(events);
+    this.noteQueenBites(events);
   }
 
   apply(rec: { tick: number; ants: StreamAnts; events: readonly StreamEvent[] }): void {
     this.noteBites(rec.events);
+    this.noteQueenBites(rec.events);
     const f = this.full;
     const t = rec.tick - 1;
     for (const e of rec.events) {
@@ -744,7 +750,7 @@ export class SpectatorState {
    * changed.
    */
   message(): StreamMessage {
-    return { tick: this.tick, ants: this.ants, full: this.full, events: this.flyerBitesUnderWay() };
+    return { tick: this.tick, ants: this.ants, full: this.full, events: [...this.flyerBitesUnderWay(), ...this.queenBitesUnderWay()] };
   }
 
   /**
@@ -753,7 +759,18 @@ export class SpectatorState {
    * read back only by the next server, never sent to a viewer.
    */
   savedMessage(): StreamMessage {
-    return { tick: this.tick, ants: this.ants, full: this.full, events: [...this.bites.values()].map((bite) => ({ ...bite })) };
+    return { tick: this.tick, ants: this.ants, full: this.full,
+      events: [...[...this.bites.values()].map((bite) => ({ ...bite })), ...this.queenBitesUnderWay()] };
+  }
+
+  /** Queen bites are reported every tick, so a record names all of them: one with none means none are under way. */
+  private noteQueenBites(events: readonly StreamEvent[]): void {
+    this.queenBites = events.flatMap((e) => (e.kind === "queenBites" ? [e] : []));
+  }
+
+  /** The queen bites of this tick's record, as named. A message with no queen bitten keeps its bytes. */
+  private queenBitesUnderWay(): StreamEvent[] {
+    return this.queenBites.map((e) => ({ ...e, biters: [...e.biters] }));
   }
 
   private noteBites(events: readonly StreamEvent[]): void {

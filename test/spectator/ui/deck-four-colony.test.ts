@@ -172,13 +172,45 @@ describe("Score Band in a four-colony match", () => {
 
   it("keeps history behind a labelled per-colony button with Escape returning focus", () => {
     const { host, hud } = mounted(); hud.update(view(quadFrame()));
-    const team = host.byClass("d1-team")[3]!, button = one(team, "sb-history"), line = one(team, "d1-timeline");
+    const team = host.byClass("d1-team")[3]!, button = one(team, "sb-history");
+    const strip = one(host, "sb-history-strip");
+    const line = host.byClass("d1-timeline").find(n => n.id === button.getAttribute("aria-controls"))!;
     expect(button.getAttribute("aria-label")).toBe(`${NAMES[3]} history`);
+    expect(line.parent?.classes()).toContain("sb-history-cols");
     expect(line.hidden).toBe(true);
+    expect(strip.hidden).toBe(true);
     button.click();
-    expect(line.hidden).toBe(false); expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(line.hidden).toBe(false); expect(strip.hidden).toBe(false); expect(button.getAttribute("aria-expanded")).toBe("true");
     line.fire("keydown", { key: "Escape" });
-    expect(line.hidden).toBe(true); expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(line.hidden).toBe(true); expect(strip.hidden).toBe(true); expect(button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("places history under each colony card on narrow screens, syncs Selected replacement, and closes on match change", () => {
+    const narrow = mounted(false);
+    const frame = quadFrame();
+    narrow.hud.update(view(frame));
+    const team = narrow.host.byClass("d1-team")[2]!;
+    const button = one(team, "sb-history");
+    const line = one(team, "d1-timeline");
+    expect(button.getAttribute("aria-controls")).toBe(line.id);
+    expect(one(narrow.host, "sb-history-strip").hidden).toBe(true);
+    button.click();
+    expect(line.hidden).toBe(false);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(team.classes()).toContain("is-history-open");
+    // Picking an agent in that colony hides its History behind Selected and clears aria-expanded.
+    narrow.hud.update(view(frame, 2));
+    expect(line.hidden).toBe(true);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    // Clearing selection restores the previously open History.
+    narrow.hud.update(view(frame, -1));
+    expect(line.hidden).toBe(false);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    // Changing matches closes every open History.
+    const nextMatch = quadFrame(); nextMatch.match = 99;
+    narrow.hud.update(view(nextMatch));
+    expect(line.hidden).toBe(true);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 });
 
@@ -351,7 +383,7 @@ describe("the single-line state and separate match metadata", () => {
   });
 });
 
-// The Queen kills cell: the recorded count, zero included, where the recording carries it (version 31); where it does
+// The Queen kills cell: the recorded count, zero included, where the recording carries it (version 33); where it does
 // not, the dash said as not recorded, never a count derived from queens lost.
 describe("the Queen kills cell", () => {
   const cells = (host: ElementPort) => host.byClass("d1-team").filter(shownIn).map(team => one(team, "sb-queen-kills").byClass("d1-mv")[0]!);

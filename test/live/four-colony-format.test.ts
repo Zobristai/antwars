@@ -196,7 +196,7 @@ describe("a four-colony match on the spectator stream", () => {
 
 // Two-colony matches recorded on the live and public paths, and their reconnect snapshot, as the encoder wrote them
 // before version 27 existed: each message's version, and the SHA-256 of the messages packed as a recording. Queen
-// kills (version 31) are later content where the rules credit them; they are taken out before comparing, so these
+// kills (version 33) are later content where the rules credit them; they are taken out before comparing, so these
 // hashes still prove every other byte unchanged.
 const TWO_COLONY_BEFORE = {
   rated: {
