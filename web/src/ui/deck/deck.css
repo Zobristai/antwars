@@ -779,10 +779,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band.d1-hud:has(.sb-history-strip:not([hidden])) {
     grid-template-rows: auto 4px minmax(0, auto) 16px minmax(244px, 1fr) minmax(36px, auto);
   }
-  .score-band .d1-deck {
-    grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);
-    min-height: 0;
-  }
+  .score-band .d1-deck { min-height: 0; }
   .score-band .d1-deck:has(> .sb-deck-table) {
     display: flex; flex-direction: column;
   }
@@ -802,7 +799,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
     position: sticky; top: 0; z-index: 1; background: var(--aw-surface);
   }
   .sb-history-strip {
-    grid-column: 1 / -1; grid-row: 7; display: grid; grid-template-columns: auto minmax(0, 1fr);
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
     align-items: start; column-gap: 12px; margin-top: 0; padding-top: 0; border-top: 1px solid var(--d1-hair);
     flex: 0 9999 auto; min-height: 76px; max-height: 280px; overflow-y: auto; overflow-x: hidden; overflow-anchor: auto;
     scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent;

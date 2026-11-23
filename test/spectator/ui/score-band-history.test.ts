@@ -503,6 +503,15 @@ describe("Score Band side-by-side History ledger", () => {
     show(makeFrame(3));
     expect(scroller.scrollTop).toBe(328);
 
+    // With the open History entirely below the scroller's visible box, a playback prepend anchors nothing.
+    anchorTop = 600;
+    for (const r of team0.byClass("d1-tl-entry")) {
+      r.getBoundingClientRect = () => ({ top: anchorTop, bottom: anchorTop + 28, left: 0, right: 374, width: 374, height: 28 });
+    }
+    show(makeFrame(4));
+    expect(anchorTop).toBe(628);
+    expect(scroller.scrollTop).toBe(328);
+
     // Deep-scroll collapse pulls the collapsed colony back to the top of the narrow scroller.
     team0.getBoundingClientRect = () => ({ top: -250, bottom: 100, left: 0, right: 390, width: 390, height: 350 });
     btn0.click();

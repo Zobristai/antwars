@@ -206,8 +206,8 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     listen(line, "keydown", e => {
       if ((e as KeyboardEvent).key !== "Escape") return;
       historyOpen[colony] = false;
-      setAttr(historyButton, "aria-expanded", "false"); setHidden(line, true); historyButton.focus();
       syncHistory();
+      historyButton.focus();
       recoverCollapsedScroll(colony);
     });
     line.tabIndex = 0;
@@ -700,11 +700,12 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       node.historyButton.setAttribute("aria-label", `${named} history`);
     }
   };
-  /** Keep the visible scrolled History row pinned in place when playback prepends new rows while scrolled down. */
+  /** Keep the visible scrolled History row pinned in place when playback prepends new rows while scrolled down.
+   * Only a row inside the scroller's visible box anchors; with no History row in view, nothing is adjusted. */
   const captureScrollAnchor = () => {
     const scroller = wideLayout ? historyStrip : hooks.narrowScroller;
     if (!scroller || typeof scroller.getBoundingClientRect !== "function" || typeof scroller.scrollTop !== "number" || scroller.scrollTop <= 0) return null;
-    const scrollerTop = scroller.getBoundingClientRect().top;
+    const { top: scrollerTop, bottom: scrollerBottom } = scroller.getBoundingClientRect();
     for (const team of teamNodes) {
       if (team.line.hidden || team.section.hidden) continue;
       const pinned = wideLayout ? team.lineHead : team.stickyBar;
@@ -712,7 +713,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       const threshold = Math.max(scrollerTop, pinnedBottom);
       for (const child of Array.from(team.entries.children)) {
         const rect = child.getBoundingClientRect();
-        if (rect.height > 0 && rect.bottom > threshold) return { scroller, node: child, top: rect.top };
+        if (rect.height <= 0 || rect.bottom <= threshold) continue;
+        if (rect.top >= scrollerBottom) break;
+        return { scroller, node: child, top: rect.top };
       }
     }
     return null;
