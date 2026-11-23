@@ -5945,39 +5945,6 @@
    "surface": "watch",
    "width": 1280,
    "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 13 Nov 2026",
-   "extent": 53,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 21 Nov 2026",
-   "extent": 53,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 22 Nov 2026",
-   "extent": 53,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
    "typeface": "Roboto",
    "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
@@ -6529,66 +6496,11 @@
    "width": 320,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 13 Nov 2026",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 21 Nov 2026",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 22 Nov 2026",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
    "rule": "part-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
    "text": "",
    "extent": 11,
    "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
   },
   {
    "surface": "watch",
@@ -6686,17 +6598,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7004,28 +6905,6 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX 5 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
@@ -7115,17 +6994,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7398,61 +7266,6 @@
    "width": 390,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 13 Nov 2026",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 21 Nov 2026",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 22 Nov 2026",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX 5 Nov 2026",
@@ -7544,17 +7357,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7840,28 +7642,6 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX 5 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
@@ -7951,17 +7731,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8107,28 +7876,6 @@
    "text": "above: Sustained territory lead",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 53,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 53,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
@@ -8444,17 +8191,6 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Scripted bot",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
    "text": "above: Queens killed",
    "extent": 132,
@@ -8564,28 +8300,6 @@
    "width": 320,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
    "rule": "part-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
    "text": "",
@@ -8599,29 +8313,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX Sustained territory lea",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8710,17 +8402,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8864,17 +8545,6 @@
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Qwen4 Max HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Scripted bot",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9028,29 +8698,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX Sustained territory lea",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9139,17 +8787,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9304,17 +8941,6 @@
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Qwen4 Max HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Scripted bot",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9433,53 +9059,9 @@
    "width": 390,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 133,
-   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX Sustained territory lea",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9568,17 +9150,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9711,17 +9282,6 @@
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Qwen4 Max HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Scripted bot",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9864,29 +9424,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra MAX Sustained territory lea",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9975,17 +9513,6 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   }

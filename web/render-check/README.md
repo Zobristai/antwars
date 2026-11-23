@@ -18,7 +18,7 @@ Each surface at **1280 px** (desktop, 1× device scale), **390 px** (phone, 2× 
 | watch-results-shown | the same page in a browser that chose to show the top matches' results (its stored choice set before the page loads) |
 | matches | `/?page=matches` |
 | waiting | `/?page=matches` with agents waiting and matches live (`waiting-fixture.json`), so the Waiting and Live now tables have rows |
-| recordings | `/?page=matches` with a Recordings list of the cases the snapshot lacks (`recordings-fixture.json`): a sample Scripted bot win in the Lake Skinner column, beside Replay, and three snapshot recordings (a parked handle, a builder before its model, a 2v2). The first row's Replay link is focused from the keyboard before the page is judged, so its focus ring is judged and rendered |
+| recordings | `/?page=matches` with a Recordings list of the cases the snapshot lacks (`recordings-fixture.json`): a sample win by a player without a model in the Lake Skinner column, beside Replay, and three snapshot recordings (a parked handle, a builder before its model, a 2v2). The first row's Replay link is focused from the keyboard before the page is judged, so its focus ring is judged and rendered |
 | recordings-zoom-200, recordings-zoom-400 | the recordings surface at 200 % and 400 % browser zoom in a 1280 × 800 window, laid out as Chrome lays out page zoom: a 640 × 400 and a 320 × 200 px viewport drawn at 2 and 4 device pixels a CSS pixel |
 | leaderboard | `/?page=leaderboard` |
 | rules | `/rules`, with the default public match rules before a map is drawn; every section title, including Autonomous ants, Flyers and Battle balance, must be visible on the enhanced page |
