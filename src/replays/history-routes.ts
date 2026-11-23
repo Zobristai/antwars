@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { peek } from "../net/relay.js";
 import type { MountHandler } from "../server.js";
 import { isReplayId } from "./access.js";
-import { validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
+import { USERS_SCAN_RECORDS, validHistoryPageToken, type HistoryPage, type HistorySource, type HistorySummary } from "./history-source.js";
 import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
@@ -216,6 +216,7 @@ const RECORD_IDLE_MS = 30_000;
 export interface HistoryRouteOptions {
   readonly ratings?: Pick<Ratings, "leaderboard">;
   readonly usersDeadlineMs?: number;
+  readonly usersNow?: () => number;
   readonly publicVisibility?: PublicVisibility;
   /** Longest a record download may go without handing the client a chunk; past it the download is dropped. */
   readonly recordIdleMs?: number;
@@ -303,7 +304,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
   for (let pages = 1; ; pages++) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
-    const served = await serveVisible(raw);
+    const served = await untilAborted(serveVisible(raw), signal);
     listed.push(...served.matches);
     if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
     if (listed.length >= PAGE_ROWS) {
@@ -343,50 +344,71 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
   const types = recordingMatchTypes(cached);
   const continuations = listingContinuations();
-  /** Listed rows' served values: type, lobby handles, then a source's corrections. A test match is left out. */
-  async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+  /** Test status and the served type come from the same sources in both public lists. */
+  async function nonTest(listed: HistoryPage): Promise<ServedPage> {
     const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id))]);
-    // A test match is never listed: its lobby is a test lobby, or its recording carries the test marker, which also
-    // covers a recording with no lobby record.
-    const typed = { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
+    return { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
+  }
+  async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+    const typed = await nonTest(listed);
     // A request that has ended starts no further lookups.
     signal.throwIfAborted();
     const filled = handles === undefined ? typed : await handles(typed);
     // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
     return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
   }
-  /** Both public listings use this exact filter and projection, including recording corrections. */
+  async function visibleRows<T extends HistorySummary>(rows: T[], signal: AbortSignal) {
+    signal.throwIfAborted();
+    return options.publicVisibility ? publiclyVisible(rows, row => options.publicVisibility!.replayVisible(row.id), signal) : rows;
+  }
   async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
-    const visible = options.publicVisibility ? await untilAborted(publiclyVisible(raw.matches, row => options.publicVisibility!.replayVisible(row.id), signal), signal) : raw.matches;
-    return untilAborted(serve({ ...raw, matches: visible }, signal), signal);
+    return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
   }
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
+
   async function* userBatches(signal: AbortSignal) {
     if (!source.scan) throw new Error("History scan unavailable");
+    let scanned = 0;
     for await (const batch of source.scan(signal)) {
-      // A few bounded parallel groups avoid serialising every visibility lookup on a large history.
-      const reads = [];
-      for (let i = 0; i < batch.length; i += 5) reads.push(serveVisible({ matches: batch.slice(i, i + 5), nextPageToken: null }, signal));
-      for (const page of await Promise.all(reads)) yield page.matches;
+      scanned += Math.max(1, batch.length);
+      if (scanned > USERS_SCAN_RECORDS) throw new Error("History scan record limit reached");
+      yield (await serveVisible({ matches: batch, nextPageToken: null }, signal)).matches;
     }
   }
-  type UsersRead = { controller: AbortController; result: ReturnType<typeof publicUsers>; waiters: number };
-  let building: UsersRead | undefined;
-  const usersDeadline = options.usersDeadlineMs ?? 240_000;
+  async function recheck(rows: TypedHistorySummary[], signal: AbortSignal) {
+    const visible = await visibleRows(rows, signal);
+    return (await nonTest({ matches: visible, nextPageToken: null })).matches;
+  }
+
+  const usersDeadline = options.usersDeadlineMs ?? 240_000, usersNow = options.usersNow ?? Date.now;
+  let snapshot: Buffer | undefined, expires = 0;
+  let flight: { reply: Promise<Buffer>; signal: AbortSignal; admissions: number } | undefined;
   async function users(signal: AbortSignal) {
-    if (!building) {
-      const controller = new AbortController();
-      const buildSignal = AbortSignal.any([controller.signal, AbortSignal.timeout(usersDeadline)]);
-      const result = untilAborted(publicUsers(userBatches(buildSignal), options.ratings, buildSignal), buildSignal);
-      building = { controller, result, waiters: 0 };
+    if (usersNow() < expires) {
+      if (snapshot) return snapshot;
+      throw new Error("Users listing temporarily unavailable");
     }
-    const build = building;
-    build.waiters++;
-    try { return await untilAborted(build.result, signal); }
-    finally {
-      if (--build.waiters === 0) { build.controller.abort(); building = undefined; }
+    if (!flight) {
+      snapshot = undefined;
+      // The build belongs to the listing, not to a client. Disconnects end only that client's wait.
+      const deadline = AbortSignal.timeout(usersDeadline);
+      const work = publicUsers(userBatches(deadline), options.ratings, deadline, recheck)
+        .then(rows => {
+          deadline.throwIfAborted();
+          snapshot = Buffer.from(JSON.stringify({ users: rows }));
+          return snapshot;
+        }).finally(() => {
+          // Release the slot only when work really settles (in particular, an outstanding ranking read).
+          // A failed build also waits one cache period before retrying. Never return expired data.
+          expires = usersNow() + 60_000;
+          flight = undefined;
+        });
+      flight = { reply: untilAborted(work, deadline), signal: deadline, admissions: 0 };
     }
+    flight.signal.throwIfAborted();
+    if (++flight.admissions > 128) throw new Error("Listing busy");
+    return untilAborted(flight.reply, signal);
   }
   const picks = options.topMatches ?? shippedTopMatchList();
   /** The listed records' complete summaries: a complete record is never replaced (records/record-store.ts save), so it is kept. */
@@ -445,7 +467,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     res.once("close", cancel);
     try {
       if (usersList) {
-        const body = Buffer.from(JSON.stringify({ users: await users(abort.signal) }));
+        const body = await users(abort.signal);
         if (res.destroyed) return;
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
         res.end(req.method === "HEAD" ? undefined : body);

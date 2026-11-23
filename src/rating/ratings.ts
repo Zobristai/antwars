@@ -195,6 +195,8 @@ export interface Ratings {
     readonly mode?: RankedMode; readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string;
     /** Also serve each row's model (LeaderboardEntry.model): the web page's read only, never the agents' tool. */
     readonly model?: boolean;
+    /** Optional read budget for a caller walking the whole ranking, including pages of filtered rows. */
+    readonly beforeStoragePage?: () => void;
   }): Promise<LeaderboardOutcome>;
 }
 
@@ -730,6 +732,7 @@ export function createRatings(
       // Storage boundaries stay internal. A public continuation names only a returned public row.
       try {
         while (publicRows.length <= limit) {
+          options.beforeStoragePage?.();
           const page = await store.query(collection, { orderBy, direction: "DESCENDING", limit: limit + 1, startAfter, readTime });
           readTime ??= page.readTime;
           // One read checks the whole page; rows are still taken in order and only up to the cut.

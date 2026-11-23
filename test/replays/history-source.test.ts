@@ -832,3 +832,10 @@ it("streams all summary batches from a single metadata traversal, reusing reads 
   expect(f.objects.length).toBe(21);
   expect(f.calls.filter(c => !c.url.includes("metadata.google.internal"))).toHaveLength(4);
 });
+
+it("bounds metadata traversal for Users even on empty storage pages with continuations", async () => {
+  let page = 0;
+  const f = await fixture(() => { throw Error("no record expected"); }, () => ({ nextPageToken: String(++page) }));
+  await expect(async () => { for await (const _ of f.source.scan!(signal())) throw Error("unexpected rows"); }).rejects.toThrow("page limit");
+  expect(page).toBe(8);
+});

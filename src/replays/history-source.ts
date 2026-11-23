@@ -37,6 +37,9 @@ export interface HistorySummary {
   colonyNames?: string[];
 }
 export interface HistoryPage { matches: HistorySummary[]; nextPageToken: string | null }
+/** A listing is complete or unavailable, never the first part of a longer history. */
+export const USERS_SCAN_RECORDS = 4096;
+const USERS_METADATA_PAGES = 8;
 export interface HistorySource {
   list(pageToken: string | undefined, signal: AbortSignal): Promise<HistoryPage>;
   /** All listing summaries in bounded batches, without repeatedly enumerating storage metadata. */
@@ -280,14 +283,13 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
     return body;
   }
   type Stored = { id: string; generation?: string };
-  async function* metadata(token: string, signal: AbortSignal, before?: string): AsyncGenerator<Stored> {
+  async function* metadata(token: string, signal: AbortSignal, before?: string, pageLimit = Infinity): AsyncGenerator<Stored> {
     const seen = new Set<string>();
     let providerToken: string | undefined;
-    // GCS has no descending listing. Scan metadata only, retaining 21 names
-    // (one lookahead), then read at most 20 records. Never parse all history.
-    // Every request shares the caller's whole-page deadline and cancellation.
+    // The recording page takes the newest names; the Users scan consumes metadata once.
     do {
       signal.throwIfAborted();
+      if (seen.size >= pageLimit) throw new Error("History scan page limit reached");
       // Saved records only: "*" never matches "/", so private/v1/*.sealed and .bin replays stay in storage.
       const response = await objects.call(objects.url(undefined, { maxResults: "1000", matchGlob: "*.json",
         fields: "items(name,generation),nextPageToken", endOffset: before && `${before}.json`, pageToken: providerToken }), { token, signal });
@@ -324,8 +326,9 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
   return {
     async *scan(signal) {
       const token = await metadataAccessToken(request, signal), read = summaries.beginPage();
-      let batch: Stored[] = [];
-      for await (const object of metadata(token, signal)) {
+      let batch: Stored[] = [], count = 0;
+      for await (const object of metadata(token, signal, undefined, USERS_METADATA_PAGES)) {
+        if (++count > USERS_SCAN_RECORDS) throw new Error("History scan record limit reached");
         batch.push(object);
         if (batch.length === 20) { yield await readBatch(batch, read, token, signal); batch = []; }
       }
