@@ -513,7 +513,6 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (max-width: 34.9375em) {
   .d1 { --d1-lane: 52px; --d1-tap: 44px; }
   .d1-hud { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 4px auto minmax(0, 1fr); }
-  .d1 .d1-top { padding: 0 2px 0 12px; gap: 8px; }
   .d1 .d1-top-credit { display: none; }
   .d1 .d1-home > .d2-wordmark { grid-row: 1 / 3; align-self: center; }
   .d1 .d1-top .d2-nav { margin-left: auto; }
@@ -576,7 +575,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-foot { padding: 4px 8px 8px; gap: 0 12px; flex-wrap: wrap; }
   .d1-foot .d2-link { min-height: 44px; }
   .d1-foot-credit { display: inline; margin-left: auto; font-size: 12px; }
-  .d1 .d1-dialog { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0; }
+  .d1 .d1-dialog:not(.d1-result-dialog) { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: 18px 18px 0 0; }
   .d1 .d1-dialog .aw-byoa-copy { min-height: 44px; padding: 0 20px; }
   .d1 .d1-dialog .d1-close { width: 44px; height: 44px; }
 }
@@ -1030,8 +1029,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   }
 }
 
-/* Under reader text-spacing overrides from 320 CSS px, allow text to wrap between words and whole gauge figures to move
-   to a further row when they no longer fit; at the page's own spacing every item stays on one line. */
+/* From 320 CSS px, allow these labels to wrap between words when needed, including at the page's own spacing.
+   Gauge figures move to another row when measured content no longer fits. */
 @media (min-width: 320px) {
   .score-band :is(.d1-clock, .d1-map-name, .d1-agent-button) { white-space: normal; }
   .score-band .aw-replay-state { white-space: normal; overflow-wrap: normal; word-break: normal; }
