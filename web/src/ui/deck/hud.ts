@@ -392,21 +392,24 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     if (!(r.width > 0 && r.bottom - top > 0)) return { x0: 0, y0: 0, x1: win.innerWidth, y1: win.innerHeight };
     return { x0: r.left, y0: top, x1: r.right, y1: r.bottom };
   }
-  // A legend that wraps to another line (a long recording's on a phone) moves the window's top: fit the board again.
+  // A legend that wraps to another line (a long recording's on a phone) or a replay state line in the lane moves the
+  // window's edge: fit the board again.
   let legendH = -1;
   let deckH = -1;
   let metadataH = -1;
   let footerH = -1;
+  let laneH = -1;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     const next = legendEl.offsetHeight;
-    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight;
-    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH)) scheduleRefit();
-    legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter;
+    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;
+    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();
+    legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter; laneH = nextLane;
   });
   watch?.observe(legendEl);
   watch?.observe(deckEl);
   watch?.observe(metadata);
   watch?.observe(foot);
+  watch?.observe(lane);
   listeners.push(() => { watch?.disconnect(); if (refit) win.cancelAnimationFrame(refit); });
 
   return {

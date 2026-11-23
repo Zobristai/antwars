@@ -145,12 +145,15 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* An explicit replay's own speed and position controls (replay-controls.ts), just before the board controls:
    pushed against them, 8px apart. */
 .d1-transport { display: flex; align-items: center; margin: 0 -4px 0 auto; }
-.d1 .aw-replay-controls { position: relative; display: flex; width: auto; min-width: 0; align-items: center; gap: 8px; height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 12px; color: var(--aw-ink); }
+.d1 .aw-replay-controls { position: relative; display: grid; grid-template-columns: auto auto auto; grid-template-rows: var(--d1-tap); width: auto; min-width: 0; max-width: 100%; align-items: center; gap: 0 8px; min-height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 12px; color: var(--aw-ink); }
+.d1 .aw-replay-controls:has(> .aw-replay-state:not(:empty)) { padding-bottom: 8px; border-radius: calc(var(--d1-tap) / 2); }
 .d1 .aw-replay-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--aw-ink-2); }
 .d1 .aw-replay-controls select { min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); color: var(--aw-ink); font: inherit; }
 .d1 .aw-replay-controls input { width: clamp(72px, 18vw, 280px); min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); margin: 0; accent-color: var(--aw-ink-bright); }
 .d1 .aw-replay-time { font-size: 12px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
-.d1 .aw-replay-state { position: absolute; min-height: 0; right: 12px; bottom: calc(100% + 4px); padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
+/* Replay status takes its own row inside the transport pill whenever it has text, so it never floats over
+   metadata or the board and never clips at the top of the stacked scroller. */
+.d1 .aw-replay-state { grid-column: 1 / -1; justify-self: start; min-width: 0; max-width: calc(100% - 6px); min-height: 0; margin-right: 6px; padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
 .d1 .aw-replay-state:empty { display: none; }
 /* A recording's Back to live, at the legend's end, as today's HUD offers it on its status line. */
 .d1-back { flex: none; margin-left: 10px; color: var(--aw-ink-bright); font-weight: 600; letter-spacing: 0; text-transform: none; text-underline-offset: 3px; }
@@ -527,8 +530,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-frame:has(> .d1-lane > .d1-transport:not([hidden])) { --d1-lane: calc(var(--d1-tap) * 2 + 16px); }
   .d1-lane:has(> .d1-transport:not([hidden])) { flex-wrap: wrap; align-content: center; row-gap: 4px; }
   .d1-transport { order: -1; flex: 1 1 100%; min-width: 0; margin: 0; }
-  .d1 .aw-replay-controls { flex: 1 1 auto; }
-  .d1 .aw-replay-controls input { flex: 1 1 0; width: auto; }
+  .d1 .aw-replay-controls { flex: 1 1 auto; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .d1 .aw-replay-controls input { width: 100%; }
   /* The team picker and four board buttons already use the phone's width. A present caption needs its own row;
      an empty caption keeps the original lane height. Replay transport remains on its existing row above it. */
   .d1-frame:has(.d1-caption:not([data-kind="none"])) { --d1-lane: calc(var(--d1-tap) * 2 + 16px); }
@@ -765,12 +768,13 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-detail-stat { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; }
 .sb-detail-stat > dd { margin: 0; }
 .score-band .d1-ml { overflow: visible; text-overflow: clip; }
-.score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) var(--d1-lane); }
+.score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) minmax(var(--d1-lane), auto); }
 .score-band .d1-frame > :not(.d1-legend) { grid-column: 1; }
 .sb-metadata { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px 4px; background: var(--aw-bg); z-index: 1; color: var(--aw-ink-2); font-size: 12px; pointer-events: auto; }
 .sb-meta-item { white-space: nowrap; }
 .score-band .d1-window { grid-row: 2; }
 .score-band .d1-lane { grid-row: 3; }
+.score-band .d1-frame > .d1-lane:has(.aw-replay-state:not(:empty)) { padding-block: var(--aw-space-1); }
 .score-band .d1-back { margin-left: auto; }
 .score-band .d1-legend { display: flex; white-space: nowrap; letter-spacing: .02em; }
 .score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
@@ -923,9 +927,10 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (max-width: 319.9px) {
   .score-band .d1-cap-what, .score-band .d1-cap-who { white-space: normal; overflow: visible; text-overflow: clip; }
   .score-band .d1-caption { align-items: start; }
-  .score-band .aw-replay-controls { flex-wrap: wrap; height: auto; min-height: var(--d1-tap); row-gap: var(--aw-space-1); padding-block: var(--aw-space-1); border-radius: 22px; }
+  .score-band .aw-replay-controls { display: flex; flex-wrap: wrap; height: auto; min-height: var(--d1-tap); row-gap: var(--aw-space-1); padding-block: var(--aw-space-1); border-radius: 22px; }
   .score-band .aw-replay-controls input { flex: 1 1 100%; order: 3; }
   .score-band .aw-replay-time { white-space: nowrap; }
+  .score-band .aw-replay-state { flex: 0 1 auto; order: 4; white-space: normal; overflow-wrap: normal; word-break: normal; }
   .score-band .sb-gauge .sb-values:not([hidden]):has(> .sb-figure.c2:not([hidden])) { display: flex; flex-wrap: wrap; column-gap: var(--aw-space-3); row-gap: 2px; }
   .score-band .d1-frame > .d1-legend {
     position: absolute; display: flex; top: calc(-1 * var(--d1-legend-half)); left: 4px; padding: 0 4px; white-space: nowrap;
@@ -936,6 +941,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
    to a further row when they no longer fit; at the page's own spacing every item stays on one line. */
 @media (min-width: 320px) {
   .score-band :is(.d1-clock, .d1-map-name, .d1-agent-button) { white-space: normal; }
+  .score-band .aw-replay-state { white-space: normal; overflow-wrap: normal; word-break: normal; }
   .score-band .d1-agent-button { text-align: center; }
   .score-band .sb-key .sb-key-term { display: inline-block; max-width: 100%; }
 }
