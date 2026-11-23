@@ -241,12 +241,13 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   }
 
   const rootPx = parseFloat(style(document.documentElement).fontSize);
-  // The Recordings and Top matches player names alone shorten as one run, never at normal text on
-  // screens 360 px and wider. A title alone, or overflow:hidden alone, does not make a cut intentional.
+  // At enlarged text both player names can shorten; at default text only narrow Top matches tiles can.
+  // A title alone, or overflow:hidden alone, does not make a cut intentional.
   const designedEnds = new Set<Element>();
   if (rootPx > 16 || vw < 360) {
     for (const run of document.querySelectorAll<HTMLElement>(
       ".d1p-rec-player > .d1p-rec-who > .d1p-rec-name.aw-cut, .aw-tile .aw-player > .aw-who > .aw-name.aw-cut")) {
+      if (rootPx <= 16 && run.matches(".d1p-rec-name")) continue;
       const cs = style(run);
       const parts = [...run.children].filter(p => !p.matches(".d1p-sr"));
       const words = parts.map(p => p.textContent).join("").trim();

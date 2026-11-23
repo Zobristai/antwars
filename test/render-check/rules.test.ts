@@ -170,7 +170,9 @@ describe("render check rules", () => {
     it.each(["tile", "recording"])("allows the %s name to shorten only as designed", async kind => {
       const tile = kind === "tile";
       expect(rules(await judged(run(tile), 390, 32))).toEqual([]);
-      expect(rules(await judged(run(tile), 320))).toEqual([]);
+      const narrow = rules(await judged(run(tile), 320));
+      if (tile) expect(narrow).toEqual([]);
+      else expect(narrow).toContain("clipped");
       expect(rules(await judged(run(tile), 390))).toContain("clipped");
       expect(rules(await judged(run(tile, "text-overflow:clip"), 390, 32))).toContain("clipped");
       expect(rules(await judged(run(tile, "", "Wrong name"), 390, 32))).toContain("clipped");
@@ -188,11 +190,11 @@ describe("render check rules", () => {
 
     it("still fails other cuts to a shortened name and an unrelated name", async () => {
       const nested = run(false).replace("<b>", '<b style="display:inline-block;width:20px;overflow:hidden">');
-      expect(rules(await judged(nested, 320))).toContain("clipped");
-      expect(rules(await judged(run(false, "height:8px"), 320))).toContain("clipped");
-      expect(rules(await judged(`<div style="overflow:hidden;width:50px">${run(false)}</div>`, 320))).toContain("clipped");
-      expect(rules(await judged(`<div style="margin-left:300px">${run(false)}</div>`, 320))).toContain("offscreen");
-      expect(rules(await judged(run(false).replace("d1p-rec-name", "d1p-name"), 320))).toContain("clipped");
+      expect(rules(await judged(nested, 320, 32))).toContain("clipped");
+      expect(rules(await judged(run(false, "height:8px"), 320, 32))).toContain("clipped");
+      expect(rules(await judged(`<div style="overflow:hidden;width:50px">${run(false)}</div>`, 320, 32))).toContain("clipped");
+      expect(rules(await judged(`<div style="margin-left:300px">${run(false)}</div>`, 320, 32))).toContain("offscreen");
+      expect(rules(await judged(run(false).replace("d1p-rec-name", "d1p-name"), 320, 32))).toContain("clipped");
     });
   });
 
