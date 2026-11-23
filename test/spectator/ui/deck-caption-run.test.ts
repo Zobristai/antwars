@@ -1,0 +1,156 @@
+// The 3D deck's board caption at 1280 px with 200% zoom (a 640 x 400 CSS px viewport): its event words and colony
+// shorten as one run ending in a single "…", its time and first word always show, and its whole text is its title and
+// accessible name. The deck HUD is mounted on the test port in its stacked form, written out as markup and laid out in
+// headless Chromium with the client's own stylesheets, in Roboto and in Liberation Sans. Not visual evidence.
+import { readFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { chromium, type Browser } from "playwright-core";
+import { Frame, type Board, type StoryEntry } from "../../../web/src/buffer.ts";
+import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
+import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
+import { mountDeckHud } from "../../../web/src/ui/deck/hud.ts";
+import type { HudActions, HudHost, HudView } from "../../../web/src/ui/types.ts";
+import { dom, type ElementPort } from "../pages/dom.ts";
+import { markup } from "./port-markup.ts";
+
+const file = (path: string) => readFileSync(new URL(path, import.meta.url));
+const STYLES = ["../../../web/src/design-system/tokens.css", "../../../web/src/ui/ui.css", "../../../web/src/ui/deck/deck.css"].map(path => file(path).toString("utf8")).join("\n");
+const ROBOTO = ([[400, "400Regular/Roboto_400Regular"], [600, "600SemiBold/Roboto_600SemiBold"], [700, "700Bold/Roboto_700Bold"]] as const)
+  .map(([weight, name]) => `@font-face{font-family:Roboto;font-weight:${weight};src:url(data:font/ttf;base64,${file(`../../../node_modules/@expo-google-fonts/roboto/${name}.ttf`).toString("base64")})}`).join("");
+const DRAWN = ["Lake Hodges Colony", "Lake Skinner Colony"] as const;
+const TICK = 6080;
+/** The longest event the caption can form on these names (overlays' overrun wording), and an ordinary one. */
+const LONG = "Overrun attempt on the Lake Skinner Colony queen — reached 100% at time-up";
+const SHORT = "Takes the territory lead";
+
+const queen = (colony: 0 | 1, tile: number): StreamQueen => ({ id: 0, colony, x: tile * SUB_TILE + 2, y: 20 * SUB_TILE + 2, foundedTick: 0, lostTick: null, overrun: 0, hp: 40000 });
+const agent = (colony: 0 | 1, name: string): StreamAgent => ({ identity: { displayName: name, elo: 1500 }, colony, modelLabel: "claude-sonnet-5", joinTick: 0, lastCallTick: TICK - 20, prevCallTick: TICK - 62, lastCommandTick: TICK - 30, order: "forage", orderX: 0, orderY: 0, intent: "" });
+
+/** An unrated match with the drawn pair whose one story entry is the caption's event at 10:07; none without one. */
+function frameOf(event: "long" | "short" | "none"): Frame {
+  const f = new Frame();
+  f.tick = TICK; f.targetMs = TICK * 100 + 60_000; f.match = 1;
+  f.ensure(0); f.count = 0;
+  const b: Board = {
+    setup: { mapW: 64, mapH: 48, ticksPerSecond: 10, matchTicks: 18000, idleTicks: 1800, overrunRadiusTiles: 3,
+      queens: [[8 * SUB_TILE, 20 * SUB_TILE], [50 * SUB_TILE, 20 * SUB_TILE]], rated: false, rules: "redesign", colonyNames: DRAWN },
+    queens: [queen(0, 8), queen(1, 50)],
+    territory: new Uint8Array(0), held: [500, 500], marks: [], agents: [agent(0, "fennec"), agent(1, "tidewater")],
+    overrun: [0, 0], overrunRequired: 100, deaths: [0, 0], result: null,
+    food: new Uint32Array(0), hatch: { cost: 3, intervalTicks: 20, cap: 512 },
+    stores: [{ food: 5, nextHatchTick: TICK + 10, nextCost: 3 }, { food: 5, nextHatchTick: TICK + 10, nextCost: 3 }],
+  };
+  f.board = b;
+  const entry: Record<typeof event, StoryEntry[]> = {
+    long: [{ id: 1, kind: "overrun", queenId: 0, tick: 6070, colony: 0, target: 1, agent: -1, x: 50, y: 20, endTick: 6075, peak: 100, required: 100, outcome: "unfinished" }],
+    short: [{ id: 1, kind: "lead", tick: 6070, colony: 0, agent: -1, x: 30, y: 20 }],
+    none: [],
+  };
+  f.story = entry[event];
+  return f;
+}
+
+const actions = { hover() {}, trails() {}, tilt() {}, focusMark() {}, select() {}, selectAgent() {}, openSheet() {}, pointOrder() {}, zoom() {}, wholeBoard() {} } as unknown as HudActions;
+const view = (frame: Frame) => ({ frame, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as unknown as HudView);
+
+/** The deck HUD in its stacked form (under 75em), painted with these frames in turn. */
+function mounted(...frames: Frame[]): { host: ElementPort; caption: ElementPort } {
+  const port = dom({ search: "", wide: false });
+  Object.assign(port.win.location, { href: "https://antwars.example/?replay=1", pathname: "/" });
+  const host = port.doc.createElement("div") as unknown as ElementPort;
+  port.body.append(host);
+  const hud = mountDeckHud({ doc: port.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
+  for (const frame of frames) hud.update(view(frame));
+  return { host, caption: host.byClass("d1-caption")[0]! };
+}
+
+describe("the deck caption's title", () => {
+  it("holds the whole caption, follows each change and clears with the caption", () => {
+    const port = mounted(frameOf("long"));
+    expect(port.caption.getAttribute("title")).toBe(`10:07 · ${LONG} · ${DRAWN[0]}`);
+    const changed = mounted(frameOf("long"), frameOf("short"));
+    expect(changed.caption.getAttribute("title")).toBe(`10:07 · ${SHORT} · ${DRAWN[0]}`);
+    const cleared = mounted(frameOf("long"), frameOf("none"));
+    expect(cleared.caption.dataset.kind).toBe("none");
+    expect(cleared.caption.hasAttribute("title")).toBe(false);
+  });
+});
+
+let browser: Browser;
+beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
+afterAll(async () => { await browser?.close(); });
+
+/** The caption and the board controls as laid out at 640 x 400, with what the pointer's tooltip is over each part. */
+async function laidOut(event: "long" | "short", font: string) {
+  const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
+  try {
+    await page.setContent(`<!doctype html><style>${ROBOTO}${STYLES}:root,.d1{--aw-sans:'${font}',sans-serif}</style><div class="aw-hud">${markup(mounted(frameOf(event)).host)}</div>`);
+    await page.evaluate(() => document.fonts.ready);
+    const lane = page.locator(".d1-lane");
+    await lane.scrollIntoViewIfNeeded();
+    const measured = await page.evaluate(() => {
+      const box = (el: Element | Range) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+      const cap = document.querySelector(".d1-caption")!, text = cap.querySelector<HTMLElement>(".d1-cap-text")!, what = cap.querySelector(".d1-cap-what")!;
+      const first = document.createRange();
+      const node = what.firstChild!;
+      first.setStart(node, 0);
+      first.setEnd(node, node.textContent!.indexOf(" "));
+      // Every box in the caption that shortens its text with an ellipsis and has text cut.
+      const cut = [...cap.querySelectorAll<HTMLElement>("*")].filter(el => {
+        const cs = getComputedStyle(el);
+        return cs.textOverflow === "ellipsis" && cs.overflowX === "hidden" && !["inline", "contents"].includes(cs.display) && el.scrollWidth > el.clientWidth + 0.5;
+      }).map(el => el.className);
+      return {
+        caption: box(cap), when: box(cap.querySelector(".d1-cap-when")!), text: box(text), firstWord: box(first), firstText: first.toString(),
+        textLines: new Set([...text.getClientRects()].map(r => Math.round(r.top))).size, whoLines: new Set([...cap.querySelector(".d1-cap-who")!.getClientRects()].map(r => Math.round(r.top))).size,
+        whatTop: box(what).top, cut, words: cap.textContent!.replace(/\s+/g, " "),
+        zoomIn: box(document.querySelector('.d1-btn[aria-label="Zoom in"]')!), board: box(document.querySelector(".d1-btn-board")!),
+      };
+    });
+    const tooltipAt = async (x: number, y: number) => {
+      await page.mouse.move(x, y);
+      return page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("[title]")?.getAttribute("title") ?? null, [x, y]);
+    };
+    const overTime = await tooltipAt(measured.when.left + 2, (measured.when.top + measured.when.bottom) / 2);
+    const name = page.locator(`.d1-cap-what [title="${colonyNameNote(DRAWN[1])}"]`);
+    const nameBox = await name.count() ? await name.boundingBox() : null;
+    const overName = nameBox && nameBox.x + 4 < measured.text.right ? await tooltipAt(nameBox.x + 4, nameBox.y + nameBox.height / 2) : null;
+    const named = await page.getByRole("status", { name: `10:07 · ${event === "long" ? LONG : SHORT} · ${DRAWN[0]}`, exact: true }).count();
+    return { ...measured, overTime, overName, named };
+  } finally { await page.close(); }
+}
+
+describe("the deck caption at 1280 px with 200% zoom", () => {
+  for (const font of ["Roboto", "Liberation Sans"]) {
+    it(`shortens an overlong caption to one line with its time, its first word and a single ellipsis, in ${font}`, async () => {
+      const m = await laidOut("long", font);
+      expect(m.textLines, "one line").toBe(1);
+      expect(m.cut, "one shortened run, not an ellipsis per part").toEqual(["d1-cap-text"]);
+      // The time first, whole, never shortened; the first word whole inside the run.
+      expect(m.when.right).toBeLessThanOrEqual(m.text.left);
+      expect(m.when.left).toBeGreaterThanOrEqual(m.caption.left);
+      expect(m.firstText).toBe("Overrun");
+      expect(m.firstWord.left).toBeGreaterThanOrEqual(m.text.left - 0.5);
+      expect(m.firstWord.right).toBeLessThanOrEqual(m.text.right + 0.5);
+      // The whole text: read out (words and colony apart), on hover and as the status region's name.
+      expect(m.words).toContain(`${LONG} ${DRAWN[0]}`);
+      expect(m.overTime).toBe(`10:07 · ${LONG} · ${DRAWN[0]}`);
+      expect(m.named).toBe(1);
+      // A drawn colony name still shows its own source note.
+      expect(m.overName).toBe(colonyNameNote(DRAWN[1]));
+      // The board controls stay whole and inside the frame's 628 px edge.
+      expect(m.zoomIn.right).toBeLessThanOrEqual(628);
+      expect(m.board.right).toBeLessThanOrEqual(628);
+      expect(m.board.left).toBeGreaterThanOrEqual(0);
+    });
+    it(`shows a caption that fits in full with its time first, in ${font}`, async () => {
+      const m = await laidOut("short", font);
+      expect(m.cut).toEqual([]);
+      expect(m.textLines).toBe(1);
+      expect(m.whoLines).toBe(1);
+      expect(m.when.right).toBeLessThanOrEqual(m.text.left);
+      expect(m.words).toContain(`${SHORT} ${DRAWN[0]}`);
+      expect(m.named).toBe(1);
+    });
+  }
+});

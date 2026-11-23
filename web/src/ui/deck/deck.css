@@ -123,11 +123,13 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   padding: 0 8px 0 12px; border-top: 1px solid var(--aw-line); border-radius: 0 0 14px 14px; background: var(--aw-surface); pointer-events: auto;
 }
 .d1-caption { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--d1-side, var(--aw-ink)); }
-.d1-cap-meta { display: contents; }
-.d1-cap-bar { flex: none; order: 0; width: 4px; height: 28px; border-radius: 2px; background: currentColor; }
-.d1-cap-when { flex: none; order: 1; font-size: 12px; font-weight: 600; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
-.d1-cap-what { order: 2; min-width: 0; font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.d1-cap-who { flex: none; order: 3; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
+.d1-cap-bar { flex: none; width: 4px; height: 28px; border-radius: 2px; background: currentColor; }
+.d1-cap-when { flex: none; font-size: 12px; font-weight: 600; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+/* The event's words and its colony shorten as one run: one line, cut at the last letter that fits, ending in a single
+   small "…" (in the run's own 12 px face). The time beside it never shortens; the caption's title holds the whole text. */
+.d1-cap-text { min-width: 0; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-cap-what { min-width: 0; font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-cap-who { margin-left: 7px; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
 .d1-cap-when:empty { display: none; }
 /* The fall: the queen lost, large, in the fallen colony's colour. */
 .d1-caption[data-kind="fall"] .d1-cap-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: currentColor; }
@@ -549,9 +551,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-cap-bar { grid-area: bar; height: 36px; align-self: center; }
   .d1-cap-what { grid-area: what; font-size: 14px; line-height: 18px; }
   .d1-cap-when { grid-area: when; font-size: 11px; }
-  .d1-cap-who { grid-area: who; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
-  .d1-cap-when:not(:empty) + .d1-cap-who { margin-left: -4px; }
-  .d1-cap-when:not(:empty) + .d1-cap-who::before { content: "· "; }
+  /* The run is not a box here: its words and its colony each keep their own row and their own ellipsis. */
+  .d1-cap-text { display: contents; }
+  .d1-cap-who { grid-area: who; min-width: 0; margin-left: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+  .d1-cap-when:not(:empty) + .d1-cap-text > .d1-cap-who { margin-left: -4px; }
+  .d1-cap-when:not(:empty) + .d1-cap-text > .d1-cap-who::before { content: "· "; }
   .d1-caption[data-kind="fall"] .d1-cap-what { font-size: 20px; line-height: 24px; }
   .d1-caption[data-kind="fall"] .d1-cap-who { font-size: 12px; }
   .d1-below { grid-column: 1; grid-row: 4; border-radius: 0; box-shadow: none; }
