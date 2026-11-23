@@ -71,6 +71,16 @@ describe("a top-match tile", () => {
     expect(link(tile).title).toBe(label);
   });
 
+  it("names a builder without a model on the tile and in the link label, with either result setting", () => {
+    const { doc } = dom();
+    const r = recording({ seats: [seat(0, 0, "wren"), seat(1, 1, "antwars/gpt-6-1-terra-max-fast")] });
+    for (const results of ["hidden", "shown"] as const) {
+      const tile = topMatchTile(doc, r, "", results) as unknown as ElementPort;
+      expect(tagged(tile, "b").map(text)).toEqual(["wren"]);
+      expect(link(tile).getAttribute("aria-label")).toContain("wren");
+    }
+  });
+
   it("shows a builder by its name exactly as stored, in bold before the model", () => {
     const { doc } = dom();
     const tile = topMatchTile(doc, recording({

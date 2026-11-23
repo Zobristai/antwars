@@ -251,21 +251,21 @@ describe("Recordings leave out test matches", () => {
   it("by its lobby or its recording's marker, with or without a lobby record, while a direct link still serves", async () => {
     const { store } = memoryWatchStore(), testRecordings = createTestRecordings(store);
     const testLobby = "2026-11-01T10-00-00-000Z-1", markedNoLobby = "2026-11-01T11-00-00-000Z-2", markedWithLobby = "2026-11-01T11-30-00-000Z-5";
-    const unrated = "2026-11-01T12-00-00-000Z-3", scriptedSeat = "2026-11-01T13-00-00-000Z-4", rated = "2026-11-01T14-00-00-000Z-6";
+    const unrated = "2026-11-01T12-00-00-000Z-3", noModel = "2026-11-01T13-00-00-000Z-4", rated = "2026-11-01T14-00-00-000Z-6";
     await testRecordings.mark(markedNoLobby);
     await testRecordings.mark(markedWithLobby);
     const rows = [row(testLobby), row(markedNoLobby), row(markedWithLobby), row(unrated),
-      // A seat with no model label (a scripted seat) does not make a match a test match.
-      row(scriptedSeat, [seat(0, "Scripted bot", null), seat(1, "beta", "m/b")]), row(rated, [seat(0, "Scripted bot", null), seat(1, "beta", "m/b")], true)];
+      // A seat with no model label does not make a match a test match.
+      row(noModel, [seat(0, "wren", null), seat(1, "beta", "m/b")]), row(rated, [seat(0, "wren", null), seat(1, "beta", "m/b")], true)];
     const lobbies: Record<string, RecordingLobby | null> = { [testLobby]: lobby(true), [markedNoLobby]: null, [markedWithLobby]: lobby(false),
-      [unrated]: lobby(false), [scriptedSeat]: null, [rated]: null };
+      [unrated]: lobby(false), [noModel]: null, [rated]: null };
     const routes = historyRoutes({
       list: async () => ({ matches: rows, nextPageToken: null }),
       open: async id => Readable.from([`{"format":"antwar.match","version":1,"id":${JSON.stringify(id)},"source":"match-log","status":"complete","events":[]}`]),
     }, async id => lobbies[id] ?? null, { testRecordings });
     const origin = await listen((req, res) => routes(req, res, undefined as never));
     const page = await (await fetch(`${origin}/matches`)).json();
-    expect(page.matches.map((match: HistorySummary) => match.id)).toEqual([unrated, scriptedSeat, rated]);
+    expect(page.matches.map((match: HistorySummary) => match.id)).toEqual([unrated, noModel, rated]);
     expect(JSON.stringify(page)).not.toContain(testLobby);
     expect(JSON.stringify(page)).not.toContain(markedNoLobby);
     for (const id of [testLobby, markedNoLobby]) {
