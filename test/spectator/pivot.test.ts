@@ -245,14 +245,15 @@ describe("flyers over water and rock", () => {
   const water = [2, 2, 2, 2] as const, rock = [6, 2, 2, 2, 1] as const;
   const inside = (x: number, y: number, [rx, ry, w, h]: readonly number[]) => x > rx + EPS && x < rx + w - EPS && y > ry + EPS && y < ry + h - EPS;
   /** One ant through these positions and flyer states, one per tick, on a board with one water and one rock rect. */
-  function flyerFixture(points: readonly (readonly [number, number])[], states: readonly (StreamFlyer | null)[]): StreamMessage[] {
+  function flyerFixture(points: readonly (readonly [number, number])[], states: readonly (StreamFlyer | null)[],
+    events: (tick: number) => StreamMessage["events"] = () => []): StreamMessage[] {
     const full = structuredClone(shipped[0]!.full!);
     full.setup.terrain = { mapId: "pivot-flyer-fixture", mapName: "Pivot flyer fixture", water: [water], rocks: [rock] };
     return points.map(([x, y], tick) => {
       const prev = points[Math.max(0, tick - 1)]!;
       const heading = x === prev[0] && y === prev[1] ? 0 : Math.round((Math.atan2(y - prev[1], x - prev[0]) / (2 * Math.PI) * 256 + 256) % 256);
       const flyer = states[tick]!;
-      return { tick, full: tick === 0 ? full : null, events: [], ants: { count: 1, id: Uint32Array.of(1),
+      return { tick, full: tick === 0 ? full : null, events: events(tick), ants: { count: 1, id: Uint32Array.of(1),
         x: Uint16Array.of(Math.round(x * SUB_TILE)), y: Uint16Array.of(Math.round(y * SUB_TILE)), heading: Uint8Array.of(heading),
         colony: Uint8Array.of(0), agent: Int16Array.of(-1), caste: Uint8Array.of(0), carrying: Uint8Array.of(0),
         ...(flyer ? { flyers: [flyer] } : {}) } };
@@ -288,6 +289,23 @@ describe("flyers over water and rock", () => {
     }
     expect(overWater).toBeGreaterThan(0);
     expect(overRock).toBeGreaterThan(0);
+  });
+
+  it("draws a flyer that takes off and lands in one step on its flight line, grounded at both ends", () => {
+    // One 0.71-tile flight step cutting the water's corner; grounded before it, locked out after it.
+    const hop = [[1.9, 2.4], [2.4, 1.9], [2.4, 1.9]] as const;
+    const states: StreamFlyer[] = [{ state: "grounded" }, { state: "lockedOut", takeOffTick: 31 }, { state: "lockedOut", takeOffTick: 31 }];
+    const at = (x: number, y: number) => ({ antId: 1, colony: 0 as const, x: Math.round(x * SUB_TILE), y: Math.round(y * SUB_TILE) });
+    const flew = drawn(flyerFixture(hop, states, (tick) => tick === 1
+      ? [{ kind: "takeoff", ...at(2.4, 1.9) }, { kind: "landing", ...at(2.4, 1.9) }] : []));
+    for (const s of flew) {
+      expect(Math.abs(s.x - s.rawX)).toBeLessThanOrEqual(EPS);
+      expect(Math.abs(s.y - s.rawY)).toBeLessThanOrEqual(EPS);
+    }
+    expect(flew.some(s => inside(s.x, s.y, water))).toBe(true);
+    // The same step with no flight in its message is a walk, routed around the water.
+    const walked = drawn(flyerFixture(hop, states));
+    for (const s of walked) expect(inside(s.x, s.y, water)).toBe(false);
   });
 
   it("still routes a walking ant and a landed flyer around water as before", () => {

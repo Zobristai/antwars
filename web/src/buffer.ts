@@ -148,6 +148,8 @@ interface Held {
   pulses: readonly QueenPulse[];
   /** Each ant biting a queen at this tick, and that queen's point (sub-tile units), for its body's facing. */
   queenTargets: ReadonlyMap<number, readonly [number, number]>;
+  /** Each flyer this message took off or landed, for its drawn flight line (pivot.ts). */
+  flown: ReadonlySet<number>;
   /** Combat target and legacy positional-steering history, not final drawn facing. */
   facing: ReadonlyMap<number, CombatFacing>;
 }
@@ -1197,7 +1199,9 @@ export class Playback {
         facing.set(id, { rotation, target: null });
       }
     }
-    this.held.push({ tick: m.tick, ants, index, trails, board, engagements, facing, pulses, queenTargets });
+    const flown = new Set<number>();
+    for (const e of m.events) if (e.kind === "takeoff" || e.kind === "landing") flown.add(e.antId);
+    this.held.push({ tick: m.tick, ants, index, trails, board, engagements, facing, pulses, queenTargets, flown });
   }
 
   /**
