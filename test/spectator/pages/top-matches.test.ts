@@ -105,7 +105,7 @@ describe("a top-match tile", () => {
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 2 per side"]);
     expect(tile.byClass("aw-player").map(p => p.classes().includes("is-team"))).toEqual([true, true]);
     expect(tile.byClass("aw-player").map(text)).toEqual(["K3.1 Pro Highspeedhigh", "GPT-6 Astramax"]);
-    expect(link(tile).getAttribute("aria-label")).toContain("K3.1 Pro Highspeed (high), 2 seats beat GPT-6 Astra (max, Fast), 2 seats");
+    expect(link(tile).getAttribute("aria-label")).toContain("K3.1 Pro Highspeed (high), 2 seats beat GPT-6 Astra (max, Fast, retired model), 2 seats");
   });
 
   it("keeps a side of three or four alike seats on one line, with one seat mark per seat", () => {
@@ -138,7 +138,7 @@ describe("a top-match tile", () => {
     expect(lines.map(line => tagged(line, "b").map(text))).toEqual([["Kain"], ["zed_7"]]);
     expect(lines.map(line => line.classes().includes("is-seats-2"))).toEqual([false, false]);
     expect(text(tile)).not.toMatch(/\+\d/);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+ and zed_7 \S+ beat GPT-6 Astra \(max, Fast\), 2 seats, Index · 2 per side,/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+ and zed_7 \S+ beat GPT-6 Astra \(max, Fast, retired model\), 2 seats, Index · 2 per side,/);
   });
 
   it("gives a seat group of two seats on such a side two seat rules and its count in the accessible name", () => {
@@ -152,7 +152,7 @@ describe("a top-match tile", () => {
     const lines = tile.byClass("aw-side")[0]!.byClass("aw-player");
     expect(lines.map(line => line.classes().includes("is-seats-2"))).toEqual([true, false]);
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 3 per side"]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+, 2 seats and zed_7 \S+ beat GPT-6 Astra \(max, Fast\), 3 seats,/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^Kain \S+, 2 seats and zed_7 \S+ beat GPT-6 Astra \(max, Fast, retired model\), 3 seats,/);
   });
 
   it("puts a 1v1's two lines and an alike team's two sides in the players block, the winner first", () => {
@@ -272,7 +272,7 @@ describe("a top-match tile with results hidden", () => {
     resultFree(tile);
     expect(tile.byClass("aw-player").map(text)).toEqual(["GPT-6 Astramax", "K3.1 Pro Highspeedhigh"]);
     expect(tile.byClass("aw-player").map(p => p.classes().includes("is-team"))).toEqual([true, true]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^GPT-6 Astra \(max, Fast\), 2 seats versus K3\.1 Pro Highspeed \(high\), 2 seats, Index · 2 per side, 11 Nov 2026$/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^GPT-6 Astra \(max, Fast, retired model\), 2 seats versus K3\.1 Pro Highspeed \(high\), 2 seats, Index · 2 per side, 11 Nov 2026$/);
   });
 
   it("puts a side whose seats differ in its colony's place, with no band", () => {
@@ -283,7 +283,7 @@ describe("a top-match tile with results hidden", () => {
     }));
     resultFree(tile);
     expect(rowKinds(tile)).toEqual(["aw-meta", "aw-player", "aw-side", "aw-date"]);
-    expect(link(tile).getAttribute("aria-label")).toMatch(/^GPT-6 Astra \(max, Fast\), 2 seats versus Kain \S+ and zed_7 \S+, Index · 2 per side, 11 Nov 2026$/);
+    expect(link(tile).getAttribute("aria-label")).toMatch(/^GPT-6 Astra \(max, Fast, retired model\), 2 seats versus Kain \S+ and zed_7 \S+, Index · 2 per side, 11 Nov 2026$/);
   });
 
   it("lists a free-for-all's colonies in colony order, none marked", () => {
