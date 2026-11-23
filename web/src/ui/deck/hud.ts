@@ -112,7 +112,9 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const teams = mountTeams(doc, actions, { search, economy: deck.economy, narrowScroller: below });
   const band = h(doc, "div", "sb-band");
   band.append(deck.header, deck.score);
-  deckEl.append(band, deck.columns, ...teams.teams, teams.historyStrip);
+  const table = h(doc, "div", "sb-deck-table");
+  table.append(deck.columns, ...teams.teams);
+  deckEl.append(band, table, teams.historyStrip);
   const deckEnd = h(doc, "div", "d1-deck-end");
   const foot = h(doc, "footer", "d1-foot");
   const rules = h(doc, "a", "d2-link", "Rules");

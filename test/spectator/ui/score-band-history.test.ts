@@ -33,12 +33,29 @@ const COLONIES = [
 const BADGE_SVG = `<svg width="14" height="14" viewBox="0 0 20 20"><rect x="1" y="1" width="18" height="18" rx="2.5" fill="#0b0907" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="currentColor"/></svg>`;
 const ORDER_SVG = `<svg width="13" height="13" viewBox="0 0 24 24"><path d="M13 3L5 14h6l-2 7 10-11h-6z" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 
-function desktopPageHtml(font: string, openCount: number, extraRows = 0): string {
-  const teams = COLONIES.map((col, i) => `
-    <section class="d1-team c${i}" style="--sb-ink:${col.ink}">
+function desktopPageHtml(
+  font: string,
+  openCount: number,
+  extraRows = 0,
+  opts: { visibleColonies?: number; agentsPerColony?: number; longAgents?: boolean } = {},
+): string {
+  const visibleColonies = opts.visibleColonies ?? COLONIES.length;
+  const agentsPerColony = opts.agentsPerColony ?? 1;
+  const longAgents = opts.longAgents ?? false;
+  const teams = COLONIES.map((col, i) => {
+    const seats = Array.from({ length: agentsPerColony }, () =>
+      `<button class="d1-member" type="button"><span class="sb-seat-badge">${BADGE_SVG}</span><span class="sb-idle"></span></button>`
+    ).join("");
+    const agentRows = Array.from({ length: agentsPerColony }, (_, a) => {
+      const title = longAgents ? `CompetitiveAgentHandleName_${i}_${a}__` : `Agent ${i + 1}`;
+      const model = longAgents ? `provider-org/very-long-model-identifier-version-2026-preview-0${a}` : `Model ${i + 1}`;
+      return `<li class="d1-agent-item c${i}"><button class="d1-agent" type="button"><span class="d1-who"><span class="d1-title-box"><span class="d1-title">${title}</span></span><span class="d1-model-box"><span class="d1-model">${model}</span></span></span></button></li>`;
+    }).join("");
+    return `
+    <section class="d1-team c${i}" style="--sb-ink:${col.ink}" ${i >= visibleColonies ? "hidden" : ""}>
       <div class="sb-identity">
-        <header class="d1-team-head"><h2 class="d1-name c${i}">${col.name}</h2><span class="d1-team-members"><button class="d1-member" type="button"><span class="sb-seat-badge">${BADGE_SVG}</span><span class="sb-idle"></span></button></span></header>
-        <ol class="d1-agents"><li class="d1-agent-item c${i}"><button class="d1-agent" type="button"><span class="d1-who"><span class="d1-title-box"><span class="d1-title">Agent ${i + 1}</span></span><span class="d1-model-box"><span class="d1-model">Model ${i + 1}</span></span></span></button></li></ol>
+        <header class="d1-team-head"><h2 class="d1-name c${i}">${col.name}</h2><span class="d1-team-members">${seats}</span></header>
+        <ol class="d1-agents">${agentRows}</ol>
       </div>
       <div class="d1-econ c${i} has-flyers">
         <div class="d1-cell sb-workers"><span class="d1-ml">Workers</span><span class="d1-mv">92</span></div>
@@ -52,7 +69,8 @@ function desktopPageHtml(font: string, openCount: number, extraRows = 0): string
       </div>
       <button class="sb-history" type="button" aria-controls="colony-history-${i}" aria-expanded="${i < openCount ? "true" : "false"}">≡</button>
     </section>
-  `).join("");
+  `;
+  }).join("");
 
   const stripCols = COLONIES.map((col, i) => {
     const filler = Array.from({ length: extraRows }, (_, k) =>
@@ -91,8 +109,10 @@ function desktopPageHtml(font: string, openCount: number, extraRows = 0): string
               <section class="sb-hold"><h3 class="d1-ml">Territory hold</h3><div class="sb-hold-value">—</div></section>
             </section>
           </div>
-          <div class="sb-columns"><span class="d1-ml">Colony</span><span class="d1-ml">Workers</span><span class="d1-ml">Soldiers</span><span class="d1-ml">Flyers</span><span class="d1-ml">Food</span><span class="d1-ml">Next spawn</span><span class="d1-ml">Ants</span><span class="d1-ml">Queens</span><span class="d1-ml">Queen kills</span><span class="d1-ml">History</span></div>
-          ${teams}
+          <div class="sb-deck-table">
+            <div class="sb-columns"><span class="d1-ml">Colony</span><span class="d1-ml">Workers</span><span class="d1-ml">Soldiers</span><span class="d1-ml">Flyers</span><span class="d1-ml">Food</span><span class="d1-ml">Next spawn</span><span class="d1-ml">Ants</span><span class="d1-ml">Queens</span><span class="d1-ml">Queen kills</span><span class="d1-ml">History</span></div>
+            ${teams}
+          </div>
           <div class="sb-history-strip" role="region" aria-label="History" ${openCount === 0 ? "hidden" : ""}>
             <h3 class="d1-kicker sb-history-strip-title">History</h3>
             <div class="sb-history-cols">${stripCols}</div>
@@ -158,10 +178,10 @@ describe("Score Band side-by-side History ledger", () => {
             await page.setContent(desktopPageHtml(font, 4, 24));
             await page.evaluate(() => document.fonts.ready);
             const m = await page.evaluate(() => {
+              const table = document.querySelector<HTMLElement>(".sb-deck-table")!;
               const strip = document.querySelector<HTMLElement>(".sb-history-strip")!;
               const frame = document.querySelector<HTMLElement>(".d1-frame")!;
               const legend = document.querySelector<HTMLElement>(".d1-legend")!;
-              const lastTeam = document.querySelector<HTMLElement>(".d1-team.c3")!;
               const openBtn = document.querySelector<HTMLElement>("button.sb-history[aria-expanded='true']")!;
               const closedClone = openBtn.cloneNode(true) as HTMLElement;
               closedClone.setAttribute("aria-expanded", "false");
@@ -174,7 +194,7 @@ describe("Score Band side-by-side History ledger", () => {
               const stripRect = strip.getBoundingClientRect();
               const frameRect = frame.getBoundingClientRect();
               const legendRect = legend.getBoundingClientRect();
-              const lastTeamRect = lastTeam.getBoundingClientRect();
+              const tableRect = table.getBoundingClientRect();
 
               const heads = [...strip.querySelectorAll<HTMLElement>(".sb-history-head")].map(h => {
                 const name = h.querySelector<HTMLElement>(".sb-history-col-name")!;
@@ -212,7 +232,7 @@ describe("Score Band side-by-side History ledger", () => {
                 frameH: Math.round(frameRect.height),
                 stripTop: Math.round(stripRect.top),
                 stripBottom: Math.round(stripRect.bottom),
-                lastTeamBottom: Math.round(lastTeamRect.bottom),
+                tableBottom: Math.round(tableRect.bottom),
                 legendTop: Math.round(legendRect.top),
                 openBg, openInk, closedBg,
                 heads, lists,
@@ -223,7 +243,7 @@ describe("Score Band side-by-side History ledger", () => {
             });
 
             expect(m.frameH, `${width}px ${font} df=${defaultFontSize}: board floor`).toBeGreaterThanOrEqual(244);
-            expect(m.stripTop).toBeGreaterThanOrEqual(m.lastTeamBottom - 1);
+            expect(m.stripTop).toBeGreaterThanOrEqual(m.tableBottom - 1);
             expect(m.stripBottom).toBeLessThanOrEqual(m.legendTop + 1);
             expect(m.openBg).not.toBe(m.closedBg);
             expect(m.openBg).toBe("rgb(248, 252, 252)");
@@ -243,6 +263,81 @@ describe("Score Band side-by-side History ledger", () => {
               expect(h.nameRight).toBeLessThanOrEqual(h.colRight + 1);
               expect(h.statRight).toBeLessThanOrEqual(h.colRight + 1);
             }
+          } finally { await page.close(); }
+        }
+      } finally { await browser.close(); }
+    }
+  }, 60_000);
+
+  it("keeps a usable scrollable desktop History strip and 244 px board floor when two colonies have 3–4 long multi-agent rows", async () => {
+    for (const defaultFontSize of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
+      try {
+        for (const agentsPerColony of [3, 4]) for (const width of [1200, 1280]) for (const font of ["Roboto", "Liberation Sans"]) {
+          const page = await browser.newPage({ viewport: { width, height: 800 } });
+          try {
+            await page.setContent(desktopPageHtml(font, 2, 24, { visibleColonies: 2, agentsPerColony, longAgents: true }));
+            await page.evaluate(() => document.fonts.ready);
+            const m = await page.evaluate(() => {
+              const table = document.querySelector<HTMLElement>(".sb-deck-table")!;
+              const strip = document.querySelector<HTMLElement>(".sb-history-strip")!;
+              const frame = document.querySelector<HTMLElement>(".d1-frame")!;
+              const legend = document.querySelector<HTMLElement>(".d1-legend")!;
+              const teams = [...table.querySelectorAll<HTMLElement>(".d1-team:not([hidden])")];
+              const teamOverlap = teams.some((t, i) => i > 0 && t.getBoundingClientRect().top < teams[i - 1]!.getBoundingClientRect().bottom - 0.5);
+              const colsLeft = table.querySelectorAll<HTMLElement>(".sb-columns > *")[1]!.getBoundingClientRect().left;
+              const cellLeft = teams[0]!.querySelector<HTMLElement>(".sb-workers")!.getBoundingClientRect().left;
+              const head = strip.querySelector<HTMLElement>(".sb-history-head")!;
+              const stripRect = strip.getBoundingClientRect();
+              const tableRect = table.getBoundingClientRect();
+              const frameRect = frame.getBoundingClientRect();
+              const legendRect = legend.getBoundingClientRect();
+              const headH = Math.round(head.getBoundingClientRect().height);
+
+              strip.scrollTop = 120;
+              const stripScrolled = strip.scrollTop;
+              const stickyAfter = Math.round(head.getBoundingClientRect().top);
+
+              table.scrollTop = table.scrollHeight;
+              const lastAgent = teams.at(-1)!.querySelectorAll<HTMLElement>(".d1-agent-item");
+              const lastAgentRect = lastAgent[lastAgent.length - 1]!.getBoundingClientRect();
+              const lastAgentVisible = lastAgentRect.bottom <= tableRect.bottom + 1 && lastAgentRect.top >= tableRect.top - 1;
+
+              return {
+                frameH: Math.round(frameRect.height),
+                stripClientH: strip.clientHeight,
+                stripScrollH: strip.scrollHeight,
+                visibleRowH: strip.clientHeight - headH,
+                stripScrolled,
+                stickyDelta: Math.abs(stickyAfter - Math.round(stripRect.top)),
+                stripTop: Math.round(stripRect.top),
+                stripBottom: Math.round(stripRect.bottom),
+                tableBottom: Math.round(tableRect.bottom),
+                tableScrollable: table.scrollHeight > table.clientHeight,
+                tableClientH: table.clientHeight,
+                legendTop: Math.round(legendRect.top),
+                teamOverlap,
+                lastAgentVisible,
+                colAlign: Math.abs(Math.round(colsLeft - cellLeft)),
+                pageW: document.documentElement.scrollWidth,
+              };
+            });
+
+            const tag = `${agentsPerColony}a ${width}px ${font} df=${defaultFontSize}`;
+            expect(m.frameH, `${tag}: board floor`).toBeGreaterThanOrEqual(244);
+            expect(m.stripClientH, `${tag}: usable strip height`).toBeGreaterThanOrEqual(70);
+            expect(m.visibleRowH, `${tag}: visible row viewport`).toBeGreaterThanOrEqual(40);
+            expect(m.stripScrollH, `${tag}: scrollable history`).toBeGreaterThan(m.stripClientH);
+            expect(m.stripScrolled, `${tag}: scrolls history`).toBeGreaterThan(0);
+            expect(m.stickyDelta, `${tag}: sticky header`).toBeLessThanOrEqual(2);
+            expect(m.stripTop, `${tag}: strip below table`).toBeGreaterThanOrEqual(m.tableBottom - 1);
+            expect(m.stripBottom, `${tag}: strip above legend`).toBeLessThanOrEqual(m.legendTop + 1);
+            expect(m.tableClientH, `${tag}: table usable`).toBeGreaterThanOrEqual(88);
+            expect(m.tableScrollable, `${tag}: table scrolls`).toBe(true);
+            expect(m.teamOverlap, `${tag}: no team overlap`).toBe(false);
+            expect(m.lastAgentVisible, `${tag}: last agent reachable`).toBe(true);
+            expect(m.colAlign, `${tag}: columns aligned`).toBeLessThanOrEqual(1);
+            expect(m.pageW, `${tag}: no horizontal overflow`).toBe(width);
           } finally { await page.close(); }
         }
       } finally { await browser.close(); }
@@ -429,6 +524,9 @@ describe("Score Band side-by-side History ledger", () => {
     const hud = mountDeckHud({ doc: hudPort.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
     hud.update({ frame: makeFrame(1), connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView);
     expect(host.byClass("sb-history-strip")).toHaveLength(1);
+    expect(host.byClass("sb-deck-table")).toHaveLength(1);
+    expect(host.byClass("sb-deck-table")[0]!.byClass("sb-columns")).toHaveLength(1);
+    expect(host.byClass("sb-deck-table")[0]!.byClass("d1-team")).toHaveLength(4);
     hud.destroy();
     teams.destroy();
   });

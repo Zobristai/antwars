@@ -158,7 +158,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     player.append(playerName, playerTags, playerElo, playerSeats, playerResult);
     // Hidden until a colony has one player holding several seats (writePlayer).
     setHidden(player, true);
-    head.append(name, members);
+    head.append(name, members, player);
     // The agents: one small row each under the colony name, its badge, name, model and rating; none for one
     // player, whose heading names it once.
     const rows = h(doc, "ol", "d1-agents");
@@ -183,7 +183,6 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     setHidden(stickyBar, true);
     const identity = h(doc, "div", "sb-identity");
     identity.append(head, rows);
-    identity.insertBefore(player, rows);
     const historyButton = h(doc, "button", "sb-history");
     historyButton.type = "button";
     historyButton.textContent = "≡";
@@ -250,12 +249,14 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     for (const team of teamNodes) {
       if (wide) {
         setHidden(team.stickyBar, true);
+        if (team.player.parentElement !== team.head) team.head.insertBefore(team.player, team.out.parentElement === team.head ? team.out : null);
         if (team.head.parentElement !== team.identity) team.identity.prepend(team.head);
         if (team.historyButton.parentElement !== team.section) team.section.append(team.historyButton);
         if (team.line.parentElement !== historyCols) historyCols.append(team.line);
       } else {
         setHidden(team.stickyBar, false);
         if (team.head.parentElement !== team.stickyBar) team.stickyBar.append(team.head);
+        if (team.player.parentElement !== team.identity) team.identity.insertBefore(team.player, team.rows);
         if (team.historyButton.parentElement !== team.stickyBar) team.stickyBar.append(team.historyButton);
         if (team.stickyBar.parentElement !== team.section) team.section.prepend(team.stickyBar);
         if (team.line.parentElement !== team.section) team.section.append(team.line);

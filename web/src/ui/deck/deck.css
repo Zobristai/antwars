@@ -707,7 +707,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-holder { color: var(--sb-ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .sb-hold-value { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--sb-ink); white-space: nowrap; }
 .sb-columns { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; padding: 6px 0; border-block: 1px solid var(--d1-hair); }
-.score-band .d1-team { display: grid; grid-column: 1 / -1; grid-row: auto; grid-template-columns: subgrid; grid-template-areas: none; gap: 0 8px; align-items: center; padding: 6px 0; border-top: 0; border-bottom: 1px solid var(--d1-hair); overflow: visible; container-type: normal; }
+.score-band .d1-team { display: grid; grid-column: 1 / -1; grid-row: auto; grid-template-columns: subgrid; grid-template-areas: none; gap: 0 8px; align-items: center; min-height: auto; padding: 6px 0; border-top: 0; border-bottom: 1px solid var(--d1-hair); overflow: visible; container-type: normal; }
 .score-band .d1-team:last-of-type { border-bottom: 0; }
 .score-band .d1-team.c0 { --sb-ink: var(--aw-k0, var(--aw-c0)); grid-area: auto; grid-column: 1 / -1; }
 .score-band .d1-team.c1 { --sb-ink: var(--aw-k1, var(--aw-c1)); grid-area: auto; grid-column: 1 / -1; }
@@ -783,10 +783,28 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
     grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);
     min-height: 0;
   }
+  .score-band .d1-deck:has(> .sb-deck-table) {
+    display: flex; flex-direction: column;
+  }
+  .score-band .d1-deck:has(> .sb-deck-table) > .sb-band { flex: 0 0 auto; }
+  .sb-deck-table {
+    display: grid; grid-template-columns: var(--sb-columns); gap: 0 8px;
+    flex: 0 1 auto; min-height: auto;
+  }
+  /* When open History and tall multi-agent colony rows compete for the space above the 244 px board floor,
+     let the History strip shrink first to its reserved floor and scroll the colony table above it. */
+  .score-band .d1-deck:has(> .sb-history-strip:not([hidden])) > .sb-deck-table {
+    min-height: 88px; padding-inline: 4px; margin-inline: -4px;
+    overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent;
+  }
+  .score-band .d1-deck:has(> .sb-history-strip:not([hidden])) > .sb-deck-table > .sb-columns {
+    position: sticky; top: 0; z-index: 1; background: var(--aw-surface);
+  }
   .sb-history-strip {
     grid-column: 1 / -1; grid-row: 7; display: grid; grid-template-columns: auto minmax(0, 1fr);
     align-items: start; column-gap: 12px; margin-top: 0; padding-top: 0; border-top: 1px solid var(--d1-hair);
-    min-height: 0; max-height: 280px; overflow-y: auto; overflow-x: hidden; overflow-anchor: auto;
+    flex: 0 9999 auto; min-height: 76px; max-height: 280px; overflow-y: auto; overflow-x: hidden; overflow-anchor: auto;
     scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent;
   }
   .sb-history-strip-title { position: sticky; top: 0; z-index: 1; background: var(--aw-surface); padding: 6px 0 2px; white-space: nowrap; overflow-anchor: none; }
@@ -838,6 +856,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-below { display: block; grid-row: 5; overflow-y: auto; overflow-anchor: auto; background: var(--aw-surface); min-height: 0; pointer-events: auto; }
   .score-band .d1-deck, .score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) { display: flex; flex-direction: column; gap: 0; padding: 0 8px; border-radius: 0; box-shadow: none; }
   .sb-band { display: contents; }
+  .sb-deck-table { display: contents; }
   .sb-clock-map { display: flex; flex-direction: row; align-items: baseline; justify-content: space-between; padding: 12px 0; border: 0; gap: 8px; }
   .sb-columns { display: none; }
   .score-band .d1-team { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 12px 6px; padding: 12px 0; border-top: 1px solid var(--d1-hair); border-bottom: 0; }
