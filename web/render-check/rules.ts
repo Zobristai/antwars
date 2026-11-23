@@ -5,7 +5,7 @@
  *
  * Fails:
  * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings;
- *   every label, button and table heading, wherever it stands and however long) laid out on 2+ rendered lines,
+ *   every label, button, table heading and designated one-line title, wherever it stands and however long) laid out on 2+ rendered lines,
  *   explicit breaks included. A part positioned out of the line (a tooltip) is not a line; a heading cell built of
  *   stacked blocks (a date over its time) is judged block by block. A row of icon-only items (a colony's seat badges:
  *   no text, two or more images or controls holding one) is a one-line item too, even as controls allowed to wrap
@@ -165,7 +165,10 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   // it stands (inside a paragraph too) and however long its text: those are one line by what they are, not by where they
   // are or how much they say. The cards' state line (p.d1p-state: web/src/pages/chrome.ts stateLine) is a paragraph
   // but a one-line item, not running text.
-  const ONE_LINE = "label, th, button, [role=button], p.d1p-state";
+  // Section titles on Rules and the Watch title (docs/design-system.md, Layout rules) stay on one line even if
+  // a badge or a block inside the heading moves to a second line. Other headings may be running text.
+  const ONE_LINE_TITLE = 'h3.d1p-rule-title, [data-page="watch"] h1.d1p-title';
+  const ONE_LINE = `label, th, button, [role=button], p.d1p-state, ${ONE_LINE_TITLE}`;
   const painted = (c: string) => c !== "" && c !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(c);
   /**
    * A badge (a tag, chip or pill): an inline box drawn as a unit of its own, with its own background or border. It is
@@ -207,7 +210,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     const oneLine = oneLineItem(el);
     const icons = iconRow(el);
     if ((cs.display === "inline" && !oneLine) || cs.display === "contents" || (!el.textContent?.trim() && !icons) || !shown(el)) continue;
-    if (!icons && !lineable(el, true)) continue;
+    if (!icons && !el.matches(ONE_LINE_TITLE) && !lineable(el, true)) continue;
     // Inside an item it is part of that item's line, unless positioned out of it (a panel laid over a line).
     if (!oneLine && withinLine(el)) continue;
     isItem.add(el);

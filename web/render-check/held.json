@@ -3661,7 +3661,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 5236,
+   "extent": 8055,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
   {
@@ -3693,7 +3693,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 52,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
@@ -3716,7 +3716,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 5404,
+   "extent": 8271,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
   {
@@ -3748,7 +3748,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 51,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
@@ -3771,7 +3771,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 5220,
+   "extent": 8023,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -3803,7 +3803,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 43,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -3826,7 +3826,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 5412,
+   "extent": 8239,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -3858,7 +3858,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 41,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -3881,7 +3881,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 11588,
+   "extent": 17323,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -3913,7 +3913,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 41,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -3936,7 +3936,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 11564,
+   "extent": 17299,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -3968,7 +3968,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 40,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -3991,7 +3991,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 11628,
+   "extent": 17383,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -4023,7 +4023,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 43,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -4046,7 +4046,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 11604,
+   "extent": 17359,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -4078,7 +4078,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 41,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -4101,7 +4101,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 9236,
+   "extent": 13867,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
   {
@@ -4133,7 +4133,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 41,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
@@ -4156,7 +4156,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 9164,
+   "extent": 13675,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
   {
@@ -4188,7 +4188,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 40,
    "why": "The Rules page's reading cards (section.d1p-card) hold different amounts of text, so they differ in height and in parts; on main before this check."
   },
@@ -4211,7 +4211,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 9276,
+   "extent": 13927,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -4243,7 +4243,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 43,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -4266,7 +4266,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 9204,
+   "extent": 13735,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -4298,7 +4298,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
-   "text": "START HERE HOW TO WIN Overrun every enemy queen: hold an enemy majority near her",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
    "extent": 41,
    "why": "Already on main when this coverage was added to the render check."
   },
