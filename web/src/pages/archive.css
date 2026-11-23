@@ -450,8 +450,8 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rule { margin: 0 var(--d1p-inset); padding: 24px 0 22px; border-top: 1px solid var(--aw-line); scroll-margin-top: 64px; }
 .d1p-rules-kicker + .d1p-rule { border-top: 0; }
 .d1p-rule-title { margin-bottom: 12px; font-size: var(--aw-text-title); font-weight: var(--aw-bold); line-height: var(--aw-lh-title); letter-spacing: var(--aw-track-title); text-transform: uppercase; color: var(--aw-ink-bright); }
-/* These four titles cannot hold one line on a phone at doubled text, so they keep their px size until they have their own design. */
-.d1p-rule:is(#d1-food-and-hatching, #d1-thoughts-and-marks, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 15px; line-height: 20px; }
+/* These six titles cannot hold one line on a phone at doubled text, so they keep their px size until they have their own design. */
+.d1p-rule:is(#d1-food-and-hatching, #d1-autonomous-ants, #d1-thoughts-and-marks, #d1-battle-balance, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 15px; line-height: 20px; }
 .d1p-rule p { max-width: 600px; font-size: 15px; line-height: 24px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
 .d1p-rule p + p { margin-top: 12px; }
 .d1p-win li { position: relative; max-width: 600px; padding-left: 18px; font-size: 17px; line-height: 26px; color: var(--aw-ink-bright); }
@@ -463,10 +463,14 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; width: 100%; max-width: calc(var(--d1p-content) + 2 * var(--d1p-pad)); min-height: 36px; margin: 40px auto 0; padding: 0 var(--d1p-pad) 20px; font-size: var(--aw-text-meta); }
 .d1p .d1p-foot-current, .d1p .d1p-foot-current:hover { color: var(--aw-ink-bright); text-decoration: none; }
 .d1p-end:not([hidden]) + .d1p-foot { margin-top: 0; }
-/* Where the footer is under 19em wide (a 320 px phone with doubled text, or zoom), its links stand 8 px from the window's
-   edges, the design system's narrow page edge (page-edge.css), so "Inspired by @LambethEthan" keeps one line. */
+/* Where the footer is under 19em wide (a phone with doubled text, or zoom), its links stand 8 px from the window's
+   edges (page-edge.css); under 12em (a 320 px phone with doubled text, or zoom), 4 px (--aw-space-1), so
+   "Inspired by @LambethEthan" keeps one line in every face. */
 @media (width < 19em) {
   .d1p .d1p-foot { padding-inline: var(--aw-space-2); }
+}
+@media (width < 12em) {
+  .d1p .d1p-foot { padding-inline: var(--aw-space-1); }
 }
 
 /* ---------------------------------------------------------------- Rules' index above its cards under 65.5rem */
@@ -487,7 +491,7 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-main { padding-top: 24px; }
   .d1p-title, .d1p-card-title { font-size: var(--aw-text-lead); }
   .d1p-rule-title { font-size: var(--aw-text-lead); }
-  .d1p-rule:is(#d1-food-and-hatching, #d1-thoughts-and-marks, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 14px; }
+  .d1p-rule:is(#d1-food-and-hatching, #d1-autonomous-ants, #d1-thoughts-and-marks, #d1-battle-balance, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 14px; }
   .d1p-card:has(.d1p-lb, .d1p-lb-rows) .d1p-card-title, .d1p[data-page="leaderboard"] .d1p-title { font-size: 14px; }
   .d1p-lead { margin-top: 10px; }
   /* The board choice takes the band's whole width, its groups one over the other, each size a quarter of it. */
