@@ -9,14 +9,17 @@ import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../w
 import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
 import { heldFrom, judge, markdown, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
+import { rulesConfig } from "../../src/sim/config.ts";
+import { newMatchConfig } from "../../src/sim/gridScale.ts";
+import { ruleSections } from "../../web/rules.ts";
 import { RESULTS_KEY } from "../../web/src/pages/top-matches.ts";
-import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, createGate, hudOnScreen, playRecording, saveInvalidEvidence, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
+import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, createGate, hudOnScreen, playRecording, rulesSectionsProblem, saveInvalidEvidence, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
 afterAll(async () => { await browser?.close(); });
 
-const BASE = "<style>body{margin:0;font:16px/20px monospace} p{margin:0} .tile{border:1px solid #888;padding:4px} .grid{display:grid;grid-template-columns:repeat(2,150px);gap:8px}</style>";
+const BASE = "<style>body{margin:0;font:16px/20px 'Liberation Mono',monospace} p{margin:0} .tile{border:1px solid #888;padding:4px} .grid{display:grid;grid-template-columns:repeat(2,150px);gap:8px}</style>";
 
 async function judged(body: string, width = 400): Promise<PageJudgement> {
   const page = await browser.newPage({ viewport: { width, height: 600 } });
@@ -32,6 +35,38 @@ describe("render check rules", () => {
     expect(rules(await judged('<div style="width:100px"><span>Riverbank GPT-6.1 Sol</span></div>'))).toContain("wrap");
     expect(rules(await judged('<div style="width:300px"><span>Riverbank GPT-6.1 Sol</span></div>'))).not.toContain("wrap");
     expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines.</p>'))).not.toContain("wrap");
+  });
+
+  it("judges Rules section titles as one line, including their in-flow children, but lets ordinary headings and prose wrap", async () => {
+    const section = (style: string, title = "Autonomous ants") => `<section class="d1p-rule" id="d1-autonomous-ants" aria-labelledby="d1-autonomous-ants-title">`
+      + `<h3 class="d1p-rule-title" id="d1-autonomous-ants-title" style="${style}">${title}</h3>`
+      + '<p style="width:60px">How an ant finds its way.</p></section>';
+    const wraps = (j: PageJudgement) => j.failures.filter(f => f.rule === "wrap").map(f => f.element);
+    const titleElement = "section.d1p-rule > h3.d1p-rule-title";
+    expect(wraps(await judged(section("width:120px")))).toEqual([titleElement]);
+    expect(wraps(await judged(section("width:320px")))).toEqual([]);
+    expect(wraps(await judged(section("width:320px", 'Autonomous <span style="display:block">ants</span>')))).toEqual([titleElement]);
+    expect(wraps(await judged(section("width:120px", 'Autonomous <span style="display:inline-block;border:1px solid">ants</span>')))).toEqual([titleElement]);
+    const clipped = await judged(section("width:90px;white-space:nowrap;overflow:hidden"));
+    expect(clipped.failures).toContainEqual(expect.objectContaining({ rule: "clipped", element: titleElement }));
+    const headings = (page: string) => `<main data-page="${page}" style="width:100px"><h1 class="d1p-title">Top matches</h1><h2 class="d1p-card-title">Ranking card</h2></main>`;
+    expect(wraps(await judged(headings("watch")))).toEqual(["main > h1.d1p-title"]);
+    expect(wraps(await judged(headings("leaderboard")))).toEqual([]);
+  });
+
+  it("requires the redesign sections to be shown as Rules headings, not just listed in the index", async () => {
+    const page = await browser.newPage();
+    try {
+      const sections = ruleSections(newMatchConfig(rulesConfig("redesign")), { undrawn: true });
+      await page.setContent(sections.map(({ title }) => `<a>${title}</a><section class="d1p-rule"><h3 class="d1p-rule-title">${title}</h3></section>`).join(""));
+      expect(await rulesSectionsProblem(page)).toBeNull();
+      for (const title of ["Autonomous ants", "Flyers", "Battle balance"]) {
+        const heading = page.locator("h3").filter({ hasText: title });
+        await heading.evaluate(el => el.setAttribute("hidden", ""));
+        expect(await rulesSectionsProblem(page)).toBe(`Rules section titles not shown: ${title}`);
+        await heading.evaluate(el => el.removeAttribute("hidden"));
+      }
+    } finally { await page.close(); }
   });
 
   it("fails a card's state line that wraps: it is a paragraph, but a one-line item", async () => {
