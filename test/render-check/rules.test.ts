@@ -10,7 +10,7 @@ import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, text
 import { heldFrom, judge, markdown, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
 import { RESULTS_KEY } from "../../web/src/pages/top-matches.ts";
-import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, hudOnScreen, playRecording, saveInvalidEvidence, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
+import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, createGate, hudOnScreen, playRecording, saveInvalidEvidence, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
@@ -415,6 +415,22 @@ describe("render check widths and doubled text", () => {
 });
 
 describe("render check replay readiness", () => {
+  it("shares one replay permit, transfers it to queued work, and releases it after errors", async () => {
+    const gate = createGate(1);
+    const order: number[] = [];
+    let active = 0, maxActive = 0;
+    const job = (id: number, fails = false) => gate(async () => {
+      active++; maxActive = Math.max(maxActive, active); order.push(id);
+      try { await Promise.resolve(); if (fails) throw new Error("failed replay"); return id; }
+      finally { active--; }
+    });
+    const results = await Promise.allSettled([job(1), job(2, true), job(3), job(4)]);
+    expect(maxActive).toBe(1);
+    expect(order).toEqual([1, 2, 3, 4]);
+    expect(results.map(r => r.status)).toEqual(["fulfilled", "rejected", "fulfilled", "fulfilled"]);
+    expect(await job(5)).toBe(5);
+  });
+
   const replay = SURFACES.find(s => s.id === "replay-free-for-all")!;
   const watch = SURFACES.find(s => s.id === "watch")!;
   const played: Playback = { startTick: 6_000, playbackTick: 6_040, playbackMs: 604_000, hud: "shown", error: null };

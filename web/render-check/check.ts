@@ -522,15 +522,17 @@ interface Options {
 }
 
 /** A bounded permit gate so software-rendered 3D replays stay capped while lightweight DOM surfaces run in parallel. */
-function createGate(limit: number): <T>(fn: () => Promise<T>) => Promise<T> {
+export function createGate(limit: number): <T>(fn: () => Promise<T>) => Promise<T> {
   let active = 0;
   const queue: (() => void)[] = [];
   return async <T>(fn: () => Promise<T>): Promise<T> => {
     if (active >= limit) await new Promise<void>(res => queue.push(res));
-    active++;
+    else active++;
     try { return await fn(); } finally {
-      active--;
-      queue.shift()?.();
+      const next = queue.shift();
+      // Transfer the occupied permit directly to a waiter; a new arrival cannot steal it before that waiter resumes.
+      if (next) next();
+      else active--;
     }
   };
 }
@@ -552,10 +554,10 @@ async function renderAll(o: Options): Promise<Render[]> {
     jobs.push({ width, textSize, surface });
   }
   const perBrowser = o.record ? 1 : Math.max(1, Math.min(2, Math.floor(availableParallelism() / TYPEFACES.length)));
+  const boardGate = createGate(1); // Shared across both typeface browsers; all other surfaces remain parallel.
   const renderTypeface = async (typeface: (typeof TYPEFACES)[number]): Promise<Render[]> => {
     const conf = await fontconfigFor(typeface, fontRoot);
     const out: Render[] = Array.from({ length: jobs.length });
-    const boardGate = createGate(1);
     let browser: Browser | null = null;
     try {
       browser = await chromium.launch({ executablePath: o.chrome, args: CHROMIUM_FLAGS, env: { ...process.env, FONTCONFIG_FILE: conf } });
