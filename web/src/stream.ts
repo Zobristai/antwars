@@ -9,7 +9,7 @@
  *   messages, the first a full snapshot), handed to the buffer one tick of
  *   client time apart, for the bench and whole-match capture.
  */
-import { decodeMessage, type StreamMessage } from "../../src/live/format.ts";
+import { decodeMessage, LIVE_OPT_INS, type StreamMessage } from "../../src/live/format.ts";
 import { unpackMessages } from "../../src/live/snapshot.ts";
 
 export type Sink = (message: StreamMessage) => void;
@@ -126,10 +126,10 @@ export function openLive(path: string, sink: Sink, onState: (s: LinkState) => vo
     const my = gen;
     let draining = false;
     report("connecting");
-    // Old open tabs omit this opt-in and keep receiving the earlier wire format.
+    // Old open tabs omit these opt-ins and keep receiving the earlier wire format.
     const [route, query = ""] = path.split("?", 2);
     const params = new URLSearchParams(query);
-    params.set("kills", "1");
+    for (const optIn of LIVE_OPT_INS) params.set(optIn, "1");
     const source = open(`${route}?${params}`);
     es = source;
     source.onopen = () => {

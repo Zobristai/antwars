@@ -144,4 +144,24 @@ describe("retired models on the Leaderboard", () => {
     expect(p.cards()[0]!.names).toEqual(["Qwen4 Max", "GPT-6.2 Astra"]);
     p.dispose();
   });
+
+  it("hides retired gpt-6-astra behind Show retired and reveals its rating and badges when switched on", async () => {
+    vi.resetModules();
+    const p = await open([
+      { displayName: "antwars/claude-opus-5-5", rating: 1712.4, rd: 61, ratedMatches: 40, thinkingLevel: "high", benchmark: true },
+      { displayName: "antwars/gpt-6-astra", rating: 1693, rd: 68, ratedMatches: 25, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
+      { displayName: "antwars/gpt-6-luna", rating: 1650, rd: 70, ratedMatches: 20, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
+    ]);
+    const hidden = p.cards()[0]!;
+    expect(hidden.names).toEqual(["Claude Opus 5.5", "GPT-6 Luna"]);
+    expect(hidden.cells.map(row => row[0])).toEqual(["1", "2"]);
+    expect(hidden.count).toBe("2 shown");
+    await p.turn(p.switches()[0]!, true);
+    const shown = p.cards()[0]!;
+    expect(shown.names).toEqual(["Claude Opus 5.5", "GPT-6 Astra", "GPT-6 Luna"]);
+    expect(shown.named[1]).toBe("GPT-6 Astra [max] [Fast] [retired]");
+    expect([shown.cells[1]![0], shown.cells[1]![2], shown.cells[1]![3]]).toEqual(["2", "1693 ± 68", "25"]);
+    expect(shown.count).toBe("3 shown");
+    p.dispose();
+  });
 });
