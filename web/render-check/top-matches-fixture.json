@@ -377,7 +377,7 @@
      "modelLabel": "openai/gpt-6.1-terra",
      "thinkingLevel": "high",
      "serviceTier": "fast",
-     "handle": "kain",
+     "handle": "folio",
      "startRating": {
       "rating": 1500,
       "rd": 350,
@@ -418,7 +418,7 @@
      "modelLabel": "openai/gpt-6.1-terra",
      "thinkingLevel": "max",
      "serviceTier": "fast",
-     "handle": "kain",
+     "handle": "folio",
      "startRating": null
     }
    ],
