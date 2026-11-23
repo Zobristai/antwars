@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
 import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
@@ -499,16 +499,18 @@ describe("render check replay readiness", () => {
 
   it("retains the comparison images and clipping measurements of an invalid HUD", async () => {
     const dir = await mkdtemp(join(tmpdir(), "render-invalid-"));
-    const page = await browser.newPage();
+    const page = await browser.newPage({ viewport: { width: 320, height: 180 } });
     try {
-      await page.setContent('<div style="position:fixed;inset:0;clip-path:inset(40px 0 0 0)"><div class="d1-hud" style="position:fixed;inset:0"><b>Score Band</b><p style="margin-top:50px">Clock</p></div></div>');
+      // The clock still paints a solid patch below the cut, independently of its font.
+      await page.setContent('<div style="position:fixed;inset:0;clip-path:inset(40px 0 0 0)"><div class="d1-hud" style="position:fixed;inset:0"><b>Score Band</b><p style="margin-top:50px;width:40px;background:#ddd">Clock</p></div></div>');
       const evidence: RenderEvidence = { clipState: await captureClipState(page), comparisons: [] };
       expect(await hudOnScreen(page, evidence)).toBe("clipped");
       const ref = await saveInvalidEvidence(dir, "replay-320-32px-roboto", ["HUD clipped"], evidence);
       const saved = JSON.parse(await readFile(join(dir, ref), "utf8"));
       expect(saved.invalid).toEqual(["HUD clipped"]);
+      expect(saved.measurements.unclipped.verdict).toBe("clipped");
       expect(saved.clipState.chain).toEqual(expect.arrayContaining([expect.objectContaining({ clipPath: "inset(40px 0px 0px)" })]));
-      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "unclipped"]);
+      expect(saved.comparisons.map((c: { kind: string }) => c.kind)).toEqual(["hidden", "hidden", "hidden", "unclipped", "unclipped", "unclipped"]);
       for (const c of saved.comparisons) for (const file of Object.values(c.files) as string[]) {
         expect((await readFile(join(dir, "invalid-evidence", file))).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
       }
@@ -519,17 +521,65 @@ describe("render check replay readiness", () => {
     } finally { await page.close(); await rm(dir, { recursive: true, force: true }); }
   });
 
+  it("does not count a one-pixel change in the hidden shot as paint from a covered HUD", async () => {
+    const page = await browser.newPage({ viewport: { width: 320, height: 180 } });
+    try {
+      await page.setContent('<div class="d1-hud">Score Band</div><div id="board" style="position:fixed;inset:0;background:#123"></div>');
+      const capture = page.screenshot.bind(page);
+      let planted = false;
+      vi.spyOn(page, "screenshot").mockImplementation(async options => {
+        const hidden = await page.locator(".d1-hud").evaluate(e => getComputedStyle(e).visibility === "hidden");
+        if (planted || !hidden) return capture(options);
+        planted = true;
+        const dot = await page.addStyleTag({ content: "#board::after {content:'';position:absolute;left:0;top:0;width:1px;height:1px;background:white}" });
+        try { return await capture(options); } finally { await dot.evaluate(e => (e as Element).remove()); }
+      });
+      const evidence: RenderEvidence = { comparisons: [] };
+      expect(await hudOnScreen(page, evidence)).toBe("screen not still");
+      expect(planted).toBe(true);
+      expect(evidence.measurements?.hidden).toMatchObject({ stableDifferences: 0, alteredVariablePixels: 1 });
+      const [noisy, clean] = evidence.comparisons;
+      expect(noisy!.before!.equals(noisy!.after!)).toBe(true);
+      expect(noisy!.before!.equals(noisy!.altered!)).toBe(false);
+      expect(clean!.before!.equals(clean!.altered!)).toBe(true);
+    } finally { await page.close(); }
+  });
+
+  it("requires more than one percent of the device pixels even for a visibly painted tiny HUD", async () => {
+    const page = await browser.newPage({ viewport: { width: 100, height: 100 }, deviceScaleFactor: 2 });
+    try {
+      await page.setContent('<div class="d1-hud" style="width:9px;height:10px;background:black"></div>');
+      const evidence: RenderEvidence = { comparisons: [] };
+      expect(await hudOnScreen(page, evidence)).toBe("insufficient HUD paint");
+      expect(evidence.measurements?.hidden).toMatchObject({ width: 200, height: 200, pixelLimit: 400, stableDifferences: 360, variablePixels: 0 });
+    } finally { await page.close(); }
+  });
+
+  it.each(["clip-path:inset(0 1px 0 0)", "mask-image:linear-gradient(to right, black 31px, transparent 31px)"])(
+    "detects a single device pixel removed by %s", async css => {
+      const page = await browser.newPage({ viewport: { width: 80, height: 32 }, deviceScaleFactor: 1 });
+      try {
+        // Only the 1px dot paints in the rightmost column. A separate square proves visibility.
+        await page.setContent(`<div class="d1-hud" style="position:fixed;left:0;top:0;width:32px;height:20px;${css}">
+          <div style="width:20px;height:20px;background:black"></div>
+          <div style="position:absolute;right:0;top:0;width:1px;height:1px;background:black"></div></div>`);
+        const evidence: RenderEvidence = { comparisons: [] };
+        expect(await hudOnScreen(page, evidence)).toBe("clipped");
+        expect(evidence.measurements?.unclipped).toMatchObject({ stableDifferences: 1, variablePixels: 0 });
+      } finally { await page.close(); }
+    });
+
   it("does not compare unclipped screenshots when the HUD and its ancestors have no clip or mask", async () => {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ viewport: { width: 320, height: 180 } });
     try {
       await page.setContent('<div class="d1-hud" style="position:fixed;inset:0;background:#333;color:white">Score Band</div>');
       const evidence: RenderEvidence = { comparisons: [] };
       expect(await hudOnScreen(page, evidence)).toBe("shown");
-      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden"]);
+      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden", "hidden"]);
       await page.setContent('<div style="position:fixed;left:0;top:0;width:300px;height:30px;overflow:hidden;transform:translateZ(0)"><div class="d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;background:#333;color:white">Score Band</div></div>');
       const overflowEvidence: RenderEvidence = { comparisons: [] };
       await hudOnScreen(page, overflowEvidence);
-      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "unclipped"]);
+      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "hidden", "hidden", "unclipped", "unclipped", "unclipped"]);
     } finally { await page.close(); }
   });
 
@@ -544,7 +594,7 @@ describe("render check replay readiness", () => {
 
   it("makes a ready replay invalid unless its recording plays and its HUD is shown", async () => {
     const ready: BoardReadiness = { state: "ready" };
-    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px">Score Band</div>';
+    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px;background:#eee">Score Band</div>';
     expect(boardProblem(replay, ready, null)).toMatch(/recording was never played/);
     expect(boardProblem(replay, ready, await play(0, hud))).toMatch(/did not play: the board was still at its first tick \(0\)/);
     expect(boardProblem(replay, ready, await play(1, hud, "This recording is damaged."))).toMatch(/failed while playing \(This recording is damaged\.\)/);
@@ -562,7 +612,7 @@ describe("render check replay readiness", () => {
 
   it("makes a replay invalid when it stays at its own first tick, which is not tick 0", async () => {
     const ready: BoardReadiness = { state: "ready" };
-    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px">Score Band</div>';
+    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px;background:#eee">Score Band</div>';
     // An excerpt that starts 6000 ticks into its match and never moves.
     const frozen = await play(0, hud, null, 6_000);
     expect(frozen).toMatchObject({ startTick: 6_000, playbackTick: 6_000 });
@@ -578,7 +628,7 @@ describe("render check replay readiness", () => {
 
   it("makes a ready replay invalid when its HUD is boxed and visible but nothing of it reaches the screen", async () => {
     const ready: BoardReadiness = { state: "ready" };
-    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px">Score Band</div>';
+    const hud = '<div class="d1 d1-hud" style="width:300px;height:80px;background:#eee">Score Band</div>';
     expect(boardProblem(replay, ready, await play(1, `<div style="clip-path:inset(100%)">${hud}</div>`))).toMatch(/no match HUD was shown/);
     expect(boardProblem(replay, ready, await play(1, `<div style="height:0;overflow:hidden">${hud}</div>`))).toMatch(/its match HUD was cut/);
     expect(boardProblem(replay, ready, await play(1, `${hud}<div style="position:fixed;inset:0;background:#123">board</div>`))).toMatch(/no match HUD was shown/);
@@ -587,7 +637,7 @@ describe("render check replay readiness", () => {
 
   it("makes a ready replay invalid when part of its HUD is clipped away, by the HUD or an element containing it", async () => {
     const ready: BoardReadiness = { state: "ready" };
-    const hud = '<div class="d1 d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px"><b>Score Band</b><p style="margin:40px 0 0">Clock 1:00</p></div>';
+    const hud = '<div class="d1 d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;background:#eee"><b>Score Band</b><p style="margin:40px 0 0">Clock 1:00</p></div>';
     const cut = /its match HUD was cut/;
     expect(boardProblem(replay, ready, await play(1, `<div style="position:fixed;inset:0;clip-path:inset(40px 0 0 0)">${hud}</div>`))).toMatch(cut);
     expect(boardProblem(replay, ready, await play(1, hud.replace("height:80px", "height:80px;clip-path:inset(0 0 60% 0)")))).toMatch(cut);
@@ -598,7 +648,7 @@ describe("render check replay readiness", () => {
 
   it("judges the HUD on the HUD alone while the board keeps animating", async () => {
     const ready: BoardReadiness = { state: "ready" };
-    const hud = '<div class="d1 d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px">Score Band</div>';
+    const hud = '<div class="d1 d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;background:#eee">Score Band</div>';
     const board = '<div id="b" style="position:fixed;left:0;top:100px;width:200px;height:200px"></div>';
     // A board drawn every animation frame, and one drawn by a timer, which holding frames does not stop.
     const byFrame = `${board}<script>let n = 0; const f = () => { b.style.background = "#" + (n++ % 4096).toString(16).padStart(3, "0"); requestAnimationFrame(f); }; requestAnimationFrame(f);</script>`;
