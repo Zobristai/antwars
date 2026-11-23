@@ -146,7 +146,7 @@
    then gives each line 150 px, and the longest 2v2 line keeps its one line. */
 @media (max-width: 11.999em) {
   .d1p[data-page="watch"] { --d1p-pad: 0px; }
-  .d1p[data-page="watch"] :is(.d1p-band, .aw-after, .aw-status, .d1p-end, .d1p-foot) { padding-left: var(--aw-space-2); padding-right: var(--aw-space-2); }
+  .d1p[data-page="watch"] :is(.d1p-band, .aw-after, .aw-status, .d1p-end) { padding-left: var(--aw-space-2); padding-right: var(--aw-space-2); }
   .aw-tile { padding-right: 2px; border-width: 1px 0; border-radius: 0; }
   .aw-player { column-gap: var(--aw-space-1); }
   .aw-player.is-winner, .aw-player.is-team, .aw-side { margin-right: -2px; }

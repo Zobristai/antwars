@@ -362,7 +362,7 @@ describe("capture and frame wiring", () => {
     const beforeRender = src.slice(src.indexOf("const step ="), src.indexOf("if (render) {"));
     for (const update of ["food.update(shown, tilePx)", "markers.update(shown, toScreenRef)", "battles.update(shown, tilePx)", "ants.update(shown, selected"]) expect(beforeRender).toContain(update);
     expect(beforeRender).toContain("const selected = squads.selected");
-    expect(src).toContain("pixi.stage.addChild(markers.layer, words.layer");
+    expect(src).toContain("pixi.stage.addChild(markers.layer, cues.layer, words.layer");
     expect(src).toContain("placeMarks: markers.shown");
     expect(src).toContain("focusAt:");
   });

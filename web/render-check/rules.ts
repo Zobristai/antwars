@@ -7,7 +7,8 @@
  * - wrap: a one-line item (a block holding only inline content, or a row of flex items, outside prose and headings;
  *   every label, button and table heading, wherever it stands and however long) laid out on 2+ rendered lines,
  *   explicit breaks included. A part positioned out of the line (a tooltip) is not a line; a heading cell built of
- *   stacked blocks (a date over its time) is judged block by block
+ *   stacked blocks (a date over its time) is judged block by block. A row of icon-only items (a colony's seat badges:
+ *   no text, two or more images or controls holding one) is a one-line item too, even as controls allowed to wrap
  * - clipped / cut / offscreen: text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport's
  *   sides; an image, board or control cut by an overflow box or the viewport. Each axis is judged on its own: a box
  *   that scrolls on an axis cuts nothing on it (the reader scrolls), and past it the content counts where scrolling
@@ -177,7 +178,21 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       && cs.getPropertyValue(`border-${side}-style`) !== "none" && painted(cs.getPropertyValue(`border-${side}-color`)));
     return painted(cs.backgroundColor) || cs.backgroundImage !== "none" || border;
   };
-  const oneLineItem = (el: Element) => el.matches(ONE_LINE) || badge(el);
+  /**
+   * A row of icon-only items (a colony's seat badges): no text of its own, laid out as a row (a row of flex items, or
+   * a box whose children are all inline), and two or more shown in-flow children, each an image or holding one and no
+   * text. It is one line by what it is, like a label, however its items are built inside and whether or not they are
+   * controls allowed to wrap: its icons are judged as its line. Icons stacked as blocks on purpose are not a row.
+   */
+  const iconRow = (el: Element): boolean => {
+    if (el.textContent?.trim()) return false;
+    const cs = style(el);
+    if (!(inline(cs.display) || cs.display === "block" || rowFlex(cs)) || cs.display === "contents") return false;
+    const row = rowFlex(cs);
+    const parts = [...el.children].filter(c => !outOfFlow(c) && shown(c));
+    return parts.length >= 2 && parts.every(c => (row || inline(style(c).display)) && (c.matches("img, svg") || c.querySelector("img, svg") !== null));
+  };
+  const oneLineItem = (el: Element) => el.matches(ONE_LINE) || badge(el) || iconRow(el);
   const items: Element[] = [];
   const isItem = new Set<Element>();
   const withinLine = (el: Element) => {
@@ -190,8 +205,9 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   for (const el of all) {
     const cs = style(el);
     const oneLine = oneLineItem(el);
-    if ((cs.display === "inline" && !oneLine) || cs.display === "contents" || !el.textContent?.trim() || !shown(el)) continue;
-    if (!lineable(el, true)) continue;
+    const icons = iconRow(el);
+    if ((cs.display === "inline" && !oneLine) || cs.display === "contents" || (!el.textContent?.trim() && !icons) || !shown(el)) continue;
+    if (!icons && !lineable(el, true)) continue;
     // Inside an item it is part of that item's line, unless positioned out of it (a panel laid over a line).
     if (!oneLine && withinLine(el)) continue;
     isItem.add(el);
