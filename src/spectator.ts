@@ -12,7 +12,7 @@ import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { DEFAULT_LIVE_CONFIG, type LiveConfig } from "./live/config.js";
-import type { StreamIdentity } from "./live/format.js";
+import { LIVE_OPT_INS, type StreamIdentity } from "./live/format.js";
 import { SPECTATOR_SAVE_META_BYTES } from "./live/handover.js";
 import { LiveHub, type LiveClock } from "./live/hub.js";
 import type { MatchAccess } from "./live/match-access.js";
@@ -137,7 +137,9 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   if (localMatch) server.mount(LOCAL_WATCH_PATH, (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== LOCAL_WATCH_PATH) { res.writeHead(404).end(); return; }
-    req.url = url.searchParams.get("kills") === "1" ? "/live/current?kills=1" : "/live/current";
+    const optIns = new URLSearchParams();
+    for (const optIn of LIVE_OPT_INS) if (url.searchParams.get(optIn) === "1") optIns.set(optIn, "1");
+    req.url = optIns.size ? `/live/current?${optIns}` : "/live/current";
     return hub.handle(req, res);
   });
   if (options.accounts && options.watchRegistry) server.mount("/watch", watchRoutes({ accounts: options.accounts, registry: options.watchRegistry,

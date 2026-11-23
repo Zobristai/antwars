@@ -72,7 +72,7 @@ async function* localMessages(response: Response, decode: (bytes: Uint8Array) =>
   }
 }
 
-it.each(["?kills=1", "", "?kills=0"])("keeps local four-colony telemetry negotiated through the route rewrite (%s)", async query => {
+it.each(["?kills=1&queenBites=1", "?queenBites=1", "?kills=1", "", "?kills=0"])("keeps local four-colony telemetry negotiated through the route rewrite (%s)", async query => {
   server = await startSpectatedServer({ port: 0, host: "127.0.0.1", dataDir: tempDir(),
     ...comparisonOptions({ ANTWAR_RULES: "redesign", ANTWAR_PLAYERS: "2" }, DEFAULT_MCP_CONFIG) },
     { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
@@ -86,19 +86,24 @@ it.each(["?kills=1", "", "?kills=0"])("keeps local four-colony telemetry negotia
   const abort = new AbortController(); readers.push(abort);
   const response = await fetch(`http://127.0.0.1:${server.port}/watch/live/local${query}`, { signal: abort.signal });
   expect(response.status).toBe(200);
-  const optedIn = query === "?kills=1";
-  const messages = localMessages(response, optedIn ? decodeMessage : oldDecode);
+  const optedIn = query.startsWith("?kills=1"), queenBites = query.includes("queenBites=1");
+  const messages = localMessages(response, optedIn || queenBites ? decodeMessage : oldDecode);
   try {
     const opening = (await messages.next()).value!;
     expect(opening.full!.setup.colonies).toBe(4);
     expect(opening.full!.kills).toEqual(optedIn ? [0, 7, 14, 21] : undefined);
     state.colonies[0]!.kills = 3;
     const out = step(state, []);
+    // A labelled queen-bites record on this step: an ant of colony 1 biting colony 0's queen.
+    const biter = out.state.ants.find(ant => ant.colony === 1)!;
+    out.events.push({ type: "queen_bites", tick: out.state.tick - 1, colony: 0, queenId: 0, tileX: 0, tileY: 0, biters: [biter.id], targetId: null });
     server.hub.pushTick(1, out);
     const delta = (await messages.next()).value!;
     expect(delta.tick).toBe(out.state.tick);
     expect(delta.full).toBeNull();
     expect(delta.events.filter(event => event.kind === "kills")).toEqual(optedIn
       ? [{ kind: "kills", totals: out.state.colonies.map(colony => colony.kills ?? 0) }] : []);
+    expect(delta.events.filter(event => event.kind === "queenBites")).toEqual(queenBites
+      ? [{ kind: "queenBites", colony: 0, queenId: 0, biters: [biter.id], targetId: null }] : []);
   } finally { await messages.return(); }
 }, 30_000);

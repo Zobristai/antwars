@@ -69,8 +69,9 @@ describe("board masks", () => {
     await useIcons("test-only"); expect(iconMasks().version).toBeGreaterThan(version);
     const empty = { board: null, story: [], targetMs: 0, hits: [], lossShown: new Map() } as unknown as Frame;
     markers.update(empty, (_x, _y, out) => { out.x = 0; out.y = 0; });
-    expect(holders[1]!.children).toHaveLength(2);
-    expect(holders[1]!.children.map(s => (s as Sprite).tint)).toEqual([0xffb000, 0x00c2ff]);
+    // Each colony's emblem, then its held-lit emblem (QUEEN_LIT), both with the crown in the colony's colour.
+    expect(holders[1]!.children).toHaveLength(4);
+    expect(holders[1]!.children.map(s => (s as Sprite).tint)).toEqual([0xffb000, 0xffb000, 0x00c2ff, 0x00c2ff]);
     const textures = (markers as unknown as { textures: Record<string, Texture> }).textures;
     expect(new Set(Object.values(textures).map(t => t.source)).size).toBe(1);
     await useIcons(null); markers.update(empty, () => {});
@@ -85,15 +86,16 @@ describe("board masks", () => {
     });
     await useIcons("test-only");
     const markers = new BoardMarkers3D({ generateTexture, resolution: 1 } as unknown as Renderer, 4);
-    expect(crowns[0]).toEqual([0, 1, 2, 3].map(colonyTint));
-    expect(widths[0]).toBe(7 * 128);
+    expect(crowns[0]).toEqual([0, 1, 2, 3].flatMap(c => [colonyTint(c), colonyTint(c)]));
+    // Seven cells as before, then the four held-lit emblems.
+    expect(widths[0]).toBe(11 * 128);
     const textures = (markers as unknown as { textures: Record<string, Texture> }).textures;
-    expect(Object.keys(textures)).toEqual(["ring", "dot", "line", "queen0", "queen1", "queen2", "queen3"]);
+    expect(Object.keys(textures)).toEqual(["ring", "dot", "line", "queen0", "queen1", "queen2", "queen3", "lit0", "lit1", "lit2", "lit3"]);
     expect(new Set(Object.values(textures).map(t => t.source)).size).toBe(1);
-    // A two-colony match's atlas is the one it always was: two emblems, five cells.
+    // A two-colony match's atlas keeps its cells where they always were, the held-lit emblems at the four-colony places.
     new BoardMarkers3D({ generateTexture, resolution: 1 } as unknown as Renderer);
-    expect(crowns[1]).toEqual([0, 1].map(colonyTint));
-    expect(widths[1]).toBe(5 * 128);
+    expect(crowns[1]).toEqual([0, 1].flatMap(c => [colonyTint(c), colonyTint(c)]));
+    expect(widths[1]).toBe(9 * 128);
   });
   it("routes marks and board castes through the ready mask without removing ring geometry", async () => {
     await useIcons("test-only");
@@ -150,10 +152,10 @@ describe("board masks", () => {
     const empty = { board: null, story: [], targetMs: 0, hits: [], lossShown: new Map() } as unknown as Frame;
     const pending = useIcons("crown-only"); await Promise.resolve(); await Promise.resolve();
     markers.update(empty, () => {});
-    expect(layers.at(-1)).toEqual([0xffb000, 0x00c2ff]);
+    expect(layers.at(-1)).toEqual([0xffb000, 0xffb000, 0x00c2ff, 0x00c2ff]);
     finishSecond(Texture.EMPTY); await pending;
     markers.update(empty, () => {});
-    expect(layers.at(-1)).toEqual([0xffb000, 0x00c2ff]);
+    expect(layers.at(-1)).toEqual([0xffb000, 0xffb000, 0x00c2ff, 0x00c2ff]);
     expect(sources[1]!.source.destroyed).toBe(true);
     const textures = (markers as unknown as { textures: Record<string, Texture> }).textures;
     expect(new Set(Object.values(textures).map(t => t.source)).size).toBe(1);

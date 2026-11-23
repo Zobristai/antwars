@@ -28,7 +28,7 @@ import { promisify } from "node:util";
 import { deflateRaw, deflateRawSync, inflateRaw } from "node:zlib";
 import type { SimState, StepOutput } from "../sim/types.js";
 import { DEFAULT_LIVE_CONFIG, type LiveConfig } from "./config.js";
-import { decodeMessage, encodeMessage, encodePublicMessage, withoutKillTotals, type StreamAgent, type StreamMessage, type StreamRatingChange } from "./format.js";
+import { decodeMessage, encodeMessage, encodePublicMessage, withoutKillTotals, withoutQueenBites, type StreamAgent, type StreamMessage, type StreamRatingChange } from "./format.js";
 import { SpectatorRecorder, SpectatorState, type RecorderResume, type SpectatorPlayerOptions, type TickRecord } from "./model.js";
 import { ReplayRecording } from "../replays/recording.js";
 import type { RecordHandoff } from "../records/handoff.js";
@@ -214,10 +214,32 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
   } };
 }
 
-interface Spectator {
+/** What a live viewer has opted into; a page that has not opted in keeps the earlier wire format it can read. */
+interface WireForm {
+  readonly kills: boolean;
+  readonly queenBites: boolean;
+}
+
+const CURRENT_FORM: WireForm = { kills: true, queenBites: true };
+
+/** Whether a message carries content the form has not opted into; if not, the current frame serves it unchanged. */
+function beyondForm(message: { readonly full?: StreamMessage["full"]; readonly events: StreamMessage["events"] }, form: WireForm): boolean {
+  const kills = message.full?.kills !== undefined || message.events.some(e => e.kind === "kills");
+  return (!form.kills && kills) || (!form.queenBites && message.events.some(e => e.kind === "queenBites"));
+}
+
+function formKey(form: WireForm): string {
+  return `${form.kills ? 1 : 0}${form.queenBites ? 1 : 0}`;
+}
+
+function inForm(message: StreamMessage, form: WireForm): StreamMessage {
+  const withKills = form.kills ? message : withoutKillTotals(message);
+  return form.queenBites ? withKills : withoutQueenBites(withKills);
+}
+
+interface Spectator extends WireForm {
   readonly res: ServerResponse;
   readonly stream: MatchStream;
-  readonly kills: boolean;
   needsFull: boolean;
   timer: unknown;
   finalFlushTimer: unknown;
@@ -483,7 +505,8 @@ class MatchStream {
     }
     if (this.access) this.hub.recordReleased(this.access, this.released.full.agents);
     let full: string | null = null;
-    let legacyFull: string | null = null, legacyDelta: string | null = null;
+    const olderFulls = new Map<string, string>(), olderDeltas = new Map<string, string>();
+    let releasedMessage: StreamMessage | undefined;
     if (this.recording !== null) {
       if (first) {
         const opening = this.fullPayload(this.released);
@@ -495,20 +518,25 @@ class MatchStream {
     }
     for (const s of this.spectators) {
       if (s.needsFull) {
-        if (s.kills) {
+        releasedMessage ??= this.released.message();
+        if (!beyondForm(releasedMessage, s)) {
           full ??= this.fullFrame(this.released);
           this.hub.write(s, full);
         } else {
-          legacyFull ??= this.fullFrame(this.released, false);
-          this.hub.write(s, legacyFull);
+          const key = formKey(s);
+          let older = olderFulls.get(key);
+          if (older === undefined) olderFulls.set(key, older = this.fullFrame(this.released, s));
+          this.hub.write(s, older);
         }
         s.needsFull = false;
       } else {
-        // Both forms come from the same already-released tick, never the live sim state.
-        if (s.kills) this.hub.write(s, delta);
+        // Every form comes from the same already-released tick, never the live sim state.
+        if (!beyondForm(record, s)) this.hub.write(s, delta);
         else {
-          legacyDelta ??= this.hub.frame(withoutKillTotals({ ...record, full: null }));
-          this.hub.write(s, legacyDelta);
+          const key = formKey(s);
+          let older = olderDeltas.get(key);
+          if (older === undefined) olderDeltas.set(key, older = this.hub.frame(inForm({ ...record, full: null }, s)));
+          this.hub.write(s, older);
         }
       }
       // A dropped slow reader must not be written to or have its timer re-armed.
@@ -527,20 +555,20 @@ class MatchStream {
   }
 
   /** The full snapshot at the delayed playback position, naming this match by its identity. */
-  private fullFrame(released: SpectatorState, kills = true): string {
-    return sseFrame(this.fullPayload(released, kills));
+  private fullFrame(released: SpectatorState, form: WireForm = CURRENT_FORM): string {
+    return sseFrame(this.fullPayload(released, form));
   }
 
-  private fullPayload(released: SpectatorState, kills = true): Uint8Array {
+  private fullPayload(released: SpectatorState, form: WireForm = CURRENT_FORM): Uint8Array {
     const m = released.message();
     const message = { ...m, full: { ...m.full!, match: this.identity } };
-    return this.hub.payload(kills ? message : withoutKillTotals(message));
+    return this.hub.payload(inForm(message, form));
   }
 
   attach(s: Spectator): void {
     this.spectators.add(s);
     if (this.released !== null) {
-      this.hub.write(s, this.fullFrame(this.released, s.kills));
+      this.hub.write(s, this.fullFrame(this.released, s));
       if (this.released.full.result !== null && this.spectators.has(s)) this.hub.flushFinal(s);
       s.needsFull = false;
     }
@@ -809,7 +837,8 @@ export class LiveHub {
       "x-antwar-match": String(stream.seq),
     });
     res.flushHeaders();
-    const s: Spectator = { res, stream, kills: url.searchParams.get("kills") === "1", needsFull: true, timer: null, finalFlushTimer: null };
+    const s: Spectator = { res, stream, kills: url.searchParams.get("kills") === "1",
+      queenBites: url.searchParams.get("queenBites") === "1", needsFull: true, timer: null, finalFlushTimer: null };
     // An intermediary may hold the headers until the first body byte, which the delay can postpone for minutes.
     this.write(s, HEARTBEAT);
     req.on("close", () => {
