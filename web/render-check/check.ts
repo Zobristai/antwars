@@ -414,6 +414,24 @@ export async function hudOnScreen(page: Page, evidence?: RenderEvidence): Promis
     await page.waitForTimeout(100); // frames already requested run once, and request the next from the held queue
     const withoutHud = await sameWith(hidden);
     if (withoutHud !== false) return withoutHud === true ? "not shown" : withoutHud;
+    // Only omit this comparison when there is no clip or mask and no overflow-clipping ancestor cuts the HUD box.
+    // Otherwise an unrelated screenshot pixel change can look like a clip even though no clip can be lifted.
+    const noClipping = await page.evaluate(hudRoot => {
+      const root = document.querySelector(hudRoot);
+      if (!root) return false;
+      const box = root.getBoundingClientRect();
+      for (let e: Element | null = root; e; e = e.parentElement) {
+        const s = getComputedStyle(e);
+        if (s.clipPath !== "none" || s.maskImage !== "none" || s.clip !== "auto") return false;
+        if (e === root) continue;
+        const r = e.getBoundingClientRect();
+        const left = r.left + e.clientLeft, top = r.top + e.clientTop;
+        if (s.overflowX !== "visible" && (box.left < left || box.right > left + e.clientWidth)) return false;
+        if (s.overflowY !== "visible" && (box.top < top || box.bottom > top + e.clientHeight)) return false;
+      }
+      return true;
+    }, HUD_ROOT);
+    if (noClipping) return "shown";
     const withoutClips = await sameWith(unclipped);
     return withoutClips === true ? "shown" : withoutClips === false ? "clipped" : withoutClips;
   } finally {

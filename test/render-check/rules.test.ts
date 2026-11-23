@@ -484,6 +484,20 @@ describe("render check replay readiness", () => {
     } finally { await page.close(); await rm(dir, { recursive: true, force: true }); }
   });
 
+  it("does not compare unclipped screenshots when the HUD and its ancestors have no clip or mask", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<div class="d1-hud" style="position:fixed;inset:0;background:#333;color:white">Score Band</div>');
+      const evidence: RenderEvidence = { comparisons: [] };
+      expect(await hudOnScreen(page, evidence)).toBe("shown");
+      expect(evidence.comparisons.map(c => c.kind)).toEqual(["hidden"]);
+      await page.setContent('<div style="position:fixed;left:0;top:0;width:300px;height:30px;overflow:hidden;transform:translateZ(0)"><div class="d1-hud" style="position:fixed;left:0;top:0;width:300px;height:80px;background:#333;color:white">Score Band</div></div>');
+      const overflowEvidence: RenderEvidence = { comparisons: [] };
+      await hudOnScreen(page, overflowEvidence);
+      expect(overflowEvidence.comparisons.map(c => c.kind)).toEqual(["hidden", "unclipped"]);
+    } finally { await page.close(); }
+  });
+
   it("makes a replay invalid when its board fails to load or never becomes ready", async () => {
     const rejected = await readiness('Promise.reject(new Error("recording 404"))');
     expect(rejected).toEqual({ state: "rejected", reason: "recording 404" });
