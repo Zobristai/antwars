@@ -128,7 +128,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 /* The event's words and its colony shorten as one run: one line, cut at the last letter that fits, ending in a single
    small "…" (in the run's own 12 px face). The time beside it never shortens; the caption's title holds the whole text. */
 .d1-cap-text { min-width: 0; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.d1-cap-what { min-width: 0; font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-cap-what { font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; }
 .d1-cap-who { margin-left: 7px; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
 .d1-cap-when:empty { display: none; }
 /* The fall: the queen lost, large, in the fallen colony's colour. */
@@ -549,7 +549,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-caption { display: grid; grid-template-columns: 4px auto minmax(0, 1fr); grid-template-areas: "bar what what" "bar when who"; column-gap: 8px; row-gap: 1px; align-items: baseline; }
   .d1-caption:not([data-kind="none"]) { flex: 1 0 100%; }
   .d1-cap-bar { grid-area: bar; height: 36px; align-self: center; }
-  .d1-cap-what { grid-area: what; font-size: 14px; line-height: 18px; }
+  .d1-cap-what { grid-area: what; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 14px; line-height: 18px; }
   .d1-cap-when { grid-area: when; font-size: 11px; }
   /* The run is not a box here: its words and its colony each keep their own row and their own ellipsis. */
   .d1-cap-text { display: contents; }
